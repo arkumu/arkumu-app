@@ -83,6 +83,6 @@ module.exports = {
     }
   ],
   daisyui: {
-    themes: ["light", "dark"], // Enable built-in themes
+    themes: ["corporate", "dark"], // Use corporate theme
   },
 }
