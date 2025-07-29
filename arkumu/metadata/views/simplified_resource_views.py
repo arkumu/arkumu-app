@@ -6,6 +6,7 @@ Replaces complex harmonization flow with direct resource creation and linking.
 
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.decorators import login_required
 from django.views.generic import View
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Count, Prefetch
@@ -86,6 +87,7 @@ class UnifiedResourceView(LoginRequiredMixin, View):
         )
 
 
+@login_required
 @require_http_methods(["GET"])
 def search_resources(request):
     """HTMX endpoint for searching resources with filters"""
@@ -120,6 +122,7 @@ def search_resources(request):
     })
 
 
+@login_required
 @require_http_methods(["POST"])
 def quick_link_resources(request):
     """HTMX endpoint for quickly linking resources with multiple predicates"""
@@ -152,6 +155,7 @@ def quick_link_resources(request):
     )
 
 
+@login_required
 @require_http_methods(["GET"])
 def resource_link_form(request, resource_id):
     """HTMX partial for inline resource linking"""
@@ -224,6 +228,7 @@ class ResourceDashboardView(LoginRequiredMixin, View):
         }
 
 
+@login_required
 @require_http_methods(["DELETE"])
 def delete_triple(request, triple_id):
     """HTMX endpoint for deleting a triple"""
@@ -240,6 +245,7 @@ def delete_triple(request, triple_id):
     )
 
 
+@login_required
 @require_http_methods(["GET"])
 def get_predicates(request):
     """HTMX endpoint for loading predicates with search"""
