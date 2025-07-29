@@ -4,11 +4,12 @@ Simplified Resource Views with HTMX
 Replaces complex harmonization flow with direct resource creation and linking.
 """
 
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import View
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Count, Prefetch
+from django.urls import reverse
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -169,61 +170,11 @@ class ResourceLinkFormView(LoginRequiredMixin, View):
 
 
 class ResourceDashboardView(LoginRequiredMixin, View):
-    """Simplified dashboard replacing multiple list views"""
+    """Redirect to unified data explorer"""
     
     def get(self, request):
-        section = request.GET.get('section', 'overview')
-        
-        # Base context
-        context = {
-            'section': section,
-            'stats': self._get_stats(request.user.organization)
-        }
-        
-        # Section-specific data
-        if section == 'resources':
-            context['resources'] = Resource.objects.filter(
-                organization=request.user.organization
-            ).select_related('organization').order_by('-created_at')[:50]
-        
-        elif section == 'links':
-            context['triples'] = Triple.objects.filter(
-                source=request.user.organization
-            ).select_related(
-                'subject', 'predicate', 'object'
-            ).order_by('-created_at')[:50]
-        
-        elif section == 'search':
-            # Just return the search interface
-            pass
-        
-        # HTMX partial or full page
-        if request.headers.get('HX-Request'):
-            template = f'metadata/resource/partials/{section}.html'
-        else:
-            template = 'metadata/resource/dashboard.html'
-        
-        return render(request, template, context)
-    
-    def _get_stats(self, organization):
-        """Get dashboard statistics"""
-        return {
-            'resource_count': Resource.objects.filter(
-                organization=organization
-            ).count(),
-            'triple_count': Triple.objects.filter(
-                source=organization
-            ).count(),
-            'linked_resources': Resource.objects.filter(
-                organization=organization,
-                subject_triples__isnull=False
-            ).distinct().count(),
-            'resource_types': Resource.objects.filter(
-                organization=organization
-            ).values('resource_type').annotate(
-                count=Count('id')
-            ).order_by('-count')
-        }
+        # Redirect all resource dashboard requests to the unified data explorer
+        return redirect(reverse('metadata:data_explorer'))
 
 
 class DeleteTripleView(LoginRequiredMixin, View):

@@ -1,15 +1,55 @@
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- Resource Type Distribution -->
+    <!-- Semantic Model Overview -->
     <div class="card bg-base-100 shadow-lg">
         <div class="card-body">
-            <h2 class="card-title">Resource Types</h2>
+            <h2 class="card-title">Semantic Model</h2>
             
-            {% if stats.resource_types %}
-            <div class="space-y-3">
-                {% for type_data in stats.resource_types %}
+            <div class="space-y-4">
+                <!-- Semantic Classes -->
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
-                        <div class="text-lg">
+                        <div class="text-lg">🏛️</div>
+                        <span class="font-medium">Semantic Classes</span>
+                    </div>
+                    <a href="{% url 'metadata:data_explorer' %}?semantic_view=classes" 
+                       class="badge badge-primary hover:badge-primary-focus transition-colors">
+                        {{ stats.semantic_stats.semantic_classes }}
+                    </a>
+                </div>
+                
+                <!-- Typed Instances -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="text-lg">📋</div>
+                        <span class="font-medium">Typed Instances</span>
+                    </div>
+                    <a href="{% url 'metadata:data_explorer' %}?semantic_view=instances" 
+                       class="badge badge-secondary hover:badge-secondary-focus transition-colors">
+                        {{ stats.semantic_stats.typed_instances }}
+                    </a>
+                </div>
+                
+                <!-- Semantic Properties -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="text-lg">🔗</div>
+                        <span class="font-medium">Semantic Properties</span>
+                    </div>
+                    <a href="{% url 'metadata:data_explorer' %}?semantic_view=properties" 
+                       class="badge badge-accent hover:badge-accent-focus transition-colors">
+                        {{ stats.semantic_stats.semantic_properties }}
+                    </a>
+                </div>
+            </div>
+            
+            <div class="divider">Storage Types</div>
+            
+            {% if stats.resource_types %}
+            <div class="space-y-2">
+                {% for type_data in stats.resource_types %}
+                <div class="flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2">
+                        <div class="text-base">
                             {% if type_data.resource_type == 'IRI' %}🔗
                             {% elif type_data.resource_type == 'CLASS' %}📦
                             {% elif type_data.resource_type == 'PROPERTY' %}🔧
@@ -18,19 +58,13 @@
                         </div>
                         <span class="font-medium">{{ type_data.resource_type }}</span>
                     </div>
-                    <div class="badge badge-outline">{{ type_data.count }}</div>
+                    <div class="badge badge-outline badge-sm">{{ type_data.count }}</div>
                 </div>
-                <progress class="progress progress-primary w-full" 
-                          value="{{ type_data.count }}" 
-                          max="{{ stats.resource_count }}"></progress>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="text-center py-8 text-base-content/50">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                <p>No resources yet</p>
+            <div class="text-center py-4 text-base-content/50">
+                <p class="text-sm">No resources yet</p>
             </div>
             {% endif %}
         </div>

@@ -77,6 +77,35 @@ class DataExplorerView(ListView):
         
         return queryset.select_related('organization').values_list('organization__name', flat=True).distinct().order_by('organization__name')
     
+    def _get_semantic_classes(self):
+        """Get list of semantic classes (resources used as objects in rdf:type triples)."""
+        rdf_type = Resource.objects.filter(
+            uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+        ).first()
+        
+        if not rdf_type:
+            return []
+        
+        # Get resources that are used as objects in rdf:type triples
+        semantic_classes = Triple.objects.filter(
+            predicate=rdf_type
+        ).select_related('object').values(
+            'object__id', 'object__uri', 'object__name'
+        ).distinct().order_by('object__name', 'object__uri')[:100]  # Limit for performance
+        
+        result = []
+        for cls in semantic_classes:
+            if cls['object__uri']:
+                # Extract readable name from URI
+                name = cls['object__name'] or cls['object__uri'].split('/')[-1]
+                result.append({
+                    'value': cls['object__id'],
+                    'label': name,
+                    'uri': cls['object__uri']
+                })
+        
+        return result
+    
     def apply_filters(self, queryset):
         """Apply various filters based on request parameters"""
         # Search
@@ -136,6 +165,47 @@ class DataExplorerView(ListView):
             queryset = queryset.filter(is_externally_linked=True)
         elif externally_linked == 'false':
             queryset = queryset.filter(is_externally_linked=False)
+        
+        # Semantic model filters
+        semantic_view = self.request.GET.get('semantic_view')
+        if semantic_view == 'classes':
+            # Show resources that are semantic classes (used as objects in rdf:type triples)
+            rdf_type = Resource.objects.filter(
+                uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+            ).first()
+            if rdf_type:
+                queryset = queryset.filter(
+                    Exists(Triple.objects.filter(predicate=rdf_type, object=OuterRef('pk')))
+                )
+        elif semantic_view == 'instances':
+            # Show resources that have rdf:type (are instances of semantic classes)
+            rdf_type = Resource.objects.filter(
+                uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+            ).first()
+            if rdf_type:
+                queryset = queryset.filter(
+                    Exists(Triple.objects.filter(predicate=rdf_type, subject=OuterRef('pk')))
+                )
+        elif semantic_view == 'properties':
+            # Show resources that are used as predicates in triples
+            queryset = queryset.filter(
+                Exists(Triple.objects.filter(predicate=OuterRef('pk')))
+            )
+        
+        # Semantic class filter (filter instances by their semantic class)
+        semantic_class = self.request.GET.get('semantic_class')
+        if semantic_class:
+            rdf_type = Resource.objects.filter(
+                uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+            ).first()
+            if rdf_type:
+                queryset = queryset.filter(
+                    Exists(Triple.objects.filter(
+                        predicate=rdf_type, 
+                        subject=OuterRef('pk'),
+                        object_id=semantic_class
+                    ))
+                )
         
         return queryset
     
@@ -208,6 +278,11 @@ class DataExplorerView(ListView):
                 {'value': 'literals', 'label': 'Literals Only'},
                 {'value': 'placeholders', 'label': 'Placeholder Resources'},
             ],
+            'semantic_views': [
+                {'value': 'classes', 'label': 'Semantic Classes'},
+                {'value': 'instances', 'label': 'Typed Instances'},
+                {'value': 'properties', 'label': 'Semantic Properties'},
+            ],
             'triple_usage': [
                 {'value': 'as_subject', 'label': 'Used as Subject'},
                 {'value': 'as_predicate', 'label': 'Used as Predicate'},
@@ -215,6 +290,7 @@ class DataExplorerView(ListView):
                 {'value': 'no_triples', 'label': 'No Triple References'},
             ],
             'organizations': self._get_accessible_organizations(),
+            'semantic_classes': self._get_semantic_classes(),
         }
         
         # Current filters for template
@@ -222,6 +298,8 @@ class DataExplorerView(ListView):
             'search': self.request.GET.get('search', ''),
             'resource_type': self.request.GET.getlist('resource_type'),
             'type_group': self.request.GET.get('type_group'),
+            'semantic_view': self.request.GET.get('semantic_view'),
+            'semantic_class': self.request.GET.get('semantic_class'),
             'organization': self.request.GET.getlist('organization'),
             'triple_usage': self.request.GET.get('triple_usage'),
             'externally_linked': self.request.GET.get('externally_linked'),
@@ -233,7 +311,69 @@ class DataExplorerView(ListView):
             'order': self.request.GET.get('order', 'desc'),
         }
         
+        # Add semantic statistics (from resource dashboard)
+        context['semantic_stats'] = self._get_semantic_stats()
+        
         return context
+    
+    def _get_semantic_stats(self):
+        """Get semantic model statistics for the overview section"""
+        # Get rdf:type predicate
+        rdf_type = Resource.objects.filter(
+            uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+        ).first()
+        
+        # Get base accessible queryset (same access control as main results)
+        base_queryset = Resource.objects.all()
+        
+        # Apply same access control as get_queryset
+        if not self.request.user.is_authenticated:
+            base_queryset = base_queryset.filter(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True
+            )
+        elif not self.request.user.has_perm('metadata.view_all_resources'):
+            base_queryset = base_queryset.filter(
+                public_access_level__in=[
+                    PublicAccessLevel.PUBLIC, 
+                    PublicAccessLevel.RESTRICTED
+                ]
+            )
+        
+        # Get semantic statistics
+        semantic_stats = {}
+        if rdf_type:
+            # Count semantic classes (distinct types used in rdf:type triples)
+            semantic_stats['semantic_classes'] = Triple.objects.filter(
+                predicate=rdf_type,
+                object__in=base_queryset
+            ).values('object').distinct().count()
+            
+            # Count typed instances (resources that have rdf:type)
+            semantic_stats['typed_instances'] = Triple.objects.filter(
+                predicate=rdf_type,
+                subject__in=base_queryset
+            ).values('subject').distinct().count()
+        else:
+            semantic_stats['semantic_classes'] = 0
+            semantic_stats['typed_instances'] = 0
+            
+        # Count semantic properties (distinct predicates used)
+        semantic_stats['semantic_properties'] = Triple.objects.filter(
+            predicate__in=base_queryset
+        ).values('predicate').distinct().count()
+        
+        # Total accessible resources
+        semantic_stats['total_resources'] = base_queryset.count()
+        
+        # Total triples involving accessible resources
+        semantic_stats['total_triples'] = Triple.objects.filter(
+            Q(subject__in=base_queryset) |
+            Q(predicate__in=base_queryset) |
+            Q(object__in=base_queryset)
+        ).count()
+        
+        return semantic_stats
 
 class ResourceDetailView(DetailView):
     """HTMX-powered resource detail view"""
