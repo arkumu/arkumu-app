@@ -101,23 +101,7 @@ Template for displaying organization folder contents with lazy loading
                                 </button>
                             {% endif %}
                             
-                            <!-- Check for CSV files (both .csv and .CSV) -->
-                            {% if item.name|slice:"-4:" == ".csv" or item.name|slice:"-4:" == ".CSV" %}
-                            <!-- Ingest CSV file button -->
-                            <button 
-                                    hx-post="{% url 'importer:ingest_file' %}"
-                                    hx-vals='{"file_path": "{{ item.path }}", "organization": "{{ organization }}"}'
-                                    hx-indicator="#ingest-indicator-{{ forloop.counter }}"
-                                    class="ingest-icon text-purple-500 hover:text-purple-700 p-1 border border-purple-300 rounded-md bg-purple-50"
-                                    title="Import CSV into database">
-                                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                                </svg>
-                            </button>
-                            <div id="ingest-indicator-{{ forloop.counter }}" class="htmx-indicator">
-                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-500"></div>
-                            </div>
-                            {% endif %}
+                            <!-- Ingest button removed - use importer/ingest instead -->
                             
                             <button hx-post="{% url 'storage:delete_object' bucket_type=bucket_type object_type='file' object_path=item.path %}"
                                     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
@@ -174,23 +158,6 @@ Template for displaying organization folder contents with lazy loading
     transform: rotate(90deg);
 }
 
-/* Make the ingest icon more visible */
-.ingest-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    min-height: 28px;
-}
-
-/* Ingest button animation */
-@keyframes pulse-purple {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-.ingest-success {
-  animation: pulse-purple 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
 </style>
 
 <script>

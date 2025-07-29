@@ -1,5 +1,3 @@
-<!-- Directory Import Result Container -->
-<div id="directory-import-result" class="mb-4"></div>
 
 {% if not contents %}
     <div class="alert alert-warning mb-4">
@@ -49,23 +47,7 @@
                                     </svg>
                                 </button>
                                 
-                                <!-- Import Directory button -->
-                                <button class="import-directory-icon text-blue-500 hover:text-blue-700 p-1 border border-blue-300 rounded-md" 
-                                        title="Import all CSV files from this folder"
-                                        hx-post="{% url 'importer:start_directory_import' %}"
-                                        hx-vals='{"organization": "{{ organization }}", "s3_folder_path": "{{ item.path }}", "folder_name": "{{ item.name }}"}'
-                                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                        hx-target="#directory-import-result"
-                                        hx-swap="innerHTML"
-                                        hx-indicator="#directory-import-indicator-{{ forloop.counter }}"
-                                        hx-confirm="Start importing all CSV files from folder '{{ item.name }}'? This will process all CSV files in the background.">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 12l2 2 4-4" />
-                                    </svg>
-                                </button>
-                                <div id="directory-import-indicator-{{ forloop.counter }}" class="htmx-indicator">
-                                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                                </div>
+                                <!-- Import Directory button removed - use importer/ingest instead -->
                                 
                                 <!-- Delete folder button -->
                                 <button hx-post="{% url 'storage:delete_object' bucket_type='org-'|add:organization object_type='folder' object_path=item.path %}"
@@ -134,23 +116,7 @@
                                 <!-- Always show debug info about file extension -->
                                 <div class="text-xs text-gray-400 hidden">File type: {{ item.name|slice:"-4:" }}</div>
                                 
-                                <!-- Check for CSV files (both .csv and .CSV) -->
-                                {% if item.name|slice:"-4:" == ".csv" or item.name|slice:"-4:" == ".CSV" %}
-                                <!-- Ingest CSV file button -->
-                                <button 
-                                        hx-post="{% url 'importer:ingest_file' %}"
-                                        hx-vals='{"file_path": "{{ item.path }}", "organization": "{{ organization }}"}'
-                                        hx-indicator="#ingest-indicator-{{ forloop.counter }}"
-                                        class="ingest-icon text-purple-500 hover:text-purple-700 p-1 border border-purple-300 rounded-md"
-                                        title="Import CSV into database">
-                                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                                    </svg>
-                                </button>
-                                <div id="ingest-indicator-{{ forloop.counter }}" class="htmx-indicator">
-                                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-500"></div>
-                                </div>
-                                {% endif %}
+                                <!-- Ingest button removed - use importer/ingest instead -->
                                 
                                 <!-- Delete file button -->
                                 <button hx-post="{% url 'storage:delete_object' bucket_type='org-'|add:organization object_type='file' object_path=item.path %}"
@@ -207,23 +173,6 @@
     transform: rotate(90deg);
 }
 
-/* Ingest button animation */
-@keyframes pulse-purple {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-.ingest-success {
-  animation: pulse-purple 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Make the ingest icon more visible */
-.ingest-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    min-height: 28px;
-}
 </style>
 
 <script>
