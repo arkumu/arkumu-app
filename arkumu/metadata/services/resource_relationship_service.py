@@ -37,7 +37,7 @@ class ResourceRelationshipService:
             # Get the starting resource
             resource_query = Resource.objects.filter(uri=resource_uri)
             if organization:
-                resource_query = resource_query.filter(source=organization)
+                resource_query = resource_query.filter(organization__code=organization)
             
             resource = resource_query.first()
             if not resource:
@@ -107,7 +107,7 @@ class ResourceRelationshipService:
         # Find outgoing relationships (where this resource is the subject)
         outgoing_query = Triple.objects.filter(subject=resource).select_related('predicate', 'object')
         if organization:
-            outgoing_query = outgoing_query.filter(object__source=organization)
+            outgoing_query = outgoing_query.filter(object__organization__code=organization)
         
         for triple in outgoing_query:
             if triple.object.uri not in visited:
@@ -144,7 +144,7 @@ class ResourceRelationshipService:
         # Find incoming relationships (where this resource is the object)
         incoming_query = Triple.objects.filter(object=resource).select_related('predicate', 'subject')
         if organization:
-            incoming_query = incoming_query.filter(subject__source=organization)
+            incoming_query = incoming_query.filter(subject__organization__code=organization)
         
         for triple in incoming_query:
             if triple.subject.uri not in visited:
@@ -199,7 +199,7 @@ class ResourceRelationshipService:
             # Get the starting resource
             resource_query = Resource.objects.filter(uri=resource_uri)
             if organization:
-                resource_query = resource_query.filter(source=organization)
+                resource_query = resource_query.filter(organization__code=organization)
             
             resource = resource_query.first()
             if not resource:
@@ -215,7 +215,7 @@ class ResourceRelationshipService:
             ).select_related('object')
             
             if organization:
-                outgoing_triples = outgoing_triples.filter(object__source=organization)
+                outgoing_triples = outgoing_triples.filter(object__organization__code=organization)
             
             for triple in outgoing_triples:
                 related_resources.append(triple.object)
@@ -227,7 +227,7 @@ class ResourceRelationshipService:
             ).select_related('subject')
             
             if organization:
-                incoming_triples = incoming_triples.filter(subject__source=organization)
+                incoming_triples = incoming_triples.filter(subject__organization__code=organization)
             
             for triple in incoming_triples:
                 related_resources.append(triple.subject)
@@ -277,7 +277,7 @@ class ResourceRelationshipService:
             # Get the starting resource
             resource_query = Resource.objects.filter(uri=resource_uri)
             if organization:
-                resource_query = resource_query.filter(source=organization)
+                resource_query = resource_query.filter(organization__code=organization)
             
             resource = resource_query.first()
             if not resource:
@@ -288,7 +288,7 @@ class ResourceRelationshipService:
             # Get outgoing relationships
             outgoing_triples = Triple.objects.filter(subject=resource).select_related('object')
             if organization:
-                outgoing_triples = outgoing_triples.filter(object__source=organization)
+                outgoing_triples = outgoing_triples.filter(object__organization__code=organization)
             
             for triple in outgoing_triples:
                 result['outgoing'].append(triple.object)
@@ -296,7 +296,7 @@ class ResourceRelationshipService:
             # Get incoming relationships
             incoming_triples = Triple.objects.filter(object=resource).select_related('subject')
             if organization:
-                incoming_triples = incoming_triples.filter(subject__source=organization)
+                incoming_triples = incoming_triples.filter(subject__organization__code=organization)
             
             for triple in incoming_triples:
                 result['incoming'].append(triple.subject)
@@ -352,7 +352,7 @@ class ResourceRelationshipService:
                 
                 # Explore neighbors
                 for triple in Triple.objects.filter(subject=current_resource).select_related('predicate', 'object'):
-                    if organization and triple.object.source != organization:
+                    if organization and (not triple.object.organization or triple.object.organization.code != organization):
                         continue
                     
                     if triple.object.uri not in visited:
@@ -478,7 +478,7 @@ class ResourceRelationshipService:
         try:
             # Get all predicates used in triples for this organization
             predicates = Triple.objects.filter(
-                Q(subject__source=organization) | Q(object__source=organization)
+                Q(subject__organization__code=organization) | Q(object__organization__code=organization)
             ).values_list('predicate__uri', flat=True).distinct()
             
             relationship_types = list(predicates)
