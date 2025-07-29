@@ -43,7 +43,7 @@
 
 {% endblock javascript %}
 </head>
-<body class="min-h-screen bg-base-100" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+<body class="min-h-screen bg-base-100 flex flex-col" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
   {% block body %}
   
   <!-- Navbar -->
@@ -137,10 +137,8 @@
           </div>
           <ul tabindex="0" class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">
             <li><a href="{% url 'users:detail' request.user.username %}">Profile</a></li>
-            {% if request.user.is_staff %}
             <li><a href="{% url 'catalog:design' %}">Design Testing</a></li>
             <li><a href="{% url 'catalog:components' %}">Components</a></li>
-            {% endif %}
             <li><a href="{% url 'account_logout' %}">Logout</a></li>
           </ul>
         </div>
@@ -150,9 +148,11 @@
     </div>
   </div>
 
-  <!-- Messages/Alerts -->
-  <div class="container mx-auto px-4 mt-4">
-    {% if messages %}
+  <!-- Main Content Wrapper -->
+  <main class="flex-grow">
+    <!-- Messages/Alerts -->
+    <div class="container mx-auto px-4 mt-4">
+      {% if messages %}
       {% for message in messages %}
         <div class="alert {% if message.tags == 'error' %}alert-error{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %} mb-4">
           <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
@@ -220,8 +220,12 @@
       {% endblock container_type_end %}
     {% endblock main %}
   </div>
+  </main>
 
   {% endblock body %}
+  
+  <!-- Footer -->
+  {% include 'partials/footer.html' %}
   
   <!-- Toast Container for HTMX notifications -->
   <div id="toast-container"></div>
