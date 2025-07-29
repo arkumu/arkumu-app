@@ -1,5 +1,5 @@
 from django.urls import path
-from arkumu.metadata.views import dashboard_views, resource_views, triple_views, graph_views, bulk_editor_views, data_discovery_views, data_explorer_views, split_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, harmonization_views
+from arkumu.metadata.views import dashboard_views, resource_views, triple_views, graph_views, bulk_editor_views, data_discovery_views, data_explorer_views, split_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, harmonization_views, simplified_resource_views
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 from arkumu.metadata.views.data_explorer import DataExplorerView, ResourceDetailView, DataExplorerResultsView
 from arkumu.metadata.views.csv_mapping import saved_mappings_api
@@ -263,7 +263,16 @@ urlpatterns = [
     path('model-graph/workflow/<str:workflow_type>/', model_graph_views.model_graph_workflow_details, name='model_graph_workflow_details'),
     path('model-graph/relation/<str:relation_type>/', model_graph_views.model_graph_relation_details, name='model_graph_relation_details'),
     
-    # Harmonization URLs
+    # Simplified Resource Management URLs
+    path('resource-management/', simplified_resource_views.ResourceDashboardView.as_view(), name='resource_management'),
+    path('resource-management/create/', simplified_resource_views.UnifiedResourceView.as_view(), name='unified_resource_create'),
+    path('resource-management/search/', simplified_resource_views.search_resources, name='search_resources_htmx'),
+    path('resource-management/link/', simplified_resource_views.quick_link_resources, name='quick_link_resources'),
+    path('resource-management/link-form/<uuid:resource_id>/', simplified_resource_views.resource_link_form, name='resource_link_form'),
+    path('resource-management/predicates/', simplified_resource_views.get_predicates, name='get_predicates_htmx'),
+    path('resource-management/triple/<uuid:triple_id>/delete/', simplified_resource_views.delete_triple, name='delete_triple'),
+    
+    # Harmonization URLs (Legacy)
     path('harmonization/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_list'),
     path('harmonization/start/', harmonization_views.HarmonizationStartView.as_view(), name='harmonization_start'),
     path('harmonization/executions/<uuid:pk>/', harmonization_views.HarmonizationExecutionDetailView.as_view(), name='harmonization_execution_detail'),

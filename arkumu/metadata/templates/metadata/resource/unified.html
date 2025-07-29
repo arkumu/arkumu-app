@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Create Resource{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">Create & Link Resources</h1>
+        <a href="{% url 'metadata:resource_management' %}" class="btn btn-ghost">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            Dashboard
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Resource Creation Form -->
+        <div class="card bg-base-100 shadow-lg">
+            <div class="card-body">
+                <h2 class="card-title">Resource Details</h2>
+                
+                <form id="resource-form" 
+                      hx-post="{% url 'metadata:unified_resource_create' %}" 
+                      hx-target="#result"
+                      hx-swap="outerHTML"
+                      hx-indicator="#form-indicator">
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Resource Type</span>
+                        </label>
+                        <select name="resource_type" class="select select-bordered" required>
+                            {% for value, display in resource_types %}
+                            <option value="{{ value }}">{{ display }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">URI</span>
+                        </label>
+                        <input type="url" 
+                               name="uri" 
+                               class="input input-bordered" 
+                               placeholder="https://example.org/resource"
+                               required>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Name</span>
+                        </label>
+                        <input type="text" 
+                               name="name" 
+                               class="input input-bordered" 
+                               placeholder="Human-readable name">
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Value (for literals)</span>
+                        </label>
+                        <textarea name="value" 
+                                  class="textarea textarea-bordered" 
+                                  placeholder="Literal value"></textarea>
+                    </div>
+
+                    <!-- Link to Existing Resources -->
+                    <div class="divider">Link to Existing Resources</div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Predicate (Relationship)</span>
+                        </label>
+                        
+                        <!-- Search input for filtering predicates -->
+                        <input type="text" 
+                               id="predicate-search"
+                               name="predicate-search"
+                               placeholder="Search relationship types..."
+                               class="input input-bordered input-sm mb-2"
+                               hx-get="{% url 'metadata:get_predicates_htmx' %}"
+                               hx-trigger="keyup changed delay:300ms"
+                               hx-target="#predicate-dropdown"
+                               hx-indicator="#predicate-indicator"
+                               hx-include="this">
+                        
+                        <div class="flex items-center mb-2">
+                            <span id="predicate-indicator" class="htmx-indicator loading loading-spinner loading-xs mr-2"></span>
+                            <span class="text-xs text-base-content/70">Type to search through 988+ properties</span>
+                        </div>
+                        
+                        <div id="predicate-dropdown">
+                            <select name="predicate_ids" multiple class="select select-bordered w-full h-32">
+                                {% for predicate in predicates %}
+                                <option value="{{ predicate.id }}" title="{{ predicate.uri|default:'No URI' }}">
+                                    {{ predicate.name|default:predicate.uri|truncatechars:50 }}
+                                    {% if predicate.organization %}
+                                    - {{ predicate.organization.name|truncatechars:15 }}
+                                    {% endif %}
+                                </option>
+                                {% endfor %}
+                                {% if not predicates %}
+                                <option disabled>No properties available</option>
+                                {% endif %}
+                            </select>
+                            <div class="label">
+                                <span class="label-text-alt">Hold Ctrl/Cmd to select multiple relationships - Showing {{ predicates|length }} properties (first 100 alphabetically)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Search & Select Resources to Link</span>
+                        </label>
+                        <input type="text" 
+                               class="input input-bordered"
+                               placeholder="Search resources..."
+                               hx-get="{% url 'metadata:search_resources_htmx' %}"
+                               hx-trigger="keyup changed delay:500ms"
+                               hx-target="#resource-search-results"
+                               hx-vals='{"mode": "multiple"}'
+                               hx-indicator="#search-indicator">
+                        <div class="flex items-center mt-1">
+                            <span id="search-indicator" class="htmx-indicator loading loading-spinner loading-xs"></span>
+                            <span class="text-xs text-base-content/70 ml-2">Type to search existing resources</span>
+                        </div>
+                        
+                        <div id="resource-search-results" class="mt-2"></div>
+                        <div id="selected-resources" class="mt-2"></div>
+                    </div>
+
+                    <div class="card-actions justify-end mt-6">
+                        <button type="submit" class="btn btn-primary">
+                            <span id="form-indicator" class="htmx-indicator loading loading-spinner loading-sm"></span>
+                            Create Resource
+                        </button>
+                    </div>
+                </form>
+
+                <div id="result" class="mt-4"></div>
+            </div>
+        </div>
+
+        <!-- Quick Actions & Preview -->
+        <div class="card bg-base-100 shadow-lg">
+            <div class="card-body">
+                <h2 class="card-title">Quick Actions</h2>
+                
+                <div class="space-y-4">
+                    <div class="stats shadow">
+                        <div class="stat">
+                            <div class="stat-title">My Resources</div>
+                            <div class="stat-value text-2xl">{{ user.organization.resource_set.count }}</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-title">Links Created</div>
+                            <div class="stat-value text-2xl">{{ user.organization.triple_set.count }}</div>
+                        </div>
+                    </div>
+
+                    <div class="divider">Recent Activity</div>
+                    
+                    <div id="recent-activity" class="text-sm text-base-content/70">
+                        <p>No recent activity to display</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Handle selected resource display
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.target.id === 'resource-search-results') {
+            // Update selected count if needed
+            const selected = document.querySelectorAll('input[name="linked_iris"]:checked');
+            const count = selected.length;
+            
+            let display = document.getElementById('selected-resources');
+            if (count > 0) {
+                display.innerHTML = `<div class="badge badge-info">${count} resources selected</div>`;
+            } else {
+                display.innerHTML = '';
+            }
+        }
+    });
+</script>
+{% endblock %}

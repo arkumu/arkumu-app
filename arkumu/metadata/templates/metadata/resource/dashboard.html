@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Resource Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">Resource Dashboard</h1>
+        <div class="flex gap-2">
+            <a href="{% url 'metadata:unified_resource_create' %}" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Create Resource
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="stats shadow mb-6 w-full">
+        <div class="stat">
+            <div class="stat-figure text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+            <div class="stat-title">Total Resources</div>
+            <div class="stat-value">{{ stats.resource_count }}</div>
+            <div class="stat-desc">In your organization</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-figure text-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10m0 0V6a2 2 0 00-2-2H9a2 2 0 00-2 2v2m10 0v10a2 2 0 01-2 2H9a2 2 0 01-2-2V8m0 0V6a2 2 0 012-2h10a2 2 0 012 2v2" />
+                </svg>
+            </div>
+            <div class="stat-title">Links Created</div>
+            <div class="stat-value">{{ stats.triple_count }}</div>
+            <div class="stat-desc">Relationship triples</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-figure text-accent">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+                </svg>
+            </div>
+            <div class="stat-title">Linked Resources</div>
+            <div class="stat-value">{{ stats.linked_resources }}</div>
+            <div class="stat-desc">With relationships</div>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="tabs tabs-boxed mb-6">
+        <a class="tab {% if section == 'overview' %}tab-active{% endif %}" 
+           hx-get="{% url 'metadata:resource_management' %}?section=overview"
+           hx-target="#dashboard-content"
+           hx-push-url="true">
+            Overview
+        </a>
+        <a class="tab {% if section == 'resources' %}tab-active{% endif %}" 
+           hx-get="{% url 'metadata:resource_management' %}?section=resources"
+           hx-target="#dashboard-content"
+           hx-push-url="true">
+            Resources
+        </a>
+        <a class="tab {% if section == 'links' %}tab-active{% endif %}" 
+           hx-get="{% url 'metadata:resource_management' %}?section=links"
+           hx-target="#dashboard-content"
+           hx-push-url="true">
+            Links
+        </a>
+        <a class="tab {% if section == 'search' %}tab-active{% endif %}" 
+           hx-get="{% url 'metadata:resource_management' %}?section=search"
+           hx-target="#dashboard-content"
+           hx-push-url="true">
+            Search
+        </a>
+    </div>
+
+    <!-- Dynamic Content Area -->
+    <div id="dashboard-content">
+        {% if section == 'overview' %}
+            {% include 'metadata/resource/partials/overview.html' %}
+        {% elif section == 'resources' %}
+            {% include 'metadata/resource/partials/resources.html' %}
+        {% elif section == 'links' %}
+            {% include 'metadata/resource/partials/links.html' %}
+        {% elif section == 'search' %}
+            {% include 'metadata/resource/partials/search.html' %}
+        {% else %}
+            {% include 'metadata/resource/partials/overview.html' %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

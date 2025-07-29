@@ -22,11 +22,17 @@
                 </svg>
                 Data Discovery
             </a>
-            <a href="{% url 'metadata:harmonization_list' %}" class="btn btn-accent btn-sm">
+            <a href="{% url 'metadata:resource_management' %}" class="btn btn-accent btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                </svg>
+                Resource Management
+            </a>
+            <a href="{% url 'metadata:harmonization_list' %}" class="btn btn-outline btn-accent btn-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-5 4h.01M15 14h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Harmonization
+                Harmonization (Legacy)
             </a>
             
         </div>
@@ -146,6 +152,16 @@
             <div class="card-body">
                 <h2 class="card-title">Ingests</h2>
                 <p class="text-4xl font-bold">{{ stats.ingests }}</p>
+            </div>
+        </div>
+        
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-sm">Resource Links</h2>
+                <p class="text-4xl font-bold">{{ stats.linked_resources|default:0 }}</p>
+                <div class="text-xs text-base-content/70">
+                    Resources with IRI connections
+                </div>
             </div>
         </div>
         

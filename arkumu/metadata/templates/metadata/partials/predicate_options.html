@@ -1,0 +1,9 @@
+<option value="">Select relationship type...</option>
+{% for predicate in predicates %}
+<option value="{{ predicate.id }}" title="{{ predicate.uri }}">
+    {{ predicate.name|default:predicate.uri|truncatechars:40 }}
+    {% if predicate.organization.name %}
+    ({{ predicate.organization.name }})
+    {% endif %}
+</option>
+{% endfor %}

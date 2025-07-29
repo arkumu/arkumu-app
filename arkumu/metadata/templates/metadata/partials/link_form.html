@@ -1,0 +1,74 @@
+<div class="space-y-4">
+    <h3 class="font-bold text-lg">Link Resource: {{ resource.name|default:resource.uri|truncatechars:40 }}</h3>
+    
+    <form hx-post="{% url 'metadata:quick_link_resources' %}"
+          hx-target="#link-result"
+          hx-swap="innerHTML"
+          hx-indicator="#link-indicator">
+        
+        <input type="hidden" name="subject_id" value="{{ resource.id }}">
+        
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text">Relationship Types (Predicates)</span>
+            </label>
+            <select name="predicate_ids" multiple class="select select-bordered h-24" required>
+                {% for predicate in predicates %}
+                <option value="{{ predicate.id }}">
+                    {{ predicate.name|default:predicate.uri|truncatechars:40 }}
+                </option>
+                {% endfor %}
+            </select>
+            <div class="label">
+                <span class="label-text-alt">Hold Ctrl/Cmd to select multiple relationship types</span>
+            </div>
+        </div>
+
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text">Link to Resources</span>
+            </label>
+            <input type="text" 
+                   placeholder="Search resources to link..."
+                   class="input input-bordered"
+                   hx-get="{% url 'metadata:search_resources_htmx' %}"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#search-results"
+                   hx-vals='{"mode": "multiple"}'
+                   hx-indicator="#search-indicator">
+            <div class="flex items-center mt-1">
+                <span id="search-indicator" class="htmx-indicator loading loading-spinner loading-xs"></span>
+                <span class="text-xs text-base-content/70 ml-2">Type to search</span>
+            </div>
+        </div>
+
+        <div id="search-results" class="max-h-40 overflow-y-auto"></div>
+
+        <div class="modal-action">
+            <button type="submit" class="btn btn-primary">
+                <span id="link-indicator" class="htmx-indicator loading loading-spinner loading-sm"></span>
+                Create Links
+            </button>
+            <button type="button" class="btn" onclick="document.getElementById('link-modal').close()">
+                Cancel
+            </button>
+        </div>
+
+        <div id="link-result" class="mt-4"></div>
+    </form>
+</div>
+
+<script>
+    // Auto-close modal on successful link creation
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.target.id === 'link-result' && 
+            evt.detail.xhr.status === 200 && 
+            evt.detail.xhr.responseText.includes('links created')) {
+            setTimeout(() => {
+                document.getElementById('link-modal').close();
+                // Trigger refresh of the resources list
+                htmx.trigger('#resources-list', 'linksCreated');
+            }, 1500);
+        }
+    });
+</script>

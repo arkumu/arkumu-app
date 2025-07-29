@@ -1,0 +1,97 @@
+<div class="card bg-base-100 shadow-lg">
+    <div class="card-body">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="card-title">Resource Links</h2>
+            <div class="flex gap-2">
+                <input type="text" 
+                       placeholder="Filter links..."
+                       class="input input-bordered input-sm"
+                       hx-get="{% url 'metadata:search_resources_htmx' %}"
+                       hx-trigger="keyup changed delay:300ms"
+                       hx-target="#links-list"
+                       hx-indicator="#filter-indicator">
+                <span id="filter-indicator" class="htmx-indicator loading loading-spinner loading-sm"></span>
+            </div>
+        </div>
+        
+        <div id="links-list">
+            {% if triples %}
+            <div class="overflow-x-auto">
+                <table class="table table-zebra">
+                    <thead>
+                        <tr>
+                            <th>Subject</th>
+                            <th>Predicate</th>
+                            <th>Object</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for triple in triples %}
+                        <tr>
+                            <td>
+                                <div class="font-medium">
+                                    {{ triple.subject.name|default:triple.subject.uri|truncatechars:30 }}
+                                </div>
+                                <div class="text-xs text-base-content/50">
+                                    {{ triple.subject.resource_type }}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="badge badge-outline">
+                                    {{ triple.predicate.name|default:triple.predicate.uri|truncatechars:20 }}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="font-medium">
+                                    {{ triple.object.name|default:triple.object.uri|truncatechars:30 }}
+                                </div>
+                                <div class="text-xs text-base-content/50">
+                                    {{ triple.object.resource_type }}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="text-sm">
+                                    {{ triple.created_at|date:"M d, Y" }}
+                                </div>
+                                <div class="text-xs text-base-content/50">
+                                    {{ triple.created_at|date:"H:i" }}
+                                </div>
+                            </td>
+                            <td>
+                                <button class="btn btn-ghost btn-xs text-error"
+                                        hx-delete="{% url 'metadata:delete_triple' triple_id=triple.id %}"
+                                        hx-target="closest tr"
+                                        hx-swap="outerHTML"
+                                        hx-confirm="Are you sure you want to delete this link?"
+                                        hx-indicator="#delete-indicator-{{ triple.id }}">
+                                    <span id="delete-indicator-{{ triple.id }}" class="htmx-indicator loading loading-spinner loading-xs"></span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-12">
+                <div class="text-base-content/50 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10m0 0V6a2 2 0 00-2-2H9a2 2 0 00-2 2v2m10 0v10a2 2 0 01-2 2H9a2 2 0 01-2-2V8m0 0V6a2 2 0 012-2h10a2 2 0 012 2v2" />
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">No Links Found</h3>
+                <p class="text-base-content/70 mb-4">Create relationships between your resources.</p>
+                <a href="{% url 'metadata:unified_resource_create' %}" class="btn btn-primary">
+                    Create Resource & Links
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

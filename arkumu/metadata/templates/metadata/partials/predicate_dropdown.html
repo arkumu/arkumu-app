@@ -1,0 +1,22 @@
+<select name="predicate_ids" multiple class="select select-bordered w-full h-32">
+    {% for predicate in predicates %}
+    <option value="{{ predicate.id }}" title="{{ predicate.uri|default:'No URI' }}">
+        {{ predicate.name|default:predicate.uri|truncatechars:50 }}
+        {% if predicate.organization %}
+        - {{ predicate.organization.name|truncatechars:15 }}
+        {% endif %}
+    </option>
+    {% endfor %}
+    {% if not predicates %}
+    <option disabled>No properties found{% if search_query %} for "{{ search_query }}"{% endif %}</option>
+    {% endif %}
+</select>
+<div class="label">
+    <span class="label-text-alt">
+        {% if search_query %}
+            Found {{ predicates|length }} properties matching "{{ search_query }}"
+        {% else %}
+            Showing {{ predicates|length }} properties (first 100 alphabetically)
+        {% endif %}
+    </span>
+</div>

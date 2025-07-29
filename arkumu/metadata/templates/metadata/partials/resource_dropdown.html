@@ -1,0 +1,61 @@
+{% if resources %}
+<div class="dropdown dropdown-open w-full">
+    <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-full max-h-60 overflow-auto">
+        {% for resource in resources %}
+        <li>
+            <label class="label cursor-pointer justify-start p-2 hover:bg-base-200 rounded">
+                {% if selection_mode == 'multiple' %}
+                <input type="checkbox" 
+                       name="linked_iris" 
+                       value="{{ resource.id }}"
+                       class="checkbox checkbox-sm mr-3">
+                {% else %}
+                <input type="radio" 
+                       name="selected_resource" 
+                       value="{{ resource.id }}"
+                       class="radio radio-sm mr-3">
+                {% endif %}
+                
+                <div class="flex-1 text-left">
+                    <div class="font-semibold text-sm">
+                        {{ resource.name|default:resource.uri|truncatechars:50 }}
+                    </div>
+                    <div class="text-xs text-base-content/70">
+                        {{ resource.organization.name }} • 
+                        {{ resource.get_resource_type_display }}
+                        {% if resource.usage_count %}
+                        • {{ resource.usage_count }} links
+                        {% endif %}
+                    </div>
+                    {% if resource.value %}
+                    <div class="text-xs text-base-content/50 italic">
+                        "{{ resource.value|truncatechars:30 }}"
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Resource type badge -->
+                <div class="badge badge-outline badge-xs">
+                    {% if resource.resource_type == 'IRI' %}🔗
+                    {% elif resource.resource_type == 'CLASS' %}📦
+                    {% elif resource.resource_type == 'PROPERTY' %}🔧
+                    {% elif resource.resource_type == 'LITERAL' %}📝
+                    {% endif %}
+                    {{ resource.get_resource_type_display }}
+                </div>
+            </label>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% else %}
+<div class="text-center py-8">
+    <div class="text-base-content/50 mb-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+    </div>
+    <p class="text-sm text-base-content/70">No resources found</p>
+    <p class="text-xs text-base-content/50 mt-1">Try adjusting your search terms</p>
+</div>
+{% endif %}
