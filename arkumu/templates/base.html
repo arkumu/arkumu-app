@@ -54,11 +54,6 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16" /></svg>
         </div>
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
-          <li class="mb-2">
-            <div class="badge badge-error badge-sm font-medium">
-              {% translate "This website is under construction" %}
-            </div>
-          </li>
           <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
           {% if request.user.is_authenticated %}
             <li><a href="{% url 'storage:archivist_dashboard' %}">Archivist Dashboard</a></li>
@@ -75,10 +70,7 @@
       <a class="btn btn-ghost text-xl" href="{% url 'home' %}">arkumu</a>
     </div>
     
-    <div class="navbar-center hidden lg:flex flex-col">
-      <div class="badge badge-error badge-lg font-medium mb-2">
-        {% translate "This website is under construction" %}
-      </div>
+    <div class="navbar-center hidden lg:flex">
       <ul class="menu menu-horizontal px-1">
         <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
         {% if request.user.is_authenticated %}
@@ -153,6 +145,21 @@
       {% else %}
         <a class="btn btn-primary" href="{% url 'account_login' %}">{% translate "Sign In" %}</a>
       {% endif %}
+    </div>
+  </div>
+
+  <!-- Construction Notice Banner -->
+  <div class="bg-error text-white py-2">
+    <div class="container mx-auto px-4 text-center">
+      <div class="flex items-center justify-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span class="font-medium">{% translate "This website is under construction" %}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
     </div>
   </div>
 
