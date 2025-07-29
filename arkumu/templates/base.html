@@ -70,7 +70,10 @@
       <a class="btn btn-ghost text-xl" href="{% url 'home' %}">arkumu</a>
     </div>
     
-    <div class="navbar-center hidden lg:flex">
+    <div class="navbar-center hidden lg:flex flex-col">
+      <div class="badge badge-error badge-lg font-medium mb-2">
+        {% translate "This website is under construction" %}
+      </div>
       <ul class="menu menu-horizontal px-1">
         <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
         {% if request.user.is_authenticated %}
@@ -222,10 +225,10 @@
   </div>
   </main>
 
-  {% endblock body %}
-  
   <!-- Footer -->
   {% include 'partials/footer.html' %}
+
+  {% endblock body %}
   
   <!-- Toast Container for HTMX notifications -->
   <div id="toast-container"></div>
