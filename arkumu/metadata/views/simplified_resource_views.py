@@ -6,11 +6,9 @@ Replaces complex harmonization flow with direct resource creation and linking.
 
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.decorators import login_required
 from django.views.generic import View
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Count, Prefetch
-from django.views.decorators.http import require_http_methods
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -87,87 +85,87 @@ class UnifiedResourceView(LoginRequiredMixin, View):
         )
 
 
-@login_required
-@require_http_methods(["GET"])
-def search_resources(request):
+class SearchResourcesView(LoginRequiredMixin, View):
     """HTMX endpoint for searching resources with filters"""
-    query = request.GET.get('q', '')
-    resource_type = request.GET.get('type', '')
-    org_id = request.GET.get('org', '')
     
-    # Build query
-    resources = Resource.objects.all()
-    
-    if query:
-        resources = resources.filter(
-            Q(uri__icontains=query) | 
-            Q(name__icontains=query) |
-            Q(value__icontains=query)
-        )
-    
-    if resource_type:
-        resources = resources.filter(resource_type=resource_type)
-    
-    if org_id:
-        resources = resources.filter(organization_id=org_id)
-    
-    # Optimize query
-    resources = resources.select_related('organization').annotate(
-        usage_count=Count('subject_triples') + Count('object_triples')
-    )[:20]
-    
-    return render(request, 'metadata/partials/resource_dropdown.html', {
-        'resources': resources,
-        'selection_mode': request.GET.get('mode', 'single')
-    })
-
-
-@login_required
-@require_http_methods(["POST"])
-def quick_link_resources(request):
-    """HTMX endpoint for quickly linking resources with multiple predicates"""
-    subject_id = request.POST.get('subject_id')
-    predicate_ids = request.POST.getlist('predicate_ids')
-    object_ids = request.POST.getlist('object_ids')
-    
-    if not all([subject_id, predicate_ids, object_ids]):
-        return HttpResponse(
-            '<div class="alert alert-error">Missing required fields</div>',
-            status=400
-        )
-    
-    created_count = 0
-    for object_id in object_ids:
-        for predicate_id in predicate_ids:
-            triple, created = Triple.objects.get_or_create(
-                subject_id=subject_id,
-                predicate_id=predicate_id,
-                object_id=object_id,
-                source=request.user.organization
+    def get(self, request):
+        query = request.GET.get('q', '')
+        resource_type = request.GET.get('type', '')
+        org_id = request.GET.get('org', '')
+        
+        # Build query
+        resources = Resource.objects.all()
+        
+        if query:
+            resources = resources.filter(
+                Q(uri__icontains=query) | 
+                Q(name__icontains=query) |
+                Q(value__icontains=query)
             )
-            if created:
-                created_count += 1
+        
+        if resource_type:
+            resources = resources.filter(resource_type=resource_type)
+        
+        if org_id:
+            resources = resources.filter(organization_id=org_id)
+        
+        # Optimize query
+        resources = resources.select_related('organization').annotate(
+            usage_count=Count('subject_triples') + Count('object_triples')
+        )[:20]
+        
+        return render(request, 'metadata/partials/resource_dropdown.html', {
+            'resources': resources,
+            'selection_mode': request.GET.get('mode', 'single')
+        })
+
+
+class QuickLinkResourcesView(LoginRequiredMixin, View):
+    """HTMX endpoint for quickly linking resources with multiple predicates"""
     
-    total_combinations = len(object_ids) * len(predicate_ids)
-    return HttpResponse(
-        f'<span class="badge badge-success">{created_count} of {total_combinations} links created</span>',
-        headers={'HX-Trigger': 'linksCreated'}
-    )
+    def post(self, request):
+        subject_id = request.POST.get('subject_id')
+        predicate_ids = request.POST.getlist('predicate_ids')
+        object_ids = request.POST.getlist('object_ids')
+        
+        if not all([subject_id, predicate_ids, object_ids]):
+            return HttpResponse(
+                '<div class="alert alert-error">Missing required fields</div>',
+                status=400
+            )
+        
+        created_count = 0
+        for object_id in object_ids:
+            for predicate_id in predicate_ids:
+                triple, created = Triple.objects.get_or_create(
+                    subject_id=subject_id,
+                    predicate_id=predicate_id,
+                    object_id=object_id,
+                    source=request.user.organization
+                )
+                if created:
+                    created_count += 1
+        
+        total_combinations = len(object_ids) * len(predicate_ids)
+        return HttpResponse(
+            f'<span class="badge badge-success">{created_count} of {total_combinations} links created</span>',
+            headers={'HX-Trigger': 'linksCreated'}
+        )
 
 
-@login_required
-@require_http_methods(["GET"])
-def resource_link_form(request, resource_id):
+class ResourceLinkFormView(LoginRequiredMixin, View):
     """HTMX partial for inline resource linking"""
-    resource = get_object_or_404(Resource, id=resource_id)
-    predicates = Resource.objects.filter(
-        resource_type=ResourceType.PROPERTY
-    ).order_by('name')
     
-    return render(request, 'metadata/partials/link_form.html', {
-        'resource': resource,
-        'predicates': predicates
-    })
+    def get(self, request, resource_id):
+        resource = get_object_or_404(Resource, id=resource_id)
+        predicates = Resource.objects.filter(
+            resource_type=ResourceType.PROPERTY
+        ).order_by('name')
+        
+        return render(request, 'metadata/partials/link_form.html', {
+            'resource': resource,
+            'predicates': predicates
+        })
 
 
 class ResourceDashboardView(LoginRequiredMixin, View):
@@ -228,43 +226,43 @@ class ResourceDashboardView(LoginRequiredMixin, View):
         }
 
 
-@login_required
-@require_http_methods(["DELETE"])
-def delete_triple(request, triple_id):
+class DeleteTripleView(LoginRequiredMixin, View):
     """HTMX endpoint for deleting a triple"""
-    triple = get_object_or_404(
-        Triple, 
-        id=triple_id, 
-        source=request.user.organization
-    )
-    triple.delete()
     
-    return HttpResponse(
-        '<div class="text-success">Link removed</div>',
-        headers={'HX-Trigger': 'linkDeleted'}
-    )
+    def delete(self, request, triple_id):
+        triple = get_object_or_404(
+            Triple, 
+            id=triple_id, 
+            source=request.user.organization
+        )
+        triple.delete()
+        
+        return HttpResponse(
+            '<div class="text-success">Link removed</div>',
+            headers={'HX-Trigger': 'linkDeleted'}
+        )
 
 
-@login_required
-@require_http_methods(["GET"])
-def get_predicates(request):
+class GetPredicatesView(LoginRequiredMixin, View):
     """HTMX endpoint for loading predicates with search"""
-    search_query = request.GET.get('predicate-search', '').strip()
     
-    predicates = Resource.objects.filter(
-        resource_type=ResourceType.PROPERTY
-    )
-    
-    # Apply search filter if provided
-    if search_query:
-        predicates = predicates.filter(
-            Q(name__icontains=search_query) | 
-            Q(uri__icontains=search_query)
-        ).order_by('name')[:50]  # Show top 50 matches
-    else:
-        predicates = predicates.order_by('name')[:100]  # Show first 100 by default
-    
-    return render(request, 'metadata/partials/predicate_dropdown.html', {
-        'predicates': predicates,
-        'search_query': search_query
-    })
+    def get(self, request):
+        search_query = request.GET.get('predicate-search', '').strip()
+        
+        predicates = Resource.objects.filter(
+            resource_type=ResourceType.PROPERTY
+        )
+        
+        # Apply search filter if provided
+        if search_query:
+            predicates = predicates.filter(
+                Q(name__icontains=search_query) | 
+                Q(uri__icontains=search_query)
+            ).order_by('name')[:50]  # Show top 50 matches
+        else:
+            predicates = predicates.order_by('name')[:100]  # Show first 100 by default
+        
+        return render(request, 'metadata/partials/predicate_dropdown.html', {
+            'predicates': predicates,
+            'search_query': search_query
+        })

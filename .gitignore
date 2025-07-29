@@ -324,3 +324,5 @@ cursor.md
 
 # Cursor IDE
 .cursor/.claude/
+.claude/
+.cursor/

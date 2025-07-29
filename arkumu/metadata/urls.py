@@ -266,11 +266,11 @@ urlpatterns = [
     # Simplified Resource Management URLs
     path('resource-management/', simplified_resource_views.ResourceDashboardView.as_view(), name='resource_management'),
     path('resource-management/create/', simplified_resource_views.UnifiedResourceView.as_view(), name='unified_resource_create'),
-    path('resource-management/search/', simplified_resource_views.search_resources, name='search_resources_htmx'),
-    path('resource-management/link/', simplified_resource_views.quick_link_resources, name='quick_link_resources'),
-    path('resource-management/link-form/<uuid:resource_id>/', simplified_resource_views.resource_link_form, name='resource_link_form'),
-    path('resource-management/predicates/', simplified_resource_views.get_predicates, name='get_predicates_htmx'),
-    path('resource-management/triple/<uuid:triple_id>/delete/', simplified_resource_views.delete_triple, name='delete_triple'),
+    path('resource-management/search/', simplified_resource_views.SearchResourcesView.as_view(), name='search_resources_htmx'),
+    path('resource-management/link/', simplified_resource_views.QuickLinkResourcesView.as_view(), name='quick_link_resources'),
+    path('resource-management/link-form/<uuid:resource_id>/', simplified_resource_views.ResourceLinkFormView.as_view(), name='resource_link_form'),
+    path('resource-management/predicates/', simplified_resource_views.GetPredicatesView.as_view(), name='get_predicates_htmx'),
+    path('resource-management/triple/<uuid:triple_id>/delete/', simplified_resource_views.DeleteTripleView.as_view(), name='delete_triple'),
     
     # Harmonization URLs (Legacy)
     path('harmonization/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_list'),
