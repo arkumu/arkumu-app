@@ -83,41 +83,6 @@ module.exports = {
     }
   ],
   daisyui: {
-    themes: [
-      {
-        light: {
-          ...require("daisyui/src/theming/themes")["light"],
-          primary: "#2B7EF2",
-          secondary: "#EBEBEB",
-          accent: "#5498F7",
-          neutral: "#1E1E1E",
-          "base-100": "#FAF9F6",
-          error: "#EF4444",
-          "error-content": "#FFFFFF",
-          success: "#10B981",
-          "success-content": "#FFFFFF", 
-          warning: "#F59E0B",
-          "warning-content": "#FFFFFF",
-          info: "#3B82F6",
-          "info-content": "#FFFFFF",
-        },
-        dark: {
-          ...require("daisyui/src/theming/themes")["dark"],
-          primary: "#2B7EF2",
-          secondary: "#434343",
-          accent: "#5498F7",
-          neutral: "#FAF9F6",
-          "base-100": "#1E1E1E",
-          error: "#EF4444",
-          "error-content": "#FFFFFF",
-          success: "#10B981",
-          "success-content": "#FFFFFF",
-          warning: "#F59E0B", 
-          "warning-content": "#FFFFFF",
-          info: "#3B82F6",
-          "info-content": "#FFFFFF",
-        },
-      },
-    ],
+    themes: ["light", "dark"], // Enable built-in themes
   },
 }
