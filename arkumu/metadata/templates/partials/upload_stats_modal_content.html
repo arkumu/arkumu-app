@@ -1,0 +1,107 @@
+<h3 class="font-bold text-lg mb-4">Upload Statistics - {{ session.folder_name|default:"Upload Session" }}</h3>
+
+<!-- Session Info -->
+<div class="grid grid-cols-2 gap-4 mb-6">
+    <div class="stat bg-base-200 rounded-lg p-4">
+        <div class="stat-title">Session ID</div>
+        <div class="stat-value text-sm font-mono">{{ session.id }}</div>
+    </div>
+    <div class="stat bg-base-200 rounded-lg p-4">
+        <div class="stat-title">Created</div>
+        <div class="stat-value text-sm">{{ session.created_at|date:"M d, Y H:i" }}</div>
+    </div>
+</div>
+
+<!-- Upload Summary -->
+<div class="space-y-4">
+    <h4 class="font-semibold">Upload Summary:</h4>
+    
+    {% if session.import_stats %}
+        {% if session.import_stats.summary %}
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="stat bg-base-100 border rounded-lg p-3">
+                <div class="stat-title text-xs">Duration</div>
+                <div class="stat-value text-lg">{{ session.import_stats.duration_seconds|floatformat:2 }}s</div>
+            </div>
+            <div class="stat bg-base-100 border rounded-lg p-3">
+                <div class="stat-title text-xs">Total Size</div>
+                <div class="stat-value text-lg">{{ session.import_stats.total_size|filesizeformat }}</div>
+            </div>
+            <div class="stat bg-base-100 border rounded-lg p-3">
+                <div class="stat-title text-xs">S3 Bucket</div>
+                <div class="stat-value text-sm font-mono">{{ session.import_stats.summary.bucket|default:"-" }}</div>
+            </div>
+            <div class="stat bg-base-100 border rounded-lg p-3">
+                <div class="stat-title text-xs">Base Path</div>
+                <div class="stat-value text-sm font-mono">{{ session.import_stats.summary.base_path|default:"-" }}</div>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if session.import_stats.error_count > 0 %}
+        <div class="alert alert-error">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{{ session.import_stats.error_count }} error{{ session.import_stats.error_count|pluralize }} occurred during upload</span>
+        </div>
+        {% endif %}
+    {% else %}
+    <div class="text-base-content/60">No upload statistics available</div>
+    {% endif %}
+
+    <!-- File Summary -->
+    <div class="grid grid-cols-3 gap-4">
+        <div class="stat bg-success/10 border border-success/20 rounded-lg p-3">
+            <div class="stat-title text-success">Completed Files</div>
+            <div class="stat-value text-success text-2xl">{{ completed_files }}</div>
+        </div>
+        <div class="stat bg-error/10 border border-error/20 rounded-lg p-3">
+            <div class="stat-title text-error">Failed Files</div>
+            <div class="stat-value text-error text-2xl">{{ failed_files }}</div>
+        </div>
+        <div class="stat bg-info/10 border border-info/20 rounded-lg p-3">
+            <div class="stat-title text-info">Total Files</div>
+            <div class="stat-value text-info text-2xl">{{ file_count }}</div>
+        </div>
+    </div>
+
+    <!-- Individual File Details -->
+    {% if files %}
+    <div>
+        <h5 class="font-medium mb-2">File Details:</h5>
+        <div class="overflow-x-auto">
+            <table class="table table-zebra table-xs">
+                <thead>
+                    <tr>
+                        <th>File Name</th>
+                        <th>Status</th>
+                        <th>Size</th>
+                        <th>Type</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                    <tr>
+                        <td class="font-mono">{{ file.name }}</td>
+                        <td>
+                            <span class="badge badge-xs 
+                                {% if file.status == 'completed' %}badge-success
+                                {% elif file.status == 'failed' %}badge-error
+                                {% elif file.status == 'uploading' %}badge-info
+                                {% else %}badge-ghost{% endif %}">
+                                {{ file.status }}
+                            </span>
+                        </td>
+                        <td>{{ file.size|default:0|filesizeformat }}</td>
+                        <td class="text-xs">{{ file.content_type|default:"-" }}</td>
+                        <td class="text-xs text-error">{{ file.error_message|default:"-"|truncatechars:50 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>

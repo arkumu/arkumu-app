@@ -8,45 +8,179 @@
         <a href="{% url 'metadata:metadata_dashboard' %}" class="btn btn-sm btn-outline">&larr; Back to Metadata Dashboard</a>
     </div>
 
-    {% if upload_sessions %}
+    <!-- Summary Statistics -->
+    {% if total_stats %}
+    <div class="stats shadow mb-6 w-full">
+        <div class="stat">
+            <div class="stat-figure text-primary">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+            </div>
+            <div class="stat-title">Upload Sessions</div>
+            <div class="stat-value text-primary">{{ total_stats.total_sessions }}</div>
+            <div class="stat-desc">{{ total_stats.total_files }} files total</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-figure text-success">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div class="stat-title">Completed</div>
+            <div class="stat-value text-success">{{ total_stats.completed_sessions }}</div>
+            <div class="stat-desc">{{ total_stats.failed_sessions }} failed, {{ total_stats.in_progress_sessions }} in progress</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if enhanced_sessions %}
     <div class="overflow-x-auto bg-base-100 shadow-xl rounded-lg">
+        <div class="p-4 border-b border-base-300 bg-base-50">
+            <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+                <span>Each session shows all files uploaded together. Expand to view individual file details.</span>
+            </div>
+        </div>
         <table class="table table-zebra w-full">
             <thead>
                 <tr>
                     <th>Date</th>
-                    <th>User</th>
+                    <th>Files & Status</th>
                     <th>Organization</th>
-                    <th>Source Path/File</th>
-                    <th>Files</th>
-                    <th>Status</th>
-                    <th>Completed At</th>
-                    <th>Message</th>
+                    <th>Folder</th>
+                    <th>Progress</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
-                {% for session in upload_sessions %}
+                {% for item in enhanced_sessions %}
+                {% with session=item.session files=item.files %}
                 <tr>
-                    <td>{{ session.created_at|date:"M d, Y H:i" }}</td>
-                    <td>{{ session.user.username|default:"N/A" }}</td>
-                    <td>{{ session.organization_id|default:"N/A" }}</td>
-                    <td>{{ session.source_path|truncatechars:50|default:"N/A" }}</td>
-                    <td>{{ session.total_files }}</td>
+                    <!-- Date -->
+                    <td class="text-sm">{{ session.created_at|date:"M d, Y" }}<br>
+                        <span class="text-xs text-base-content/60">{{ session.created_at|date:"H:i" }}</span>
+                    </td>
+                    
+                    <!-- Files & Status -->
                     <td>
+                        <div class="space-y-2">
+                            <!-- File Count and Status Summary -->
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="badge badge-outline badge-sm">
+                                    {{ item.file_count }} file{{ item.file_count|pluralize }}
+                                </span>
+                                
+                                <!-- Status Indicators -->
+                                {% if item.failed_files > 0 %}
+                                <div class="flex items-center gap-1 text-error" title="{{ item.failed_files }} failed file{{ item.failed_files|pluralize }}">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                    </svg>
+                                    <span class="text-sm font-medium">{{ item.failed_files }}</span>
+                                </div>
+                                {% endif %}
+                                
+                                {% if item.completed_files > 0 %}
+                                <div class="flex items-center gap-1 text-success" title="{{ item.completed_files }} completed file{{ item.completed_files|pluralize }}">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
+                                    <span class="text-sm font-medium">{{ item.completed_files }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Complete File List -->
+                            <div class="file-list">
+                                {% for file in files %}
+                                <div class="text-sm mb-1 flex items-center gap-2">
+                                    <span class="font-medium font-mono" title="{{ file.name }}">{{ file.name|truncatechars:30 }}</span>
+                                    <span class="badge badge-xs 
+                                        {% if file.status == 'completed' %}badge-success
+                                        {% elif file.status == 'failed' %}badge-error
+                                        {% elif file.status == 'uploading' %}badge-info
+                                        {% else %}badge-ghost{% endif %}">
+                                        {{ file.status }}
+                                    </span>
+                                    {% if file.size > 0 %}
+                                        <span class="text-xs text-base-content/60">{{ file.size|filesizeformat }}</span>
+                                    {% endif %}
+                                    {% if file.error_message %}
+                                        <span class="text-xs text-error" title="{{ file.error_message }}">Error</span>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </td>
+                    
+                    <!-- Organization -->
+                    <td class="text-sm">{{ session.institution|default:"Not specified" }}</td>
+                    
+                    <!-- Folder -->
+                    <td class="font-mono text-xs">{{ session.folder_name|truncatechars:20|default:"No folder" }}</td>
+                    
+                    <!-- Progress -->
+                    <td class="text-sm">
                         <span class="badge 
                             {% if session.status == 'completed' %}badge-success
                             {% elif session.status == 'failed' %}badge-error
-                            {% elif session.status == 'processing' %}badge-info
+                            {% elif session.status == 'in_progress' %}badge-info
                             {% else %}badge-ghost{% endif %}">
-                            {{ session.get_status_display|default:session.status }} 
+                            {{ session.get_status_display|default:session.status }}
                         </span>
+                        {% if session.completed_at %}
+                            <div class="text-xs text-base-content/60 mt-1">{{ session.completed_at|date:"M d, H:i" }}</div>
+                        {% endif %}
                     </td>
-                    <td>{{ session.completed_at|date:"M d, Y H:i"|default:"-" }}</td>
-                    <td class="text-xs">{{ session.result_message|truncatewords:10|default:"-" }}</td>
+                    
+                    <!-- Actions -->
+                    <td class="text-xs">
+                        {% if session.import_stats.error %}
+                            <span class="text-error">{{ session.import_stats.error|truncatewords:6 }}</span>
+                        {% elif session.import_stats %}
+                            <button class="btn btn-xs btn-outline" 
+                                    hx-get="{% url 'metadata:upload_session_stats' session.id %}"
+                                    hx-target="#stats-modal-content"
+                                    hx-swap="innerHTML"
+                                    onclick="document.getElementById('stats-modal').showModal()">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2-2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                </svg>
+                                Stats
+                            </button>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                 </tr>
+                {% endwith %}
                 {% endfor %}
             </tbody>
         </table>
     </div>
+
+    <!-- Single Reusable Statistics Modal -->
+    <dialog id="stats-modal" class="modal">
+        <div class="modal-box w-11/12 max-w-3xl">
+            <div id="stats-modal-content">
+                <!-- Content will be loaded via HTMX -->
+                <div class="flex items-center justify-center p-8">
+                    <span class="loading loading-spinner loading-lg"></span>
+                </div>
+            </div>
+            <div class="modal-action">
+                <form method="dialog">
+                    <button class="btn">Close</button>
+                </form>
+            </div>
+        </div>
+    </dialog>
+
     {% else %}
     <div class="alert alert-info">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>

@@ -28,7 +28,7 @@ def metadata_dashboard(request):
     recent_uploads = UploadSession.objects.all().order_by('-created_at')[:5]
     
     # Get recent ingests
-    recent_ingests = IngestSession.objects.all().order_by('-created_at')[:5]
+    recent_ingests = IngestSession.objects.select_related('organization').order_by('-created_at')[:5]
     
     # Get institutions with resource counts
     institutions = Resource.objects.values('organization__name').annotate(
@@ -45,18 +45,54 @@ def metadata_dashboard(request):
 
 @general_login_required
 def all_upload_sessions(request):
-    """Displays a list of all upload sessions."""
-    all_uploads = UploadSession.objects.all().order_by('-created_at')
-    # TODO: Add pagination if the list can become very long
+    """Displays a list of all upload sessions with their files."""
+    all_uploads = UploadSession.objects.prefetch_related('files').all().order_by('-created_at')
+    
+    # Prepare enhanced session data
+    enhanced_sessions = []
+    for session in all_uploads:
+        # Get associated files
+        files = list(session.files.all())
+        
+        # Prepare file information
+        file_info = []
+        for file_obj in files:
+            file_info.append({
+                'name': file_obj.file_name,
+                'status': file_obj.status,
+                'size': file_obj.file_size_bytes,
+                'content_type': file_obj.content_type,
+                'error_message': file_obj.error_message,
+            })
+        
+        enhanced_sessions.append({
+            'session': session,
+            'files': file_info,
+            'file_count': len(file_info),
+            'is_multi_file': len(file_info) > 1,
+            'completed_files': len([f for f in file_info if f['status'] == 'completed']),
+            'failed_files': len([f for f in file_info if f['status'] == 'failed']),
+        })
+    
+    # Calculate aggregate statistics
+    total_stats = {
+        'total_sessions': len(enhanced_sessions),
+        'total_files': sum(item['file_count'] for item in enhanced_sessions),
+        'completed_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'completed'),
+        'failed_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'failed'),
+        'in_progress_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'in_progress'),
+    }
+    
     return render(request, 'all_upload_sessions.html', {
-        'upload_sessions': all_uploads
+        'enhanced_sessions': enhanced_sessions,
+        'total_stats': total_stats
     })
 
 
 @general_login_required
 def all_ingest_sessions(request):
     """Displays a list of all ingest sessions with their datasets."""
-    all_ingests = IngestSession.objects.prefetch_related('import_tasks').all().order_by('-created_at')
+    all_ingests = IngestSession.objects.select_related('organization').prefetch_related('import_tasks').all().order_by('-created_at')
     
     # Prepare enhanced session data
     enhanced_sessions = []
@@ -142,6 +178,41 @@ def ingest_session_stats(request, session_id):
     except IngestSession.DoesNotExist:
         return render(request, 'partials/error_message.html', {
             'error': 'Ingest session not found'
+        })
+
+
+@general_login_required
+def upload_session_stats(request, session_id):
+    """HTMX endpoint to show detailed stats for a specific upload session."""
+    try:
+        session = UploadSession.objects.prefetch_related('files').get(pk=session_id)
+        
+        # Prepare file information
+        files = list(session.files.all())
+        file_info = []
+        for file_obj in files:
+            file_info.append({
+                'name': file_obj.file_name,
+                'status': file_obj.status,
+                'size': file_obj.file_size_bytes,
+                'content_type': file_obj.content_type,
+                'error_message': file_obj.error_message,
+            })
+        
+        # Calculate stats
+        completed_files = len([f for f in file_info if f['status'] == 'completed'])
+        failed_files = len([f for f in file_info if f['status'] == 'failed'])
+        
+        return render(request, 'partials/upload_stats_modal_content.html', {
+            'session': session,
+            'files': file_info,
+            'file_count': len(file_info),
+            'completed_files': completed_files,
+            'failed_files': failed_files,
+        })
+    except UploadSession.DoesNotExist:
+        return render(request, 'partials/error_message.html', {
+            'error': 'Upload session not found'
         })
 
 
