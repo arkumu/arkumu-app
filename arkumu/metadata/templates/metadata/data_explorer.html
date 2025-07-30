@@ -5,101 +5,44 @@
 
 {% block content %}
 <div class="container mx-auto px-6 py-12">
-    <!-- Hero Section -->
-    <div class="hero bg-base-200 rounded-box mb-8">
-        <div class="hero-content text-center py-8">
-            <div class="max-w-2xl">
-                <h1 class="text-4xl font-bold mb-4">Resource Explorer</h1>
-                <p class="text-lg text-base-content/70">Comprehensive interface for exploring semantic resources, classes, properties, and their relationships</p>
+    <!-- Compact Header -->
+    <div class="bg-base-200 rounded-box mb-4 p-4">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold">Resource Explorer</h1>
+                <p class="text-sm text-base-content/70">Explore semantic resources, classes, properties, and relationships</p>
             </div>
+            <a href="{% url 'metadata:unified_resource_create' %}" class="btn btn-primary btn-sm text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                Link Resources
+            </a>
         </div>
     </div>
     
-    <!-- Statistics Overview -->
-    <div class="mb-8">
-        <h2 class="text-2xl font-bold mb-6">Overview</h2>
-        
-        <!-- Main Statistics Cards -->
-        <div class="stats shadow mb-6 w-full">
-            <div class="stat">
-                <div class="stat-figure text-primary">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                </div>
-                <div class="stat-title">Total Resources</div>
-                <div class="stat-value">{{ semantic_stats.total_resources }}</div>
-                <div class="stat-desc">All accessible resources</div>
-            </div>
-            
-            <div class="stat">
-                <div class="stat-figure text-secondary">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                    </svg>
-                </div>
-                <div class="stat-title">Total Relationships</div>
-                <div class="stat-value">{{ semantic_stats.total_triples }}</div>
-                <div class="stat-desc">RDF triples connecting resources</div>
-            </div>
-        </div>
-        
-        <!-- Semantic Model Cards -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <div class="card bg-base-100 shadow-lg border border-primary/20">
-                <div class="card-body">
-                    <h3 class="card-title text-primary">
-                        <span class="text-2xl">🏛️</span>
-                        Semantic Classes
-                    </h3>
-                    <div class="stat-value text-primary">{{ semantic_stats.semantic_classes }}</div>
-                    <p class="text-sm text-base-content/70 mb-4">Domain types and categories</p>
-                    <a href="?semantic_view=classes" 
-                       class="btn btn-primary btn-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        Explore Classes
-                    </a>
-                </div>
-            </div>
-            
-            <div class="card bg-base-100 shadow-lg border border-secondary/20">
-                <div class="card-body">
-                    <h3 class="card-title text-secondary">
-                        <span class="text-2xl">📋</span>
-                        Typed Instances
-                    </h3>
-                    <div class="stat-value text-secondary">{{ semantic_stats.typed_instances }}</div>
-                    <p class="text-sm text-base-content/70 mb-4">Classified data entities</p>
-                    <a href="?semantic_view=instances" 
-                       class="btn btn-secondary btn-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        Browse Instances
-                    </a>
-                </div>
-            </div>
-            
-            <div class="card bg-base-100 shadow-lg border border-accent/20">
-                <div class="card-body">
-                    <h3 class="card-title text-accent">
-                        <span class="text-2xl">🔗</span>
-                        Semantic Properties
-                    </h3>
-                    <div class="stat-value text-accent">{{ semantic_stats.semantic_properties }}</div>
-                    <p class="text-sm text-base-content/70 mb-4">Relationships and attributes</p>
-                    <a href="?semantic_view=properties" 
-                       class="btn btn-accent btn-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        View Properties
-                    </a>
-                </div>
-            </div>
-        </div>
+    <!-- Compact Statistics Table -->
+    <div class="mb-4 overflow-x-auto">
+        <table class="table table-xs">
+            <thead>
+                <tr>
+                    <th>Resources</th>
+                    <th>Relationships</th>
+                    <th class="text-primary">Classes</th>
+                    <th class="text-secondary">Instances</th>
+                    <th class="text-accent">Properties</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="font-bold">{{ semantic_stats.total_resources }}</td>
+                    <td class="font-bold">{{ semantic_stats.total_triples }}</td>
+                    <td class="font-bold text-primary">{{ semantic_stats.semantic_classes }}</td>
+                    <td class="font-bold text-secondary">{{ semantic_stats.typed_instances }}</td>
+                    <td class="font-bold text-accent">{{ semantic_stats.semantic_properties }}</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
     
     <div class="flex flex-col lg:flex-row gap-8">

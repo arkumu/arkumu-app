@@ -1,201 +1,155 @@
 <!-- Results Header -->
-<div class="flex justify-between items-center mb-6">
-    <h2 class="text-2xl font-bold text-primary flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+<div class="flex justify-between items-center mb-4">
+    <h2 class="text-xl font-bold flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
         </svg>
         Results
     </h2>
-    <div class="badge badge-primary badge-lg">{{ page_obj.paginator.count }} resources</div>
+    <div class="badge badge-primary">{{ page_obj.paginator.count }} resources</div>
 </div>
 
 <!-- Results Table -->
 {% if resources %}
-<div class="overflow-x-auto">
-    <table class="table table-zebra w-full">
-        <thead>
+<div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
+    <table class="table table-xs table-pin-rows">
+        <thead class="bg-base-200">
             <tr>
                 <!-- Sortable Type Column -->
-                <th class="text-left w-32">
-                    <button class="flex items-center gap-1 font-semibold hover:text-primary"
+                <th class="w-24">
+                    <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
                             hx-get="{% url 'metadata:data_explorer_results' %}?{{ request.GET.urlencode }}&sort=type&order={% if current_sort.sort == 'type' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
                             hx-target="#results-pane"
                             hx-push-url="true">
                         Type
                         {% if current_sort.sort == 'type' %}
-                            {% if current_sort.order == 'asc' %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"/>
-                                </svg>
-                            {% else %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-                                </svg>
-                            {% endif %}
+                            {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
                         {% else %}
-                            <svg class="w-4 h-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M10 3a1 1 0 01.707.293l3 3a1 1 0 01-1.414 1.414L10 5.414 7.707 7.707a1 1 0 01-1.414-1.414l3-3A1 1 0 0110 3zM10 17a1 1 0 01-.707-.293l-3-3a1 1 0 011.414-1.414L10 14.586l2.293-2.293a1 1 0 011.414 1.414l-3 3A1 1 0 0110 17z"/>
-                            </svg>
+                            <span class="opacity-30">↕</span>
                         {% endif %}
                     </button>
                 </th>
                 <!-- Sortable Resource Column -->
-                <th class="text-left">
-                    <button class="flex items-center gap-1 font-semibold hover:text-primary"
+                <th>
+                    <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
                             hx-get="{% url 'metadata:data_explorer_results' %}?{{ request.GET.urlencode }}&sort=resource&order={% if current_sort.sort == 'resource' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
                             hx-target="#results-pane"
                             hx-push-url="true">
                         Resource
                         {% if current_sort.sort == 'resource' %}
-                            {% if current_sort.order == 'asc' %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"/>
-                                </svg>
-                            {% else %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-                                </svg>
-                            {% endif %}
+                            {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
                         {% else %}
-                            <svg class="w-4 h-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M10 3a1 1 0 01.707.293l3 3a1 1 0 01-1.414 1.414L10 5.414 7.707 7.707a1 1 0 01-1.414-1.414l3-3A1 1 0 0110 3zM10 17a1 1 0 01-.707-.293l-3-3a1 1 0 011.414-1.414L10 14.586l2.293-2.293a1 1 0 011.414 1.414l-3 3A1 1 0 0110 17z"/>
-                            </svg>
+                            <span class="opacity-30">↕</span>
                         {% endif %}
                     </button>
                 </th>
                 <!-- Sortable Organization Column -->
-                <th class="text-left w-20">
-                    <button class="flex items-center gap-1 font-semibold hover:text-primary"
+                <th class="w-20">
+                    <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
                             hx-get="{% url 'metadata:data_explorer_results' %}?{{ request.GET.urlencode }}&sort=organization&order={% if current_sort.sort == 'organization' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
                             hx-target="#results-pane"
                             hx-push-url="true">
-                        Organization
+                        Org
                         {% if current_sort.sort == 'organization' %}
-                            {% if current_sort.order == 'asc' %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"/>
-                                </svg>
-                            {% else %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-                                </svg>
-                            {% endif %}
+                            {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
                         {% else %}
-                            <svg class="w-4 h-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M10 3a1 1 0 01.707.293l3 3a1 1 0 01-1.414 1.414L10 5.414 7.707 7.707a1 1 0 01-1.414-1.414l3-3A1 1 0 0110 3zM10 17a1 1 0 01-.707-.293l-3-3a1 1 0 011.414-1.414L10 14.586l2.293-2.293a1 1 0 011.414 1.414l-3 3A1 1 0 0110 17z"/>
-                            </svg>
+                            <span class="opacity-30">↕</span>
                         {% endif %}
                     </button>
                 </th>
                 <!-- Sortable Triples Column -->
-                <th class="text-left w-24">
-                    <button class="flex items-center gap-1 font-semibold hover:text-primary"
+                <th class="w-20">
+                    <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
                             hx-get="{% url 'metadata:data_explorer_results' %}?{{ request.GET.urlencode }}&sort=total_triples&order={% if current_sort.sort == 'total_triples' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
                             hx-target="#results-pane"
                             hx-push-url="true">
                         Triples
                         {% if current_sort.sort == 'total_triples' %}
-                            {% if current_sort.order == 'asc' %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"/>
-                                </svg>
-                            {% else %}
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-                                </svg>
-                            {% endif %}
+                            {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
                         {% else %}
-                            <svg class="w-4 h-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M10 3a1 1 0 01.707.293l3 3a1 1 0 01-1.414 1.414L10 5.414 7.707 7.707a1 1 0 01-1.414-1.414l3-3A1 1 0 0110 3zM10 17a1 1 0 01-.707-.293l-3-3a1 1 0 011.414-1.414L10 14.586l2.293-2.293a1 1 0 011.414 1.414l-3 3A1 1 0 0110 17z"/>
-                            </svg>
+                            <span class="opacity-30">↕</span>
                         {% endif %}
                     </button>
                 </th>
                 <!-- Non-sortable Actions Column -->
-                <th class="text-center w-32">Actions</th>
+                <th class="text-center w-20 text-xs">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for resource in resources %}
             <tr class="hover">
                 <!-- Resource Type -->
-                <td class="text-center">
-                    <div class="flex flex-col items-center gap-1">
-                        <span class="font-semibold text-sm">
-                            {{ resource.get_resource_type_display }}
-                        </span>
-                        {% if resource.is_placeholder %}
-                            <span class="text-xs text-warning">Placeholder</span>
-                        {% endif %}
+                <td>
+                    <div class="badge badge-sm {% if resource.resource_type == 'IRI' %}badge-primary{% elif resource.resource_type == 'CLASS' %}badge-secondary{% elif resource.resource_type == 'PROPERTY' %}badge-accent{% else %}badge-ghost{% endif %}">
+                        {{ resource.get_resource_type_display }}
                     </div>
+                    {% if resource.is_placeholder %}
+                        <span class="badge badge-warning badge-xs ml-1">P</span>
+                    {% endif %}
                 </td>
                 
                 <!-- Resource Display -->
-                <td class="max-w-md">
-                    {% if resource.resource_type == 'LITERAL' %}
-                        <div class="font-mono text-sm bg-neutral text-neutral-content px-3 py-2 rounded inline-block max-w-full">
-                            <span class="text-success">"</span>{{ resource.value|truncatechars:80 }}<span class="text-success">"</span>
-                            {% if resource.language %}
-                                <span class="text-warning">@{{ resource.language }}</span>
-                            {% endif %}
-                        </div>
-                    {% elif resource.uri %}
-                        <a href="{{ resource.uri }}" target="_blank" class="link link-primary hover:link-hover font-medium break-all" title="{{ resource.uri }}">
-                            {{ resource.uri|truncatechars:120 }}
-                        </a>
-                    {% elif resource.name %}
-                        <div class="font-semibold">{{ resource.name }}</div>
-                    {% else %}
-                        <div class="text-base-content/70 font-medium">Resource {{ resource.id }}</div>
-                    {% endif %}
+                <td>
+                    <div class="flex flex-col gap-1">
+                        {% if resource.name %}
+                            <div class="font-semibold text-sm">{{ resource.name|truncatechars:50 }}</div>
+                        {% endif %}
+                        {% if resource.resource_type == 'LITERAL' %}
+                            <code class="text-xs bg-base-200 px-2 py-1 rounded max-w-xs truncate block">
+                                "{{ resource.value|truncatechars:60 }}"
+                                {% if resource.language %}
+                                    <span class="text-info font-bold">@{{ resource.language }}</span>
+                                {% endif %}
+                            </code>
+                        {% elif resource.uri %}
+                            <a href="{{ resource.uri }}" target="_blank" class="link link-primary text-xs hover:link-hover break-all" title="{{ resource.uri }}">
+                                {{ resource.uri|truncatechars:80 }}
+                            </a>
+                        {% else %}
+                            <span class="text-xs text-base-content/50">Resource #{{ resource.id }}</span>
+                        {% endif %}
+                    </div>
                 </td>
                 
                 <!-- Organization -->
                 <td>
                     {% if resource.organization %}
-                        <code class="bg-base-300 px-2 py-1 rounded text-sm">{{ resource.organization.code }}</code>
+                        <span class="badge badge-ghost badge-xs">{{ resource.organization.code }}</span>
                     {% else %}
-                        <span class="text-base-content/50">-</span>
+                        <span class="text-xs text-base-content/30">-</span>
                     {% endif %}
                 </td>
                 
                 <!-- Triple Usage -->
                 <td>
-                    <div class="flex gap-1">
+                    <div class="flex gap-1 flex-wrap">
                         {% if resource.subject_count %}
-                            <span class="badge badge-outline badge-xs">S:{{ resource.subject_count }}</span>
+                            <span class="text-xs font-mono">S:{{ resource.subject_count }}</span>
                         {% endif %}
                         {% if resource.predicate_count %}
-                            <span class="badge badge-outline badge-xs">P:{{ resource.predicate_count }}</span>
+                            <span class="text-xs font-mono">P:{{ resource.predicate_count }}</span>
                         {% endif %}
                         {% if resource.object_count %}
-                            <span class="badge badge-outline badge-xs">O:{{ resource.object_count }}</span>
+                            <span class="text-xs font-mono">O:{{ resource.object_count }}</span>
                         {% endif %}
                         {% if not resource.subject_count and not resource.predicate_count and not resource.object_count %}
-                            <span class="text-base-content/50 text-xs">No triples</span>
+                            <span class="text-xs text-base-content/30">-</span>
                         {% endif %}
                     </div>
                 </td>
                 
                 <!-- Action Buttons -->
-                <td class="text-center">
-                    <div class="flex gap-1 justify-center">
-                        <button class="btn btn-primary btn-sm"
+                <td>
+                    <div class="flex gap-1">
+                        <button class="btn btn-ghost btn-xs"
                                 hx-get="{% url 'metadata:resource_detail_modal' resource.pk %}"
                                 hx-target="#modal-content"
                                 onclick="document.getElementById('resource-modal').showModal()">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
                             View
                         </button>
                         <a href="{% url 'metadata:resource_relationships' resource.pk %}" 
-                           class="btn btn-outline btn-primary btn-sm">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                            </svg>
-                            Relations
+                           class="btn btn-ghost btn-xs">
+                            Links
                         </a>
                     </div>
                 </td>
