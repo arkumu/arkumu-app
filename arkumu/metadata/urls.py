@@ -272,6 +272,7 @@ urlpatterns = [
     path('resource-management/link-form/<uuid:resource_id>/', simplified_resource_views.ResourceLinkFormView.as_view(), name='resource_link_form'),
     path('resource-management/predicates/', simplified_resource_views.GetPredicatesView.as_view(), name='get_predicates_htmx'),
     path('resource-management/triple/<uuid:triple_id>/delete/', simplified_resource_views.DeleteTripleView.as_view(), name='delete_triple'),
+    path('ontology-linking-modal/', simplified_resource_views.OntologyLinkingModalView.as_view(), name='ontology_linking_modal'),
     
     # Harmonization URLs (Legacy)
     path('harmonization/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_list'),

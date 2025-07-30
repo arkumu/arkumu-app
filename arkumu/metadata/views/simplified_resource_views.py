@@ -217,3 +217,16 @@ class GetPredicatesView(LoginRequiredMixin, View):
             'predicates': predicates,
             'search_query': search_query
         })
+
+
+class OntologyLinkingModalView(LoginRequiredMixin, View):
+    """Simple modal view for ontology linking"""
+    
+    def get(self, request):
+        """Display ontology linking modal"""
+        resource_id = request.GET.get('resource_id')
+        resource = get_object_or_404(Resource, pk=resource_id) if resource_id else None
+        
+        return render(request, 'metadata/partials/ontology_linking_modal.html', {
+            'resource': resource
+        })
