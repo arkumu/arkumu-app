@@ -49,13 +49,16 @@
         <!-- Filters Sidebar -->
         <div class="lg:w-80 flex-shrink-0">
             <div class="card bg-base-100 shadow-xl sticky top-6 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="card-title text-xl mb-6 text-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                        </svg>
-                        Filters
-                    </h2>
+                <div class="card-body p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                            </svg>
+                            Filters
+                        </h2>
+                        <span class="text-xs text-base-content/60">Auto-apply on change</span>
+                    </div>
                 
                 <form hx-get="{% url 'metadata:data_explorer_results' %}" 
                       hx-target="#results-pane" 
@@ -63,193 +66,134 @@
                       hx-indicator="#loading-indicator">
                     
                     <!-- Search -->
-                    <div class="form-control mb-6">
-                        <label class="label">
-                            <span class="label-text font-semibold">Search</span>
-                        </label>
+                    <div class="form-control mb-4">
                         <input type="text" 
                                id="search-input"
                                name="search" 
-                               placeholder="Search resources..." 
-                               class="input input-bordered w-full input-primary focus:input-primary"
+                               placeholder="🔍 Search resources..." 
+                               class="input input-bordered input-sm w-full"
                                value="{{ current_filters.search }}">
                     </div>
                     
-                    <!-- Resource Type Groups -->
-                    <div class="collapse collapse-arrow bg-base-200 mb-4 rounded-lg">
-                        <input type="checkbox" checked>
-                        <div class="collapse-title text-sm font-semibold">Resource Type Groups</div>
-                        <div class="collapse-content">
-                            {% for group in filter_options.type_groups %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">{{ group.label }}</span>
-                                <input type="radio" 
-                                       name="type_group" 
-                                       value="{{ group.value }}"
-                                       class="radio radio-primary radio-sm"
-                                       {% if current_filters.type_group == group.value %}checked{% endif %}>
-                            </label>
+                    <!-- Quick Filters -->
+                    <div class="divider text-xs my-2">QUICK FILTERS</div>
+                    
+                    <!-- Semantic View Tabs -->
+                    <div class="mb-4">
+                        <p class="text-xs font-semibold mb-2">Semantic View</p>
+                        <div class="join join-vertical w-full">
+                            <input type="radio" name="semantic_view" value="" class="join-item btn btn-sm" aria-label="All Resources" {% if not current_filters.semantic_view %}checked{% endif %}>
+                            {% for view in filter_options.semantic_views %}
+                            <input type="radio" name="semantic_view" value="{{ view.value }}" class="join-item btn btn-sm" aria-label="{{ view.label }}" {% if current_filters.semantic_view == view.value %}checked{% endif %}>
                             {% endfor %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">All Types</span>
-                                <input type="radio" 
-                                       name="type_group" 
-                                       value=""
-                                       class="radio radio-primary radio-sm"
-                                       {% if not current_filters.type_group %}checked{% endif %}>
-                            </label>
                         </div>
                     </div>
                     
-                    <!-- Semantic Model Views -->
-                    <div class="collapse collapse-arrow bg-base-200 mb-4 rounded-lg">
-                        <input type="checkbox">
-                        <div class="collapse-title text-sm font-semibold">Semantic Model</div>
-                        <div class="collapse-content">
-                            {% for view in filter_options.semantic_views %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">{{ view.label }}</span>
-                                <input type="radio" 
-                                       name="semantic_view" 
-                                       value="{{ view.value }}"
-                                       class="radio radio-secondary radio-sm"
-                                       {% if current_filters.semantic_view == view.value %}checked{% endif %}>
-                            </label>
-                            {% endfor %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">All Resources</span>
-                                <input type="radio" 
-                                       name="semantic_view" 
-                                       value=""
-                                       class="radio radio-secondary radio-sm"
-                                       {% if not current_filters.semantic_view %}checked{% endif %}>
-                            </label>
-                        </div>
-                    </div>
+                    <div class="divider text-xs my-2">ADVANCED FILTERS</div>
                     
                     <!-- Semantic Class Filter -->
-                    <div class="collapse collapse-arrow bg-base-200 mb-4 rounded-lg">
-                        <input type="checkbox">
-                        <div class="collapse-title text-sm font-semibold">Filter by Class</div>
-                        <div class="collapse-content max-h-32 overflow-y-auto">
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Semantic Class</span>
+                            {% if current_filters.semantic_class %}
+                            <span class="badge badge-accent badge-xs">Active</span>
+                            {% endif %}
+                        </label>
+                        <select name="semantic_class" class="select select-bordered select-xs w-full">
+                            <option value="">All Classes</option>
                             {% for class in filter_options.semantic_classes %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-xs" title="{{ class.uri }}">{{ class.label }}</span>
-                                <input type="radio" 
-                                       name="semantic_class" 
-                                       value="{{ class.value }}"
-                                       class="radio radio-accent radio-sm"
-                                       {% if current_filters.semantic_class == class.value %}checked{% endif %}>
-                            </label>
+                            <option value="{{ class.value }}" {% if current_filters.semantic_class == class.value %}selected{% endif %} title="{{ class.uri }}">
+                                {{ class.label|truncatechars:30 }}
+                            </option>
                             {% endfor %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-xs">All Classes</span>
-                                <input type="radio" 
-                                       name="semantic_class" 
-                                       value=""
-                                       class="radio radio-accent radio-sm"
-                                       {% if not current_filters.semantic_class %}checked{% endif %}>
-                            </label>
-                        </div>
+                        </select>
                     </div>
                     
                     <!-- Resource Types -->
-                    <div class="collapse collapse-arrow bg-base-200 mb-4 rounded-lg">
-                        <input type="checkbox">
-                        <div class="collapse-title text-sm font-semibold">Resource Types</div>
-                        <div class="collapse-content">
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Resource Types</span>
+                            {% if current_filters.resource_type %}
+                            <span class="badge badge-primary badge-xs">{{ current_filters.resource_type|length }} selected</span>
+                            {% endif %}
+                        </label>
+                        <div class="space-y-1">
                             {% for type in filter_options.resource_types %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">{{ type.label }}</span>
+                            <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 px-2 py-1 rounded">
                                 <input type="checkbox" 
                                        name="resource_type" 
                                        value="{{ type.value }}"
-                                       class="checkbox checkbox-primary checkbox-sm"
+                                       class="checkbox checkbox-xs"
                                        {% if type.value in current_filters.resource_type %}checked{% endif %}>
+                                <span class="text-xs">{{ type.label }}</span>
                             </label>
                             {% endfor %}
                         </div>
                     </div>
                     
                     <!-- Triple Usage -->
-                    <div class="collapse collapse-arrow bg-base-200 mb-4 rounded-lg">
-                        <input type="checkbox">
-                        <div class="collapse-title text-sm font-semibold">Triple Usage</div>
-                        <div class="collapse-content">
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Triple Usage</span>
+                            {% if current_filters.triple_usage %}
+                            <span class="badge badge-info badge-xs">Active</span>
+                            {% endif %}
+                        </label>
+                        <select name="triple_usage" class="select select-bordered select-xs w-full">
+                            <option value="">All Usage</option>
                             {% for usage in filter_options.triple_usage %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">{{ usage.label }}</span>
-                                <input type="radio" 
-                                       name="triple_usage" 
-                                       value="{{ usage.value }}"
-                                       class="radio radio-primary radio-sm"
-                                       {% if current_filters.triple_usage == usage.value %}checked{% endif %}>
-                            </label>
+                            <option value="{{ usage.value }}" {% if current_filters.triple_usage == usage.value %}selected{% endif %}>
+                                {{ usage.label }}
+                            </option>
                             {% endfor %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">All Usage</span>
-                                <input type="radio" 
-                                       name="triple_usage" 
-                                       value=""
-                                       class="radio radio-primary radio-sm"
-                                       {% if not current_filters.triple_usage %}checked{% endif %}>
-                            </label>
-                        </div>
+                        </select>
                     </div>
                     
                     <!-- Organizations -->
-                    <div class="collapse collapse-arrow bg-base-200 mb-4 rounded-lg">
-                        <input type="checkbox">
-                        <div class="collapse-title text-sm font-semibold">Organizations</div>
-                        <div class="collapse-content max-h-32 overflow-y-auto">
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Organizations</span>
+                            {% if current_filters.organization %}
+                            <span class="badge badge-secondary badge-xs">{{ current_filters.organization|length }} selected</span>
+                            {% endif %}
+                        </label>
+                        <div class="space-y-1 max-h-24 overflow-y-auto">
                             {% for organization in filter_options.organizations %}
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">{{ organization }}</span>
+                            <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 px-2 py-1 rounded">
                                 <input type="checkbox" 
                                        name="organization" 
                                        value="{{ organization }}"
-                                       class="checkbox checkbox-primary checkbox-sm"
+                                       class="checkbox checkbox-xs"
                                        {% if organization in current_filters.organization %}checked{% endif %}>
+                                <span class="text-xs">{{ organization }}</span>
                             </label>
                             {% endfor %}
                         </div>
                     </div>
                     
                     <!-- External Linking -->
-                    <div class="collapse collapse-arrow bg-base-200 mb-4 rounded-lg">
-                        <input type="checkbox">
-                        <div class="collapse-title text-sm font-semibold">External Linking</div>
-                        <div class="collapse-content">
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">Externally Linked</span>
-                                <input type="radio" 
-                                       name="externally_linked" 
-                                       value="true"
-                                       class="radio radio-primary radio-sm"
-                                       {% if current_filters.externally_linked == 'true' %}checked{% endif %}>
-                            </label>
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">Not Externally Linked</span>
-                                <input type="radio" 
-                                       name="externally_linked" 
-                                       value="false"
-                                       class="radio radio-primary radio-sm"
-                                       {% if current_filters.externally_linked == 'false' %}checked{% endif %}>
-                            </label>
-                            <label class="label cursor-pointer">
-                                <span class="label-text text-sm">All</span>
-                                <input type="radio" 
-                                       name="externally_linked" 
-                                       value=""
-                                       class="radio radio-primary radio-sm"
-                                       {% if not current_filters.externally_linked %}checked{% endif %}>
-                            </label>
+                    <div class="form-control mb-4">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">External Links</span>
+                            {% if current_filters.externally_linked %}
+                            <span class="badge badge-warning badge-xs">Active</span>
+                            {% endif %}
+                        </label>
+                        <div class="join w-full">
+                            <input type="radio" name="externally_linked" value="" class="join-item btn btn-xs flex-1" aria-label="All" {% if not current_filters.externally_linked %}checked{% endif %}>
+                            <input type="radio" name="externally_linked" value="true" class="join-item btn btn-xs flex-1" aria-label="Linked" {% if current_filters.externally_linked == 'true' %}checked{% endif %}>
+                            <input type="radio" name="externally_linked" value="false" class="join-item btn btn-xs flex-1" aria-label="Not Linked" {% if current_filters.externally_linked == 'false' %}checked{% endif %}>
                         </div>
                     </div>
                     
                     <!-- Clear Filters -->
-                    <div class="mt-6">
-                        <a href="{% url 'metadata:data_explorer' %}" class="btn btn-outline btn-sm w-full">Clear All Filters</a>
+                    <div class="mt-4">
+                        <a href="{% url 'metadata:data_explorer' %}" class="btn btn-ghost btn-xs w-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            Clear All Filters
+                        </a>
                     </div>
                 </form>
                 </div>

@@ -81,7 +81,7 @@
                 <!-- Resource Type -->
                 <td>
                     <div class="badge badge-sm {% if resource.resource_type == 'IRI' %}badge-primary{% elif resource.resource_type == 'CLASS' %}badge-secondary{% elif resource.resource_type == 'PROPERTY' %}badge-accent{% else %}badge-ghost{% endif %}">
-                        {{ resource.get_resource_type_display }}
+                        {% if resource.resource_type == 'IRI' %}IRI{% else %}{{ resource.get_resource_type_display }}{% endif %}
                     </div>
                     {% if resource.is_placeholder %}
                         <span class="badge badge-warning badge-xs ml-1">P</span>

@@ -18,8 +18,8 @@ class DataExplorerView(ListView):
     
     def get_queryset(self):
         """Get resources with appropriate access control and debug mode support."""
-        # Start with all resources
-        queryset = Resource.objects.all().select_related('organization').annotate(
+        # Start with all resources, excluding placeholders by default
+        queryset = Resource.objects.exclude(is_placeholder=True).select_related('organization').annotate(
             subject_count=Count('subject_triples', distinct=True),
             predicate_count=Count('predicate_triples', distinct=True),
             object_count=Count('object_triples', distinct=True),
@@ -51,8 +51,8 @@ class DataExplorerView(ListView):
     
     def _get_accessible_organizations(self):
         """Get list of organizations accessible to current user."""
-        # Start with all resources
-        queryset = Resource.objects.all()
+        # Start with all resources, excluding placeholders
+        queryset = Resource.objects.exclude(is_placeholder=True)
         
         # Debug mode - show all organizations in development
         if settings.DEBUG and self.request.GET.get('debug') == 'true':
@@ -89,18 +89,25 @@ class DataExplorerView(ListView):
         # Get resources that are used as objects in rdf:type triples
         semantic_classes = Triple.objects.filter(
             predicate=rdf_type
-        ).select_related('object').values(
-            'object__id', 'object__uri', 'object__name'
+        ).select_related('object', 'object__organization').values(
+            'object__id', 'object__uri', 'object__name', 'object__organization__code'
         ).distinct().order_by('object__name', 'object__uri')[:100]  # Limit for performance
         
         result = []
         for cls in semantic_classes:
             if cls['object__uri']:
                 # Extract readable name from URI
-                name = cls['object__name'] or cls['object__uri'].split('/')[-1]
+                base_name = cls['object__name'] or cls['object__uri'].split('/')[-1]
+                
+                # Add organization code for disambiguation
+                if cls['object__organization__code']:
+                    label = f"{base_name} ({cls['object__organization__code']})"
+                else:
+                    label = base_name
+                    
                 result.append({
                     'value': cls['object__id'],
-                    'label': name,
+                    'label': label,
                     'uri': cls['object__uri']
                 })
         
@@ -129,7 +136,12 @@ class DataExplorerView(ListView):
         elif type_group == 'literals':
             queryset = queryset.filter(resource_type=ResourceType.LITERAL)
         elif type_group == 'placeholders':
-            queryset = queryset.filter(is_placeholder=True)
+            # Override the default exclusion of placeholders and show only placeholders
+            queryset = Resource.objects.filter(is_placeholder=True).select_related('organization').annotate(
+                subject_count=Count('subject_triples', distinct=True),
+                predicate_count=Count('predicate_triples', distinct=True),
+                object_count=Count('object_triples', distinct=True),
+            )
         
         # Organization filter
         organizations = self.request.GET.getlist('organization')
@@ -324,7 +336,7 @@ class DataExplorerView(ListView):
         ).first()
         
         # Get base accessible queryset (same access control as main results)
-        base_queryset = Resource.objects.all()
+        base_queryset = Resource.objects.exclude(is_placeholder=True)
         
         # Apply same access control as get_queryset
         if not self.request.user.is_authenticated:
