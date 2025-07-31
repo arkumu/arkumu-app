@@ -85,21 +85,15 @@
                             </div>
                             
                             <div class="col-md-6">
-                                <div class="form-group mb-3">
-                                    <label for="{{ form.mapping_type.id_for_label }}" class="form-label">
-                                        <strong>Mapping Type</strong>
-                                    </label>
-                                    {{ form.mapping_type }}
-                                    <div class="form-text">{{ form.mapping_type.help_text }}</div>
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>Automatic Mapping</strong><br>
+                                    All organization URIs will be automatically mapped to generic Arkumu model URIs using exact matches.
                                 </div>
                                 
-                                <div class="form-group mb-3">
-                                    <label for="{{ form.priority.id_for_label }}" class="form-label">
-                                        <strong>Priority</strong>
-                                    </label>
-                                    {{ form.priority }}
-                                    <div class="form-text">{{ form.priority.help_text }}</div>
-                                </div>
+                                <!-- Hidden form fields -->
+                                {{ form.mapping_type }}
+                                {{ form.priority }}
                                 
                                 <div class="form-group mb-3">
                                     <div class="form-check">

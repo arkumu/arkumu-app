@@ -34,13 +34,15 @@ class BulkArkumuMappingForm(forms.Form):
             ('narrow', 'Narrower Match')
         ],
         initial='exact',
+        widget=forms.HiddenInput(),  # Hide this field
         help_text="Type of semantic mapping between organization ontology and Arkumu model"
     )
     
     priority = forms.IntegerField(
-        initial=0,
+        initial=1,
         min_value=0,
         max_value=100,
+        widget=forms.HiddenInput(),  # Hide this field
         help_text="Priority for conflict resolution (higher values win)"
     )
     
