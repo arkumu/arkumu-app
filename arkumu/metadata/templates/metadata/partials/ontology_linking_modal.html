@@ -1,5 +1,7 @@
 <div class="p-4">
-    <h3 class="font-bold text-lg mb-4">Link to Ontology</h3>
+    <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+        🔗 Link to Ontology
+    </h3>
     
     {% if resource %}
     <div class="space-y-4">
@@ -7,28 +9,78 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
-            <span>Linking <strong>{{ resource.name }}</strong> to external ontologies</span>
+            <span>Linking <strong>{{ resource.name }}</strong> ({{ resource.get_resource_type_display }}) to external ontologies</span>
+        </div>
+        
+        <!-- Resource Information -->
+        <div class="bg-base-100 p-3 rounded border">
+            <h5 class="font-medium text-sm mb-1">Resource Information</h5>
+            <p class="text-sm text-base-content/70">
+                <strong>Type:</strong> {{ resource.get_resource_type_display }}<br>
+                <strong>Name:</strong> {{ resource.name|default:"Unnamed resource" }}<br>
+                {% if resource.uri %}<strong>URI:</strong> <code class="text-xs">{{ resource.uri|truncatechars:60 }}</code>{% endif %}
+            </p>
         </div>
         
         <form class="space-y-4">
-            <!-- Placeholder for ontology linking form -->
+            {% csrf_token %}
+            <input type="hidden" name="resource_id" value="{{ resource.pk }}">
+            
+            <!-- Ontology Type Selection -->
             <div class="form-control">
                 <label class="label">
-                    <span class="label-text">Ontology Source</span>
+                    <span class="label-text font-medium">Ontology Type <span class="text-error">*</span></span>
                 </label>
-                <select class="select select-bordered">
-                    <option>Select ontology source...</option>
-                    <option>Wikidata</option>
-                    <option>DBpedia</option>
-                    <option>Schema.org</option>
+                <select name="ontology_type" 
+                        id="ontology-type-modal"
+                        class="select select-bordered w-full"
+                        required
+                        onchange="updateOntologyPreset(this.value)">
+                    <option value="">Select ontology type...</option>
+                    {% for key, preset in ontology_presets.items %}
+                        <option value="{{ key }}" 
+                                data-template="{{ preset.uri_template }}"
+                                data-pattern="{{ preset.identifier_pattern }}"
+                                data-example="{{ preset.example }}"
+                                data-description="{{ preset.description }}">
+                            {{ preset.name }}
+                        </option>
+                    {% endfor %}
                 </select>
             </div>
             
+            <!-- URI Template Display -->
             <div class="form-control">
                 <label class="label">
-                    <span class="label-text">External Identifier</span>
+                    <span class="label-text font-medium">URI Template</span>
                 </label>
-                <input type="text" placeholder="Enter external ID or URI" class="input input-bordered" />
+                <input type="text" 
+                       name="uri_template" 
+                       id="uri-template-modal"
+                       class="input input-bordered w-full font-mono text-sm" 
+                       placeholder="Select ontology type to see template"
+                       readonly>
+            </div>
+            
+            <!-- External Identifier -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-medium">External Identifier <span class="text-error">*</span></span>
+                </label>
+                <input type="text" 
+                       name="external_identifier"
+                       id="external-identifier-modal"
+                       placeholder="Enter external ID"
+                       class="input input-bordered" 
+                       required />
+                <div class="label">
+                    <span class="label-text-alt" id="identifier-help">Select ontology type to see example format</span>
+                </div>
+            </div>
+            
+            <!-- Description Display -->
+            <div class="bg-base-200 p-3 rounded" id="ontology-description" style="display: none;">
+                <p class="text-sm text-base-content/80" id="description-text"></p>
             </div>
             
             <div class="modal-action">
@@ -43,3 +95,56 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+function updateOntologyPreset(ontologyType) {
+    const selectElement = document.getElementById('ontology-type-modal');
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    const templateField = document.getElementById('uri-template-modal');
+    const identifierField = document.getElementById('external-identifier-modal');
+    const helpText = document.getElementById('identifier-help');
+    const descriptionDiv = document.getElementById('ontology-description');
+    const descriptionText = document.getElementById('description-text');
+    
+    if (ontologyType && selectedOption) {
+        const template = selectedOption.dataset.template;
+        const example = selectedOption.dataset.example;
+        const description = selectedOption.dataset.description;
+        
+        templateField.value = template;
+        
+        if (example) {
+            identifierField.placeholder = `Example: ${example}`;
+            helpText.textContent = `Example format: ${example}`;
+        } else {
+            identifierField.placeholder = 'Enter external ID';
+            helpText.textContent = 'Enter the external identifier';
+        }
+        
+        if (description) {
+            descriptionText.textContent = description;
+            descriptionDiv.style.display = 'block';
+        } else {
+            descriptionDiv.style.display = 'none';
+        }
+        
+        // Enable identifier field
+        identifierField.disabled = false;
+    } else {
+        templateField.value = '';
+        identifierField.placeholder = 'Select ontology type first';
+        identifierField.disabled = true;
+        helpText.textContent = 'Select ontology type to see example format';
+        descriptionDiv.style.display = 'none';
+    }
+}
+
+// Initialize the form when loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Disable identifier field initially
+    const identifierField = document.getElementById('external-identifier-modal');
+    if (identifierField) {
+        identifierField.disabled = true;
+    }
+});
+</script>
