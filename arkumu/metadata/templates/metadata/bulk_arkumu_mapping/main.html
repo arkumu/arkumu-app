@@ -33,8 +33,7 @@
                                     <thead>
                                         <tr>
                                             <th>Organization</th>
-                                            <th>Existing Mappings</th>
-                                            <th>Status</th>
+                                            <th>Code</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -42,14 +41,7 @@
                                         <tr>
                                             <td>{{ stats.name }}</td>
                                             <td>
-                                                <span class="badge badge-info">{{ stats.existing_mappings }}</span>
-                                            </td>
-                                            <td>
-                                                {% if stats.existing_mappings > 0 %}
-                                                    <span class="badge badge-success">Mapped</span>
-                                                {% else %}
-                                                    <span class="badge badge-warning">Not Mapped</span>
-                                                {% endif %}
+                                                <span class="badge badge-primary">{{ org_code|upper }}</span>
                                             </td>
                                         </tr>
                                         {% endfor %}

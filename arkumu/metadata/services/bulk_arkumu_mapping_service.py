@@ -59,11 +59,12 @@ class BulkArkumuMappingService:
     ) -> dict[str, set[str]]:
         """
         Get all organization-specific IRIs from the resources database.
+        Look for resources that could be mapped to Arkumu model.
 
         Returns:
             Dict mapping org_code to set of IRIs
         """
-        from arkumu.metadata.models.resource import Resource
+        from arkumu.metadata.models.resource import Resource, ResourceType
         from arkumu.users.models import Organization
 
         org_iris = {}
@@ -72,22 +73,19 @@ class BulkArkumuMappingService:
             try:
                 organization = Organization.objects.get(code=org_code)
 
-                # Get all resources for this organization that match the pattern
-                pattern_types = f"{self.base_arkumu_url}/data/{org_code}/types/"
-                pattern_properties = (
-                    f"{self.base_arkumu_url}/data/{org_code}/properties/"
-                )
-
+                # Get all Class and Property resources for this organization
+                # These are the types that should be mapped to Arkumu model
                 resources = Resource.objects.filter(
                     organization=organization,
-                ).filter(
-                    models.Q(uri__startswith=pattern_types) |
-                    models.Q(uri__startswith=pattern_properties),
+                    resource_type__in=[ResourceType.CLASS, ResourceType.PROPERTY],
+                    uri__isnull=False  # Must have a URI to map
+                ).exclude(
+                    uri=""  # Exclude empty URIs
                 ).values_list("uri", flat=True)
 
                 org_iris[org_code] = set(resources)
                 logger.info(
-                    "Found %d IRIs for organization %s",
+                    "Found %d mappable resources (classes/properties) for organization %s",
                     len(org_iris[org_code]),
                     org_code,
                 )

@@ -77,15 +77,10 @@ class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
         organizations = Organization.objects.filter(is_active=True)
         context['organization_stats'] = {}
         
-        if organizations.exists():
-            org_codes = list(organizations.values_list('code', flat=True))
-            existing_counts = self.service.get_existing_mappings_count(org_codes)
-            
-            for org in organizations:
-                context['organization_stats'][org.code] = {
-                    'name': org.name,
-                    'existing_mappings': existing_counts.get(org.code, 0)
-                }
+        for org in organizations:
+            context['organization_stats'][org.code] = {
+                'name': org.name,
+            }
         
         return context
     
@@ -129,15 +124,13 @@ class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
         try:
             # Generate preview
             preview = self.service.preview_bulk_mapping(valid_codes)
-            existing_counts = self.service.get_existing_mappings_count(valid_codes)
             
             context = {
                 'preview': preview,
-                'existing_counts': existing_counts,
                 'total_new_mappings': sum(len(mappings) for mappings in preview.values())
             }
             
-            return render(request, 'metadata/bulk_arkumu_mapping/preview_fragment.html', context)
+            return render(self.request, 'metadata/bulk_arkumu_mapping/preview_fragment.html', context)
             
         except Exception as e:
             return HttpResponse(
