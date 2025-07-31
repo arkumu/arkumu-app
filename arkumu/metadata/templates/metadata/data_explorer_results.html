@@ -71,6 +71,8 @@
                         {% endif %}
                     </button>
                 </th>
+                <!-- Ontology Link Status Column -->
+                <th class="text-center w-20 text-xs">Ontologies</th>
                 <!-- Non-sortable Actions Column -->
                 <th class="text-center w-20 text-xs">Actions</th>
             </tr>
@@ -136,6 +138,30 @@
                             <span class="text-xs text-base-content/30">-</span>
                         {% endif %}
                     </div>
+                </td>
+                
+                <!-- Ontology Link Status -->
+                <td class="text-center">
+                    {% if resource.resource_type == 'CLASS' or resource.resource_type == 'PROPERTY' %}
+                        <div class="flex flex-col items-center gap-1">
+                            <button class="btn btn-xs btn-primary"
+                                    hx-get="{% url 'metadata:ontology_linking_modal' %}?resource_id={{ resource.pk }}"
+                                    hx-target="#modal-content"
+                                    onclick="document.getElementById('resource-modal').showModal()"
+                                    title="Link to ontology">
+                                🔗 Link
+                            </button>
+                            <div class="text-xs text-base-content/70">
+                                {% if resource.linked_ontology %}
+                                    {{ resource.linked_ontology }}
+                                {% else %}
+                                    <span class="text-base-content/40">None</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% else %}
+                        <span class="text-xs text-base-content/30">-</span>
+                    {% endif %}
                 </td>
                 
                 <!-- Action Buttons -->
