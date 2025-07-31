@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<!-- Load HTMX -->
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+{% endblock %}
+
+{% block title %}Bulk Arkumu Mapping{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">
+                        <i class="fas fa-link me-2"></i>
+                        Bulk Arkumu Mapping
+                    </h4>
+                    <p class="text-muted mb-0">
+                        Create bulk mappings from organization-specific ontologies to the Arkumu model
+                    </p>
+                </div>
+                
+                <div class="card-body">
+                    <!-- Organization Statistics -->
+                    {% if organization_stats %}
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h5>Organization Overview</h5>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Organization</th>
+                                            <th>Existing Mappings</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for org_code, stats in organization_stats.items %}
+                                        <tr>
+                                            <td>{{ stats.name }}</td>
+                                            <td>
+                                                <span class="badge badge-info">{{ stats.existing_mappings }}</span>
+                                            </td>
+                                            <td>
+                                                {% if stats.existing_mappings > 0 %}
+                                                    <span class="badge badge-success">Mapped</span>
+                                                {% else %}
+                                                    <span class="badge badge-warning">Not Mapped</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Bulk Mapping Form -->
+                    <form method="post" id="bulk-mapping-form">
+                        {% csrf_token %}
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label for="{{ form.organizations.id_for_label }}" class="form-label">
+                                        <strong>Organizations</strong>
+                                    </label>
+                                    <div class="form-text mb-2">{{ form.organizations.help_text }}</div>
+                                    <div class="border p-3 rounded max-height-300 overflow-auto">
+                                        {% for choice in form.organizations %}
+                                            <div class="form-check">
+                                                {{ choice.tag }}
+                                                <label class="form-check-label" for="{{ choice.id_for_label }}">
+                                                    {{ choice.choice_label }}
+                                                </label>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label for="{{ form.mapping_type.id_for_label }}" class="form-label">
+                                        <strong>Mapping Type</strong>
+                                    </label>
+                                    {{ form.mapping_type }}
+                                    <div class="form-text">{{ form.mapping_type.help_text }}</div>
+                                </div>
+                                
+                                <div class="form-group mb-3">
+                                    <label for="{{ form.priority.id_for_label }}" class="form-label">
+                                        <strong>Priority</strong>
+                                    </label>
+                                    {{ form.priority }}
+                                    <div class="form-text">{{ form.priority.help_text }}</div>
+                                </div>
+                                
+                                <div class="form-group mb-3">
+                                    <div class="form-check">
+                                        {{ form.preview_only }}
+                                        <label class="form-check-label" for="{{ form.preview_only.id_for_label }}">
+                                            {{ form.preview_only.label }}
+                                        </label>
+                                    </div>
+                                    <div class="form-text">{{ form.preview_only.help_text }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- HTMX Preview Section -->
+                        <div id="htmx-preview" class="mt-4">
+                            <h5>Quick Preview</h5>
+                            <div id="preview-content">
+                                <div class="text-muted">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    Click "Quick Preview" to see potential mappings before executing.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <button type="submit" 
+                                        name="preview" 
+                                        value="true"
+                                        hx-post="{% url 'metadata:bulk_arkumu_mapping' %}"
+                                        hx-target="#preview-content"
+                                        hx-swap="innerHTML"
+                                        hx-indicator="#preview-loading"
+                                        class="btn btn-outline-primary me-2">
+                                    <i class="fas fa-eye me-1"></i>
+                                    Quick Preview
+                                </button>
+                                <button type="submit" class="btn btn-primary me-2">
+                                    <i class="fas fa-play me-1"></i>
+                                    Execute Mapping
+                                </button>
+                                <a href="{% url 'metadata:harmonization_rules_list' %}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-list me-1"></i>
+                                    View All Rules
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <!-- Loading Indicator -->
+                        <div id="preview-loading" class="htmx-indicator mt-3">
+                            <div class="d-flex align-items-center text-primary">
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span>Generating preview...</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Preview Content -->
+                        <div id="preview-content" class="mt-4"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Executions -->
+    {% if recent_executions %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Recent Executions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Organizations</th>
+                                    <th>Status</th>
+                                    <th>Mappings Created</th>
+                                    <th>Duration</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for execution in recent_executions %}
+                                <tr>
+                                    <td>{{ execution.started_at|date:"M j, Y H:i" }}</td>
+                                    <td>
+                                        {% for org in execution.organizations.all %}
+                                            <span class="badge badge-secondary me-1">{{ org.code }}</span>
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {% if execution.status == 'completed' %}
+                                            <span class="badge badge-success">{{ execution.get_status_display }}</span>
+                                        {% elif execution.status == 'failed' %}
+                                            <span class="badge badge-danger">{{ execution.get_status_display }}</span>
+                                        {% else %}
+                                            <span class="badge badge-warning">{{ execution.get_status_display }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ execution.triples_created }}</td>
+                                    <td>
+                                        {% if execution.duration_seconds %}
+                                            {{ execution.duration_seconds }}s
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'metadata:bulk_arkumu_mapping_execution' pk=execution.pk %}" 
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-eye me-1"></i>
+                                            View
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.max-height-300 {
+    max-height: 300px;
+}
+</style>
+
+<!-- HTMX provides all the functionality - no JavaScript needed! -->
+<style>
+.htmx-indicator {
+    display: none;
+}
+
+.htmx-request .htmx-indicator {
+    display: block;
+}
+
+.htmx-request #preview-content {
+    opacity: 0.7;
+}
+</style>
+{% endblock %}
