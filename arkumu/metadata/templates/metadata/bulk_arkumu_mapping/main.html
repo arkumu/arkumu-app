@@ -23,59 +23,53 @@
                 </div>
                 
                 <div class="card-body">
-                    <!-- Organization Statistics -->
-                    {% if organization_stats %}
-                    <div class="row mb-4">
-                        <div class="col-12">
-                            <h5>Organization Overview</h5>
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Organization</th>
-                                            <th>Code</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for org_code, stats in organization_stats.items %}
-                                        <tr>
-                                            <td>{{ stats.name }}</td>
-                                            <td>
-                                                <span class="badge badge-primary">{{ org_code|upper }}</span>
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-                    
                     <!-- Bulk Mapping Form -->
                     <form method="post" id="bulk-mapping-form">
                         {% csrf_token %}
                         
                         <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-group mb-3">
-                                    <label for="{{ form.organizations.id_for_label }}" class="form-label">
-                                        <strong>Organizations</strong>
-                                    </label>
-                                    <div class="form-text mb-2">{{ form.organizations.help_text }}</div>
-                                    <div class="border p-3 rounded max-height-300 overflow-auto">
-                                        {% for choice in form.organizations %}
-                                            <div class="form-check">
-                                                {{ choice.tag }}
-                                                <label class="form-check-label" for="{{ choice.id_for_label }}">
-                                                    {{ choice.choice_label }}
-                                                </label>
-                                            </div>
-                                        {% endfor %}
-                                    </div>
+                            <div class="col-12 mb-4">
+                                <h5>Select Organizations to Map</h5>
+                                <p class="text-muted">Choose which organizations to create mappings for. Each organization's classes and properties will be mapped to the generic Arkumu model.</p>
+                                
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th width="50">
+                                                    <input type="checkbox" id="select-all" class="form-check-input">
+                                                </th>
+                                                <th>Organization</th>
+                                                <th>Code</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for organization in form.organizations.field.queryset %}
+                                            <tr>
+                                                <td>
+                                                    <input type="checkbox" 
+                                                           name="organizations" 
+                                                           value="{{ organization.pk }}" 
+                                                           id="id_organizations_{{ forloop.counter0 }}"
+                                                           class="form-check-input org-checkbox">
+                                                </td>
+                                                <td>
+                                                    <label for="id_organizations_{{ forloop.counter0 }}" class="form-check-label mb-0" style="cursor: pointer;">
+                                                        {{ organization.name }}
+                                                    </label>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-primary">{{ organization.code|upper }}</span>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
-                            
+                        </div>
+                        
+                        <div class="row">
                             <div class="col-md-6">
                                 <div class="alert alert-info">
                                     <i class="fas fa-info-circle me-2"></i>
@@ -225,7 +219,30 @@
 }
 </style>
 
-<!-- HTMX provides all the functionality - no JavaScript needed! -->
+<!-- JavaScript for Select All functionality -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllCheckbox = document.getElementById('select-all');
+    const orgCheckboxes = document.querySelectorAll('.org-checkbox');
+    
+    // Handle select all checkbox
+    selectAllCheckbox.addEventListener('change', function() {
+        orgCheckboxes.forEach(checkbox => {
+            checkbox.checked = selectAllCheckbox.checked;
+        });
+    });
+    
+    // Update select all checkbox when individual checkboxes change
+    orgCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const checkedCount = document.querySelectorAll('.org-checkbox:checked').length;
+            selectAllCheckbox.checked = (checkedCount === orgCheckboxes.length);
+            selectAllCheckbox.indeterminate = (checkedCount > 0 && checkedCount < orgCheckboxes.length);
+        });
+    });
+});
+</script>
+
 <style>
 .htmx-indicator {
     display: none;
