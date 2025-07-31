@@ -3,12 +3,12 @@ Template for displaying organization folder contents with lazy loading
 {% endcomment %}
 
 {% if structure and structure.children %}
-    <ul class="folder-tree">
+    <div class="space-y-0">
         {% for item in structure.children %}
             {% if item.type == 'folder' %}
-                <li class="folder-item" data-folder-path="{{ item.path }}">
+                <div class="py-0 px-1" data-folder-path="{{ item.path }}">
                     <div class="flex items-center">
-                        <button class="folder-toggle mr-1 text-gray-600 focus:outline-none"
+                        <button class="btn btn-ghost btn-xs mr-1 folder-toggle"
                                 data-folder-path="{{ item.path }}"
                                 data-folder-state="closed"
                                 hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
@@ -21,12 +21,12 @@ Template for displaying organization folder contents with lazy loading
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                             </svg>
                         </button>
-                        <span class="folder-name text-gray-800 font-medium">
+                        <span class="text-sm font-medium">
                             {{ item.name }}
                         </span>
                         
                         <div class="ml-auto flex items-center space-x-2">
-                            <button class="refresh-icon text-green-500 hover:text-green-700" 
+                            <button class="btn btn-ghost btn-xs text-success" 
                                     title="Refresh folder"
                                     hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
                                     hx-target=".folder-contents[data-folder-path='{{ item.path }}'][data-organization='{{ organization }}']"
@@ -40,10 +40,10 @@ Template for displaying organization folder contents with lazy loading
                             <!-- Delete button for organization folders -->
                             <button hx-post="{% url 'storage:delete_object' bucket_type=bucket_type object_type='folder' object_path=item.path %}"
                                     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                    hx-target="closest li"
+                                    hx-target="closest div"
                                     hx-swap="outerHTML"
                                     hx-confirm="Are you sure you want to delete this folder and all its contents? This cannot be undone."
-                                    class="text-red-500 hover:text-red-700" title="Delete Folder">
+                                    class="btn btn-ghost btn-xs text-error" title="Delete Folder">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                 </svg>
@@ -52,28 +52,26 @@ Template for displaying organization folder contents with lazy loading
                     </div>
                     
                     <!-- Loading indicator outside the folder contents div so it exists before the HTMX request -->
-                    <div class="loading-indicator htmx-indicator" data-folder-path="{{ item.path }}">
-                        <div class="flex items-center justify-center py-2">
-                            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                        </div>
+                    <div class="loading-indicator htmx-indicator ml-2" data-folder-path="{{ item.path }}">
+                        <span class="loading loading-spinner loading-xs"></span>
                     </div>
                     
-                    <div class="folder-contents pl-6 mt-1 hidden" data-folder-path="{{ item.path }}" data-organization="{{ organization }}">
+                    <div class="folder-contents ml-3 hidden" data-folder-path="{{ item.path }}" data-organization="{{ organization }}">
                         <!-- Folder contents will be loaded here -->
                     </div>
-                </li>
+                </div>
             {% elif item.type == 'file' %}
-                <li class="file-item py-1">
+                <div class="py-0 px-1">
                     <div class="flex items-center">
-                        <span class="file-icon mr-1 text-gray-500">
+                        <span class="mr-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
                             </svg>
                         </span>
-                        <span class="file-name text-gray-700">{{ item.name }}</span>
+                        <span class="text-sm">{{ item.name }}</span>
                         
                         {% if item.size %}
-                            <span class="ml-2 text-sm text-gray-500">({{ item.size|filesizeformat }})</span>
+                            <span class="ml-2 text-xs opacity-60">({{ item.size|filesizeformat }})</span>
                         {% endif %}
                         
                         <div class="ml-auto flex items-center space-x-2">
@@ -82,7 +80,7 @@ Template for displaying organization folder contents with lazy loading
                                 <button hx-get="{% url 'storage:csv_preview' bucket_type=bucket_type file_path=item.path %}"
                                         hx-target="#csv-preview-modal .modal-box"
                                         hx-swap="innerHTML"
-                                        class="view-icon text-blue-500 hover:text-blue-700" 
+                                        class="btn btn-ghost btn-xs text-info" 
                                         title="Preview CSV file"
                                         onclick="document.getElementById('csv-preview-modal').showModal()">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,7 +89,7 @@ Template for displaying organization folder contents with lazy loading
                                     </svg>
                                 </button>
                             {% else %}
-                                <button class="view-icon text-gray-400 cursor-not-allowed" 
+                                <button class="btn btn-ghost btn-xs btn-disabled" 
                                         title="File viewing not available"
                                         disabled>
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,38 +103,29 @@ Template for displaying organization folder contents with lazy loading
                             
                             <button hx-post="{% url 'storage:delete_object' bucket_type=bucket_type object_type='file' object_path=item.path %}"
                                     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                    hx-target="closest li"
+                                    hx-target="closest div"
                                     hx-swap="outerHTML"
                                     hx-confirm="Are you sure you want to delete this file? This cannot be undone."
-                                    class="text-red-500 hover:text-red-700" title="Delete File">
+                                    class="btn btn-ghost btn-xs text-error" title="Delete File">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                 </svg>
                             </button>
                         </div>
                     </div>
-                </li>
+                </div>
             {% endif %}
         {% endfor %}
-    </ul>
+    </div>
 {% else %}
-    <p class="text-gray-500 italic">No files or folders found.</p>
+    <div class="alert alert-info">
+        <span>No files or folders found.</span>
+    </div>
 {% endif %}
 
 <style>
-/* Folder structure styles */
-.folder-tree {
-    list-style-type: none;
-    padding: 0;
-}
-
-.folder-item {
-    margin-bottom: 0.5rem;
-}
-
 .folder-contents {
     transition: all 0.3s ease;
-    padding-left: 1rem;
 }
 
 .folder-contents:not(.hidden) {
@@ -144,20 +133,17 @@ Template for displaying organization folder contents with lazy loading
     opacity: 1;
 }
 
-/* Colorized borders for folder nesting */
-.folder-tree .folder-contents {
-    border-left: 2px solid hsl(var(--p) / 0.5);
-    padding-left: 1rem;
-}
-
-.folder-toggle svg {
+.btn svg {
     transition: transform 0.2s ease;
 }
 
 .folder-toggle[data-folder-state="open"] svg {
-    transform: rotate(90deg);
+    transform: rotate(90deg) !important;
 }
 
+.folder-toggle[data-folder-state="closed"] svg {
+    transform: rotate(0deg) !important;
+}
 </style>
 
 <script>
