@@ -16,3 +16,10 @@ def length(value):
         return len(value)
     except (TypeError, AttributeError):
         return 0
+
+@register.filter
+def get_item(dictionary, key):
+    """Template filter to get item from dictionary"""
+    if isinstance(dictionary, dict):
+        return dictionary.get(key)
+    return None
