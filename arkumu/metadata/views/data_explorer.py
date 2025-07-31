@@ -405,6 +405,55 @@ class ResourceDetailView(DetailView):
         context['predicate_count'] = resource.predicate_triples.count()
         context['object_count'] = resource.object_triples.count()
         
+        # Get owl:sameAs relationships for ontology mappings
+        sameas_triples = Triple.objects.filter(
+            subject=resource,
+            predicate__uri='http://www.w3.org/2002/07/owl#sameAs'
+        ).select_related('object')
+        
+        # Process sameas links for display
+        sameas_links = []
+        for triple in sameas_triples:
+            external_uri = triple.object.uri
+            external_identifier = None
+            ontology_type = None
+            
+            # Try to determine ontology type and identifier from URI
+            if 'wikidata.org/entity/' in external_uri:
+                ontology_type = 'Wikidata'
+                external_identifier = external_uri.split('/')[-1]
+            elif 'orcid.org/' in external_uri:
+                ontology_type = 'ORCID'
+                external_identifier = external_uri.split('/')[-1]
+            elif 'd-nb.info/gnd/' in external_uri:
+                ontology_type = 'GND'
+                external_identifier = external_uri.split('/')[-1]
+            elif 'viaf.org/viaf/' in external_uri:
+                ontology_type = 'VIAF'
+                external_identifier = external_uri.split('/')[-1]
+            elif 'cidoc-crm.org' in external_uri:
+                ontology_type = 'CIDOC-CRM'
+                external_identifier = external_uri.split('/')[-1]
+            elif 'schema.org' in external_uri:
+                ontology_type = 'Schema.org'
+                external_identifier = external_uri.split('/')[-1]
+            elif 'arkumu.nrw' in external_uri:
+                ontology_type = 'Arkumu'
+                external_identifier = external_uri.split('/')[-1]
+            else:
+                # Try to extract identifier from common patterns
+                parts = external_uri.rstrip('/').split('/')
+                if len(parts) > 0:
+                    external_identifier = parts[-1]
+            
+            sameas_links.append({
+                'external_uri': external_uri,
+                'external_identifier': external_identifier or triple.object.name or external_uri,
+                'ontology_type': ontology_type
+            })
+        
+        context['sameas_links'] = sameas_links
+        
         # For literals, get organization usage breakdown
         if resource.resource_type == ResourceType.LITERAL:
             from django.db.models import Count

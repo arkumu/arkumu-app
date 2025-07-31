@@ -108,6 +108,35 @@
         </div>
     </div>
     
+    <!-- Ontology Mappings (owl:sameAs) -->
+    {% if sameas_links %}
+    <div class="card bg-base-100 shadow-sm border-l-4 border-info">
+        <div class="card-body">
+            <h4 class="card-title text-lg flex items-center gap-2">
+                🔗 Ontology Mappings
+                <div class="badge badge-info badge-sm">{{ sameas_links|length }}</div>
+            </h4>
+            <div class="space-y-2">
+                {% for link in sameas_links %}
+                <div class="flex items-center gap-3 p-3 bg-info/5 rounded border border-info/20">
+                    <div class="badge badge-outline badge-sm">{{ link.ontology_type|default:"External" }}</div>
+                    <span class="font-medium">{{ resource.name|default:resource.uri|truncatechars:30 }}</span>
+                    <span class="text-info font-bold">owl:sameAs</span>
+                    <a href="{{ link.external_uri }}" target="_blank" 
+                       class="link link-info text-sm hover:link-hover break-all flex items-center gap-1"
+                       title="{{ link.external_uri }}">
+                        {{ link.external_identifier|default:link.external_uri|truncatechars:40 }}
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                        </svg>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Triple Relationships -->
     <div class="space-y-6">
         <!-- As Subject -->
