@@ -65,7 +65,7 @@ class TestDatabaseValidation:
         execution_config = self.mapping_adapter.translate_to_execution_config(production_test_mapping.id)
         
         processor = MappingAwareProcessor(
-            institution="TEST_FUK",
+            organization=production_test_mapping.organization,
             base_uri="http://test.arkumu.org/data",
             statistics=execution_statistics
         )
@@ -115,7 +115,7 @@ class TestDatabaseValidation:
         execution_config = self.mapping_adapter.translate_to_execution_config(production_test_mapping.id)
         
         processor = MappingAwareProcessor(
-            institution="TEST_FUK",
+            organization=production_test_mapping.organization,
             base_uri="http://test.arkumu.org/data",
             statistics=execution_statistics
         )
@@ -166,7 +166,7 @@ class TestDatabaseValidation:
         execution_config = self.mapping_adapter.translate_to_execution_config(production_test_mapping.id)
         
         processor = MappingAwareProcessor(
-            institution="TEST_FUK",
+            organization=production_test_mapping.organization,
             base_uri="http://test.arkumu.org/data",
             statistics=execution_statistics
         )
@@ -238,7 +238,7 @@ class TestDatabaseValidation:
         execution_config = self.mapping_adapter.translate_to_execution_config(production_test_mapping.id)
         
         processor = MappingAwareProcessor(
-            institution="TEST_FUK",
+            organization=production_test_mapping.organization,
             base_uri="http://test.arkumu.org/data",
             statistics=execution_statistics
         )

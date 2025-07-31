@@ -529,7 +529,7 @@ class MappingAwareProcessor:
             value = row_data.get(column.column_name)
             if value is not None and str(value).strip():
                 # Create identifier property
-                property_uri = self._generate_property_uri(f"identifier_{column.arkumu_type}")
+                property_uri = self._generate_property_uri(column.arkumu_type)
                 
                 # Create property triple
                 self.resource_manager.create_property_triple(
@@ -608,33 +608,37 @@ class MappingAwareProcessor:
             if value is not None and str(value).strip():
                 cleaned_value = str(value).strip()
                 
-                # 1. SOFT LINKING: Create identifier property with literal value (existing behavior)
-                identifier_property_uri = self._generate_property_uri(f"identifier-{column.arkumu_type}")
-                self.resource_manager.create_property_triple(
+                # 1. SOFT LINKING: Create normal property triple (entity -> property -> literal)
+                property_uri = self._generate_property_uri(column.arkumu_type)
+                triple = self.resource_manager.create_property_triple(
                     entity_resource,
-                    identifier_property_uri,
+                    property_uri,
                     cleaned_value,
                     "http://www.w3.org/2001/XMLSchema#string"
                 )
                 
-                # 2. HARD LINKING: Create owl:sameAs relationship to external ontology URI
+                # 2. HARD LINKING: Link external ontology to our literal resource
                 external_uri = self._generate_external_ontology_uri(column, cleaned_value)
                 
-                if external_uri:
+                if external_uri and triple:
+                    # Get the literal resource from the triple (object of the triple)
+                    literal_resource = triple.object
+                    
                     # Create external resource (stub)
                     external_resource = self.resource_manager.create_external_resource(
                         external_uri,
                         column.external_ontology_config.get('ontology_type', 'external')
                     )
                     
-                    # Create owl:sameAs hard link
+                    # Create owl:sameAs from external ontology to our literal resource
                     self.resource_manager.create_owl_same_as_triple(
-                        entity_resource,
-                        external_resource
+                        external_resource,
+                        literal_resource
                     )
                     
                     logger.debug(f"Created both soft and hard links for {column.column_name}: "
-                               f"identifier='{cleaned_value}' -> owl:sameAs={external_uri}")
+                               f"entity -> {property_uri} -> '{cleaned_value}' and "
+                               f"{external_uri} -> owl:sameAs -> literal_resource('{cleaned_value}')")
     
     def _resolve_pending_relationships(self, context: ProcessingContext):
         """Resolve all pending FK relationships"""
@@ -820,7 +824,7 @@ class MappingAwareProcessor:
         for context_column in rel_context.context_columns:
             value = row_data.get(context_column)
             if value is not None and str(value).strip():
-                property_uri = self._generate_property_uri(f"context_{context_column}")
+                property_uri = self._generate_property_uri(f"junction_{context_column}")
                 self.resource_manager.create_property_triple(
                     junction_entity,
                     property_uri,

@@ -176,7 +176,7 @@ class TestCompleteSchemaBlueprints:
         
         # Create processor
         processor = CompleteSchemaProcessor(
-            institution="TEST_COMPLETE",
+            organization=mock_execution_config.organization,
             base_uri="http://test-complete.arkumu.org/data",
             statistics=ExecutionStatistics()
         )
@@ -243,7 +243,7 @@ class TestCompleteSchemaBlueprints:
         
         # Create processor
         processor = CompleteSchemaProcessor(
-            institution="TEST_CACHE",
+            organization=mock_execution_config.organization,
             base_uri="http://test-cache.arkumu.org/data",
             statistics=ExecutionStatistics()
         )
@@ -261,7 +261,7 @@ class TestCompleteSchemaBlueprints:
         
         # Second call - should use cache
         processor2 = CompleteSchemaProcessor(
-            institution="TEST_CACHE",
+            organization=mock_execution_config.organization,
             base_uri="http://test-cache.arkumu.org/data", 
             statistics=ExecutionStatistics()
         )
@@ -280,7 +280,7 @@ class TestCompleteSchemaBlueprints:
         
         # Create processor with complete schema
         processor = CompleteSchemaProcessor(
-            institution="TEST_CRUD",
+            organization=mock_execution_config.organization,
             base_uri="http://test-crud.arkumu.org/data",
             statistics=ExecutionStatistics()
         )
@@ -312,7 +312,7 @@ class TestCompleteSchemaBlueprints:
         
         # Create processor with complete schema
         processor = CompleteSchemaProcessor(
-            institution="TEST_CREATE",
+            organization=mock_execution_config.organization,
             base_uri="http://test-create.arkumu.org/data",
             statistics=ExecutionStatistics()
         )
@@ -356,7 +356,7 @@ class TestCompleteSchemaBlueprints:
         """Test that column metadata captures all column information"""
         
         processor = CompleteSchemaProcessor(
-            institution="TEST_META",
+            organization=mock_execution_config.organization,
             base_uri="http://test-meta.arkumu.org/data",
             statistics=ExecutionStatistics()
         )
@@ -400,7 +400,7 @@ class TestCompleteSchemaBlueprints:
         """Test that complete schema statistics are logged correctly"""
         
         processor = CompleteSchemaProcessor(
-            institution="TEST_STATS",
+            organization=mock_execution_config.organization,
             base_uri="http://test-stats.arkumu.org/data",
             statistics=ExecutionStatistics()
         )
