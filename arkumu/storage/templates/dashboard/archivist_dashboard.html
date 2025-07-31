@@ -178,4 +178,120 @@
 
 <!-- Pure HTMX solution handles organization selector synchronization via out-of-band swaps -->
 <!-- File browser loading will be handled by HTMX triggers on organization change -->
+
+{% block inline_javascript %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form[hx-post="/storage/upload/streaming/"]');
+    
+    if (form) {
+        console.log('📁 DASHBOARD DEBUG: Form found');
+        
+        // Debug: Log when HTMX afterSwap happens (after OOB swaps)
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            console.log('📁 DASHBOARD DEBUG: HTMX afterSwap event');
+            const fileInput = form.querySelector('input[type="file"][name="files"]');
+            if (fileInput) {
+                console.log('📁 DASHBOARD DEBUG: File input after swap - hasWebkitDirectory:', fileInput.hasAttribute('webkitdirectory'));
+                console.log('📁 DASHBOARD DEBUG: File input attributes:', Array.from(fileInput.attributes).map(attr => attr.name + '=' + attr.value));
+            }
+        });
+        
+        // Debug: Add click listeners to mode buttons
+        document.addEventListener('click', function(evt) {
+            if (evt.target.id === 'folder-mode-btn') {
+                console.log('📁 DASHBOARD DEBUG: Folder mode button clicked');
+            } else if (evt.target.id === 'files-mode-btn') {
+                console.log('📁 DASHBOARD DEBUG: Files mode button clicked');
+            }
+        });
+        
+        // Intercept HTMX before request to add folder structure data
+        form.addEventListener('htmx:configRequest', function(evt) {
+            // Get the current file input (might have been replaced by HTMX OOB swap)
+            const fileInput = form.querySelector('input[type="file"][name="files"]');
+            
+            if (!fileInput) {
+                console.log('📁 DASHBOARD DEBUG: No file input found');
+                return;
+            }
+            
+            console.log('📁 DASHBOARD DEBUG: HTMX request intercepted');
+            console.log('📁 DASHBOARD DEBUG: Files selected:', fileInput.files.length);
+            console.log('📁 DASHBOARD DEBUG: File input attributes:', Array.from(fileInput.attributes).map(attr => attr.name + '=' + attr.value));
+            
+            // Check if folder mode is active
+            const isFolderMode = fileInput.hasAttribute('webkitdirectory');
+            console.log('📁 DASHBOARD DEBUG: isFolderMode =', isFolderMode);
+            
+            if (isFolderMode && fileInput.files.length > 0) {
+                console.log('📁 DASHBOARD DEBUG: Processing folder upload');
+                
+                // Extract folder name from first file
+                const firstFile = fileInput.files[0];
+                const folderName = firstFile.webkitRelativePath ? firstFile.webkitRelativePath.split('/')[0] : 'uploaded_folder';
+                console.log('📁 DASHBOARD DEBUG: Detected folder name:', folderName);
+                
+                // Collect all file paths
+                const filePaths = [];
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    const file = fileInput.files[i];
+                    const relativePath = file.webkitRelativePath || file.name;
+                    // Remove folder name prefix to avoid duplication
+                    if (folderName && relativePath.startsWith(folderName + '/')) {
+                        filePaths.push(relativePath.substring(folderName.length + 1));
+                    } else {
+                        filePaths.push(relativePath);
+                    }
+                }
+                
+                console.log('📁 DASHBOARD DEBUG: Sample file paths:', filePaths.slice(0, 5));
+                
+                // Get base folder
+                const baseFolderSelect = document.querySelector('select[name="base_folder"]');
+                const baseFolder = baseFolderSelect ? baseFolderSelect.value : '';
+                console.log('📁 DASHBOARD DEBUG: Base folder:', baseFolder);
+                
+                // Create full folder path
+                const fullFolderPath = baseFolder ? (baseFolder + '/' + folderName) : folderName;
+                console.log('📁 DASHBOARD DEBUG: Full folder path:', fullFolderPath);
+                
+                // Add folder structure data to the request
+                const formData = new FormData();
+                
+                // Copy existing form data
+                const originalFormData = new FormData(form);
+                for (let [key, value] of originalFormData.entries()) {
+                    if (key !== 'files') { // We'll handle files separately
+                        formData.append(key, value);
+                    }
+                }
+                
+                // Add files
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    formData.append('files', fileInput.files[i]);
+                }
+                
+                // Add folder structure data
+                formData.append('preserve_folder_structure', 'true');
+                formData.append('file_paths', JSON.stringify(filePaths));
+                formData.set('folder_name', fullFolderPath); // Override folder_name
+                
+                console.log('📁 DASHBOARD DEBUG: Added preserve_folder_structure = true');
+                console.log('📁 DASHBOARD DEBUG: Added file_paths =', JSON.stringify(filePaths));
+                console.log('📁 DASHBOARD DEBUG: Set folder_name =', fullFolderPath);
+                
+                // Replace the request parameters
+                evt.detail.parameters = formData;
+            } else {
+                console.log('📁 DASHBOARD DEBUG: Not a folder upload, proceeding normally');
+            }
+        });
+    } else {
+        console.log('📁 DASHBOARD DEBUG: Form not found');
+    }
+});
+</script>
+{% endblock %}
 {% endblock %}
