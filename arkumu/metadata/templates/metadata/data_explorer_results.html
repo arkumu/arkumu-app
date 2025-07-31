@@ -74,7 +74,7 @@
                 <!-- Ontology Link Status Column -->
                 <th class="text-center w-20 text-xs">Ontologies</th>
                 <!-- Non-sortable Actions Column -->
-                <th class="text-center w-20 text-xs">Actions</th>
+<th class="text-center w-32 text-xs">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -153,8 +153,8 @@
                             </button>
                         {% endif %}
                         <div class="text-xs text-base-content/70">
-                            {% if resource.linked_ontology %}
-                                {{ resource.linked_ontology }}
+                            {% if resource.ontology_count > 0 %}
+                                {{ resource.ontology_count }} ontolog{{ resource.ontology_count|pluralize:"y,ies" }}
                             {% else %}
                                 <span class="text-base-content/40">None</span>
                             {% endif %}
@@ -164,7 +164,7 @@
                 
                 <!-- Action Buttons -->
                 <td>
-                    <div class="flex gap-1">
+                    <div class="flex gap-1 flex-wrap">
                         <button class="btn btn-ghost btn-xs"
                                 hx-get="{% url 'metadata:resource_detail_modal' resource.pk %}"
                                 hx-target="#modal-content"

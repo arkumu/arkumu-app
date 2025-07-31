@@ -18,48 +18,22 @@ class DataExplorerView(ListView):
     
     def get_queryset(self):
         """Get resources with appropriate access control and debug mode support."""
-        # Get sameAs predicate for Arkumu linking check
-        same_as_subquery = Triple.objects.filter(
-            subject=OuterRef('pk'),
-            predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
-            object__uri__startswith='http://data.arkumu.org/arkumu/types/',
-            is_derived=True
-        )
-        
-        # Get linked ontology name from owl:sameAs relationships only
-        linked_ontology_subquery = Triple.objects.filter(
-            subject=OuterRef('pk'),
-            predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
-            is_derived=True
-        ).annotate(
-            ontology_name=Case(
-                # owl:sameAs relationships
-                When(object__uri__startswith='http://data.arkumu.org/arkumu/types/', then=Value('Arkumu')),
-                When(object__uri__startswith='http://www.cidoc-crm.org/cidoc-crm/', then=Value('CIDOC-CRM')),
-                When(object__uri__startswith='http://purl.org/dc/', then=Value('Dublin Core')),
-                When(object__uri__startswith='http://schema.org/', then=Value('Schema.org')),
-                # External ontology relationships (by object URI pattern)
-                When(object__uri__startswith='https://orcid.org/', then=Value('ORCID')),
-                When(object__uri__startswith='https://www.wikidata.org/', then=Value('Wikidata')),
-                When(object__uri__startswith='https://viaf.org/', then=Value('VIAF')),
-                When(object__uri__startswith='https://d-nb.info/gnd/', then=Value('GND')),
-                When(object__uri__startswith='http://id.loc.gov/', then=Value('Library of Congress')),
-                When(object__uri__startswith='https://isni.org/', then=Value('ISNI')),
-                When(object__uri__startswith='http://vocab.getty.edu/aat/', then=Value('AAT')),
-                When(object__uri__startswith='http://terminology.lido-schema.org/', then=Value('LIDO')),
-                When(object__uri__startswith='https://filmportal.vocnet.org/', then=Value('Filmportal')),
-                default=Value('Other'),
-                output_field=CharField()
-            )
-        ).values('ontology_name')[:1]
-        
         # Start with all resources, excluding placeholders by default
+        # Use efficient LEFT JOIN approach - GENERIC ontology detection
         queryset = Resource.objects.exclude(is_placeholder=True).select_related('organization').annotate(
             subject_count=Count('subject_triples', distinct=True),
             predicate_count=Count('predicate_triples', distinct=True),
             object_count=Count('object_triples', distinct=True),
-            is_arkumu_linked=Exists(same_as_subquery),
-            linked_ontology=Subquery(linked_ontology_subquery)
+            
+            # Generic ontology link count - any owl:sameAs derived triple
+            ontology_count=Count(
+                'subject_triples__id',
+                filter=Q(
+                    subject_triples__predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+                    subject_triples__is_derived=True
+                ),
+                distinct=True
+            )
         )
         
         # Debug mode - show all resources in development
@@ -138,47 +112,21 @@ class DataExplorerView(ListView):
             queryset = queryset.filter(resource_type=ResourceType.LITERAL)
         elif type_group == 'placeholders':
             # Override the default exclusion of placeholders and show only placeholders
-            # Get sameAs predicate for Arkumu linking check
-            same_as_subquery = Triple.objects.filter(
-                subject=OuterRef('pk'),
-                predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
-                object__uri__startswith='http://data.arkumu.org/arkumu/types/',
-                is_derived=True
-            )
-            
-            # Get linked ontology name subquery for placeholders (use same logic as main query)
-            linked_ontology_subquery_ph = Triple.objects.filter(
-                subject=OuterRef('pk'),
-                predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
-                is_derived=True
-            ).annotate(
-                ontology_name=Case(
-                    # owl:sameAs relationships
-                    When(object__uri__startswith='http://data.arkumu.org/arkumu/types/', then=Value('Arkumu')),
-                    When(object__uri__startswith='http://www.cidoc-crm.org/cidoc-crm/', then=Value('CIDOC-CRM')),
-                    When(object__uri__startswith='http://purl.org/dc/', then=Value('Dublin Core')),
-                    When(object__uri__startswith='http://schema.org/', then=Value('Schema.org')),
-                    # External ontology relationships (by object URI pattern)
-                    When(object__uri__startswith='https://orcid.org/', then=Value('ORCID')),
-                    When(object__uri__startswith='https://www.wikidata.org/', then=Value('Wikidata')),
-                    When(object__uri__startswith='https://viaf.org/', then=Value('VIAF')),
-                    When(object__uri__startswith='https://d-nb.info/gnd/', then=Value('GND')),
-                    When(object__uri__startswith='http://id.loc.gov/', then=Value('Library of Congress')),
-                    When(object__uri__startswith='https://isni.org/', then=Value('ISNI')),
-                    When(object__uri__startswith='http://vocab.getty.edu/aat/', then=Value('AAT')),
-                    When(object__uri__startswith='http://terminology.lido-schema.org/', then=Value('LIDO')),
-                    When(object__uri__startswith='https://filmportal.vocnet.org/', then=Value('Filmportal')),
-                    default=Value('Other'),
-                    output_field=CharField()
-                )
-            ).values('ontology_name')[:1]
-            
+            # Use same generic approach as main query
             queryset = Resource.objects.filter(is_placeholder=True).select_related('organization').annotate(
                 subject_count=Count('subject_triples', distinct=True),
                 predicate_count=Count('predicate_triples', distinct=True),
                 object_count=Count('object_triples', distinct=True),
-                is_arkumu_linked=Exists(same_as_subquery),
-                linked_ontology=Subquery(linked_ontology_subquery_ph)
+                
+                # Generic ontology link count
+                ontology_count=Count(
+                    'subject_triples__id',
+                    filter=Q(
+                        subject_triples__predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+                        subject_triples__is_derived=True
+                    ),
+                    distinct=True
+                )
             )
         
         # Organization filter
@@ -209,12 +157,12 @@ class DataExplorerView(ListView):
                 ))
             )
         
-        # External linking
+        # Ontology linking (generic approach)
         externally_linked = self.request.GET.get('externally_linked')
         if externally_linked == 'true':
-            queryset = queryset.filter(is_externally_linked=True)
+            queryset = queryset.filter(ontology_count__gt=0)
         elif externally_linked == 'false':
-            queryset = queryset.filter(is_externally_linked=False)
+            queryset = queryset.filter(ontology_count=0)
         
         
         return queryset
@@ -414,18 +362,43 @@ class ResourceDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         resource = self.object
         
-        # Get triple relationships
-        context['subject_triples'] = Triple.objects.filter(
-            subject=resource
-        ).select_related('predicate', 'object')[:10]
+        # Get triple relationships with pagination (20 per page)
+        from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
         
-        context['predicate_triples'] = Triple.objects.filter(
-            predicate=resource
-        ).select_related('subject', 'object')[:10]
+        page_size = 20
         
-        context['object_triples'] = Triple.objects.filter(
-            object=resource
-        ).select_related('subject', 'predicate')[:10]
+        # Subject triples pagination
+        subject_page = self.request.GET.get('subject_page', 1)
+        subject_queryset = Triple.objects.filter(subject=resource).select_related('predicate', 'object')
+        subject_paginator = Paginator(subject_queryset, page_size)
+        try:
+            context['subject_triples'] = subject_paginator.page(subject_page)
+        except PageNotAnInteger:
+            context['subject_triples'] = subject_paginator.page(1)
+        except EmptyPage:
+            context['subject_triples'] = subject_paginator.page(subject_paginator.num_pages)
+        
+        # Predicate triples pagination
+        predicate_page = self.request.GET.get('predicate_page', 1)
+        predicate_queryset = Triple.objects.filter(predicate=resource).select_related('subject', 'object')
+        predicate_paginator = Paginator(predicate_queryset, page_size)
+        try:
+            context['predicate_triples'] = predicate_paginator.page(predicate_page)
+        except PageNotAnInteger:
+            context['predicate_triples'] = predicate_paginator.page(1)
+        except EmptyPage:
+            context['predicate_triples'] = predicate_paginator.page(predicate_paginator.num_pages)
+        
+        # Object triples pagination
+        object_page = self.request.GET.get('object_page', 1)
+        object_queryset = Triple.objects.filter(object=resource).select_related('subject', 'predicate')
+        object_paginator = Paginator(object_queryset, page_size)
+        try:
+            context['object_triples'] = object_paginator.page(object_page)
+        except PageNotAnInteger:
+            context['object_triples'] = object_paginator.page(1)
+        except EmptyPage:
+            context['object_triples'] = object_paginator.page(object_paginator.num_pages)
         
         # Get counts
         context['subject_count'] = resource.subject_triples.count()
@@ -446,7 +419,6 @@ class ResourceDetailView(DetailView):
         
         return context
 
-@method_decorator(cache_page(60 * 5), name='dispatch')  # 5 minute cache
 class DataExplorerResultsView(DataExplorerView):
     """HTMX endpoint for filtered results"""
     template_name = 'metadata/data_explorer_results.html'
