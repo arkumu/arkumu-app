@@ -102,6 +102,9 @@ def streaming_upload_form(request):
     # Check if we should preserve folder structure
     preserve_folder_structure = request.POST.get('preserve_folder_structure', '').lower() == 'true'
     
+    logger.info(f"📁 FOLDER UPLOAD DEBUG: preserve_folder_structure = {preserve_folder_structure}")
+    logger.info(f"📁 FOLDER UPLOAD DEBUG: POST data keys = {list(request.POST.keys())}")
+    
     # Get organization (if provided)
     organization = request.POST.get('organization', '').strip()
     
@@ -162,7 +165,9 @@ def streaming_upload_form(request):
             if file_paths_json:
                 try:
                     file_paths = json.loads(file_paths_json)
-                    logger.debug(f"Parsed {len(file_paths)} file paths for structured upload")
+                    logger.info(f"📁 FOLDER UPLOAD DEBUG: Parsed {len(file_paths)} file paths for structured upload")
+                    logger.info(f"📁 FOLDER UPLOAD DEBUG: folder_name = '{folder_name}'")
+                    logger.info(f"📁 FOLDER UPLOAD DEBUG: sample file_paths = {file_paths[:5]}")
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse file_paths JSON: {e}")
             

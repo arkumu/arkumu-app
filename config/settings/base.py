@@ -105,6 +105,7 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
     "modeltranslation",
     "huey.contrib.djhuey",
+    "guardian",
 ]
 
 LOCAL_APPS = [

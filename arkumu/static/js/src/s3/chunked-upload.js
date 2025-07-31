@@ -172,8 +172,12 @@ class ChunkedUploadHandler {
         
         // Handle folder structure preservation
         if (this.preserveFolderStructure) {
-            // For folder mode, send individual file paths
-            formData.append('folder_name', baseFolder || '');
+            // For folder mode, combine baseFolder and folderName to create the full path
+            let fullFolderPath = folderName || '';
+            if (baseFolder) {
+                fullFolderPath = baseFolder + (folderName ? '/' + folderName : '');
+            }
+            formData.append('folder_name', fullFolderPath);
             formData.append('preserve_folder_structure', 'true');
             
             // Send file paths as a JSON array
@@ -189,6 +193,8 @@ class ChunkedUploadHandler {
             formData.append('file_paths', JSON.stringify(filePaths));
             
             console.log(`📁 Preserving structure for ${chunk.files.length} files:`, filePaths.slice(0, 3));
+            console.log(`📁 Folder name being sent: "${fullFolderPath}"`);
+            console.log(`📁 Sample file paths:`, filePaths.slice(0, 5));
         } else {
             // Create the final folder path for non-folder mode
             let finalFolderName = folderName;

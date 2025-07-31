@@ -148,6 +148,10 @@ class UploadFormHandler {
             // Check if we're in folder mode by examining file input attributes
             const isFolderMode = this.fileInput && this.fileInput.hasAttribute('webkitdirectory');
             
+            console.log(`📁 FORM HANDLER DEBUG: File input element:`, this.fileInput);
+            console.log(`📁 FORM HANDLER DEBUG: Has webkitdirectory attribute:`, this.fileInput?.hasAttribute('webkitdirectory'));
+            console.log(`📁 FORM HANDLER DEBUG: isFolderMode = ${isFolderMode}`);
+            
             // For folder mode, we need to preserve individual file paths
             let folderName = '';
             if (isFolderMode && this.selectedFiles.length > 0) {
@@ -156,6 +160,10 @@ class UploadFormHandler {
                 if (firstFile.webkitRelativePath) {
                     const pathParts = firstFile.webkitRelativePath.split('/');
                     folderName = pathParts[0]; // Just for logging/display
+                    console.log(`📁 FORM HANDLER DEBUG: Detected folder upload`);
+                    console.log(`📁 FORM HANDLER DEBUG: folderName = "${folderName}"`);
+                    console.log(`📁 FORM HANDLER DEBUG: isFolderMode = ${isFolderMode}`);
+                    console.log(`📁 FORM HANDLER DEBUG: sample file paths:`, this.selectedFiles.slice(0, 3).map(f => f.webkitRelativePath || f.name));
                 }
             }
 
@@ -180,6 +188,12 @@ class UploadFormHandler {
     }
 
     async performChunkedUpload(folderName, organization, baseFolder, isFolderMode) {
+        console.log(`📁 CHUNKED UPLOAD DEBUG: Starting chunked upload`);
+        console.log(`📁 CHUNKED UPLOAD DEBUG: folderName = "${folderName}"`);
+        console.log(`📁 CHUNKED UPLOAD DEBUG: organization = "${organization}"`);
+        console.log(`📁 CHUNKED UPLOAD DEBUG: baseFolder = "${baseFolder}"`);
+        console.log(`📁 CHUNKED UPLOAD DEBUG: isFolderMode = ${isFolderMode}`);
+        
         this.currentUploader = new ChunkedUploadHandler({
             chunkSize: 75,
             maxConcurrent: 3,
