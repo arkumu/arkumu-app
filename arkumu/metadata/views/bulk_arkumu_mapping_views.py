@@ -6,10 +6,12 @@ Views for creating bulk mappings from organization-specific ontologies to the Ar
 
 from django.shortcuts import render, redirect
 from django.contrib import messages
-from django.views.generic import FormView, TemplateView
+from django.views.generic import FormView, TemplateView, View
 from django.urls import reverse_lazy
 from django import forms
 from django.http import HttpResponse
+from django.views.decorators.http import require_http_methods
+from django.utils.decorators import method_decorator
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.users.models import Organization
@@ -73,14 +75,32 @@ class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
             created_by=self.request.user
         ).order_by('-created_at')[:10]
         
-        # Get organization statistics
+        # Get organization statistics with mapping counts
         organizations = Organization.objects.filter(is_active=True)
         context['organization_stats'] = {}
         
         for org in organizations:
-            context['organization_stats'][org.code] = {
-                'name': org.name,
-            }
+            # Get preview data for this single organization to show counts
+            try:
+                preview_data = self.service.preview_bulk_mapping([org.code])
+                org_data = preview_data.get(org.code, {})
+                
+                context['organization_stats'][org.code] = {
+                    'name': org.name,
+                    'total_count': org_data.get('total_count', 0),
+                    'class_count': org_data.get('class_count', 0),
+                    'property_count': org_data.get('property_count', 0),
+                    'has_mappable_resources': org_data.get('total_count', 0) > 0
+                }
+            except Exception:
+                # Fallback if there's an error getting preview data
+                context['organization_stats'][org.code] = {
+                    'name': org.name,
+                    'total_count': 0,
+                    'class_count': 0,
+                    'property_count': 0,
+                    'has_mappable_resources': False
+                }
         
         return context
     
@@ -125,9 +145,21 @@ class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
             # Generate preview
             preview = self.service.preview_bulk_mapping(valid_codes)
             
+            # Cache the preview data for fast sorting
+            for org_code, org_data in preview.items():
+                session_key = f'bulk_mapping_preview_{org_code}'
+                self.request.session[session_key] = org_data.get('mappings', [])
+            
+            # Get sort states for each organization
+            sort_states = {}
+            for org_code in preview.keys():
+                sort_session_key = f'bulk_mapping_sort_{org_code}'
+                sort_states[org_code] = self.request.session.get(sort_session_key, {'sort': None, 'order': 'asc'})
+            
             context = {
                 'preview': preview,
-                'total_new_mappings': sum(len(mappings) for mappings in preview.values())
+                'total_new_mappings': sum(data['total_count'] for data in preview.values()),
+                'sort_states': sort_states
             }
             
             return render(self.request, 'metadata/bulk_arkumu_mapping/preview_fragment.html', context)
@@ -312,3 +344,164 @@ class BulkArkumuMappingExecutionDetailView(GeneralLoginRequiredMixin, TemplateVi
             context['execution'] = None
         
         return context
+
+
+@method_decorator(require_http_methods(["GET"]), name='dispatch')
+class BulkArkumuMappingSortView(GeneralLoginRequiredMixin, View):
+    """HTMX view for sorting mappings in the preview table."""
+    
+    def get(self, request, *args, **kwargs):
+        """Handle HTMX sorting request with URL parameters."""
+        org_code = request.GET.get('org_code')
+        sort_by = request.GET.get('sort')
+        order = request.GET.get('order', 'asc')
+        
+        if not org_code or not sort_by:
+            return HttpResponse('<tr><td colspan="4">Invalid sort request</td></tr>')
+        
+        try:
+            # Get cached preview data from session
+            session_key = f'bulk_mapping_preview_{org_code}'
+            cached_mappings = request.session.get(session_key)
+            
+            if not cached_mappings:
+                # Fallback: regenerate if not cached
+                service = BulkArkumuMappingService()
+                preview = service.preview_bulk_mapping([org_code])
+                org_data = preview.get(org_code, {})
+                cached_mappings = org_data.get('mappings', [])
+                # Cache for future sorts
+                request.session[session_key] = cached_mappings
+            
+            # Sort the cached mappings
+            reverse_sort = (order == 'desc')
+            
+            if sort_by == 'type':
+                sorted_mappings = sorted(cached_mappings, key=lambda x: (x.get('resource_type', ''), x.get('label', '')), reverse=reverse_sort)
+            elif sort_by == 'source':
+                sorted_mappings = sorted(cached_mappings, key=lambda x: x.get('source_iri', ''), reverse=reverse_sort)
+            elif sort_by == 'target':
+                sorted_mappings = sorted(cached_mappings, key=lambda x: x.get('target_iri', ''), reverse=reverse_sort)
+            elif sort_by == 'label':
+                sorted_mappings = sorted(cached_mappings, key=lambda x: x.get('label', ''), reverse=reverse_sort)
+            else:
+                sorted_mappings = cached_mappings
+            
+            # Store current sort state in session for template
+            sort_session_key = f'bulk_mapping_sort_{org_code}'
+            request.session[sort_session_key] = {'sort': sort_by, 'order': order}
+            
+            context = {
+                'mappings': sorted_mappings,
+                'current_sort': {'sort': sort_by, 'order': order},
+                'org_code': org_code
+            }
+            return render(
+                request, 
+                'metadata/bulk_arkumu_mapping/sorted_mappings_fragment.html', 
+                context
+            )
+            
+        except Exception as e:
+            return HttpResponse(f'<tr><td colspan="4">Error sorting: {str(e)}</td></tr>')
+
+
+@method_decorator(require_http_methods(["POST"]), name='dispatch')
+class BulkArkumuMappingRemoveView(GeneralLoginRequiredMixin, View):
+    """HTMX view for removing mappings for a specific organization."""
+    
+    def post(self, request, *args, **kwargs):
+        """Handle HTMX remove request for organization mappings."""
+        org_code = request.GET.get('org_code')
+        
+        if not org_code:
+            return HttpResponse('<div class="alert alert-danger">Invalid remove request</div>')
+        
+        try:
+            service = BulkArkumuMappingService()
+            
+            # Remove the organization from cached preview data
+            session_key = f'bulk_mapping_preview_{org_code}'
+            if session_key in request.session:
+                del request.session[session_key]
+            
+            # Remove sort state for this organization
+            sort_session_key = f'bulk_mapping_sort_{org_code}'
+            if sort_session_key in request.session:
+                del request.session[sort_session_key]
+            
+            # Get all cached preview organization codes and remove the specified one
+            session_keys = [key for key in request.session.keys() if key.startswith('bulk_mapping_preview_')]
+            remaining_codes = []
+            
+            for key in session_keys:
+                cached_org_code = key.replace('bulk_mapping_preview_', '')
+                if cached_org_code != org_code:
+                    remaining_codes.append(cached_org_code)
+            
+            if not remaining_codes:
+                return HttpResponse('<div class="alert alert-info">No organizations selected.</div>')
+            
+            # Regenerate preview without the removed organization
+            preview = service.preview_bulk_mapping(remaining_codes)
+            
+            # Cache the preview data for remaining organizations
+            for remaining_org_code, org_data in preview.items():
+                session_key = f'bulk_mapping_preview_{remaining_org_code}'
+                request.session[session_key] = org_data.get('mappings', [])
+            
+            # Get sort states for remaining organizations
+            sort_states = {}
+            for remaining_org_code in preview.keys():
+                sort_session_key = f'bulk_mapping_sort_{remaining_org_code}'
+                sort_states[remaining_org_code] = request.session.get(sort_session_key, {'sort': None, 'order': 'asc'})
+            
+            context = {
+                'preview': preview,
+                'total_new_mappings': sum(data['total_count'] for data in preview.values()),
+                'sort_states': sort_states
+            }
+            
+            return render(
+                request, 
+                'metadata/bulk_arkumu_mapping/preview_fragment.html', 
+                context
+            )
+            
+        except Exception as e:
+            return HttpResponse(f'<div class="alert alert-danger">Error removing mappings: {str(e)}</div>')
+
+
+@method_decorator(require_http_methods(["DELETE"]), name='dispatch')
+class BulkArkumuMappingDeleteView(GeneralLoginRequiredMixin, View):
+    """HTMX view for deleting existing harmonization mappings."""
+    
+    def delete(self, request, *args, **kwargs):
+        """Handle HTMX delete request for harmonization execution."""
+        execution_id = kwargs.get('pk')
+        
+        if not execution_id:
+            return HttpResponse('<tr><td colspan="6" class="text-danger">Invalid delete request</td></tr>')
+        
+        try:
+            # Get the harmonization execution
+            execution = HarmonizationExecution.objects.get(pk=execution_id)
+            
+            # Check if user has permission to delete (created by them)
+            if execution.created_by != request.user:
+                return HttpResponse('<tr><td colspan="6" class="text-danger">You can only delete your own mappings</td></tr>')
+            
+            # Delete all harmonization rules created by this execution
+            deleted_rules_count = execution.rules_applied.count()
+            execution.rules_applied.all().delete()
+            
+            # Delete the execution record itself
+            execution.delete()
+            
+            # Return empty content to remove the table row
+            return HttpResponse('')
+            
+        except HarmonizationExecution.DoesNotExist:
+            return HttpResponse('<tr><td colspan="6" class="text-danger">Execution not found</td></tr>')
+        except Exception as e:
+            return HttpResponse(f'<tr><td colspan="6" class="text-danger">Error deleting mappings: {str(e)}</td></tr>')

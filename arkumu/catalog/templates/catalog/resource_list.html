@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+{% if current_type %}{{ current_type }}s{% else %}Resources{% endif %} - Catalog
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-6 py-12">
+    <!-- Header -->
+    <div class="bg-base-200 rounded-box mb-6 p-6">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold">
+                    {% if current_type %}
+                        {{ current_type }}s
+                    {% else %}
+                        All Resources
+                    {% endif %}
+                </h1>
+                <p class="text-base-content/70 mt-2">
+                    {% if current_type %}
+                        Explore {{ current_type|lower }}s across all organizations
+                    {% else %}
+                        Browse all harmonized resources
+                    {% endif %}
+                </p>
+            </div>
+            
+            <!-- Breadcrumb -->
+            <div class="breadcrumbs text-sm">
+                <ul>
+                    <li><a href="{% url 'catalog:overview' %}">Catalog</a></li>
+                    <li>
+                        {% if current_type %}{{ current_type }}s{% else %}Resources{% endif %}
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-col lg:flex-row gap-6">
+        <!-- Sidebar -->
+        <div class="lg:w-80 flex-shrink-0">
+            <div class="card bg-base-100 shadow-xl sticky top-6">
+                <div class="card-body p-4">
+                    <!-- Search -->
+                    <div class="mb-4">
+                        <form method="get" class="form-control">
+                            <input type="text" 
+                                   name="q" 
+                                   value="{{ search_query }}" 
+                                   placeholder="Search resources..." 
+                                   class="input input-bordered input-sm w-full" />
+                            <!-- Preserve current filters -->
+                            {% if current_type %}
+                                <input type="hidden" name="type" value="{{ current_type }}" />
+                            {% endif %}
+                            {% if current_org %}
+                                <input type="hidden" name="org" value="{{ current_org }}" />
+                            {% endif %}
+                        </form>
+                    </div>
+
+                    <!-- Resource Type Filter -->
+                    <div class="mb-4">
+                        <h3 class="font-semibold mb-2">Resource Types</h3>
+                        <div class="space-y-1">
+                            <a href="{% url 'catalog:resource_list' %}" 
+                               class="btn btn-ghost btn-sm w-full justify-start {% if not current_type %}btn-active{% endif %}">
+                                <i class="fas fa-list w-4"></i>
+                                All Resources
+                            </a>
+                            {% for resource_type in resource_types %}
+                            <a href="{% url 'catalog:resource_list' %}?type={{ resource_type.key }}" 
+                               class="btn btn-ghost btn-sm w-full justify-between {% if current_type == resource_type.key %}btn-active{% endif %}">
+                                <span class="flex items-center gap-2">
+                                    {% if resource_type.key == 'Project' %}
+                                        <i class="fas fa-project-diagram w-4"></i>
+                                    {% elif resource_type.key == 'Event' %}
+                                        <i class="fas fa-calendar-alt w-4"></i>
+                                    {% elif resource_type.key == 'Person' %}
+                                        <i class="fas fa-user w-4"></i>
+                                    {% elif resource_type.key == 'Organization' %}
+                                        <i class="fas fa-building w-4"></i>
+                                    {% elif resource_type.key == 'Document' %}
+                                        <i class="fas fa-file-alt w-4"></i>
+                                    {% endif %}
+                                    {{ resource_type.label }}
+                                </span>
+                                <span class="badge badge-sm">{{ resource_type.count }}</span>
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Statistics -->
+                    <div class="stats stats-vertical shadow-sm">
+                        <div class="stat py-2">
+                            <div class="stat-title text-xs">Showing</div>
+                            <div class="stat-value text-lg">{{ page_obj.paginator.count|default:0 }}</div>
+                            <div class="stat-desc text-xs">
+                                {% if current_type %}{{ current_type|lower }}s{% else %}resources{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 min-w-0">
+            {% if resources %}
+                <!-- Resource Grid -->
+                <div class="grid gap-4">
+                    {% for resource in resources %}
+                    <div class="card bg-base-100 shadow hover:shadow-lg transition-all duration-200">
+                        <div class="card-body">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1 min-w-0">
+                                    <!-- Resource Title/URI -->
+                                    <h3 class="text-lg font-semibold mb-2">
+                                        <a href="{% url 'catalog:resource_detail' resource.uri %}" 
+                                           class="link link-hover break-all">
+                                            {{ resource.uri }}
+                                        </a>
+                                    </h3>
+
+                                    <!-- Labels -->
+                                    {% if resource.label_triples %}
+                                        <div class="mb-2">
+                                            {% for triple in resource.label_triples|slice:":3" %}
+                                                <p class="text-base-content/80">{{ triple.object.value }}</p>
+                                            {% endfor %}
+                                            {% if resource.label_triples|length > 3 %}
+                                                <p class="text-xs text-base-content/60">
+                                                    +{{ resource.label_triples|length|add:"-3" }} more labels
+                                                </p>
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+
+                                    <!-- Related Resources Preview -->
+                                    {% if resource.event_triples %}
+                                        <div class="mb-2">
+                                            <span class="text-sm font-medium text-base-content/60">Events:</span>
+                                            <span class="text-sm">{{ resource.event_triples|length }} related</span>
+                                        </div>
+                                    {% endif %}
+                                    
+                                    {% if resource.participant_triples %}
+                                        <div class="mb-2">
+                                            <span class="text-sm font-medium text-base-content/60">Participants:</span>
+                                            <span class="text-sm">{{ resource.participant_triples|length }} related</span>
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Resource Type & Organization -->
+                                <div class="flex flex-col items-end gap-2 ml-4">
+                                    <!-- Resource Type Badge -->
+                                    <div class="badge badge-primary">
+                                        {% if 'Project' in resource.uri or current_type == 'Project' %}
+                                            Project
+                                        {% elif 'Event' in resource.uri or current_type == 'Event' %}
+                                            Event
+                                        {% elif 'Person' in resource.uri or current_type == 'Person' %}
+                                            Person
+                                        {% elif 'Organization' in resource.uri or current_type == 'Organization' %}
+                                            Organization
+                                        {% elif 'Document' in resource.uri or current_type == 'Document' %}
+                                            Document
+                                        {% else %}
+                                            Resource
+                                        {% endif %}
+                                    </div>
+
+                                    <!-- Organization Badge -->
+                                    {% if resource.organization %}
+                                        <div class="badge badge-outline">{{ resource.organization.code }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="card-actions justify-end mt-4">
+                                <a href="{% url 'catalog:resource_detail' resource.uri %}" 
+                                   class="btn btn-outline btn-sm">
+                                    <i class="fas fa-eye"></i>
+                                    View Details
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Pagination -->
+                {% if page_obj.has_other_pages %}
+                <div class="flex justify-center mt-8">
+                    <div class="join">
+                        {% if page_obj.has_previous %}
+                            <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_type %}&type={{ current_type }}{% endif %}{% if current_org %}&org={{ current_org }}{% endif %}" 
+                               class="join-item btn btn-outline">
+                                <i class="fas fa-chevron-left"></i>
+                                Previous
+                            </a>
+                        {% endif %}
+                        
+                        <button class="join-item btn btn-primary">
+                            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                        </button>
+                        
+                        {% if page_obj.has_next %}
+                            <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_type %}&type={{ current_type }}{% endif %}{% if current_org %}&org={{ current_org }}{% endif %}" 
+                               class="join-item btn btn-outline">
+                                Next
+                                <i class="fas fa-chevron-right"></i>
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+            {% else %}
+                <!-- Empty State -->
+                <div class="text-center py-16">
+                    <div class="text-base-content/60">
+                        <i class="fas fa-search text-6xl mb-4"></i>
+                        <div class="text-xl mb-2 font-semibold">No resources found</div>
+                        <div class="text-sm">
+                            {% if search_query %}
+                                No results for "{{ search_query }}"
+                            {% elif current_type %}
+                                No {{ current_type|lower }}s available
+                            {% else %}
+                                No resources available
+                            {% endif %}
+                        </div>
+                        <div class="mt-4">
+                            <a href="{% url 'catalog:overview' %}" class="btn btn-outline">
+                                <i class="fas fa-home"></i>
+                                Back to Catalog
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

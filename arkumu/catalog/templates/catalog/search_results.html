@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% load static %}
+{% load catalog_tags %}
+
+{% block title %}Search Results - Catalog{% endblock %}
+
+{% block extra_css %}
+<style>
+    .htmx-indicator {
+        display: none;
+    }
+    .htmx-request .htmx-indicator {
+        display: block;
+    }
+    .htmx-request .htmx-indicator {
+        opacity: 1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-6 py-12">
+    <!-- Header -->
+    <div class="bg-base-200 rounded-box mb-6 p-6">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold">Search Results</h1>
+                {% if search_query %}
+                    <p class="text-base-content/70 mt-2">
+                        Results for "<strong>{{ search_query }}</strong>"
+                    </p>
+                {% endif %}
+            </div>
+            
+            <!-- Breadcrumb -->
+            <div class="breadcrumbs text-sm">
+                <ul>
+                    <li><a href="{% url 'catalog:overview' %}">Catalog</a></li>
+                    <li>Search</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-col lg:flex-row gap-6">
+        <!-- Search Sidebar -->
+        <div class="lg:w-80 flex-shrink-0">
+            <div class="card bg-base-100 shadow-xl sticky top-6">
+                <div class="card-body p-4">
+                    <!-- Live Search Form -->
+                    <form hx-get="{% url 'catalog:live_filter' %}" 
+                          hx-target="#search-results" 
+                          hx-trigger="input from:input, change from:select, change from:input[type=checkbox]"
+                          hx-indicator="#loading-indicator"
+                          class="mb-4">
+                        
+                        <div class="form-control mb-4">
+                            <label class="label">
+                                <span class="label-text font-semibold">Search Query</span>
+                            </label>
+                            <input type="text" 
+                                   name="q" 
+                                   value="{{ search_query }}" 
+                                   placeholder="Enter search terms..." 
+                                   class="input input-bordered w-full" 
+                                   hx-trigger="input changed delay:300ms"
+                                   autofocus />
+                        </div>
+
+                        <!-- Dynamic Search Sidebar -->
+                        <div id="search-sidebar">
+                            {% include "catalog/partials/search_sidebar.html" %}
+                        </div>
+
+                        <!-- Loading Indicator -->
+                        <div id="loading-indicator" class="htmx-indicator">
+                            <div class="flex items-center justify-center py-2">
+                                <span class="loading loading-spinner loading-sm mr-2"></span>
+                                <span class="text-sm">Searching...</span>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- Clear Filters -->
+                    <div class="divider"></div>
+                    <a href="{% url 'catalog:search' %}" class="btn btn-ghost btn-sm w-full">
+                        <i class="fas fa-times"></i>
+                        Clear All Filters
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div class="flex-1 min-w-0">
+            <!-- Results Header -->
+            <div class="flex justify-between items-center mb-6">
+                <div id="result-count">
+                    <h2 class="text-xl font-semibold">
+                        {% if result_count %}
+                            {{ result_count }} result{{ result_count|pluralize }}
+                        {% else %}
+                            No results found
+                        {% endif %}
+                    </h2>
+                    {% if selected_type %}
+                        <p class="text-sm text-base-content/60">
+                            Showing {{ selected_type }}
+                            {% if selected_facets %}
+                                with filters: 
+                                {% for facet_key, values in selected_facets.items %}
+                                    {{ values|join:", " }}{% if not forloop.last %}, {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Search Results Container -->
+            <div id="search-results">
+                {% include "catalog/partials/search_results_list.html" %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

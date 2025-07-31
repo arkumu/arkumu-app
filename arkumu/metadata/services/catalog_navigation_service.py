@@ -15,12 +15,12 @@ class CatalogNavigationService:
     RDFS_LABEL = 'http://www.w3.org/2000/01/rdf-schema#label'
     DC_TITLE = 'http://purl.org/dc/terms/title'
     
-    # Arkumu model URIs (generic, not organization-specific)
-    ARKUMU_PROJECT = 'http://arkumu.org/types/Project'
-    ARKUMU_EVENT = 'http://arkumu.org/types/Event'
-    ARKUMU_PERSON = 'http://arkumu.org/types/Person'
-    ARKUMU_ORGANIZATION = 'http://arkumu.org/types/Organization'
-    ARKUMU_DOCUMENT = 'http://arkumu.org/types/Document'
+    # Arkumu model URIs (actual harmonized German terms)
+    ARKUMU_PROJECT = 'http://arkumu.org/types/projekt'
+    ARKUMU_EVENT = 'http://arkumu.org/types/ereignis'
+    ARKUMU_PERSON = 'http://arkumu.org/types/akteurin'
+    ARKUMU_ORGANIZATION = 'http://arkumu.org/types/einliefernde-hochschule'
+    ARKUMU_DOCUMENT = 'http://arkumu.org/types/digitales-objekt'
     
     # Common relationship predicates
     HAS_EVENT = 'http://arkumu.org/properties/hasEvent'
@@ -42,6 +42,43 @@ class CatalogNavigationService:
         # Collect all original URIs that map to this type
         mapped_uris = [arkumu_type]  # Include the generic type
         mapped_uris.extend([rule.source_property_pattern for rule in rules])
+        
+        # FALLBACK: If user has organization but no harmonization rules exist for their org,
+        # try to find organization-specific types by pattern matching
+        if self.user.organization:
+            org_code = self.user.organization.code.lower()
+            # Check if we already have harmonization rules for this organization
+            has_org_rules = any(f'/data/{org_code}/' in uri for uri in mapped_uris[1:])  # Skip generic type
+            
+            if not has_org_rules:  # No rules for this organization yet
+                type_name = arkumu_type.split('/')[-1]  # e.g., 'projekt' from 'http://arkumu.org/types/projekt'
+                
+                # Look for organization-specific URIs that might match this type
+                from django.db.models import Q
+                
+                # Search for type URIs that contain the organization code and might match the type
+                type_patterns = Q()
+                if type_name == 'projekt':
+                    type_patterns = Q(uri__icontains='projekt') | Q(uri__icontains='project')
+                elif type_name == 'ereignis':
+                    type_patterns = Q(uri__icontains='ereignis') | Q(uri__icontains='event')
+                elif type_name == 'akteurin':
+                    type_patterns = Q(uri__icontains='person') | Q(uri__icontains='akteur')
+                elif type_name == 'einliefernde-hochschule':
+                    type_patterns = Q(uri__icontains='hochschule') | Q(uri__icontains='organisation')
+                elif type_name == 'digitales-objekt':
+                    type_patterns = Q(uri__icontains='objekt') | Q(uri__icontains='digital') | Q(uri__icontains='media')
+                else:
+                    type_patterns = Q(uri__icontains=type_name)
+                
+                matching_resources = Resource.objects.filter(
+                    Q(uri__contains=f'/data/{org_code}/types/') & type_patterns
+                )
+                
+                # Add found URIs
+                for resource in matching_resources:
+                    if resource.uri not in mapped_uris:
+                        mapped_uris.append(resource.uri)
         
         return mapped_uris
     
@@ -337,7 +374,10 @@ class CatalogNavigationService:
                         resource_types: Optional[List[str]] = None,
                         limit: int = 50) -> QuerySet:
         """
-        Search for resources by label/value with optional type filtering.
+        Search for resources by their connected literal values and properties.
+        
+        This searches within the actual content (literal values) connected to resources,
+        not just the resource URIs themselves.
         
         Args:
             query: Search query string
@@ -347,16 +387,19 @@ class CatalogNavigationService:
         Returns:
             QuerySet of matching resources
         """
-        # Build base query with access control
         from django.db.models import Q
         
+        if not query.strip():
+            return Resource.objects.none()
+        
+        # Build base access control filter
         if not self.user.is_authenticated:
-            base_filter = Q(
+            base_access_filter = Q(
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True
             )
         elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
-            base_filter = Q()  # No restrictions
+            base_access_filter = Q()  # No restrictions
         else:
             org_filter = Q()
             if hasattr(self.user, 'organization') and self.user.organization:
@@ -367,18 +410,42 @@ class CatalogNavigationService:
                 is_public_approved=True
             )
             
-            base_filter = org_filter | public_filter
+            base_access_filter = org_filter | public_filter
         
-        # Find resources with matching labels/values
-        matching_resources = Resource.objects.filter(
-            base_filter & (Q(value__icontains=query) | Q(name__icontains=query))
+        # STRATEGY 1: Find resources that have literal values matching the query
+        # This searches in the actual content connected to resources
+        matching_literal_triples = Triple.objects.for_user(self.user).filter(
+            object__resource_type=ResourceType.LITERAL,
+            object__value__icontains=query
+        ).select_related('subject')
+        
+        # Get the subject resources (entities with matching literal content)
+        literal_match_resource_ids = list(
+            matching_literal_triples.values_list('subject_id', flat=True).distinct()
         )
         
+        # STRATEGY 2: Also search in resource URIs/names (fallback)
+        direct_match_resources = Resource.objects.filter(
+            base_access_filter & (Q(value__icontains=query) | Q(name__icontains=query) | Q(uri__icontains=query))
+        )
+        direct_match_resource_ids = list(direct_match_resources.values_list('id', flat=True))
+        
+        # Combine both strategies
+        all_matching_ids = list(set(literal_match_resource_ids + direct_match_resource_ids))
+        
+        if not all_matching_ids:
+            return Resource.objects.none()
+        
+        # Apply access control to the final results
+        matching_resources = Resource.objects.filter(
+            Q(id__in=all_matching_ids) & base_access_filter
+        )
+        
+        # Filter by resource type if specified
         if resource_types:
-            # Filter by type if specified
             rdf_type_resource = Resource.objects.filter(uri=self.RDF_TYPE).first()
             if rdf_type_resource:
-                # Get all URIs for the requested types
+                # Get all URIs for the requested types (including harmonized types)
                 all_type_uris = []
                 for arkumu_type in resource_types:
                     all_type_uris.extend(self._get_harmonized_types(arkumu_type))
@@ -391,4 +458,4 @@ class CatalogNavigationService:
                 
                 matching_resources = matching_resources.filter(id__in=typed_resource_ids)
         
-        return matching_resources.select_related('organization')[:limit]
+        return matching_resources.select_related('organization').distinct()[:limit]

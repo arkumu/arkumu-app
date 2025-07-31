@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Catalog Overview{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-6 py-12">
+    <!-- Header -->
+    <div class="bg-base-200 rounded-box mb-6 p-6">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold">Resource Catalog</h1>
+                <p class="text-base-content/70 mt-2">Explore harmonized resources across all organizations</p>
+            </div>
+            <div class="stats shadow">
+                <div class="stat">
+                    <div class="stat-title">Total Resources</div>
+                    <div class="stat-value text-primary">{{ total_resources|default:0 }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body">
+            <form method="get" action="{% url 'catalog:search' %}" class="flex gap-4 items-end">
+                <div class="form-control flex-1">
+                    <label class="label">
+                        <span class="label-text">Search across all resources</span>
+                    </label>
+                    <input type="text" 
+                           name="q" 
+                           placeholder="Search projects, events, people, documents..." 
+                           class="input input-bordered w-full" />
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search"></i>
+                    Search
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Resource Type Cards -->
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
+        <!-- Projects -->
+        <div class="card bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-xl">
+            <div class="card-body">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="card-title text-lg">Projects</h3>
+                        <p class="text-2xl font-bold">{{ resource_counts.projects|default:0 }}</p>
+                    </div>
+                    <i class="fas fa-project-diagram text-3xl opacity-70"></i>
+                </div>
+                <div class="card-actions justify-end mt-4">
+                    <a href="{% url 'catalog:projects' %}" class="btn btn-sm bg-white/20 hover:bg-white/30 border-none text-white">
+                        View All
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Events -->
+        <div class="card bg-gradient-to-br from-green-500 to-green-600 text-white shadow-xl">
+            <div class="card-body">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="card-title text-lg">Events</h3>
+                        <p class="text-2xl font-bold">{{ resource_counts.events|default:0 }}</p>
+                    </div>
+                    <i class="fas fa-calendar-alt text-3xl opacity-70"></i>
+                </div>
+                <div class="card-actions justify-end mt-4">
+                    <a href="{% url 'catalog:events' %}" class="btn btn-sm bg-white/20 hover:bg-white/30 border-none text-white">
+                        View All
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Persons -->
+        <div class="card bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-xl">
+            <div class="card-body">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="card-title text-lg">Persons</h3>
+                        <p class="text-2xl font-bold">{{ resource_counts.persons|default:0 }}</p>
+                    </div>
+                    <i class="fas fa-users text-3xl opacity-70"></i>
+                </div>
+                <div class="card-actions justify-end mt-4">
+                    <a href="{% url 'catalog:persons' %}" class="btn btn-sm bg-white/20 hover:bg-white/30 border-none text-white">
+                        View All
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Organizations -->
+        <div class="card bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-xl">
+            <div class="card-body">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="card-title text-lg">Organizations</h3>
+                        <p class="text-2xl font-bold">{{ resource_counts.organizations|default:0 }}</p>
+                    </div>
+                    <i class="fas fa-building text-3xl opacity-70"></i>
+                </div>
+                <div class="card-actions justify-end mt-4">
+                    <a href="{% url 'catalog:organizations' %}" class="btn btn-sm bg-white/20 hover:bg-white/30 border-none text-white">
+                        View All
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Documents -->
+        <div class="card bg-gradient-to-br from-red-500 to-red-600 text-white shadow-xl">
+            <div class="card-body">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="card-title text-lg">Documents</h3>
+                        <p class="text-2xl font-bold">{{ resource_counts.documents|default:0 }}</p>
+                    </div>
+                    <i class="fas fa-file-alt text-3xl opacity-70"></i>
+                </div>
+                <div class="card-actions justify-end mt-4">
+                    <a href="{% url 'catalog:documents' %}" class="btn btn-sm bg-white/20 hover:bg-white/30 border-none text-white">
+                        View All
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Projects -->
+    {% if recent_projects %}
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Recent Projects</h2>
+                <a href="{% url 'catalog:projects' %}" class="btn btn-outline btn-sm">View All Projects</a>
+            </div>
+            
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for project in recent_projects %}
+                <div class="card bg-base-200 hover:shadow-lg transition-all duration-200">
+                    <div class="card-body p-4">
+                        <h3 class="font-semibold text-sm mb-2">
+                            <a href="{% url 'catalog:resource_detail' project.uri %}" class="link link-hover">
+                                {{ project.uri|slice:":50" }}{% if project.uri|length > 50 %}...{% endif %}
+                            </a>
+                        </h3>
+                        
+                        <!-- Display labels if available -->
+                        {% if project.label_triples %}
+                            {% for triple in project.label_triples|slice:":1" %}
+                                <p class="text-xs text-base-content/70">{{ triple.object.value }}</p>
+                            {% endfor %}
+                        {% endif %}
+                        
+                        <!-- Organization badge -->
+                        {% if project.organization %}
+                            <div class="card-actions justify-end mt-2">
+                                <span class="badge badge-outline badge-xs">{{ project.organization.code }}</span>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick Actions -->
+    <div class="mt-8 text-center">
+        <div class="join">
+            <a href="{% url 'catalog:resource_list' %}" class="btn btn-outline join-item">
+                <i class="fas fa-list"></i>
+                Browse All Resources
+            </a>
+            <a href="{% url 'catalog:search' %}" class="btn btn-outline join-item">
+                <i class="fas fa-search"></i>
+                Advanced Search
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

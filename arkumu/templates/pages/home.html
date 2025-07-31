@@ -9,11 +9,69 @@
     <div class="max-w-md">
       <h1 class="text-5xl font-bold">{% translate "arkumu_title" %}</h1>
       <p class="py-6">{% translate "arkumu_intro" %}</p>
+      
+      {% if user.is_authenticated %}
+      <div class="flex gap-4 justify-center">
+        <a href="{% url 'catalog:overview' %}" class="btn btn-primary">
+          <i class="fas fa-book"></i>
+          Explore Catalog
+        </a>
+        <a href="{% url 'catalog:search' %}" class="btn btn-outline">
+          <i class="fas fa-search"></i>
+          Search Resources
+        </a>
+      </div>
+      {% endif %}
     </div>
   </div>
 </div>
 
+{% if user.is_authenticated %}
+<!-- Catalog Quick Access -->
+<div class="container mx-auto px-6 py-12">
+  <div class="text-center mb-8">
+    <h2 class="text-3xl font-bold mb-4">Resource Catalog</h2>
+    <p class="text-base-content/70">Explore harmonized resources across all organizations</p>
+  </div>
+  
+  <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <!-- Projects -->
+    <a href="{% url 'catalog:projects' %}" class="card bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-xl hover:shadow-2xl transition-all duration-300">
+      <div class="card-body text-center">
+        <i class="fas fa-project-diagram text-4xl mb-2 opacity-90"></i>
+        <h3 class="card-title justify-center">Projects</h3>
+        <p class="text-sm opacity-90">Explore project resources</p>
+      </div>
+    </a>
 
+    <!-- Events -->
+    <a href="{% url 'catalog:events' %}" class="card bg-gradient-to-br from-green-500 to-green-600 text-white shadow-xl hover:shadow-2xl transition-all duration-300">
+      <div class="card-body text-center">
+        <i class="fas fa-calendar-alt text-4xl mb-2 opacity-90"></i>
+        <h3 class="card-title justify-center">Events</h3>
+        <p class="text-sm opacity-90">Browse event data</p>
+      </div>
+    </a>
 
+    <!-- Persons -->
+    <a href="{% url 'catalog:persons' %}" class="card bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-xl hover:shadow-2xl transition-all duration-300">
+      <div class="card-body text-center">
+        <i class="fas fa-users text-4xl mb-2 opacity-90"></i>
+        <h3 class="card-title justify-center">Persons</h3>
+        <p class="text-sm opacity-90">Find people and roles</p>
+      </div>
+    </a>
+
+    <!-- Search -->
+    <a href="{% url 'catalog:search' %}" class="card bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-xl hover:shadow-2xl transition-all duration-300">
+      <div class="card-body text-center">
+        <i class="fas fa-search text-4xl mb-2 opacity-90"></i>
+        <h3 class="card-title justify-center">Search</h3>
+        <p class="text-sm opacity-90">Find anything</p>
+      </div>
+    </a>
+  </div>
+</div>
+{% endif %}
 
 {% endblock content %}

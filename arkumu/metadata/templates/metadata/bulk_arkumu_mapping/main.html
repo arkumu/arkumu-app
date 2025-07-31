@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load custom_filters %}
 
 {% block extra_head %}
 <!-- Load HTMX -->
@@ -41,10 +42,12 @@
                                                 </th>
                                                 <th>Organization</th>
                                                 <th>Code</th>
+                                                <th>Mappable Resources</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {% for organization in form.organizations.field.queryset %}
+                                            {% with stats=organization_stats|default_if_none:organization.code %}
                                             <tr>
                                                 <td>
                                                     <input type="checkbox" 
@@ -61,7 +64,29 @@
                                                 <td>
                                                     <span class="badge bg-primary">{{ organization.code|upper }}</span>
                                                 </td>
+                                                <td>
+                                                    {% if organization_stats and organization_stats|get_item:organization.code %}
+                                                        {% with org_stat=organization_stats|get_item:organization.code %}
+                                                            {% if org_stat.has_mappable_resources %}
+                                                                <div class="d-flex gap-1">
+                                                                    <span class="badge bg-success">{{ org_stat.total_count }} total</span>
+                                                                    {% if org_stat.class_count > 0 %}
+                                                                        <span class="badge bg-info">{{ org_stat.class_count }} class{{ org_stat.class_count|pluralize:"es" }}</span>
+                                                                    {% endif %}
+                                                                    {% if org_stat.property_count > 0 %}
+                                                                        <span class="badge bg-secondary">{{ org_stat.property_count }} propert{{ org_stat.property_count|pluralize:"y,ies" }}</span>
+                                                                    {% endif %}
+                                                                </div>
+                                                            {% else %}
+                                                                <span class="badge bg-warning">No mappable resources</span>
+                                                            {% endif %}
+                                                        {% endwith %}
+                                                    {% else %}
+                                                        <span class="text-muted">Loading...</span>
+                                                    {% endif %}
+                                                </td>
                                             </tr>
+                                            {% endwith %}
                                             {% endfor %}
                                         </tbody>
                                     </table>
@@ -81,15 +106,6 @@
                                 {{ form.mapping_type }}
                                 {{ form.priority }}
                                 
-                                <div class="form-group mb-3">
-                                    <div class="form-check">
-                                        {{ form.preview_only }}
-                                        <label class="form-check-label" for="{{ form.preview_only.id_for_label }}">
-                                            {{ form.preview_only.label }}
-                                        </label>
-                                    </div>
-                                    <div class="form-text">{{ form.preview_only.help_text }}</div>
-                                </div>
                             </div>
                         </div>
                         
@@ -195,11 +211,22 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <a href="{% url 'metadata:bulk_arkumu_mapping_execution' pk=execution.pk %}" 
-                                           class="btn btn-sm btn-outline-primary">
-                                            <i class="fas fa-eye me-1"></i>
-                                            View
-                                        </a>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'metadata:bulk_arkumu_mapping_execution' pk=execution.pk %}" 
+                                               class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye me-1"></i>
+                                                View
+                                            </a>
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    hx-delete="{% url 'metadata:bulk_arkumu_mapping_delete' pk=execution.pk %}"
+                                                    hx-target="closest tr"
+                                                    hx-swap="outerHTML"
+                                                    hx-confirm="Are you sure you want to delete {{ execution.triples_created }} mappings from {{ execution.organizations.all|join:', ' }}? This cannot be undone."
+                                                    title="Delete all mappings from this execution">
+                                                <i class="fas fa-trash me-1"></i>
+                                                Delete
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}

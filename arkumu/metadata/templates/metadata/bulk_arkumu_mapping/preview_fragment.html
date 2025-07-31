@@ -5,41 +5,87 @@
         Found <strong>{{ total_new_mappings }}</strong> potential new mappings across {{ preview|length }} organization{{ preview|length|pluralize }}
     </div>
     
-    {% for org_code, mappings in preview.items %}
+    {% for org_code, org_data in preview.items %}
+        {% with current_sort=sort_states|get_item:org_code %}
         <div class="card mb-3">
             <div class="card-header">
                 <h6 class="mb-0">
                     <i class="fas fa-building me-2"></i>
                     <strong>{{ org_code|upper }}</strong>
-                    {% if mappings|length > 0 %}
-                        <span class="badge bg-primary ms-2">{{ mappings|length }} new mapping{{ mappings|length|pluralize }}</span>
+                    {% if org_data.total_count > 0 %}
+                        <span class="badge bg-primary ms-2">{{ org_data.total_count }} mapping{{ org_data.total_count|pluralize }}</span>
                     {% else %}
                         <span class="badge bg-warning ms-2">No mappable resources</span>
                     {% endif %}
                 </h6>
             </div>
             <div class="card-body">
-                {% if mappings|length == 0 %}
+                {% if org_data.total_count == 0 %}
                     <div class="alert alert-warning mb-0">
                         <i class="fas fa-exclamation-triangle me-2"></i>
                         No mappable resources found. This organization doesn't have any Class or Property resources that can be mapped to the Arkumu model.
                     </div>
                 {% else %}
-                    {% if mappings|length > 5 %}
-                        <p class="text-muted mb-2">Showing first 5 mappings:</p>
-                    {% endif %}
-                    
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0">
-                            <thead>
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                        <table id="mappings-table-{{ org_code }}" class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
                                 <tr>
-                                    <th>Type</th>
-                                    <th>Source → Target</th>
-                                    <th>Label</th>
+                                    <th width="80">
+                                        <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
+                                                hx-get="{% url 'metadata:bulk_arkumu_mapping_sort' %}?org_code={{ org_code }}&sort=type&order={% if current_sort.sort == 'type' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
+                                                hx-target="#mappings-table-{{ org_code }}"
+                                                hx-swap="outerHTML">
+                                            Type
+                                            {% if current_sort.sort == 'type' %}
+                                                {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
+                                            {% else %}
+                                                <span class="opacity-30">↕</span>
+                                            {% endif %}
+                                        </button>
+                                    </th>
+                                    <th>
+                                        <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
+                                                hx-get="{% url 'metadata:bulk_arkumu_mapping_sort' %}?org_code={{ org_code }}&sort=source&order={% if current_sort.sort == 'source' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
+                                                hx-target="#mappings-table-{{ org_code }}"
+                                                hx-swap="outerHTML">
+                                            Source
+                                            {% if current_sort.sort == 'source' %}
+                                                {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
+                                            {% else %}
+                                                <span class="opacity-30">↕</span>
+                                            {% endif %}
+                                        </button>
+                                    </th>
+                                    <th>
+                                        <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
+                                                hx-get="{% url 'metadata:bulk_arkumu_mapping_sort' %}?org_code={{ org_code }}&sort=target&order={% if current_sort.sort == 'target' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
+                                                hx-target="#mappings-table-{{ org_code }}"
+                                                hx-swap="outerHTML">
+                                            Target
+                                            {% if current_sort.sort == 'target' %}
+                                                {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
+                                            {% else %}
+                                                <span class="opacity-30">↕</span>
+                                            {% endif %}
+                                        </button>
+                                    </th>
+                                    <th>
+                                        <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
+                                                hx-get="{% url 'metadata:bulk_arkumu_mapping_sort' %}?org_code={{ org_code }}&sort=label&order={% if current_sort.sort == 'label' and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}"
+                                                hx-target="#mappings-table-{{ org_code }}"
+                                                hx-swap="outerHTML">
+                                            Label
+                                            {% if current_sort.sort == 'label' %}
+                                                {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
+                                            {% else %}
+                                                <span class="opacity-30">↕</span>
+                                            {% endif %}
+                                        </button>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for mapping in mappings|slice:":5" %}
+                                {% for mapping in org_data.mappings %}
                                 <tr>
                                     <td>
                                         {% if mapping.resource_type == 'Class' %}
@@ -48,12 +94,11 @@
                                             <span class="badge bg-success">Property</span>
                                         {% endif %}
                                     </td>
-                                    <td class="font-monospace small">
-                                        <div class="text-primary">{{ mapping.source_iri|truncatechars:60 }}</div>
-                                        <div class="text-muted">
-                                            <i class="fas fa-arrow-down small"></i>
-                                        </div>
-                                        <div class="text-success">{{ mapping.target_iri|truncatechars:60 }}</div>
+                                    <td class="font-monospace small text-primary">
+                                        <div style="word-break: break-all;">{{ mapping.source_iri }}</div>
+                                    </td>
+                                    <td class="font-monospace small text-success">
+                                        <div style="word-break: break-all;">{{ mapping.target_iri }}</div>
                                     </td>
                                     <td>{{ mapping.label }}</td>
                                 </tr>
@@ -62,13 +107,29 @@
                         </table>
                     </div>
                     
-                    {% if mappings|length > 5 %}
-                        <div class="text-muted mt-2">
-                            <small>... and {{ mappings|length|add:"-5" }} more mappings</small>
+                    <!-- Sort Loading Indicator -->
+                    <div id="sort-loading-{{ org_code }}" class="htmx-indicator text-center py-2">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Sorting...</span>
                         </div>
-                    {% endif %}
+                        <small class="text-muted ms-2">Sorting...</small>
+                    </div>
+                    
+                    <!-- Remove Mappings Button -->
+                    <div class="text-center mt-3 pt-3 border-top">
+                        <button class="btn btn-danger btn-sm"
+                                hx-post="{% url 'metadata:bulk_arkumu_mapping_remove' %}?org_code={{ org_code }}"
+                                hx-target="#preview-content"
+                                hx-swap="innerHTML"
+                                hx-confirm="Are you sure you want to remove all {{ org_data.total_count }} mappings for {{ org_code|upper }}? This cannot be undone."
+                                title="Remove all mappings for this organization">
+                            <i class="fas fa-trash me-2"></i>
+                            Remove {{ org_data.total_count }} Mapping{{ org_data.total_count|pluralize }}
+                        </button>
+                    </div>
                 {% endif %}
             </div>
         </div>
+        {% endwith %}
     {% endfor %}
 {% endif %}

@@ -3,7 +3,10 @@ from arkumu.metadata.views import dashboard_views, resource_views, triple_views,
 from arkumu.metadata.views.bulk_arkumu_mapping_views import (
     BulkArkumuMappingView,
     BulkArkumuMappingPreviewView,
-    BulkArkumuMappingExecutionDetailView
+    BulkArkumuMappingExecutionDetailView,
+    BulkArkumuMappingSortView,
+    BulkArkumuMappingRemoveView,
+    BulkArkumuMappingDeleteView
 )
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
@@ -298,5 +301,8 @@ urlpatterns = [
     path('bulk-arkumu-mapping/', BulkArkumuMappingView.as_view(), name='bulk_arkumu_mapping'),
     path('bulk-arkumu-mapping/preview/', BulkArkumuMappingPreviewView.as_view(), name='bulk_arkumu_mapping_preview'),
     path('bulk-arkumu-mapping/execution/<uuid:pk>/', BulkArkumuMappingExecutionDetailView.as_view(), name='bulk_arkumu_mapping_execution'),
+    path('bulk-arkumu-mapping/sort/', BulkArkumuMappingSortView.as_view(), name='bulk_arkumu_mapping_sort'),
+    path('bulk-arkumu-mapping/remove/', BulkArkumuMappingRemoveView.as_view(), name='bulk_arkumu_mapping_remove'),
+    path('bulk-arkumu-mapping/delete/<uuid:pk>/', BulkArkumuMappingDeleteView.as_view(), name='bulk_arkumu_mapping_delete'),
     
     ]

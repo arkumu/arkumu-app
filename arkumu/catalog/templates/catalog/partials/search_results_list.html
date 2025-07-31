@@ -1,0 +1,93 @@
+{% load catalog_tags %}
+
+{% if results %}
+    <!-- Search Results -->
+    <div class="space-y-4">
+        {% for resource in results %}
+        <div class="card bg-base-100 shadow hover:shadow-lg transition-all duration-200">
+            <div class="card-body">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1 min-w-0">
+                        <!-- Resource Title/URI -->
+                        <h3 class="text-lg font-semibold mb-2">
+                            <a href="{% url 'catalog:resource_detail' resource.uri %}" 
+                               class="link link-hover break-all">
+                                {{ resource.uri }}
+                            </a>
+                        </h3>
+
+                        <!-- Resource Description/Value -->
+                        {% if resource.value %}
+                            <p class="text-base-content/80 mb-2">{{ resource.value|truncatewords:30 }}</p>
+                        {% endif %}
+
+                        <!-- Match Context -->
+                        <div class="text-sm text-base-content/60">
+                            Content matches your search terms in connected properties
+                        </div>
+                    </div>
+
+                    <!-- Resource Type & Organization -->
+                    <div class="flex flex-col items-end gap-2 ml-4">
+                        <!-- Resource Type Badge -->
+                        <div class="badge badge-primary">
+                            {% if 'Project' in resource.uri or '00-projekte' in resource.uri %}
+                                Project
+                            {% elif 'Event' in resource.uri or 'events' in resource.uri %}
+                                Event
+                            {% elif 'Person' in resource.uri or 'person' in resource.uri %}
+                                Person
+                            {% elif 'Organization' in resource.uri %}
+                                Organization
+                            {% elif 'Document' in resource.uri or 'media' in resource.uri %}
+                                Document
+                            {% else %}
+                                Resource
+                            {% endif %}
+                        </div>
+
+                        <!-- Organization Badge -->
+                        {% if resource.organization %}
+                            <div class="badge badge-outline">{{ resource.organization.code }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="card-actions justify-end mt-4">
+                    <a href="{% url 'catalog:resource_detail' resource.uri %}" 
+                       class="btn btn-outline btn-sm">
+                        <i class="fas fa-eye"></i>
+                        View Details
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+{% else %}
+    <!-- No Results -->
+    <div class="text-center py-16">
+        <div class="text-base-content/60">
+            <i class="fas fa-search text-6xl mb-4"></i>
+            <div class="text-xl mb-2 font-semibold">No results found</div>
+            <div class="text-sm mb-4">
+                No resources match your current filters
+            </div>
+            
+            <!-- Search Suggestions -->
+            <div class="card bg-base-200 max-w-md mx-auto">
+                <div class="card-body py-4">
+                    <h4 class="font-semibold mb-2">Try:</h4>
+                    <ul class="text-left space-y-1 text-sm">
+                        <li>• Using different keywords</li>
+                        <li>• Clearing some filters</li>
+                        <li>• Selecting a different resource type</li>
+                        <li>• Using broader search terms</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}

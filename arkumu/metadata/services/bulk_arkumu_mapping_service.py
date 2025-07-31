@@ -209,12 +209,12 @@ class BulkArkumuMappingService:
 
     def preview_bulk_mapping(
         self, organization_codes: list[str]
-    ) -> dict[str, list[dict[str, str]]]:
+    ) -> dict[str, dict]:
         """
         Preview what mappings would be created without actually creating them.
 
         Returns:
-            Dict mapping org_code to list of mapping previews
+            Dict mapping org_code to preview data with mappings and counts
         """
         org_iris = self.get_organization_iris_from_resources(organization_codes)
 
@@ -222,6 +222,8 @@ class BulkArkumuMappingService:
 
         for org_code, iris in org_iris.items():
             mappings = []
+            class_count = 0
+            property_count = 0
 
             for org_iri in iris:
                 arkumu_iri = self.transform_organization_iri_to_arkumu(org_iri)
@@ -229,11 +231,16 @@ class BulkArkumuMappingService:
                 if arkumu_iri:
                     label = (
                         org_iri.split("/")[-1]
-                        .replace("-", " ")
+                        .replace("-", " ")  
                         .replace("_", " ")
                         .title()
                     )
                     resource_type = "Class" if "/types/" in org_iri else "Property"
+                    
+                    if resource_type == "Class":
+                        class_count += 1
+                    else:
+                        property_count += 1
 
                     mappings.append({
                         "source_iri": org_iri,
@@ -242,7 +249,12 @@ class BulkArkumuMappingService:
                         "resource_type": resource_type,
                     })
 
-            preview[org_code] = mappings
+            preview[org_code] = {
+                "mappings": mappings,
+                "class_count": class_count,
+                "property_count": property_count,
+                "total_count": len(mappings)
+            }
 
         return preview
 

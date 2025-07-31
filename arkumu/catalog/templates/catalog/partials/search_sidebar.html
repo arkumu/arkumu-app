@@ -1,0 +1,75 @@
+{% load catalog_tags %}
+{# Dynamic search sidebar with property selection and facets #}
+
+<!-- Property Selection for Search -->
+{% if selected_type and searchable_properties %}
+<div class="form-control mb-4">
+    <label class="label">
+        <span class="label-text font-semibold">Search In Property</span>
+    </label>
+    <select name="search_property" class="select select-bordered w-full select-sm">
+        {% for prop_key, prop_config in searchable_properties.items %}
+        <option value="{{ prop_key }}" 
+                {% if prop_key == selected_search_property %}selected{% endif %}>
+            {{ prop_config.label }}
+            {% if prop_config.count %}<span class="text-xs opacity-60"> ({{ prop_config.count }})</span>{% endif %}
+        </option>
+        {% endfor %}
+    </select>
+    <div class="label">
+        <span class="label-text-alt text-xs opacity-60">
+            {% if selected_search_property and searchable_properties|get_item:selected_search_property %}
+                {{ searchable_properties|get_item:selected_search_property|get_item:"description" }}
+            {% endif %}
+        </span>
+    </div>
+</div>
+{% endif %}
+
+<!-- Resource Type Selection -->
+<div class="form-control mb-4">
+    <label class="label">
+        <span class="label-text font-semibold">Resource Type</span>
+    </label>
+    <select name="type" class="select select-bordered w-full">
+        <option value="">All Types</option>
+        {% for type_option in available_types %}
+        <option value="{{ type_option.key }}" 
+                {% if type_option.key == selected_type %}selected{% endif %}>
+            {{ type_option.label }} ({{ type_option.count }})
+        </option>
+        {% endfor %}
+    </select>
+</div>
+
+<!-- Dynamic Facets based on selected type -->
+{% if selected_type and facets %}
+    <div class="divider text-xs">Property Filters</div>
+    
+    {% for facet_key, facet_values in facets.items %}
+        {% if facet_values %}
+        <div class="form-control mb-4">
+            <label class="label">
+                <span class="label-text font-semibold">
+                    {{ all_properties|get_item:facet_key|get_item:"label"|default:facet_key }}
+                </span>
+            </label>
+            <div class="space-y-1 max-h-32 overflow-y-auto">
+                {% for facet_value in facet_values %}
+                <label class="label cursor-pointer justify-start gap-2 py-1">
+                    <input type="checkbox" 
+                           name="{{ facet_key }}" 
+                           value="{{ facet_value.value }}" 
+                           class="checkbox checkbox-xs"
+                           {% if facet_value.value in selected_facets|get_item:facet_key %}checked{% endif %} />
+                    <span class="label-text text-xs">
+                        {{ facet_value.label|truncatechars:25 }}
+                        <span class="badge badge-outline badge-xs">{{ facet_value.count }}</span>
+                    </span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
+{% endif %}
