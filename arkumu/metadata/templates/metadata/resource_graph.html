@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Resource Graph - {{ resource.name|default:resource.uri|default:"Resource" }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-6 py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">
+            <!-- Back Button -->
+            <a href="{% url 'metadata:data_explorer' %}" class="btn btn-ghost btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+                Back to Explorer
+            </a>
+            
+            <div class="divider divider-horizontal"></div>
+            
+            <!-- Resource Info -->
+            <div>
+                <h1 class="text-2xl font-bold flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    Resource Graph
+                </h1>
+                <div class="flex items-center gap-2 text-sm text-base-content/70">
+                    <div class="badge badge-sm {% if resource.resource_type == 'IRI' %}badge-primary{% elif resource.resource_type == 'CLASS' %}badge-secondary{% elif resource.resource_type == 'PROPERTY' %}badge-accent{% else %}badge-ghost{% endif %}">
+                        {{ resource.get_resource_type_display }}
+                    </div>
+                    {% if resource.organization %}
+                        <span class="badge badge-ghost badge-sm">{{ resource.organization.code }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="flex gap-2">
+            <button class="btn btn-ghost btn-sm" 
+                    hx-get="{% url 'metadata:resource_detail_modal' resource.pk %}"
+                    hx-target="#modal-content"
+                    onclick="document.getElementById('resource-modal').showModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Details
+            </button>
+            <a href="{% url 'metadata:resource_relationships' resource.pk %}" class="btn btn-ghost btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Relationships
+            </a>
+        </div>
+    </div>
+    
+    <!-- Resource Summary Card -->
+    <div class="card bg-base-100 shadow-sm border border-base-300 mb-6">
+        <div class="card-body p-4">
+            <div class="flex flex-col gap-2">
+                {% if resource.name %}
+                    <div class="font-semibold text-lg">{{ resource.name }}</div>
+                {% endif %}
+                
+                {% if resource.resource_type == 'LITERAL' %}
+                    <code class="text-sm bg-base-200 px-3 py-2 rounded">
+                        "{{ resource.value|truncatechars:100 }}"
+                        {% if resource.language %}
+                            <span class="text-info font-bold">@{{ resource.language }}</span>
+                        {% endif %}
+                    </code>
+                {% elif resource.uri %}
+                    <a href="{{ resource.uri }}" target="_blank" 
+                       class="link link-primary text-sm hover:link-hover break-all" 
+                       title="{{ resource.uri }}">
+                        {{ resource.uri }}
+                    </a>
+                {% else %}
+                    <span class="text-sm text-base-content/50">Resource #{{ resource.id }}</span>
+                {% endif %}
+                
+                {% if resource.value and resource.resource_type != 'LITERAL' %}
+                    <div class="text-sm text-base-content/70">{{ resource.value|truncatechars:200 }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Graph Container -->
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body p-0">
+            <!-- Graph Header -->
+            <div class="flex justify-between items-center p-4 border-b border-base-300">
+                <div class="flex items-center gap-4">
+                    <h2 class="text-lg font-semibold">Relationship Network</h2>
+                </div>
+            </div>
+            
+            <!-- Graph Content (uses partial for HTMX updates) -->
+            <div id="graph-content">
+                {% include 'metadata/partials/resource_graph_content.html' %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Graph Legend -->
+    {% if graph_svg %}
+    <div class="card bg-base-100 shadow-sm border border-base-300 mt-4">
+        <div class="card-body p-4">
+            <h3 class="text-sm font-semibold mb-3">Legend</h3>
+            
+            <!-- Node Types -->
+            <div class="mb-4">
+                <h4 class="text-xs font-medium text-base-content/80 mb-2">Node Types</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 rounded bg-blue-100 border-2 border-blue-600"></div>
+                        <span>IRI Resource</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 rounded bg-purple-100 border-2 border-purple-600"></div>
+                        <span>Class</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 rounded bg-green-100 border-2 border-green-600"></div>
+                        <span>Property</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 rounded bg-gray-100 border-2 border-gray-600"></div>
+                        <span>Literal</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Arrow Colors -->
+            <div class="mb-3">
+                <h4 class="text-xs font-medium text-base-content/80 mb-2">Relationship Directions</h4>
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="flex items-center gap-2">
+                        <svg width="20" height="8" viewBox="0 0 20 8">
+                            <defs>
+                                <marker id="green-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+                                    <path d="M0,0 L0,6 L6,3 z" fill="#10b981"/>
+                                </marker>
+                            </defs>
+                            <line x1="2" y1="4" x2="18" y2="4" stroke="#10b981" stroke-width="2" marker-end="url(#green-arrow)"/>
+                        </svg>
+                        <span>Outgoing (from central resource)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <svg width="20" height="8" viewBox="0 0 20 8">
+                            <defs>
+                                <marker id="blue-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+                                    <path d="M0,0 L0,6 L6,3 z" fill="#3b82f6"/>
+                                </marker>
+                            </defs>
+                            <line x1="2" y1="4" x2="18" y2="4" stroke="#3b82f6" stroke-width="2" marker-end="url(#blue-arrow)"/>
+                        </svg>
+                        <span>Incoming (to central resource)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Notes -->
+            <div class="text-xs text-base-content/60 pt-2 border-t border-base-200">
+                <strong>Central resource</strong> has a thick border. 
+                <strong>Arrow labels</strong> show the relationship type (predicate).
+                Only connected resources are displayed.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Resource Detail Modal (reused from data explorer) -->
+<dialog id="resource-modal" class="modal">
+    <div class="modal-box w-11/12 max-w-4xl">
+        <div id="modal-content">
+            <!-- Content loaded via HTMX -->
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+<script>
+// Future: Add interactive features here
+document.addEventListener('DOMContentLoaded', function() {
+    // Add any interactive graph features
+    console.log('Resource graph loaded');
+});
+</script>
+{% endblock %}

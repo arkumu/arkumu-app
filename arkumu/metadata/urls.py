@@ -1,5 +1,6 @@
 from django.urls import path
 from arkumu.metadata.views import dashboard_views, resource_views, triple_views, graph_views, bulk_editor_views, data_discovery_views, data_explorer_views, split_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, harmonization_views, simplified_resource_views
+from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 from arkumu.metadata.views.data_explorer import DataExplorerView, ResourceDetailView, DataExplorerResultsView
 from arkumu.metadata.views.csv_mapping import saved_mappings_api
@@ -32,6 +33,10 @@ urlpatterns = [
     
     # Resource Relationship Explorer (HTMX-based)
     path('resources/<uuid:resource_id>/relationships/', resource_relationship_views.ResourceRelationshipExplorerView.as_view(), name='resource_relationships'),
+    
+    # Resource Graph Visualizer (GraphViz-based)
+    path('resources/<uuid:resource_id>/graph/', ResourceGraphView.as_view(), name='resource_graph'),
+    path('resources/<uuid:resource_id>/graph/expand/', ResourceGraphExpandView.as_view(), name='resource_graph_expand'),
     path('resources/<uuid:resource_id>/related/', resource_relationship_views.RelatedResourcesHTMXView.as_view(), name='related_resources_htmx'),
     path('resources/<uuid:resource_id>/chain/<uuid:target_id>/', resource_relationship_views.RelationshipChainHTMXView.as_view(), name='relationship_chain_htmx'),
     path('mappings/<uuid:mapping_id>/relationships/', resource_relationship_views.MappingRelationshipsHTMXView.as_view(), name='mapping_relationships_htmx'),
