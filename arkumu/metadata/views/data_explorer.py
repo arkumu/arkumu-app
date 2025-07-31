@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.core.paginator import Paginator
-from django.db.models import Q, Count, Exists, OuterRef
+from django.db.models import Q, Count, Exists, OuterRef, Case, When, Value, CharField, Subquery, F
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.views.generic import ListView, DetailView
@@ -18,11 +18,37 @@ class DataExplorerView(ListView):
     
     def get_queryset(self):
         """Get resources with appropriate access control and debug mode support."""
+        # Get sameAs predicate for Arkumu linking check
+        same_as_subquery = Triple.objects.filter(
+            subject=OuterRef('pk'),
+            predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+            object__uri__startswith='http://data.arkumu.org/arkumu/types/',
+            is_derived=True
+        )
+        
+        # Get linked ontology name directly in database
+        linked_ontology_subquery = Triple.objects.filter(
+            subject=OuterRef('pk'),
+            predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+            is_derived=True
+        ).annotate(
+            ontology_name=Case(
+                When(object__uri__startswith='http://data.arkumu.org/arkumu/types/', then=Value('Arkumu')),
+                When(object__uri__startswith='http://www.cidoc-crm.org/cidoc-crm/', then=Value('CIDOC-CRM')),
+                When(object__uri__startswith='http://purl.org/dc/', then=Value('Dublin Core')),
+                When(object__uri__startswith='http://schema.org/', then=Value('Schema.org')),
+                default=Value('Other'),
+                output_field=CharField()
+            )
+        ).values('ontology_name')[:1]
+        
         # Start with all resources, excluding placeholders by default
         queryset = Resource.objects.exclude(is_placeholder=True).select_related('organization').annotate(
             subject_count=Count('subject_triples', distinct=True),
             predicate_count=Count('predicate_triples', distinct=True),
             object_count=Count('object_triples', distinct=True),
+            is_arkumu_linked=Exists(same_as_subquery),
+            linked_ontology=Subquery(linked_ontology_subquery)
         )
         
         # Debug mode - show all resources in development
@@ -77,42 +103,6 @@ class DataExplorerView(ListView):
         
         return queryset.select_related('organization').values_list('organization__name', flat=True).distinct().order_by('organization__name')
     
-    def _get_semantic_classes(self):
-        """Get list of semantic classes (resources used as objects in rdf:type triples)."""
-        rdf_type = Resource.objects.filter(
-            uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
-        ).first()
-        
-        if not rdf_type:
-            return []
-        
-        # Get resources that are used as objects in rdf:type triples
-        semantic_classes = Triple.objects.filter(
-            predicate=rdf_type
-        ).select_related('object', 'object__organization').values(
-            'object__id', 'object__uri', 'object__name', 'object__organization__code'
-        ).distinct().order_by('object__name', 'object__uri')[:100]  # Limit for performance
-        
-        result = []
-        for cls in semantic_classes:
-            if cls['object__uri']:
-                # Extract readable name from URI
-                base_name = cls['object__name'] or cls['object__uri'].split('/')[-1]
-                
-                # Add organization code for disambiguation
-                if cls['object__organization__code']:
-                    label = f"{base_name} ({cls['object__organization__code']})"
-                else:
-                    label = base_name
-                    
-                result.append({
-                    'value': cls['object__id'],
-                    'label': label,
-                    'uri': cls['object__uri']
-                })
-        
-        return result
-    
     def apply_filters(self, queryset):
         """Apply various filters based on request parameters"""
         # Search
@@ -137,10 +127,36 @@ class DataExplorerView(ListView):
             queryset = queryset.filter(resource_type=ResourceType.LITERAL)
         elif type_group == 'placeholders':
             # Override the default exclusion of placeholders and show only placeholders
+            # Get sameAs predicate for Arkumu linking check
+            same_as_subquery = Triple.objects.filter(
+                subject=OuterRef('pk'),
+                predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+                object__uri__startswith='http://data.arkumu.org/arkumu/types/',
+                is_derived=True
+            )
+            
+            # Get linked ontology name subquery for placeholders
+            linked_ontology_subquery_ph = Triple.objects.filter(
+                subject=OuterRef('pk'),
+                predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+                is_derived=True
+            ).annotate(
+                ontology_name=Case(
+                    When(object__uri__startswith='http://data.arkumu.org/arkumu/types/', then=Value('Arkumu')),
+                    When(object__uri__startswith='http://www.cidoc-crm.org/cidoc-crm/', then=Value('CIDOC-CRM')),
+                    When(object__uri__startswith='http://purl.org/dc/', then=Value('Dublin Core')),
+                    When(object__uri__startswith='http://schema.org/', then=Value('Schema.org')),
+                    default=Value('Other'),
+                    output_field=CharField()
+                )
+            ).values('ontology_name')[:1]
+            
             queryset = Resource.objects.filter(is_placeholder=True).select_related('organization').annotate(
                 subject_count=Count('subject_triples', distinct=True),
                 predicate_count=Count('predicate_triples', distinct=True),
                 object_count=Count('object_triples', distinct=True),
+                is_arkumu_linked=Exists(same_as_subquery),
+                linked_ontology=Subquery(linked_ontology_subquery_ph)
             )
         
         # Organization filter
@@ -178,46 +194,6 @@ class DataExplorerView(ListView):
         elif externally_linked == 'false':
             queryset = queryset.filter(is_externally_linked=False)
         
-        # Semantic model filters
-        semantic_view = self.request.GET.get('semantic_view')
-        if semantic_view == 'classes':
-            # Show resources that are semantic classes (used as objects in rdf:type triples)
-            rdf_type = Resource.objects.filter(
-                uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
-            ).first()
-            if rdf_type:
-                queryset = queryset.filter(
-                    Exists(Triple.objects.filter(predicate=rdf_type, object=OuterRef('pk')))
-                )
-        elif semantic_view == 'instances':
-            # Show resources that have rdf:type (are instances of semantic classes)
-            rdf_type = Resource.objects.filter(
-                uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
-            ).first()
-            if rdf_type:
-                queryset = queryset.filter(
-                    Exists(Triple.objects.filter(predicate=rdf_type, subject=OuterRef('pk')))
-                )
-        elif semantic_view == 'properties':
-            # Show resources that are used as predicates in triples
-            queryset = queryset.filter(
-                Exists(Triple.objects.filter(predicate=OuterRef('pk')))
-            )
-        
-        # Semantic class filter (filter instances by their semantic class)
-        semantic_class = self.request.GET.get('semantic_class')
-        if semantic_class:
-            rdf_type = Resource.objects.filter(
-                uri='http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
-            ).first()
-            if rdf_type:
-                queryset = queryset.filter(
-                    Exists(Triple.objects.filter(
-                        predicate=rdf_type, 
-                        subject=OuterRef('pk'),
-                        object_id=semantic_class
-                    ))
-                )
         
         return queryset
     
@@ -254,7 +230,6 @@ class DataExplorerView(ListView):
             field = 'total_usage'
         elif sort_by == 'resource':
             # Sort by name, but fallback to uri for resources without names
-            from django.db.models import Case, When, Value
             queryset = queryset.annotate(
                 sort_name=Case(
                     When(name__isnull=False, then=F('name')),
@@ -290,11 +265,6 @@ class DataExplorerView(ListView):
                 {'value': 'literals', 'label': 'Literals Only'},
                 {'value': 'placeholders', 'label': 'Placeholder Resources'},
             ],
-            'semantic_views': [
-                {'value': 'classes', 'label': 'Semantic Classes'},
-                {'value': 'instances', 'label': 'Typed Instances'},
-                {'value': 'properties', 'label': 'Semantic Properties'},
-            ],
             'triple_usage': [
                 {'value': 'as_subject', 'label': 'Used as Subject'},
                 {'value': 'as_predicate', 'label': 'Used as Predicate'},
@@ -302,7 +272,6 @@ class DataExplorerView(ListView):
                 {'value': 'no_triples', 'label': 'No Triple References'},
             ],
             'organizations': self._get_accessible_organizations(),
-            'semantic_classes': self._get_semantic_classes(),
         }
         
         # Current filters for template
@@ -310,8 +279,6 @@ class DataExplorerView(ListView):
             'search': self.request.GET.get('search', ''),
             'resource_type': self.request.GET.getlist('resource_type'),
             'type_group': self.request.GET.get('type_group'),
-            'semantic_view': self.request.GET.get('semantic_view'),
-            'semantic_class': self.request.GET.get('semantic_class'),
             'organization': self.request.GET.getlist('organization'),
             'triple_usage': self.request.GET.get('triple_usage'),
             'externally_linked': self.request.GET.get('externally_linked'),

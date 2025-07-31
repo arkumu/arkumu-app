@@ -20,20 +20,16 @@
         <table class="table table-xs">
             <thead>
                 <tr>
-                    <th>Resources</th>
-                    <th>Relationships</th>
-                    <th class="text-primary">Classes</th>
-                    <th class="text-secondary">Instances</th>
-                    <th class="text-accent">Properties</th>
+                    <th>Total Resources</th>
+                    <th>Total Relationships</th>
+                    <th>Organizations</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td class="font-bold">{{ semantic_stats.total_resources }}</td>
                     <td class="font-bold">{{ semantic_stats.total_triples }}</td>
-                    <td class="font-bold text-primary">{{ semantic_stats.semantic_classes }}</td>
-                    <td class="font-bold text-secondary">{{ semantic_stats.typed_instances }}</td>
-                    <td class="font-bold text-accent">{{ semantic_stats.semantic_properties }}</td>
+                    <td class="font-bold">{{ filter_options.organizations|length }}</td>
                 </tr>
             </tbody>
         </table>
@@ -69,39 +65,7 @@
                                value="{{ current_filters.search }}">
                     </div>
                     
-                    <!-- Quick Filters -->
-                    <div class="divider text-xs my-2">QUICK FILTERS</div>
-                    
-                    <!-- Semantic View Tabs -->
-                    <div class="mb-4">
-                        <p class="text-xs font-semibold mb-2">Semantic View</p>
-                        <div class="join join-vertical w-full">
-                            <input type="radio" name="semantic_view" value="" class="join-item btn btn-sm" aria-label="All Resources" {% if not current_filters.semantic_view %}checked{% endif %}>
-                            {% for view in filter_options.semantic_views %}
-                            <input type="radio" name="semantic_view" value="{{ view.value }}" class="join-item btn btn-sm" aria-label="{{ view.label }}" {% if current_filters.semantic_view == view.value %}checked{% endif %}>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    
-                    <div class="divider text-xs my-2">ADVANCED FILTERS</div>
-                    
-                    <!-- Semantic Class Filter -->
-                    <div class="form-control mb-3">
-                        <label class="label py-1">
-                            <span class="label-text text-xs font-semibold">Semantic Class</span>
-                            {% if current_filters.semantic_class %}
-                            <span class="badge badge-accent badge-xs">Active</span>
-                            {% endif %}
-                        </label>
-                        <select name="semantic_class" class="select select-bordered select-xs w-full">
-                            <option value="">All Classes</option>
-                            {% for class in filter_options.semantic_classes %}
-                            <option value="{{ class.value }}" {% if current_filters.semantic_class == class.value %}selected{% endif %} title="{{ class.uri }}">
-                                {{ class.label|truncatechars:30 }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
+                    <div class="divider text-xs my-2">FILTERS</div>
                     
                     <!-- Resource Types -->
                     <div class="form-control mb-3">

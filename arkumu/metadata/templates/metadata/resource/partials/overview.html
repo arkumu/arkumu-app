@@ -5,40 +5,27 @@
             <h2 class="card-title">Semantic Model</h2>
             
             <div class="space-y-4">
-                <!-- Semantic Classes -->
+                <!-- Total Resources -->
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
-                        <div class="text-lg">🏛️</div>
-                        <span class="font-medium">Semantic Classes</span>
+                        <div class="text-lg">📊</div>
+                        <span class="font-medium">Total Resources</span>
                     </div>
-                    <a href="{% url 'metadata:data_explorer' %}?semantic_view=classes" 
+                    <a href="{% url 'metadata:data_explorer' %}" 
                        class="badge badge-primary hover:badge-primary-focus transition-colors">
-                        {{ stats.semantic_stats.semantic_classes }}
+                        {{ stats.semantic_stats.total_resources }}
                     </a>
                 </div>
                 
-                <!-- Typed Instances -->
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <div class="text-lg">📋</div>
-                        <span class="font-medium">Typed Instances</span>
-                    </div>
-                    <a href="{% url 'metadata:data_explorer' %}?semantic_view=instances" 
-                       class="badge badge-secondary hover:badge-secondary-focus transition-colors">
-                        {{ stats.semantic_stats.typed_instances }}
-                    </a>
-                </div>
-                
-                <!-- Semantic Properties -->
+                <!-- Total Triples -->
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <div class="text-lg">🔗</div>
-                        <span class="font-medium">Semantic Properties</span>
+                        <span class="font-medium">Total Relationships</span>
                     </div>
-                    <a href="{% url 'metadata:data_explorer' %}?semantic_view=properties" 
-                       class="badge badge-accent hover:badge-accent-focus transition-colors">
-                        {{ stats.semantic_stats.semantic_properties }}
-                    </a>
+                    <span class="badge badge-secondary">
+                        {{ stats.semantic_stats.total_triples }}
+                    </span>
                 </div>
             </div>
             
