@@ -107,7 +107,11 @@ class ResourceRelationshipService:
         # Find outgoing relationships (where this resource is the subject)
         outgoing_query = Triple.objects.filter(subject=resource).select_related('predicate', 'object')
         if organization:
-            outgoing_query = outgoing_query.filter(object__organization__code=organization)
+            # Include organization resources AND external ontology links (owl:sameAs with no organization)
+            outgoing_query = outgoing_query.filter(
+                Q(object__organization__code=organization) |
+                Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', object__organization__isnull=True)
+            )
         
         for triple in outgoing_query:
             if triple.object.uri not in visited:
@@ -144,7 +148,11 @@ class ResourceRelationshipService:
         # Find incoming relationships (where this resource is the object)
         incoming_query = Triple.objects.filter(object=resource).select_related('predicate', 'subject')
         if organization:
-            incoming_query = incoming_query.filter(subject__organization__code=organization)
+            # Include organization resources AND external ontology links (owl:sameAs with no organization)
+            incoming_query = incoming_query.filter(
+                Q(subject__organization__code=organization) |
+                Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', subject__organization__isnull=True)
+            )
         
         for triple in incoming_query:
             if triple.subject.uri not in visited:

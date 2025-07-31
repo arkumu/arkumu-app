@@ -10,10 +10,14 @@ from django.views.generic import View
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Count, Prefetch
 from django.urls import reverse
+import logging
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
+from arkumu.users.mixins import GeneralLoginRequiredMixin
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedResourceView(LoginRequiredMixin, View):
@@ -219,7 +223,7 @@ class GetPredicatesView(LoginRequiredMixin, View):
         })
 
 
-class OntologyLinkingModalView(LoginRequiredMixin, View):
+class OntologyLinkingModalView(GeneralLoginRequiredMixin, View):
     """Simple modal view for ontology linking"""
     
     def get(self, request):
@@ -390,3 +394,140 @@ class OntologyLinkingModalView(LoginRequiredMixin, View):
             'resource': resource,
             'ontology_presets': ontology_presets
         })
+    
+    def post(self, request):
+        """Handle ontology linking form submission"""
+        logger.info(f"ONTOLOGY_LINKING_POST: User {request.user.username} attempting ontology link")
+        logger.info(f"ONTOLOGY_LINKING_POST: POST data: {dict(request.POST)}")
+        
+        try:
+            resource_id = request.POST.get('resource_id')
+            ontology_type = request.POST.get('ontology_type')
+            external_identifier = request.POST.get('external_identifier')
+            uri_template = request.POST.get('uri_template')
+            
+            logger.info(f"ONTOLOGY_LINKING_POST: Parsed - resource_id={resource_id}, ontology_type={ontology_type}, external_identifier={external_identifier}, uri_template={uri_template}")
+            
+            # Validate required fields
+            if not all([resource_id, ontology_type, external_identifier]):
+                logger.error(f"ONTOLOGY_LINKING_POST: Missing required fields - resource_id={bool(resource_id)}, ontology_type={bool(ontology_type)}, external_identifier={bool(external_identifier)}")
+                return HttpResponse(
+                    '<div class="alert alert-error"><span>Missing required fields</span></div>',
+                    status=400
+                )
+            
+            # Get the resource being linked
+            try:
+                resource = Resource.objects.get(pk=resource_id)
+                logger.info(f"ONTOLOGY_LINKING_POST: Found resource: {resource.uri} (name: {resource.name})")
+            except Resource.DoesNotExist:
+                logger.error(f"ONTOLOGY_LINKING_POST: Resource not found for ID: {resource_id}")
+                return HttpResponse(
+                    '<div class="alert alert-error"><span>Resource not found</span></div>',
+                    status=404
+                )
+            
+            # Generate external URI based on template
+            if '{identifier}' in uri_template:
+                external_uri = uri_template.replace('{identifier}', external_identifier)
+            else:
+                # For ontologies like arkumu/cidoc that don't use {identifier} template
+                external_uri = uri_template + external_identifier
+            
+            logger.info(f"ONTOLOGY_LINKING_POST: Generated external URI: {external_uri}")
+            
+            # Get or create the owl:sameAs predicate
+            same_as_predicate, created = Resource.objects.get_or_create(
+                uri='http://www.w3.org/2002/07/owl#sameAs',
+                defaults={
+                    'name': 'sameAs',
+                    'resource_type': ResourceType.PROPERTY,
+                    'organization': None  # Standard ontology predicates don't belong to organizations
+                }
+            )
+            logger.info(f"ONTOLOGY_LINKING_POST: owl:sameAs predicate - created: {created}, ID: {same_as_predicate.id}")
+            
+            # Get or create the external resource
+            external_resource, ext_created = Resource.objects.get_or_create(
+                uri=external_uri,
+                defaults={
+                    'name': external_identifier,
+                    'resource_type': ResourceType.IRI,
+                    'organization': None  # External ontology resources don't belong to organizations
+                }
+            )
+            logger.info(f"ONTOLOGY_LINKING_POST: External resource - created: {ext_created}, URI: {external_resource.uri}, ID: {external_resource.id}")
+            
+            # Create the owl:sameAs triple (external ontology links are derived)
+            triple, triple_created = Triple.objects.get_or_create(
+                subject=resource,
+                predicate=same_as_predicate,
+                object=external_resource,
+                defaults={
+                    'source': None,  # Derived triples have no source
+                    'is_derived': True
+                }
+            )
+            logger.info(f"ONTOLOGY_LINKING_POST: Triple - created: {triple_created}, ID: {triple.id}, is_derived: {triple.is_derived}, source: {triple.source}")
+            
+            if triple_created:
+                logger.info(f"ONTOLOGY_LINKING_POST: SUCCESS - Created new ontology link for {resource.uri} -> {external_uri}")
+                return HttpResponse(
+                    f'''
+                    <div class="alert alert-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <h3 class="font-bold">Ontology Link Created!</h3>
+                            <div class="text-xs">
+                                Linked <strong>{resource.name}</strong> to <strong>{ontology_type}</strong>: {external_identifier}
+                            </div>
+                        </div>
+                    </div>
+                    ''',
+                    headers={
+                        'HX-Trigger': 'ontologyLinked, refreshDataExplorer',
+                        'HX-Retarget': '#ontology-link-result',
+                        'HX-Reswap': 'innerHTML'
+                    }
+                )
+            else:
+                logger.info(f"ONTOLOGY_LINKING_POST: DUPLICATE - Link already exists for {resource.uri} -> {external_uri}")
+                return HttpResponse(
+                    f'''
+                    <div class="alert alert-info">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div>
+                            <h3 class="font-bold">Link Already Exists</h3>
+                            <div class="text-xs">
+                                <strong>{resource.name}</strong> is already linked to <strong>{ontology_type}</strong>: {external_identifier}
+                            </div>
+                        </div>
+                    </div>
+                    ''',
+                    headers={
+                        'HX-Trigger': 'ontologyLinkExists, refreshDataExplorer',
+                        'HX-Retarget': '#ontology-link-result',
+                        'HX-Reswap': 'innerHTML'
+                    }
+                )
+                
+        except Exception as e:
+            logger.error(f"ONTOLOGY_LINKING_POST: ERROR - Failed to create ontology link: {str(e)}", exc_info=True)
+            return HttpResponse(
+                f'''
+                <div class="alert alert-error">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                        <h3 class="font-bold">Error Creating Link</h3>
+                        <div class="text-xs">Failed to create ontology link: {str(e)}</div>
+                    </div>
+                </div>
+                ''',
+                status=500
+            )

@@ -7,6 +7,7 @@ from django.http import Http404, HttpResponse
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.middleware.csrf import get_token
+from django.db.models import Q
 import graphviz
 import logging
 import json
@@ -205,6 +206,9 @@ class ResourceGraphService:
     def generate_initial_graph(self, central_resource, levels=1, max_nodes=25):
         """Generate initial resource graph showing only specified levels"""
         
+        # Get organization for filtering
+        organization_code = central_resource.organization.code if central_resource.organization else None
+        
         # Create GraphViz graph with neato layout
         dot = graphviz.Digraph(
             name='ResourceGraph',
@@ -243,7 +247,8 @@ class ResourceGraphService:
         graph_data = self._get_level_based_relationship_data(
             central_resource, 
             levels=levels, 
-            max_nodes=max_nodes
+            max_nodes=max_nodes,
+            organization_code=organization_code
         )
         
         # Build the graph
@@ -294,9 +299,14 @@ class ResourceGraphService:
                 continue
             
             # Get relationships where this resource is subject
-            subject_triples = Triple.objects.filter(
-                subject=resource
-            ).select_related('predicate', 'object')[:20]  # Increased limit per resource
+            subject_query = Triple.objects.filter(subject=resource).select_related('predicate', 'object')
+            if organization_code:
+                # Include organization resources AND external ontology links (owl:sameAs with no organization)
+                subject_query = subject_query.filter(
+                    Q(object__organization__code=organization_code) |
+                    Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', object__organization__isnull=True)
+                )
+            subject_triples = subject_query[:50]  # Increased limit to include owl:sameAs relationships
             
             for triple in subject_triples:
                 if len(nodes) >= max_nodes:
@@ -326,9 +336,14 @@ class ResourceGraphService:
                     })
             
             # Get relationships where this resource is object
-            object_triples = Triple.objects.filter(
-                object=resource
-            ).select_related('subject', 'predicate')[:20]  # Increased limit per resource
+            object_query = Triple.objects.filter(object=resource).select_related('subject', 'predicate')
+            if organization_code:
+                # Include organization resources AND external ontology links (owl:sameAs with no organization)
+                object_query = object_query.filter(
+                    Q(subject__organization__code=organization_code) |
+                    Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', subject__organization__isnull=True)
+                )
+            object_triples = object_query[:50]  # Increased limit to include owl:sameAs relationships
             
             for triple in object_triples:
                 if len(nodes) >= max_nodes:
@@ -380,7 +395,7 @@ class ResourceGraphService:
         
         return {'nodes': filtered_nodes, 'edges': edges}
     
-    def _get_level_based_relationship_data(self, central_resource, levels=1, max_nodes=25):
+    def _get_level_based_relationship_data(self, central_resource, levels=1, max_nodes=25, organization_code=None):
         """Get relationship data with clear level-based structure"""
         
         nodes = {}
@@ -404,7 +419,7 @@ class ResourceGraphService:
                     break
                 
                 # Get direct connections (both outgoing and incoming)
-                connections = self._get_direct_connections(current_resource, max_per_resource=8)
+                connections = self._get_direct_connections(current_resource, max_per_resource=100, organization_code=organization_code)
                 
                 for connection in connections:
                     related_resource = connection['related_resource']
@@ -445,14 +460,19 @@ class ResourceGraphService:
         
         return {'nodes': nodes, 'edges': edges}
     
-    def _get_direct_connections(self, resource, max_per_resource=8):
+    def _get_direct_connections(self, resource, max_per_resource=8, organization_code=None):
         """Get direct connections for a resource"""
         connections = []
         
         # Outgoing relationships (where resource is subject)
-        outgoing_triples = Triple.objects.filter(
-            subject=resource
-        ).select_related('predicate', 'object')[:max_per_resource//2]
+        outgoing_query = Triple.objects.filter(subject=resource).select_related('predicate', 'object')
+        if organization_code:
+            # Include organization resources AND external ontology links (owl:sameAs with no organization)
+            outgoing_query = outgoing_query.filter(
+                Q(object__organization__code=organization_code) |
+                Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', object__organization__isnull=True)
+            )
+        outgoing_triples = outgoing_query[:max_per_resource//2]
         
         for triple in outgoing_triples:
             if triple.object:  # Skip triples without objects
@@ -466,9 +486,14 @@ class ResourceGraphService:
                 })
         
         # Incoming relationships (where resource is object)
-        incoming_triples = Triple.objects.filter(
-            object=resource
-        ).select_related('subject', 'predicate')[:max_per_resource//2]
+        incoming_query = Triple.objects.filter(object=resource).select_related('subject', 'predicate')
+        if organization_code:
+            # Include organization resources AND external ontology links (owl:sameAs with no organization)
+            incoming_query = incoming_query.filter(
+                Q(subject__organization__code=organization_code) |
+                Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', subject__organization__isnull=True)
+            )
+        incoming_triples = incoming_query[:max_per_resource//2]
         
         for triple in incoming_triples:
             connections.append({

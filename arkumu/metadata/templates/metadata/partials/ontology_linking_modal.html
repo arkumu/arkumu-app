@@ -22,7 +22,10 @@
             </p>
         </div>
         
-        <form class="space-y-4">
+        <form method="post" action="{% url 'metadata:ontology_linking_modal' %}" 
+              hx-post="{% url 'metadata:ontology_linking_modal' %}"
+              hx-target="#ontology-link-result"
+              class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="resource_id" value="{{ resource.pk }}">
             
@@ -82,6 +85,9 @@
             <div class="bg-base-200 p-3 rounded" id="ontology-description" style="display: none;">
                 <p class="text-sm text-base-content/80" id="description-text"></p>
             </div>
+            
+            <!-- Result Display -->
+            <div id="ontology-link-result"></div>
             
             <div class="modal-action">
                 <button type="button" class="btn btn-ghost" onclick="document.getElementById('resource-modal').close()">Cancel</button>
