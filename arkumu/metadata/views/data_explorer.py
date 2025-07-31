@@ -26,12 +26,11 @@ class DataExplorerView(ListView):
             is_derived=True
         )
         
-        # Get linked ontology name from both owl:sameAs and external ontology relationships
+        # Get linked ontology name from owl:sameAs relationships only
         linked_ontology_subquery = Triple.objects.filter(
-            subject=OuterRef('pk')
-        ).filter(
-            Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', is_derived=True) |
-            Q(predicate__uri__regex=r'.*/properties/.*(orcid|wikidata|viaf|gnd|aat|lccn|dublin-core|schema-org|cidoc-crm)', is_derived=False)
+            subject=OuterRef('pk'),
+            predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+            is_derived=True
         ).annotate(
             ontology_name=Case(
                 # owl:sameAs relationships
@@ -46,13 +45,9 @@ class DataExplorerView(ListView):
                 When(object__uri__startswith='https://d-nb.info/gnd/', then=Value('GND')),
                 When(object__uri__startswith='http://id.loc.gov/', then=Value('Library of Congress')),
                 When(object__uri__startswith='https://isni.org/', then=Value('ISNI')),
-                # Detect by predicate patterns for identifier properties
-                When(predicate__uri__contains='lccn', then=Value('Library of Congress')),
                 When(object__uri__startswith='http://vocab.getty.edu/aat/', then=Value('AAT')),
                 When(object__uri__startswith='http://terminology.lido-schema.org/', then=Value('LIDO')),
                 When(object__uri__startswith='https://filmportal.vocnet.org/', then=Value('Filmportal')),
-                # Check if object is a literal containing Wikidata ID
-                When(object__value__startswith='Q', then=Value('Wikidata')),
                 default=Value('Other'),
                 output_field=CharField()
             )
@@ -153,10 +148,9 @@ class DataExplorerView(ListView):
             
             # Get linked ontology name subquery for placeholders (use same logic as main query)
             linked_ontology_subquery_ph = Triple.objects.filter(
-                subject=OuterRef('pk')
-            ).filter(
-                Q(predicate__uri='http://www.w3.org/2002/07/owl#sameAs', is_derived=True) |
-                Q(predicate__uri__regex=r'.*/properties/.*(orcid|wikidata|viaf|gnd|aat|lccn|dublin-core|schema-org|cidoc-crm)', is_derived=False)
+                subject=OuterRef('pk'),
+                predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+                is_derived=True
             ).annotate(
                 ontology_name=Case(
                     # owl:sameAs relationships
@@ -171,13 +165,9 @@ class DataExplorerView(ListView):
                     When(object__uri__startswith='https://d-nb.info/gnd/', then=Value('GND')),
                     When(object__uri__startswith='http://id.loc.gov/', then=Value('Library of Congress')),
                     When(object__uri__startswith='https://isni.org/', then=Value('ISNI')),
-                    # Detect by predicate patterns for identifier properties
-                    When(predicate__uri__contains='lccn', then=Value('Library of Congress')),
                     When(object__uri__startswith='http://vocab.getty.edu/aat/', then=Value('AAT')),
                     When(object__uri__startswith='http://terminology.lido-schema.org/', then=Value('LIDO')),
                     When(object__uri__startswith='https://filmportal.vocnet.org/', then=Value('Filmportal')),
-                    # Check if object is a literal containing Wikidata ID
-                    When(object__value__startswith='Q', then=Value('Wikidata')),
                     default=Value('Other'),
                     output_field=CharField()
                 )
