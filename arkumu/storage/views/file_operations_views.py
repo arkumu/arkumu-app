@@ -274,7 +274,7 @@ def delete_object(request, bucket_type, object_type, object_path):
         object_type: "file" or "folder"
         object_path: The path to the object within the bucket
     """
-    if request.method != "POST":
+    if request.method not in ["POST", "DELETE"]:
         return JsonResponse({"success": False, "error": "Method not allowed"})
     
     try:
@@ -301,7 +301,12 @@ def delete_object(request, bucket_type, object_type, object_path):
             logger.info(f"🔥 DELETE_DEBUG: Processing successful deletion, HTMX={request.headers.get('HX-Request')}, bucket_type={bucket_type}")
             
             if request.headers.get('HX-Request') == 'true':
-                # For HTMX requests, return a toast notification AND refresh file browser
+                # For HTMX DELETE requests, return empty response so HTMX removes the element
+                if request.method == "DELETE":
+                    logger.info(f"🔥 DELETE_DEBUG: Returning empty response for DELETE request")
+                    return HttpResponse("")
+                
+                # For HTMX POST requests, return a toast notification AND refresh file browser
                 from django.template.loader import render_to_string
                 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
                 
