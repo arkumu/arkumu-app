@@ -85,12 +85,22 @@ class ResourceManager:
                         "organization": self.organization
                     }
                 )
+                self.owl_same_as_prop, _ = Resource.objects.get_or_create(
+                    uri="http://www.w3.org/2002/07/owl#sameAs",
+                    defaults={
+                        "resource_type": ResourceType.PROPERTY,
+                        "name": "sameAs",
+                        "is_placeholder": False,
+                        "organization": None  # OWL properties are standard, no organization
+                    }
+                )
         except Exception as e:
             logger.error(f"Failed to initialize standard RDF properties: {e}", exc_info=True)
             self.has_part_prop = None
             self.rdf_value_prop = None
             self.dcterms_relation_prop = None
             self.is_part_of_prop = None
+            self.owl_same_as_prop = None
     
     def generate_dataset_uri(self, dataset_name: str) -> str:
         """Generate URI for a dataset."""
@@ -486,6 +496,33 @@ class ResourceManager:
                 
         except Exception as e:
             logger.error(f"Failed to create relationship triple: {e}")
+            raise
+    
+    def create_owl_same_as_triple(self, subject_resource: Resource, object_resource: Resource) -> Triple:
+        """Create an owl:sameAs triple for external ontology hard linking."""
+        try:
+            with transaction.atomic():
+                if not self.owl_same_as_prop:
+                    logger.error("owl:sameAs property not initialized")
+                    raise ValueError("owl:sameAs property not available")
+                
+                # Create the owl:sameAs triple (marked as derived for semantic linking)
+                triple, created = Triple.objects.get_or_create(
+                    subject=subject_resource,
+                    predicate=self.owl_same_as_prop,
+                    object=object_resource,
+                    source=self.organization,
+                    defaults={"is_derived": True}  # Mark as derived for semantic reasoning
+                )
+                
+                if created and self.statistics:
+                    self.statistics.current_metrics.triples_created += 1
+                    self.statistics.current_metrics.relationships_created += 1
+                
+                return triple
+                
+        except Exception as e:
+            logger.error(f"Failed to create owl:sameAs triple: {e}")
             raise
     
     def create_entity_resources_bulk(self, entity_data: List[Tuple[str, str]]) -> Dict[str, Resource]:
