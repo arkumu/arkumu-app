@@ -25,7 +25,7 @@
                     Upload Files to S3
                 </h2>
                 
-                <!-- Embedded Upload Form -->
+                <!-- Upload Form -->
                 <form enctype="multipart/form-data"
                       hx-post="/storage/upload/streaming/"
                       hx-swap="none"
@@ -188,6 +188,29 @@ document.addEventListener('DOMContentLoaded', function() {
     if (form) {
         console.log('📁 DASHBOARD DEBUG: Form found');
         
+        // Function to update upload endpoint based on base folder selection
+        function updateUploadEndpoint() {
+            const baseFolderSelect = form.querySelector('select[name="base_folder"]');
+            if (baseFolderSelect) {
+                const baseFolder = baseFolderSelect.value;
+                const endpoint = baseFolder === 'data' ? '/storage/upload/streaming/raw/' : '/storage/upload/streaming/';
+                form.setAttribute('hx-post', endpoint);
+                console.log(`📡 HTMX: Updated endpoint to ${endpoint} for baseFolder: ${baseFolder}`);
+            }
+        }
+        
+        // Update endpoint when base folder changes
+        document.body.addEventListener('change', function(evt) {
+            if (evt.target && evt.target.name === 'base_folder') {
+                updateUploadEndpoint();
+            }
+        });
+        
+        // Update endpoint after HTMX swaps (when base folder select is added/updated)
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            updateUploadEndpoint();
+        });
+        
         // Debug: Log when HTMX afterSwap happens (after OOB swaps)
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             console.log('📁 DASHBOARD DEBUG: HTMX afterSwap event');
@@ -209,6 +232,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Intercept HTMX before request to add folder structure data
         form.addEventListener('htmx:configRequest', function(evt) {
+            console.log('🚀 HTMX CONFIG REQUEST FIRED - JavaScript is running!');
             // Get the current file input (might have been replaced by HTMX OOB swap)
             const fileInput = form.querySelector('input[type="file"][name="files"]');
             
@@ -224,6 +248,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Check if folder mode is active
             const isFolderMode = fileInput.hasAttribute('webkitdirectory');
             console.log('📁 DASHBOARD DEBUG: isFolderMode =', isFolderMode);
+            console.log('📁 DASHBOARD DEBUG: fileInput.files.length =', fileInput.files.length);
+            console.log('📁 DASHBOARD DEBUG: Condition check: isFolderMode && fileInput.files.length > 0 =', isFolderMode && fileInput.files.length > 0);
             
             if (isFolderMode && fileInput.files.length > 0) {
                 console.log('📁 DASHBOARD DEBUG: Processing folder upload');

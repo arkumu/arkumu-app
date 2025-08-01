@@ -110,9 +110,22 @@ def streaming_upload_form(request):
     
     logger.info(f"📁 FOLDER UPLOAD DEBUG: preserve_folder_structure = {preserve_folder_structure}")
     logger.info(f"📁 FOLDER UPLOAD DEBUG: POST data keys = {list(request.POST.keys())}")
+    logger.info(f"📁 FOLDER UPLOAD DEBUG: folder_name = '{folder_name}' (from POST)")
+    logger.info(f"📁 FOLDER UPLOAD DEBUG: base_folder = '{base_folder}' (from POST)")
     
     # Get organization (if provided)
     organization = request.POST.get('organization', '').strip()
+    
+    # 🚀 SMART ROUTING: Check if we should use raw streaming for data uploads
+    if folder_name.startswith('data/') or folder_name == 'data':
+        logger.info(f"🚀 ROUTING: Detected data folder upload, redirecting to raw streaming")
+        # Import and delegate to raw streaming view
+        from .raw_stream_upload import RawStreamUploadView
+        raw_view = RawStreamUploadView()
+        raw_view.request = request  # Pass request context
+        return raw_view.post(request)
+    else:
+        logger.info(f"📁 ROUTING: Using standard streaming for metadata folder: {folder_name}")
     
     # Debug: Log all form field counts
     logger.info(f"📊 FORM DEBUG: Total POST fields: {len(request.POST)}")
