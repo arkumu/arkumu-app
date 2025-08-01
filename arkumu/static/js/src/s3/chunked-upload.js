@@ -11,6 +11,7 @@ class ChunkedUploadHandler {
         this.chunkSize = options.chunkSize || 75; // Files per chunk
         this.maxConcurrent = options.maxConcurrent || 3; // Concurrent chunks
         this.uploadUrl = options.uploadUrl || '/storage/upload/streaming/';
+        this.baseFolder = options.baseFolder || '';
         this.preserveFolderStructure = options.preserveFolderStructure || false;
         this.onProgress = options.onProgress || this.defaultProgressHandler;
         this.onChunkComplete = options.onChunkComplete || this.defaultChunkCompleteHandler;
@@ -259,7 +260,11 @@ class ChunkedUploadHandler {
         // Add CSRF token
         formData.append('csrfmiddlewaretoken', this.getCsrfToken());
 
-        const response = await fetch(this.uploadUrl, {
+        // Route to raw streaming endpoint for data uploads
+        const uploadUrl = baseFolder === 'data' ? '/storage/upload/streaming/raw/' : this.uploadUrl;
+        console.log(`📡 CHUNKED: Using endpoint: ${uploadUrl} for baseFolder: ${baseFolder}`);
+        
+        const response = await fetch(uploadUrl, {
             method: 'POST',
             body: formData,
             signal: this.abortController.signal,

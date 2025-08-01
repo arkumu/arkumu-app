@@ -257,7 +257,11 @@ class UploadFormHandler {
         }
 
         try {
-            const response = await fetch('/storage/upload/streaming/', {
+            // Route to raw streaming endpoint for data uploads
+            const uploadUrl = baseFolder === 'data' ? '/storage/upload/streaming/raw/' : '/storage/upload/streaming/';
+            console.log(`📡 Using endpoint: ${uploadUrl} for baseFolder: ${baseFolder}`);
+            
+            const response = await fetch(uploadUrl, {
                 method: 'POST',
                 body: formData
             });
