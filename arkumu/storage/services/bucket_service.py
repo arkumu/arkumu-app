@@ -359,12 +359,14 @@ class BucketService:
                 if not result["success"]:
                     return []
         
-        logger.info(f"Listing contents for bucket: {bucket_name}, prefix: {prefix}")
+        start_time = time.time()
+        logger.info(f"⏱️ S3 LIST START: Listing contents for bucket: {bucket_name}, prefix: {prefix} at {start_time}")
         logger.info(f"🔑 Using cache key: {cache_key}")
         contents = []
         
         try:
             paginator = self.base_s3_service.s3_client.get_paginator('list_objects_v2')
+            logger.info(f"⏱️ S3 PAGINATOR: Created paginator at {time.time()}")
             for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix, Delimiter='/'):
                 # Add folders (CommonPrefixes)
                 for prefix_info in page.get('CommonPrefixes', []):
@@ -391,11 +393,13 @@ class BucketService:
                             "last_modified": obj.get('LastModified')
                         })
             
-            logger.info(f"Found {len(contents)} items in {bucket_name} with prefix '{prefix}'")
+            end_time = time.time()
+            logger.info(f"⏱️ S3 LIST COMPLETE: Found {len(contents)} items in {bucket_name} with prefix '{prefix}' at {end_time}")
             if contents:
                 logger.info(f"📁 Items found: {[item.get('name', 'unnamed') + ' (' + item.get('type', 'unknown') + ')' for item in contents[:5]]}")  # Show first 5 items
             
             # Cache the results for 5 minutes (300 seconds)
+            logger.info(f"⏱️ CACHE SET: Caching {len(contents)} items with key {cache_key}")
             self.cache.set(cache_key, contents, timeout=300)
             
             return contents
