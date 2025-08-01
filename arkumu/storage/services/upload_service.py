@@ -31,9 +31,19 @@ class UploadService:
         """
         Initialize the UploadService with reference to BaseStorageService.
         """
+        init_start = time.time()
+        logger.info(f"⏱️ UPLOAD SERVICE INIT START: {init_start:.3f}")
         logger.info("Initializing UploadService...")
+        
         # Get the singleton instance of BaseStorageService for S3 operations
+        base_service_start = time.time()
+        logger.info(f"⏱️ BASE SERVICE INIT START: {base_service_start:.3f}")
         self.base_s3_service = BaseStorageService()
+        base_service_end = time.time()
+        logger.info(f"⏱️ BASE SERVICE INIT END: {base_service_end:.3f} (took {base_service_end - base_service_start:.3f}s)")
+        
+        init_end = time.time()
+        logger.info(f"⏱️ UPLOAD SERVICE INIT END: {init_end:.3f} (took {init_end - init_start:.3f}s)")
         logger.info(f"UploadService initialized using BaseStorageService with endpoint: {self.base_s3_service.endpoint_url}")
 
     def _safe_head_object(self, bucket_name: str, s3_key: str) -> Dict[str, Any]:
@@ -119,20 +129,27 @@ class UploadService:
             Dictionary with upload result
         """
         try:
-            logger.debug(f"Uploading to custom key: {s3_key}")
+            upload_start = time.time()
+            logger.info(f"⏱️ UPLOAD START: {s3_key} at {upload_start:.3f}")
             
-            # Prepare upload arguments
-            upload_args = {
-                'ContentType': content_type,
-            }
-            
-            # Upload the file using BaseStorageService's S3 client
-            self.base_s3_service.s3_client.upload_fileobj(
-                file_obj,
-                bucket_name,
-                s3_key,
-                ExtraArgs=upload_args
+            # Use encrypted upload method from BaseStorageService
+            upload_result = self.base_s3_service.upload_fileobj_encrypted(
+                fileobj=file_obj,
+                bucket_name=bucket_name,
+                s3_key=s3_key,
+                content_type=content_type
             )
+            
+            upload_end = time.time()
+            upload_duration = upload_end - upload_start
+            logger.info(f"⏱️ UPLOAD END: {s3_key} at {upload_end:.3f} (took {upload_duration:.3f}s)")
+            
+            if not upload_result.get('success', False):
+                return {
+                    'success': False,
+                    'error': upload_result.get('error', 'Upload failed'),
+                    's3_key': s3_key
+                }
             
             # Verify upload and get file info
             head_response = self._safe_head_object(bucket_name, s3_key)
@@ -206,13 +223,20 @@ class UploadService:
                 'ContentType': content_type,
             }
             
-            # Upload the file using BaseStorageService's S3 client
-            self.base_s3_service.s3_client.upload_fileobj(
-                file_obj,
-                self.base_s3_service.ingest_bucket,
-                s3_key,
-                ExtraArgs=upload_args
+            # Use encrypted upload method from BaseStorageService
+            upload_result = self.base_s3_service.upload_fileobj_encrypted(
+                fileobj=file_obj,
+                bucket_name=self.base_s3_service.ingest_bucket,
+                s3_key=s3_key,
+                content_type=content_type
             )
+            
+            if not upload_result.get('success', False):
+                return {
+                    'success': False,
+                    'error': upload_result.get('error', 'Upload failed'),
+                    'file_name': file_name
+                }
             
             # Verify upload and get file info
             head_response = self._safe_head_object(self.base_s3_service.ingest_bucket, s3_key)
@@ -632,14 +656,18 @@ class UploadService:
                 # Track start time for performance analysis
                 start_time = time.time()
                 
-                # Upload the file using optimized settings
-                self.base_s3_service.s3_client.upload_file(
-                    file_path,
-                    bucket_name,
-                    s3_key,
-                    ExtraArgs=upload_args,
-                    Config=transfer_config
-                )
+                # Use encrypted upload method from BaseStorageService
+                with open(file_path, 'rb') as file_obj:
+                    upload_result = self.base_s3_service.upload_fileobj_encrypted(
+                        fileobj=file_obj,
+                        bucket_name=bucket_name,
+                        s3_key=s3_key,
+                        content_type=content_type,
+                        metadata=metadata
+                    )
+                    
+                    if not upload_result.get('success', False):
+                        raise Exception(upload_result.get('error', 'Upload failed'))
                 
                 # Calculate upload speed
                 end_time = time.time()

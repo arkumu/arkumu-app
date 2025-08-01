@@ -22,6 +22,7 @@ urlpatterns = [
     path("upload/streaming/api/", streaming_upload_views.streaming_upload_api, name="streaming_upload_api"),
     path("upload/streaming/single/", streaming_upload_views.streaming_upload_single, name="streaming_upload_single"),
     path("upload/status/<uuid:session_id>/", upload_status_view.upload_status, name="upload_status"),
+    path("upload/dismiss-banner/", upload_status_view.dismiss_upload_banner, name="dismiss_upload_banner"),
     path("file/info/", streaming_upload_views.file_info, name="file_info"),
     
     # Organization-specific views

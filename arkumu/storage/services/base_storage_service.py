@@ -475,10 +475,10 @@ class BaseStorageService:
         # For AWS S3, use AES256 server-side encryption
         # For MinIO/other S3-compatible, encryption might not be supported
         if self.is_minio:
-            logger.debug("🔒 ENCRYPTION: MinIO detected - encryption may not be supported")
+            logger.info("🔒 ENCRYPTION: MinIO detected - encryption may not be supported")
             return {}
         
-        logger.debug("🔒 ENCRYPTION: Using AES256 server-side encryption")
+        logger.info("🔒 ENCRYPTION: Using AES256 server-side encryption")
         return {
             'ServerSideEncryption': 'AES256'
         }
@@ -513,8 +513,8 @@ class BaseStorageService:
                 ExtraArgs=extra_args
             )
             
-            # Log encryption only at debug level to reduce noise
-            logger.debug(f"🔒 ENCRYPTED UPLOAD: {s3_key} -> s3://{bucket_name}")
+            # Log encryption at info level to confirm it's working
+            logger.info(f"🔒 ENCRYPTED UPLOAD: {s3_key} -> s3://{bucket_name} (AES256: {bool(encryption_settings)})")
             return {
                 'success': True,
                 'encrypted': bool(encryption_settings),
