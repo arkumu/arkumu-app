@@ -351,6 +351,8 @@ def upload_mode_toggle(request):
     """
     from django.template.loader import render_to_string
     
+    logger.info(f"⏱️ UPLOAD MODE TOGGLE: Received at {time.strftime('%H:%M:%S', time.localtime())}.{int((time.time() % 1) * 1000):03d}")
+    
     mode = request.GET.get('mode', 'files')
     
     # Prepare context for template

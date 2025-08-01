@@ -61,6 +61,8 @@ def streaming_upload_form(request):
     GET: Show the upload form
     POST: Process uploaded files
     """
+    logger.info(f"⏱️ STREAMING UPLOAD FORM: Called at {time.strftime('%H:%M:%S', time.localtime())}.{int((time.time() % 1) * 1000):03d} - Method: {request.method}")
+    
     if request.method == 'GET':
         # Get optional organization parameter
         organization = request.GET.get('organization', '')
@@ -81,7 +83,7 @@ def streaming_upload_form(request):
     
     # Handle POST request with file uploads
     upload_start_time = time.time()
-    logger.info(f"Processing streaming upload for user: {request.user.username}")
+    logger.info(f"⏱️ STREAMING UPLOAD: Processing for user {request.user.username} at {time.strftime('%H:%M:%S', time.localtime())}.{int((time.time() % 1) * 1000):03d}")
     logger.info(f"📊 UPLOAD TYPE: Standard streaming upload endpoint")
     logger.info(f"⏱️ TIMING: Upload started at {upload_start_time:.3f}")
     
@@ -216,6 +218,10 @@ def streaming_upload_form(request):
         upload_session.s3_bucket = target_bucket
         upload_session.total_files = len(files)
         upload_session.save()
+        
+        # Log encryption status once at the beginning
+        encryption_enabled = not upload_service.base_s3_service.is_minio
+        logger.info(f"🔒 ENCRYPTION STATUS: {'AES256 enabled' if encryption_enabled else 'Disabled (MinIO)'}")
         
         # Record start time
         start_time = time.time()

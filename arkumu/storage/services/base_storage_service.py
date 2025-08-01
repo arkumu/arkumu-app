@@ -130,6 +130,8 @@ class BaseStorageService:
         Create an S3 client configured for the current environment.
         Assigns to self.s3_client and self.presigned_client.
         """
+        logger.info(f"⏱️ S3 CLIENT CREATION: Starting at {time.strftime('%H:%M:%S', time.localtime())}.{int((time.time() % 1) * 1000):03d}")
+        
         # Get max pool connections from environment, with sensible defaults
         max_pool_connections = int(os.environ.get('AWS_MAX_POOL_CONNECTIONS', '10'))
         
@@ -218,10 +220,16 @@ class BaseStorageService:
                     self.presigned_client = boto3.client(**client_kwargs)
                     logger.info("Created presigned client (same as main client for Dell EMC/S3-compatible endpoint).")
 
+        s3_create_start = time.time()
         self.s3_client = boto3.client(**client_kwargs)
+        s3_create_end = time.time()
+        logger.info(f"⏱️ S3 CLIENT CREATED: boto3.client() took {s3_create_end - s3_create_start:.3f}s")
         
         # Test S3 connection and log results
+        test_start = time.time()
         self._test_s3_connection()
+        test_end = time.time()
+        logger.info(f"⏱️ S3 CONNECTION TEST: Took {test_end - test_start:.3f}s")
         
         # If not using a specific endpoint_url (i.e., targeting AWS S3 directly) 
         # and presigned_client wasn't created, make it the same as s3_client.
@@ -245,7 +253,10 @@ class BaseStorageService:
         try:
             # Test basic connection by listing buckets
             logger.info("===> Attempting to list buckets...")
+            list_start = time.time()
             response = self.s3_client.list_buckets()
+            list_end = time.time()
+            logger.info(f"⏱️ S3 LIST BUCKETS: Took {list_end - list_start:.3f}s")
             buckets = [bucket['Name'] for bucket in response.get('Buckets', [])]
             logger.info(f"✅ S3 connection successful! Found {len(buckets)} buckets: {buckets}")
             
@@ -475,10 +486,10 @@ class BaseStorageService:
         # For AWS S3, use AES256 server-side encryption
         # For MinIO/other S3-compatible, encryption might not be supported
         if self.is_minio:
-            logger.info("🔒 ENCRYPTION: MinIO detected - encryption may not be supported")
+            logger.debug("🔒 ENCRYPTION: MinIO detected - encryption may not be supported")
             return {}
         
-        logger.info("🔒 ENCRYPTION: Using AES256 server-side encryption")
+        logger.debug("🔒 ENCRYPTION: Using AES256 server-side encryption")
         return {
             'ServerSideEncryption': 'AES256'
         }
@@ -506,15 +517,18 @@ class BaseStorageService:
             extra_args['Metadata']['encrypted'] = 'false'
         
         try:
+            s3_start = time.time()
             self.s3_client.upload_fileobj(
                 Fileobj=fileobj,
                 Bucket=bucket_name,
                 Key=s3_key,
                 ExtraArgs=extra_args
             )
+            s3_end = time.time()
+            s3_duration = s3_end - s3_start
             
-            # Log encryption at info level to confirm it's working
-            logger.info(f"🔒 ENCRYPTED UPLOAD: {s3_key} -> s3://{bucket_name} (AES256: {bool(encryption_settings)})")
+            # Log encryption with timing at debug level
+            logger.debug(f"🔒 ENCRYPTED UPLOAD: {s3_key} -> s3://{bucket_name} (AES256: {bool(encryption_settings)}) took {s3_duration:.3f}s")
             return {
                 'success': True,
                 'encrypted': bool(encryption_settings),
