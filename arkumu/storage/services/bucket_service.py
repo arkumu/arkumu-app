@@ -31,23 +31,40 @@ PREDEFINED_ORGANIZATIONS = [
 class BucketService:
     """
     Service for managing organization-specific S3 buckets.
-    This service is NOT a singleton. It uses the BaseStorageService singleton for S3 interactions.
+    This service is now a singleton to prevent redundant initializations and S3 API calls.
     """
-    # Remove _instance and _lock, as this is no longer a singleton
-    # _instance = None
-    # _lock = threading.Lock() # Temporarily commented out lock as part of deadlock diagnosis
-    
-    # No __new__ method needed anymore
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        # Singleton pattern like BaseStorageService
+        if not cls._instance:
+            with cls._lock:
+                if not cls._instance:
+                    logger.info("-----> BucketService.__new__: Creating new singleton instance")
+                    cls._instance = super().__new__(cls)
+                else:
+                    logger.info("-----> BucketService.__new__: Instance already existed (another thread created it)")
+        else:
+            logger.info("-----> BucketService.__new__: Instance already existed")
+        return cls._instance
 
     def __init__(self):
+        # Check if this instance has already been initialized
+        if hasattr(self, '_bucket_initialized_flag') and self._bucket_initialized_flag:
+            logger.info("-----> BucketService.__init__: Already initialized. Skipping setup.")
+            return
+            
         logger.info("-----> BucketService.__init__ ENTERED")
         # Get the singleton instance of BaseStorageService
         self.base_s3_service = BaseStorageService()
         
-        # No longer call super().__init__ as BaseStorageService manages its own initialization.
-        # The S3 client and essential bucket info (ingest/production) are available via self.base_s3_service.
+        # Initialize cache for bucket existence and directory listings
+        from django.core.cache import cache
+        self.cache = cache
         
-        # If BucketService needs its own specific initialization that runs only once,
+        # Mark as initialized
+        self._bucket_initialized_flag = True
         # an instance flag like self._initialized could be used here.
         # For now, assume most of its state comes from BaseStorageService or is per-method.
 
@@ -93,13 +110,26 @@ class BucketService:
         Ensures an organization-specific bucket exists. 
         Now uses BaseStorageService's ensure_bucket_exists for creation if not check_only.
         If check_only is True, it only checks existence using head_bucket and does not create.
+        Uses Redis caching to avoid redundant S3 API calls.
         """
         bucket_name = self._get_organization_bucket_name(organization_id)
+        cache_key = f"bucket_exists_{bucket_name}"
+        
+        # Check cache first (30 minute TTL for bucket existence)
+        cached_result = self.cache.get(cache_key)
+        if cached_result and check_only:
+            logger.info(f"✅ Organization bucket '{bucket_name}' existence cached (skipping S3 call)")
+            return {"success": True, "bucket_name": bucket_name, "status": "exists"}
+        
         logger.info(f"Ensuring organization bucket: {bucket_name}, check_only={check_only}")
         
         try:
             self.base_s3_service.s3_client.head_bucket(Bucket=bucket_name)
             logger.info(f"✅ Organization bucket '{bucket_name}' already exists.")
+            
+            # Cache the positive result for 30 minutes
+            self.cache.set(cache_key, True, timeout=1800)
+            
             return {"success": True, "bucket_name": bucket_name, "status": "exists"}
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')
@@ -309,8 +339,26 @@ class BucketService:
             logger.error(f"Unexpected error during deletion of bucket {bucket_name}: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    def list_bucket_contents(self, bucket_name: str, prefix: str = "") -> List[Dict[str, Any]]:
-        """List contents of a bucket with optional prefix."""
+    def list_bucket_contents(self, bucket_name: str, prefix: str = "", skip_bucket_check: bool = True) -> List[Dict[str, Any]]:
+        """List contents of a bucket with optional prefix. Uses Redis caching to avoid redundant S3 API calls."""
+        cache_key = f"bucket_contents_{bucket_name}_{prefix.replace('/', '_')}"
+        
+        # Check cache first (5 minute TTL for directory listings)
+        cached_contents = self.cache.get(cache_key)
+        if cached_contents is not None:
+            logger.info(f"📋 Found {len(cached_contents)} cached items for {bucket_name} prefix '{prefix}' (skipping S3 call)")
+            return cached_contents
+        
+        # Skip bucket existence check for read operations (performance optimization)
+        if not skip_bucket_check:
+            bucket_exists = self.cache.get(f"bucket_exists_{bucket_name}")
+            if not bucket_exists:
+                logger.info(f"Verifying bucket {bucket_name} exists before listing")
+                # This will cache the result if successful
+                result = self.ensure_organization_bucket_exists(bucket_name.replace('arkumu-', ''), check_only=True)
+                if not result["success"]:
+                    return []
+        
         logger.info(f"Listing contents for bucket: {bucket_name}, prefix: {prefix}")
         contents = []
         
@@ -343,6 +391,10 @@ class BucketService:
                         })
             
             logger.info(f"Found {len(contents)} items in {bucket_name} with prefix '{prefix}'")
+            
+            # Cache the results for 5 minutes (300 seconds)
+            self.cache.set(cache_key, contents, timeout=300)
+            
             return contents
 
         except ClientError as e:

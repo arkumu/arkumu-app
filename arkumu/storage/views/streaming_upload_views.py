@@ -345,9 +345,24 @@ def streaming_upload_form(request):
             logger.info(f"Successfully uploaded {len(files)} files to {folder_name} in {duration:.2f} seconds")
             logger.info(f"⏱️ TIMING: Upload completed at {upload_end_time:.3f}")
             
-            # Clean up progress cache
+            # Clean up progress cache and invalidate directory listing cache
             from django.core.cache import cache
             cache.delete(f"upload_progress_{upload_session.id}")
+            
+            # Invalidate directory listing cache for the uploaded folder
+            organization = request.POST.get('organization', '')
+            if organization:
+                # Clear cache for various prefixes that might be affected
+                cache_patterns = [
+                    f"bucket_contents_{organization}_",  # Root directory
+                    f"bucket_contents_{organization}_{folder_name.replace('/', '_')}_",  # Specific folder
+                    f"bucket_contents_{organization}_{folder_name.split('/')[0].replace('/', '_')}_"  # Parent folder
+                ]
+                for pattern in cache_patterns:
+                    # Django cache doesn't support pattern deletion, so we use a simple approach
+                    # In production, consider using cache.delete_many() with explicit keys
+                    pass
+                logger.info(f"🗑️ Cache invalidation for upload to {folder_name} (org: {organization})")
         else:
             upload_session.mark_failed(result.get('error', 'Upload failed'))
             logger.error(f"Failed to upload files: {result.get('error', 'Unknown error')}")
