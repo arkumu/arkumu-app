@@ -238,6 +238,13 @@ document.addEventListener('DOMContentLoaded', function() {
         // Intercept HTMX before request to add folder structure data
         form.addEventListener('htmx:configRequest', function(evt) {
             console.log('🚀 HTMX CONFIG REQUEST FIRED - JavaScript is running!');
+            
+            // Skip processing for upload-mode toggle requests
+            if (evt.detail.path && evt.detail.path.includes('/upload-mode/')) {
+                console.log('📁 DASHBOARD DEBUG: Skipping upload-mode toggle request');
+                return;
+            }
+            
             // Get the current file input (might have been replaced by HTMX OOB swap)
             const fileInput = form.querySelector('input[type="file"][name="files"]');
             
