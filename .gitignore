@@ -327,5 +327,3 @@ cursor.md
 .claude/
 .cursor/
 
-# Keep raw upload test file untracked
-arkumu/storage/views/raw_upload.py
