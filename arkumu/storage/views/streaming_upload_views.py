@@ -311,11 +311,21 @@ def streaming_upload_form(request):
                 )
                 
                 # Refresh file browser content after successful upload
+                refresh_start = time.time()
+                logger.info("🕒 Starting file browser refresh")
+                
                 from arkumu.storage.services.bucket_service import BucketService
                 bucket_service = BucketService()
                 bucket_name = bucket_service.get_organization_bucket(organization)
-                contents = bucket_service.list_bucket_contents(bucket_name, '')
                 
+                # Optimized: Only list top-level folders (data/, metadata/) to avoid expensive deep listing
+                s3_start = time.time()
+                all_contents = bucket_service.list_bucket_contents(bucket_name, '')
+                # Filter to only show top-level folders, not their contents
+                contents = [item for item in all_contents if item.get('type') == 'folder' and '/' not in item.get('name', '').strip('/')]
+                logger.info(f"🕒 S3 listing took: {time.time() - s3_start:.2f}s, found {len(contents)} top-level folders")
+                
+                render_start = time.time()
                 file_browser_html = render_to_string(
                     'dashboard/organization_files_partial.html',
                     {
@@ -327,6 +337,9 @@ def streaming_upload_form(request):
                     },
                     request=request
                 )
+                logger.info(f"🕒 Template rendering took: {time.time() - render_start:.2f}s")
+                logger.info(f"🕒 Response size: {len(file_browser_html)} chars")
+                logger.info(f"🕒 Total file browser refresh: {time.time() - refresh_start:.2f}s")
                 
                 # Use template helper mixin for clean OOB response
                 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin

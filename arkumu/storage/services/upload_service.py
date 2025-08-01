@@ -799,8 +799,9 @@ class UploadService:
                     # Clean up the S3 key (remove double slashes, etc.)
                     s3_key = '/'.join(filter(None, s3_key.split('/')))
                     
-                    logger.info(f"📁 FOLDER UPLOAD DEBUG: {uploaded_file.name} -> S3 key: {s3_key}")
-                    logger.info(f"📁 FOLDER UPLOAD DEBUG: base_path={base_path}, relative_path={relative_path}")
+                    # Only log first few files to avoid spam
+                    if i <= 2:
+                        logger.info(f"📁 FOLDER UPLOAD DEBUG: {uploaded_file.name} -> S3 key: {s3_key}")
                     
                     # Upload the file directly using the existing upload methods
                     # Reset file position to beginning
