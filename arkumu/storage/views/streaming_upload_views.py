@@ -242,6 +242,11 @@ def streaming_upload_form(request):
                 else:
                     s3_key = f"{folder_name}/{uploaded_file.name}"
                 
+                # Sanitize filename for S3 metadata (ASCII only) using uri_utils
+                from arkumu.common.uri_utils import normalize_string_nfc, slugify_uri_part
+                # Use existing utilities for proper Unicode handling and ASCII conversion
+                sanitized_filename = slugify_uri_part(uploaded_file.name)
+                
                 # Use encrypted upload method from BaseStorageService
                 upload_result = upload_service.base_s3_service.upload_fileobj_encrypted(
                     fileobj=uploaded_file,
@@ -250,7 +255,7 @@ def streaming_upload_form(request):
                     content_type=uploaded_file.content_type,
                     metadata={
                         'uploaded_by': request.user.username,
-                        'original_filename': uploaded_file.name,
+                        'original_filename': sanitized_filename,
                         'upload_method': 'encrypted_streaming'
                     }
                 )
@@ -359,60 +364,31 @@ def streaming_upload_form(request):
             from django.http import StreamingHttpResponse
             
             if result.get('success', False):
-                # Use StreamingHttpResponse to bypass proxy buffering
-                def generate_success_response():
-                    # Use inherited helper
-                    helper = StreamingUploadHelper()
-                    
-                    # Render success notification
-                    success_html = render_to_string(
-                        'dashboard/partials/upload_results.html',
-                        {
-                            'success': True,
-                            'files_count': total_uploaded_files,
-                            'total_size': result['total_size_formatted'],
-                            'duration': result['duration']
-                        },
-                        request=request
-                    )
-                    
-                    # Get fresh file browser content
-                    from arkumu.storage.services.bucket_service import BucketService
-                    bucket_service = BucketService()
-                    bucket_name = bucket_service.get_organization_bucket(organization)
-                    
-                    # List only top-level folders for performance
-                    all_contents = bucket_service.list_bucket_contents(bucket_name, '')
-                    contents = [item for item in all_contents if item.get('type') == 'folder' and '/' not in item.get('name', '').strip('/')]
-                    
-                    file_browser_html = render_to_string(
-                        'dashboard/organization_files_partial.html',
-                        {
-                            'organization': organization,
-                            'bucket_name': bucket_name,
-                            'contents': contents,
-                            'selected_org_slug': organization,
-                            'prefix': ''
-                        },
-                        request=request
-                    )
-                    
-                    # Build OOB response with automatic refresh
-                    oob_updates = {
-                        'file-browser-content': file_browser_html  # Auto-refresh file browser
-                    }
-                    
-                    # Yield complete response with OOB updates
-                    yield helper.build_oob_response(success_html, oob_updates)
+                # Use helper for OOB response
+                helper = StreamingUploadHelper()
                 
-                response = StreamingHttpResponse(
-                    generate_success_response(),
-                    content_type='text/html'
-                )
-                # Tell proxy not to buffer
-                response['X-Accel-Buffering'] = 'no'
-                response['Cache-Control'] = 'no-cache, no-transform'
-                return response
+                # Return immediate response with HTMX polling for completion
+                upload_session_id = result.get('upload_session_id', '')
+                
+                # Main content: polling div that checks status every second
+                main_html = f'''
+                <div hx-get="/storage/upload/status/{upload_session_id}/?organization={organization}"
+                     hx-trigger="every 1s"
+                     hx-swap="outerHTML">
+                    <div class="alert alert-info">
+                        <span class="loading loading-spinner"></span>
+                        Processing upload... ({total_uploaded_files} files)
+                    </div>
+                </div>
+                '''
+                
+                # OOB updates to hide progress and update status
+                oob_updates = {
+                    'upload-status': main_html,
+                    'upload-progress': '<div class="mt-4 hidden"></div>'
+                }
+                
+                return HttpResponse(helper.build_oob_response('', oob_updates))
             else:
                 # Error: show error message using OOB updates
                 oob_updates = {
