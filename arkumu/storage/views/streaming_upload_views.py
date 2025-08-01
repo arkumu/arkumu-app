@@ -352,17 +352,29 @@ def streaming_upload_form(request):
             # Invalidate directory listing cache for the uploaded folder
             organization = request.POST.get('organization', '')
             if organization:
-                # Clear cache for various prefixes that might be affected
-                cache_patterns = [
-                    f"bucket_contents_{organization}_",  # Root directory
-                    f"bucket_contents_{organization}_{folder_name.replace('/', '_')}_",  # Specific folder
-                    f"bucket_contents_{organization}_{folder_name.split('/')[0].replace('/', '_')}_"  # Parent folder
+                # Get the actual bucket name that was used
+                bucket_name = bucket_service.get_organization_bucket(organization)
+                
+                # Clear specific cache keys that are affected by the upload
+                cache_keys_to_delete = [
+                    f"bucket_contents_{bucket_name}_",  # Root directory (empty prefix)
+                    f"bucket_contents_{bucket_name}_{folder_name.replace('/', '_')}_",  # Specific folder
                 ]
-                for pattern in cache_patterns:
-                    # Django cache doesn't support pattern deletion, so we use a simple approach
-                    # In production, consider using cache.delete_many() with explicit keys
-                    pass
-                logger.info(f"🗑️ Cache invalidation for upload to {folder_name} (org: {organization})")
+                
+                # Also clear parent directories
+                folder_parts = folder_name.split('/')
+                for i in range(len(folder_parts)):
+                    parent_path = '/'.join(folder_parts[:i+1])
+                    cache_key = f"bucket_contents_{bucket_name}_{parent_path.replace('/', '_')}_"
+                    if cache_key not in cache_keys_to_delete:
+                        cache_keys_to_delete.append(cache_key)
+                
+                # Delete the cache entries
+                for cache_key in cache_keys_to_delete:
+                    cache.delete(cache_key)
+                    logger.info(f"🗑️ Deleted cache key: {cache_key}")
+                
+                logger.info(f"🗑️ Cache invalidation completed for upload to {folder_name} (bucket: {bucket_name})")
         else:
             upload_session.mark_failed(result.get('error', 'Upload failed'))
             logger.error(f"Failed to upload files: {result.get('error', 'Unknown error')}")

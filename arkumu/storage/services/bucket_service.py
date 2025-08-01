@@ -360,6 +360,7 @@ class BucketService:
                     return []
         
         logger.info(f"Listing contents for bucket: {bucket_name}, prefix: {prefix}")
+        logger.info(f"🔑 Using cache key: {cache_key}")
         contents = []
         
         try:
@@ -391,6 +392,8 @@ class BucketService:
                         })
             
             logger.info(f"Found {len(contents)} items in {bucket_name} with prefix '{prefix}'")
+            if contents:
+                logger.info(f"📁 Items found: {[item.get('name', 'unnamed') + ' (' + item.get('type', 'unknown') + ')' for item in contents[:5]]}")  # Show first 5 items
             
             # Cache the results for 5 minutes (300 seconds)
             self.cache.set(cache_key, contents, timeout=300)

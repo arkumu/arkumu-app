@@ -300,6 +300,27 @@ def delete_object(request, bucket_type, object_type, object_path):
             logger.info(success_message)
             logger.info(f"🔥 DELETE_DEBUG: Processing successful deletion, HTMX={request.headers.get('HX-Request')}, bucket_type={bucket_type}")
             
+            # Invalidate directory listing cache after deletion
+            from django.core.cache import cache
+            if bucket_type.startswith('org-'):
+                organization = bucket_type.replace('org-', '')
+                # Clear cache for parent directories
+                cache_keys_to_delete = [
+                    f"bucket_contents_{organization}_",  # Root directory
+                ]
+                
+                # Clear parent directories of deleted item
+                if '/' in object_path:
+                    parent_path = '/'.join(object_path.split('/')[:-1])
+                    cache_keys_to_delete.append(f"bucket_contents_{organization}_{parent_path.replace('/', '_')}_")
+                
+                # Delete the cache entries
+                for cache_key in cache_keys_to_delete:
+                    cache.delete(cache_key)
+                    logger.info(f"🗑️ Deleted cache key after deletion: {cache_key}")
+                
+                logger.info(f"🗑️ Cache invalidation completed for deletion of {object_path} (org: {organization})")
+            
             if request.headers.get('HX-Request') == 'true':
                 # For HTMX DELETE requests, return empty response so HTMX removes the element
                 if request.method == "DELETE":
