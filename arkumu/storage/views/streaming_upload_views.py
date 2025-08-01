@@ -85,7 +85,8 @@ def streaming_upload_form(request):
     upload_start_time = time.time()
     logger.info(f"⏱️ STREAMING UPLOAD: Processing for user {request.user.username} at {time.strftime('%H:%M:%S', time.localtime())}.{int((time.time() % 1) * 1000):03d}")
     logger.info(f"📊 UPLOAD TYPE: Standard streaming upload endpoint")
-    logger.info(f"⏱️ TIMING: Upload started at {upload_start_time:.3f}")
+    from datetime import datetime
+    logger.info(f"⏱️ TIMING: Upload started at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
     
     # 🔍 CHECK NGINX HEADERS
     nginx_proxy = request.headers.get('X-Nginx-Proxy', 'false')
