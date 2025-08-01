@@ -28,11 +28,31 @@ def upload_status(request, session_id):
         upload_session = UploadSession.objects.get(id=session_id, user=request.user)
         organization = request.GET.get('organization', '')
         
-        # Get file count and metadata from session
+        # Get progress from Redis and session metadata
+        from django.core.cache import cache
+        progress_data = cache.get(f"upload_progress_{upload_session.id}", {})
         file_count = upload_session.files.count() if hasattr(upload_session, 'files') else upload_session.total_files
         import_stats = upload_session.import_stats or {}
         
         logger.info(f"📊 POLL: Session status = {upload_session.status}, files = {file_count}")
+        
+        # If still in progress, check Redis for real-time progress
+        if upload_session.status == 'in_progress' and progress_data:
+            progress_pct = progress_data.get('percentage', 0)
+            progress_msg = progress_data.get('message', 'Processing...')
+            logger.info(f"📊 POLL: Upload progress = {progress_pct}% - {progress_msg}")
+            
+            return HttpResponse(f'''
+                <div hx-get="/storage/upload/status/{session_id}/?organization={organization}"
+                     hx-trigger="every 1s"
+                     hx-swap="outerHTML">
+                    <div class="alert alert-info">
+                        <span class="loading loading-spinner"></span>
+                        {progress_msg} ({progress_pct}%)
+                        <progress class="progress progress-primary w-56" value="{progress_pct}" max="100"></progress>
+                    </div>
+                </div>
+            ''')
         
         if upload_session.status == 'completed':
             logger.info(f"✅ POLL: Upload completed! Returning success response with file browser refresh")

@@ -226,10 +226,19 @@ def streaming_upload_form(request):
         
         for i, uploaded_file in enumerate(files):
             try:
-                # Progress logging every 10 files or on significant milestones
+                # Progress logging and Redis update every 10 files or on significant milestones
                 if i == 0 or (i + 1) % 10 == 0 or i == len(files) - 1:
                     progress_pct = ((i + 1) / len(files)) * 100
                     logger.info(f"📊 UPLOAD PROGRESS: {i + 1}/{len(files)} files ({progress_pct:.1f}%)")
+                    
+                    # Update progress in Redis for frontend polling
+                    from django.core.cache import cache
+                    cache.set(f"upload_progress_{upload_session.id}", {
+                        'percentage': int(progress_pct),
+                        'message': f"Uploading file {i + 1} of {len(files)}",
+                        'files_processed': i + 1,
+                        'total_files': len(files)
+                    }, timeout=3600)  # Cache for 1 hour
                 # Determine S3 key path
                 if preserve_folder_structure:
                     file_paths_json = request.POST.get('file_paths', '')
@@ -335,6 +344,10 @@ def streaming_upload_form(request):
             upload_end_time = time.time()
             logger.info(f"Successfully uploaded {len(files)} files to {folder_name} in {duration:.2f} seconds")
             logger.info(f"⏱️ TIMING: Upload completed at {upload_end_time:.3f}")
+            
+            # Clean up progress cache
+            from django.core.cache import cache
+            cache.delete(f"upload_progress_{upload_session.id}")
         else:
             upload_session.mark_failed(result.get('error', 'Upload failed'))
             logger.error(f"Failed to upload files: {result.get('error', 'Unknown error')}")
