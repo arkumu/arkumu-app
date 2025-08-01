@@ -7,7 +7,8 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
 import time
-from arkumu.users.mixins import general_login_required
+from arkumu.users.mixins import general_login_required, GeneralLoginRequiredMixin
+from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.bucket_service import BucketService
@@ -44,6 +45,11 @@ def get_cached_bucket_service():
     return _bucket_service
 
 logger = logging.getLogger(__name__)
+
+
+class StreamingUploadHelper(GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin):
+    """Helper class to use template mixin methods in function-based views"""
+    pass
 
 
 
@@ -350,60 +356,63 @@ def streaming_upload_form(request):
         if request.headers.get('HX-Request'):
             # Return HTML with out-of-band swaps for HTMX
             from django.template.loader import render_to_string
+            from django.http import StreamingHttpResponse
             
             if result.get('success', False):
-                # Success: show results using proper OOB format
-                upload_results_html = render_to_string(
-                    'dashboard/partials/upload_results.html',
-                    {
-                        'success': True,
-                        'files_count': total_uploaded_files,
-                        'total_size': result['total_size_formatted'],
-                        'duration': result['duration']
-                    },
-                    request=request
+                # Use StreamingHttpResponse to bypass proxy buffering
+                def generate_success_response():
+                    # Use inherited helper
+                    helper = StreamingUploadHelper()
+                    
+                    # Render success notification
+                    success_html = render_to_string(
+                        'dashboard/partials/upload_results.html',
+                        {
+                            'success': True,
+                            'files_count': total_uploaded_files,
+                            'total_size': result['total_size_formatted'],
+                            'duration': result['duration']
+                        },
+                        request=request
+                    )
+                    
+                    # Get fresh file browser content
+                    from arkumu.storage.services.bucket_service import BucketService
+                    bucket_service = BucketService()
+                    bucket_name = bucket_service.get_organization_bucket(organization)
+                    
+                    # List only top-level folders for performance
+                    all_contents = bucket_service.list_bucket_contents(bucket_name, '')
+                    contents = [item for item in all_contents if item.get('type') == 'folder' and '/' not in item.get('name', '').strip('/')]
+                    
+                    file_browser_html = render_to_string(
+                        'dashboard/organization_files_partial.html',
+                        {
+                            'organization': organization,
+                            'bucket_name': bucket_name,
+                            'contents': contents,
+                            'selected_org_slug': organization,
+                            'prefix': ''
+                        },
+                        request=request
+                    )
+                    
+                    # Build OOB response with automatic refresh
+                    oob_updates = {
+                        'file-browser-content': file_browser_html  # Auto-refresh file browser
+                    }
+                    
+                    # Yield complete response with OOB updates
+                    yield helper.build_oob_response(success_html, oob_updates)
+                
+                response = StreamingHttpResponse(
+                    generate_success_response(),
+                    content_type='text/html'
                 )
-                
-                # Refresh file browser content after successful upload
-                refresh_start = time.time()
-                logger.info("🕒 Starting file browser refresh")
-                
-                from arkumu.storage.services.bucket_service import BucketService
-                bucket_service = BucketService()
-                bucket_name = bucket_service.get_organization_bucket(organization)
-                
-                # Optimized: Only list top-level folders (data/, metadata/) to avoid expensive deep listing
-                s3_start = time.time()
-                all_contents = bucket_service.list_bucket_contents(bucket_name, '')
-                # Filter to only show top-level folders, not their contents
-                contents = [item for item in all_contents if item.get('type') == 'folder' and '/' not in item.get('name', '').strip('/')]
-                logger.info(f"🕒 S3 listing took: {time.time() - s3_start:.2f}s, found {len(contents)} top-level folders")
-                
-                render_start = time.time()
-                file_browser_html = render_to_string(
-                    'dashboard/organization_files_partial.html',
-                    {
-                        'organization': organization,
-                        'bucket_name': bucket_name,
-                        'contents': contents,
-                        'selected_org_slug': organization,
-                        'prefix': ''
-                    },
-                    request=request
-                )
-                logger.info(f"🕒 Template rendering took: {time.time() - render_start:.2f}s")
-                logger.info(f"🕒 Response size: {len(file_browser_html)} chars")
-                logger.info(f"🕒 Total file browser refresh: {time.time() - refresh_start:.2f}s")
-                
-                # Use template helper mixin for clean OOB response
-                from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
-                helper = CSVMappingTemplateHelperMixin()
-                oob_updates = {
-                    'file-browser-content': file_browser_html  # Refresh file browser
-                }
-                
-                response_html = helper.build_oob_response(upload_results_html, oob_updates)
-                return HttpResponse(response_html)
+                # Tell proxy not to buffer
+                response['X-Accel-Buffering'] = 'no'
+                response['Cache-Control'] = 'no-cache, no-transform'
+                return response
             else:
                 # Error: show error message using OOB updates
                 oob_updates = {
