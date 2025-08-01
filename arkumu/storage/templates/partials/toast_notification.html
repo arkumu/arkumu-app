@@ -7,7 +7,7 @@ Usage: Include this template with message and type variables
 
 <div class="toast toast-top toast-center z-50" 
      id="toast-{{ timestamp }}-{{ type }}"
-     hx-get="/storage/dismiss-message"
+     hx-get="/storage/dismiss-message/"
      hx-trigger="load delay:5s"
      hx-swap="outerHTML"
      hx-target="this">
@@ -34,7 +34,7 @@ Usage: Include this template with message and type variables
             <div class="text-sm">{{ message }}</div>
         </div>
         <button class="btn btn-sm btn-circle btn-ghost ml-2" 
-                hx-get="/storage/dismiss-message"
+                hx-get="/storage/dismiss-message/"
                 hx-target="closest .toast"
                 hx-swap="outerHTML">✕</button>
     </div>
