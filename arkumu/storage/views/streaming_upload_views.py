@@ -77,6 +77,14 @@ def streaming_upload_form(request):
     logger.info(f"Processing streaming upload for user: {request.user.username}")
     logger.info(f"📊 UPLOAD TYPE: Standard streaming upload endpoint")
     
+    # 🔍 CHECK NGINX HEADERS
+    nginx_proxy = request.headers.get('X-Nginx-Proxy', 'false')
+    via_nginx = request.headers.get('X-Via-Nginx', 'none')
+    if nginx_proxy == 'true':
+        logger.info(f"🌐 NGINX DETECTED: Request via nginx ({via_nginx})")
+    else:
+        logger.info(f"🔗 DIRECT: Request direct to Django (no nginx)")
+    
     # Debug: Log current settings
     from django.conf import settings
     logger.info(f"📊 SETTINGS CHECK: DATA_UPLOAD_MAX_NUMBER_FILES = {getattr(settings, 'DATA_UPLOAD_MAX_NUMBER_FILES', 'NOT SET')}")
@@ -116,16 +124,9 @@ def streaming_upload_form(request):
     # Get organization (if provided)
     organization = request.POST.get('organization', '').strip()
     
-    # 🚀 SMART ROUTING: Check if we should use raw streaming for data uploads
-    if folder_name.startswith('data/') or folder_name == 'data':
-        logger.info(f"🚀 ROUTING: Detected data folder upload, redirecting to raw streaming")
-        # Import and delegate to raw streaming view
-        from .raw_stream_upload import RawStreamUploadView
-        raw_view = RawStreamUploadView()
-        raw_view.request = request  # Pass request context
-        return raw_view.post(request)
-    else:
-        logger.info(f"📁 ROUTING: Using standard streaming for metadata folder: {folder_name}")
+    # Use encrypted streaming for all uploads - nginx handles the no-buffering part
+    logger.info(f"📁 PROCESSING: Using encrypted streaming upload for folder: {folder_name}")
+    logger.info(f"📡 STREAMING: Nginx handles buffering control, Django processes individual files")
     
     # Debug: Log all form field counts
     logger.info(f"📊 FORM DEBUG: Total POST fields: {len(request.POST)}")
@@ -211,34 +212,74 @@ def streaming_upload_form(request):
         # Record start time
         start_time = time.time()
         
-        # Process files with optimized method
-        if preserve_folder_structure:
-            # Parse individual file paths if provided
-            file_paths = None
-            file_paths_json = request.POST.get('file_paths', '')
-            if file_paths_json:
-                try:
-                    file_paths = json.loads(file_paths_json)
-                    logger.info(f"📁 FOLDER UPLOAD DEBUG: Parsed {len(file_paths)} file paths for structured upload")
-                    logger.info(f"📁 FOLDER UPLOAD DEBUG: folder_name = '{folder_name}'")
-                    logger.info(f"📁 FOLDER UPLOAD DEBUG: sample file_paths = {file_paths[:5]}")
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Failed to parse file_paths JSON: {e}")
-            
-            # Use custom upload method that preserves folder structure
-            result = upload_service.upload_batch_django_files_with_structure(
-                uploaded_files=files,
-                base_path=folder_name,
-                bucket_name=target_bucket,
-                file_paths=file_paths
-            )
-        else:
-            # Use existing method for simple uploads
-            result = upload_service.upload_batch_django_files_optimized(
-                uploaded_files=files,
-                path_prefix=folder_name,
-                bucket_name=target_bucket
-            )
+        # Process files with encrypted uploads
+        results = []
+        failures = []
+        
+        for i, uploaded_file in enumerate(files):
+            try:
+                # Determine S3 key path
+                if preserve_folder_structure:
+                    file_paths_json = request.POST.get('file_paths', '')
+                    file_paths = []
+                    try:
+                        if file_paths_json:
+                            file_paths = json.loads(file_paths_json)
+                    except json.JSONDecodeError:
+                        pass
+                    
+                    if file_paths and i < len(file_paths):
+                        # Use structured path
+                        s3_key = f"{folder_name}/{file_paths[i]}"
+                    else:
+                        s3_key = f"{folder_name}/{uploaded_file.name}"
+                else:
+                    s3_key = f"{folder_name}/{uploaded_file.name}"
+                
+                # Use encrypted upload method from BaseStorageService
+                upload_result = upload_service.base_s3_service.upload_fileobj_encrypted(
+                    fileobj=uploaded_file,
+                    bucket_name=target_bucket,
+                    s3_key=s3_key,
+                    content_type=uploaded_file.content_type,
+                    metadata={
+                        'uploaded_by': request.user.username,
+                        'original_filename': uploaded_file.name,
+                        'upload_method': 'encrypted_streaming'
+                    }
+                )
+                
+                if upload_result.get('success'):
+                    results.append({
+                        'file_name': uploaded_file.name,
+                        's3_key': s3_key,
+                        'file_size': uploaded_file.size,
+                        'content_type': uploaded_file.content_type,
+                        'encrypted': upload_result.get('encrypted', False),
+                        'encryption_type': upload_result.get('encryption_type')
+                    })
+                else:
+                    failures.append({
+                        'file_name': uploaded_file.name,
+                        'error': upload_result.get('error', 'Upload failed')
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Failed to upload {uploaded_file.name}: {str(e)}")
+                failures.append({
+                    'file_name': uploaded_file.name,
+                    'error': str(e)
+                })
+        
+        # Build result in expected format
+        result = {
+            'success': len(failures) == 0,
+            'results': results,
+            'failures': failures,
+            'total_files': len(files),
+            'successful_files': len(results),
+            'failed_files': len(failures)
+        }
         
         # Calculate duration
         duration = time.time() - start_time

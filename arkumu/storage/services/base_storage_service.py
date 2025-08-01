@@ -460,4 +460,64 @@ class BaseStorageService:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if size_bytes < 1024.0: return f"{size_bytes:.2f} {unit}"
             size_bytes /= 1024.0
-        return f"{size_bytes:.2f} PB" 
+        return f"{size_bytes:.2f} PB"
+    
+    def get_encryption_settings(self) -> Dict[str, str]:
+        """
+        Get standardized encryption settings for S3 uploads.
+        Returns encryption configuration for ExtraArgs.
+        """
+        # For AWS S3, use AES256 server-side encryption
+        # For MinIO/other S3-compatible, encryption might not be supported
+        if self.is_minio:
+            logger.info("🔒 ENCRYPTION: MinIO detected - encryption may not be supported")
+            return {}
+        
+        logger.info("🔒 ENCRYPTION: Using AES256 server-side encryption")
+        return {
+            'ServerSideEncryption': 'AES256'
+        }
+    
+    def upload_fileobj_encrypted(self, fileobj, bucket_name: str, s3_key: str, 
+                                content_type: str = None, metadata: Dict[str, str] = None) -> Dict[str, Any]:
+        """
+        Upload file object with encryption enabled.
+        Wrapper around upload_fileobj with standardized encryption settings.
+        """
+        extra_args = {
+            'ContentType': content_type or 'application/octet-stream',
+            'Metadata': metadata or {}
+        }
+        
+        # Add encryption settings
+        encryption_settings = self.get_encryption_settings()
+        extra_args.update(encryption_settings)
+        
+        # Add encryption flag to metadata
+        if encryption_settings:
+            extra_args['Metadata']['encrypted'] = 'true'
+            extra_args['Metadata']['encryption_type'] = 'AES256'
+        else:
+            extra_args['Metadata']['encrypted'] = 'false'
+        
+        try:
+            self.s3_client.upload_fileobj(
+                Fileobj=fileobj,
+                Bucket=bucket_name,
+                Key=s3_key,
+                ExtraArgs=extra_args
+            )
+            
+            logger.info(f"🔒 ENCRYPTED UPLOAD: {s3_key} -> s3://{bucket_name}")
+            return {
+                'success': True,
+                'encrypted': bool(encryption_settings),
+                'encryption_type': 'AES256' if encryption_settings else None
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ ENCRYPTED UPLOAD FAILED: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
+            }

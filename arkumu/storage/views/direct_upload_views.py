@@ -584,7 +584,6 @@ def debug_presigned_url(request):
 
 
 @require_http_methods(["POST"])
-@csrf_exempt  # This is needed because some browsers may not include CSRF token in these requests
 @general_login_required
 def debug_upload_error(request):
     """
