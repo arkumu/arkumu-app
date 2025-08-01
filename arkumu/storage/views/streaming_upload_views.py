@@ -226,6 +226,10 @@ def streaming_upload_form(request):
         # Record start time
         start_time = time.time()
         
+        # Log timing before S3 upload begins
+        from datetime import datetime
+        logger.info(f"⏱️ S3 UPLOAD START: Beginning upload of {len(files)} files to S3 at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+        
         # Process files with encrypted uploads
         results = []
         failures = []
