@@ -226,6 +226,10 @@ def streaming_upload_form(request):
         
         for i, uploaded_file in enumerate(files):
             try:
+                # Progress logging every 10 files or on significant milestones
+                if i == 0 or (i + 1) % 10 == 0 or i == len(files) - 1:
+                    progress_pct = ((i + 1) / len(files)) * 100
+                    logger.info(f"📊 UPLOAD PROGRESS: {i + 1}/{len(files)} files ({progress_pct:.1f}%)")
                 # Determine S3 key path
                 if preserve_folder_structure:
                     file_paths_json = request.POST.get('file_paths', '')
