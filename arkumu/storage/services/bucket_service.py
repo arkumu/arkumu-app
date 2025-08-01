@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import threading
+from datetime import datetime
 from typing import Any, Dict, List
 import tempfile
 from pathlib import Path
@@ -360,13 +361,13 @@ class BucketService:
                     return []
         
         start_time = time.time()
-        logger.info(f"⏱️ S3 LIST START: Listing contents for bucket: {bucket_name}, prefix: {prefix} at {start_time}")
+        logger.info(f"⏱️ S3 LIST START: Listing contents for bucket: {bucket_name}, prefix: {prefix} at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
         logger.info(f"🔑 Using cache key: {cache_key}")
         contents = []
         
         try:
             paginator = self.base_s3_service.s3_client.get_paginator('list_objects_v2')
-            logger.info(f"⏱️ S3 PAGINATOR: Created paginator at {time.time()}")
+            logger.info(f"⏱️ S3 PAGINATOR: Created paginator at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
             for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix, Delimiter='/'):
                 # Add folders (CommonPrefixes)
                 for prefix_info in page.get('CommonPrefixes', []):
@@ -394,7 +395,7 @@ class BucketService:
                         })
             
             end_time = time.time()
-            logger.info(f"⏱️ S3 LIST COMPLETE: Found {len(contents)} items in {bucket_name} with prefix '{prefix}' at {end_time}")
+            logger.info(f"⏱️ S3 LIST COMPLETE: Found {len(contents)} items in {bucket_name} with prefix '{prefix}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
             if contents:
                 logger.info(f"📁 Items found: {[item.get('name', 'unnamed') + ' (' + item.get('type', 'unknown') + ')' for item in contents[:5]]}")  # Show first 5 items
             
