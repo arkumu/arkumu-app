@@ -100,9 +100,11 @@ urlpatterns = [
     path('data-discovery/search-resources/', data_discovery_views.search_resources, name='search_resources'),
     path('data-discovery/link-file/', data_discovery_views.link_file_to_resource, name='link_file_to_resource'),
     path('data-discovery/batch-link/', data_discovery_views.batch_link_files, name='batch_link_files'),
+    path('data-discovery/batch-unlink/', data_discovery_views.batch_unlink_files, name='batch_unlink_files'),
     path('data-discovery/unlink-file/', data_discovery_views.unlink_file, name='unlink_file'),
     path('data-discovery/auto-link-all/', data_discovery_views.auto_link_all, name='auto_link_all'),
     path('data-discovery/rescan-s3/', data_discovery_views.rescan_s3_files, name='rescan_s3_files'),
+    path('data-discovery/toggle-select-all/', data_discovery_views.toggle_select_all, name='toggle_select_all'),
     
     # Split Table/Graph View (Database-based)
     path('split-view/', split_views.split_table_graph_view, name='split_table_graph'),

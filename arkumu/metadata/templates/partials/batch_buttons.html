@@ -1,0 +1,37 @@
+<button class="btn btn-sm btn-primary {% if not select_all_checked %}btn-disabled{% endif %}"
+        {% if select_all_checked %}
+        hx-post="{% url 'metadata:batch_link_files' %}"
+        hx-include="[name='selected_files']:checked"
+        hx-confirm="Link ALL files using automatic matching?"
+        hx-swap="none"
+        hx-trigger="click"
+        {% else %}
+        disabled
+        title="Select All files first to enable batch linking"
+        {% endif %}
+        id="batch-link-btn">
+    <span class="loading loading-spinner loading-sm htmx-indicator"></span>
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    </svg>
+    Batch Link{% if select_all_checked %} (All Files){% endif %}
+</button>
+
+<button class="btn btn-sm btn-error {% if not select_all_checked %}btn-disabled{% endif %}"
+        {% if select_all_checked %}
+        hx-post="{% url 'metadata:batch_unlink_files' %}"
+        hx-include="[name='selected_files']:checked"
+        hx-confirm="Unlink ALL selected files from their resources?"
+        hx-swap="none"
+        hx-trigger="click"
+        {% else %}
+        disabled
+        title="Select All files first to enable batch unlinking"
+        {% endif %}
+        id="batch-unlink-btn">
+    <span class="loading loading-spinner loading-sm htmx-indicator"></span>
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    </svg>
+    Unlink All{% if select_all_checked %} Files{% endif %}
+</button>

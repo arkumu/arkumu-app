@@ -67,25 +67,23 @@
                             
                             <!-- All Action Buttons in Single Row -->
                             <div class="flex gap-2">
-                                <button class="btn btn-sm btn-outline" onclick="toggleSelectAll()">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
+                                <label class="btn btn-sm btn-outline">
+                                    <input type="checkbox" 
+                                           id="select-all-checkbox" 
+                                           name="select-all-checkbox"
+                                           class="checkbox checkbox-sm mr-2"
+                                           {% if select_all_checked %}checked{% endif %}
+                                           hx-post="{% url 'metadata:toggle_select_all' %}"
+                                           hx-target="#files-container"
+                                           hx-swap="innerHTML"
+                                           hx-include="[name='org_filter'], [name='status_filter']">
                                     Select All
-                                </button>
-                                
-                                <a href="{% url 'metadata:data_discovery' %}" class="btn btn-ghost btn-sm">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                    Refresh
-                                </a>
+                                </label>
                                 
                                 <button class="btn btn-outline btn-sm"
                                         hx-post="{% url 'metadata:rescan_s3_files' %}"
                                         hx-confirm="Rescan S3 buckets for new files? This may take a while."
-                                        hx-target="#toast-container"
-                                        hx-swap="beforeend">
+                                        hx-swap="none">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                     </svg>
@@ -93,33 +91,47 @@
                                     <span class="loading loading-spinner loading-sm htmx-indicator"></span>
                                 </button>
 
-                                <button class="btn btn-sm btn-primary"
-                                        hx-post="{% url 'metadata:batch_link_files' %}"
-                                        hx-include="[name='selected_files']:checked"
-                                        hx-confirm="Link selected files using automatic matching?"
-                                        hx-target="#toast-container"
-                                        hx-swap="beforeend"
-                                        disabled
-                                        id="batch-link-btn">
-                                    <span class="loading loading-spinner loading-sm htmx-indicator"></span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                    </svg>
-                                    Batch Link
-                                </button>
+                                <div id="batch-buttons-container">
+                                    <button class="btn btn-sm btn-primary {% if not select_all_checked %}btn-disabled{% endif %}"
+                                            {% if select_all_checked %}
+                                            hx-post="{% url 'metadata:batch_link_files' %}"
+                                            hx-include="[name='selected_files']:checked"
+                                            hx-confirm="Link ALL files using automatic matching?"
+                                            hx-target="#files-container"
+                                            hx-swap="innerHTML"
+                                            hx-trigger="click"
+                                            {% else %}
+                                            disabled
+                                            title="Select All files first to enable batch linking"
+                                            {% endif %}
+                                            id="batch-link-btn">
+                                        <span class="loading loading-spinner loading-sm htmx-indicator"></span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                        </svg>
+                                        Batch Link{% if select_all_checked %} (All Files){% endif %}
+                                    </button>
 
-                                <button class="btn btn-accent btn-sm"
-                                        hx-post="{% url 'metadata:auto_link_all' %}"
-                                        hx-confirm="Run automatic linking for all unlinked files? This may take a while."
-                                        hx-target="#toast-container"
-                                        hx-swap="beforeend"
-                                        disabled>
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                    </svg>
-                                    Auto-Link
-                                    <span class="loading loading-spinner loading-sm htmx-indicator"></span>
-                                </button>
+                                    <button class="btn btn-sm btn-error {% if not select_all_checked %}btn-disabled{% endif %}"
+                                            {% if select_all_checked %}
+                                            hx-post="{% url 'metadata:batch_unlink_files' %}"
+                                            hx-include="[name='selected_files']:checked"
+                                            hx-confirm="Unlink ALL selected files from their resources?"
+                                            hx-target="#files-container"
+                                            hx-swap="innerHTML"
+                                            hx-trigger="click"
+                                            {% else %}
+                                            disabled
+                                            title="Select All files first to enable batch unlinking"
+                                            {% endif %}
+                                            id="batch-unlink-btn">
+                                        <span class="loading loading-spinner loading-sm htmx-indicator"></span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                        </svg>
+                                        Unlink All{% if select_all_checked %} Files{% endif %}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         
@@ -369,7 +381,7 @@
 {% block javascript %}
 {{ block.super }}
 <script>
-// Basic JavaScript for functionality that doesn't need server endpoints
+// Minimal JavaScript only for modal functionality and toast handling
 function openResourceSearch(fileId, filename) {
     document.getElementById('current-file-id').value = fileId;
     document.getElementById('search-filename').textContent = filename;
@@ -381,54 +393,27 @@ function openResourceSearch(fileId, filename) {
     document.getElementById('resource-search-modal').showModal();
 }
 
-function toggleSelectAll() {
-    const checkboxes = document.querySelectorAll('.file-checkbox');
-    const allChecked = document.querySelectorAll('.file-checkbox:checked').length === checkboxes.length;
+// Handle toast messages from HX-Trigger
+document.addEventListener('showToast', function(event) {
+    const message = event.detail;
+    const toastContainer = document.getElementById('toast-container');
     
-    checkboxes.forEach(cb => cb.checked = !allChecked);
-    updateBatchButton();
-}
-
-function updateBatchButton() {
-    const checkedBoxes = document.querySelectorAll('.file-checkbox:checked');
-    const batchBtn = document.getElementById('batch-link-btn');
+    const toastHtml = `
+        <div class="alert alert-success shadow-lg mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>${message}</span>
+        </div>
+    `;
     
-    if (batchBtn) {
-        batchBtn.disabled = checkedBoxes.length === 0;
-    }
-}
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    updateBatchButton();
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
     
-    // Add event listeners for checkbox changes
-    document.addEventListener('change', function(e) {
-        if (e.target.classList.contains('file-checkbox')) {
-            updateBatchButton();
-        }
-    });
+    // Remove toast after 5 seconds
+    setTimeout(() => {
+        const lastToast = toastContainer.lastElementChild;
+        if (lastToast) lastToast.remove();
+    }, 5000);
 });
-
-// Filter functionality
-document.addEventListener('change', function(e) {
-    if (e.target.name === 'status_filter' || e.target.name === 'bucket_filter') {
-        // Simple client-side filtering could be implemented here
-        // For now, just a placeholder
-        console.log('Filter changed:', e.target.name, e.target.value);
-    }
-});
-
-function filterByOrganization(orgValue) {
-    const url = new URL(window.location);
-    if (orgValue) {
-        url.searchParams.set('org', orgValue);
-    } else {
-        url.searchParams.delete('org');
-    }
-    // Reset to page 1 when changing organization
-    url.searchParams.delete('page');
-    window.location.href = url.toString();
-}
 </script>
 {% endblock %} 

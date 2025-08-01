@@ -111,6 +111,10 @@ class FileResourceMatcherService:
         # Pre-fetch all resources for better performance
         all_resources = defaultdict(list)
         for resource in Resource.objects.all():
+            # Skip resources with null/empty values
+            if not resource.value:
+                continue
+                
             key = resource.value.lower() if not self.config.case_sensitive else resource.value
             all_resources[key].append(resource)
 
