@@ -75,8 +75,8 @@ INSTALLED_APPS += ["django_extensions"]
 # Your stuff...
 # ------------------------------------------------------------------------------
 
-# Temporary fix for large batch uploads during development
-# TODO: Implement proper chunked upload solution
-DATA_UPLOAD_MAX_NUMBER_FILES = 1000  # Increase from default 100
-FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25MB per file
-DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500MB total
+# File upload settings for development
+# Support large video files and batch uploads
+DATA_UPLOAD_MAX_NUMBER_FILES = 10000  # Allow up to 10000 files
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB - keep files in memory below this
+DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024 * 1024  # 100GB total request size

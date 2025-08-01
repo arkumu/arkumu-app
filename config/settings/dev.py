@@ -121,3 +121,9 @@ STATIC_URL = "/static/"
 
 # S3 settings are inherited from production
 # Current bucket: my_pony (needs to exist on your S3 server)
+
+# File upload settings for development
+# Increase from Django's default of 100 to handle larger batch uploads
+DATA_UPLOAD_MAX_NUMBER_FILES = 10000  # Allow up to 10000 files
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB - keep files in memory below this
+DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024 * 1024  # 100GB total request size

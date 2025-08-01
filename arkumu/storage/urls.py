@@ -2,6 +2,7 @@ from django.urls import path
 
 from . import views
 from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views
+# from .views import raw_stream_upload  # DISABLED: Security issue
 
 app_name = "storage"
 
@@ -21,6 +22,7 @@ urlpatterns = [
     path("upload/streaming/", streaming_upload_views.streaming_upload_form, name="streaming_upload_form"),
     path("upload/streaming/api/", streaming_upload_views.streaming_upload_api, name="streaming_upload_api"),
     path("upload/streaming/single/", streaming_upload_views.streaming_upload_single, name="streaming_upload_single"),
+    # path("upload/streaming/raw/", raw_stream_upload.raw_stream_upload, name="raw_stream_upload"),  # DISABLED: Security issue - no CSRF protection
     path("file/info/", streaming_upload_views.file_info, name="file_info"),
     
     # Organization-specific views

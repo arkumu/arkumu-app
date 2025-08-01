@@ -75,6 +75,12 @@ def streaming_upload_form(request):
     
     # Handle POST request with file uploads
     logger.info(f"Processing streaming upload for user: {request.user.username}")
+    logger.info(f"📊 UPLOAD TYPE: Standard streaming upload endpoint")
+    
+    # Debug: Log current settings
+    from django.conf import settings
+    logger.info(f"📊 SETTINGS CHECK: DATA_UPLOAD_MAX_NUMBER_FILES = {getattr(settings, 'DATA_UPLOAD_MAX_NUMBER_FILES', 'NOT SET')}")
+    logger.info(f"📊 SETTINGS CHECK: Using settings module: {settings.SETTINGS_MODULE}")
     
     # Get folder name - construct from base_folder for HTMX requests
     folder_name = request.POST.get('folder_name', '').strip()
@@ -108,8 +114,43 @@ def streaming_upload_form(request):
     # Get organization (if provided)
     organization = request.POST.get('organization', '').strip()
     
+    # Debug: Log all form field counts
+    logger.info(f"📊 FORM DEBUG: Total POST fields: {len(request.POST)}")
+    logger.info(f"📊 FORM DEBUG: Total FILES fields: {len(request.FILES)}")
+    logger.info(f"📊 FORM DEBUG: POST keys: {list(request.POST.keys())}")
+    logger.info(f"📊 FORM DEBUG: FILES keys: {list(request.FILES.keys())}")
+    
     # Get uploaded files
     files = request.FILES.getlist('files')
+    logger.info(f"📊 FORM DEBUG: Number of files in 'files' field: {len(files)}")
+    
+    # Log file sizes and detect if this is a chunked upload
+    total_size = sum(f.size for f in files)
+    largest_file = max((f.size for f in files), default=0)
+    logger.info(f"📊 UPLOAD STATS: Files: {len(files)}, Total size: {total_size / (1024*1024):.2f}MB, Largest file: {largest_file / (1024*1024):.2f}MB")
+    
+    # Debug: Log individual file sizes for first few files and check file types
+    for i, f in enumerate(files[:5]):
+        file_type = type(f).__name__
+        logger.info(f"📊 FILE {i+1}: {f.name} - {f.size / (1024*1024):.2f}MB - Type: {file_type}")
+        # Check if it's a TemporaryUploadedFile vs InMemoryUploadedFile
+        if hasattr(f, 'temporary_file_path'):
+            import os
+            actual_disk_size = os.path.getsize(f.temporary_file_path()) if f.temporary_file_path() else 0
+            logger.info(f"📊 FILE {i+1}: Disk size: {actual_disk_size / (1024*1024):.2f}MB vs Reported: {f.size / (1024*1024):.2f}MB")
+    
+    # Check for duplicate file names
+    file_names = [f.name for f in files]
+    unique_names = set(file_names)
+    if len(file_names) != len(unique_names):
+        logger.warning(f"📊 DUPLICATE FILES DETECTED: {len(file_names)} total, {len(unique_names)} unique")
+    
+    # Check if this looks like a chunked upload (based on typical chunk size)
+    if len(files) <= 75 and total_size <= 500 * 1024 * 1024:
+        logger.info(f"📊 UPLOAD MODE: Regular upload (within chunk thresholds)")
+    else:
+        logger.info(f"📊 UPLOAD MODE: Part of chunked upload sequence")
+    
     if not files:
         error_msg = 'No files were uploaded'
         if request.headers.get('HX-Request'):
@@ -234,9 +275,21 @@ def streaming_upload_form(request):
         total_uploaded_files = len(successful_files)
         total_size = sum(file_result.get('file_size', 0) for file_result in successful_files)
         
-        # Add display information
+        # Debug: Log size mismatch
+        original_total_size = sum(f.size for f in files)
+        logger.info(f"📊 SIZE DEBUG: Django reported total: {original_total_size / (1024*1024):.2f}MB")
+        logger.info(f"📊 SIZE DEBUG: S3 actual total: {total_size / (1024*1024):.2f}MB")
+        
+        # The S3 size is the actual file size on disk, Django's size might include encoding overhead
+        # Use the S3 size as it's the accurate representation of what was stored
+        if abs(original_total_size - total_size) > 1024:  # More than 1KB difference
+            size_ratio = original_total_size / total_size if total_size > 0 else 0
+            logger.warning(f"📊 SIZE MISMATCH: Django reports {size_ratio:.1f}x larger than actual ({original_total_size / (1024*1024):.2f}MB vs {total_size / (1024*1024):.2f}MB)")
+        
+        # Add display information - use the S3 results size as it's more accurate
+        # The original_total_size from Django files can be inflated due to buffering
         result['total_uploaded_files'] = total_uploaded_files
-        result['total_size_bytes'] = total_size
+        result['total_size_bytes'] = total_size  # Use S3 reported size
         result['total_size_formatted'] = format_file_size(total_size)
         
         # Check if this is an HTMX request
@@ -340,6 +393,9 @@ def streaming_upload_api(request):
     API endpoint for streaming file uploads through Django to S3.
     This is for programmatic use by other applications.
     """
+    logger.info(f"📊 UPLOAD TYPE: Streaming upload API endpoint")
+    logger.info(f"Processing API upload for user: {request.user.username}")
+    
     try:
         # Parse JSON data if Content-Type is application/json
         if request.content_type == 'application/json':

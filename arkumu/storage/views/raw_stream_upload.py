@@ -9,7 +9,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.views import View
-from arkumu.users.mixins import ge, GeneralLoginRequiredMixinneral_login_required
+from arkumu.users.mixins import GeneralLoginRequiredMixin, general_login_required
 
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.bucket_service import BucketService
@@ -31,6 +31,9 @@ class RawStreamUploadView(GeneralLoginRequiredMixin, View):
         Process raw multipart stream upload.
         """
         try:
+            logger.info(f"📊 UPLOAD TYPE: Raw stream upload endpoint (bypasses Django limits)")
+            logger.info(f"Processing raw stream upload for user: {request.user.username}")
+            
             # Check authentication
             if not request.user.is_authenticated:
                 return JsonResponse({'error': 'Authentication required'}, status=401)

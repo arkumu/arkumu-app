@@ -167,14 +167,19 @@ class UploadFormHandler {
                 }
             }
 
-            // Determine if we need chunking
-            const useChunking = this.selectedFiles.length > 75; // Chunk if more than 75 files
+            // Determine if we need chunking based on:
+            // 1. Number of files > 75
+            // 2. Any single file > 100MB  
+            // 3. Total size > 500MB
+            const totalSize = this.selectedFiles.reduce((sum, file) => sum + file.size, 0);
+            const hasLargeFile = this.selectedFiles.some(file => file.size > 100 * 1024 * 1024); // 100MB
+            const useChunking = this.selectedFiles.length > 75 || hasLargeFile || totalSize > 500 * 1024 * 1024;
             
             if (useChunking) {
-                console.log(`🔄 Using chunked upload for ${this.selectedFiles.length} files`);
+                console.log(`🔄 Using chunked upload for ${this.selectedFiles.length} files (total size: ${formatFileSize(totalSize)})`);
                 await this.performChunkedUpload(folderName, organization, baseFolder, isFolderMode);
             } else {
-                console.log(`📤 Using standard upload for ${this.selectedFiles.length} files`);
+                console.log(`📤 Using standard upload for ${this.selectedFiles.length} files (total size: ${formatFileSize(totalSize)})`);
                 await this.performStandardUpload(folderName, organization, baseFolder, isFolderMode);
             }
 

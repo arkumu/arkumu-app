@@ -90,19 +90,62 @@ class ChunkedUploadHandler {
 
     /**
      * Split files array into smaller chunks
+     * Smart chunking: considers both file count and size
      */
     createChunks(files) {
         const chunks = [];
+        const maxChunkSize = 500 * 1024 * 1024; // 500MB per chunk
+        const maxFilesPerChunk = this.chunkSize; // 75 files default
         
-        for (let i = 0; i < files.length; i += this.chunkSize) {
-            const chunk = {
-                index: Math.floor(i / this.chunkSize),
-                files: Array.from(files).slice(i, i + this.chunkSize),
-                startIndex: i,
-                endIndex: Math.min(i + this.chunkSize - 1, files.length - 1)
-            };
-            chunks.push(chunk);
+        let currentChunk = {
+            index: 0,
+            files: [],
+            totalSize: 0,
+            startIndex: 0,
+            endIndex: 0
+        };
+        
+        // Sort files by size (largest first) for better packing
+        const sortedFiles = Array.from(files).sort((a, b) => b.size - a.size);
+        
+        sortedFiles.forEach((file, index) => {
+            // Check if adding this file would exceed limits
+            const wouldExceedSize = currentChunk.totalSize + file.size > maxChunkSize;
+            const wouldExceedCount = currentChunk.files.length >= maxFilesPerChunk;
+            
+            // If file is huge (>500MB), give it its own chunk
+            const isHugeFile = file.size > maxChunkSize;
+            
+            if (currentChunk.files.length > 0 && (wouldExceedSize || wouldExceedCount || isHugeFile)) {
+                // Finish current chunk
+                currentChunk.endIndex = currentChunk.startIndex + currentChunk.files.length - 1;
+                chunks.push(currentChunk);
+                
+                // Start new chunk
+                currentChunk = {
+                    index: chunks.length,
+                    files: [],
+                    totalSize: 0,
+                    startIndex: currentChunk.endIndex + 1,
+                    endIndex: 0
+                };
+            }
+            
+            // Add file to current chunk
+            currentChunk.files.push(file);
+            currentChunk.totalSize += file.size;
+        });
+        
+        // Don't forget the last chunk
+        if (currentChunk.files.length > 0) {
+            currentChunk.endIndex = currentChunk.startIndex + currentChunk.files.length - 1;
+            chunks.push(currentChunk);
         }
+        
+        console.log(`📦 Created ${chunks.length} smart chunks:`);
+        chunks.forEach((chunk, i) => {
+            console.log(`  Chunk ${i + 1}: ${chunk.files.length} files, ${formatFileSize(chunk.totalSize)}`);
+        });
         
         return chunks;
     }
