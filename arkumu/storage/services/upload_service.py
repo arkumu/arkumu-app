@@ -10,6 +10,7 @@ from functools import partial
 import boto3
 from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import ClientError
+import urllib3.exceptions
 
 from .base_storage_service import BaseStorageService
 
@@ -34,6 +35,51 @@ class UploadService:
         # Get the singleton instance of BaseStorageService for S3 operations
         self.base_s3_service = BaseStorageService()
         logger.info(f"UploadService initialized using BaseStorageService with endpoint: {self.base_s3_service.endpoint_url}")
+
+    def _safe_head_object(self, bucket_name: str, s3_key: str) -> Dict[str, Any]:
+        """
+        Safely perform head_object call with fallback for MinIO header parsing issues.
+        
+        Args:
+            bucket_name: S3 bucket name
+            s3_key: S3 object key
+            
+        Returns:
+            Dictionary with object metadata or None if failed
+        """
+        try:
+            return self.base_s3_service.s3_client.head_object(
+                Bucket=bucket_name,
+                Key=s3_key
+            )
+        except urllib3.exceptions.HeaderParsingError as e:
+            logger.warning(f"MinIO header parsing error for {s3_key}: {e}")
+            # For empty files, MinIO sometimes has header parsing issues
+            # Try to get object info via list_objects_v2 as fallback
+            try:
+                response = self.base_s3_service.s3_client.list_objects_v2(
+                    Bucket=bucket_name,
+                    Prefix=s3_key,
+                    MaxKeys=1
+                )
+                objects = response.get('Contents', [])
+                if objects and objects[0]['Key'] == s3_key:
+                    obj = objects[0]
+                    return {
+                        'ContentLength': obj.get('Size', 0),
+                        'LastModified': obj.get('LastModified'),
+                        'ETag': obj.get('ETag', ''),
+                        'ContentType': 'application/octet-stream'  # Default fallback
+                    }
+                else:
+                    logger.error(f"Object {s3_key} not found in fallback list_objects_v2")
+                    return None
+            except Exception as fallback_error:
+                logger.error(f"Fallback method also failed for {s3_key}: {fallback_error}")
+                return None
+        except Exception as e:
+            logger.error(f"Unexpected error in head_object for {s3_key}: {e}")
+            return None
 
     def _generate_file_key(self, file_name: str, path_prefix: Optional[str] = None) -> str:
         """
@@ -89,11 +135,8 @@ class UploadService:
             )
             
             # Verify upload and get file info
-            try:
-                head_response = self.base_s3_service.s3_client.head_object(
-                    Bucket=bucket_name,
-                    Key=s3_key
-                )
+            head_response = self._safe_head_object(bucket_name, s3_key)
+            if head_response:
                 actual_file_size = head_response.get('ContentLength', 0)
                 last_modified = head_response.get('LastModified', None)
                 
@@ -110,15 +153,15 @@ class UploadService:
                     'content_type': content_type,
                     'last_modified': last_modified.isoformat() if last_modified else None,
                 }
-            except Exception as verify_error:
-                logger.warning(f"Upload succeeded but verification failed for {s3_key}: {verify_error}")
+            else:
+                logger.warning(f"Upload succeeded but verification failed for {s3_key}")
                 return {
                     'success': True,
                     's3_key': s3_key,
                     's3_url': f"s3://{bucket_name}/{s3_key}",
                     'bucket': bucket_name,
                     'content_type': content_type,
-                    'verification_warning': str(verify_error)
+                    'verification_warning': 'Could not verify upload due to header parsing error'
                 }
                 
         except Exception as e:
@@ -172,11 +215,8 @@ class UploadService:
             )
             
             # Verify upload and get file info
-            try:
-                head_response = self.base_s3_service.s3_client.head_object(
-                    Bucket=self.base_s3_service.ingest_bucket,
-                    Key=s3_key
-                )
+            head_response = self._safe_head_object(self.base_s3_service.ingest_bucket, s3_key)
+            if head_response:
                 actual_file_size = head_response.get('ContentLength', 0)
                 last_modified = head_response.get('LastModified', None)
                 
@@ -192,15 +232,15 @@ class UploadService:
                     'content_type': content_type,
                     'last_modified': last_modified.isoformat() if last_modified else None,
                 }
-            except Exception as verify_error:
-                logger.warning(f"Upload succeeded but verification failed for {s3_key}: {verify_error}")
+            else:
+                logger.warning(f"Upload succeeded but verification failed for {s3_key}")
                 return {
                     'success': True,
                     'file_name': file_name,
                     's3_key': s3_key,
                     'bucket': self.base_s3_service.ingest_bucket,
                     'content_type': content_type,
-                    'verification_warning': str(verify_error)
+                    'verification_warning': 'Could not verify upload due to header parsing error'
                 }
                 
         except Exception as e:
@@ -293,11 +333,8 @@ class UploadService:
                 logger.info(f"Multipart upload completed for {file_name} ({self.base_s3_service._format_size(total_size)}, {len(parts)} parts)")
                 
                 # Verify upload
-                try:
-                    head_response = self.base_s3_service.s3_client.head_object(
-                        Bucket=self.base_s3_service.ingest_bucket,
-                        Key=s3_key
-                    )
+                head_response = self._safe_head_object(self.base_s3_service.ingest_bucket, s3_key)
+                if head_response:
                     actual_file_size = head_response.get('ContentLength', 0)
                     last_modified = head_response.get('LastModified', None)
                     
@@ -312,8 +349,8 @@ class UploadService:
                         'last_modified': last_modified.isoformat() if last_modified else None,
                         'part_count': len(parts)
                     }
-                except Exception as verify_error:
-                    logger.warning(f"Upload succeeded but verification failed for {s3_key}: {verify_error}")
+                else:
+                    logger.warning(f"Upload succeeded but verification failed for {s3_key}")
                     return {
                         'success': True,
                         'file_name': file_name,
@@ -323,7 +360,7 @@ class UploadService:
                         'file_size_formatted': self.base_s3_service._format_size(total_size),
                         'content_type': content_type,
                         'part_count': len(parts),
-                        'verification_warning': str(verify_error)
+                        'verification_warning': 'Could not verify upload due to header parsing error'
                     }
                     
             except Exception as part_error:
@@ -453,31 +490,36 @@ class UploadService:
             Dictionary with file information
         """
         try:
-            # Get file metadata
-            head_response = self.base_s3_service.s3_client.head_object(
-                Bucket=self.base_s3_service.ingest_bucket,
-                Key=s3_key
-            )
+            # Get file metadata using safe head_object
+            head_response = self._safe_head_object(self.base_s3_service.ingest_bucket, s3_key)
             
-            # Extract file details
-            file_size = head_response.get('ContentLength', 0)
-            last_modified = head_response.get('LastModified', None)
-            content_type = head_response.get('ContentType', 'application/octet-stream')
-            metadata = head_response.get('Metadata', {})
-            
-            logger.info(f"Retrieved file info for {s3_key}: {self.base_s3_service._format_size(file_size)}, {content_type}")
-            
-            return {
-                'success': True,
-                's3_key': s3_key,
-                'file_name': os.path.basename(s3_key),
-                'bucket': self.base_s3_service.ingest_bucket,
-                'file_size': file_size,
-                'file_size_formatted': self.base_s3_service._format_size(file_size),
-                'content_type': content_type,
-                'last_modified': last_modified.isoformat() if last_modified else None,
-                'metadata': metadata
-            }
+            if head_response:
+                # Extract file details
+                file_size = head_response.get('ContentLength', 0)
+                last_modified = head_response.get('LastModified', None)
+                content_type = head_response.get('ContentType', 'application/octet-stream')
+                metadata = head_response.get('Metadata', {})
+                
+                logger.info(f"Retrieved file info for {s3_key}: {self.base_s3_service._format_size(file_size)}, {content_type}")
+                
+                return {
+                    'success': True,
+                    's3_key': s3_key,
+                    'file_name': os.path.basename(s3_key),
+                    'bucket': self.base_s3_service.ingest_bucket,
+                    'file_size': file_size,
+                    'file_size_formatted': self.base_s3_service._format_size(file_size),
+                    'content_type': content_type,
+                    'last_modified': last_modified.isoformat() if last_modified else None,
+                    'metadata': metadata
+                }
+            else:
+                logger.error(f"Could not get file info for {s3_key} due to header parsing error")
+                return {
+                    'success': False,
+                    'error': 'Could not retrieve file info due to header parsing error',
+                    's3_key': s3_key
+                }
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
             if error_code == 'NoSuchKey':

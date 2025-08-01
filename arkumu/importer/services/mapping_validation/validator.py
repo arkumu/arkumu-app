@@ -12,6 +12,8 @@ from pathlib import Path
 import csv
 import json
 import io
+import urllib3.exceptions
+from botocore.exceptions import ClientError
 
 from arkumu.storage.services.bucket_service import BucketService
 # Validation enums and classes (previously from validation_result module)
@@ -532,6 +534,19 @@ class MappingValidator:
             response = s3_client.head_object(Bucket=bucket_name, Key=file_path)
             
             return True, response.get('ContentLength', 0)
+        except urllib3.exceptions.HeaderParsingError:
+            # MinIO header parsing fallback - try list_objects_v2
+            try:
+                s3_client = self.bucket_service.get_s3_client()
+                list_response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=file_path, MaxKeys=1)
+                objects = list_response.get('Contents', [])
+                if objects and objects[0]['Key'] == file_path:
+                    return True, objects[0].get('Size', 0)
+                else:
+                    return False, 0
+            except Exception as fallback_e:
+                self.logger.debug(f"S3 fallback check failed for {file_path}: {str(fallback_e)}")
+                return False, 0
         except Exception as e:
             self.logger.debug(f"S3 file check failed for {file_path}: {str(e)}")
             return False, 0

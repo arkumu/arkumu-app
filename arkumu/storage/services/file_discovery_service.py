@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, Union, Optional, Set, Any
 from botocore.exceptions import ClientError
+import urllib3.exceptions
 
 from django.conf import settings
 from .base_storage_service import BaseStorageService
@@ -35,6 +36,52 @@ class FileDiscoveryService(BaseStorageService):
         
         logger.info("FileDiscoveryService initialized with configured path patterns")
         self.initialized = True
+    
+    def _safe_head_object(self, bucket_name: str, s3_key: str) -> Dict[str, Any]:
+        """
+        Safely perform head_object call with fallback for MinIO header parsing issues.
+        
+        Args:
+            bucket_name: S3 bucket name
+            s3_key: S3 object key
+            
+        Returns:
+            Dictionary with object metadata or None if failed
+        """
+        try:
+            return self.s3_client.head_object(
+                Bucket=bucket_name,
+                Key=s3_key
+            )
+        except urllib3.exceptions.HeaderParsingError as e:
+            logger.warning(f"MinIO header parsing error for {s3_key}: {e}")
+            # For empty files, MinIO sometimes has header parsing issues
+            # Try to get object info via list_objects_v2 as fallback
+            try:
+                response = self.s3_client.list_objects_v2(
+                    Bucket=bucket_name,
+                    Prefix=s3_key,
+                    MaxKeys=1
+                )
+                objects = response.get('Contents', [])
+                if objects and objects[0]['Key'] == s3_key:
+                    obj = objects[0]
+                    return {
+                        'ContentLength': obj.get('Size', 0),
+                        'LastModified': obj.get('LastModified'),
+                        'ETag': obj.get('ETag', ''),
+                        'ContentType': 'application/octet-stream',
+                        'Metadata': {}
+                    }
+                else:
+                    logger.error(f"Object {s3_key} not found in fallback list_objects_v2")
+                    return None
+            except ClientError as fallback_e:
+                logger.error(f"Fallback list_objects_v2 also failed for {s3_key}: {fallback_e}")
+                return None
+        except ClientError as e:
+            # Let ClientError bubble up as it's expected for 404s, etc.
+            raise e
     
     def _load_path_structure(self) -> Dict[str, Any]:
         """
@@ -208,9 +255,12 @@ class FileDiscoveryService(BaseStorageService):
                 # Check for the expected XML file using the configured path pattern
                 collection_xml_key = self.form_collection_xml_path(dir_name)
                 try:
-                    self.s3_client.head_object(Bucket=bucket, Key=collection_xml_key)
-                    collections.append(dir_name)
-                    logger.debug(f"Found collection in S3: {dir_name}")
+                    result = self._safe_head_object(bucket, collection_xml_key)
+                    if result:
+                        collections.append(dir_name)
+                        logger.debug(f"Found collection in S3: {dir_name}")
+                    else:
+                        logger.debug(f"Not a collection (no result): {dir_name}")
                 except Exception as e:
                     logger.debug(f"Not a collection or error: {dir_name}, {str(e)}")
             
@@ -258,9 +308,12 @@ class FileDiscoveryService(BaseStorageService):
                 # Check for the expected XML file using the form_bundle_xml_path method
                 bundle_xml_key = self.form_bundle_xml_path(collection_id, bundle_id)
                 try:
-                    self.s3_client.head_object(Bucket=bucket, Key=bundle_xml_key)
-                    bundles.append(bundle_id)
-                    logger.debug(f"Found bundle in S3: {bundle_id} in collection {collection_id}")
+                    result = self._safe_head_object(bucket, bundle_xml_key)
+                    if result:
+                        bundles.append(bundle_id)
+                        logger.debug(f"Found bundle in S3: {bundle_id} in collection {collection_id}")
+                    else:
+                        logger.debug(f"Not a bundle (no result): {bundle_id}")
                 except Exception as e:
                     logger.debug(f"Not a bundle or error: {bundle_id}, {str(e)}")
             
@@ -366,10 +419,13 @@ class FileDiscoveryService(BaseStorageService):
                     # Check if the formed key belongs to this prefix
                     if collection_xml_key.startswith(current_prefix):
                         logger.debug(f"Checking for collection XML at: {collection_xml_key}")
-                        self.s3_client.head_object(Bucket=bucket, Key=collection_xml_key)
-                        # Store potential collection info
-                        potential_collection_xml_keys.append((potential_id, collection_xml_key, current_prefix))
-                        logger.info(f"SUCCESS: Identified potential Collection via XML: {collection_xml_key}")
+                        result = self._safe_head_object(bucket, collection_xml_key)
+                        if result:
+                            # Store potential collection info
+                            potential_collection_xml_keys.append((potential_id, collection_xml_key, current_prefix))
+                            logger.info(f"SUCCESS: Identified potential Collection via XML: {collection_xml_key}")
+                        else:
+                            logger.debug(f"Collection XML not found: {collection_xml_key}")
                     else:
                          logger.debug(f"Skipping collection check for {potential_id} as formed path {collection_xml_key} doesn't match prefix {current_prefix}")
                 except ClientError as coll_e:
@@ -413,9 +469,12 @@ class FileDiscoveryService(BaseStorageService):
                         # Check if the formed key belongs to this bundle prefix
                         if bundle_xml_key.startswith(current_prefix):
                              logger.debug(f"Checking for bundle XML at: {bundle_xml_key}")
-                             self.s3_client.head_object(Bucket=bucket, Key=bundle_xml_key)
-                             result['potential_bundle_xmls'].append(bundle_xml_key)
-                             logger.info(f"SUCCESS: Identified Bundle via XML: {bundle_xml_key}")
+                             head_result = self._safe_head_object(bucket, bundle_xml_key)
+                             if head_result:
+                                 result['potential_bundle_xmls'].append(bundle_xml_key)
+                                 logger.info(f"SUCCESS: Identified Bundle via XML: {bundle_xml_key}")
+                             else:
+                                 logger.debug(f"Bundle XML not found: {bundle_xml_key}")
                         else:
                              logger.debug(f"Skipping bundle check for {potential_bundle_id} as formed path {bundle_xml_key} doesn't match prefix {current_prefix}")
                     except ClientError as bundle_e:

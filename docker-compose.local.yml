@@ -50,7 +50,7 @@ services:
       - arkumu_network
 
   minio:
-    image: minio/minio
+    image: minio/minio:latest
     container_name: arkumu_minio
     restart: unless-stopped
     ports:

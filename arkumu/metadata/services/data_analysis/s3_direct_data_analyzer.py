@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import tempfile
 import os
+import urllib3.exceptions
+from botocore.exceptions import ClientError
 
 from arkumu.storage.services.bucket_service import BucketService
 # SmartBulkUpdaterPolars removed - using modular services instead
@@ -96,6 +98,54 @@ class S3DirectDataAnalyzer:
         
         # Initialize bulk updater only when needed (lazy initialization)
         self._bulk_updater = None
+    
+    def _safe_head_object(self, bucket_name: str, s3_key: str) -> Dict[str, Any]:
+        """
+        Safely perform head_object call with fallback for MinIO header parsing issues.
+        
+        Args:
+            bucket_name: S3 bucket name
+            s3_key: S3 object key
+            
+        Returns:
+            Dictionary with object metadata or None if failed
+        """
+        try:
+            s3_client = self.bucket_service.base_s3_service.s3_client
+            return s3_client.head_object(
+                Bucket=bucket_name,
+                Key=s3_key
+            )
+        except urllib3.exceptions.HeaderParsingError as e:
+            logger.warning(f"MinIO header parsing error for {s3_key}: {e}")
+            # For empty files, MinIO sometimes has header parsing issues
+            # Try to get object info via list_objects_v2 as fallback
+            try:
+                s3_client = self.bucket_service.base_s3_service.s3_client
+                response = s3_client.list_objects_v2(
+                    Bucket=bucket_name,
+                    Prefix=s3_key,
+                    MaxKeys=1
+                )
+                objects = response.get('Contents', [])
+                if objects and objects[0]['Key'] == s3_key:
+                    obj = objects[0]
+                    return {
+                        'ContentLength': obj.get('Size', 0),
+                        'LastModified': obj.get('LastModified'),
+                        'ETag': obj.get('ETag', ''),
+                        'ContentType': 'application/octet-stream',
+                        'Metadata': {}
+                    }
+                else:
+                    logger.error(f"Object {s3_key} not found in fallback list_objects_v2")
+                    return None
+            except ClientError as fallback_e:
+                logger.error(f"Fallback list_objects_v2 also failed for {s3_key}: {fallback_e}")
+                return None
+        except ClientError as e:
+            # Let ClientError bubble up as it's expected for 404s, etc.
+            raise e
     
     @property
     def bulk_updater(self):
@@ -911,10 +961,9 @@ class S3DirectDataAnalyzer:
                 object_key = f"metadata/{source_name}{ext}"
                 try:
                     # Check if file exists by trying to get its metadata
-                    self.bucket_service.base_s3_service.s3_client.head_object(
-                        Bucket=bucket_name,
-                        Key=object_key
-                    )
+                    result = self._safe_head_object(bucket_name, object_key)
+                    if not result:
+                        raise ClientError({'Error': {'Code': 'NoSuchKey'}}, 'head_object')
                     # File exists, create source info
                     source_info = S3DataSourceInfo(
                         bucket_name=bucket_name,
@@ -930,10 +979,9 @@ class S3DirectDataAnalyzer:
                 # Fallback: check without extension (source_name might already include it)
                 object_key = f"metadata/{source_name}"
                 try:
-                    self.bucket_service.base_s3_service.s3_client.head_object(
-                        Bucket=bucket_name,
-                        Key=object_key
-                    )
+                    result = self._safe_head_object(bucket_name, object_key)
+                    if not result:
+                        raise ClientError({'Error': {'Code': 'NoSuchKey'}}, 'head_object')
                     # Determine format from filename
                     name, ext = os.path.splitext(source_name)
                     if ext.lower() in ['.csv', '.xlsx', '.xls', '.json', '.parquet']:
