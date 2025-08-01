@@ -74,7 +74,7 @@ class BaseStorageService:
         self.production_bucket = self._get_production_bucket_name()
         
         logger.info(f"===> BaseStorageService: Attempting to create S3 client. Endpoint: {self.endpoint_url}, Region: {self.region}")
-        logger.info(f"===> BaseStorageService: Access Key: {self.access_key[:10]}..., Secret Key: {self.secret_key[:10]}...")
+        logger.info("===> BaseStorageService: S3 credentials configured")
         # _create_s3_client will set self.s3_client and potentially self.presigned_client
         self._create_s3_client() 
         logger.info("===> BaseStorageService: S3 client(s) created.")
@@ -235,7 +235,7 @@ class BaseStorageService:
         logger.info("===> Testing S3 connection...")
         logger.info(f"===> Endpoint: {self.endpoint_url}")
         logger.info(f"===> Region: {self.region}")
-        logger.info(f"===> Access Key: {self.access_key[:10]}...")
+        logger.info("===> S3 credentials validated")
         
         try:
             # Test basic connection by listing buckets
