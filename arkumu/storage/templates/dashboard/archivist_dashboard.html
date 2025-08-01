@@ -253,8 +253,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const baseFolder = baseFolderSelect ? baseFolderSelect.value : '';
                 console.log('📁 DASHBOARD DEBUG: Base folder:', baseFolder);
                 
-                // Create full folder path
-                const fullFolderPath = baseFolder ? (baseFolder + '/' + folderName) : folderName;
+                // For metadata uploads, only use the base folder (strip user folder)
+                // For data uploads, include the user folder
+                const fullFolderPath = baseFolder === 'metadata' ? baseFolder : (baseFolder ? (baseFolder + '/' + folderName) : folderName);
                 console.log('📁 DASHBOARD DEBUG: Full folder path:', fullFolderPath);
                 
                 // Add folder structure data to the request
