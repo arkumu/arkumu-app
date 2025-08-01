@@ -130,7 +130,7 @@ class UploadService:
         """
         try:
             upload_start = time.time()
-            logger.info(f"⏱️ UPLOAD START: {s3_key} at {upload_start:.3f}")
+            logger.info(f"⏱️ UPLOAD START: {s3_key} at {time.strftime('%H:%M:%S', time.localtime(upload_start))}.{int((upload_start % 1) * 1000):03d}")
             
             # Use encrypted upload method from BaseStorageService
             upload_result = self.base_s3_service.upload_fileobj_encrypted(
@@ -142,7 +142,7 @@ class UploadService:
             
             upload_end = time.time()
             upload_duration = upload_end - upload_start
-            logger.info(f"⏱️ UPLOAD END: {s3_key} at {upload_end:.3f} (took {upload_duration:.3f}s)")
+            logger.info(f"⏱️ UPLOAD END: {s3_key} at {time.strftime('%H:%M:%S', time.localtime(upload_end))}.{int((upload_end % 1) * 1000):03d} (took {upload_duration:.3f}s)")
             
             if not upload_result.get('success', False):
                 return {
