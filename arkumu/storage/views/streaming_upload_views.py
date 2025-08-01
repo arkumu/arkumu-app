@@ -80,8 +80,10 @@ def streaming_upload_form(request):
         })
     
     # Handle POST request with file uploads
+    upload_start_time = time.time()
     logger.info(f"Processing streaming upload for user: {request.user.username}")
     logger.info(f"📊 UPLOAD TYPE: Standard streaming upload endpoint")
+    logger.info(f"⏱️ TIMING: Upload started at {upload_start_time:.3f}")
     
     # 🔍 CHECK NGINX HEADERS
     nginx_proxy = request.headers.get('X-Nginx-Proxy', 'false')
@@ -326,7 +328,9 @@ def streaming_upload_form(request):
         # Mark session as completed or failed
         if result.get('success', False):
             upload_session.mark_completed(result)
+            upload_end_time = time.time()
             logger.info(f"Successfully uploaded {len(files)} files to {folder_name} in {duration:.2f} seconds")
+            logger.info(f"⏱️ TIMING: Upload completed at {upload_end_time:.3f}")
         else:
             upload_session.mark_failed(result.get('error', 'Upload failed'))
             logger.error(f"Failed to upload files: {result.get('error', 'Unknown error')}")
@@ -510,7 +514,9 @@ def streaming_upload_api(request):
         
         # Log the result
         if result.get('success', False):
+            upload_end_time = time.time()
             logger.info(f"API: Successfully uploaded {len(files)} files to {folder_name} in {duration:.2f} seconds")
+            logger.info(f"⏱️ TIMING: API upload completed at {upload_end_time:.3f}")
         else:
             logger.error(f"API: Failed to upload files: {result.get('error', 'Unknown error')}")
         

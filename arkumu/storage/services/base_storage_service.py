@@ -116,7 +116,10 @@ class BaseStorageService:
                 logger.info("===> BaseStorageService: System buckets GLOBAL check already performed.")
         
         self._base_initialized_flag = True # Mark this specific instance as having completed its one-time setup.
-        logger.info("===> BaseStorageService.__init__: ONE-TIME actual S3 setup COMPLETED.")
+        init_end_time = time.time()
+        init_duration = init_end_time - init_start_time
+        logger.info(f"===> BaseStorageService.__init__: ONE-TIME actual S3 setup COMPLETED at {init_end_time:.3f}")
+        logger.info(f"⏱️ TIMING: BaseStorageService initialization took {init_duration:.3f} seconds")
     
     # Methods like _is_minio_environment, _get_endpoint_url, _create_s3_client, 
     # ensure_bucket_exists, ensure_cors_enabled etc. remain largely the same, 
