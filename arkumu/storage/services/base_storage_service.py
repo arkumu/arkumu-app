@@ -49,7 +49,9 @@ class BaseStorageService:
             logger.info("===> BaseStorageService.__init__: Already fully initialized. Skipping one-time setup.")
             return
             
-        logger.info("===> BaseStorageService.__init__: Starting ONE-TIME actual S3 setup.")
+        init_start_time = time.time()
+        logger.info(f"===> BaseStorageService.__init__: Starting ONE-TIME actual S3 setup at {init_start_time:.3f}")
+        logger.info(f"⏱️ TIMING: BaseStorageService initialization beginning...")
         
         # Disable SSL warnings for self-signed certificates
         if self._is_minio_environment() or os.environ.get('AWS_S3_ENDPOINT_URL'):

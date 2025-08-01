@@ -1,4 +1,5 @@
 import logging
+import time
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.views import View
@@ -149,7 +150,9 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
                         logger.info(f"Loaded {len(contents)} items for {selected_org_slug}")
                         # Also get root level items if needed for other purposes
                         organization_structure = bucket_service.get_root_level_items(bucket_name)
-                        logger.info(f"Structure fetched for {selected_org_slug}")
+                        current_time = time.time()
+                        logger.info(f"Structure fetched for {selected_org_slug} at {current_time:.3f}")
+                        logger.info(f"⏱️ TIMING: About to initialize services for file operations...")
                     else:
                         logger.warning(f"Requested organization '{selected_org_slug}' not found in available organizations.")
 
