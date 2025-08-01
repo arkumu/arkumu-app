@@ -31,19 +31,20 @@ class UploadService:
         """
         Initialize the UploadService with reference to BaseStorageService.
         """
+        from datetime import datetime
         init_start = time.time()
-        logger.info(f"⏱️ UPLOAD SERVICE INIT START: {init_start:.3f}")
+        logger.info(f"⏱️ UPLOAD SERVICE INIT START: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
         logger.info("Initializing UploadService...")
         
         # Get the singleton instance of BaseStorageService for S3 operations
         base_service_start = time.time()
-        logger.info(f"⏱️ BASE SERVICE INIT START: {base_service_start:.3f}")
+        logger.info(f"⏱️ BASE SERVICE INIT START: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
         self.base_s3_service = BaseStorageService()
         base_service_end = time.time()
-        logger.info(f"⏱️ BASE SERVICE INIT END: {base_service_end:.3f} (took {base_service_end - base_service_start:.3f}s)")
+        logger.info(f"⏱️ BASE SERVICE INIT END: {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (took {base_service_end - base_service_start:.3f}s)")
         
         init_end = time.time()
-        logger.info(f"⏱️ UPLOAD SERVICE INIT END: {init_end:.3f} (took {init_end - init_start:.3f}s)")
+        logger.info(f"⏱️ UPLOAD SERVICE INIT END: {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (took {init_end - init_start:.3f}s)")
         logger.info(f"UploadService initialized using BaseStorageService with endpoint: {self.base_s3_service.endpoint_url}")
 
     def _safe_head_object(self, bucket_name: str, s3_key: str) -> Dict[str, Any]:
