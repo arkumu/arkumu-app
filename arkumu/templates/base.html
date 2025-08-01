@@ -56,21 +56,10 @@
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
           <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
           {% if request.user.is_authenticated %}
-            <li>
-              <details>
-                <summary class="{% if '/catalog/' in request.path %}active{% endif %}">
-                  <i class="fas fa-book"></i>
-                  Catalog
-                </summary>
-                <ul class="p-2">
-                  <li><a href="{% url 'catalog:overview' %}">Overview</a></li>
-                  <li><a href="{% url 'catalog:projects' %}">Projects</a></li>
-                  <li><a href="{% url 'catalog:events' %}">Events</a></li>
-                  <li><a href="{% url 'catalog:persons' %}">Persons</a></li>
-                  <li><a href="{% url 'catalog:search' %}">Search</a></li>
-                </ul>
-              </details>
-            </li>
+            <li><span class="cursor-not-allowed opacity-50 block px-3 py-2 text-sm flex items-center gap-2">
+              <i class="fas fa-book"></i>
+              Catalog (Under Development)
+            </span></li>
             <li><a href="{% url 'storage:archivist_dashboard' %}">Archivist Dashboard</a></li>
             <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
             <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
@@ -89,14 +78,15 @@
       <ul class="menu menu-horizontal px-1">
         <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
         {% if request.user.is_authenticated %}
-          <li><a href="{% url 'catalog:search' %}" class="{% if '/catalog/' in request.path %}active{% endif %}">
-            <i class="fas fa-search"></i>
-            Catalog Search
-          </a></li>
           <li><a href="{% url 'storage:archivist_dashboard' %}">Archivist Dashboard</a></li>
           <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
           <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
           <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
+          <li><span class="cursor-not-allowed opacity-50 flex items-center gap-2 px-3 py-2 text-sm bg-base-200 rounded-md">
+            <i class="fas fa-search"></i>
+            <span>Catalog Search</span>
+            <span class="badge badge-warning badge-sm">Coming Soon</span>
+          </span></li>
 
         {% endif %}
       </ul>

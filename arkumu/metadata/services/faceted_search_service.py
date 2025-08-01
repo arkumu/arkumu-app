@@ -3,7 +3,7 @@ Faceted search service for filtering resources by their property values.
 """
 
 from typing import Dict, List, Optional, Set, Tuple
-from django.db.models import QuerySet, Q, Count
+from django.db.models import QuerySet, Q, Count, Exists, OuterRef
 from django.contrib.auth import get_user_model
 from arkumu.metadata.models import Resource, Triple, HarmonizationRule
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
@@ -14,6 +14,109 @@ User = get_user_model()
 
 class FacetedSearchService(CatalogNavigationService):
     """Service for faceted search with property-based filtering."""
+    
+    def _get_harmonized_base_queryset(self) -> QuerySet:
+        """Get base queryset filtered to only organizations with explicit harmonization rules."""
+        from django.db.models import Q
+        
+        # ONLY include resources from organizations with explicit harmonization rules
+        harmonized_org_ids = HarmonizationRule.objects.filter(
+            is_active=True
+        ).values_list('source_organization_id', flat=True).distinct()
+        
+        harmonization_filter = Q(organization_id__in=harmonized_org_ids)
+        
+        # For harmonized resources, allow private access since harmonization implies searchability
+        if not self.user.is_authenticated:
+            # Anonymous users can only see public approved harmonized resources
+            base_access_filter = Q(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True
+            )
+        elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
+            base_access_filter = Q()  # No restrictions
+        else:
+            # Authenticated users can access all harmonized resources (including private)
+            # since harmonization implies cross-organizational searchability
+            base_access_filter = Q()  # Allow all harmonized resources
+        
+        return Resource.objects.filter(base_access_filter & harmonization_filter)
+    
+    def search_resources(self, query: str, resource_types=None, limit=50) -> QuerySet:
+        """Override parent method to only search harmonized resources."""
+        from django.db.models import Q
+        
+        if not query.strip():
+            return Resource.objects.none()
+        
+        # Get harmonized resources first
+        harmonized_resources = self._get_harmonized_base_queryset()
+        
+        # Use same access control as harmonized base queryset for consistency
+        if not self.user.is_authenticated:
+            base_access_filter = Q(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True
+            )
+        elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
+            base_access_filter = Q()
+        else:
+            # For harmonized search, allow all harmonized resources (including private)
+            # since harmonization implies cross-organizational searchability
+            base_access_filter = Q()  # Allow all harmonized resources
+        
+        # Search in literal values connected to harmonized resources
+        harmonized_resource_ids = list(harmonized_resources.values_list('id', flat=True))
+        if not harmonized_resource_ids:
+            return Resource.objects.none()
+        
+        # Use raw Triple query for literal searches since we already filtered to harmonized resources
+        matching_literal_triples = Triple.objects.filter(
+            subject_id__in=harmonized_resource_ids,
+            object__resource_type=ResourceType.LITERAL,
+            object__value__icontains=query
+        ).select_related('subject')
+        
+        literal_match_resource_ids = list(
+            matching_literal_triples.values_list('subject_id', flat=True).distinct()
+        )
+        
+        # Also search in resource URIs/names but only for harmonized resources
+        direct_match_resources = harmonized_resources.filter(
+            base_access_filter & (Q(value__icontains=query) | Q(name__icontains=query) | Q(uri__icontains=query))
+        )
+        direct_match_resource_ids = list(direct_match_resources.values_list('id', flat=True))
+        
+        # Combine both strategies
+        all_matching_ids = list(set(literal_match_resource_ids + direct_match_resource_ids))
+        
+        if not all_matching_ids:
+            return Resource.objects.none()
+        
+        # Apply access control to the final results
+        # Since we already filtered to harmonized resources only, use the harmonized access control
+        matching_resources = Resource.objects.filter(
+            Q(id__in=all_matching_ids) & base_access_filter
+        )
+        
+        # Filter by resource type if specified
+        if resource_types:
+            rdf_type_resource = Resource.objects.filter(uri=self.RDF_TYPE).first()
+            if rdf_type_resource:
+                all_type_uris = []
+                for arkumu_type in resource_types:
+                    all_type_uris.extend(self._get_harmonized_types(arkumu_type))
+                
+                # Use raw Triple query for type lookups - types should be universally accessible
+                typed_resource_ids = Triple.objects.filter(
+                    predicate=rdf_type_resource,
+                    object__uri__in=all_type_uris,
+                    subject_id__in=harmonized_resource_ids  # Only harmonized resources
+                ).values_list('subject_id', flat=True)
+                
+                matching_resources = matching_resources.filter(id__in=typed_resource_ids)
+        
+        return matching_resources.select_related('organization').distinct()[:limit]
     
     def discover_and_cache_properties(self, resource_type: str) -> Dict[str, Dict]:
         """
@@ -34,14 +137,19 @@ class FacetedSearchService(CatalogNavigationService):
         arkumu_type = self.ARKUMU_PROJECT if resource_type == 'projects' else self.ARKUMU_EVENT
         type_uris = self._get_harmonized_types(arkumu_type)
         
-        # Find resources of this type
+        # Find resources of this type (only harmonized ones)
         rdf_type_resource = Resource.objects.filter(uri=self.RDF_TYPE).first()
         if not rdf_type_resource:
             return {}
         
-        resource_triples = Triple.objects.for_user(self.user).filter(
+        # Only include harmonized resources
+        harmonized_resources = self._get_harmonized_base_queryset()
+        
+        # Use raw Triple query for type lookups - types should be universally accessible
+        resource_triples = Triple.objects.filter(
             predicate=rdf_type_resource,
-            object__uri__in=type_uris
+            object__uri__in=type_uris,
+            subject__in=harmonized_resources
         )
         resource_ids = list(resource_triples.values_list('subject_id', flat=True))
         
@@ -49,7 +157,8 @@ class FacetedSearchService(CatalogNavigationService):
             return {}
         
         # Get all properties that these resources have with literal values
-        property_triples = Triple.objects.for_user(self.user).filter(
+        # Use raw Triple query since we already filtered to harmonized resources
+        property_triples = Triple.objects.filter(
             subject_id__in=resource_ids,
             object__resource_type=ResourceType.LITERAL
         ).values('predicate__uri', 'predicate__value').annotate(
@@ -80,7 +189,8 @@ class FacetedSearchService(CatalogNavigationService):
             label = self._generate_property_label(prop_key)
             
             # Determine if property is good for faceting (categorical) or searching (text)
-            sample_values = Triple.objects.for_user(self.user).filter(
+            # Use raw Triple query since we already filtered to harmonized resources
+            sample_values = Triple.objects.filter(
                 subject_id__in=resource_ids[:10],  # Sample from first 10 resources
                 predicate__uri=prop_uri,
                 object__resource_type=ResourceType.LITERAL
@@ -167,19 +277,25 @@ class FacetedSearchService(CatalogNavigationService):
         arkumu_type = self.ARKUMU_PROJECT if resource_type == 'projects' else self.ARKUMU_EVENT
         type_uris = self._get_harmonized_types(arkumu_type)
         
-        # Find resources of this type
+        # Find resources of this type (only harmonized ones)
         rdf_type_resource = Resource.objects.filter(uri=self.RDF_TYPE).first()
         if not rdf_type_resource:
             return []
         
-        resource_triples = Triple.objects.for_user(self.user).filter(
+        # Only include harmonized resources
+        harmonized_resources = self._get_harmonized_base_queryset()
+        
+        # Use raw Triple query for type lookups - types should be universally accessible
+        resource_triples = Triple.objects.filter(
             predicate=rdf_type_resource,
-            object__uri__in=type_uris
+            object__uri__in=type_uris,
+            subject__in=harmonized_resources
         )
         resource_ids = list(resource_triples.values_list('subject_id', flat=True))
         
         # Get facet values with counts
-        facet_triples = Triple.objects.for_user(self.user).filter(
+        # Use raw Triple query since we already filtered to harmonized resources
+        facet_triples = Triple.objects.filter(
             subject_id__in=resource_ids,
             predicate__uri=prop_uri,
             object__resource_type=ResourceType.LITERAL
@@ -257,26 +373,45 @@ class FacetedSearchService(CatalogNavigationService):
                 )
                 resource_ids = list(matching_resources.values_list('id', flat=True))
         else:
-            # No query - get all resources of the specified type
+            # No query - get all harmonized resources of the specified type
+            harmonized_resources = self._get_harmonized_base_queryset()
+            
             if resource_type == 'projects':
-                matching_resources = self.get_all_projects()
+                # Get harmonized projects
+                project_types = self._get_harmonized_types(self.ARKUMU_PROJECT)
+                rdf_type_resource = Resource.objects.filter(uri=self.RDF_TYPE).first()
+                if not rdf_type_resource:
+                    return Resource.objects.none()
+                
+                # Use raw Triple query for type lookups - types should be universally accessible
+                project_triples = Triple.objects.filter(
+                    predicate=rdf_type_resource,
+                    object__uri__in=project_types,
+                    subject__in=harmonized_resources
+                ).select_related('subject')
+                
+                project_ids = list(project_triples.values_list('subject_id', flat=True))
+                matching_resources = Resource.objects.filter(id__in=project_ids)
+                
             elif resource_type == 'events':
-                # Get events using same pattern as projects
+                # Get harmonized events
                 event_types = self._get_harmonized_types(self.ARKUMU_EVENT)
                 rdf_type_resource = Resource.objects.filter(uri=self.RDF_TYPE).first()
                 if not rdf_type_resource:
                     return Resource.objects.none()
                 
-                event_triples = Triple.objects.for_user(self.user).filter(
+                # Use raw Triple query for type lookups - types should be universally accessible
+                event_triples = Triple.objects.filter(
                     predicate=rdf_type_resource,
-                    object__uri__in=event_types
+                    object__uri__in=event_types,
+                    subject__in=harmonized_resources
                 ).select_related('subject')
                 
                 event_ids = list(event_triples.values_list('subject_id', flat=True))
                 matching_resources = Resource.objects.filter(id__in=event_ids)
             else:
-                # No type specified - search all
-                matching_resources = Resource.objects.none()
+                # No type specified - search all harmonized resources
+                matching_resources = harmonized_resources
             
             resource_ids = list(matching_resources.values_list('id', flat=True))
         
@@ -312,25 +447,20 @@ class FacetedSearchService(CatalogNavigationService):
         if not resource_ids:
             return Resource.objects.none()
         
-        # Apply access control
+        # For harmonized search, we already filtered to harmonized resources
+        # Apply consistent access control (allow private harmonized resources)
         if not self.user.is_authenticated:
+            # Anonymous users can only see public approved resources
             base_access_filter = Q(
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True
             )
         elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
-            base_access_filter = Q()
+            base_access_filter = Q()  # No restrictions
         else:
-            org_filter = Q()
-            if hasattr(self.user, 'organization') and self.user.organization:
-                org_filter = Q(organization=self.user.organization)
-            
-            public_filter = Q(
-                public_access_level__in=[PublicAccessLevel.PUBLIC, PublicAccessLevel.RESTRICTED],
-                is_public_approved=True
-            )
-            
-            base_access_filter = org_filter | public_filter
+            # Authenticated users can access all harmonized resources (including private)
+            # since harmonization implies cross-organizational searchability
+            base_access_filter = Q()  # Allow all harmonized resources
         
         return Resource.objects.filter(
             Q(id__in=resource_ids) & base_access_filter
@@ -349,19 +479,25 @@ class FacetedSearchService(CatalogNavigationService):
         arkumu_type = self.ARKUMU_PROJECT if resource_type == 'projects' else self.ARKUMU_EVENT
         type_uris = self._get_harmonized_types(arkumu_type)
         
-        # Find resources of this type
+        # Find resources of this type (only harmonized ones)
         rdf_type_resource = Resource.objects.filter(uri=self.RDF_TYPE).first()
         if not rdf_type_resource:
             return []
         
-        resource_triples = Triple.objects.for_user(self.user).filter(
+        # Only include harmonized resources
+        harmonized_resources = self._get_harmonized_base_queryset()
+        
+        # Use raw Triple query for type lookups - types should be universally accessible
+        resource_triples = Triple.objects.filter(
             predicate=rdf_type_resource,
-            object__uri__in=type_uris
+            object__uri__in=type_uris,
+            subject__in=harmonized_resources
         )
         resource_ids = list(resource_triples.values_list('subject_id', flat=True))
         
         # Search within the specific property
-        matching_triples = Triple.objects.for_user(self.user).filter(
+        # Use raw Triple query since we already filtered to harmonized resources
+        matching_triples = Triple.objects.filter(
             subject_id__in=resource_ids,
             predicate__uri=prop_uri,
             object__resource_type=ResourceType.LITERAL,

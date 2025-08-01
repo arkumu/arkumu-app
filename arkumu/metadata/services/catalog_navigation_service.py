@@ -43,42 +43,8 @@ class CatalogNavigationService:
         mapped_uris = [arkumu_type]  # Include the generic type
         mapped_uris.extend([rule.source_property_pattern for rule in rules])
         
-        # FALLBACK: If user has organization but no harmonization rules exist for their org,
-        # try to find organization-specific types by pattern matching
-        if self.user.organization:
-            org_code = self.user.organization.code.lower()
-            # Check if we already have harmonization rules for this organization
-            has_org_rules = any(f'/data/{org_code}/' in uri for uri in mapped_uris[1:])  # Skip generic type
-            
-            if not has_org_rules:  # No rules for this organization yet
-                type_name = arkumu_type.split('/')[-1]  # e.g., 'projekt' from 'http://arkumu.org/types/projekt'
-                
-                # Look for organization-specific URIs that might match this type
-                from django.db.models import Q
-                
-                # Search for type URIs that contain the organization code and might match the type
-                type_patterns = Q()
-                if type_name == 'projekt':
-                    type_patterns = Q(uri__icontains='projekt') | Q(uri__icontains='project')
-                elif type_name == 'ereignis':
-                    type_patterns = Q(uri__icontains='ereignis') | Q(uri__icontains='event')
-                elif type_name == 'akteurin':
-                    type_patterns = Q(uri__icontains='person') | Q(uri__icontains='akteur')
-                elif type_name == 'einliefernde-hochschule':
-                    type_patterns = Q(uri__icontains='hochschule') | Q(uri__icontains='organisation')
-                elif type_name == 'digitales-objekt':
-                    type_patterns = Q(uri__icontains='objekt') | Q(uri__icontains='digital') | Q(uri__icontains='media')
-                else:
-                    type_patterns = Q(uri__icontains=type_name)
-                
-                matching_resources = Resource.objects.filter(
-                    Q(uri__contains=f'/data/{org_code}/types/') & type_patterns
-                )
-                
-                # Add found URIs
-                for resource in matching_resources:
-                    if resource.uri not in mapped_uris:
-                        mapped_uris.append(resource.uri)
+        # Only use explicit harmonization rules - no pattern matching fallback
+        # This ensures complete control over which organizations are harmonized
         
         return mapped_uris
     
@@ -106,7 +72,8 @@ class CatalogNavigationService:
             return Resource.objects.none()
         
         # Find all resources that are typed as projects
-        project_triples = Triple.objects.for_user(self.user).filter(
+        # Use raw Triple query for type lookups - types should be universally accessible
+        project_triples = Triple.objects.filter(
             predicate=rdf_type_resource,
             object__uri__in=project_types
         ).select_related('subject')
@@ -451,7 +418,8 @@ class CatalogNavigationService:
                     all_type_uris.extend(self._get_harmonized_types(arkumu_type))
                 
                 # Find resources that have the correct type
-                typed_resource_ids = Triple.objects.for_user(self.user).filter(
+                # Use raw Triple query for type lookups - types should be universally accessible
+                typed_resource_ids = Triple.objects.filter(
                     predicate=rdf_type_resource,
                     object__uri__in=all_type_uris
                 ).values_list('subject_id', flat=True)

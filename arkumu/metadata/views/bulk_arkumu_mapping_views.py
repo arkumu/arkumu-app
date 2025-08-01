@@ -19,13 +19,43 @@ from arkumu.metadata.services.bulk_arkumu_mapping_service import BulkArkumuMappi
 from arkumu.metadata.models.harmonization import HarmonizationExecution
 
 
+class BulkMappingAccessMixin:
+    """Mixin to restrict bulk mapping access to specific organizations."""
+    
+    # Organizations allowed to use bulk mapping
+    ALLOWED_BULK_MAPPING_ORGS = ['rsh', 'fuk', 'det']
+    
+    def dispatch(self, request, *args, **kwargs):
+        """Check if user's organization is allowed to use bulk mapping."""
+        # Allow superusers to bypass restrictions
+        if request.user.is_superuser:
+            return super().dispatch(request, *args, **kwargs)
+            
+        # Check if user has an organization
+        if not hasattr(request.user, 'organization') or not request.user.organization:
+            messages.error(request, "You must be associated with an organization to access bulk mapping.")
+            return redirect('metadata:csv_mapping_editor')
+        
+        # Check if user's organization is allowed to use bulk mapping
+        user_org_code = request.user.organization.code.lower()
+        if user_org_code not in self.ALLOWED_BULK_MAPPING_ORGS:
+            messages.warning(
+                request, 
+                f"Bulk mapping is not available for {request.user.organization.name}. "
+                "Please use the manual CSV Mapping Editor instead."
+            )
+            return redirect('metadata:csv_mapping_editor')
+        
+        return super().dispatch(request, *args, **kwargs)
+
+
 class BulkArkumuMappingForm(forms.Form):
     """Form for bulk Arkumu mapping configuration."""
     
     organizations = forms.ModelMultipleChoiceField(
-        queryset=Organization.objects.filter(is_active=True),
+        queryset=Organization.objects.filter(is_active=True),  # Will be filtered in view
         widget=forms.CheckboxSelectMultiple,
-        help_text="Select one or more organizations to map to the Arkumu model"
+        help_text="Select one or more organizations to map to the Arkumu model (only RSH, FUK, and DET allowed)"
     )
     
     mapping_type = forms.ChoiceField(
@@ -55,7 +85,7 @@ class BulkArkumuMappingForm(forms.Form):
     )
 
 
-class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
+class BulkArkumuMappingView(BulkMappingAccessMixin, GeneralLoginRequiredMixin, FormView):
     """Main view for bulk Arkumu mapping with HTMX support."""
     
     template_name = 'metadata/bulk_arkumu_mapping/main.html'
@@ -66,6 +96,19 @@ class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
         super().__init__(*args, **kwargs)
         self.service = BulkArkumuMappingService()
     
+    def get_form(self, form_class=None):
+        """Override form to filter organizations to only allowed ones."""
+        form = super().get_form(form_class)
+        
+        # Filter organizations to only show those allowed for bulk mapping
+        allowed_orgs = Organization.objects.filter(
+            is_active=True,
+            code__iregex=r'^(rsh|fuk|det)$'  # Case-insensitive exact match
+        )
+        form.fields['organizations'].queryset = allowed_orgs
+        
+        return form
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
@@ -75,8 +118,11 @@ class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
             created_by=self.request.user
         ).order_by('-created_at')[:10]
         
-        # Get organization statistics with mapping counts
-        organizations = Organization.objects.filter(is_active=True)
+        # Get organization statistics with mapping counts (only for allowed organizations)
+        organizations = Organization.objects.filter(
+            is_active=True,
+            code__iregex=r'^(rsh|fuk|det)$'  # Case-insensitive exact match
+        )
         context['organization_stats'] = {}
         
         for org in organizations:
@@ -240,7 +286,7 @@ class BulkArkumuMappingView(GeneralLoginRequiredMixin, FormView):
         return super().form_valid(form)
 
 
-class BulkArkumuMappingPreviewView(GeneralLoginRequiredMixin, TemplateView):
+class BulkArkumuMappingPreviewView(BulkMappingAccessMixin, GeneralLoginRequiredMixin, TemplateView):
     """View for previewing bulk mappings before creation."""
     
     template_name = 'metadata/bulk_arkumu_mapping/preview.html'
@@ -315,7 +361,7 @@ class BulkArkumuMappingPreviewView(GeneralLoginRequiredMixin, TemplateView):
             return redirect('metadata:bulk_arkumu_mapping')
 
 
-class BulkArkumuMappingExecutionDetailView(GeneralLoginRequiredMixin, TemplateView):
+class BulkArkumuMappingExecutionDetailView(BulkMappingAccessMixin, GeneralLoginRequiredMixin, TemplateView):
     """View for displaying execution details."""
     
     template_name = 'metadata/bulk_arkumu_mapping/execution_detail.html'
@@ -347,7 +393,7 @@ class BulkArkumuMappingExecutionDetailView(GeneralLoginRequiredMixin, TemplateVi
 
 
 @method_decorator(require_http_methods(["GET"]), name='dispatch')
-class BulkArkumuMappingSortView(GeneralLoginRequiredMixin, View):
+class BulkArkumuMappingSortView(BulkMappingAccessMixin, GeneralLoginRequiredMixin, View):
     """HTMX view for sorting mappings in the preview table."""
     
     def get(self, request, *args, **kwargs):
@@ -407,7 +453,7 @@ class BulkArkumuMappingSortView(GeneralLoginRequiredMixin, View):
 
 
 @method_decorator(require_http_methods(["POST"]), name='dispatch')
-class BulkArkumuMappingRemoveView(GeneralLoginRequiredMixin, View):
+class BulkArkumuMappingRemoveView(BulkMappingAccessMixin, GeneralLoginRequiredMixin, View):
     """HTMX view for removing mappings for a specific organization."""
     
     def post(self, request, *args, **kwargs):
@@ -473,7 +519,7 @@ class BulkArkumuMappingRemoveView(GeneralLoginRequiredMixin, View):
 
 
 @method_decorator(require_http_methods(["DELETE"]), name='dispatch')
-class BulkArkumuMappingDeleteView(GeneralLoginRequiredMixin, View):
+class BulkArkumuMappingDeleteView(BulkMappingAccessMixin, GeneralLoginRequiredMixin, View):
     """HTMX view for deleting existing harmonization mappings."""
     
     def delete(self, request, *args, **kwargs):
