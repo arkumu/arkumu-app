@@ -36,6 +36,7 @@
             id="files-mode-btn"
             hx-get="/storage/dashboard/upload-mode/"
             hx-vals='{"mode": "files"}'
+            hx-include="this"
             hx-swap="none">
         📄 Upload Files
     </button>
@@ -47,6 +48,7 @@
             id="folder-mode-btn"
             hx-get="/storage/dashboard/upload-mode/"
             hx-vals='{"mode": "folder"}'
+            hx-include="this"
             hx-swap="none">
         📁 Upload Folder
     </button>
