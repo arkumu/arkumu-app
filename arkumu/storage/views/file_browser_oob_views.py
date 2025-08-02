@@ -10,6 +10,7 @@ import logging
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_http_methods
+from django.middleware.csrf import get_token
 from arkumu.users.mixins import general_login_required
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 
@@ -40,19 +41,31 @@ class FileBrowserOOBMixin(CSVMappingTemplateHelperMixin):
             bucket_name = bucket_service.get_organization_bucket(organization)
             contents = bucket_service.list_bucket_contents(bucket_name, '')
             
+            logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: organization={organization}")
+            logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: bucket_name={bucket_name}")
+            logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: contents count={len(contents) if contents else 0}")
+            if contents:
+                logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: first few contents: {[item.get('name', 'unknown') for item in contents[:3]]}")
+            
             context = {
                 'organization': organization,
                 'bucket_name': bucket_name,
                 'contents': contents,
                 'selected_org_slug': organization,
-                'prefix': ''
+                'prefix': '',
+                'csrf_token': get_token(request) if request else ''
             }
             
-            return render_to_string(
+            rendered_html = render_to_string(
                 'dashboard/organization_files_partial.html',
                 context,
                 request=request
             )
+            
+            logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: rendered HTML length={len(rendered_html)}")
+            logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: rendered HTML preview: {rendered_html[:300]}...")
+            
+            return rendered_html
         except Exception as e:
             logger.error(f"Error rendering organization files template: {e}")
             return f'<div class="error">Error loading files: {str(e)}</div>'
