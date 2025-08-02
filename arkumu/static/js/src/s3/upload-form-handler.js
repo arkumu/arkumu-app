@@ -342,7 +342,6 @@ class UploadFormHandler {
         this.hideProgress();
         
         if (summary.success) {
-            this.showStatus('Upload completed successfully!', 'success');
             this.showResults(summary);
             
             // Refresh file browser after successful upload
@@ -429,7 +428,13 @@ class UploadFormHandler {
         }
         
         if (this.resultDuration) {
-            this.resultDuration.textContent = formatDuration(summary.duration_seconds || summary.duration || 0);
+            // Convert seconds to milliseconds for formatDuration, or display seconds directly
+            const durationSeconds = summary.duration_seconds || summary.duration || 0;
+            if (durationSeconds < 1) {
+                this.resultDuration.textContent = `${(durationSeconds * 1000).toFixed(0)}ms`;
+            } else {
+                this.resultDuration.textContent = `${durationSeconds.toFixed(1)}s`;
+            }
         }
     }
 
