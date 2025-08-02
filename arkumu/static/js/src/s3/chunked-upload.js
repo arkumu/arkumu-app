@@ -262,68 +262,21 @@ class ChunkedUploadHandler {
         const response = await fetch(this.uploadUrl, {
             method: 'POST',
             body: formData,
-            signal: this.abortController.signal,
-            headers: {
-                // Don't set Content-Type, let browser set it with boundary
-                'HX-Request': 'true'  // Tell server this should be treated as HTMX request for OOB updates
-            }
+            signal: this.abortController.signal
+            // Let browser set Content-Type with boundary for multipart/form-data
         });
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        // Check if response is HTML (with OOB updates) or JSON
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('text/html')) {
-            // HTML response with OOB updates - process the HTML and extract success info
-            const htmlText = await response.text();
-            
-            // Process OOB updates by inserting HTML into document
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = htmlText;
-            
-            console.log(`🔍 OOB DEBUG: Full HTML response length: ${htmlText.length}`);
-            console.log(`🔍 OOB DEBUG: Full HTML response preview: ${htmlText.substring(0, 500)}...`);
-            
-            // Find and process OOB elements
-            const oobElements = tempDiv.querySelectorAll('[hx-swap-oob]');
-            console.log(`🔍 OOB DEBUG: Found ${oobElements.length} OOB elements`);
-            
-            oobElements.forEach((element, index) => {
-                const targetId = element.id;
-                const target = document.getElementById(targetId);
-                console.log(`🔍 OOB DEBUG: Element ${index + 1}: id="${targetId}", exists=${!!target}, content length=${element.innerHTML.length}`);
-                console.log(`🔍 OOB DEBUG: Element ${index + 1} content preview: ${element.innerHTML.substring(0, 200)}...`);
-                
-                if (target) {
-                    target.innerHTML = element.innerHTML;
-                    console.log(`🔄 OOB UPDATE: Updated ${targetId} via chunked upload`);
-                } else {
-                    console.warn(`⚠️ OOB WARNING: Target element with id "${targetId}" not found`);
-                }
-            });
-            
-            // For HTML responses, assume success (server sends OOB updates on success)
-            // The actual file count isn't easily extractable from HTML, so we use chunk file count
-            const result = {
-                success: true,
-                success_count: chunk.files.length,
-                error_count: 0,
-                message: 'Chunk uploaded successfully with OOB updates'
-            };
-            
-            return result;
-        } else {
-            // JSON response - parse normally
-            const result = await response.json();
-            
-            if (!result.success) {
-                throw new Error(result.error || 'Upload failed');
-            }
-            
-            return result;
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Upload failed');
         }
+
+        return result;
 
         // Track timing
         const chunkDuration = Date.now() - chunkStartTime;
@@ -353,6 +306,34 @@ class ChunkedUploadHandler {
 
         this.onChunkComplete(chunk, result);
         this.updateProgress();
+        
+        // Trigger file browser refresh after each successful chunk
+        this.refreshFileBrowser();
+    }
+    
+    /**
+     * Refresh file browser via dedicated OOB endpoint
+     */
+    refreshFileBrowser() {
+        // Get organization from form data
+        const orgSelect = document.querySelector('select[name="organization"]');
+        const organization = orgSelect ? orgSelect.value : '';
+        
+        if (!organization) {
+            console.warn('⚠️ No organization selected, skipping file browser refresh');
+            return;
+        }
+        
+        console.log(`🔄 Triggering file browser OOB refresh for organization: ${organization}`);
+        
+        // Use HTMX to call the OOB refresh endpoint
+        htmx.ajax('GET', `/storage/oob/file-browser-refresh/${organization}/`, {
+            swap: 'none'  // We only care about OOB updates, not the response content
+        }).then(() => {
+            console.log(`✅ File browser refresh completed for: ${organization}`);
+        }).catch(error => {
+            console.error(`❌ File browser refresh failed:`, error);
+        });
     }
 
     /**

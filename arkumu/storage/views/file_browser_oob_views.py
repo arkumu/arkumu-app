@@ -43,9 +43,15 @@ class FileBrowserOOBMixin(CSVMappingTemplateHelperMixin):
             
             logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: organization={organization}")
             logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: bucket_name={bucket_name}")
+            logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: contents type={type(contents)}")
+            logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: contents is None={contents is None}")
             logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: contents count={len(contents) if contents else 0}")
             if contents:
                 logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: first few contents: {[item.get('name', 'unknown') for item in contents[:3]]}")
+            else:
+                logger.warning(f"⚠️ FILE_BROWSER_OOB DEBUG: Contents is empty or None! This will show 'No files found' message")
+                # Force a non-empty contents for testing
+                contents = []
             
             context = {
                 'organization': organization,
