@@ -2,7 +2,6 @@ import logging
 import json
 import os
 import hashlib
-import tempfile
 from typing import Dict, Any
 from datetime import datetime
 
@@ -114,8 +113,8 @@ def resumable_upload_init(request):
             content_type=data.get('contentType', '')
         )
         
-        # Create temp directory for chunks
-        temp_dir = os.path.join(tempfile.gettempdir(), 'resumable_uploads', str(s3_file_object.id))
+        # Create temp directory for chunks (use shared /app directory for Docker)
+        temp_dir = os.path.join('/app', 'temp', 'resumable_uploads', str(s3_file_object.id))
         os.makedirs(temp_dir, exist_ok=True)
         
         # Create resumable upload session
