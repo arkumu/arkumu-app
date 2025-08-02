@@ -307,12 +307,14 @@ class ChunkedUploadHandler {
         this.onChunkComplete(chunk, result);
         this.updateProgress();
         
-        // Trigger file browser refresh after each successful chunk
-        this.refreshFileBrowser();
+        // Only refresh file browser on last chunk to reduce overhead
+        if (this.processedFiles >= this.totalFiles) {
+            this.refreshFileBrowser();
+        }
     }
     
     /**
-     * Refresh file browser via dedicated OOB endpoint
+     * Refresh file browser via HTMX reload (same as dashboard uses)
      */
     refreshFileBrowser() {
         // Get organization from form data
@@ -324,16 +326,22 @@ class ChunkedUploadHandler {
             return;
         }
         
-        console.log(`🔄 Triggering file browser OOB refresh for organization: ${organization}`);
+        console.log(`🔄 Refreshing file browser for organization: ${organization}`);
         
-        // Use HTMX to call the OOB refresh endpoint
-        htmx.ajax('GET', `/storage/oob/file-browser-refresh/${organization}/`, {
-            swap: 'none'  // We only care about OOB updates, not the response content
-        }).then(() => {
-            console.log(`✅ File browser refresh completed for: ${organization}`);
-        }).catch(error => {
-            console.error(`❌ File browser refresh failed:`, error);
-        });
+        // Use the existing OOB update system
+        if (typeof htmx !== 'undefined') {
+            const refreshUrl = `/storage/oob/file-browser-refresh/${encodeURIComponent(organization)}/`;
+            
+            htmx.ajax('GET', refreshUrl, {
+                swap: 'none'  // OOB updates handle their own targeting
+            }).then(() => {
+                console.log('✅ File browser refreshed successfully via OOB');
+            }).catch((error) => {
+                console.error('❌ File browser refresh failed:', error);
+            });
+        } else {
+            console.warn('⚠️ HTMX not available for file browser refresh');
+        }
     }
 
     /**

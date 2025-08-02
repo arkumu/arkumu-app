@@ -302,15 +302,18 @@ def view_organization_bucket(request):
             # Get the bucket structure
             bucket_name = result['bucket_name']
             try:
-                organization_structure = bucket_service.get_root_level_items(bucket_name)
+                # Use list_bucket_contents instead of get_root_level_items for consistency
+                contents = bucket_service.list_bucket_contents(bucket_name, '')
                 
                 # Return the HTML structure for the organization bucket
                 from django.template.loader import render_to_string
                 html_content = render_to_string(
-                    "dashboard/folder_structure_partial.html",
+                    "dashboard/organization_files_partial.html",
                     {
-                        "structure": organization_structure,
-                        "bucket_type": "organization"
+                        "organization": organization,
+                        "bucket_name": bucket_name,
+                        "contents": contents,
+                        "prefix": ""
                     }
                 )
                 
