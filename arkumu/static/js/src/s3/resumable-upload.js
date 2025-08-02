@@ -27,7 +27,7 @@ class ResumableUpload {
     constructor(file, options = {}) {
         this.file = file;
         this.options = {
-            chunkSize: options.chunkSize || 5 * 1024 * 1024, // 5MB default
+            chunkSize: options.chunkSize || this.calculateOptimalChunkSize(file.size),
             maxRetries: options.maxRetries || 3,
             uploadSessionId: options.uploadSessionId,
             organization: options.organization,
@@ -58,6 +58,23 @@ class ResumableUpload {
         // this.restoreState();
         
         logger.info(`ResumableUpload initialized for ${file.name} (${file.size} bytes, ${this.totalChunks} chunks)`);
+    }
+    
+    /**
+     * Calculate optimal chunk size based on file size
+     */
+    calculateOptimalChunkSize(fileSize) {
+        const MB = 1024 * 1024;
+        
+        if (fileSize < 100 * MB) {
+            return 8 * MB;    // 8MB for small files
+        } else if (fileSize < 500 * MB) {
+            return 16 * MB;   // 16MB for medium files  
+        } else if (fileSize < 2000 * MB) {
+            return 32 * MB;   // 32MB for large files
+        } else {
+            return 64 * MB;   // 64MB for very large files
+        }
     }
     
     /**
@@ -159,39 +176,8 @@ class ResumableUpload {
             // Resume functionality disabled
             // this.saveState();
             
-            // Upload chunks sequentially, starting from current chunk
-            for (let chunkNum = this.currentChunk; chunkNum < this.totalChunks; chunkNum++) {
-                if (this.isPaused) {
-                    logger.info(`Upload paused at chunk ${chunkNum}`);
-                    this.saveState();
-                    return;
-                }
-                
-                this.currentChunk = chunkNum;
-                await this.uploadChunk(chunkNum);
-                this.completedChunks++;
-                
-                // Resume functionality disabled
-                // this.saveState();
-                
-                // Call progress callback
-                this.options.onProgress({
-                    uploadId: this.uploadId,
-                    filename: this.file.name,
-                    completedChunks: this.completedChunks,
-                    totalChunks: this.totalChunks,
-                    completedBytes: this.completedChunks * this.options.chunkSize,
-                    totalBytes: this.file.size,
-                    progress: (this.completedChunks / this.totalChunks) * 100
-                });
-                
-                // Call chunk complete callback
-                this.options.onChunkComplete({
-                    chunkNumber: chunkNum,
-                    completedChunks: this.completedChunks,
-                    totalChunks: this.totalChunks
-                });
-            }
+            // Upload chunks in parallel batches
+            await this.uploadChunksInParallel();
             
             this.isUploading = false;
             
@@ -264,6 +250,72 @@ class ResumableUpload {
         this.totalChunks = result.totalChunks;
         
         logger.info(`Upload initialized with ID: ${this.uploadId}`);
+    }
+    
+    /**
+     * Upload chunks in parallel batches for better performance
+     */
+    async uploadChunksInParallel() {
+        const maxConcurrency = 3; // Upload 3 chunks at once
+        const remainingChunks = [];
+        
+        // Build list of remaining chunks to upload
+        for (let chunkNum = this.currentChunk; chunkNum < this.totalChunks; chunkNum++) {
+            remainingChunks.push(chunkNum);
+        }
+        
+        logger.info(`📦 Starting parallel upload of ${remainingChunks.length} chunks with max concurrency: ${maxConcurrency}`);
+        
+        // Process chunks in batches
+        for (let i = 0; i < remainingChunks.length; i += maxConcurrency) {
+            if (this.isPaused) {
+                logger.info(`Upload paused at chunk batch starting at ${remainingChunks[i]}`);
+                return;
+            }
+            
+            const batch = remainingChunks.slice(i, i + maxConcurrency);
+            logger.info(`📦 Uploading batch: chunks ${batch.map(c => c + 1).join(', ')}`);
+            
+            // Upload batch in parallel
+            const batchPromises = batch.map(chunkNum => this.uploadChunkWithProgress(chunkNum));
+            
+            try {
+                await Promise.all(batchPromises);
+                logger.info(`✅ Completed batch: chunks ${batch.map(c => c + 1).join(', ')}`);
+            } catch (error) {
+                logger.error(`❌ Batch failed:`, error);
+                throw error;
+            }
+        }
+        
+        logger.info(`🎉 All ${this.totalChunks} chunks uploaded successfully`);
+    }
+    
+    /**
+     * Upload a single chunk with progress tracking
+     */
+    async uploadChunkWithProgress(chunkNumber) {
+        await this.uploadChunk(chunkNumber);
+        this.completedChunks++;
+        this.currentChunk = Math.max(this.currentChunk, chunkNumber + 1);
+        
+        // Call progress callback
+        this.options.onProgress({
+            uploadId: this.uploadId,
+            filename: this.file.name,
+            completedChunks: this.completedChunks,
+            totalChunks: this.totalChunks,
+            completedBytes: this.completedChunks * this.options.chunkSize,
+            totalBytes: this.file.size,
+            progress: (this.completedChunks / this.totalChunks) * 100
+        });
+        
+        // Call chunk complete callback
+        this.options.onChunkComplete({
+            chunkNumber: chunkNumber,
+            completedChunks: this.completedChunks,
+            totalChunks: this.totalChunks
+        });
     }
     
     /**

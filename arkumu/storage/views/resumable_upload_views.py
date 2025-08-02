@@ -243,9 +243,10 @@ def resumable_upload_chunk(request):
             # Check if all chunks are completed
             completed_chunks = resumable_upload.completed_chunks
             if completed_chunks == resumable_upload.total_chunks:
-                logger.info(f"⏱️ ALL CHUNKS COMPLETE: Starting assembly for {resumable_upload.original_filename}")
-                # Trigger assembly (could be async)
-                _assemble_file(resumable_upload)
+                logger.info(f"⏱️ ALL CHUNKS COMPLETE: Starting background assembly for {resumable_upload.original_filename}")
+                # Trigger assembly as background task
+                from arkumu.storage.tasks import assemble_file_task
+                assemble_file_task.schedule(args=(resumable_upload.id,), delay=0)
             
             return JsonResponse({
                 'status': 'success',
@@ -295,6 +296,7 @@ def resumable_upload_status(request, upload_id):
     except Exception as e:
         logger.error(f"Error getting upload status: {e}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
+
 
 
 def _assemble_file(resumable_upload: ResumableUploadSession):
