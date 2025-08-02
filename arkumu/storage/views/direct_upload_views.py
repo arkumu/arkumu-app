@@ -442,12 +442,50 @@ def upload_complete(request):
         else:
             logger.error(f"Failed to process uploaded files: {result.get('error', 'Unknown error')}")
         
-        return render(request, "upload/upload_status.html", {
+        # Render the main template content
+        template_content = render(request, "upload/upload_status.html", {
             "success": result["success"],
             "processed_files": result.get("processed_files", []),
             "failed_files": result.get("failed_files", []),
             "message": "Upload complete!"
-        })
+        }).content.decode('utf-8')
+        
+        # Add OOB file browser refresh on successful upload using template helpers pattern
+        if result["success"]:
+            # Try to determine organization from the upload folder name or user context
+            organization = getattr(request.user, 'organization', None) or folder_name.split('/')[0] if '/' in folder_name else folder_name
+            
+            try:
+                # Use the template helpers build_oob_response method directly
+                from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+                from arkumu.storage.views.file_browser_oob_views import _file_browser_helper
+                
+                # Render the file browser content
+                file_browser_html = _file_browser_helper.render_organization_files_template(
+                    organization, request
+                )
+                
+                # Use template helpers build_oob_response method (the proven pattern)
+                helper = CSVMappingTemplateHelperMixin()
+                oob_updates = {
+                    'file-browser-content': file_browser_html
+                }
+                
+                response_html = helper.build_oob_response(template_content, oob_updates)
+                logger.info(f"🔄 UPLOAD COMPLETE: Added OOB file browser refresh for organization: {organization}")
+                
+                from django.http import HttpResponse
+                return HttpResponse(response_html)
+                
+            except Exception as e:
+                logger.warning(f"Failed to add OOB file browser refresh: {e}")
+                # Fall back to just the template content
+                from django.http import HttpResponse
+                return HttpResponse(template_content)
+        else:
+            # Return normal response for failed uploads
+            from django.http import HttpResponse
+            return HttpResponse(template_content)
         
     except Exception as e:
         logger.exception(f"Unexpected error in upload_complete: {str(e)}")

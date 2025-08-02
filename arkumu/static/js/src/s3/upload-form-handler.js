@@ -344,6 +344,14 @@ class UploadFormHandler {
         if (summary.success) {
             this.showStatus('Upload completed successfully!', 'success');
             this.showResults(summary);
+            
+            // Refresh file browser after successful upload
+            console.log('🔄 UploadFormHandler: Triggering file browser refresh...');
+            if (typeof refreshFileBrowser === 'function') {
+                refreshFileBrowser();
+            } else {
+                console.warn('⚠️ refreshFileBrowser function not found');
+            }
         } else {
             const message = summary.cancelled 
                 ? 'Upload was cancelled' 

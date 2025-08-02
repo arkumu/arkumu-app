@@ -1,7 +1,7 @@
 from django.urls import path
 
 from . import views
-from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views, simple_multipart_upload
+from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views, simple_multipart_upload, file_browser_oob_views
 
 app_name = "storage"
 
@@ -60,4 +60,7 @@ urlpatterns = [
     
     # Organization bucket viewing with auto-creation
     path("view-organization-bucket/", dashboard_views.view_organization_bucket, name="view_organization_bucket"),
+    
+    # File browser OOB updates
+    path("oob/file-browser-refresh/<str:organization>/", file_browser_oob_views.file_browser_refresh, name="file_browser_refresh"),
 ] 

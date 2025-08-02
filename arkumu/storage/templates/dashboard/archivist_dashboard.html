@@ -303,6 +303,7 @@ function updateProgressUI(progress) {
 
 function handleUploadComplete(result) {
     console.log('🎉 Upload completed:', result);
+    console.log('🔍 DEBUG: handleUploadComplete called with result:', result);
     
     const statusDiv = document.getElementById('upload-status');
     if (statusDiv) {
@@ -328,47 +329,12 @@ function handleUploadComplete(result) {
         }
     }, 3000);
     
-    // Refresh file browser content properly
-    refreshFileBrowser();
+    // Note: File browser refresh is handled server-side via OOB updates
+    // No need for client-side refresh - server sends file-browser-content OOB update
 }
 
-function refreshFileBrowser() {
-    console.log('🔄 Refreshing file browser after upload...');
-    
-    // Get current organization from the form
-    const orgSelect = document.querySelector('select[name="organization"]');
-    const orgField = document.getElementById('organization');
-    const organization = orgSelect ? orgSelect.value : (orgField ? orgField.value : '');
-    
-    if (!organization) {
-        console.log('⚠️ No organization selected, cannot refresh file browser');
-        return;
-    }
-    
-    console.log(`📁 Refreshing file browser for organization: ${organization}`);
-    
-    // Use HTMX to reload the file browser content
-    if (typeof htmx !== 'undefined') {
-        const fileBrowser = document.getElementById('file-browser-content');
-        if (fileBrowser) {
-            // Clear cache and trigger refresh by making a request to the organization files endpoint
-            const refreshUrl = `/storage/view-organization-bucket/?organization=${encodeURIComponent(organization)}`;
-            
-            htmx.ajax('GET', refreshUrl, {
-                target: '#file-browser-content',
-                swap: 'innerHTML'
-            }).then(() => {
-                console.log('✅ File browser refreshed successfully');
-            }).catch((error) => {
-                console.error('❌ File browser refresh failed:', error);
-            });
-        }
-    } else {
-        // Fallback: reload the page if HTMX is not available
-        console.log('⚠️ HTMX not available, falling back to page reload');
-        window.location.reload();
-    }
-}
+// refreshFileBrowser function removed - file browser refresh is now handled 
+// server-side via OOB updates in the upload response
 
 function handleUploadError(error) {
     console.error('❌ Upload error:', error);
@@ -391,6 +357,8 @@ function handleUploadError(error) {
         progressContainer.classList.add('hidden');
     }
 }
+
+// OOB updates should work automatically without JavaScript listeners
 </script>
 
 {% endblock %}

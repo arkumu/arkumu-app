@@ -265,6 +265,7 @@ class ChunkedUploadHandler {
             signal: this.abortController.signal,
             headers: {
                 // Don't set Content-Type, let browser set it with boundary
+                'HX-Request': 'true'  // Tell server this should be treated as HTMX request for OOB updates
             }
         });
 
@@ -272,10 +273,46 @@ class ChunkedUploadHandler {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const result = await response.json();
-        
-        if (!result.success) {
-            throw new Error(result.error || 'Upload failed');
+        // Check if response is HTML (with OOB updates) or JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+            // HTML response with OOB updates - process the HTML and extract success info
+            const htmlText = await response.text();
+            
+            // Process OOB updates by inserting HTML into document
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = htmlText;
+            
+            // Find and process OOB elements
+            const oobElements = tempDiv.querySelectorAll('[hx-swap-oob]');
+            oobElements.forEach(element => {
+                const targetId = element.id;
+                const target = document.getElementById(targetId);
+                if (target) {
+                    target.innerHTML = element.innerHTML;
+                    console.log(`🔄 OOB UPDATE: Updated ${targetId} via chunked upload`);
+                }
+            });
+            
+            // For HTML responses, assume success (server sends OOB updates on success)
+            // The actual file count isn't easily extractable from HTML, so we use chunk file count
+            const result = {
+                success: true,
+                success_count: chunk.files.length,
+                error_count: 0,
+                message: 'Chunk uploaded successfully with OOB updates'
+            };
+            
+            return result;
+        } else {
+            // JSON response - parse normally
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Upload failed');
+            }
+            
+            return result;
         }
 
         // Track timing

@@ -85,6 +85,40 @@ def streaming_upload_form(request):
     upload_start_time = time.time()
     logger.info(f"⏱️ STREAMING UPLOAD: Processing for user {request.user.username} at {time.strftime('%H:%M:%S', time.localtime())}.{int((time.time() % 1) * 1000):03d}")
     logger.info(f"📊 UPLOAD TYPE: Standard streaming upload endpoint")
+    
+    # 🔄 REFRESH SESSION: Ensure session stays valid during long uploads
+    request.session.modified = True
+    request.session.save()
+    logger.info(f"🔄 SESSION REFRESH: Session refreshed for long upload processing")
+    
+    # 🔍 DEBUG: Session and authentication state
+    logger.info(f"🔐 AUTH DEBUG: user.is_authenticated = {request.user.is_authenticated}")
+    logger.info(f"🔐 AUTH DEBUG: user.id = {getattr(request.user, 'id', 'None')}")
+    logger.info(f"🔐 AUTH DEBUG: session_key = {request.session.session_key}")
+    logger.info(f"🔐 AUTH DEBUG: session age = {request.session.get_expiry_age()} seconds")
+    
+    # 🔍 DEBUG: CSRF state
+    csrf_token = request.META.get('CSRF_COOKIE')
+    logger.info(f"🔐 CSRF DEBUG: CSRF_COOKIE = {csrf_token}")
+    logger.info(f"🔐 CSRF DEBUG: csrfmiddlewaretoken in POST = {'csrfmiddlewaretoken' in request.POST}")
+    if 'csrfmiddlewaretoken' in request.POST:
+        logger.info(f"🔐 CSRF DEBUG: POST token length = {len(request.POST['csrfmiddlewaretoken'])}")
+    
+    # 🔍 DEBUG: Request headers
+    logger.info(f"🔍 HEADERS DEBUG: User-Agent = {request.META.get('HTTP_USER_AGENT', 'None')}")
+    logger.info(f"🔍 HEADERS DEBUG: Referer = {request.META.get('HTTP_REFERER', 'None')}")
+    logger.info(f"🔍 HEADERS DEBUG: Content-Length = {request.META.get('CONTENT_LENGTH', 'None')}")
+    logger.info(f"🔍 HEADERS DEBUG: Content-Type = {request.META.get('CONTENT_TYPE', 'None')}")
+    
+    # 🔍 DEBUG: Cookies
+    session_cookie = request.COOKIES.get('sessionid')
+    csrf_cookie = request.COOKIES.get('csrftoken')
+    logger.info(f"🔍 COOKIES DEBUG: sessionid present = {session_cookie is not None}")
+    logger.info(f"🔍 COOKIES DEBUG: csrftoken present = {csrf_cookie is not None}")
+    if session_cookie:
+        logger.info(f"🔍 COOKIES DEBUG: sessionid length = {len(session_cookie)}")
+    if csrf_cookie:
+        logger.info(f"🔍 COOKIES DEBUG: csrftoken length = {len(csrf_cookie)}")
     from datetime import datetime
     logger.info(f"⏱️ TIMING: Upload started at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
     
@@ -413,11 +447,19 @@ def streaming_upload_form(request):
         # Add display information - use the S3 results size as it's more accurate
         # The original_total_size from Django files can be inflated due to buffering
         result['total_uploaded_files'] = total_uploaded_files
+        
+        # 🔄 REFRESH SESSION: Ensure session stays valid after upload completion
+        request.session.modified = True
+        request.session.save()
+        logger.info(f"🔄 SESSION REFRESH: Session refreshed after upload completion")
         result['total_size_bytes'] = total_size  # Use S3 reported size
         result['total_size_formatted'] = format_file_size(total_size)
         
         # Check if this is an HTMX request
-        if request.headers.get('HX-Request'):
+        is_htmx = request.headers.get('HX-Request')
+        logger.info(f"🔍 DEBUG: HX-Request header = '{is_htmx}', all headers = {dict(request.headers)}")
+        
+        if is_htmx:
             # Return HTML with out-of-band swaps for HTMX
             from django.template.loader import render_to_string
             from django.http import StreamingHttpResponse
@@ -441,13 +483,41 @@ def streaming_upload_form(request):
                 </div>
                 '''
                 
-                # OOB updates to hide progress and update status
+                # OOB updates to hide progress, update status, and refresh file browser
                 oob_updates = {
                     'upload-status': main_html,
                     'upload-progress': '<div class="mt-4 hidden"></div>'
                 }
                 
-                return HttpResponse(helper.build_oob_response('', oob_updates))
+                # Add file browser refresh if organization is provided
+                logger.info(f"🔍 OOB DEBUG: Checking file browser refresh - organization = '{organization}', HX-Request = '{request.headers.get('HX-Request')}'")
+                if organization:
+                    try:
+                        logger.info(f"🔍 OOB DEBUG: Starting file browser refresh for organization: {organization}")
+                        # Import here to avoid circular imports
+                        from arkumu.storage.views.file_browser_oob_views import _file_browser_helper
+                        
+                        logger.info(f"🔍 OOB DEBUG: Imported _file_browser_helper successfully")
+                        file_browser_html = _file_browser_helper.render_organization_files_template(
+                            organization, request
+                        )
+                        logger.info(f"🔍 OOB DEBUG: Generated file browser HTML, length: {len(file_browser_html) if file_browser_html else 0}")
+                        logger.info(f"🔍 OOB DEBUG: File browser HTML preview: {file_browser_html[:200] if file_browser_html else 'None'}...")
+                        
+                        oob_updates['file-browser-content'] = file_browser_html
+                        logger.info(f"🔄 STREAMING UPLOAD: Added file browser OOB refresh for organization: {organization}")
+                        logger.info(f"🔍 OOB DEBUG: Total OOB updates: {list(oob_updates.keys())}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to add file browser OOB refresh: {e}", exc_info=True)
+                else:
+                    logger.warning(f"🔍 OOB DEBUG: No organization provided, skipping file browser refresh")
+                
+                # Build final response
+                final_response = helper.build_oob_response('', oob_updates)
+                logger.info(f"🔍 OOB DEBUG: Final response length: {len(final_response)}")
+                logger.info(f"🔍 OOB DEBUG: Final response preview: {final_response[:500]}...")
+                
+                return HttpResponse(final_response)
             else:
                 # Error: show error message using OOB updates
                 oob_updates = {
@@ -466,6 +536,7 @@ def streaming_upload_form(request):
                 return HttpResponse(response_html)
         
         # Non-HTMX request: return JSON as before
+        logger.info(f"🔍 NON-HTMX DEBUG: Returning JSON response (no HTMX headers detected)")
         return JsonResponse(result)
     
     except Exception as e:

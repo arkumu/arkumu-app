@@ -305,6 +305,8 @@ def resumable_upload_chunk(request):
 def resumable_upload_status(request, upload_id):
     """
     Get the status of a resumable upload.
+    
+    When upload is completed, includes HX-Trigger to refresh file browser.
     """
     try:
         resumable_upload = ResumableUploadSession.objects.get(id=upload_id)
@@ -316,7 +318,7 @@ def resumable_upload_status(request, upload_id):
         completed_chunks = resumable_upload.completed_chunks
         failed_chunks = resumable_upload.chunks.filter(status='failed').count()
         
-        return JsonResponse({
+        response_data = {
             'uploadId': str(resumable_upload.id),
             'status': resumable_upload.status,
             'filename': resumable_upload.original_filename,
@@ -328,8 +330,23 @@ def resumable_upload_status(request, upload_id):
             'progress': redis_progress.get('progress_percentage', resumable_upload.progress_percentage),
             'canResume': resumable_upload.can_resume(),
             'errorMessage': resumable_upload.error_message,
-            'redisChunks': len(redis_progress.get('uploaded_chunks', []))
-        })
+            'redisChunks': len(redis_progress.get('uploaded_chunks', [])) if isinstance(redis_progress.get('uploaded_chunks'), list) else redis_progress.get('uploaded_chunks', 0)
+        }
+        
+        # For JSON endpoints, HX-Trigger is actually the right approach since we can't mix JSON + OOB HTML
+        response = JsonResponse(response_data)
+        
+        # Add HX-Trigger when upload is completed to refresh file browser
+        if resumable_upload.status == 'completed':
+            organization = resumable_upload.upload_session.institution
+            if organization:
+                trigger_data = {
+                    "refreshFileBrowser": organization
+                }
+                response['HX-Trigger'] = json.dumps(trigger_data)
+                logger.info(f"🔔 UPLOAD STATUS: Added file browser refresh trigger for organization: {organization}")
+        
+        return response
         
     except ResumableUploadSession.DoesNotExist:
         return JsonResponse({'error': 'Upload not found'}, status=404)

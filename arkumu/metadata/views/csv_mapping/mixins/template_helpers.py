@@ -206,14 +206,23 @@ class CSVMappingTemplateHelperMixin:
         Returns:
             str: Complete HTML response with OOB updates
         """
+        logger.info(f"🔍 BUILD_OOB DEBUG: main_html length: {len(main_html)}")
+        logger.info(f"🔍 BUILD_OOB DEBUG: oob_updates: {list(oob_updates.keys()) if oob_updates else 'None'}")
+        
         if not oob_updates:
+            logger.info(f"🔍 BUILD_OOB DEBUG: No OOB updates, returning main_html only")
             return main_html
         
         oob_html = ""
         for target_id, content in oob_updates.items():
-            oob_html += f'<div id="{target_id}" hx-swap-oob="innerHTML">{content}</div>'
+            oob_element = f'<div id="{target_id}" hx-swap-oob="innerHTML">{content}</div>'
+            oob_html += oob_element
+            logger.info(f"🔍 BUILD_OOB DEBUG: Added OOB element for '{target_id}', content length: {len(content)}")
+            logger.info(f"🔍 BUILD_OOB DEBUG: OOB element preview: {oob_element[:300]}...")
         
-        return f'{main_html}{oob_html}'
+        final_response = f'{main_html}{oob_html}'
+        logger.info(f"🔍 BUILD_OOB DEBUG: Final combined response length: {len(final_response)}")
+        return final_response
     
     def add_workspace_update_trigger(self, html_content):
         """

@@ -95,12 +95,20 @@ def upload_status(request, session_id):
             '''
             
             # Get file browser content
+            logger.info(f"🔍 OOB DEBUG: organization = '{organization}'")
+            
+            if not organization:
+                logger.warning("⚠️ OOB DEBUG: No organization provided, cannot refresh file browser")
+                # Return success without OOB update
+                return HttpResponse(success_html)
+            
             bucket_service = BucketService()
             bucket_name = bucket_service.get_organization_bucket(organization)
+            logger.info(f"🔍 OOB DEBUG: bucket_name = '{bucket_name}'")
             
-            # List only top-level folders
-            all_contents = bucket_service.list_bucket_contents(bucket_name, '')
-            contents = [item for item in all_contents if item.get('type') == 'folder' and '/' not in item.get('name', '').strip('/')]
+            # List all contents like in the dashboard
+            contents = bucket_service.list_bucket_contents(bucket_name, '')
+            logger.info(f"🔍 OOB DEBUG: Found {len(contents)} items in bucket")
             
             file_browser_html = render_to_string(
                 'dashboard/organization_files_partial.html',
@@ -113,13 +121,30 @@ def upload_status(request, session_id):
                 },
                 request=request
             )
+            logger.info(f"🔍 OOB DEBUG: Rendered template, length = {len(file_browser_html)} chars")
             
             # Return success with file browser refresh
             oob_updates = {
                 'file-browser-content': file_browser_html
             }
             
-            return HttpResponse(helper.build_oob_response(success_html, oob_updates))
+            response_html = helper.build_oob_response(success_html, oob_updates)
+            logger.info(f"🔄 UPLOAD STATUS: Built OOB response with file browser refresh for organization: {organization}")
+            logger.info(f"📏 RESPONSE LENGTH: {len(response_html)} characters")
+            
+            # Debug: Log the OOB part to see what's being sent
+            if 'hx-swap-oob' in response_html:
+                oob_start = response_html.find('<div id="file-browser-content"')
+                if oob_start > -1:
+                    oob_end = response_html.find('</div>', oob_start + 100) + 6
+                    oob_snippet = response_html[oob_start:oob_end]
+                    logger.info(f"🔍 OOB CONTENT: {oob_snippet[:200]}...")
+                else:
+                    logger.warning("⚠️ OOB DEBUG: No file-browser-content div found in response")
+            else:
+                logger.warning("⚠️ OOB DEBUG: No hx-swap-oob found in response")
+            
+            return HttpResponse(response_html)
             
         elif upload_session.status == 'failed':
             error_message = import_stats.get('error', 'Unknown error')
