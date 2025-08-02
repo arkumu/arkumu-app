@@ -186,6 +186,7 @@
 
 {% block inline_javascript %}
 {{ block.super }}
+<script src="{% static 'js/src/s3/resumable-upload.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.querySelector('form[hx-post="/storage/upload/streaming/"]');
@@ -256,6 +257,34 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('📁 DASHBOARD DEBUG: HTMX request intercepted');
             console.log('📁 DASHBOARD DEBUG: Files selected:', fileInput.files.length);
             console.log('📁 DASHBOARD DEBUG: File input attributes:', Array.from(fileInput.attributes).map(attr => attr.name + '=' + attr.value));
+            
+            // Check for large files that need resumable upload
+            const largeFiles = [];
+            const largeSizeThreshold = 50 * 1024 * 1024; // 50MB
+            let totalSize = 0;
+            
+            for (let i = 0; i < fileInput.files.length; i++) {
+                const file = fileInput.files[i];
+                totalSize += file.size;
+                if (file.size > largeSizeThreshold) {
+                    largeFiles.push(file);
+                }
+            }
+            
+            console.log('📁 RESUMABLE DEBUG: Total size:', (totalSize / (1024 * 1024)).toFixed(2), 'MB');
+            console.log('📁 RESUMABLE DEBUG: Large files (>50MB):', largeFiles.length);
+            
+            // If we have large files, use resumable upload instead
+            if (largeFiles.length > 0) {
+                console.log('📁 RESUMABLE DEBUG: Using resumable upload for large files');
+                
+                // Prevent the normal HTMX submission
+                evt.preventDefault();
+                
+                // Handle resumable upload
+                handleResumableUpload(fileInput.files, form);
+                return;
+            }
             
             // Check if folder mode is active
             const isFolderMode = fileInput.hasAttribute('webkitdirectory');
@@ -330,7 +359,211 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.log('📁 DASHBOARD DEBUG: Form not found');
     }
+    
+    // Global flag to prevent multiple simultaneous uploads
+    let isUploading = false;
+    
+    /**
+     * Handle resumable upload for large files
+     */
+    async function handleResumableUpload(files, form) {
+        console.log('📁 RESUMABLE: Starting resumable upload process');
+        
+        // Prevent multiple simultaneous uploads
+        if (isUploading) {
+            console.log('📁 RESUMABLE: Upload already in progress, skipping...');
+            return;
+        }
+        
+        isUploading = true;
+        
+        try {
+            // Get form data
+            const organization = form.querySelector('select[name="organization"]')?.value;
+            const baseFolder = form.querySelector('select[name="base_folder"]')?.value;
+            
+            if (!organization || !baseFolder) {
+                throw new Error('Organization and base folder must be selected');
+            }
+            
+            // Skip upload session creation - ResumableUpload will handle it per file
+            
+            // Show progress UI
+            showUploadProgress();
+            
+            // Create resumable upload manager
+            const manager = new ResumableUploadManager({
+                maxConcurrent: 2,
+                fileSizeThreshold: 50 * 1024 * 1024, // 50MB
+                onProgress: updateUploadProgress,
+                onComplete: handleUploadComplete,
+                onError: handleUploadError
+            });
+            
+            // Process each file
+            const folderMode = form.querySelector('input[type="file"]').hasAttribute('webkitdirectory');
+            let folderName = '';
+            
+            if (folderMode && files.length > 0) {
+                // Extract folder name from first file
+                const firstFile = files[0];
+                folderName = firstFile.webkitRelativePath ? 
+                    firstFile.webkitRelativePath.split('/')[0] : 'uploaded_folder';
+                
+                // For data uploads, include the user folder
+                folderName = baseFolder === 'metadata' ? baseFolder : `${baseFolder}/${folderName}`;
+            }
+            
+            // Add files to resumable upload manager
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const originalPath = folderMode ? 
+                    file.webkitRelativePath : file.name;
+                
+                const uploadOptions = {
+                    organization: organization,
+                    baseFolder: baseFolder,
+                    folderName: folderName || baseFolder,
+                    originalPath: originalPath
+                };
+                
+                // Add to manager (all files now use resumable upload)
+                manager.addFile(file, uploadOptions);
+            }
+            
+            // Start processing the resumable upload queue
+            await manager.processQueue();
+            
+        } catch (error) {
+            console.error('📁 RESUMABLE ERROR:', error);
+            showUploadError(error.message);
+        } finally {
+            // Always reset the upload flag
+            isUploading = false;
+        }
+    }
+    
+    
+    /**
+     * Show upload progress UI
+     */
+    function showUploadProgress() {
+        const progressSection = document.getElementById('upload-progress');
+        if (progressSection) {
+            progressSection.classList.remove('htmx-indicator');
+            progressSection.style.display = 'block';
+        }
+    }
+    
+    /**
+     * Update upload progress
+     */
+    function updateUploadProgress(progress) {
+        console.log('📁 PROGRESS:', progress);
+        
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const progressPercentage = document.getElementById('progress-percentage');
+        
+        if (progressBar) {
+            progressBar.value = progress.progress;
+        }
+        
+        if (progressText) {
+            progressText.textContent = `Uploading ${progress.filename}...`;
+        }
+        
+        if (progressPercentage) {
+            progressPercentage.textContent = `${progress.progress.toFixed(1)}%`;
+        }
+    }
+    
+    /**
+     * Handle upload completion
+     */
+    function handleUploadComplete(result) {
+        console.log('📁 COMPLETE:', result);
+        
+        // Hide progress, show success
+        const progressSection = document.getElementById('upload-progress');
+        const statusSection = document.getElementById('upload-status');
+        
+        if (progressSection) {
+            progressSection.style.display = 'none';
+        }
+        
+        if (statusSection) {
+            statusSection.innerHTML = `
+                <div class="alert alert-success">
+                    <div>
+                        <h3 class="font-bold">Upload Complete!</h3>
+                        <div class="text-sm">
+                            ${result.filename} uploaded successfully
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Refresh file browser (similar to HTMX behavior)
+        setTimeout(() => {
+            location.reload(); // Simple refresh for now
+        }, 2000);
+    }
+    
+    /**
+     * Handle upload errors
+     */
+    function handleUploadError(error) {
+        console.error('📁 ERROR:', error);
+        showUploadError(error.message || 'Upload failed');
+    }
+    
+    /**
+     * Show upload error
+     */
+    function showUploadError(message) {
+        const statusSection = document.getElementById('upload-status');
+        
+        if (statusSection) {
+            statusSection.innerHTML = `
+                <div class="alert alert-error">
+                    <div>
+                        <h3 class="font-bold">Upload Failed</h3>
+                        <div class="text-sm">${message}</div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    /**
+     * Utility functions
+     */
+    function getCsrfToken() {
+        // Try multiple ways to get CSRF token
+        const fromInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (fromInput) {
+            return fromInput.value;
+        }
+        
+        // Fallback to cookie method
+        const cookieValue = document.cookie
+            .split('; ')
+            .find(row => row.startsWith('csrftoken='))
+            ?.split('=')[1];
+        return cookieValue || '';
+    }
+    
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
 });
 </script>
 {% endblock %}
+
 {% endblock %}
