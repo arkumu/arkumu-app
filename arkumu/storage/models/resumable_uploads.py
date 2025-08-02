@@ -49,8 +49,6 @@ class ResumableUploadSession(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     last_chunk_uploaded_at = models.DateTimeField(null=True, blank=True)
     
-    # Temporary storage path for chunks before S3 upload
-    temp_storage_path = models.CharField(max_length=512, blank=True)
     
     # Error handling
     error_message = models.TextField(blank=True)
@@ -141,7 +139,6 @@ class ResumableUploadChunk(models.Model):
     )
     
     # Storage information
-    temp_file_path = models.CharField(max_length=512, blank=True)
     checksum = models.CharField(max_length=64, blank=True)  # MD5 or SHA256
     
     # Timing
