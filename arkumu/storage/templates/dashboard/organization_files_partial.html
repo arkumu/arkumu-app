@@ -21,14 +21,14 @@
                     <div class="flex items-center">
                         <button class="btn btn-ghost btn-xs mr-1 folder-toggle"
                                     data-folder-path="{{ item.path }}"
-                                    data-folder-state="closed"
+                                    data-folder-state="{% if item.name == 'data' or item.name == 'metadata' %}open{% else %}closed{% endif %}"
                                     hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
                                     hx-target=".folder-contents[data-folder-path='{{ item.path }}'][data-organization='{{ organization }}']"
                                     hx-swap="innerHTML"
                                     hx-trigger="click"
                                     hx-indicator=".loading-indicator[data-folder-path='{{ item.path }}']"
                                     onclick="toggleFolderVisibility('{{ item.path }}', '{{ organization }}')">
-                                <svg class="w-4 h-4 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-4 h-4 transform transition-transform {% if item.name == 'data' or item.name == 'metadata' %}rotate-90{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                                 </svg>
                             </button>
@@ -69,8 +69,8 @@
                         <span class="loading loading-spinner loading-xs"></span>
                     </div>
                     
-                    <div class="folder-contents ml-2 hidden" data-folder-path="{{ item.path }}" data-organization="{{ organization }}">
-                        <!-- Folder contents will be loaded here -->
+                    <div class="folder-contents ml-2 {% if item.name != 'data' and item.name != 'metadata' %}hidden{% endif %}" data-folder-path="{{ item.path }}" data-organization="{{ organization }}">
+                        <!-- Folder contents will be loaded here via HTMX -->
                     </div>
                 </div>
             {% elif item.type == 'file' %}
