@@ -283,14 +283,24 @@ class ChunkedUploadHandler {
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = htmlText;
             
+            console.log(`🔍 OOB DEBUG: Full HTML response length: ${htmlText.length}`);
+            console.log(`🔍 OOB DEBUG: Full HTML response preview: ${htmlText.substring(0, 500)}...`);
+            
             // Find and process OOB elements
             const oobElements = tempDiv.querySelectorAll('[hx-swap-oob]');
-            oobElements.forEach(element => {
+            console.log(`🔍 OOB DEBUG: Found ${oobElements.length} OOB elements`);
+            
+            oobElements.forEach((element, index) => {
                 const targetId = element.id;
                 const target = document.getElementById(targetId);
+                console.log(`🔍 OOB DEBUG: Element ${index + 1}: id="${targetId}", exists=${!!target}, content length=${element.innerHTML.length}`);
+                console.log(`🔍 OOB DEBUG: Element ${index + 1} content preview: ${element.innerHTML.substring(0, 200)}...`);
+                
                 if (target) {
                     target.innerHTML = element.innerHTML;
                     console.log(`🔄 OOB UPDATE: Updated ${targetId} via chunked upload`);
+                } else {
+                    console.warn(`⚠️ OOB WARNING: Target element with id "${targetId}" not found`);
                 }
             });
             
