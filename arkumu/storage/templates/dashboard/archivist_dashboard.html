@@ -148,6 +148,13 @@
                     S3 Files Browser
                     {% if selected_org_slug %}
                         <span class="text-sm font-normal text-base-content/70">({{ selected_org_slug|title }})</span>
+                        <!-- Test OOB refresh button -->
+                        <button class="btn btn-ghost btn-xs ml-2" 
+                                hx-get="/storage/test/oob-refresh/{{ selected_org_slug }}/"
+                                hx-swap="none"
+                                title="Test file browser refresh">
+                            🧪 Test Refresh
+                        </button>
                     {% endif %}
                 </h2>
                 

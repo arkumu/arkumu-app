@@ -77,6 +77,41 @@ _file_browser_helper = FileBrowserOOBMixin()
 
 @require_http_methods(["GET"])
 @general_login_required
+def test_oob_refresh(request, organization):
+    """
+    Simple test endpoint to trigger file browser OOB refresh.
+    
+    Use this to test the OOB mechanism without complex upload flows:
+    GET /storage/test/oob-refresh/your-org/
+    """
+    logger.info(f"🧪 TEST: Manual OOB refresh triggered for organization: {organization}")
+    
+    try:
+        # Use the same logic as the main refresh endpoint
+        file_browser_html = _file_browser_helper.render_organization_files_template(
+            organization, request
+        )
+        
+        # Build OOB response
+        oob_updates = {
+            'file-browser-content': file_browser_html
+        }
+        
+        response_html = _file_browser_helper.build_oob_response(
+            '<div class="alert alert-info">🧪 Test OOB refresh completed!</div>', 
+            oob_updates
+        )
+        
+        logger.info(f"🧪 TEST: Generated response HTML length: {len(response_html)}")
+        return HttpResponse(response_html)
+        
+    except Exception as e:
+        logger.error(f"🧪 TEST: Error during OOB refresh test: {e}", exc_info=True)
+        return HttpResponse(f'<div class="alert alert-error">Test failed: {str(e)}</div>')
+
+
+@require_http_methods(["GET"])
+@general_login_required
 def file_browser_refresh(request, organization):
     """
     Return OOB update for the file browser content.
