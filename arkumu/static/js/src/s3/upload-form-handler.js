@@ -245,6 +245,9 @@ class UploadFormHandler {
     async performStandardUpload(folderName, organization, baseFolder, isFolderMode) {
         this.showProgress();
         
+        // Track upload start time
+        const uploadStartTime = Date.now();
+        
         // Use existing streaming upload
         const formData = new FormData();
         
@@ -294,6 +297,10 @@ class UploadFormHandler {
             const result = await response.json();
             
             if (result.success) {
+                // Add client-side duration if not provided by server
+                if (!result.duration_seconds && !result.duration) {
+                    result.duration = Date.now() - uploadStartTime;
+                }
                 this.handleUploadComplete(result);
             } else {
                 throw new Error(result.error || 'Upload failed');
@@ -311,16 +318,42 @@ class UploadFormHandler {
         
         // Update progress bar
         if (this.progressBar) {
-            this.progressBar.value = progress.percentage;
+            // If we're showing individual file progress, use the file's percentage
+            if (progress.currentFile && progress.fileProgress !== undefined) {
+                this.progressBar.value = Math.round(progress.fileProgress);
+            } else {
+                this.progressBar.value = progress.percentage;
+            }
         }
         
         if (this.progressPercentage) {
-            this.progressPercentage.textContent = `${progress.percentage}%`;
+            // If we're showing individual file progress, use the file's percentage
+            if (progress.currentFile && progress.fileProgress !== undefined) {
+                this.progressPercentage.textContent = `${Math.round(progress.fileProgress)}%`;
+            } else {
+                this.progressPercentage.textContent = `${progress.percentage}%`;
+            }
         }
         
         if (this.progressText) {
-            let text = `Uploading ${progress.processedFiles}/${progress.totalFiles} files`;
+            let text = '';
             
+            // Check if we have individual file info
+            if (progress.currentFile) {
+                // For single file uploads (like resumable large files)
+                text = `Uploading ${progress.currentFile}`;
+                // Don't add percentage here since it's shown in the dedicated percentage element
+            } else {
+                // Default progress text
+                text = `Processing ${progress.processedFiles}/${progress.totalFiles} files`;
+            }
+            
+            // Add completed files info if we have it
+            if (progress.completedFiles !== undefined && progress.completedFiles > 0) {
+                text += ` - ${progress.completedFiles} completed`;
+            }
+            
+            // Add time remaining if available
             if (progress.estimatedRemaining) {
                 text += ` (${formatDuration(progress.estimatedRemaining)} remaining)`;
             }
@@ -428,12 +461,25 @@ class UploadFormHandler {
         }
         
         if (this.resultDuration) {
-            // Convert seconds to milliseconds for formatDuration, or display seconds directly
-            const durationSeconds = summary.duration_seconds || summary.duration || 0;
-            if (durationSeconds < 1) {
-                this.resultDuration.textContent = `${(durationSeconds * 1000).toFixed(0)}ms`;
+            // Handle duration based on what's provided in the summary
+            if (summary.duration_seconds !== undefined) {
+                // Server provided duration in seconds
+                const durationSeconds = summary.duration_seconds;
+                if (durationSeconds < 1) {
+                    this.resultDuration.textContent = `${(durationSeconds * 1000).toFixed(0)}ms`;
+                } else {
+                    this.resultDuration.textContent = `${durationSeconds.toFixed(1)}s`;
+                }
+            } else if (summary.duration !== undefined) {
+                // Client-side duration in milliseconds
+                const durationMs = summary.duration;
+                if (durationMs < 1000) {
+                    this.resultDuration.textContent = `${durationMs.toFixed(0)}ms`;
+                } else {
+                    this.resultDuration.textContent = `${(durationMs / 1000).toFixed(1)}s`;
+                }
             } else {
-                this.resultDuration.textContent = `${durationSeconds.toFixed(1)}s`;
+                this.resultDuration.textContent = 'N/A';
             }
         }
     }
@@ -460,6 +506,9 @@ class UploadFormHandler {
 
     async performMixedUpload(largeFiles, smallFiles, folderName, organization, baseFolder, isFolderMode) {
         console.log(`🔄 MIXED UPLOAD: Starting mixed upload strategy`);
+        
+        // Track upload start time
+        const uploadStartTime = Date.now();
         
         const results = {
             largeFileResults: [],
@@ -539,7 +588,7 @@ class UploadFormHandler {
                 total_uploaded_files: results.completedFiles,
                 failed_files: results.failedFiles,
                 total_size_formatted: formatFileSize(this.selectedFiles.reduce((sum, f) => sum + f.size, 0)),
-                duration_seconds: 0 // TODO: track actual duration
+                duration: Date.now() - uploadStartTime // Duration in milliseconds
             });
 
         } catch (error) {

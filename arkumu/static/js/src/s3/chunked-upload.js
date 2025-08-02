@@ -53,6 +53,10 @@ class ChunkedUploadHandler {
             // Step 1: Split files into chunks
             const chunks = this.createChunks(files);
             console.log(`📦 Created ${chunks.length} chunks`);
+            
+            // Store total chunks for progress reporting
+            this._totalChunks = chunks.length;
+            this._currentChunkIndex = 0;
 
             // Step 2: Upload chunks with controlled concurrency
             await this.uploadChunksWithConcurrency(chunks, folderName, organization, baseFolder);
@@ -179,6 +183,7 @@ class ChunkedUploadHandler {
                     // Start new uploads if we have capacity and chunks remaining
                     while (activeUploads.size < this.maxConcurrent && chunkIndex < chunks.length) {
                         const chunk = chunks[chunkIndex++];
+                        this._currentChunkIndex = chunk.index;
                         
                         const uploadPromise = this.uploadSingleChunk(chunk, folderName, organization, baseFolder)
                             .then(result => {
@@ -210,6 +215,9 @@ class ChunkedUploadHandler {
     async uploadSingleChunk(chunk, folderName, organization, baseFolder) {
         const chunkStartTime = Date.now();
         console.log(`📤 Uploading chunk ${chunk.index + 1}: files ${chunk.startIndex + 1}-${chunk.endIndex + 1}`);
+        
+        // Update progress to show current chunk
+        this.updateProgress(chunk.index);
 
         const formData = new FormData();
         
