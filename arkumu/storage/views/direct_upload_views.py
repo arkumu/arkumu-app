@@ -9,6 +9,7 @@ from django.http import JsonResponse, HttpResponse
 from django.urls import reverse
 from arkumu.storage.services.upload_service import UploadService
 from django.views.decorators.csrf import csrf_exempt
+from django.core.cache import cache
 import requests
 from arkumu.users.mixins import general_login_required
 
@@ -433,6 +434,9 @@ def upload_complete(request):
         
         if result["success"]:
             logger.info(f"Successfully processed {len(result.get('processed_files', []))} files")
+            
+            # Note: Cache invalidation happens at the individual file level in upload service
+            
             if result.get("failed_files"):
                 logger.warning(f"Failed to process {len(result.get('failed_files', []))} files")
         else:

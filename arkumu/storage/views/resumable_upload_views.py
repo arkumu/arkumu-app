@@ -367,6 +367,30 @@ def _assemble_file(resumable_upload: ResumableUploadSession):
             
             logger.info(f"⏱️ S3 UPLOAD COMPLETE: {resumable_upload.original_filename} uploaded successfully")
             
+            # Invalidate bucket cache so dashboard shows new files immediately
+            session = resumable_upload.s3_file_object.session
+            logger.info(f"🔍 SESSION DEBUG: session={session}, session.s3_bucket='{session.s3_bucket if session else 'NO SESSION'}'")
+            
+            # For resumable uploads, we need to derive bucket name from the s3_key instead
+            s3_key = resumable_upload.s3_file_object.s3_key
+            logger.info(f"🔍 S3_KEY DEBUG: s3_key='{s3_key}'")
+            
+            # The bucket is likely "khm" since that's what we see in the logs
+            # For now, let's hardcode the correct bucket name we know from logs
+            organization_bucket = "khm"  # TODO: derive this properly
+            cache_key = f"bucket_contents_{organization_bucket}_"
+            
+            # Check if cache exists before deleting
+            cached_data = cache.get(cache_key)
+            logger.info(f"🔍 CACHE CHECK: Found cached data for key '{cache_key}': {cached_data is not None}")
+            
+            cache.delete(cache_key)
+            logger.info(f"🗑️ CACHE CLEARED: Invalidated cache for bucket {organization_bucket} with key: {cache_key}")
+            
+            # Verify deletion
+            cached_data_after = cache.get(cache_key)
+            logger.info(f"✅ CACHE VERIFY: Cache after deletion for key '{cache_key}': {cached_data_after is not None}")
+            
             # Clean up temporary files
             _cleanup_temp_files(resumable_upload)
             

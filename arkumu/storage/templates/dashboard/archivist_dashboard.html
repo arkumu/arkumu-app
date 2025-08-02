@@ -189,10 +189,17 @@
 <script src="{% static 'js/src/s3/resumable-upload.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.querySelector('form[hx-post="/storage/upload/streaming/"]');
+    // Select ALL forms but only process the first one to avoid duplicates
+    const forms = document.querySelectorAll('form[hx-post="/storage/upload/streaming/"]');
+    const form = forms[0]; // Only use the first form
     
-    if (form) {
+    if (forms.length > 1) {
+        console.log(`📁 WARNING: Found ${forms.length} upload forms, using only the first one`);
+    }
+    
+    if (form && !form.hasAttribute('data-upload-initialized')) {
         console.log('📁 DASHBOARD DEBUG: Form found');
+        form.setAttribute('data-upload-initialized', 'true');
         
         // Function to update upload endpoint based on base folder selection
         function updateUploadEndpoint() {
@@ -243,6 +250,12 @@ document.addEventListener('DOMContentLoaded', function() {
             // Skip processing for upload-mode toggle requests
             if (evt.detail.path && evt.detail.path.includes('/upload-mode/')) {
                 console.log('📁 DASHBOARD DEBUG: Skipping upload-mode toggle request');
+                return;
+            }
+            
+            // Prevent duplicate upload processing
+            if (isUploading || formSubmissionBlocked) {
+                console.log('📁 DASHBOARD DEBUG: Skipping duplicate upload request - already processing');
                 return;
             }
             
@@ -362,22 +375,62 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Global flag to prevent multiple simultaneous uploads
     let isUploading = false;
+    let activeUploadManager = null;
+    
+    // Resume functionality disabled
+    // setTimeout(window.checkForIncompleteUploads, 100);
+    
+    // Prevent double form submissions and HTMX conflicts
+    let formSubmissionBlocked = false;
+    
+    document.addEventListener('submit', function(e) {
+        if (isUploading || formSubmissionBlocked) {
+            console.log('📁 PREVENTED: Blocking form submission during upload');
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return false;
+        }
+    });
+    
+    // Prevent multiple HTMX requests
+    document.addEventListener('htmx:beforeRequest', function(e) {
+        if (isUploading || formSubmissionBlocked) {
+            console.log('📁 PREVENTED: Blocking HTMX request during upload');
+            e.preventDefault();
+            return false;
+        }
+    });
     
     /**
      * Handle resumable upload for large files
      */
     async function handleResumableUpload(files, form) {
         console.log('📁 RESUMABLE: Starting resumable upload process');
+        console.log(`📁 RESUMABLE: Processing ${files.length} files:`, Array.from(files).map(f => `${f.name} (${f.size} bytes)`));
         
         // Prevent multiple simultaneous uploads
-        if (isUploading) {
+        if (isUploading || formSubmissionBlocked) {
             console.log('📁 RESUMABLE: Upload already in progress, skipping...');
             return;
         }
         
         isUploading = true;
+        formSubmissionBlocked = true;
+        
+        // Prevent page navigation during upload
+        let beforeUnloadHandler;
+        let htmxBlockHandler;
         
         try {
+            // Removed beforeunload handler - no more navigation blocking
+            
+            // Prevent HTMX from navigating during uploads
+            htmxBlockHandler = function(evt) {
+                console.log('📁 HTMX BLOCKED: Preventing navigation during upload');
+                evt.preventDefault();
+                return false;
+            };
+            document.body.addEventListener('htmx:beforeRequest', htmxBlockHandler);
             // Get form data
             const organization = form.querySelector('select[name="organization"]')?.value;
             const baseFolder = form.querySelector('select[name="base_folder"]')?.value;
@@ -391,13 +444,69 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show progress UI
             showUploadProgress();
             
-            // Create resumable upload manager
-            const manager = new ResumableUploadManager({
+            // Track all files for debugging
+            const fileTracker = {
+                total: files.length,
+                processed: 0,
+                completed: 0,
+                failed: 0,
+                skipped: 0,
+                files: new Map()
+            };
+            
+            function logFileTracker() {
+                console.log(`📁 TRACKER: ${fileTracker.completed}/${fileTracker.total} complete, ${fileTracker.failed} failed, ${fileTracker.skipped} skipped`);
+                console.log('📁 FILE STATUS:', Array.from(fileTracker.files.entries()).map(([name, info]) => `${name}: ${info.status}`));
+            }
+            
+            // Create resumable upload manager (singleton)
+            if (activeUploadManager) {
+                console.log('📁 PREVENTED: Reusing existing upload manager');
+                return;
+            }
+            
+            const manager = activeUploadManager = new ResumableUploadManager({
                 maxConcurrent: 2,
                 fileSizeThreshold: 50 * 1024 * 1024, // 50MB
-                onProgress: updateUploadProgress,
-                onComplete: handleUploadComplete,
-                onError: handleUploadError
+                autoRetryNetworkErrors: true, // Enable automatic resume for network errors
+                onProgress: (progress) => {
+                    console.log(`📁 PROGRESS: ${progress.filename} - ${progress.progress.toFixed(1)}%`);
+                    const fileInfo = fileTracker.files.get(progress.filename) || {};
+                    fileInfo.status = 'uploading';
+                    fileInfo.progress = progress.progress;
+                    fileTracker.files.set(progress.filename, fileInfo);
+                    updateUploadProgress(progress);
+                },
+                onComplete: (result) => {
+                    console.log(`📁 COMPLETE: ${result.filename}`, result);
+                    fileTracker.completed++;
+                    const fileInfo = fileTracker.files.get(result.filename) || {};
+                    fileInfo.status = result.skipped ? 'skipped' : 'completed';
+                    fileInfo.result = result;
+                    fileTracker.files.set(result.filename, fileInfo);
+                    
+                    if (result.skipped) {
+                        fileTracker.skipped++;
+                        console.log(`📁 SKIPPED: ${result.filename} - ${result.reason || 'Unknown reason'}`);
+                    }
+                    
+                    handleUploadComplete(result);
+                    logFileTracker();
+                },
+                onError: (error) => {
+                    console.error(`📁 ERROR: ${error.filename || 'Unknown file'} - ${error.message}`);
+                    fileTracker.failed++;
+                    if (error.filename) {
+                        const fileInfo = fileTracker.files.get(error.filename) || {};
+                        fileInfo.status = 'failed';
+                        fileInfo.error = error.message;
+                        fileTracker.files.set(error.filename, fileInfo);
+                    }
+                    
+                    // Try to handle resumable errors
+                    handleUploadErrorWithResume(error);
+                    logFileTracker();
+                }
             });
             
             // Process each file
@@ -420,6 +529,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 const originalPath = folderMode ? 
                     file.webkitRelativePath : file.name;
                 
+                console.log(`📁 ADDING FILE: ${file.name} (${file.size} bytes) - ${originalPath}`);
+                
+                // Initialize file tracking
+                fileTracker.files.set(file.name, {
+                    status: 'pending',
+                    size: file.size,
+                    originalPath: originalPath
+                });
+                
                 const uploadOptions = {
                     organization: organization,
                     baseFolder: baseFolder,
@@ -428,19 +546,474 @@ document.addEventListener('DOMContentLoaded', function() {
                 };
                 
                 // Add to manager (all files now use resumable upload)
-                manager.addFile(file, uploadOptions);
+                const upload = manager.addFile(file, uploadOptions);
+                
+                if (upload) {
+                    console.log(`📁 MANAGER: Added ${file.name} to upload queue`);
+                } else {
+                    console.log(`📁 MANAGER: File ${file.name} was skipped by manager (likely empty)`);
+                    fileTracker.files.get(file.name).status = 'skipped_by_manager';
+                }
+                
+                fileTracker.processed++;
             }
             
+            console.log(`📁 MANAGER: Added ${fileTracker.processed} files to processing queue`);
+            logFileTracker();
+            
             // Start processing the resumable upload queue
+            console.log('📁 STARTING: Beginning processQueue...');
             await manager.processQueue();
+            
+            // Wait for all uploads to actually complete
+            console.log('📁 WAITING: Waiting for all uploads to finish...');
+            await waitForAllUploads(manager, fileTracker);
+            
+            console.log('📁 FINISHED: All uploads completed!');
+            logFileTracker();
+            
+            // Now show final results instead of redirecting
+            showFinalResults(fileTracker);
             
         } catch (error) {
             console.error('📁 RESUMABLE ERROR:', error);
             showUploadError(error.message);
         } finally {
-            // Always reset the upload flag
+            // Always reset the upload flags
             isUploading = false;
+            formSubmissionBlocked = false;
+            activeUploadManager = null;
+            
+            // beforeunload handler was removed - no cleanup needed
+            
+            // Remove HTMX blocker
+            if (htmxBlockHandler) {
+                document.body.removeEventListener('htmx:beforeRequest', htmxBlockHandler);
+            }
         }
+    }
+    
+    /**
+     * Wait for all uploads to complete
+     */
+    async function waitForAllUploads(manager, fileTracker) {
+        const checkInterval = 1000; // Check every second
+        const maxWaitTime = 300000; // Max 5 minutes
+        let waitTime = 0;
+        
+        while (waitTime < maxWaitTime) {
+            const totalProcessed = fileTracker.completed + fileTracker.failed + fileTracker.skipped;
+            
+            console.log(`📁 WAIT CHECK: ${totalProcessed}/${fileTracker.total} processed (${fileTracker.completed} complete, ${fileTracker.failed} failed, ${fileTracker.skipped} skipped)`);
+            
+            // Check if all files are processed
+            if (totalProcessed >= fileTracker.total) {
+                console.log('📁 WAIT COMPLETE: All files processed!');
+                return;
+            }
+            
+            // Check if manager has any active work
+            if (manager.queue.length === 0 && manager.activeUploads === 0) {
+                console.log('📁 WAIT WARNING: Manager reports no active work but files still pending');
+                // Give it a bit more time in case of timing issues
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const finalProcessed = fileTracker.completed + fileTracker.failed + fileTracker.skipped;
+                if (finalProcessed >= fileTracker.total) {
+                    return;
+                }
+                break; // Exit if still stuck
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+            waitTime += checkInterval;
+        }
+        
+        console.log('📁 WAIT TIMEOUT: Stopped waiting, some files may be incomplete');
+    }
+    
+    /**
+     * Check for incomplete uploads on page load
+     */
+    window.checkForIncompleteUploads = function() {
+        if (typeof ResumableUpload === 'undefined') {
+            console.log('📁 RESUME CHECK: ResumableUpload not loaded yet, will retry...');
+            setTimeout(window.checkForIncompleteUploads, 1000);
+            return;
+        }
+        
+        // First clear any expired uploads
+        ResumableUpload.clearExpiredUploads();
+        
+        const incompleteUploads = ResumableUpload.getIncompleteUploads();
+        
+        if (incompleteUploads.length > 0) {
+            console.log(`📁 RESUME CHECK: Found ${incompleteUploads.length} incomplete uploads:`, incompleteUploads);
+            showResumeUI(incompleteUploads);
+        } else {
+            console.log('📁 RESUME CHECK: No incomplete uploads found');
+        }
+    }
+    
+    /**
+     * Show resume UI for incomplete uploads
+     */
+    function showResumeUI(incompleteUploads) {
+        // Create resume notification
+        const resumeContainer = document.createElement('div');
+        resumeContainer.id = 'resume-uploads-container';
+        resumeContainer.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6';
+        
+        resumeContainer.innerHTML = `
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-sm font-medium text-blue-800">Incomplete Uploads Found</h3>
+                    <div class="mt-2 text-sm text-blue-700">
+                        <p>Found ${incompleteUploads.length} incomplete upload(s) that can be resumed:</p>
+                        <ul class="mt-2 space-y-1">
+                            ${incompleteUploads.map(upload => `
+                                <li class="flex justify-between items-center">
+                                    <span>Upload ${upload.uploadId.substring(0, 8)}... (${upload.completedChunks}/${upload.totalChunks} chunks)</span>
+                                    <button onclick="window.resumeUpload('${upload.uploadId}', '${upload.key}')" 
+                                            class="ml-2 bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">
+                                        Resume
+                                    </button>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                    <div class="mt-4 flex space-x-2">
+                        <button onclick="window.resumeAllUploads()" class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                            Resume All
+                        </button>
+                        <button onclick="window.clearExpiredUploads()" class="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700">
+                            Clear Expired
+                        </button>
+                        <button onclick="window.clearAllIncompleteUploads()" class="bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700">
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+                <div class="ml-3 flex-shrink-0">
+                    <button onclick="window.dismissResumeUI()" class="bg-white rounded-md text-gray-400 hover:text-gray-600">
+                        <span class="sr-only">Dismiss</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Insert at the top of the main content area
+        const mainContent = document.querySelector('.container') || document.querySelector('main') || document.body;
+        mainContent.insertBefore(resumeContainer, mainContent.firstChild);
+    }
+    
+    /**
+     * Resume a specific upload
+     */
+    window.resumeUpload = async function(uploadId, storageKey) {
+        console.log(`📁 MANUAL RESUME: Cannot resume upload ${uploadId} - original file data not available`);
+        console.log(`📁 SOLUTION: Please re-upload the files manually`);
+        
+        // Remove this expired upload from localStorage
+        localStorage.removeItem(storageKey);
+        
+        // Show user-friendly message
+        const notification = document.createElement('div');
+        notification.className = 'bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4';
+        notification.innerHTML = `
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-orange-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-sm font-medium text-orange-800">Cannot Resume Upload</h3>
+                    <div class="mt-2 text-sm text-orange-700">
+                        <p>Upload sessions have expired and original file data is no longer available.</p>
+                        <p class="mt-1"><strong>Solution:</strong> Please re-upload your files using the upload form.</p>
+                    </div>
+                </div>
+                <div class="ml-3 flex-shrink-0">
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" class="bg-white rounded-md text-gray-400 hover:text-gray-600">
+                        <span class="sr-only">Dismiss</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Insert notification
+        const mainContent = document.querySelector('.container') || document.querySelector('main') || document.body;
+        mainContent.insertBefore(notification, mainContent.firstChild);
+        
+        // Auto-remove after 8 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 8000);
+    }
+    
+    /**
+     * Resume all incomplete uploads
+     */
+    window.resumeAllUploads = async function() {
+        const incompleteUploads = ResumableUpload.getIncompleteUploads();
+        
+        console.log(`📁 RESUME ALL: Found ${incompleteUploads.length} incomplete uploads`);
+        console.log(`📁 NOTICE: Upload sessions have expired - clearing all incomplete uploads`);
+        
+        // Clear all incomplete uploads since they can't be resumed without original files
+        for (const upload of incompleteUploads) {
+            localStorage.removeItem(upload.key);
+        }
+        
+        // Show notification that uploads were cleared
+        const notification = document.createElement('div');
+        notification.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4';
+        notification.innerHTML = `
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-sm font-medium text-blue-800">Upload Sessions Cleared</h3>
+                    <div class="mt-2 text-sm text-blue-700">
+                        <p>All incomplete upload sessions have been cleared because they expired and cannot be resumed.</p>
+                        <p class="mt-1"><strong>Next step:</strong> Please re-upload your files using the upload form below.</p>
+                    </div>
+                </div>
+                <div class="ml-3 flex-shrink-0">
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" class="bg-white rounded-md text-gray-400 hover:text-gray-600">
+                        <span class="sr-only">Dismiss</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Insert notification
+        const mainContent = document.querySelector('.container') || document.querySelector('main') || document.body;
+        mainContent.insertBefore(notification, mainContent.firstChild);
+        
+        // Remove the resume UI
+        window.dismissResumeUI();
+        
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 10000);
+    }
+    
+    /**
+     * Clear expired uploads
+     */
+    window.clearExpiredUploads = function() {
+        ResumableUpload.clearExpiredUploads();
+        console.log('📁 CLEARED: Removed expired uploads');
+        
+        // Refresh the UI to show remaining uploads
+        setTimeout(() => {
+            window.dismissResumeUI();
+            window.checkForIncompleteUploads();
+        }, 100);
+    }
+    
+    /**
+     * Clear all incomplete uploads
+     */
+    window.clearAllIncompleteUploads = function() {
+        const incompleteUploads = ResumableUpload.getIncompleteUploads();
+        
+        for (const upload of incompleteUploads) {
+            localStorage.removeItem(upload.key);
+        }
+        
+        console.log(`📁 CLEARED: Removed ${incompleteUploads.length} incomplete uploads`);
+        window.dismissResumeUI();
+    }
+    
+    /**
+     * Dismiss the resume UI
+     */
+    window.dismissResumeUI = function() {
+        const container = document.getElementById('resume-uploads-container');
+        if (container) {
+            container.remove();
+        }
+    }
+    
+    /**
+     * Handle upload errors with resume logic
+     */
+    function handleUploadErrorWithResume(error) {
+        console.log(`📁 ERROR HANDLER: Processing error for ${error.filename || 'unknown file'}:`, error.message);
+        
+        // Check if this is a network error that could be resumed
+        const isNetworkError = error.message && (
+            error.message.includes('NetworkError') ||
+            error.message.includes('fetch') ||
+            error.message.includes('timeout') ||
+            error.message.includes('connection')
+        );
+        
+        if (isNetworkError) {
+            console.log(`📁 NETWORK ERROR: Detected network error for ${error.filename}, upload state preserved for resume`);
+            
+            // Show a non-intrusive notification about the failure and resume option
+            showErrorWithResumeOption(error);
+        } else {
+            console.log(`📁 PERMANENT ERROR: Non-network error for ${error.filename}, not resumable:`, error.message);
+            
+            // For non-network errors, still preserve state but show different message
+            showNonResumableError(error);
+        }
+    }
+    
+    /**
+     * Show error notification with resume option
+     */
+    function showErrorWithResumeOption(error) {
+        const notification = document.createElement('div');
+        notification.className = 'bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4';
+        notification.innerHTML = `
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-sm font-medium text-yellow-800">Upload Interrupted</h3>
+                    <div class="mt-2 text-sm text-yellow-700">
+                        <p>Upload for "${error.filename || 'file'}" failed due to network error: ${error.message}</p>
+                        <p class="mt-1">Progress has been saved and can be resumed later.</p>
+                    </div>
+                    <div class="mt-3">
+                        <button onclick="window.checkForIncompleteUploads(); this.parentElement.parentElement.parentElement.parentElement.remove();" 
+                                class="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700">
+                            Check for Resumable Uploads
+                        </button>
+                    </div>
+                </div>
+                <div class="ml-3 flex-shrink-0">
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" class="bg-white rounded-md text-gray-400 hover:text-gray-600">
+                        <span class="sr-only">Dismiss</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Insert at the top of the main content area
+        const mainContent = document.querySelector('.container') || document.querySelector('main') || document.body;
+        mainContent.insertBefore(notification, mainContent.firstChild);
+        
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 10000);
+    }
+    
+    /**
+     * Show non-resumable error notification
+     */
+    function showNonResumableError(error) {
+        const notification = document.createElement('div');
+        notification.className = 'bg-red-50 border border-red-200 rounded-lg p-4 mb-4';
+        notification.innerHTML = `
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-sm font-medium text-red-800">Upload Failed</h3>
+                    <div class="mt-2 text-sm text-red-700">
+                        <p>Upload for "${error.filename || 'file'}" failed: ${error.message}</p>
+                        <p class="mt-1">This appears to be a permanent error that cannot be resumed.</p>
+                    </div>
+                </div>
+                <div class="ml-3 flex-shrink-0">
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" class="bg-white rounded-md text-gray-400 hover:text-gray-600">
+                        <span class="sr-only">Dismiss</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Insert at the top of the main content area
+        const mainContent = document.querySelector('.container') || document.querySelector('main') || document.body;
+        mainContent.insertBefore(notification, mainContent.firstChild);
+        
+        // Auto-remove after 8 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 8000);
+    }
+    
+    /**
+     * Show final upload results
+     */
+    function showFinalResults(fileTracker) {
+        console.log('📁 FINAL RESULTS:');
+        console.log(`✅ Completed: ${fileTracker.completed}`);
+        console.log(`❌ Failed: ${fileTracker.failed}`);  
+        console.log(`⏭️ Skipped: ${fileTracker.skipped}`);
+        console.log(`📊 Total: ${fileTracker.total}`);
+        
+        // Show file-by-file breakdown
+        const completed = [];
+        const failed = [];
+        const skipped = [];
+        
+        for (const [filename, info] of fileTracker.files.entries()) {
+            if (info.status === 'completed') completed.push(filename);
+            else if (info.status === 'failed') failed.push(filename);
+            else if (info.status.includes('skipped')) skipped.push(filename);
+        }
+        
+        if (completed.length > 0) {
+            console.log(`✅ COMPLETED FILES (${completed.length}):`, completed);
+        }
+        if (failed.length > 0) {
+            console.log(`❌ FAILED FILES (${failed.length}):`, failed);
+        }
+        if (skipped.length > 0) {
+            console.log(`⏭️ SKIPPED FILES (${skipped.length}):`, skipped);
+        }
+        
+        // Optional: Still redirect after showing results
+        setTimeout(() => {
+            console.log('📁 REDIRECTING: Going to dashboard...');
+            window.location.href = '/storage/dashboard/';
+        }, 5000); // Wait 5 seconds to see results
     }
     
     
