@@ -167,19 +167,40 @@ class UploadFormHandler {
                 }
             }
 
-            // Determine if we need chunking based on:
-            // 1. Number of files > 75
-            // 2. Any single file > 100MB  
-            // 3. Total size > 500MB
+            // Smart upload strategy - separate large files from small files
+            const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
             const totalSize = this.selectedFiles.reduce((sum, file) => sum + file.size, 0);
-            const hasLargeFile = this.selectedFiles.some(file => file.size > 100 * 1024 * 1024); // 100MB
-            const useChunking = this.selectedFiles.length > 75 || hasLargeFile || totalSize > 500 * 1024 * 1024;
             
-            if (useChunking) {
-                console.log(`🔄 Using chunked upload for ${this.selectedFiles.length} files (total size: ${formatFileSize(totalSize)})`);
+            // Separate files by size
+            const largeFiles = this.selectedFiles.filter(file => file.size >= LARGE_FILE_THRESHOLD);
+            const smallFiles = this.selectedFiles.filter(file => file.size < LARGE_FILE_THRESHOLD);
+            
+            console.log(`📊 Upload strategy analysis:`, {
+                totalFiles: this.selectedFiles.length,
+                totalSize: formatFileSize(totalSize),
+                largeFiles: largeFiles.length,
+                smallFiles: smallFiles.length,
+                largeFileSizes: largeFiles.map(f => `${f.name}: ${formatFileSize(f.size)}`)
+            });
+            
+            // Strategy 1: Mixed upload - handle large and small files separately
+            if (largeFiles.length > 0 && smallFiles.length > 0) {
+                console.log(`🔄 Using mixed upload strategy: ${largeFiles.length} large files (resumable) + ${smallFiles.length} small files (batched)`);
+                await this.performMixedUpload(largeFiles, smallFiles, folderName, organization, baseFolder, isFolderMode);
+            }
+            // Strategy 2: Large files only - use resumable upload for each
+            else if (largeFiles.length > 0) {
+                console.log(`🔄 Using resumable upload for ${largeFiles.length} large files`);
+                await this.performLargeFilesUpload(largeFiles, folderName, organization, baseFolder, isFolderMode);
+            }
+            // Strategy 3: Small files - batch or standard based on count
+            else if (smallFiles.length > 75 || totalSize > 500 * 1024 * 1024) {
+                console.log(`🔄 Using chunked upload for ${smallFiles.length} small files (total size: ${formatFileSize(totalSize)})`);
                 await this.performChunkedUpload(folderName, organization, baseFolder, isFolderMode);
-            } else {
-                console.log(`📤 Using standard upload for ${this.selectedFiles.length} files (total size: ${formatFileSize(totalSize)})`);
+            }
+            // Strategy 4: Few small files - standard upload
+            else {
+                console.log(`📤 Using standard upload for ${smallFiles.length} small files (total size: ${formatFileSize(totalSize)})`);
                 await this.performStandardUpload(folderName, organization, baseFolder, isFolderMode);
             }
 
@@ -422,6 +443,103 @@ class UploadFormHandler {
             this.uploadButton.classList.remove('btn-error');
             this.uploadButton.classList.add('btn-primary');
         }
+    }
+
+    async performMixedUpload(largeFiles, smallFiles, folderName, organization, baseFolder, isFolderMode) {
+        console.log(`🔄 MIXED UPLOAD: Starting mixed upload strategy`);
+        
+        const results = {
+            largeFileResults: [],
+            smallFileResults: null,
+            totalFiles: largeFiles.length + smallFiles.length,
+            completedFiles: 0,
+            failedFiles: 0
+        };
+
+        try {
+            // Step 1: Upload large files individually with resumable upload
+            for (let i = 0; i < largeFiles.length; i++) {
+                const file = largeFiles[i];
+                console.log(`📤 LARGE FILE ${i + 1}/${largeFiles.length}: ${file.name} (${formatFileSize(file.size)})`);
+                
+                const resumableUpload = new ResumableUpload(file, {
+                    chunkSize: 8 * 1024 * 1024, // 8MB chunks
+                    maxRetries: 5,
+                    organization: organization,
+                    baseFolder: baseFolder,
+                    folderName: folderName,
+                    originalPath: isFolderMode ? file.webkitRelativePath : file.name,
+                    onProgress: (progress) => {
+                        // Update overall progress
+                        const overallProgress = {
+                            processedFiles: results.completedFiles,
+                            totalFiles: results.totalFiles,
+                            percentage: Math.round((results.completedFiles / results.totalFiles) * 100),
+                            currentFile: file.name,
+                            fileProgress: progress.progress
+                        };
+                        this.updateProgress(overallProgress);
+                    },
+                    onComplete: (result) => {
+                        console.log(`✅ LARGE FILE COMPLETE: ${file.name}`);
+                        results.completedFiles++;
+                        results.largeFileResults.push({file: file.name, success: true, result});
+                    },
+                    onError: (error) => {
+                        console.error(`❌ LARGE FILE ERROR: ${file.name}:`, error);
+                        results.failedFiles++;
+                        results.largeFileResults.push({file: file.name, success: false, error});
+                    }
+                });
+
+                try {
+                    await resumableUpload.upload();
+                } catch (error) {
+                    console.error(`❌ Failed to upload large file ${file.name}:`, error);
+                    results.failedFiles++;
+                }
+            }
+
+            // Step 2: Upload small files in batch if any
+            if (smallFiles.length > 0) {
+                console.log(`📦 SMALL FILES: Uploading ${smallFiles.length} small files in batch`);
+                
+                // Temporarily replace selectedFiles with small files for chunked upload
+                const originalFiles = this.selectedFiles;
+                this.selectedFiles = smallFiles;
+                
+                try {
+                    results.smallFileResults = await this.performChunkedUpload(folderName, organization, baseFolder, isFolderMode);
+                    results.completedFiles += smallFiles.length;
+                } catch (error) {
+                    console.error(`❌ Small files batch upload failed:`, error);
+                    results.failedFiles += smallFiles.length;
+                } finally {
+                    // Restore original files
+                    this.selectedFiles = originalFiles;
+                }
+            }
+
+            // Show completion
+            this.handleUploadComplete({
+                success: results.failedFiles === 0,
+                total_uploaded_files: results.completedFiles,
+                failed_files: results.failedFiles,
+                total_size_formatted: formatFileSize(this.selectedFiles.reduce((sum, f) => sum + f.size, 0)),
+                duration_seconds: 0 // TODO: track actual duration
+            });
+
+        } catch (error) {
+            console.error('Mixed upload error:', error);
+            this.handleUploadError(error);
+        }
+    }
+
+    async performLargeFilesUpload(largeFiles, folderName, organization, baseFolder, isFolderMode) {
+        console.log(`🔄 LARGE FILES ONLY: Uploading ${largeFiles.length} large files with resumable upload`);
+        
+        // For now, delegate to mixed upload with no small files
+        return await this.performMixedUpload(largeFiles, [], folderName, organization, baseFolder, isFolderMode);
     }
 }
 

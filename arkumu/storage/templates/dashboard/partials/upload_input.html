@@ -9,14 +9,15 @@
         </span>
     </label>
     <input type="file" 
-           name="files" 
+           id="file-input"
+           name="file" 
            {% if is_folder_mode %}
                webkitdirectory
                directory
            {% else %}
                multiple
            {% endif %}
-           class="file-input file-input-bordered file-input-sm w-full" />
+           class="file-input file-input-bordered file-input-sm w-full" required />
     {% if is_folder_mode %}
         <input type="hidden" name="preserve_folder_structure" value="true" />
     {% endif %}
@@ -26,6 +27,14 @@
         {% else %}
             You can select multiple files to upload to S3 at once
         {% endif %}
+    </div>
+    
+    <!-- File Selection Info -->
+    <div id="selected-files-info" class="mt-2 p-2 bg-base-200 rounded hidden">
+        <div class="text-sm">
+            <span id="file-count">0 files selected</span> 
+            (<span id="total-size">0 B</span>)
+        </div>
     </div>
 </div>
 

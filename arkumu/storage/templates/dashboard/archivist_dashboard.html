@@ -26,11 +26,8 @@
                 </h2>
                 
                 <!-- Upload Form -->
-                <form id="simple-upload-form" 
-                      hx-post="/storage/upload/multipart/"
-                      hx-target="#upload-status"
-                      hx-swap="innerHTML"
-                      hx-indicator="#upload-progress"
+                <form id="streaming-upload-form" 
+                      class="upload-form"
                       enctype="multipart/form-data">
                     {% csrf_token %}
                     
@@ -38,6 +35,9 @@
                     <div id="upload-org-selector" class="form-control mb-4">
                         {% include 'dashboard/partials/upload_org_selector.html' %}
                     </div>
+                    
+                    <!-- Hidden organization field for JavaScript access -->
+                    <input type="hidden" id="organization" name="organization" value="" />
                     
                     <!-- Base folder selection (data or metadata) -->
                     <div class="form-control mb-4">
@@ -86,27 +86,55 @@
                         <label class="label">
                             <span class="label-text">Select Files</span>
                         </label>
-                        <input type="file" name="file" multiple class="file-input file-input-bordered file-input-sm w-full" required />
+                        <input type="file" id="file-input" name="file" multiple class="file-input file-input-bordered file-input-sm w-full" required />
                         <div class="text-xs text-gray-500 mt-1">
                             You can select multiple files to upload to S3 at once
+                        </div>
+                        
+                        <!-- File Selection Info -->
+                        <div id="selected-files-info" class="mt-2 p-2 bg-base-200 rounded hidden">
+                            <div class="text-sm">
+                                <span id="file-count">0 files selected</span> 
+                                (<span id="total-size">0 B</span>)
+                            </div>
                         </div>
                     </div>
                     
                     <div class="form-control">
-                        <button type="submit" class="btn btn-primary btn-sm">Upload to S3</button>
+                        <button type="submit" id="upload-button" class="btn btn-primary btn-sm">Upload to S3</button>
                     </div>
                 </form>
                 
                 <!-- Progress section -->
-                <div id="upload-progress" class="mt-4 htmx-indicator">
-                    <div class="flex justify-center">
-                        <span class="loading loading-spinner loading-md"></span>
-                        <span class="ml-2">Uploading to S3...</span>
+                <div id="upload-progress" class="mt-4 hidden">
+                    <div class="mb-2">
+                        <div class="flex justify-between text-sm">
+                            <span id="progress-text">Ready to upload</span>
+                            <span id="progress-percentage">0%</span>
+                        </div>
+                        <progress class="progress progress-primary w-full" id="progress-bar" value="0" max="100"></progress>
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        <span id="progress-details"></span>
                     </div>
                 </div>
                 
                 <!-- Status section -->
                 <div id="upload-status" class="mt-4"></div>
+                
+                <!-- Results section (for upload handler) -->
+                <div id="upload-results" class="mt-4 hidden">
+                    <div class="alert alert-success">
+                        <div>
+                            <h3 class="font-bold">Upload Complete!</h3>
+                            <div class="text-sm">
+                                <span id="result-files-count">0</span> files uploaded
+                                (<span id="result-total-size">0 B</span>)
+                                in <span id="result-duration">0s</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -159,53 +187,210 @@
 </dialog>
 
 
-<script>
-// Add HTMX debugging
-console.log('🔧 HTMX Loading Check');
-if (typeof htmx !== 'undefined') {
-    console.log('✅ HTMX is loaded');
-    htmx.logAll(); // Enable all HTMX logging
-    
-    // Add event listeners for debugging
-    document.addEventListener('htmx:beforeRequest', function(evt) {
-        console.log('🚀 HTMX: About to send request', evt.detail);
-    });
-    
-    document.addEventListener('htmx:afterRequest', function(evt) {
-        console.log('✅ HTMX: Request completed', evt.detail);
-    });
-    
-    document.addEventListener('htmx:responseError', function(evt) {
-        console.log('❌ HTMX: Response error', evt.detail);
-    });
-    
-    document.addEventListener('htmx:sendError', function(evt) {
-        console.log('❌ HTMX: Send error', evt.detail);
-    });
-} else {
-    console.log('❌ HTMX is NOT loaded!');
-}
+<!-- Chunked Upload JavaScript -->
+<script src="{% static 'js/src/s3/chunked-upload.js' %}"></script>
+<script src="{% static 'js/src/s3/resumable-upload.js' %}"></script>
+<script src="{% static 'js/src/s3/upload-form-handler.js' %}"></script>
 
-// Add form debugging
+<script>
+// Initialize chunked upload system
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('simple-upload-form');
+    console.log('🚀 Initializing chunked upload system');
+    
+    const form = document.getElementById('streaming-upload-form');
     if (form) {
-        console.log('✅ Form found:', form);
+        console.log('✅ Streaming upload form found');
         
-        form.addEventListener('submit', function(e) {
-            console.log('📝 Form submit event triggered', e);
-        });
+        // Initialize upload handler
+        window.uploadHandler = new UploadFormHandler();
         
-        const submitBtn = form.querySelector('button[type="submit"]');
-        if (submitBtn) {
-            submitBtn.addEventListener('click', function(e) {
-                console.log('🖱️ Submit button clicked', e);
+        // Override progress callbacks for our UI
+        if (window.uploadHandler) {
+            // Patch the handler's updateProgress method to use our UI
+            const originalUpdateProgress = window.uploadHandler.updateProgress;
+            window.uploadHandler.updateProgress = function(progress) {
+                updateProgressUI(progress);
+                if (originalUpdateProgress) {
+                    originalUpdateProgress.call(this, progress);
+                }
+            };
+            
+            console.log('✅ Upload handler initialized and patched');
+            console.log('📝 Upload handler state:', {
+                selectedFiles: window.uploadHandler.selectedFiles.length,
+                fileInput: !!window.uploadHandler.fileInput,
+                uploadButton: !!window.uploadHandler.uploadButton,
+                baseFolderSelect: !!window.uploadHandler.baseFolderSelect
             });
         }
     } else {
-        console.log('❌ Form not found!');
+        console.log('❌ Streaming upload form not found!');
     }
+    
+    // Add debugging for file input changes
+    document.addEventListener('change', function(e) {
+        console.log('🔄 CHANGE EVENT detected on:', e.target.id, e.target.tagName, e.target.type, e.target.name);
+        
+        // Detect file input by type and name instead of just ID
+        if (e.target && e.target.type === 'file' && (e.target.name === 'file' || e.target.name === 'files')) {
+            console.log('📁 FILE INPUT CHANGE detected:', {
+                files: e.target.files.length,
+                fileNames: Array.from(e.target.files).map(f => f.name),
+                totalSize: Array.from(e.target.files).reduce((sum, f) => sum + f.size, 0)
+            });
+            
+            // Manually trigger the handler's file selection if it's not working
+            if (window.uploadHandler && window.uploadHandler.handleFileSelection) {
+                console.log('📝 Manually triggering upload handler file selection');
+                window.uploadHandler.handleFileSelection(e.target.files);
+            } else {
+                console.log('❌ Upload handler or handleFileSelection method not available');
+            }
+        }
+        
+        // Sync organization selector with hidden field
+        if (e.target && e.target.name === 'organization') {
+            console.log('🏢 ORGANIZATION CHANGE:', e.target.value);
+            const orgField = document.getElementById('organization');
+            if (orgField) {
+                orgField.value = e.target.value;
+            }
+        }
+    });
+    
+    // Add debugging for upload button clicks
+    document.addEventListener('click', function(e) {
+        if (e.target && e.target.id === 'upload-button') {
+            console.log('🔘 UPLOAD BUTTON CLICKED');
+            console.log('📊 Current handler state:', {
+                selectedFiles: window.uploadHandler ? window.uploadHandler.selectedFiles.length : 'no handler',
+                isUploading: window.uploadHandler ? window.uploadHandler.isUploading : 'no handler'
+            });
+        }
+    });
 });
+
+// Progress UI management
+function updateProgressUI(progress) {
+    const progressContainer = document.getElementById('upload-progress');
+    const progressText = document.getElementById('progress-text');
+    const progressPercentage = document.getElementById('progress-percentage');
+    const progressBar = document.getElementById('progress-bar');
+    const progressDetails = document.getElementById('progress-details');
+    
+    if (progressContainer) {
+        progressContainer.classList.remove('hidden');
+    }
+    
+    if (progressText && progress.processedFiles !== undefined) {
+        progressText.textContent = `Uploading ${progress.processedFiles}/${progress.totalFiles} files`;
+    }
+    
+    if (progressPercentage && progress.percentage !== undefined) {
+        progressPercentage.textContent = `${progress.percentage}%`;
+    }
+    
+    if (progressBar && progress.percentage !== undefined) {
+        progressBar.value = progress.percentage;
+    }
+    
+    if (progressDetails && progress.processedBytes !== undefined) {
+        const processedMB = (progress.processedBytes / (1024 * 1024)).toFixed(1);
+        const totalMB = (progress.totalBytes / (1024 * 1024)).toFixed(1);
+        progressDetails.textContent = `${processedMB} MB / ${totalMB} MB`;
+    }
+}
+
+function handleUploadComplete(result) {
+    console.log('🎉 Upload completed:', result);
+    
+    const statusDiv = document.getElementById('upload-status');
+    if (statusDiv) {
+        statusDiv.innerHTML = `
+            <div class="alert alert-success">
+                <div>
+                    <h3 class="font-bold">Upload Complete!</h3>
+                    <div class="text-sm">
+                        ${result.total_uploaded_files || result.completedFiles || 0} files uploaded 
+                        (${result.total_size_formatted || 'unknown size'})
+                        ${result.duration_seconds ? `in ${result.duration_seconds}s` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Reset progress UI
+    setTimeout(() => {
+        const progressContainer = document.getElementById('upload-progress');
+        if (progressContainer) {
+            progressContainer.classList.add('hidden');
+        }
+    }, 3000);
+    
+    // Refresh file browser content properly
+    refreshFileBrowser();
+}
+
+function refreshFileBrowser() {
+    console.log('🔄 Refreshing file browser after upload...');
+    
+    // Get current organization from the form
+    const orgSelect = document.querySelector('select[name="organization"]');
+    const orgField = document.getElementById('organization');
+    const organization = orgSelect ? orgSelect.value : (orgField ? orgField.value : '');
+    
+    if (!organization) {
+        console.log('⚠️ No organization selected, cannot refresh file browser');
+        return;
+    }
+    
+    console.log(`📁 Refreshing file browser for organization: ${organization}`);
+    
+    // Use HTMX to reload the file browser content
+    if (typeof htmx !== 'undefined') {
+        const fileBrowser = document.getElementById('file-browser-content');
+        if (fileBrowser) {
+            // Clear cache and trigger refresh by making a request to the organization files endpoint
+            const refreshUrl = `/storage/view-organization-bucket/?organization=${encodeURIComponent(organization)}`;
+            
+            htmx.ajax('GET', refreshUrl, {
+                target: '#file-browser-content',
+                swap: 'innerHTML'
+            }).then(() => {
+                console.log('✅ File browser refreshed successfully');
+            }).catch((error) => {
+                console.error('❌ File browser refresh failed:', error);
+            });
+        }
+    } else {
+        // Fallback: reload the page if HTMX is not available
+        console.log('⚠️ HTMX not available, falling back to page reload');
+        window.location.reload();
+    }
+}
+
+function handleUploadError(error) {
+    console.error('❌ Upload error:', error);
+    
+    const statusDiv = document.getElementById('upload-status');
+    if (statusDiv) {
+        statusDiv.innerHTML = `
+            <div class="alert alert-error">
+                <div>
+                    <h3 class="font-bold">Upload Failed</h3>
+                    <div class="text-sm">${error.message || 'Unknown error occurred'}</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Hide progress UI
+    const progressContainer = document.getElementById('upload-progress');
+    if (progressContainer) {
+        progressContainer.classList.add('hidden');
+    }
+}
 </script>
 
 {% endblock %}
