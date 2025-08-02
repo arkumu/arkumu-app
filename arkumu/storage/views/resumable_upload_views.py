@@ -24,6 +24,7 @@ from arkumu.storage.models import (
 )
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.bucket_service import BucketService
+from arkumu.storage.services.redis_resumable_storage import RedisResumableStorage
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 _upload_service = None
 _bucket_service = None
 _redis_client = None
+_redis_storage = None
 
 
 def get_cached_upload_service():
@@ -56,6 +58,14 @@ def get_redis_client():
         redis_url = getattr(settings, 'REDIS_URL', 'redis://redis:6379/0')
         _redis_client = redis.from_url(redis_url)
     return _redis_client
+
+
+def get_redis_storage():
+    """Get Redis resumable storage service."""
+    global _redis_storage
+    if _redis_storage is None:
+        _redis_storage = RedisResumableStorage()
+    return _redis_storage
 
 
 @require_http_methods(["POST"])
@@ -234,16 +244,32 @@ def resumable_upload_chunk(request):
         # Calculate checksum
         checksum = hashlib.md5(chunk_data).hexdigest()
         
-        # Store chunk in Redis with TTL (1 hour = 3600 seconds)
+        # Store chunk using Redis storage service
         try:
-            redis_client = get_redis_client()
-            redis_key = f"resumable_chunk:{upload_id}:{chunk_number}"
-            redis_client.setex(redis_key, 3600, chunk_data)
+            redis_storage = get_redis_storage()
             
-            # Mark chunk as completed
+            # Create or update session in Redis storage
+            session_info = redis_storage.get_upload_info(str(upload_id))
+            if not session_info:
+                redis_storage.create_upload_session(
+                    upload_id=str(upload_id),
+                    filename=resumable_upload.original_filename,
+                    file_size=resumable_upload.total_size_bytes,
+                    metadata={
+                        'user_id': request.user.id,
+                        'upload_session_id': str(resumable_upload.upload_session.id),
+                        'total_chunks': resumable_upload.total_chunks
+                    }
+                )
+            
+            # Store chunk
+            if not redis_storage.store_chunk(str(upload_id), chunk_number, chunk_data):
+                raise Exception("Failed to store chunk in Redis")
+            
+            # Mark chunk as completed in database
             chunk.mark_completed(checksum=checksum)
             
-            logger.info(f"⏱️ CHUNK COMPLETE: Chunk {chunk_number} of {resumable_upload.original_filename} stored in Redis")
+            logger.info(f"⏱️ CHUNK COMPLETE: Chunk {chunk_number + 1}/{resumable_upload.total_chunks} of {resumable_upload.original_filename} stored in Redis")
             
             # Check if all chunks are completed
             completed_chunks = resumable_upload.completed_chunks
@@ -253,12 +279,16 @@ def resumable_upload_chunk(request):
                 from arkumu.storage.tasks import assemble_file_task
                 assemble_file_task.schedule(args=(resumable_upload.id,), delay=0)
             
+            # Get progress from Redis storage
+            progress_info = redis_storage.get_upload_progress(str(upload_id))
+            
             return JsonResponse({
                 'status': 'success',
                 'chunkNumber': chunk_number,
                 'completedChunks': completed_chunks,
                 'totalChunks': resumable_upload.total_chunks,
-                'progress': resumable_upload.progress_percentage
+                'progress': resumable_upload.progress_percentage,
+                'uploadedBytes': progress_info.get('uploaded_bytes', 0)
             })
             
         except Exception as e:
@@ -279,6 +309,10 @@ def resumable_upload_status(request, upload_id):
     try:
         resumable_upload = ResumableUploadSession.objects.get(id=upload_id)
         
+        # Get additional progress info from Redis storage
+        redis_storage = get_redis_storage()
+        redis_progress = redis_storage.get_upload_progress(str(upload_id))
+        
         completed_chunks = resumable_upload.completed_chunks
         failed_chunks = resumable_upload.chunks.filter(status='failed').count()
         
@@ -289,11 +323,12 @@ def resumable_upload_status(request, upload_id):
             'totalChunks': resumable_upload.total_chunks,
             'completedChunks': completed_chunks,
             'failedChunks': failed_chunks,
-            'uploadedBytes': resumable_upload.uploaded_bytes,
+            'uploadedBytes': redis_progress.get('uploaded_bytes', resumable_upload.uploaded_bytes),
             'totalBytes': resumable_upload.total_size_bytes,
-            'progress': resumable_upload.progress_percentage,
+            'progress': redis_progress.get('progress_percentage', resumable_upload.progress_percentage),
             'canResume': resumable_upload.can_resume(),
-            'errorMessage': resumable_upload.error_message
+            'errorMessage': resumable_upload.error_message,
+            'redisChunks': len(redis_progress.get('uploaded_chunks', []))
         })
         
     except ResumableUploadSession.DoesNotExist:
@@ -317,34 +352,16 @@ def _assemble_file(resumable_upload: ResumableUploadSession):
         logger.info(f"🔧 ASSEMBLY: Resumable upload ID: {resumable_upload.id}")
         logger.info(f"🔧 ASSEMBLY: Upload status: {resumable_upload.status}")
         
-        # Create temp directory for final file assembly (minimal filesystem usage)
-        temp_dir = os.path.join('/app', 'temp', 'assembly', str(resumable_upload.id))
-        os.makedirs(temp_dir, exist_ok=True)
-        final_file_path = os.path.join(temp_dir, 'final_file')
+        # Use Redis storage service to assemble file
+        redis_storage = get_redis_storage()
         
-        # Get Redis client
-        redis_client = get_redis_client()
+        logger.info(f"🔧 ASSEMBLY: Using Redis storage service to assemble file")
+        final_file_path = redis_storage.assemble_file(str(resumable_upload.id))
         
-        # Get chunks and verify they exist in Redis
-        chunks = resumable_upload.chunks.filter(status='completed').order_by('chunk_number')
-        chunk_count = chunks.count()
-        logger.info(f"🔧 ASSEMBLY: Found {chunk_count} completed chunks to assemble from Redis")
+        if not final_file_path:
+            raise Exception("Failed to assemble file from chunks")
         
-        # Assemble chunks in order from Redis
-        with open(final_file_path, 'wb') as final_file:
-            for i, chunk in enumerate(chunks):
-                logger.info(f"🔧 ASSEMBLY: Processing chunk {i+1}/{chunk_count} from Redis")
-                redis_key = f"resumable_chunk:{resumable_upload.id}:{chunk.chunk_number}"
-                chunk_data = redis_client.get(redis_key)
-                
-                if chunk_data:
-                    logger.info(f"🔧 ASSEMBLY: Chunk data retrieved from Redis, size: {len(chunk_data)} bytes")
-                    final_file.write(chunk_data)
-                    # Clean up chunk from Redis after use
-                    redis_client.delete(redis_key)
-                else:
-                    logger.error(f"🔧 ASSEMBLY: Chunk data missing from Redis: {redis_key}")
-                    raise FileNotFoundError(f'Chunk data not found in Redis: {redis_key}')
+        logger.info(f"🔧 ASSEMBLY: File assembled at {final_file_path}")
         
         logger.info(f"⏱️ ASSEMBLY COMPLETE: File assembled, starting S3 upload at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
         
@@ -417,8 +434,13 @@ def _assemble_file(resumable_upload: ResumableUploadSession):
             cached_data_after = cache.get(cache_key)
             logger.info(f"✅ CACHE VERIFY: Cache after deletion for key '{cache_key}': {cached_data_after is not None}")
             
-            # Clean up temporary assembly directory
-            _cleanup_temp_files(resumable_upload)
+            # Clean up using Redis storage service
+            redis_storage.complete_upload(str(resumable_upload.id))
+            
+            # Clean up temporary file
+            if os.path.exists(final_file_path):
+                os.unlink(final_file_path)
+                logger.info(f"Cleaned up temporary file: {final_file_path}")
             
         else:
             error_msg = result.get('error', 'S3 upload failed')
@@ -432,28 +454,16 @@ def _assemble_file(resumable_upload: ResumableUploadSession):
 
 
 def _cleanup_temp_files(resumable_upload: ResumableUploadSession):
-    """Clean up temporary assembly directory after successful upload"""
+    """Clean up temporary files and Redis data after upload"""
     try:
-        import shutil
-        # Clean up the assembly temp directory
-        temp_dir = os.path.join('/app', 'temp', 'assembly', str(resumable_upload.id))
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-            logger.info(f"Cleaned up assembly temp directory for {resumable_upload.original_filename}")
-        
-        # Clean up any remaining Redis chunks (in case some weren't deleted during assembly)
-        try:
-            redis_client = get_redis_client()
-            pattern = f"resumable_chunk:{resumable_upload.id}:*"
-            keys = redis_client.keys(pattern)
-            if keys:
-                redis_client.delete(*keys)
-                logger.info(f"Cleaned up {len(keys)} remaining Redis chunks for {resumable_upload.original_filename}")
-        except Exception as e:
-            logger.warning(f"Failed to clean up Redis chunks: {e}")
+        redis_storage = get_redis_storage()
+        # Use Redis storage service to clean up all chunks
+        deleted_count = redis_storage.delete_all_chunks(str(resumable_upload.id))
+        if deleted_count > 0:
+            logger.info(f"Cleaned up {deleted_count} Redis chunks for {resumable_upload.original_filename}")
             
     except Exception as e:
-        logger.warning(f"Failed to clean up temp files: {e}")
+        logger.warning(f"Failed to clean up: {e}")
 
 
 @require_http_methods(["POST"])
