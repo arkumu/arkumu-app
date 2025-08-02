@@ -309,17 +309,40 @@ def _assemble_file(resumable_upload: ResumableUploadSession):
         resumable_upload.save()
         
         logger.info(f"⏱️ ASSEMBLY START: Assembling {resumable_upload.original_filename} at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+        logger.info(f"🔧 ASSEMBLY: Resumable upload ID: {resumable_upload.id}")
+        logger.info(f"🔧 ASSEMBLY: Upload status: {resumable_upload.status}")
+        logger.info(f"🔧 ASSEMBLY: Temp storage path: {resumable_upload.temp_storage_path}")
+        
+        # Ensure temp directory exists
+        os.makedirs(resumable_upload.temp_storage_path, exist_ok=True)
+        logger.info(f"🔧 ASSEMBLY: Temp directory ensured: {resumable_upload.temp_storage_path}")
+        
+        # Check if temp directory actually exists and list contents
+        if os.path.exists(resumable_upload.temp_storage_path):
+            contents = os.listdir(resumable_upload.temp_storage_path)
+            logger.info(f"🔧 ASSEMBLY: Temp directory contents: {contents}")
+        else:
+            logger.error(f"🔧 ASSEMBLY: Temp directory does not exist: {resumable_upload.temp_storage_path}")
         
         # Create final file path
         final_file_path = os.path.join(resumable_upload.temp_storage_path, 'final_file')
         
+        # Get chunks and verify they exist
+        chunks = resumable_upload.chunks.filter(status='completed').order_by('chunk_number')
+        chunk_count = chunks.count()
+        logger.info(f"🔧 ASSEMBLY: Found {chunk_count} completed chunks to assemble")
+        
         # Assemble chunks in order
         with open(final_file_path, 'wb') as final_file:
-            for chunk in resumable_upload.chunks.filter(status='completed').order_by('chunk_number'):
+            for i, chunk in enumerate(chunks):
+                logger.info(f"🔧 ASSEMBLY: Processing chunk {i+1}/{chunk_count}: {chunk.temp_file_path}")
                 if os.path.exists(chunk.temp_file_path):
+                    chunk_size = os.path.getsize(chunk.temp_file_path)
+                    logger.info(f"🔧 ASSEMBLY: Chunk file exists, size: {chunk_size} bytes")
                     with open(chunk.temp_file_path, 'rb') as chunk_file:
                         final_file.write(chunk_file.read())
                 else:
+                    logger.error(f"🔧 ASSEMBLY: Chunk file missing: {chunk.temp_file_path}")
                     raise FileNotFoundError(f'Chunk file not found: {chunk.temp_file_path}')
         
         logger.info(f"⏱️ ASSEMBLY COMPLETE: File assembled, starting S3 upload at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
