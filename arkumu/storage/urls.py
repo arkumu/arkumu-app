@@ -1,7 +1,7 @@
 from django.urls import path
 
 from . import views
-from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views
+from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views, simple_multipart_upload
 
 app_name = "storage"
 
@@ -25,7 +25,11 @@ urlpatterns = [
     path("upload/dismiss-banner/", upload_status_view.dismiss_upload_banner, name="dismiss_upload_banner"),
     path("file/info/", streaming_upload_views.file_info, name="file_info"),
     
-    # Resumable upload endpoints
+    # Simple multipart upload endpoint
+    path("upload/simple/", simple_multipart_upload.simple_multipart_form, name="simple_multipart_form"),
+    path("upload/multipart/", simple_multipart_upload.SimpleMultipartUploadViewSet.as_view({'post': 'upload'}), name="simple_multipart_upload"),
+    
+    # Resumable upload endpoints (keeping for backward compatibility)
     path("upload/resumable/init/", resumable_upload_views.resumable_upload_init, name="resumable_upload_init"),
     path("upload/resumable/chunk/", resumable_upload_views.resumable_upload_chunk, name="resumable_upload_chunk"),
     path("upload/resumable/status/<uuid:upload_id>/", resumable_upload_views.resumable_upload_status, name="resumable_upload_status"),

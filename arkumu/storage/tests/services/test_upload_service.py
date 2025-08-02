@@ -544,3 +544,345 @@ def test_batch_upload_folder_structure_performance(mock_upload_service):
         expected_s3_key = f"{TEST_BASE_FOLDERS[0]}/{file_paths[i]}"
         assert file_result["s3_key"] == expected_s3_key
         assert file_result["original_path"] == file_paths[i]
+
+
+# Multipart Upload Tests
+
+@pytest.mark.django_db
+def test_upload_multipart_stream_small_file(mock_upload_service):
+    """Test multipart stream upload for small file (should use single part)"""
+    from io import BytesIO
+    
+    # Create a small file (less than chunk size)
+    content = b"Small file content for multipart test"
+    file_obj = BytesIO(content)
+    file_name = "small_multipart_test.txt"
+    
+    result = mock_upload_service.upload_multipart_stream(
+        file_obj=file_obj,
+        file_name=file_name,
+        content_type="text/plain",
+        path_prefix="data/multipart_test",
+        chunk_size=5 * 1024 * 1024  # 5MB chunks
+    )
+    
+    # Verify successful upload
+    assert result["success"] is True
+    assert result["file_name"] == file_name
+    assert "s3_key" in result
+    assert "file_size" in result
+    assert result["file_size"] == len(content)
+
+
+@pytest.mark.django_db
+def test_upload_multipart_stream_large_file(mock_upload_service):
+    """Test multipart stream upload for large file (multiple parts)"""
+    from io import BytesIO
+    
+    # Create a large file that will require multiple parts
+    chunk_size = 5 * 1024 * 1024  # 5MB
+    total_size = 12 * 1024 * 1024  # 12MB (will need 3 parts)
+    content = b"X" * total_size
+    file_obj = BytesIO(content)
+    file_name = "large_multipart_test.bin"
+    
+    result = mock_upload_service.upload_multipart_stream(
+        file_obj=file_obj,
+        file_name=file_name,
+        content_type="application/octet-stream",
+        path_prefix="data/multipart_test",
+        chunk_size=chunk_size
+    )
+    
+    # Verify successful upload
+    assert result["success"] is True
+    assert result["file_name"] == file_name
+    assert result["file_size"] == total_size
+    assert "s3_key" in result
+    assert "etag" in result
+
+
+@pytest.mark.django_db
+def test_upload_multipart_stream_with_custom_parameters(mock_upload_service):
+    """Test multipart upload with custom parameters"""
+    from io import BytesIO
+    
+    content = b"Custom parameter test content" * 100000  # Make it reasonably large
+    file_obj = BytesIO(content)
+    
+    result = mock_upload_service.upload_multipart_stream(
+        file_obj=file_obj,
+        file_name="custom_params_test.txt",
+        content_type="text/plain",
+        path_prefix="metadata/custom_test",
+        chunk_size=1 * 1024 * 1024  # 1MB chunks (smaller than default)
+    )
+    
+    assert result["success"] is True
+    assert "custom_test" in result["s3_key"]
+    assert result["file_size"] == len(content)
+
+
+@pytest.mark.django_db
+def test_upload_django_file_multipart_threshold(mock_upload_service):
+    """Test that upload_django_file uses multipart for large files"""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    
+    # Create file larger than multipart threshold
+    multipart_threshold = 10 * 1024 * 1024  # 10MB
+    large_content = b"L" * (multipart_threshold + 1024)  # Slightly larger than threshold
+    
+    large_file = SimpleUploadedFile(
+        name="large_django_file.bin",
+        content=large_content,
+        content_type="application/octet-stream"
+    )
+    
+    # Mock the multipart upload method to verify it's called
+    with patch.object(mock_upload_service, 'upload_multipart_stream') as mock_multipart:
+        mock_multipart.return_value = {
+            "success": True,
+            "file_name": "large_django_file.bin",
+            "s3_key": "data/large_django_file.bin",
+            "file_size": len(large_content)
+        }
+        
+        result = mock_upload_service.upload_django_file(
+            uploaded_file=large_file,
+            path_prefix="data",
+            multipart_threshold=multipart_threshold
+        )
+        
+        # Verify multipart was called
+        mock_multipart.assert_called_once()
+        assert result["success"] is True
+
+
+@pytest.mark.django_db
+def test_upload_django_file_below_multipart_threshold(mock_upload_service):
+    """Test that upload_django_file uses single upload for small files"""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    
+    # Create file smaller than multipart threshold
+    multipart_threshold = 10 * 1024 * 1024  # 10MB
+    small_content = b"S" * 1024  # 1KB
+    
+    small_file = SimpleUploadedFile(
+        name="small_django_file.txt",
+        content=small_content,
+        content_type="text/plain"
+    )
+    
+    # Mock the single upload method to verify it's called instead of multipart
+    with patch.object(mock_upload_service, 'upload_fileobj_encrypted') as mock_single:
+        mock_single.return_value = {
+            "success": True,
+            "file_name": "small_django_file.txt",
+            "s3_key": "data/small_django_file.txt",
+            "file_size": len(small_content)
+        }
+        
+        result = mock_upload_service.upload_django_file(
+            uploaded_file=small_file,
+            path_prefix="data",
+            multipart_threshold=multipart_threshold
+        )
+        
+        # Verify single upload was called
+        mock_single.assert_called_once()
+        assert result["success"] is True
+
+
+@pytest.mark.django_db
+def test_upload_files_optimized_multipart_config(mock_upload_service):
+    """Test upload_files_optimized with multipart configuration"""
+    from io import BytesIO
+    
+    # Create files that should trigger multipart uploads
+    files = []
+    for i in range(3):
+        content = b"Optimized multipart test content" * 500000  # Large content
+        file_dict = {
+            'file_obj': BytesIO(content),
+            'file_name': f'optimized_test_{i}.bin',
+            'content_type': 'application/octet-stream'
+        }
+        files.append(file_dict)
+    
+    # Test with custom multipart settings
+    custom_threshold = 5 * 1024 * 1024  # 5MB
+    custom_chunk_size = 2 * 1024 * 1024  # 2MB chunks
+    
+    result = mock_upload_service.upload_files_optimized(
+        files=files,
+        path_prefix="data/optimized_multipart",
+        multipart_threshold=custom_threshold,
+        multipart_chunksize=custom_chunk_size,
+        max_workers=2,
+        max_concurrency=2
+    )
+    
+    assert result["success"] is True
+    assert result["total_uploaded"] == 3
+    assert len(result["results"]) == 3
+    
+    # Verify all files were uploaded successfully
+    for file_result in result["results"]:
+        assert file_result["success"] is True
+        assert "optimized_multipart" in file_result["s3_key"]
+
+
+@pytest.mark.django_db
+def test_multipart_upload_error_handling(mock_upload_service):
+    """Test error handling in multipart uploads"""
+    from io import BytesIO
+    
+    # Create a file for testing
+    content = b"Error handling test" * 1000
+    file_obj = BytesIO(content)
+    
+    # Mock S3 client to raise an exception during multipart upload
+    with patch.object(mock_upload_service.base_service.s3_client, 'create_multipart_upload') as mock_create:
+        mock_create.side_effect = Exception("Simulated S3 error")
+        
+        result = mock_upload_service.upload_multipart_stream(
+            file_obj=file_obj,
+            file_name="error_test.txt",
+            content_type="text/plain"
+        )
+        
+        # Verify error is handled gracefully
+        assert result["success"] is False
+        assert "error" in result
+        assert "Simulated S3 error" in result["error"]
+
+
+@pytest.mark.django_db
+def test_multipart_upload_performance_benchmarking(mock_upload_service):
+    """Test multipart upload performance with various file sizes"""
+    from io import BytesIO
+    import time
+    
+    # Test cases with different file sizes
+    test_cases = [
+        {"size": 5 * 1024 * 1024, "name": "5MB_perf_test.bin"},    # 5MB
+        {"size": 25 * 1024 * 1024, "name": "25MB_perf_test.bin"},  # 25MB
+        {"size": 50 * 1024 * 1024, "name": "50MB_perf_test.bin"},  # 50MB
+    ]
+    
+    results = []
+    
+    for test_case in test_cases:
+        content = b"P" * test_case["size"]
+        file_obj = BytesIO(content)
+        
+        start_time = time.time()
+        
+        result = mock_upload_service.upload_multipart_stream(
+            file_obj=file_obj,
+            file_name=test_case["name"],
+            content_type="application/octet-stream",
+            chunk_size=8 * 1024 * 1024  # 8MB chunks
+        )
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        assert result["success"] is True
+        
+        results.append({
+            "file_size": test_case["size"],
+            "duration": duration,
+            "throughput_mbps": (test_case["size"] / (1024 * 1024)) / duration
+        })
+    
+    # Verify reasonable performance (should complete within reasonable time)
+    for result in results:
+        # Allow up to 10 seconds per 50MB (quite generous for testing)
+        max_time = (result["file_size"] / (50 * 1024 * 1024)) * 10
+        assert result["duration"] < max_time, f"Upload took too long: {result['duration']}s for {result['file_size']} bytes"
+
+
+@pytest.mark.django_db
+def test_multipart_upload_with_different_chunk_sizes(mock_upload_service):
+    """Test multipart upload with various chunk sizes"""
+    from io import BytesIO
+    
+    # Create a 20MB file
+    file_size = 20 * 1024 * 1024
+    content = b"C" * file_size
+    
+    # Test different chunk sizes
+    chunk_sizes = [
+        5 * 1024 * 1024,   # 5MB (S3 minimum for multipart)
+        8 * 1024 * 1024,   # 8MB (common default)
+        10 * 1024 * 1024,  # 10MB
+    ]
+    
+    for i, chunk_size in enumerate(chunk_sizes):
+        file_obj = BytesIO(content)
+        
+        result = mock_upload_service.upload_multipart_stream(
+            file_obj=file_obj,
+            file_name=f"chunk_test_{chunk_size // (1024*1024)}MB.bin",
+            content_type="application/octet-stream",
+            chunk_size=chunk_size
+        )
+        
+        assert result["success"] is True
+        assert result["file_size"] == file_size
+        
+        # Verify the file is accessible
+        s3_key = result["s3_key"]
+        assert s3_key is not None
+
+
+@pytest.mark.django_db
+def test_multipart_upload_concurrent_operations(mock_upload_service):
+    """Test multiple concurrent multipart uploads"""
+    from io import BytesIO
+    import threading
+    import time
+    
+    def upload_file(file_index):
+        content = b"Concurrent test content" * 100000
+        file_obj = BytesIO(content)
+        
+        result = mock_upload_service.upload_multipart_stream(
+            file_obj=file_obj,
+            file_name=f"concurrent_test_{file_index}.bin",
+            content_type="application/octet-stream"
+        )
+        
+        return result
+    
+    # Start multiple uploads concurrently
+    threads = []
+    results = [None] * 3
+    
+    def thread_worker(index):
+        results[index] = upload_file(index)
+    
+    start_time = time.time()
+    
+    for i in range(3):
+        thread = threading.Thread(target=thread_worker, args=(i,))
+        threads.append(thread)
+        thread.start()
+    
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+    
+    end_time = time.time()
+    total_duration = end_time - start_time
+    
+    # Verify all uploads succeeded
+    for i, result in enumerate(results):
+        assert result is not None
+        assert result["success"] is True
+        assert f"concurrent_test_{i}" in result["file_name"]
+    
+    # Concurrent uploads should be faster than sequential
+    # (This is more of a sanity check given the mocked S3)
+    assert total_duration < 30, f"Concurrent uploads took too long: {total_duration}s"

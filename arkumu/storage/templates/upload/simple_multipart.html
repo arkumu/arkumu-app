@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Simple Upload{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="hero">
+        <div class="hero-content text-center">
+            <h1 class="text-3xl font-bold">Simple Multipart Upload</h1>
+            <p class="text-gray-600 mt-2">Upload any file size with automatic multipart handling</p>
+        </div>
+    </div>
+    
+    <div class="card bg-base-100 shadow-xl max-w-2xl mx-auto">
+        <div class="card-body">
+            <form id="upload-form" method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                
+                <!-- Organization -->
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Organization</span>
+                    </label>
+                    <select name="organization" class="select select-bordered w-full" required>
+                        <option value="DEFAULT">Default</option>
+                        {% for org in organizations %}
+                            <option value="{{ org.code }}">{{ org.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <!-- Folder -->
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Folder</span>
+                    </label>
+                    <select name="folder_path" class="select select-bordered w-full" required>
+                        <option value="data">Data</option>
+                        <option value="metadata">Metadata</option>
+                    </select>
+                </div>
+                
+                <!-- File input -->
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Select File</span>
+                    </label>
+                    <input type="file" name="file" class="file-input file-input-bordered w-full" required />
+                </div>
+                
+                <!-- Upload button -->
+                <div class="form-control">
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </div>
+            </form>
+            
+            <!-- Progress -->
+            <div id="progress" class="mt-4 hidden">
+                <progress class="progress progress-primary w-full"></progress>
+                <p class="text-sm text-gray-600 mt-1">Uploading...</p>
+            </div>
+            
+            <!-- Result -->
+            <div id="result" class="mt-4"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    const progressDiv = document.getElementById('progress');
+    const resultDiv = document.getElementById('result');
+    
+    // Show progress
+    progressDiv.classList.remove('hidden');
+    resultDiv.innerHTML = '';
+    
+    try {
+        const response = await fetch('{% url "storage:simple_multipart_upload" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <div>
+                        <h3 class="font-bold">Upload Successful!</h3>
+                        <p>File uploaded to: ${data.bucket}/${data.s3_key}</p>
+                        <p>Size: ${(data.size / 1024 / 1024).toFixed(2)} MB</p>
+                        ${data.parts ? `<p>Uploaded in ${data.parts} parts</p>` : ''}
+                    </div>
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span>Error: ${data.error}</span>
+                </div>
+            `;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `
+            <div class="alert alert-error">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>Network error: ${error.message}</span>
+            </div>
+        `;
+    } finally {
+        progressDiv.classList.add('hidden');
+    }
+});
+</script>
+{% endblock %}

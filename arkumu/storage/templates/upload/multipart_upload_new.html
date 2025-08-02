@@ -1,276 +1,148 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Optimized Streaming Upload{% endblock %}
+{% block title %}Multipart Upload{% endblock %}
 
 {% block content %}
-<div class="container py-5">
-    <div class="row">
-        <div class="col-lg-8 col-md-10 mx-auto">
-            <h1 class="mb-4">Optimized Streaming Upload</h1>
-            <p class="lead">
-                Upload files of any size efficiently using our optimized streaming upload.
-                Files are automatically processed using the most efficient method based on their size.
-            </p>
-
-            <div class="card shadow-sm mb-4">
-                <div class="card-body">
-                    <h5 class="card-title">Upload Files</h5>
-                    
-                    <div class="mb-3">
-                        <label for="folder-name" class="form-label">Folder Name</label>
-                        <input type="text" class="form-control" id="folder-name" placeholder="e.g., my-project/uploads">
-                        <div class="form-text">The folder path where files will be stored.</div>
+<div class="container mx-auto px-4 py-8">
+    <div class="hero">
+        <div class="hero-content text-center">
+            <h1 class="text-3xl font-bold text-gray-800">Multipart File Upload</h1>
+            <p class="text-gray-600 mt-2">Upload files of any size with resumable multipart uploads</p>
+        </div>
+    </div>
+    
+    <div class="card bg-base-100 shadow-xl max-w-2xl mx-auto">
+        <div class="card-body">
+            <form id="streaming-upload-form" enctype="multipart/form-data">
+                {% csrf_token %}
+                
+                <!-- Organization selection -->
+                {% if organization %}
+                <input type="hidden" id="organization" name="organization" value="{{ organization }}">
+                <div class="alert alert-info mb-4">
+                    <div>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>Uploading to organization: <strong>{{ organization }}</strong></span>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label for="file-input" class="form-label">Select Files</label>
-                        <input type="file" class="form-control" id="file-input" multiple>
-                        <div class="form-text">Select one or more files to upload. Large files will be automatically optimized.</div>
+                </div>
+                {% else %}
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Select Organization</span> 
+                    </label>
+                    <select id="organization" name="organization" class="select select-bordered w-full">
+                        <option value="">Choose organization...</option>
+                        {% for org in organizations %}
+                            <option value="{{ org.code }}">{{ org.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="label">
+                        <span class="label-text-alt">Choose the organization bucket</span>
                     </div>
-                    
-                    <div class="d-flex mb-3">
-                        <button id="upload-btn" class="btn btn-primary me-2">Upload</button>
-                        <button id="cancel-btn" class="btn btn-danger" disabled>Cancel</button>
+                </div>
+                {% endif %}
+                
+                <!-- Base folder selection (data or metadata) -->
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Select Base Folder</span>
+                    </label>
+                    <select id="base-folder" name="base_folder" class="select select-bordered w-full" required>
+                        <option value="" disabled selected>Choose a folder...</option>
+                        <option value="data">data</option>
+                        <option value="metadata">metadata</option>
+                    </select>
+                    <div class="label">
+                        <span class="label-text-alt">You can only upload to these base folders</span>
                     </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Select files to upload</span>
+                    </label>
+                    <input type="file" id="file-input" name="files" multiple class="file-input file-input-bordered w-full" />
+                    <div class="text-xs text-gray-500 mt-1">
+                        Select files for upload. Large files (>50MB) will use resumable multipart uploads automatically.
+                    </div>
+                    <div class="form-control mt-2">
+                        <label class="cursor-pointer label">
+                            <span class="label-text">Upload folder structure</span>
+                            <input type="checkbox" id="folder-mode" class="checkbox checkbox-primary" />
+                        </label>
+                    </div>
+                </div>
+                
+                <div id="selected-files-info" class="mt-4 hidden">
+                    <div class="flex justify-between">
+                        <span class="font-semibold" id="file-count">0 files selected</span>
+                        <span class="font-semibold" id="total-size">0 bytes</span>
+                    </div>
+                </div>
+                
+                <div class="form-control mt-6">
+                    <button type="button" id="upload-button" class="btn btn-primary">Upload Files</button>
+                </div>
+            </form>
+            
+            <div id="upload-progress" class="mt-4 hidden">
+                <div class="flex justify-between mb-1">
+                    <span id="progress-text">Uploading...</span>
+                    <span id="progress-percentage">0%</span>
+                </div>
+                <progress class="progress progress-primary w-full" id="progress-bar" value="0" max="100"></progress>
+            </div>
+            
+            <div id="upload-status" class="mt-4"></div>
+            
+            <div id="upload-results" class="mt-4 hidden">
+                <h3 class="font-bold">Upload Results</h3>
+                <div class="stats shadow w-full mt-2">
+                    <div class="stat">
+                        <div class="stat-title">Files Uploaded</div>
+                        <div class="stat-value text-primary" id="result-files-count">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-title">Total Size</div>
+                        <div class="stat-value text-secondary" id="result-total-size">0 bytes</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-title">Duration</div>
+                        <div class="stat-value" id="result-duration">0s</div>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <a href="{% if organization %}{% url 'storage:organization_contents' organization=organization %}{% else %}{% url 'storage:archivist_dashboard' %}{% endif %}" class="btn btn-outline">
+                        View Files
+                    </a>
                 </div>
             </div>
             
-            <div id="upload-progress-container" class="card shadow-sm mb-4 d-none">
-                <div class="card-body">
-                    <h5 class="card-title">Upload Progress</h5>
-                    <div class="mb-3">
-                        <span id="progress-file-name" class="d-block mb-1"></span>
-                        <div class="progress">
-                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
-                        </div>
-                        <span id="progress-text" class="d-block mt-1"></span>
-                    </div>
-                </div>
-            </div>
-            
-            <div id="upload-result-container" class="card shadow-sm mb-4 d-none">
-                <div class="card-body">
-                    <h5 class="card-title">Upload Result</h5>
-                    <div id="upload-result" class="mb-3"></div>
-                </div>
-            </div>
-            
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h5 class="card-title">Features</h5>
-                    <ul>
-                        <li>Upload files of any size (even multiple GB)</li>
-                        <li>Parallel uploading for multiple files</li>
-                        <li>Optimized multipart uploads for large files</li>
-                        <li>Progress tracking for each upload</li>
-                        <li>Automatic recovery from transient network issues</li>
-                    </ul>
-                </div>
+            <div class="mt-6 p-4 bg-base-200 rounded-lg">
+                <h4 class="font-semibold mb-2">Upload Features</h4>
+                <ul class="list-disc list-inside text-sm space-y-1">
+                    <li><strong>Smart upload strategy:</strong> Files >50MB use resumable multipart uploads</li>
+                    <li><strong>Automatic resuming:</strong> Interrupted uploads continue from where they left off</li>
+                    <li><strong>Batch processing:</strong> Large file sets are processed in optimized chunks</li>
+                    <li><strong>Progress tracking:</strong> Real-time progress updates with estimated completion time</li>
+                    <li><strong>Error recovery:</strong> Automatic retry with exponential backoff</li>
+                </ul>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    // Note: Upload form functionality is now handled by the UploadFormHandler
+    // class included in base.html. The handler automatically initializes
+    // when it detects the streaming-upload-form element.
+    
+    console.log('📁 Multipart upload template loaded - resumable upload support enabled');
+</script>
 {% endblock %}
 
-{% block extra_js %}
-<script src="{% static 'js/src/s3/streaming-upload.js' %}"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const folderNameInput = document.getElementById('folder-name');
-        const fileInput = document.getElementById('file-input');
-        const uploadBtn = document.getElementById('upload-btn');
-        const cancelBtn = document.getElementById('cancel-btn');
-        const progressContainer = document.getElementById('upload-progress-container');
-        const progressBar = document.getElementById('progress-bar');
-        const progressText = document.getElementById('progress-text');
-        const progressFileName = document.getElementById('progress-file-name');
-        const resultContainer = document.getElementById('upload-result-container');
-        const resultDiv = document.getElementById('upload-result');
-        
-        let uploadHandler = new StreamingUploadHandler();
-        let currentUploadId = null;
-        
-        // Handle file upload when the upload button is clicked
-        uploadBtn.addEventListener('click', function() {
-            const files = fileInput.files;
-            const folderName = folderNameInput.value.trim();
-            
-            if (!files || files.length === 0) {
-                alert('Please select at least one file to upload');
-                return;
-            }
-            
-            // Reset UI
-            progressContainer.classList.remove('d-none');
-            resultContainer.classList.add('d-none');
-            progressBar.style.width = '0%';
-            progressBar.setAttribute('aria-valuenow', 0);
-            
-            if (files.length === 1) {
-                // Single file upload
-                const file = files[0];
-                progressText.textContent = 'Initializing upload...';
-                progressFileName.textContent = file.name;
-                
-                uploadBtn.disabled = true;
-                cancelBtn.disabled = false;
-                
-                // Start the upload
-                currentUploadId = uploadHandler.uploadFile(
-                    file,
-                    folderName,
-                    // Progress callback
-                    function(progress) {
-                        progressBar.style.width = progress.percent + '%';
-                        progressBar.setAttribute('aria-valuenow', progress.percent);
-                        progressText.textContent = `${progress.percent}% (${formatSize(progress.loaded)} of ${formatSize(progress.total)})`;
-                    },
-                    // Success callback
-                    function(result) {
-                        progressContainer.classList.add('d-none');
-                        resultContainer.classList.remove('d-none');
-                        resultDiv.innerHTML = createSuccessMessage(result);
-                        uploadBtn.disabled = false;
-                        cancelBtn.disabled = true;
-                        currentUploadId = null;
-                    },
-                    // Error callback
-                    function(error) {
-                        progressContainer.classList.add('d-none');
-                        resultContainer.classList.remove('d-none');
-                        resultDiv.innerHTML = createErrorMessage(error);
-                        uploadBtn.disabled = false;
-                        cancelBtn.disabled = true;
-                        currentUploadId = null;
-                    }
-                );
-            } else {
-                // Multiple files upload
-                progressText.textContent = 'Initializing batch upload...';
-                progressFileName.textContent = `${files.length} files selected`;
-                
-                uploadBtn.disabled = true;
-                cancelBtn.disabled = false;
-                
-                // Start the batch upload
-                currentUploadId = uploadHandler.uploadFiles(
-                    Array.from(files),
-                    folderName,
-                    // Progress callback
-                    function(progress) {
-                        progressBar.style.width = progress.percent + '%';
-                        progressBar.setAttribute('aria-valuenow', progress.percent);
-                        progressText.textContent = `${progress.percent}% (${formatSize(progress.loaded)} of ${formatSize(progress.total)})`;
-                    },
-                    // Success callback
-                    function(result) {
-                        progressContainer.classList.add('d-none');
-                        resultContainer.classList.remove('d-none');
-                        resultDiv.innerHTML = createBatchSuccessMessage(result);
-                        uploadBtn.disabled = false;
-                        cancelBtn.disabled = true;
-                        currentUploadId = null;
-                    },
-                    // Error callback
-                    function(error) {
-                        progressContainer.classList.add('d-none');
-                        resultContainer.classList.remove('d-none');
-                        resultDiv.innerHTML = createErrorMessage(error);
-                        uploadBtn.disabled = false;
-                        cancelBtn.disabled = true;
-                        currentUploadId = null;
-                    }
-                );
-            }
-        });
-        
-        // Cancel the upload when the cancel button is clicked
-        cancelBtn.addEventListener('click', function() {
-            if (currentUploadId) {
-                uploadHandler.cancelUpload(currentUploadId);
-                cancelBtn.disabled = true;
-                progressText.textContent = 'Cancelling upload...';
-                
-                // Re-enable the upload button after a short delay
-                setTimeout(() => {
-                    uploadBtn.disabled = false;
-                    progressContainer.classList.add('d-none');
-                    resultContainer.classList.remove('d-none');
-                    resultDiv.innerHTML = createCancelMessage();
-                }, 500);
-            }
-        });
-        
-        // Helper function to format file size
-        function formatSize(bytes) {
-            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-            let size = bytes;
-            let unitIndex = 0;
-            
-            while (size >= 1024 && unitIndex < units.length - 1) {
-                size /= 1024;
-                unitIndex++;
-            }
-            
-            return unitIndex === 0
-                ? `${size} ${units[unitIndex]}`
-                : `${size.toFixed(2)} ${units[unitIndex]}`;
-        }
-        
-        // Helper function to create success message for single file
-        function createSuccessMessage(result) {
-            return `
-                <div class="alert alert-success">
-                    <h5 class="alert-heading">Upload Complete!</h5>
-                    <p>File <strong>${result.file_name}</strong> was successfully uploaded.</p>
-                    <hr>
-                    <p class="mb-0">
-                        <strong>S3 Key:</strong> ${result.s3_key}<br>
-                        <strong>Size:</strong> ${result.file_size_formatted || formatSize(result.file_size)}
-                    </p>
-                </div>
-            `;
-        }
-        
-        // Helper function to create success message for batch upload
-        function createBatchSuccessMessage(result) {
-            return `
-                <div class="alert alert-success">
-                    <h5 class="alert-heading">Batch Upload Complete!</h5>
-                    <p>Successfully uploaded <strong>${result.total_uploaded}</strong> files.</p>
-                    <hr>
-                    <p class="mb-0">
-                        <strong>Total Size:</strong> ${result.total_size_formatted}<br>
-                        <strong>Duration:</strong> ${result.duration_seconds.toFixed(2)} seconds
-                    </p>
-                </div>
-            `;
-        }
-        
-        // Helper function to create error message
-        function createErrorMessage(error) {
-            return `
-                <div class="alert alert-danger">
-                    <h5 class="alert-heading">Upload Failed!</h5>
-                    <p>${error.error}</p>
-                    <hr>
-                    <p class="mb-0">Please try again or contact support if the problem persists.</p>
-                </div>
-            `;
-        }
-        
-        // Helper function to create cancel message
-        function createCancelMessage() {
-            return `
-                <div class="alert alert-warning">
-                    <h5 class="alert-heading">Upload Cancelled</h5>
-                    <p>The upload was cancelled by the user.</p>
-                    <hr>
-                    <p class="mb-0">You can select files and try again.</p>
-                </div>
-            `;
-        }
-    });
-</script>
-{% endblock %} 
+ 

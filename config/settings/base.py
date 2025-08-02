@@ -366,3 +366,31 @@ HUEY = {
         'health_check_interval': 1,  # Check worker health every second
     },
 }
+
+# Multipart Upload Configuration
+MULTIPART_UPLOAD_SETTINGS = {
+    # File size thresholds
+    'multipart_threshold': 5 * 1024 * 1024,  # 5MB - start multipart earlier
+    'resumable_threshold': 50 * 1024 * 1024,  # 50MB - use resumable upload
+    
+    # Chunk configuration
+    'chunk_size': 8 * 1024 * 1024,  # 8MB chunks for better throughput
+    'resumable_chunk_size': 8 * 1024 * 1024,  # 8MB for resumable uploads
+    
+    # Concurrency settings
+    'max_workers': 8,  # Reduced to prevent overwhelming
+    'max_concurrency': 6,  # Concurrent uploads
+    
+    # Retry configuration
+    'max_retries': 5,
+    'retry_delay_base': 1.0,  # Base delay in seconds
+    'retry_max_delay': 60.0,  # Max delay in seconds
+    
+    # Timeout settings
+    'chunk_timeout': 300,  # 5 minutes per chunk
+    'total_timeout': 3600,  # 1 hour total
+    
+    # Performance tuning
+    'enable_resume': True,
+    'cleanup_failed_uploads': True,
+}
