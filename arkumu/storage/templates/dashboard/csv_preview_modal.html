@@ -1,7 +1,7 @@
 <!-- CSV Preview Modal Content -->
 <div class="flex justify-between items-center mb-4">
     <h3 class="text-lg font-bold">{{ filename }}</h3>
-    <button class="btn btn-sm btn-circle btn-ghost" onclick="document.getElementById('csv-preview-modal').close()">✕</button>
+    <button class="btn btn-sm btn-circle btn-ghost" onclick="document.getElementById('file-viewer-modal').close()">✕</button>
 </div>
 
 <!-- File Information -->
@@ -94,7 +94,7 @@
         Path: {{ file_path }}
     </div>
     <div class="flex gap-2">
-        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('csv-preview-modal').close()">
+        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('file-viewer-modal').close()">
             Close
         </button>
     </div>

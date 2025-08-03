@@ -630,3 +630,307 @@ def csv_preview(request, bucket_type, file_path):
             "error": error_message,
             "file_path": file_path
         }) 
+
+
+def file_viewer(request, bucket_type, file_path):
+    """
+    Generic file viewer that can handle multiple file types.
+    Routes to appropriate viewer based on file extension.
+    """
+    import os
+    import mimetypes
+    from django.http import HttpResponse
+    
+    try:
+        bucket_service = BucketService()
+        
+        # Determine which bucket to use (same logic as csv_preview)
+        bucket_name = bucket_service.base_s3_service.ingest_bucket
+        if bucket_type == "production":
+            bucket_name = bucket_service.base_s3_service.production_bucket
+        elif bucket_type.startswith("org-"):
+            # Handle organization-specific buckets
+            org_name = bucket_type[4:]  # Remove 'org-' prefix
+            bucket_name = bucket_service.get_organization_bucket(org_name)
+        
+        # Get file info from S3 metadata and key
+        filename = file_path.split('/')[-1]  # Get filename from path
+        file_ext = '.' + file_path.split('.')[-1].lower() if '.' in file_path else ''
+        
+        # Get actual content type from S3 metadata
+        try:
+            head_response = bucket_service.base_s3_service.s3_client.head_object(
+                Bucket=bucket_name,
+                Key=file_path
+            )
+            mime_type = head_response.get('ContentType', 'application/octet-stream')
+        except Exception as e:
+            logger.warning(f"Could not get S3 metadata for {file_path}: {e}")
+            # Fallback to guessing from filename
+            mime_type, _ = mimetypes.guess_type(filename)
+        
+        # Handle CSV files using existing CSV viewer
+        if file_ext in ['.csv'] or mime_type in ['text/csv']:
+            return csv_preview(request, bucket_type, file_path)
+        
+        # Handle images (check both extension and MIME type)
+        elif (file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'] or 
+              mime_type.startswith('image/')):
+            return _handle_image_file(request, bucket_service, bucket_name, file_path, filename, mime_type)
+        
+        # Handle PDFs (check both extension and MIME type) - DISABLED
+        # elif file_ext in ['.pdf'] or mime_type == 'application/pdf':
+        #     return _handle_pdf_file(request, bucket_service, bucket_name, file_path, filename, bucket_type)
+        
+        # Handle videos (check both extension and MIME type)
+        elif (file_ext in ['.mp4', '.webm', '.ogg', '.avi', '.mov'] or 
+              mime_type.startswith('video/')):
+            return _handle_video_file(request, bucket_service, bucket_name, file_path, filename, mime_type, bucket_type)
+        
+        # Handle audio files (check both extension and MIME type)
+        elif (file_ext in ['.mp3', '.wav', '.ogg', '.flac', '.m4a'] or 
+              mime_type.startswith('audio/')):
+            return _handle_audio_file(request, bucket_service, bucket_name, file_path, filename, mime_type, bucket_type)
+        
+        # Handle text files (check both extension and MIME type)
+        elif (file_ext in ['.txt', '.json', '.xml', '.html', '.css', '.js', '.py', '.java', '.c', '.cpp', '.md'] or 
+              mime_type.startswith('text/')):
+            return _handle_text_file(request, bucket_service, bucket_name, file_path, filename, file_ext)
+        
+        # Unsupported file type
+        else:
+            return render(request, "dashboard/file_viewer_error.html", {
+                "error": f"File type '{file_ext}' is not supported for preview",
+                "file_path": file_path,
+                "filename": filename
+            })
+            
+    except Exception as e:
+        logger.exception(f"Error in file viewer for {file_path}")
+        return render(request, "dashboard/file_viewer_error.html", {
+            "error": f"Error loading file preview: {str(e)}",
+            "file_path": file_path,
+            "filename": os.path.basename(file_path)
+        })
+
+
+def _handle_image_file(request, bucket_service, bucket_name, file_path, filename, mime_type):
+    """Handle image file viewing"""
+    try:
+        # Get file content as binary
+        result = bucket_service.get_file_content(bucket_name, file_path)
+        
+        if not result.get("success", False):
+            raise Exception(result.get('error', 'Unknown error'))
+        
+        content = result.get("content")
+        if not content:
+            raise Exception("File is empty")
+        
+        # Convert to base64 for display
+        import base64
+        if isinstance(content, str):
+            content = content.encode('utf-8')
+        
+        base64_content = base64.b64encode(content).decode('utf-8')
+        
+        return render(request, "dashboard/file_viewer_modal.html", {
+            "viewer_type": "image",
+            "filename": filename,
+            "file_path": file_path,
+            "mime_type": mime_type or "image/jpeg",
+            "content": base64_content,
+            "file_size": len(content)
+        })
+        
+    except Exception as e:
+        return render(request, "dashboard/file_viewer_error.html", {
+            "error": f"Error loading image: {str(e)}",
+            "file_path": file_path,
+            "filename": filename
+        })
+
+
+def _handle_pdf_file(request, bucket_service, bucket_name, file_path, filename, bucket_type):
+    """Handle PDF file viewing"""
+    try:
+        # Use the bucket_type passed from the caller
+        stream_url = f"/storage/stream/{bucket_type}/{file_path}"
+        
+        return render(request, "dashboard/file_viewer_modal.html", {
+            "viewer_type": "pdf",
+            "filename": filename,
+            "file_path": file_path,
+            "stream_url": stream_url
+        })
+        
+    except Exception as e:
+        return render(request, "dashboard/file_viewer_error.html", {
+            "error": f"Error loading PDF: {str(e)}",
+            "file_path": file_path,
+            "filename": filename
+        })
+
+
+def _handle_video_file(request, bucket_service, bucket_name, file_path, filename, mime_type, bucket_type):
+    """Handle video file viewing"""
+    try:
+        # Use the bucket_type passed from the caller
+        stream_url = f"/storage/stream/{bucket_type}/{file_path}"
+        
+        return render(request, "dashboard/file_viewer_modal.html", {
+            "viewer_type": "video",
+            "filename": filename,
+            "file_path": file_path,
+            "mime_type": mime_type or "video/mp4",
+            "stream_url": stream_url
+        })
+        
+    except Exception as e:
+        return render(request, "dashboard/file_viewer_error.html", {
+            "error": f"Error loading video: {str(e)}",
+            "file_path": file_path,
+            "filename": filename
+        })
+
+
+def _handle_audio_file(request, bucket_service, bucket_name, file_path, filename, mime_type, bucket_type):
+    """Handle audio file viewing"""
+    try:
+        # Use the bucket_type passed from the caller
+        stream_url = f"/storage/stream/{bucket_type}/{file_path}"
+        
+        return render(request, "dashboard/file_viewer_modal.html", {
+            "viewer_type": "audio",
+            "filename": filename,
+            "file_path": file_path,
+            "mime_type": mime_type or "audio/mpeg",
+            "stream_url": stream_url
+        })
+        
+    except Exception as e:
+        return render(request, "dashboard/file_viewer_error.html", {
+            "error": f"Error loading audio: {str(e)}",
+            "file_path": file_path,
+            "filename": filename
+        })
+
+
+def _handle_text_file(request, bucket_service, bucket_name, file_path, filename, file_ext):
+    """Handle text file viewing"""
+    try:
+        result = bucket_service.get_file_content(bucket_name, file_path)
+        
+        if not result.get("success", False):
+            raise Exception(result.get('error', 'Unknown error'))
+        
+        content = result.get("content")
+        if not content:
+            raise Exception("File is empty")
+        
+        # Decode content if it's bytes
+        if isinstance(content, bytes):
+            try:
+                content = content.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    content = content.decode('latin-1')
+                except UnicodeDecodeError:
+                    raise Exception("Unable to decode file content")
+        
+        # Limit content for preview (first 10KB)
+        max_chars = 10000
+        truncated = len(content) > max_chars
+        if truncated:
+            content = content[:max_chars]
+        
+        return render(request, "dashboard/file_viewer_modal.html", {
+            "viewer_type": "text",
+            "filename": filename,
+            "file_path": file_path,
+            "content": content,
+            "file_extension": file_ext,
+            "truncated": truncated,
+            "total_chars": len(content)
+        })
+        
+    except Exception as e:
+        return render(request, "dashboard/file_viewer_error.html", {
+            "error": f"Error loading text file: {str(e)}",
+            "file_path": file_path,
+            "filename": filename
+        })
+
+
+@general_login_required
+def stream_file(request, bucket_type, file_path):
+    """
+    Stream file content with HTTP range request support.
+    Essential for video streaming - enables seeking, progressive download, and efficient bandwidth usage.
+    """
+    try:
+        bucket_service = BucketService()
+        
+        # Determine which bucket to use (same logic as other views)
+        bucket_name = bucket_service.base_s3_service.ingest_bucket
+        if bucket_type == "production":
+            bucket_name = bucket_service.base_s3_service.production_bucket
+        elif bucket_type.startswith("org-"):
+            # Handle organization-specific buckets
+            org_name = bucket_type[4:]  # Remove 'org-' prefix
+            bucket_name = bucket_service.get_organization_bucket(org_name)
+        
+        # Get range header from request
+        range_header = request.META.get('HTTP_RANGE')
+        
+        # Use the new streaming service with range support
+        result = bucket_service.stream_file_with_range(bucket_name, file_path, range_header)
+        
+        if not result.get("success", False):
+            error_message = result.get('error', 'Unknown error')
+            logger.error(f"Streaming failed for {file_path}: {error_message}")
+            return HttpResponse(error_message, status=404)
+        
+        # Create streaming response with appropriate headers
+        content = result.get("content")
+        content_type = result.get("content_type", "application/octet-stream")
+        status_code = result.get("status_code", 200)
+        
+        response = HttpResponse(content, content_type=content_type, status=status_code)
+        
+        # Set essential headers for streaming and caching
+        response["Accept-Ranges"] = result.get("accept_ranges", "bytes")
+        response["Content-Length"] = str(len(content))
+        
+        # Add ETag and Last-Modified for caching
+        if result.get("etag"):
+            response["ETag"] = f'"{result["etag"]}"'
+        if result.get("last_modified"):
+            # Format as HTTP date
+            from django.utils.http import http_date
+            import calendar
+            timestamp = calendar.timegm(result["last_modified"].timetuple())
+            response["Last-Modified"] = http_date(timestamp)
+        
+        # Add cache headers for media files
+        filename = os.path.basename(file_path)
+        file_ext = os.path.splitext(filename)[1].lower()
+        if file_ext in ['.mp4', '.webm', '.ogg', '.avi', '.mov', '.mp3', '.wav', '.flac', '.jpg', '.jpeg', '.png', '.gif']:
+            # Cache media files for 1 hour
+            response["Cache-Control"] = "public, max-age=3600"
+        
+        # Add range-specific headers for partial content
+        if status_code == 206:
+            response["Content-Range"] = result.get("content_range")
+            response["Content-Length"] = str(result.get("partial_content_length", len(content)))
+            logger.info(f"📹 Streaming partial content for {file_path}: {result.get('content_range')}")
+        else:
+            response["Content-Length"] = str(result.get("content_length", len(content)))
+            logger.info(f"📹 Streaming full content for {file_path}: {len(content)} bytes")
+        
+        return response
+        
+    except Exception as e:
+        error_message = f"Error streaming file: {str(e)}"
+        logger.exception(error_message)
+        return HttpResponse(error_message, status=500)

@@ -1,0 +1,169 @@
+{% comment %}
+Generic file viewer modal content for different file types
+{% endcomment %}
+
+<div class="flex items-center justify-between mb-4">
+    <h3 class="font-bold text-lg">{{ filename }}</h3>
+    <button class="btn btn-sm btn-circle btn-ghost" onclick="document.getElementById('file-viewer-modal').close()">✕</button>
+</div>
+
+<div class="divider my-2"></div>
+
+<div class="file-viewer-content">
+    {% if viewer_type == "image" %}
+        <!-- Image Viewer -->
+        <div class="flex flex-col items-center">
+            <img src="data:{{ mime_type }};base64,{{ content }}" 
+                 alt="{{ filename }}" 
+                 class="max-w-full max-h-[600px] object-contain rounded-lg shadow-lg">
+            <div class="mt-4 text-sm text-base-content/70">
+                <p>File Size: {{ file_size|filesizeformat }}</p>
+                <p>Type: {{ mime_type }}</p>
+            </div>
+        </div>
+
+    {% elif viewer_type == "pdf" %}
+        <!-- PDF Viewer -->
+        <div class="w-full">
+            <iframe src="{{ stream_url }}" 
+                    class="w-full h-[700px] border rounded-lg"
+                    title="{{ filename }}">
+                <p>Your browser does not support PDFs. 
+                   <a href="{{ stream_url }}" target="_blank">Download the PDF</a>
+                </p>
+            </iframe>
+        </div>
+
+    {% elif viewer_type == "video" %}
+        <!-- Video Viewer -->
+        <div class="flex flex-col items-center">
+            <video controls 
+                   class="max-w-full max-h-[600px] rounded-lg shadow-lg"
+                   preload="metadata">
+                <source src="{{ stream_url }}" type="{{ mime_type }}">
+                Your browser does not support the video tag.
+            </video>
+            <div class="mt-4 text-sm text-base-content/70">
+                <p>Type: {{ mime_type }}</p>
+            </div>
+        </div>
+
+    {% elif viewer_type == "audio" %}
+        <!-- Audio Viewer -->
+        <div class="flex flex-col items-center space-y-4">
+            <div class="w-full max-w-md">
+                <!-- Waveform container for advanced audio player -->
+                <div id="waveform" class="w-full h-20 bg-base-200 rounded-lg mb-4"></div>
+                
+                <!-- Fallback audio element -->
+                <audio id="audioPlayer" 
+                       controls 
+                       class="w-full"
+                       src="{{ stream_url }}">
+                    Your browser does not support the audio element.
+                </audio>
+                
+                <!-- Play/Pause button for waveform -->
+                <div class="flex justify-center mt-4">
+                    <button id="playButton" class="btn btn-circle btn-primary">
+                        <svg class="play-icon w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                        <svg class="pause-icon w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="text-sm text-base-content/70">
+                <p>Type: {{ mime_type }}</p>
+            </div>
+        </div>
+
+    {% elif viewer_type == "text" %}
+        <!-- Text File Viewer -->
+        <div class="w-full">
+            <div class="bg-base-200 rounded-lg p-4 mb-4">
+                <div class="text-sm text-base-content/70 mb-2">
+                    <span>File Type: {{ file_extension }}</span>
+                    {% if truncated %}
+                        <span class="ml-4 text-warning">⚠️ Content truncated (showing first {{ total_chars }} characters)</span>
+                    {% endif %}
+                </div>
+                <pre class="overflow-auto max-h-[500px] text-sm"><code class="language-{{ file_extension|slice:"1:" }}">{{ content }}</code></pre>
+            </div>
+        </div>
+
+    {% elif viewer_type == "csv" %}
+        <!-- CSV content will be included here when routed from CSV viewer -->
+        {{ csv_content|safe }}
+
+    {% else %}
+        <!-- Unsupported file type -->
+        <div class="alert alert-warning">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span>This file type is not supported for preview</span>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Action buttons -->
+<div class="modal-action">
+    <button class="btn btn-sm btn-secondary" onclick="document.getElementById('file-viewer-modal').close()">
+        Close
+    </button>
+</div>
+
+<!-- Initialize viewers after content is loaded -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize file viewers based on type
+    const viewerType = "{{ viewer_type }}";
+    
+    if (viewerType === "audio") {
+        // Initialize audio player with waveform if WaveSurfer is available
+        const audioElement = document.querySelector('#audioPlayer');
+        if (audioElement && window.WaveSurfer) {
+            const wavesurfer = WaveSurfer.create({
+                container: '#waveform',
+                waveColor: '#4F46E5',
+                progressColor: '#818CF8',
+                cursorColor: '#C7D2FE',
+                barWidth: 2,
+                barRadius: 3,
+                cursorWidth: 1,
+                height: 80,
+                barGap: 2
+            });
+            
+            wavesurfer.load(audioElement.src);
+            
+            const playButton = document.querySelector('#playButton');
+            if (playButton) {
+                playButton.addEventListener('click', () => {
+                    wavesurfer.playPause();
+                    
+                    const isPlaying = wavesurfer.isPlaying();
+                    const playIcon = playButton.querySelector('.play-icon');
+                    const pauseIcon = playButton.querySelector('.pause-icon');
+                    
+                    if (isPlaying) {
+                        playIcon.classList.add('hidden');
+                        pauseIcon.classList.remove('hidden');
+                    } else {
+                        playIcon.classList.remove('hidden');
+                        pauseIcon.classList.add('hidden');
+                    }
+                });
+            }
+        }
+    } else if (viewerType === "text") {
+        // Initialize code highlighting if Prism.js is available
+        if (window.Prism) {
+            Prism.highlightAll();
+        }
+    }
+});
+</script>
