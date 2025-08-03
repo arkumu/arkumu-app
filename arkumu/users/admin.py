@@ -62,6 +62,56 @@ class UserRoleFilter(SimpleListFilter):
         return queryset
 
 
+class LoginActivityFilter(SimpleListFilter):
+    """Filter users by their login activity."""
+    title = _('login activity')
+    parameter_name = 'login_activity'
+    
+    def lookups(self, request, model_admin):
+        return (
+            ('never', _('Never logged in')),
+            ('active', _('Active (within 7 days)')),
+            ('recent', _('Recent (within 30 days)')),
+            ('inactive', _('Inactive (over 30 days)')),
+            ('shibboleth_only', _('Shibboleth login only')),
+            ('regular_only', _('Regular login only')),
+        )
+    
+    def queryset(self, request, queryset):
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        now = timezone.now()
+        seven_days_ago = now - timedelta(days=7)
+        thirty_days_ago = now - timedelta(days=30)
+        
+        if self.value() == 'never':
+            return queryset.filter(last_login__isnull=True, last_shibboleth_login__isnull=True)
+        elif self.value() == 'active':
+            from django.db.models import Q
+            return queryset.filter(
+                Q(last_login__gte=seven_days_ago) | Q(last_shibboleth_login__gte=seven_days_ago)
+            )
+        elif self.value() == 'recent':
+            from django.db.models import Q
+            return queryset.filter(
+                Q(last_login__gte=thirty_days_ago) | Q(last_shibboleth_login__gte=thirty_days_ago)
+            ).exclude(
+                Q(last_login__gte=seven_days_ago) | Q(last_shibboleth_login__gte=seven_days_ago)
+            )
+        elif self.value() == 'inactive':
+            from django.db.models import Q
+            return queryset.exclude(
+                Q(last_login__gte=thirty_days_ago) | Q(last_shibboleth_login__gte=thirty_days_ago)
+            ).exclude(last_login__isnull=True, last_shibboleth_login__isnull=True)
+        elif self.value() == 'shibboleth_only':
+            return queryset.filter(last_shibboleth_login__isnull=False, last_login__isnull=True)
+        elif self.value() == 'regular_only':
+            return queryset.filter(last_login__isnull=False, last_shibboleth_login__isnull=True)
+        
+        return queryset
+
+
 class UserInline(admin.TabularInline):
     """Inline for displaying users in Organization admin"""
     model = User
@@ -318,6 +368,10 @@ class UserAdmin(auth_admin.UserAdmin):
                 ),
             },
         ),
+        (_("Login Activity"), {
+            "fields": ("login_activity_display",),
+            "description": "User login history and authentication activity."
+        }),
         (_("Important dates"), {"fields": ("last_login", "date_joined")}),
     )
     list_display = [
@@ -327,10 +381,10 @@ class UserAdmin(auth_admin.UserAdmin):
         "organization_link", 
         "role_badge", 
         "auth_source_badge",
+        "login_status",
         "is_active", 
         "is_staff", 
-        "is_superuser",
-        "last_login_formatted"
+        "is_superuser"
     ]
     list_filter = [
         "is_active", 
@@ -338,6 +392,7 @@ class UserAdmin(auth_admin.UserAdmin):
         "is_superuser", 
         "role",
         UserRoleFilter,
+        LoginActivityFilter,
         "organization",
         "auth_source",
         "is_federated_user",
@@ -346,7 +401,7 @@ class UserAdmin(auth_admin.UserAdmin):
     ]
     search_fields = ["name", "username", "email", "shibboleth_eppn"]
     autocomplete_fields = ["organization"]
-    readonly_fields = ["calculated_permissions", "last_login_formatted"]
+    readonly_fields = ["calculated_permissions", "login_activity_display"]
     ordering = ['-date_joined']
     
     def get_queryset(self, request):
@@ -399,22 +454,145 @@ class UserAdmin(auth_admin.UserAdmin):
     auth_source_badge.short_description = _('Auth Source')
     auth_source_badge.admin_order_field = 'auth_source'
     
-    def last_login_formatted(self, obj):
-        """Display formatted last login with relative time."""
-        if not obj.last_login:
-            return '-'
-        
+    def login_status(self, obj):
+        """Display comprehensive login status with both regular and Shibboleth logins."""
         from django.utils import timezone
         from django.utils.timesince import timesince
         
-        time_since = timesince(obj.last_login, timezone.now())
+        regular_login = obj.last_login
+        shib_login = obj.last_shibboleth_login
+        
+        # Determine the most recent login
+        most_recent = None
+        login_type = None
+        
+        if regular_login and shib_login:
+            if regular_login > shib_login:
+                most_recent = regular_login
+                login_type = "Regular"
+            else:
+                most_recent = shib_login
+                login_type = "Shibboleth"
+        elif regular_login:
+            most_recent = regular_login
+            login_type = "Regular"
+        elif shib_login:
+            most_recent = shib_login
+            login_type = "Shibboleth"
+        
+        if not most_recent:
+            return format_html('<span style="color: #dc3545;">Never logged in</span>')
+        
+        time_since = timesince(most_recent, timezone.now())
+        
+        # Color coding based on how recent the login is
+        now = timezone.now()
+        days_since = (now - most_recent).days
+        
+        if days_since <= 1:
+            color = '#28a745'  # Green - very recent
+            status = 'Active'
+        elif days_since <= 7:
+            color = '#17a2b8'  # Blue - recent
+            status = 'Recent'
+        elif days_since <= 30:
+            color = '#ffc107'  # Yellow - moderate
+            status = 'Moderate'
+        else:
+            color = '#dc3545'  # Red - old
+            status = 'Inactive'
+        
         return format_html(
-            '{}<br><small style="color: #666;">{} ago</small>',
-            obj.last_login.strftime('%Y-%m-%d %H:%M'),
+            '<div>'
+            '<span style="color: {}; font-weight: bold;">{}</span><br>'
+            '<small style="color: #666;">{} via {}<br>{} ago</small>'
+            '</div>',
+            color,
+            status,
+            most_recent.strftime('%Y-%m-%d %H:%M'),
+            login_type,
             time_since
         )
-    last_login_formatted.short_description = _('Last Login')
-    last_login_formatted.admin_order_field = 'last_login'
+    login_status.short_description = _('Login Status')
+    login_status.admin_order_field = 'last_login'
+    
+    def login_activity_display(self, obj):
+        """Display detailed login activity in the admin form."""
+        from django.utils import timezone
+        from django.utils.timesince import timesince
+        
+        if not obj.pk:
+            return '-'
+        
+        regular_login = obj.last_login
+        shib_login = obj.last_shibboleth_login
+        
+        activity_html = []
+        
+        # Regular login info
+        if regular_login:
+            time_since = timesince(regular_login, timezone.now())
+            activity_html.append(
+                f'<div style="margin-bottom: 10px;">'
+                f'<strong>🔑 Regular Login:</strong><br>'
+                f'<span style="color: #28a745;">{regular_login.strftime("%Y-%m-%d %H:%M:%S")}</span><br>'
+                f'<small style="color: #666;">({time_since} ago)</small>'
+                f'</div>'
+            )
+        else:
+            activity_html.append(
+                f'<div style="margin-bottom: 10px;">'
+                f'<strong>🔑 Regular Login:</strong><br>'
+                f'<span style="color: #dc3545;">Never</span>'
+                f'</div>'
+            )
+        
+        # Shibboleth login info
+        if shib_login:
+            time_since = timesince(shib_login, timezone.now())
+            activity_html.append(
+                f'<div style="margin-bottom: 10px;">'
+                f'<strong>🔐 Shibboleth Login:</strong><br>'
+                f'<span style="color: #28a745;">{shib_login.strftime("%Y-%m-%d %H:%M:%S")}</span><br>'
+                f'<small style="color: #666;">({time_since} ago)</small>'
+                f'</div>'
+            )
+        else:
+            activity_html.append(
+                f'<div style="margin-bottom: 10px;">'
+                f'<strong>🔐 Shibboleth Login:</strong><br>'
+                f'<span style="color: #dc3545;">Never</span>'
+                f'</div>'
+            )
+        
+        # Account age
+        account_age = timesince(obj.date_joined, timezone.now())
+        activity_html.append(
+            f'<div style="margin-bottom: 10px; padding-top: 10px; border-top: 1px solid #ddd;">'
+            f'<strong>📅 Account Created:</strong><br>'
+            f'{obj.date_joined.strftime("%Y-%m-%d %H:%M:%S")}<br>'
+            f'<small style="color: #666;">({account_age} ago)</small>'
+            f'</div>'
+        )
+        
+        # Login frequency estimate
+        if regular_login or shib_login:
+            most_recent = max(filter(None, [regular_login, shib_login]))
+            days_since_joined = (timezone.now() - obj.date_joined).days
+            days_since_last_login = (timezone.now() - most_recent).days
+            
+            if days_since_joined > 0:
+                activity_level = "Active" if days_since_last_login <= 7 else "Moderate" if days_since_last_login <= 30 else "Inactive"
+                activity_html.append(
+                    f'<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">'
+                    f'<strong>Activity Level:</strong> '
+                    f'<span style="color: {"#28a745" if activity_level == "Active" else "#ffc107" if activity_level == "Moderate" else "#dc3545"};">'
+                    f'{activity_level}</span>'
+                    f'</div>'
+                )
+        
+        return mark_safe(''.join(activity_html))
+    login_activity_display.short_description = _('Login Activity')
     
     def calculated_permissions(self, obj):
         """Display calculated permissions based on role."""

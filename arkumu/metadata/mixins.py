@@ -6,32 +6,26 @@ from .models.resource import Resource
 from .utils import get_public_catalog_queryset, get_user_accessible_resources
 
 
-class PublicCatalogMixin:
+class PublicCatalogMixin(LoginRequiredMixin):
     """
-    Mixin for public catalog views accessible to anonymous users.
-    Automatically filters to show only publicly approved resources.
+    Mixin for catalog views requiring authentication.
+    Shows publicly approved resources to authenticated users only.
     """
     
     def get_queryset(self):
-        """Return only publicly accessible resources for catalog display."""
+        """Return publicly accessible resources for authenticated users only."""
         if hasattr(super(), 'get_queryset'):
             base_queryset = super().get_queryset()
         else:
             base_queryset = Resource.objects.all()
             
-        # For anonymous users, show only public catalog
-        if not hasattr(self.request, 'user') or not self.request.user.is_authenticated:
-            return get_public_catalog_queryset()
-        
-        # For authenticated users, use permission-based filtering
+        # Only authenticated users can access catalog
         return get_user_accessible_resources(self.request.user)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['is_public_catalog'] = True
         context['show_edit_controls'] = (
-            hasattr(self.request, 'user') and 
-            self.request.user.is_authenticated and
             self.request.user.has_role_permission('can_edit_org_data')
         )
         return context
@@ -148,8 +142,8 @@ class BulkActionMixin:
 # Composed mixins for common patterns
 class PublicCatalogDetailMixin(PublicCatalogMixin, ResourceOwnershipMixin):
     """
-    Combined mixin for public catalog detail views.
-    Allows public access but respects resource permissions.
+    Combined mixin for catalog detail views.
+    Requires authentication and respects resource permissions.
     """
     pass
 

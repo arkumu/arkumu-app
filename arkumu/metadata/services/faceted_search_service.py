@@ -26,13 +26,10 @@ class FacetedSearchService(CatalogNavigationService):
         
         harmonization_filter = Q(organization_id__in=harmonized_org_ids)
         
-        # For harmonized resources, allow private access since harmonization implies searchability
+        # For harmonized resources, require authentication
         if not self.user.is_authenticated:
-            # Anonymous users can only see public approved harmonized resources
-            base_access_filter = Q(
-                public_access_level=PublicAccessLevel.PUBLIC,
-                is_public_approved=True
-            )
+            # Anonymous users cannot access any resources
+            return Resource.objects.none()
         elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
             base_access_filter = Q()  # No restrictions
         else:
@@ -448,13 +445,10 @@ class FacetedSearchService(CatalogNavigationService):
             return Resource.objects.none()
         
         # For harmonized search, we already filtered to harmonized resources
-        # Apply consistent access control (allow private harmonized resources)
+        # Apply consistent access control - require authentication
         if not self.user.is_authenticated:
-            # Anonymous users can only see public approved resources
-            base_access_filter = Q(
-                public_access_level=PublicAccessLevel.PUBLIC,
-                is_public_approved=True
-            )
+            # Anonymous users cannot access any resources
+            return Resource.objects.none()
         elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
             base_access_filter = Q()  # No restrictions
         else:

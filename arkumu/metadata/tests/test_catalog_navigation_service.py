@@ -371,26 +371,19 @@ class TestCatalogNavigationService:
         assert projects.first().uri == sample_projects['project2'].uri
     
     def test_anonymous_user_access(self, sample_projects, rdf_predicates, org_specific_types, harmonization_rules):
-        """Test that anonymous users only see public approved resources."""
+        """Test that anonymous users cannot access any resources."""
         # Create anonymous user (not authenticated)
         class AnonymousUser:
             is_authenticated = False
             organization = None
-        
-        # Create a derived triple for the public project (anonymous users only see derived triples)
-        Triple.objects.filter(
-            subject=sample_projects['project2'],
-            predicate=rdf_predicates['rdf_type']
-        ).update(is_derived=True, source=None)
         
         anon_user = AnonymousUser()
         service = CatalogNavigationService(anon_user)
         
         projects = service.get_all_projects()
         
-        # Should only see public approved project
-        assert projects.count() == 1
-        assert projects.first().uri == sample_projects['project2'].uri
+        # Anonymous users should see no projects
+        assert projects.count() == 0
     
     def test_prefetch_optimization(self, test_user, sample_projects, sample_events, harmonization_rules, django_assert_num_queries):
         """Test that queries are optimized with prefetch_related."""

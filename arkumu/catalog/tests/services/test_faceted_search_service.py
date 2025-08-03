@@ -151,15 +151,15 @@ class TestSearchResourcesHarmonization(TestFacetedSearchService):
 class TestAccessControl(TestFacetedSearchService):
     """Test access control with harmonization filtering."""
     
-    def test_anonymous_user_sees_public_harmonized_only(self, harmonized_resource):
-        """Test that anonymous users only see public harmonized resources."""
+    def test_anonymous_user_sees_no_resources(self, harmonized_resource):
+        """Test that anonymous users cannot access any resources."""
         from django.contrib.auth.models import AnonymousUser
         
         service = FacetedSearchService(AnonymousUser())
         queryset = service._get_harmonized_base_queryset()
         
-        assert harmonized_resource in queryset
-        assert queryset.count() == 1
+        # Anonymous users should see no resources
+        assert queryset.count() == 0
     
     def test_private_harmonized_resource_hidden_from_anonymous(self, organization, harmonization_predicates, catalog_resource):
         """Test that private harmonized resources are hidden from anonymous users."""

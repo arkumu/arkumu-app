@@ -203,31 +203,23 @@ class HarmonizedResourceDetailView(GeneralLoginRequiredMixin, DetailView):
         import urllib.parse
         resource_uri = urllib.parse.unquote(resource_uri)
         
-        # Get resource with access control
+        # Get resource with access control - authentication required
         try:
-            if not self.request.user.is_authenticated:
-                resource = Resource.objects.filter(
-                    uri=resource_uri,
-                    public_access_level='PUBLIC',
-                    is_public_approved=True
-                ).first()
+            from django.db.models import Q
+            q = Q(uri=resource_uri)
+            
+            # Add organization filter if user has organization
+            if hasattr(self.request.user, 'organization') and self.request.user.organization:
+                org_filter = Q(organization=self.request.user.organization)
             else:
-                # Use proper access control logic
-                from django.db.models import Q
-                q = Q(uri=resource_uri)
-                
-                # Add organization filter if user has organization
-                if hasattr(self.request.user, 'organization') and self.request.user.organization:
-                    org_filter = Q(organization=self.request.user.organization)
-                else:
-                    org_filter = Q()
-                
-                public_filter = Q(
-                    public_access_level__in=['PUBLIC', 'RESTRICTED'],
-                    is_public_approved=True
-                )
-                
-                resource = Resource.objects.filter(q & (org_filter | public_filter)).first()
+                org_filter = Q()
+            
+            public_filter = Q(
+                public_access_level__in=['PUBLIC', 'RESTRICTED'],
+                is_public_approved=True
+            )
+            
+            resource = Resource.objects.filter(q & (org_filter | public_filter)).first()
             
             if not resource:
                 raise Http404(f"Resource not found: {resource_uri}")

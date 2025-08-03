@@ -80,14 +80,10 @@ class CatalogNavigationService:
         
         project_ids = list(project_triples.values_list('subject_id', flat=True))
         
-        # Base queryset for projects - build filter based on user access
+        # Base queryset for projects - require authentication
         if not self.user.is_authenticated:
-            # Anonymous users can only see public, approved resources
-            projects = Resource.objects.filter(
-                id__in=project_ids,
-                public_access_level=PublicAccessLevel.PUBLIC,
-                is_public_approved=True
-            )
+            # Anonymous users cannot access any resources
+            return Resource.objects.none()
         elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
             # System admins see everything
             projects = Resource.objects.filter(id__in=project_ids)
