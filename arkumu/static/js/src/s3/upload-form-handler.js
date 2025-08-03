@@ -196,8 +196,8 @@ class UploadFormHandler {
     handleChunkComplete(chunk, result) {
         console.log(`✅ Chunk ${chunk.index + 1} completed:`, result);
         
-        // Could add per-chunk status updates here
-        this.showStatus(`Completed chunk ${chunk.index + 1}`, 'info');
+        // Remove per-chunk status updates - too verbose
+        // this.showStatus(`Completed chunk ${chunk.index + 1}`, 'info');
     }
 
     handleUploadComplete(summary) {

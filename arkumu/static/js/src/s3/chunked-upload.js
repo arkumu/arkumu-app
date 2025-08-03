@@ -20,6 +20,8 @@ class ChunkedUploadHandler {
         this.processedFiles = 0;
         this.completedFiles = 0;
         this.failedFiles = 0;
+        this.totalSize = 0;
+        this.processedSize = 0;
         this.results = [];
         this.chunks = [];
         this.isUploading = false;
@@ -40,9 +42,11 @@ class ChunkedUploadHandler {
 
         this.isUploading = true;
         this.totalFiles = files.length;
+        this.totalSize = files.reduce((sum, file) => sum + file.size, 0);
         this.processedFiles = 0;
         this.completedFiles = 0;
         this.failedFiles = 0;
+        this.processedSize = 0;
         this.results = [];
         this.startTime = Date.now();
         this.abortController = new AbortController();
@@ -410,8 +414,12 @@ class ChunkedUploadHandler {
             processedFiles: this.processedFiles,
             completedFiles: this.completedFiles,
             failedFiles: this.failedFiles,
+            total_uploaded_files: this.completedFiles,
+            total_size: this.totalSize,
+            total_size_formatted: formatFileSize(this.totalSize),
             chunks: this.results.length,
             duration: elapsed,
+            duration_seconds: Math.round(elapsed / 1000),
             avgChunkTime: this.chunkTimes.length > 0 
                 ? Math.round(this.chunkTimes.reduce((a, b) => a + b, 0) / this.chunkTimes.length)
                 : 0,
