@@ -453,37 +453,25 @@ def streaming_upload_form(request):
                 # Return immediate response with HTMX polling for completion
                 upload_session_id = result.get('upload_session_id', '')
                 
-                # Main content: immediate success message that auto-hides after 5 seconds
-                main_html = f'''
-                <div class="alert alert-success" id="upload-success-alert">
-                    <div class="text-success text-2xl">✅</div>
-                    <div>
-                        <div class="font-bold text-lg">Upload Complete!</div>
-                        <div class="text-sm">
-                            <span class="font-medium">{total_uploaded_files} files</span> • 
-                            <span class="font-medium">{result.get('total_size_formatted', '')}</span> • 
-                            <span class="font-medium">{result.get('duration', '0.0')}s</span>
-                        </div>
-                    </div>
-                </div>
-                <script>
-                setTimeout(function() {{
-                    const alert = document.getElementById('upload-success-alert');
-                    if (alert) {{
-                        alert.style.transition = 'opacity 0.5s ease-out';
-                        alert.style.opacity = '0';
-                        setTimeout(function() {{
-                            alert.remove();
-                        }}, 500);
-                    }}
-                }}, 5000);
-                </script>
-                '''
+                # Create simple toast notification message
+                toast_message = "Upload Complete!"
                 
-                # OOB updates to hide progress, update status, and refresh file browser
+                # Render toast notification using the same template as delete operations
+                from django.template.loader import render_to_string
+                toast_html = render_to_string(
+                    "partials/toast_notification.html",
+                    {
+                        "message": toast_message,
+                        "type": "success"
+                    },
+                    request=request
+                )
+                
+                # OOB updates to clear status, hide progress, show toast, and refresh file browser
                 oob_updates = {
-                    'upload-status': main_html,
-                    'upload-progress': '<div class="mt-4 hidden"></div>'
+                    'upload-status': '',  # Clear the upload status area
+                    'upload-progress': '<div class="mt-4 hidden"></div>',
+                    'toast-container': toast_html  # Replace all toast content completely
                 }
                 
                 # Add file browser refresh OOB update using the mixin's template helper
@@ -494,21 +482,6 @@ def streaming_upload_form(request):
                     logger.info(f"🔄 OOB DEBUG: Added file browser refresh using mixin helper - HTML length: {len(file_browser_html)}")
                     
                     # Add debugging HTML to check if element exists
-                    debug_script = '''
-                    <script>
-                    console.log("🔍 OOB DEBUG: Checking if file-browser-content exists...");
-                    const element = document.getElementById("file-browser-content");
-                    console.log("🔍 OOB DEBUG: file-browser-content element:", element);
-                    if (element) {
-                        console.log("✅ OOB DEBUG: file-browser-content exists!");
-                        element.style.border = "2px solid red";
-                        setTimeout(() => element.style.border = "", 3000);
-                    } else {
-                        console.error("❌ OOB DEBUG: file-browser-content NOT FOUND!");
-                    }
-                    </script>
-                    '''
-                    oob_updates['upload-status'] = f'{main_html}{debug_script}'
                 else:
                     logger.warning(f"⚠️ OOB DEBUG: No organization provided, cannot refresh file browser")
                 

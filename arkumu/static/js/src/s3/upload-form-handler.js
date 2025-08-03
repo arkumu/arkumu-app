@@ -116,8 +116,14 @@ class UploadFormHandler {
 
     async startUpload() {
         try {
+            // Force clear any existing upload status before starting
             this.clearStatus();
             this.hideResults();
+            
+            // Additional aggressive clearing to prevent cached content reappearing
+            setTimeout(() => {
+                this.clearStatus();
+            }, 100);
             
             // Get form values
             const baseFolder = this.baseFolderSelect ? this.baseFolderSelect.value : '';
@@ -258,6 +264,9 @@ class UploadFormHandler {
     clearStatus() {
         if (this.statusContainer) {
             this.statusContainer.innerHTML = '';
+            // Also clear any data attributes that might be cached
+            this.statusContainer.removeAttribute('data-cached-content');
+            console.log('✅ Status container cleared');
         }
     }
 
