@@ -204,8 +204,8 @@ class UploadFormHandler {
         this.hideProgress();
         
         if (summary.success) {
-            // Show results
-            this.showResults(summary);
+            // Don't show results here - HTMX OOB update already handles this
+            // this.showResults(summary);
             
             console.log('🔄 UploadFormHandler: Upload completed successfully');
         } else {
