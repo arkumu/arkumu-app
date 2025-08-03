@@ -345,26 +345,75 @@ def multipart_upload_complete(request):
         except Exception as e:
             logger.warning(f"Failed to update S3FileObject: {e}")
         
-        # Clear cache to ensure fresh file listings
+        # Clear cache to ensure fresh file listings and file counts
         from django.core.cache import cache
         if upload_session.institution:
+            org_slug = upload_session.institution
+            bucket_name = upload_session.import_stats.get('s3_bucket', upload_session.institution)
+            
             cache_keys_to_delete = [
-                f"bucket_contents_{upload_session.institution}_",
-                f"bucket_contents_{upload_session.institution}_{upload_session.folder_name.replace('/', '_')}_"
+                f"bucket_contents_{org_slug}_",
+                f"bucket_contents_{org_slug}_{upload_session.folder_name.replace('/', '_')}_",
+                # Clear file count caches for data and metadata folders
+                f"file_count_{bucket_name}_data_",
+                f"file_count_{bucket_name}_metadata_",
+                f"file_count_{bucket_name}_data",
+                f"file_count_{bucket_name}_metadata"
             ]
             for cache_key in cache_keys_to_delete:
                 cache.delete(cache_key)
+                logger.info(f"🗑️ CACHE CLEAR: Deleted cache key: {cache_key}")
         
         logger.info(f"✅ MULTIPART COMPLETE: {s3_key} completed successfully")
         
-        return JsonResponse({
-            'success': True,
-            'location': response.get('Location'),
-            'etag': response.get('ETag'),
-            'bucket': bucket,
-            's3Key': s3_key,
-            'uploadSessionId': str(upload_session.id)
-        })
+        # Add OOB updates like other upload views
+        try:
+            from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+            
+            helper = CSVMappingTemplateHelperMixin()
+            organization = upload_session.institution
+            
+            # Create success toast
+            toast_html = f'''
+                <div class="toast toast-end z-50" id="upload-toast">
+                    <div class="alert alert-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>S3 multipart upload completed successfully!</span>
+                    </div>
+                </div>
+            '''
+            
+            # OOB updates to show toast and refresh file browser
+            oob_updates = {
+                'toast-container': toast_html
+            }
+            
+            # Add file browser refresh OOB update
+            if organization:
+                file_browser_html = helper.render_file_browser_template(request, organization)
+                oob_updates['file-browser-content'] = file_browser_html
+                logger.info(f"🔄 S3 MULTIPART OOB: Added file browser refresh for organization {organization}")
+            
+            # Build final response using the same pattern as other uploads
+            final_response = helper.build_oob_response('', oob_updates)
+            
+            from django.http import HttpResponse
+            return HttpResponse(final_response)
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate OOB update for S3 multipart completion: {e}")
+            # Fall back to JSON response
+            return JsonResponse({
+                'success': True,
+                'location': response.get('Location'),
+                'etag': response.get('ETag'),
+                'bucket': bucket,
+                's3Key': s3_key,
+                'uploadSessionId': str(upload_session.id),
+                'organization': upload_session.institution
+            })
         
     except Exception as e:
         logger.exception(f"Error completing multipart upload: {str(e)}")

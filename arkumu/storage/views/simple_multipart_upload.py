@@ -73,8 +73,13 @@ class SimpleMultipartUploadViewSet(GeneralLoginRequiredMixin, CSVMappingTemplate
             bucket_service = BucketService()
             bucket_name = organization.lower()
             
-            # Get the file structure for the organization
-            contents = bucket_service.list_bucket_contents(bucket_name, prefix='')
+            # Get the file structure for the organization - force fresh after upload
+            contents = bucket_service.list_bucket_contents(bucket_name, prefix='', force_fresh=True)
+            
+            # Add file counts for data and metadata folders - force fresh after upload
+            for item in contents:
+                if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                    item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'], force_fresh=True)
             
             from django.middleware.csrf import get_token
             context = {

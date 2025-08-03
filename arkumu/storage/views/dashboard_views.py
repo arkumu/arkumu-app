@@ -51,6 +51,11 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
             bucket_name = bucket_service.get_organization_bucket(selected_org_slug)
             contents = bucket_service.list_bucket_contents(bucket_name, '')
             
+            # Add file counts for data and metadata folders
+            for item in contents:
+                if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                    item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'])
+            
             logger.info(f"Dashboard view: Loading files for {selected_org_slug}, bucket: {bucket_name}, found {len(contents)} items")
             
             file_browser_context = {

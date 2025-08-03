@@ -366,8 +366,13 @@ def delete_object(request, bucket_type, object_type, object_path):
                     logger.info(f"🔥 DELETE_DEBUG: Organization bucket deletion path")
                     org_name = bucket_type[4:]  # Remove 'org-' prefix
                     
-                    # Refresh file browser content after deletion
-                    contents = bucket_service.list_bucket_contents(bucket_name, '')
+                    # Refresh file browser content after deletion - force fresh
+                    contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
+                    
+                    # Add file counts for data and metadata folders - force fresh after operation
+                    for item in contents:
+                        if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                            item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'], force_fresh=True)
                     
                     file_browser_html = render_to_string(
                         'dashboard/organization_files_partial.html',

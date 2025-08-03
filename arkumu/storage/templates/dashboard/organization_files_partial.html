@@ -34,6 +34,9 @@
                             </button>
                         <span class="text-sm font-medium">
                             {{ item.name }}
+                            {% if item.file_count is not None %}
+                                <span class="badge badge-outline badge-sm ml-2">{{ item.file_count }} file{{ item.file_count|pluralize }}</span>
+                            {% endif %}
                         </span>
                         
                         <div class="ml-auto flex items-center space-x-2">

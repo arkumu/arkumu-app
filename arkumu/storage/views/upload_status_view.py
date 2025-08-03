@@ -106,8 +106,14 @@ def upload_status(request, session_id):
             bucket_name = bucket_service.get_organization_bucket(organization)
             logger.info(f"🔍 OOB DEBUG: bucket_name = '{bucket_name}'")
             
-            # List all contents like in the dashboard
-            contents = bucket_service.list_bucket_contents(bucket_name, '')
+            # List all contents like in the dashboard - force fresh after upload
+            contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
+            
+            # Add file counts for data and metadata folders - force fresh after upload
+            for item in contents:
+                if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                    item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'], force_fresh=True)
+            
             logger.info(f"🔍 OOB DEBUG: Found {len(contents)} items in bucket")
             
             file_browser_html = render_to_string(

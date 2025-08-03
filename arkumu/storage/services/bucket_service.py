@@ -340,15 +340,18 @@ class BucketService:
             logger.error(f"Unexpected error during deletion of bucket {bucket_name}: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    def list_bucket_contents(self, bucket_name: str, prefix: str = "", skip_bucket_check: bool = True) -> List[Dict[str, Any]]:
+    def list_bucket_contents(self, bucket_name: str, prefix: str = "", skip_bucket_check: bool = True, force_fresh: bool = False) -> List[Dict[str, Any]]:
         """List contents of a bucket with optional prefix. Uses Redis caching to avoid redundant S3 API calls."""
         cache_key = f"bucket_contents_{bucket_name}_{prefix.replace('/', '_')}"
         
-        # Check cache first (5 minute TTL for directory listings)
-        cached_contents = self.cache.get(cache_key)
-        if cached_contents is not None:
-            logger.info(f"📋 Found {len(cached_contents)} cached items for {bucket_name} prefix '{prefix}' (skipping S3 call)")
-            return cached_contents
+        # Check cache first (5 minute TTL for directory listings) unless force_fresh is True
+        if not force_fresh:
+            cached_contents = self.cache.get(cache_key)
+            if cached_contents is not None:
+                logger.info(f"📋 Found {len(cached_contents)} cached items for {bucket_name} prefix '{prefix}' (skipping S3 call)")
+                return cached_contents
+        else:
+            logger.info(f"📋 Force fresh listing for {bucket_name} prefix '{prefix}' (cache bypassed)")
         
         # Skip bucket existence check for read operations (performance optimization)
         if not skip_bucket_check:
@@ -408,6 +411,42 @@ class BucketService:
         except ClientError as e:
             logger.error(f"Error listing contents for bucket {bucket_name}: {e.response.get('Error', {})}")
             return []
+
+    def count_files_in_folder(self, bucket_name: str, folder_prefix: str, force_fresh: bool = False) -> int:
+        """Count total number of files recursively in a folder."""
+        cache_key = f"file_count_{bucket_name}_{folder_prefix.replace('/', '_')}"
+        
+        # Check cache first (10 minute TTL for file counts) unless force_fresh is True
+        if not force_fresh:
+            cached_count = self.cache.get(cache_key)
+            if cached_count is not None:
+                logger.info(f"📊 Found cached file count for {folder_prefix}: {cached_count}")
+                return cached_count
+        else:
+            logger.info(f"📊 Force fresh count for {folder_prefix} (cache bypassed)")
+        
+        try:
+            # Ensure folder prefix ends with /
+            if folder_prefix and not folder_prefix.endswith('/'):
+                folder_prefix += '/'
+            
+            paginator = self.base_s3_service.s3_client.get_paginator('list_objects_v2')
+            file_count = 0
+            
+            for page in paginator.paginate(Bucket=bucket_name, Prefix=folder_prefix):
+                for obj in page.get('Contents', []):
+                    # Only count actual files, not folder markers
+                    if not obj['Key'].endswith('/'):
+                        file_count += 1
+            
+            # Cache the result for 10 minutes (600 seconds)
+            self.cache.set(cache_key, file_count, timeout=600)
+            logger.info(f"📊 Counted {file_count} files in {folder_prefix}")
+            return file_count
+            
+        except ClientError as e:
+            logger.error(f"Error counting files in {folder_prefix}: {e.response.get('Error', {})}")
+            return 0
 
     def get_file_content(self, bucket_name: str, file_path: str) -> Dict[str, Any]:
         """Get file content using BaseStorageService."""

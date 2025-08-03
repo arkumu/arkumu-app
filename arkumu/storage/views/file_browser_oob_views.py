@@ -43,7 +43,8 @@ class FileBrowserOOBMixin(CSVMappingTemplateHelperMixin):
             
             bucket_service = BucketService()
             bucket_name = bucket_service.get_organization_bucket(organization)
-            contents = bucket_service.list_bucket_contents(bucket_name, '')
+            # Force fresh listing for OOB updates
+            contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
             
             logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: organization={organization}")
             logger.info(f"🔍 FILE_BROWSER_OOB DEBUG: bucket_name={bucket_name}")
@@ -63,12 +64,15 @@ class FileBrowserOOBMixin(CSVMappingTemplateHelperMixin):
                 if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
                     logger.info(f"🔄 EAGER_LOADING: Pre-loading contents for {item['name']} folder")
                     try:
-                        # Load subfolder contents
+                        # Load subfolder contents - force fresh for OOB updates
                         subfolder_contents = bucket_service.list_bucket_contents(
                             bucket_name, 
-                            item['path']
+                            item['path'],
+                            force_fresh=True
                         )
                         item['preloaded_contents'] = subfolder_contents
+                        # Add file count for data and metadata folders - force fresh for OOB updates
+                        item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'], force_fresh=True)
                         logger.info(f"✅ EAGER_LOADING: Loaded {len(subfolder_contents) if subfolder_contents else 0} items for {item['name']} folder")
                         if subfolder_contents:
                             logger.info(f"📁 EAGER_LOADING: {item['name']} contents: {[sub_item.get('name', 'unknown') for sub_item in subfolder_contents[:5]]}")
