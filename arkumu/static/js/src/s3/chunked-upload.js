@@ -11,7 +11,6 @@ class ChunkedUploadHandler {
         this.chunkSize = options.chunkSize || 75; // Files per chunk
         this.maxConcurrent = options.maxConcurrent || 3; // Concurrent chunks
         this.uploadUrl = options.uploadUrl || '/storage/upload/streaming/';
-        this.preserveFolderStructure = options.preserveFolderStructure || false;
         this.onProgress = options.onProgress || this.defaultProgressHandler;
         this.onChunkComplete = options.onChunkComplete || this.defaultChunkCompleteHandler;
         this.onComplete = options.onComplete || this.defaultCompleteHandler;
@@ -22,6 +21,7 @@ class ChunkedUploadHandler {
         this.completedFiles = 0;
         this.failedFiles = 0;
         this.results = [];
+        this.chunks = [];
         this.isUploading = false;
         this.abortController = null;
         
@@ -51,15 +51,15 @@ class ChunkedUploadHandler {
 
         try {
             // Step 1: Split files into chunks
-            const chunks = this.createChunks(files);
-            console.log(`📦 Created ${chunks.length} chunks`);
+            this.chunks = this.createChunks(files);
+            console.log(`📦 Created ${this.chunks.length} chunks`);
             
             // Store total chunks for progress reporting
-            this._totalChunks = chunks.length;
+            this._totalChunks = this.chunks.length;
             this._currentChunkIndex = 0;
 
             // Step 2: Upload chunks with controlled concurrency
-            await this.uploadChunksWithConcurrency(chunks, folderName, organization, baseFolder);
+            await this.uploadChunksWithConcurrency(this.chunks, folderName, organization, baseFolder);
 
             // Step 3: Process final results
             const summary = this.createSummary();
@@ -221,39 +221,8 @@ class ChunkedUploadHandler {
 
         const formData = new FormData();
         
-        // Handle folder structure preservation
-        if (this.preserveFolderStructure) {
-            // For folder mode, combine baseFolder and folderName to create the full path
-            let fullFolderPath = folderName || '';
-            if (baseFolder) {
-                fullFolderPath = baseFolder + (folderName ? '/' + folderName : '');
-            }
-            formData.append('folder_name', fullFolderPath);
-            formData.append('preserve_folder_structure', 'true');
-            
-            // Send file paths as a JSON array
-            const filePaths = chunk.files.map(file => {
-                const relativePath = file.webkitRelativePath || file.name;
-                // Remove the folder name prefix if it exists to avoid duplication
-                if (folderName && relativePath.startsWith(folderName + '/')) {
-                    return relativePath.substring(folderName.length + 1);
-                }
-                return relativePath;
-            });
-            
-            formData.append('file_paths', JSON.stringify(filePaths));
-            
-            console.log(`📁 Preserving structure for ${chunk.files.length} files:`, filePaths.slice(0, 3));
-            console.log(`📁 Folder name being sent: "${fullFolderPath}"`);
-            console.log(`📁 Sample file paths:`, filePaths.slice(0, 5));
-        } else {
-            // Create the final folder path for non-folder mode
-            let finalFolderName = folderName;
-            if (baseFolder) {
-                finalFolderName = baseFolder + (folderName ? '/' + folderName : '');
-            }
-            formData.append('folder_name', finalFolderName);
-        }
+        // Use the base folder directly (no concatenation needed)
+        formData.append('folder_name', folderName);
         
         if (organization) {
             formData.append('organization', organization);
@@ -270,7 +239,12 @@ class ChunkedUploadHandler {
         const response = await fetch(this.uploadUrl, {
             method: 'POST',
             body: formData,
-            signal: this.abortController.signal
+            signal: this.abortController.signal,
+            headers: {
+                'HX-Request': 'true',  // Tell server we want HTMX OOB updates
+                'HX-Target': 'upload-status',
+                'HX-Trigger': 'chunked-upload'
+            }
             // Let browser set Content-Type with boundary for multipart/form-data
         });
 
@@ -278,13 +252,59 @@ class ChunkedUploadHandler {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const result = await response.json();
+        // Handle response based on content type
+        const contentType = response.headers.get('content-type');
         
-        if (!result.success) {
-            throw new Error(result.error || 'Upload failed');
+        if (contentType && contentType.includes('application/json')) {
+            // JSON response handling
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Upload failed');
+            }
+            
+            return result;
+        } else {
+            // HTMX HTML response - for the final chunk only, process OOB updates
+            const html = await response.text();
+            
+            // Check if this is the last chunk
+            if (chunk.index === this.chunks.length - 1) {
+                console.log('📡 Final chunk: Processing HTMX OOB updates...');
+                
+                // Create a temporary container to parse the HTML
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
+                
+                // Let HTMX process the OOB swaps from the temporary container
+                if (typeof htmx !== 'undefined') {
+                    htmx.process(temp);
+                    
+                    // Process each OOB element
+                    const oobElements = temp.querySelectorAll('[hx-swap-oob]');
+                    oobElements.forEach(element => {
+                        const swapStyle = element.getAttribute('hx-swap-oob');
+                        const targetId = element.id;
+                        const targetElement = document.getElementById(targetId);
+                        
+                        if (targetElement && swapStyle === 'innerHTML') {
+                            targetElement.innerHTML = element.innerHTML;
+                            htmx.process(targetElement);
+                        }
+                    });
+                    
+                    console.log(`✅ Processed ${oobElements.length} OOB updates`);
+                }
+            }
+            
+            // Return success for chunk completion tracking
+            return {
+                success: true,
+                success_count: chunk.files.length,
+                error_count: 0,
+                htmx_handled: true
+            };
         }
-
-        return result;
 
         // Track timing
         const chunkDuration = Date.now() - chunkStartTime;
@@ -315,42 +335,10 @@ class ChunkedUploadHandler {
         this.onChunkComplete(chunk, result);
         this.updateProgress();
         
-        // Only refresh file browser on last chunk to reduce overhead
-        if (this.processedFiles >= this.totalFiles) {
-            this.refreshFileBrowser();
-        }
+        // File browser refresh is handled by server OOB updates
+        // No need for separate JavaScript refresh call
     }
     
-    /**
-     * Refresh file browser via HTMX reload (same as dashboard uses)
-     */
-    refreshFileBrowser() {
-        // Get organization from form data
-        const orgSelect = document.querySelector('select[name="organization"]');
-        const organization = orgSelect ? orgSelect.value : '';
-        
-        if (!organization) {
-            console.warn('⚠️ No organization selected, skipping file browser refresh');
-            return;
-        }
-        
-        console.log(`🔄 Refreshing file browser for organization: ${organization}`);
-        
-        // Use the existing OOB update system
-        if (typeof htmx !== 'undefined') {
-            const refreshUrl = `/storage/oob/file-browser-refresh/${encodeURIComponent(organization)}/`;
-            
-            htmx.ajax('GET', refreshUrl, {
-                swap: 'none'  // OOB updates handle their own targeting
-            }).then(() => {
-                console.log('✅ File browser refreshed successfully via OOB');
-            }).catch((error) => {
-                console.error('❌ File browser refresh failed:', error);
-            });
-        } else {
-            console.warn('⚠️ HTMX not available for file browser refresh');
-        }
-    }
 
     /**
      * Handle chunk upload error

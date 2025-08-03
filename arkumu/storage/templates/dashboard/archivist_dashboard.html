@@ -6,10 +6,8 @@
 <div class="container mx-auto px-4 py-8">
     <div class="hero mb-8">
         <div class="hero-content text-center">
-            <div>
-                <h1 class="text-4xl font-bold">Archivist Dashboard</h1>
-                <p class="py-2 text-base-content/70">Manage organization digital assets in S3 cloud storage</p>
-            </div>
+            <h1 class="text-4xl font-bold">Archivist Dashboard</h1>
+            <p class="py-2 text-base-content/70">Manage organization digital assets in S3 cloud storage</p>
         </div>
     </div>
     
@@ -28,7 +26,8 @@
                 <!-- Upload Form -->
                 <form id="streaming-upload-form" 
                       class="upload-form"
-                      enctype="multipart/form-data">
+                      enctype="multipart/form-data"
+                      onsubmit="return false;">
                     {% csrf_token %}
                     
                     <!-- Organization selection -->
@@ -37,7 +36,7 @@
                     </div>
                     
                     <!-- Hidden organization field for JavaScript access -->
-                    <input type="hidden" id="organization" name="organization" value="" />
+                    <input type="hidden" id="organization-hidden" name="organization" value="" />
                     
                     <!-- Base folder selection (data or metadata) -->
                     <div class="form-control mb-4">
@@ -63,20 +62,14 @@
                             <button type="button" 
                                     class="btn btn-outline btn-sm flex-1 btn-active" 
                                     id="files-mode-btn"
-                                    hx-get="/storage/dashboard/upload-mode/"
-                                    hx-vals='{"mode": "files"}'
-                                    hx-include="this"
-                                    hx-swap="none">
-                                📄 Upload Files
+                                    onclick="switchToFilesMode()">
+                                📄 Select Files
                             </button>
                             <button type="button" 
                                     class="btn btn-outline btn-sm flex-1" 
                                     id="folder-mode-btn"
-                                    hx-get="/storage/dashboard/upload-mode/"
-                                    hx-vals='{"mode": "folder"}'
-                                    hx-include="this"
-                                    hx-swap="none">
-                                📁 Upload Folder
+                                    onclick="switchToFolderMode()">
+                                📁 Select Folder
                             </button>
                         </div>
                     </div>
@@ -84,10 +77,10 @@
                     <!-- File Upload Input -->
                     <div class="form-control mb-4" id="upload-input-section">
                         <label class="label">
-                            <span class="label-text">Select Files</span>
+                            <span class="label-text" id="upload-label">Select Files</span>
                         </label>
-                        <input type="file" id="file-input" name="file" multiple class="file-input file-input-bordered file-input-sm w-full" required />
-                        <div class="text-xs text-gray-500 mt-1">
+                        <input type="file" id="file-input" name="files" multiple class="file-input file-input-bordered file-input-sm w-full" required />
+                        <div class="text-xs text-gray-500 mt-1" id="upload-help">
                             You can select multiple files to upload to S3 at once
                         </div>
                         
@@ -101,7 +94,7 @@
                     </div>
                     
                     <div class="form-control">
-                        <button type="submit" id="upload-button" class="btn btn-primary btn-sm">Upload to S3</button>
+                        <button type="button" id="upload-button" class="btn btn-primary btn-sm">Upload to S3</button>
                     </div>
                 </form>
                 
@@ -125,13 +118,11 @@
                 <!-- Results section (for upload handler) -->
                 <div id="upload-results" class="mt-4 hidden">
                     <div class="alert alert-success">
-                        <div>
-                            <h3 class="font-bold">Upload Complete!</h3>
-                            <div class="text-sm">
-                                <span id="result-files-count">0</span> files uploaded
-                                (<span id="result-total-size">0 B</span>)
-                                in <span id="result-duration">0s</span>
-                            </div>
+                        <h3 class="font-bold">Upload Complete!</h3>
+                        <div class="text-sm">
+                            <span id="result-files-count">0</span> files uploaded
+                            (<span id="result-total-size">0 B</span>)
+                            in <span id="result-duration">0s</span>
                         </div>
                     </div>
                 </div>
@@ -175,10 +166,8 @@
     <div class="modal-box w-11/12 max-w-7xl h-5/6 max-h-screen">
         <!-- Content will be loaded via HTMX -->
         <div class="flex items-center justify-center h-full">
-            <div class="flex flex-col items-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-                <p class="text-gray-600">Loading CSV preview...</p>
-            </div>
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+            <p class="text-gray-600">Loading CSV preview...</p>
         </div>
     </div>
     <form method="dialog" class="modal-backdrop">
@@ -189,176 +178,96 @@
 
 <!-- Chunked Upload JavaScript -->
 <script src="{% static 'js/src/s3/chunked-upload.js' %}"></script>
-<script src="{% static 'js/src/s3/resumable-upload.js' %}"></script>
 <script src="{% static 'js/src/s3/upload-form-handler.js' %}"></script>
 
 <script>
-// Initialize chunked upload system
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Initializing chunked upload system');
+// Upload mode switching
+function switchToFilesMode() {
+    const fileInput = document.getElementById('file-input');
+    const uploadLabel = document.getElementById('upload-label');
+    const uploadHelp = document.getElementById('upload-help');
+    const filesBtn = document.getElementById('files-mode-btn');
+    const folderBtn = document.getElementById('folder-mode-btn');
     
-    const form = document.getElementById('streaming-upload-form');
-    if (form) {
-        console.log('✅ Streaming upload form found');
-        
-        // Initialize upload handler
-        window.uploadHandler = new UploadFormHandler();
-        
-        // Override progress callbacks for our UI
-        if (window.uploadHandler) {
-            // Patch the handler's updateProgress method to use our UI
-            const originalUpdateProgress = window.uploadHandler.updateProgress;
-            window.uploadHandler.updateProgress = function(progress) {
-                updateProgressUI(progress);
-                if (originalUpdateProgress) {
-                    originalUpdateProgress.call(this, progress);
-                }
-            };
-            
-            console.log('✅ Upload handler initialized and patched');
-            console.log('📝 Upload handler state:', {
-                selectedFiles: window.uploadHandler.selectedFiles.length,
-                fileInput: !!window.uploadHandler.fileInput,
-                uploadButton: !!window.uploadHandler.uploadButton,
-                baseFolderSelect: !!window.uploadHandler.baseFolderSelect
-            });
-        }
-    } else {
-        console.log('❌ Streaming upload form not found!');
+    if (fileInput) {
+        // Enable multiple file selection
+        fileInput.setAttribute('multiple', '');
+        fileInput.removeAttribute('webkitdirectory');
+        fileInput.removeAttribute('directory');
+        fileInput.value = ''; // Clear selection when switching modes
     }
     
-    // Add debugging for file input changes
-    document.addEventListener('change', function(e) {
-        console.log('🔄 CHANGE EVENT detected on:', e.target.id, e.target.tagName, e.target.type, e.target.name);
-        
-        // Detect file input by type and name instead of just ID
-        if (e.target && e.target.type === 'file' && (e.target.name === 'file' || e.target.name === 'files')) {
-            console.log('📁 FILE INPUT CHANGE detected:', {
-                files: e.target.files.length,
-                fileNames: Array.from(e.target.files).map(f => f.name),
-                totalSize: Array.from(e.target.files).reduce((sum, f) => sum + f.size, 0)
-            });
-            
-            // Manually trigger the handler's file selection if it's not working
-            if (window.uploadHandler && window.uploadHandler.handleFileSelection) {
-                console.log('📝 Manually triggering upload handler file selection');
-                window.uploadHandler.handleFileSelection(e.target.files);
-            } else {
-                console.log('❌ Upload handler or handleFileSelection method not available');
-            }
-        }
-        
-        // Sync organization selector with hidden field
-        if (e.target && e.target.name === 'organization') {
-            console.log('🏢 ORGANIZATION CHANGE:', e.target.value);
-            const orgField = document.getElementById('organization');
-            if (orgField) {
-                orgField.value = e.target.value;
-            }
-        }
-    });
+    if (uploadLabel) uploadLabel.textContent = 'Select Files';
+    if (uploadHelp) uploadHelp.textContent = 'You can select multiple files to upload to S3 at once';
     
-    // Add debugging for upload button clicks
-    document.addEventListener('click', function(e) {
-        if (e.target && e.target.id === 'upload-button') {
-            console.log('🔘 UPLOAD BUTTON CLICKED');
-            console.log('📊 Current handler state:', {
-                selectedFiles: window.uploadHandler ? window.uploadHandler.selectedFiles.length : 'no handler',
-                isUploading: window.uploadHandler ? window.uploadHandler.isUploading : 'no handler'
-            });
+    // Update button states
+    if (filesBtn) {
+        filesBtn.classList.add('btn-active');
+        filesBtn.classList.remove('btn-outline');
+    }
+    if (folderBtn) {
+        folderBtn.classList.remove('btn-active');
+        folderBtn.classList.add('btn-outline');
+    }
+    
+    console.log('📄 Switched to files mode');
+    
+    // Notify upload handler if it exists
+    if (window.uploadFormHandler && window.uploadFormHandler.refreshFileInput) {
+        window.uploadFormHandler.refreshFileInput();
+    }
+}
+
+function switchToFolderMode() {
+    const fileInput = document.getElementById('file-input');
+    const uploadLabel = document.getElementById('upload-label');
+    const uploadHelp = document.getElementById('upload-help');
+    const filesBtn = document.getElementById('files-mode-btn');
+    const folderBtn = document.getElementById('folder-mode-btn');
+    
+    if (fileInput) {
+        // Enable folder selection
+        fileInput.setAttribute('webkitdirectory', '');
+        fileInput.setAttribute('directory', '');
+        fileInput.removeAttribute('multiple');
+        fileInput.value = ''; // Clear selection when switching modes
+    }
+    
+    if (uploadLabel) uploadLabel.textContent = 'Select Folder';
+    if (uploadHelp) uploadHelp.textContent = 'Choose a folder to upload all its files and subfolders';
+    
+    // Update button states
+    if (folderBtn) {
+        folderBtn.classList.add('btn-active');
+        folderBtn.classList.remove('btn-outline');
+    }
+    if (filesBtn) {
+        filesBtn.classList.remove('btn-active');
+        filesBtn.classList.add('btn-outline');
+    }
+    
+    console.log('📁 Switched to folder mode');
+    
+    // Notify upload handler if it exists
+    if (window.uploadFormHandler && window.uploadFormHandler.refreshFileInput) {
+        window.uploadFormHandler.refreshFileInput();
+    }
+}
+
+// Organization selector sync
+document.addEventListener('change', function(e) {
+    // Sync organization selector with hidden field
+    if (e.target && e.target.name === 'organization') {
+        console.log('🏢 ORGANIZATION CHANGE:', e.target.value);
+        const orgField = document.getElementById('organization-hidden');
+        if (orgField) {
+            orgField.value = e.target.value;
         }
-    });
+    }
 });
 
-// Progress UI management
-function updateProgressUI(progress) {
-    const progressContainer = document.getElementById('upload-progress');
-    const progressText = document.getElementById('progress-text');
-    const progressPercentage = document.getElementById('progress-percentage');
-    const progressBar = document.getElementById('progress-bar');
-    const progressDetails = document.getElementById('progress-details');
-    
-    if (progressContainer) {
-        progressContainer.classList.remove('hidden');
-    }
-    
-    if (progressText && progress.processedFiles !== undefined) {
-        progressText.textContent = `Uploading ${progress.processedFiles}/${progress.totalFiles} files`;
-    }
-    
-    if (progressPercentage && progress.percentage !== undefined) {
-        progressPercentage.textContent = `${progress.percentage}%`;
-    }
-    
-    if (progressBar && progress.percentage !== undefined) {
-        progressBar.value = progress.percentage;
-    }
-    
-    if (progressDetails && progress.processedBytes !== undefined) {
-        const processedMB = (progress.processedBytes / (1024 * 1024)).toFixed(1);
-        const totalMB = (progress.totalBytes / (1024 * 1024)).toFixed(1);
-        progressDetails.textContent = `${processedMB} MB / ${totalMB} MB`;
-    }
-}
-
-function handleUploadComplete(result) {
-    console.log('🎉 Upload completed:', result);
-    console.log('🔍 DEBUG: handleUploadComplete called with result:', result);
-    
-    const statusDiv = document.getElementById('upload-status');
-    if (statusDiv) {
-        statusDiv.innerHTML = `
-            <div class="alert alert-success">
-                <div>
-                    <h3 class="font-bold">Upload Complete!</h3>
-                    <div class="text-sm">
-                        ${result.total_uploaded_files || result.completedFiles || 0} files uploaded 
-                        (${result.total_size_formatted || 'unknown size'})
-                        ${result.duration_seconds ? `in ${result.duration_seconds}s` : ''}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-    
-    // Reset progress UI
-    setTimeout(() => {
-        const progressContainer = document.getElementById('upload-progress');
-        if (progressContainer) {
-            progressContainer.classList.add('hidden');
-        }
-    }, 3000);
-    
-    // Note: File browser refresh is handled server-side via OOB updates
-    // No need for client-side refresh - server sends file-browser-content OOB update
-}
-
-// refreshFileBrowser function removed - file browser refresh is now handled 
-// server-side via OOB updates in the upload response
-
-function handleUploadError(error) {
-    console.error('❌ Upload error:', error);
-    
-    const statusDiv = document.getElementById('upload-status');
-    if (statusDiv) {
-        statusDiv.innerHTML = `
-            <div class="alert alert-error">
-                <div>
-                    <h3 class="font-bold">Upload Failed</h3>
-                    <div class="text-sm">${error.message || 'Unknown error occurred'}</div>
-                </div>
-            </div>
-        `;
-    }
-    
-    // Hide progress UI
-    const progressContainer = document.getElementById('upload-progress');
-    if (progressContainer) {
-        progressContainer.classList.add('hidden');
-    }
-}
-
-// OOB updates should work automatically without JavaScript listeners
+// Upload system now handled entirely by upload-form-handler.js
+// Mode switching allows both individual files and entire folders
 </script>
 
 {% endblock %}

@@ -158,13 +158,9 @@ def streaming_upload_form(request):
             'error': error_msg
         }, status=400)
     
-    # Check if we should preserve folder structure
-    preserve_folder_structure = request.POST.get('preserve_folder_structure', '').lower() == 'true'
-    
-    logger.info(f"📁 FOLDER UPLOAD DEBUG: preserve_folder_structure = {preserve_folder_structure}")
-    logger.info(f"📁 FOLDER UPLOAD DEBUG: POST data keys = {list(request.POST.keys())}")
-    logger.info(f"📁 FOLDER UPLOAD DEBUG: folder_name = '{folder_name}' (from POST)")
-    logger.info(f"📁 FOLDER UPLOAD DEBUG: base_folder = '{base_folder}' (from POST)")
+    logger.info(f"📁 UPLOAD DEBUG: POST data keys = {list(request.POST.keys())}")
+    logger.info(f"📁 UPLOAD DEBUG: folder_name = '{folder_name}' (from POST)")
+    logger.info(f"📁 UPLOAD DEBUG: base_folder = '{base_folder}' (from POST)")
     
     # Get organization (if provided)
     organization = request.POST.get('organization', '').strip()
@@ -284,23 +280,9 @@ def streaming_upload_form(request):
                         'files_processed': i + 1,
                         'total_files': len(files)
                     }, timeout=3600)  # Cache for 1 hour
-                # Determine S3 key path
-                if preserve_folder_structure:
-                    file_paths_json = request.POST.get('file_paths', '')
-                    file_paths = []
-                    try:
-                        if file_paths_json:
-                            file_paths = json.loads(file_paths_json)
-                    except json.JSONDecodeError:
-                        pass
-                    
-                    if file_paths and i < len(file_paths):
-                        # Use structured path
-                        s3_key = f"{folder_name}/{file_paths[i]}"
-                    else:
-                        s3_key = f"{folder_name}/{uploaded_file.name}"
-                else:
-                    s3_key = f"{folder_name}/{uploaded_file.name}"
+                # Generate S3 key with flat storage structure - upload directly to selected folder
+                s3_key = f"{folder_name}/{uploaded_file.name}"
+                logger.info(f"📁 FLAT_STORAGE: Storing file as: {s3_key}")
                 
                 # Sanitize filename for S3 metadata (ASCII only) using uri_utils
                 from arkumu.common.uri_utils import normalize_string_nfc, slugify_uri_part
@@ -457,7 +439,7 @@ def streaming_upload_form(request):
         
         # Check if this is an HTMX request
         is_htmx = request.headers.get('HX-Request')
-        logger.info(f"🔍 DEBUG: HX-Request header = '{is_htmx}', all headers = {dict(request.headers)}")
+        logger.info(f"🔍 DEBUG: HX-Request header = '{is_htmx}'")
         
         if is_htmx:
             # Return HTML with out-of-band swaps for HTMX
@@ -471,14 +453,17 @@ def streaming_upload_form(request):
                 # Return immediate response with HTMX polling for completion
                 upload_session_id = result.get('upload_session_id', '')
                 
-                # Main content: polling div that checks status every second
+                # Main content: immediate success message (no polling needed)
                 main_html = f'''
-                <div hx-get="/storage/upload/status/{upload_session_id}/?organization={organization}"
-                     hx-trigger="every 1s"
-                     hx-swap="outerHTML">
-                    <div class="alert alert-info">
-                        <span class="loading loading-spinner"></span>
-                        Processing upload... ({total_uploaded_files} files)
+                <div class="alert alert-success">
+                    <div class="text-success text-2xl">✅</div>
+                    <div>
+                        <div class="font-bold text-lg">Upload Complete!</div>
+                        <div class="text-sm">
+                            <span class="font-medium">{total_uploaded_files} files</span> • 
+                            <span class="font-medium">{result.get('total_size_formatted', '')}</span> • 
+                            <span class="font-medium">{result.get('duration', '0.0')}s</span>
+                        </div>
                     </div>
                 </div>
                 '''
@@ -489,33 +474,35 @@ def streaming_upload_form(request):
                     'upload-progress': '<div class="mt-4 hidden"></div>'
                 }
                 
-                # Add file browser refresh if organization is provided
-                logger.info(f"🔍 OOB DEBUG: Checking file browser refresh - organization = '{organization}', HX-Request = '{request.headers.get('HX-Request')}'")
+                # Add file browser refresh OOB update using the mixin's template helper
                 if organization:
-                    try:
-                        logger.info(f"🔍 OOB DEBUG: Starting file browser refresh for organization: {organization}")
-                        # Import here to avoid circular imports
-                        from arkumu.storage.views.file_browser_oob_views import _file_browser_helper
-                        
-                        logger.info(f"🔍 OOB DEBUG: Imported _file_browser_helper successfully")
-                        file_browser_html = _file_browser_helper.render_organization_files_template(
-                            organization, request
-                        )
-                        logger.info(f"🔍 OOB DEBUG: Generated file browser HTML, length: {len(file_browser_html) if file_browser_html else 0}")
-                        logger.info(f"🔍 OOB DEBUG: File browser HTML preview: {file_browser_html[:200] if file_browser_html else 'None'}...")
-                        
-                        oob_updates['file-browser-content'] = file_browser_html
-                        logger.info(f"🔄 STREAMING UPLOAD: Added file browser OOB refresh for organization: {organization}")
-                        logger.info(f"🔍 OOB DEBUG: Total OOB updates: {list(oob_updates.keys())}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to add file browser OOB refresh: {e}", exc_info=True)
+                    # Use the mixin's file browser template helper with eager loading
+                    file_browser_html = helper.render_file_browser_template(request, organization)
+                    oob_updates['file-browser-content'] = file_browser_html
+                    logger.info(f"🔄 OOB DEBUG: Added file browser refresh using mixin helper - HTML length: {len(file_browser_html)}")
+                    
+                    # Add debugging HTML to check if element exists
+                    debug_script = '''
+                    <script>
+                    console.log("🔍 OOB DEBUG: Checking if file-browser-content exists...");
+                    const element = document.getElementById("file-browser-content");
+                    console.log("🔍 OOB DEBUG: file-browser-content element:", element);
+                    if (element) {
+                        console.log("✅ OOB DEBUG: file-browser-content exists!");
+                        element.style.border = "2px solid red";
+                        setTimeout(() => element.style.border = "", 3000);
+                    } else {
+                        console.error("❌ OOB DEBUG: file-browser-content NOT FOUND!");
+                    }
+                    </script>
+                    '''
+                    oob_updates['upload-status'] = f'{main_html}{debug_script}'
                 else:
-                    logger.warning(f"🔍 OOB DEBUG: No organization provided, skipping file browser refresh")
+                    logger.warning(f"⚠️ OOB DEBUG: No organization provided, cannot refresh file browser")
                 
-                # Build final response
+                # Build final response using the mixin's build_oob_response method
                 final_response = helper.build_oob_response('', oob_updates)
                 logger.info(f"🔍 OOB DEBUG: Final response length: {len(final_response)}")
-                logger.info(f"🔍 OOB DEBUG: Final response preview: {final_response[:500]}...")
                 
                 return HttpResponse(final_response)
             else:

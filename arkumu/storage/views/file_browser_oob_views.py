@@ -29,9 +29,13 @@ class FileBrowserOOBMixin(CSVMappingTemplateHelperMixin):
         """
         Render organization files partial template with standard context.
         
+        Now implements eager loading to pre-load 'data' and 'metadata' folder contents
+        to fix the folder refresh issue after uploads.
+        
         Consolidates the repeated pattern:
         - Get bucket service and contents
-        - Prepare context
+        - Pre-load data and metadata folder contents
+        - Prepare enhanced context
         - Render template
         """
         try:
@@ -53,10 +57,34 @@ class FileBrowserOOBMixin(CSVMappingTemplateHelperMixin):
                 # Force a non-empty contents for testing
                 contents = []
             
+            # ISSUE 1 FIX: Pre-load data and metadata folder contents for eager loading
+            enhanced_contents = []
+            for item in contents:
+                if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                    logger.info(f"🔄 EAGER_LOADING: Pre-loading contents for {item['name']} folder")
+                    try:
+                        # Load subfolder contents
+                        subfolder_contents = bucket_service.list_bucket_contents(
+                            bucket_name, 
+                            item['path']
+                        )
+                        item['preloaded_contents'] = subfolder_contents
+                        logger.info(f"✅ EAGER_LOADING: Loaded {len(subfolder_contents) if subfolder_contents else 0} items for {item['name']} folder")
+                        if subfolder_contents:
+                            logger.info(f"📁 EAGER_LOADING: {item['name']} contents: {[sub_item.get('name', 'unknown') for sub_item in subfolder_contents[:5]]}")
+                    except Exception as e:
+                        logger.error(f"❌ EAGER_LOADING: Failed to pre-load {item['name']} folder contents: {e}")
+                        item['preloaded_contents'] = []
+                else:
+                    # For non-data/metadata folders, no preloading needed
+                    item['preloaded_contents'] = None
+                
+                enhanced_contents.append(item)
+            
             context = {
                 'organization': organization,
                 'bucket_name': bucket_name,
-                'contents': contents,
+                'contents': enhanced_contents,
                 'selected_org_slug': organization,
                 'prefix': '',
                 'csrf_token': get_token(request) if request else ''

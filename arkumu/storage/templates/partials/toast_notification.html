@@ -3,7 +3,6 @@ Toast notification partial template for HTMX responses
 Usage: Include this template with message and type variables
 {% endcomment %}
 {% now "U" as timestamp %}
-<!-- DEBUG: Toast template rendered at {{ timestamp }} for message: {{ message }} -->
 
 <div class="toast toast-top toast-center z-50" 
      id="toast-{{ timestamp }}-{{ type }}"

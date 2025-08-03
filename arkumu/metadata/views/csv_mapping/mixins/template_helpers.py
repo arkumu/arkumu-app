@@ -218,7 +218,6 @@ class CSVMappingTemplateHelperMixin:
             oob_element = f'<div id="{target_id}" hx-swap-oob="innerHTML">{content}</div>'
             oob_html += oob_element
             logger.info(f"🔍 BUILD_OOB DEBUG: Added OOB element for '{target_id}', content length: {len(content)}")
-            logger.info(f"🔍 BUILD_OOB DEBUG: OOB element preview: {oob_element[:300]}...")
         
         final_response = f'{main_html}{oob_html}'
         logger.info(f"🔍 BUILD_OOB DEBUG: Final combined response length: {len(final_response)}")
@@ -267,4 +266,70 @@ class CSVMappingTemplateHelperMixin:
             'table-content': table_html,
         }
         
-        return self.build_oob_response(main_html, oob_updates) 
+        return self.build_oob_response(main_html, oob_updates)
+    
+    def render_file_browser_template(self, request, organization):
+        """
+        Render file browser template with eager loading for data/metadata folders.
+        
+        Consolidates the repeated pattern:
+        - Get bucket service and contents
+        - Pre-load data and metadata folder contents  
+        - Prepare enhanced context
+        - Render template
+        """
+        try:
+            from arkumu.storage.services.bucket_service import BucketService
+            
+            bucket_service = BucketService()
+            bucket_name = bucket_service.get_organization_bucket(organization)
+            contents = bucket_service.list_bucket_contents(bucket_name, '')
+            
+            logger.info(f"🔍 FILE_BROWSER_TEMPLATE: organization={organization}")
+            logger.info(f"🔍 FILE_BROWSER_TEMPLATE: bucket_name={bucket_name}")
+            logger.info(f"🔍 FILE_BROWSER_TEMPLATE: contents count={len(contents) if contents else 0}")
+            
+            # Add eager loading for data and metadata folders to show uploaded files immediately
+            enhanced_contents = []
+            for item in contents:
+                if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                    logger.info(f"🔄 EAGER_LOADING: Pre-loading contents for {item['name']} folder")
+                    try:
+                        subfolder_contents = bucket_service.list_bucket_contents(
+                            bucket_name, 
+                            item['path']
+                        )
+                        item['preloaded_contents'] = subfolder_contents
+                        logger.info(f"✅ EAGER_LOADING: Loaded {len(subfolder_contents) if subfolder_contents else 0} items for {item['name']} folder")
+                        if subfolder_contents:
+                            logger.info(f"📁 EAGER_LOADING: {item['name']} contents: {[sub_item.get('name', 'unknown') for sub_item in subfolder_contents[:5]]}")
+                    except Exception as e:
+                        logger.error(f"❌ EAGER_LOADING: Failed to pre-load {item['name']} folder contents: {e}")
+                        item['preloaded_contents'] = []
+                else:
+                    item['preloaded_contents'] = None
+                enhanced_contents.append(item)
+            
+            context = {
+                'organization': organization,
+                'bucket_name': bucket_name,
+                'contents': enhanced_contents,
+                'selected_org_slug': organization,
+                'prefix': '',
+                'csrf_token': get_token(request) if request else ''
+            }
+            
+            rendered_html = render_to_string(
+                'dashboard/organization_files_partial.html',
+                context,
+                request=request
+            )
+            
+            logger.info(f"🔍 FILE_BROWSER_TEMPLATE: rendered HTML length={len(rendered_html)}")
+            logger.info(f"🔍 FILE_BROWSER_TEMPLATE: HTML starts with: '{rendered_html[:100]}'")
+            logger.info(f"🔍 FILE_BROWSER_TEMPLATE: HTML after strip starts with: '{rendered_html.strip()[:100]}'")
+            return rendered_html
+            
+        except Exception as e:
+            logger.error(f"❌ FILE_BROWSER_TEMPLATE: Error rendering file browser template: {e}")
+            return f'<div class="alert alert-error"><span>Error loading file browser: {str(e)}</span></div>' 

@@ -1,6 +1,6 @@
 import logging
 import time
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.views import View
 from arkumu.storage.services.bucket_service import BucketService
@@ -90,6 +90,17 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
         }
     
     def get(self, request):
+        # Log and ignore GET requests with sensitive data in query params  
+        if any(param in request.GET for param in ['csrfmiddlewaretoken', 'files']):
+            logger.warning(f"Dashboard accessed with sensitive URL parameters, ignoring them")
+        
+        return self._handle_dashboard_request(request)
+    
+    def post(self, request):
+        # Handle form submissions securely via POST
+        return self._handle_dashboard_request(request)
+    
+    def _handle_dashboard_request(self, request):
         """Handle GET requests for the archivist dashboard."""
         logger.info(f"Archivist dashboard view called. Request method: {request.method}, User: {request.user}")
         try:

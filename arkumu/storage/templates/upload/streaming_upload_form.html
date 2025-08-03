@@ -66,12 +66,6 @@
                     <div class="text-xs text-gray-500 mt-1">
                         You can select multiple files at once
                     </div>
-                    <div class="form-control mt-2">
-                        <label class="cursor-pointer label">
-                            <span class="label-text">Upload folder structure</span>
-                            <input type="checkbox" id="folder-mode" class="checkbox checkbox-primary" />
-                        </label>
-                    </div>
                 </div>
                 
                 <div id="selected-files-info" class="mt-4 hidden">
@@ -132,7 +126,7 @@
     // class included in base.html. The handler automatically initializes
     // when it detects the streaming-upload-form element.
     
-    // Custom initialization or overrides can be added here if needed
-    console.log('📁 Upload form template loaded - chunked upload support enabled');
+    // Upload form template loaded - chunked upload support enabled
+    console.log('📁 Upload form template loaded - flat storage with chunked upload support');
 </script>
 {% endblock %} 
