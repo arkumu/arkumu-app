@@ -453,9 +453,9 @@ def streaming_upload_form(request):
                 # Return immediate response with HTMX polling for completion
                 upload_session_id = result.get('upload_session_id', '')
                 
-                # Main content: immediate success message (no polling needed)
+                # Main content: immediate success message that auto-hides after 5 seconds
                 main_html = f'''
-                <div class="alert alert-success">
+                <div class="alert alert-success" id="upload-success-alert">
                     <div class="text-success text-2xl">✅</div>
                     <div>
                         <div class="font-bold text-lg">Upload Complete!</div>
@@ -466,6 +466,18 @@ def streaming_upload_form(request):
                         </div>
                     </div>
                 </div>
+                <script>
+                setTimeout(function() {{
+                    const alert = document.getElementById('upload-success-alert');
+                    if (alert) {{
+                        alert.style.transition = 'opacity 0.5s ease-out';
+                        alert.style.opacity = '0';
+                        setTimeout(function() {{
+                            alert.remove();
+                        }}, 500);
+                    }}
+                }}, 5000);
+                </script>
                 '''
                 
                 # OOB updates to hide progress, update status, and refresh file browser
