@@ -1,7 +1,7 @@
 from django.urls import path
 
 from . import views
-from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views, simple_multipart_upload, file_browser_oob_views
+from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views, simple_multipart_upload, file_browser_oob_views, s3_multipart_upload_views
 
 app_name = "storage"
 
@@ -28,6 +28,12 @@ urlpatterns = [
     # Simple multipart upload endpoint
     path("upload/simple/", simple_multipart_upload.simple_multipart_form, name="simple_multipart_form"),
     path("upload/multipart/", simple_multipart_upload.SimpleMultipartUploadViewSet.as_view({'post': 'upload'}), name="simple_multipart_upload"),
+    
+    # S3 Native Multipart Upload endpoints
+    path("upload/multipart/init/", s3_multipart_upload_views.multipart_upload_init, name="s3_multipart_upload_init"),
+    path("upload/multipart/chunk/", s3_multipart_upload_views.multipart_upload_chunk, name="s3_multipart_upload_chunk"),
+    path("upload/multipart/complete/", s3_multipart_upload_views.multipart_upload_complete, name="s3_multipart_upload_complete"),
+    path("upload/multipart/abort/", s3_multipart_upload_views.multipart_upload_abort, name="s3_multipart_upload_abort"),
     
     # Resumable upload endpoints (keeping for backward compatibility)
     path("upload/resumable/init/", resumable_upload_views.resumable_upload_init, name="resumable_upload_init"),

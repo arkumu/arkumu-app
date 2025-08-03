@@ -132,9 +132,16 @@ class UploadFormHandler {
             // Use the selected base folder directly
             const folderName = baseFolder;
 
-            // Simple strategy: Use chunked upload for everything
-            console.log(`🔄 Using chunked upload for ${this.selectedFiles.length} files`);
-            await this.performChunkedUpload(folderName, organization, baseFolder);
+            // Strategy selection: Choose upload method based on configuration
+            const useS3Multipart = window.uploadConfig?.useS3Multipart || false;
+            
+            if (useS3Multipart) {
+                console.log(`🔄 Using hybrid upload strategy for ${this.selectedFiles.length} files`);
+                await this.performHybridUpload(folderName, organization, baseFolder);
+            } else {
+                console.log(`🔄 Using chunked upload for ${this.selectedFiles.length} files`);
+                await this.performChunkedUpload(folderName, organization, baseFolder);
+            }
 
         } catch (error) {
             console.error('Upload error:', error);
@@ -157,6 +164,87 @@ class UploadFormHandler {
             onChunkComplete: (chunk, result) => this.handleChunkComplete(chunk, result),
             onComplete: (summary) => this.handleUploadComplete(summary),
             onError: (error, chunk) => this.handleUploadError(error, chunk)
+        });
+
+        const result = await this.currentUploader.uploadFiles(
+            this.selectedFiles,
+            folderName,
+            organization,
+            baseFolder
+        );
+
+        return result;
+    }
+
+    async performHybridUpload(folderName, organization, baseFolder) {
+        // Separate files by size: multipart for large files (≥5MB), regular for small files
+        const MULTIPART_THRESHOLD = 5 * 1024 * 1024; // 5MB
+        const largeFiles = [];
+        const smallFiles = [];
+        
+        for (const file of this.selectedFiles) {
+            console.log(`📏 File: ${file.name} (${file.size} bytes, ${(file.size / (1024*1024)).toFixed(2)}MB)`);
+            if (file.size >= MULTIPART_THRESHOLD) {
+                console.log(`  ➡️ Large file - using multipart`);
+                largeFiles.push(file);
+            } else {
+                console.log(`  ➡️ Small file - using regular upload`);
+                smallFiles.push(file);
+            }
+        }
+        
+        console.log(`📊 File distribution: ${largeFiles.length} large files (multipart), ${smallFiles.length} small files (regular)`);
+        
+        // Upload small files using regular chunked upload
+        if (smallFiles.length > 0) {
+            console.log(`🔄 Uploading ${smallFiles.length} small files using regular upload`);
+            const originalFiles = this.selectedFiles;
+            this.selectedFiles = smallFiles;
+            try {
+                await this.performChunkedUpload(folderName, organization, baseFolder);
+            } finally {
+                this.selectedFiles = originalFiles;
+            }
+        }
+        
+        // Upload large files using S3 multipart
+        if (largeFiles.length > 0) {
+            console.log(`🔄 Uploading ${largeFiles.length} large files using S3 multipart`);
+            const originalFiles = this.selectedFiles;
+            this.selectedFiles = largeFiles;
+            try {
+                await this.performS3MultipartUpload(folderName, organization, baseFolder);
+            } finally {
+                this.selectedFiles = originalFiles;
+            }
+        }
+    }
+
+    async performS3MultipartUpload(folderName, organization, baseFolder) {
+        console.log(`🚀 S3 MULTIPART: Starting S3 multipart upload`);
+        console.log(`🚀 S3 MULTIPART: folderName = "${folderName}"`);
+        console.log(`🚀 S3 MULTIPART: organization = "${organization}"`);
+        console.log(`🚀 S3 MULTIPART: baseFolder = "${baseFolder}"`);
+
+        this.currentUploader = new S3MultipartUploadHandler({
+            chunkSize: 5 * 1024 * 1024, // 5MB per chunk (S3 minimum)
+            maxConcurrent: 3,
+            initUrl: '/storage/upload/multipart/init/',
+            chunkUrl: '/storage/upload/multipart/chunk/',
+            completeUrl: '/storage/upload/multipart/complete/',
+            onProgress: (progress) => {
+                // Convert S3 multipart progress to match chunked upload format
+                this.updateProgress({
+                    percentage: progress.globalProgress,
+                    processedFiles: progress.completedFiles,
+                    totalFiles: progress.totalFiles
+                });
+            },
+            onFileComplete: (file, result) => {
+                console.log('✅ File completed:', file.name);
+            },
+            onComplete: (summary) => this.handleUploadComplete(summary),
+            onError: (error) => this.handleUploadError(error)
         });
 
         const result = await this.currentUploader.uploadFiles(

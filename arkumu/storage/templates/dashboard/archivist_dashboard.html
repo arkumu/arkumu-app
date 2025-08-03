@@ -176,9 +176,18 @@
 </dialog>
 
 
-<!-- Chunked Upload JavaScript -->
+<!-- Upload JavaScript -->
 <script src="{% static 'js/src/s3/chunked-upload.js' %}"></script>
+<script src="{% static 'js/src/s3/s3-multipart-upload.js' %}"></script>
 <script src="{% static 'js/src/s3/upload-form-handler.js' %}"></script>
+
+<!-- Upload Configuration -->
+<script>
+// Configure upload method
+window.uploadConfig = {
+    useS3Multipart: true  // Set to true to enable S3 native multipart upload
+};
+</script>
 
 <script>
 // Upload mode switching
