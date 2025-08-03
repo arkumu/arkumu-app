@@ -300,6 +300,36 @@ def delete_object(request, bucket_type, object_type, object_path):
             logger.info(success_message)
             logger.info(f"🔥 DELETE_DEBUG: Processing successful deletion, HTMX={request.headers.get('HX-Request')}, bucket_type={bucket_type}")
             
+            # Clean up database records for deleted files
+            from arkumu.storage.models import S3FileObject
+            deleted_count = 0
+            
+            if bucket_type.startswith('org-'):
+                organization = bucket_type.replace('org-', '')
+                
+                if object_type == "folder":
+                    # Delete all S3FileObject records with s3_key starting with the folder path
+                    folder_prefix = object_path if object_path.endswith('/') else object_path + '/'
+                    deleted_objects = S3FileObject.objects.filter(
+                        session__s3_bucket=organization,
+                        s3_key__startswith=folder_prefix
+                    )
+                    deleted_count = deleted_objects.count()
+                    deleted_objects.delete()
+                    logger.info(f"🗑️ Deleted {deleted_count} S3FileObject records for folder {folder_prefix}")
+                else:
+                    # Delete specific S3FileObject record for the file
+                    deleted_objects = S3FileObject.objects.filter(
+                        session__s3_bucket=organization,
+                        s3_key=object_path
+                    )
+                    deleted_count = deleted_objects.count()
+                    deleted_objects.delete()
+                    logger.info(f"🗑️ Deleted {deleted_count} S3FileObject record for file {object_path}")
+            
+            if deleted_count > 0:
+                success_message += f" (cleaned up {deleted_count} database records)"
+            
             # Invalidate directory listing cache after deletion
             from django.core.cache import cache
             if bucket_type.startswith('org-'):
