@@ -163,6 +163,12 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
                         bucket_name = bucket_service.get_organization_bucket(selected_org_slug)
                         # Get bucket contents for the file browser
                         contents = bucket_service.list_bucket_contents(bucket_name, '')
+                        
+                        # Add file counts for data and metadata folders (same as dropdown change logic)
+                        for item in contents:
+                            if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                                item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'])
+                        
                         logger.info(f"Loaded {len(contents)} items for {selected_org_slug}")
                         # Also get root level items if needed for other purposes
                         organization_structure = bucket_service.get_root_level_items(bucket_name)
