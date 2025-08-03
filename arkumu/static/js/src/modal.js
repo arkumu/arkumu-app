@@ -54,21 +54,45 @@ class ModalManager {
     }
 
     close() {
-        console.log('Closing modal');
-        this.modal.classList.remove('opacity-100', 'pointer-events-auto');
-        this.modal.classList.add('opacity-0', 'pointer-events-none');
-
-        // Stop media playback
+        console.log('🔴 MODAL CLOSE CALLED - Starting cleanup process');
+        
+        // Stop media playback BEFORE clearing content
         const audioElement = this.modal.querySelector('audio');
         if (audioElement) {
+            console.log('Stopping audio playback');
             audioElement.pause();
             audioElement.currentTime = 0;
+            audioElement.src = '';
+            audioElement.load();
         }
 
         const videoElement = this.modal.querySelector('video');
         if (videoElement) {
+            console.log('🎥 FOUND VIDEO ELEMENT - Starting video cleanup');
+            
+            // Pause video first
             videoElement.pause();
             videoElement.currentTime = 0;
+            
+            // Remove all source elements
+            const sources = videoElement.querySelectorAll('source');
+            sources.forEach(source => source.remove());
+            
+            // Clear src and load to try to stop requests
+            videoElement.src = "";
+            videoElement.load();
+            
+            // Most aggressive approach: replace with dummy video to force Chrome to abort requests
+            const dummyVideo = document.createElement('video');
+            dummyVideo.src = 'data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAAhmcmVlAAAAG21kYXQAAAGzABAHAAABthADAowdbb9/AAAC6W1vb3YAAABsbXZoZAAAAAB8JbCAfCWwgAAAA+gAAAAAAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAIVdHJhawAAAFx0a2hkAAAAD3wlsIB8JbCAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAALAAAACgAAAAAAJGVkdHMAAAAcZWxzdAAAAAAAAAABAAAAAQAACgAAAAABAAAAAAAAAAAAAAD//w==';
+            videoElement.parentNode.replaceChild(dummyVideo, videoElement);
+            
+            // Immediately remove the dummy too
+            dummyVideo.remove();
+            
+            console.log('✅ VIDEO CLEANUP COMPLETE - Element removed from DOM');
+        } else {
+            console.log('No video element found in modal');
         }
 
         // Stop WaveSurfer if exists
@@ -78,7 +102,13 @@ class ModalManager {
             window.wavesurfer = null;
         }
 
+        this.modal.classList.remove('opacity-100', 'pointer-events-auto');
+        this.modal.classList.add('opacity-0', 'pointer-events-none');
+
+        // Clear content after stopping media
         this.modalContent.innerHTML = '';
+        
+        console.log('🟢 MODAL CLOSE COMPLETE - All cleanup finished');
     }
 
     setContent(content) {
@@ -90,7 +120,7 @@ class ModalManager {
 
     _detectViewerType(content) {
         if (content.includes('audioPlayer')) return 'audio';
-        if (content.includes('videoPlayer')) return 'video';
+        if (content.includes('<video')) return 'video';
         if (content.includes('elan-viewer')) return 'elan';
         // Add more viewer types as needed
         return 'default';

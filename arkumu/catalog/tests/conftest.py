@@ -31,7 +31,11 @@ def user(organization):
 
 @pytest.fixture
 def anonymous_user():
-    """Create an anonymous user."""
+    """Create an anonymous user instance for testing.
+    
+    Note: This returns Django's AnonymousUser class instance,
+    not a database user. It's used to simulate unauthenticated requests.
+    """
     from django.contrib.auth.models import AnonymousUser
     return AnonymousUser()
 
