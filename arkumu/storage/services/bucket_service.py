@@ -464,3 +464,131 @@ class BucketService:
         """Delete a single file."""
         return self.base_s3_service.delete_object(bucket_name, file_path, is_directory=False)
 
+    def stream_file_with_range(self, bucket_name: str, file_path: str, range_header: str = None) -> Dict[str, Any]:
+        """
+        Stream file content with support for HTTP range requests.
+        Essential for video streaming - enables seeking, progressive download, and efficient bandwidth usage.
+        
+        Args:
+            bucket_name: Name of the S3 bucket
+            file_path: Path to the file within the bucket
+            range_header: HTTP Range header value (e.g., "bytes=0-1023")
+            
+        Returns:
+            Dict containing:
+                - success: bool
+                - content: bytes (file content for the requested range)
+                - content_type: str (MIME type)
+                - content_length: int (total file size)
+                - content_range: str (range info for response header)
+                - status_code: int (206 for partial content, 200 for full content)
+                - accept_ranges: str ("bytes")
+        """
+        try:
+            # First, get file metadata to determine total size
+            try:
+                head_response = self.base_s3_service.s3_client.head_object(
+                    Bucket=bucket_name,
+                    Key=file_path
+                )
+                total_size = head_response['ContentLength']
+                content_type = head_response.get('ContentType', 'application/octet-stream')
+                last_modified = head_response.get('LastModified')
+                etag = head_response.get('ETag', '').strip('"')
+                
+            except ClientError as e:
+                logger.error(f"Error getting file metadata for {file_path}: {e}")
+                return {
+                    "success": False,
+                    "error": f"File not found or inaccessible: {str(e)}"
+                }
+            
+            # Parse range header if provided
+            start_byte = 0
+            end_byte = total_size - 1
+            status_code = 200
+            
+            if range_header:
+                try:
+                    # Parse "bytes=start-end" format
+                    range_match = range_header.replace('bytes=', '').strip()
+                    if '-' in range_match:
+                        parts = range_match.split('-', 1)
+                        if parts[0]:  # start specified
+                            start_byte = int(parts[0])
+                        if parts[1]:  # end specified
+                            end_byte = int(parts[1])
+                        else:
+                            # If no end specified, serve from start to end of file
+                            end_byte = total_size - 1
+                    
+                    # Validate range
+                    if start_byte >= total_size:
+                        return {
+                            "success": False,
+                            "error": "Range start exceeds file size",
+                            "status_code": 416  # Range Not Satisfiable
+                        }
+                    
+                    # Ensure end doesn't exceed file size
+                    end_byte = min(end_byte, total_size - 1)
+                    status_code = 206  # Partial Content
+                    
+                    logger.info(f"📹 Range request for {file_path}: bytes {start_byte}-{end_byte}/{total_size}")
+                    
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"Invalid range header '{range_header}': {e}. Serving full file.")
+                    range_header = None  # Fall back to full file
+            
+            # Build S3 get_object parameters
+            get_params = {
+                'Bucket': bucket_name,
+                'Key': file_path
+            }
+            
+            # Add range to S3 request if specified
+            if range_header and status_code == 206:
+                get_params['Range'] = f'bytes={start_byte}-{end_byte}'
+            
+            # Get the file content from S3
+            try:
+                response = self.base_s3_service.s3_client.get_object(**get_params)
+                content = response['Body'].read()
+                
+                # Build response data
+                result = {
+                    "success": True,
+                    "content": content,
+                    "content_type": content_type,
+                    "content_length": total_size,
+                    "status_code": status_code,
+                    "accept_ranges": "bytes",
+                    "last_modified": last_modified,
+                    "etag": etag
+                }
+                
+                # Add range-specific headers for partial content
+                if status_code == 206:
+                    actual_content_length = len(content)
+                    result["content_range"] = f"bytes {start_byte}-{start_byte + actual_content_length - 1}/{total_size}"
+                    result["partial_content_length"] = actual_content_length
+                    logger.info(f"📹 Served partial content: {actual_content_length} bytes ({start_byte}-{start_byte + actual_content_length - 1}/{total_size})")
+                else:
+                    logger.info(f"📹 Served full content: {total_size} bytes")
+                
+                return result
+                
+            except ClientError as e:
+                logger.error(f"Error retrieving file content for {file_path}: {e}")
+                return {
+                    "success": False,
+                    "error": f"Failed to retrieve file content: {str(e)}"
+                }
+                
+        except Exception as e:
+            logger.exception(f"Unexpected error in stream_file_with_range for {file_path}")
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}"
+            }
+

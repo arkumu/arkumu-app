@@ -124,13 +124,14 @@
                                                 <span class="ml-2 text-xs opacity-60">({{ sub_item.size|filesizeformat }})</span>
                                             {% endif %}
                                             <div class="ml-auto">
-                                                {% if sub_item.name|slice:"-4:" == ".csv" or sub_item.name|slice:"-4:" == ".CSV" %}
-                                                    <button hx-get="{% url 'storage:csv_preview' bucket_type='org-'|add:organization file_path=sub_item.path %}"
-                                                            hx-target="#csv-preview-modal .modal-box"
+                                                {% load storage_extras %}
+                                                {% if sub_item.name|is_viewable_file %}
+                                                    <button hx-get="{% url 'storage:file_viewer' bucket_type='org-'|add:organization file_path=sub_item.path %}"
+                                                            hx-target="#file-viewer-modal .modal-box"
                                                             hx-swap="innerHTML"
                                                             class="btn btn-ghost btn-xs text-info mr-1" 
-                                                            title="Preview CSV file"
-                                                            onclick="document.getElementById('csv-preview-modal').showModal()">
+                                                            title="Preview file"
+                                                            onclick="document.getElementById('file-viewer-modal').showModal()">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -173,14 +174,14 @@
                         {% endif %}
                             
                         <div class="ml-auto flex items-center space-x-2">
-                            <!-- Enable view icon only for CSV files -->
-                                {% if item.name|slice:"-4:" == ".csv" or item.name|slice:"-4:" == ".CSV" %}
-                                    <button hx-get="{% url 'storage:csv_preview' bucket_type='org-'|add:organization file_path=item.path %}"
-                                            hx-target="#csv-preview-modal .modal-box"
+                            <!-- Generic file viewer for multiple file types -->
+                                {% if item.name|is_viewable_file %}
+                                    <button hx-get="{% url 'storage:file_viewer' bucket_type='org-'|add:organization file_path=item.path %}"
+                                            hx-target="#file-viewer-modal .modal-box"
                                             hx-swap="innerHTML"
                                             class="btn btn-ghost btn-xs text-info" 
-                                            title="Preview CSV file"
-                                            onclick="document.getElementById('csv-preview-modal').showModal()">
+                                            title="Preview file"
+                                            onclick="document.getElementById('file-viewer-modal').showModal()">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>

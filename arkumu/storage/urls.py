@@ -57,6 +57,8 @@ urlpatterns = [
     # File operations
     path("file-content/<str:bucket_type>/<path:file_path>/", file_operations_views.file_content, name="file_content"),
     path("csv-preview/<str:bucket_type>/<path:file_path>/", file_operations_views.csv_preview, name="csv_preview"),
+    path("file-viewer/<str:bucket_type>/<path:file_path>/", file_operations_views.file_viewer, name="file_viewer"),
+    path("stream/<str:bucket_type>/<path:file_path>/", file_operations_views.stream_file, name="stream_file"),
     path("delete/<str:bucket_type>/<str:object_type>/<path:object_path>/", file_operations_views.delete_object, name="delete_object"),
     path("debug/presigned-url/", direct_upload_views.debug_presigned_url, name="debug_presigned_url"),
     path("upload/debug-error/", direct_upload_views.debug_upload_error, name="debug_upload_error"),

@@ -102,8 +102,13 @@ def multipart_upload_init(request):
         )
         
         # Create S3 file object
-        from arkumu.common.uri_utils import slugify_uri_part
-        sanitized_filename = slugify_uri_part(filename)
+        from arkumu.common.uri_utils import normalize_string_nfc
+        import os
+        
+        # Preserve file extension while normalizing filename (NFC for umlauts)
+        filename_without_ext, file_extension = os.path.splitext(filename)
+        normalized_filename_part = normalize_string_nfc(filename_without_ext)
+        sanitized_filename = normalized_filename_part + file_extension
         
         # Build S3 key
         if folder_name:
@@ -366,54 +371,16 @@ def multipart_upload_complete(request):
         
         logger.info(f"✅ MULTIPART COMPLETE: {s3_key} completed successfully")
         
-        # Add OOB updates like other upload views
-        try:
-            from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
-            
-            helper = CSVMappingTemplateHelperMixin()
-            organization = upload_session.institution
-            
-            # Create success toast
-            toast_html = f'''
-                <div class="toast toast-end z-50" id="upload-toast">
-                    <div class="alert alert-success">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>S3 multipart upload completed successfully!</span>
-                    </div>
-                </div>
-            '''
-            
-            # OOB updates to show toast and refresh file browser
-            oob_updates = {
-                'toast-container': toast_html
-            }
-            
-            # Add file browser refresh OOB update
-            if organization:
-                file_browser_html = helper.render_file_browser_template(request, organization)
-                oob_updates['file-browser-content'] = file_browser_html
-                logger.info(f"🔄 S3 MULTIPART OOB: Added file browser refresh for organization {organization}")
-            
-            # Build final response using the same pattern as other uploads
-            final_response = helper.build_oob_response('', oob_updates)
-            
-            from django.http import HttpResponse
-            return HttpResponse(final_response)
-            
-        except Exception as e:
-            logger.warning(f"Failed to generate OOB update for S3 multipart completion: {e}")
-            # Fall back to JSON response
-            return JsonResponse({
-                'success': True,
-                'location': response.get('Location'),
-                'etag': response.get('ETag'),
-                'bucket': bucket,
-                's3Key': s3_key,
-                'uploadSessionId': str(upload_session.id),
-                'organization': upload_session.institution
-            })
+        # Return JSON response for S3 multipart upload (JavaScript expects JSON)
+        return JsonResponse({
+            'success': True,
+            'location': response.get('Location'),
+            'etag': response.get('ETag'),
+            'bucket': bucket,
+            's3Key': s3_key,
+            'uploadSessionId': str(upload_session.id),
+            'organization': upload_session.institution
+        })
         
     except Exception as e:
         logger.exception(f"Error completing multipart upload: {str(e)}")

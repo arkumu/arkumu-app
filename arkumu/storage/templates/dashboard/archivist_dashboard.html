@@ -161,13 +161,13 @@
     </div>
 </div>
 
-<!-- CSV Preview Modal -->
-<dialog id="csv-preview-modal" class="modal">
+<!-- File Viewer Modal -->
+<dialog id="file-viewer-modal" class="modal">
     <div class="modal-box w-11/12 max-w-7xl h-5/6 max-h-screen">
         <!-- Content will be loaded via HTMX -->
         <div class="flex items-center justify-center h-full">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-            <p class="text-gray-600">Loading CSV preview...</p>
+            <p class="text-gray-600">Loading file preview...</p>
         </div>
     </div>
     <form method="dialog" class="modal-backdrop">
@@ -180,6 +180,10 @@
 <script src="{% static 'js/src/s3/chunked-upload.js' %}"></script>
 <script src="{% static 'js/src/s3/s3-multipart-upload.js' %}"></script>
 <script src="{% static 'js/src/s3/upload-form-handler.js' %}"></script>
+
+<!-- File Viewer JavaScript -->
+<script src="{% static 'js/src/modal.js' %}"></script>
+<script src="{% static 'js/src/file-viewer/file-viewer-handler.js' %}" type="module"></script>
 
 <!-- Upload Configuration -->
 <script>
@@ -277,6 +281,59 @@ document.addEventListener('change', function(e) {
 
 // Upload system now handled entirely by upload-form-handler.js
 // Mode switching allows both individual files and entire folders
+
+// File viewer integration
+document.addEventListener('htmx:afterRequest', function(event) {
+    // Check if this is a file viewer request
+    if (event.detail.xhr.getResponseHeader('content-type')?.includes('text/html') && 
+        event.target.closest('#file-viewer-modal')) {
+        
+        // Initialize viewers after content is loaded
+        setTimeout(() => {
+            // Initialize audio players if WaveSurfer is available
+            const audioElement = document.querySelector('#audioPlayer');
+            if (audioElement && window.WaveSurfer) {
+                const wavesurfer = WaveSurfer.create({
+                    container: '#waveform',
+                    waveColor: '#4F46E5',
+                    progressColor: '#818CF8',
+                    cursorColor: '#C7D2FE',
+                    barWidth: 2,
+                    barRadius: 3,
+                    cursorWidth: 1,
+                    height: 80,
+                    barGap: 2
+                });
+                
+                wavesurfer.load(audioElement.src);
+                
+                const playButton = document.querySelector('#playButton');
+                if (playButton) {
+                    playButton.addEventListener('click', () => {
+                        wavesurfer.playPause();
+                        
+                        const isPlaying = wavesurfer.isPlaying();
+                        const playIcon = playButton.querySelector('.play-icon');
+                        const pauseIcon = playButton.querySelector('.pause-icon');
+                        
+                        if (isPlaying) {
+                            playIcon.classList.add('hidden');
+                            pauseIcon.classList.remove('hidden');
+                        } else {
+                            playIcon.classList.remove('hidden');
+                            pauseIcon.classList.add('hidden');
+                        }
+                    });
+                }
+            }
+            
+            // Initialize code highlighting if Prism.js is available
+            if (window.Prism) {
+                Prism.highlightAll();
+            }
+        }, 100);
+    }
+});
 </script>
 
 {% endblock %}
