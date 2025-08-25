@@ -5,7 +5,7 @@ from typing import Dict, Any
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import time
 
@@ -361,7 +361,7 @@ def multipart_upload_complete(request):
         
         # Update S3FileObject
         try:
-            s3_file_object = upload_session.s3fileobject_set.first()
+            s3_file_object = upload_session.files.first()
             if s3_file_object:
                 s3_file_object.status = 'completed'
                 s3_file_object.upload_completed_at = upload_session.completed_at
@@ -390,16 +390,52 @@ def multipart_upload_complete(request):
         
         logger.info(f"✅ MULTIPART COMPLETE: {s3_key} completed successfully")
         
-        # Return JSON response for S3 multipart upload (JavaScript expects JSON)
-        return JsonResponse({
-            'success': True,
-            'location': response.get('Location'),
-            'etag': response.get('ETag'),
-            'bucket': bucket,
-            's3Key': s3_key,
-            'uploadSessionId': str(upload_session.id),
-            'organization': upload_session.institution
-        })
+        # Check if this is an HTMX request and return OOB updates like chunked upload
+        if request.headers.get('HX-Request'):
+            from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+            from django.template.loader import render_to_string
+            
+            helper = CSVMappingTemplateHelperMixin()
+            
+            # Create success toast
+            toast_html = render_to_string(
+                "partials/toast_notification.html",
+                {
+                    "message": f"File {upload_session.files.first().file_name} uploaded successfully!",
+                    "type": "success"
+                },
+                request=request
+            )
+            
+            # OOB updates for toast and file browser refresh
+            oob_updates = {
+                'toast-container': toast_html
+            }
+            
+            # Add file browser refresh if we have an organization
+            if upload_session.institution:
+                # Small delay and cache clearing like chunked upload
+                import time as time_module
+                time_module.sleep(0.5)
+                
+                file_browser_html = helper.render_file_browser_template(request, upload_session.institution)
+                oob_updates['file-browser-content'] = file_browser_html
+                logger.info(f"🔄 MULTIPART OOB: Added file browser refresh for {upload_session.institution}")
+            
+            # Return HTMX response with OOB updates
+            response_html = helper.build_oob_response('', oob_updates)
+            return HttpResponse(response_html)
+        else:
+            # Fallback JSON response for non-HTMX requests
+            return JsonResponse({
+                'success': True,
+                'location': response.get('Location'),
+                'etag': response.get('ETag'),
+                'bucket': bucket,
+                's3Key': s3_key,
+                'uploadSessionId': str(upload_session.id),
+                'organization': upload_session.institution
+            })
         
     except Exception as e:
         logger.exception(f"Error completing multipart upload: {str(e)}")

@@ -300,9 +300,7 @@ class UploadFormHandler {
         if (summary.success) {
             console.log('🔄 UploadFormHandler: Upload completed successfully');
             console.log('📊 Summary details:', summary);
-            
-            // Manually refresh file browser for multipart uploads (since they don't use OOB updates)
-            this.refreshFileBrowser();
+            console.log('🔄 Browser refresh handled by server OOB updates - no JS refresh needed');
         } else {
             const message = summary.cancelled 
                 ? 'Upload was cancelled'

@@ -332,6 +332,10 @@ class S3MultipartUploadHandler {
         const response = await fetch(this.completeUrl, {
             method: 'POST',
             body: formData,
+            headers: {
+                'HX-Request': 'true',  // Tell server we want HTMX OOB updates
+                'HX-Target': 'toast-container'
+            },
             signal: this.abortController.signal
         });
 
@@ -339,7 +343,41 @@ class S3MultipartUploadHandler {
             throw new Error(`Failed to complete upload: ${response.status}`);
         }
 
-        return await response.json();
+        // Handle HTMX response (HTML with OOB updates) instead of JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+            // HTMX HTML response with OOB updates - process them
+            const html = await response.text();
+            
+            // Create temporary container to parse HTML
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            
+            // Process OOB updates via HTMX
+            if (typeof htmx !== 'undefined') {
+                htmx.process(temp);
+                
+                const oobElements = temp.querySelectorAll('[hx-swap-oob]');
+                oobElements.forEach(element => {
+                    const swapStyle = element.getAttribute('hx-swap-oob');
+                    const targetId = element.id;
+                    const targetElement = document.getElementById(targetId);
+                    
+                    if (targetElement && swapStyle === 'innerHTML') {
+                        targetElement.innerHTML = element.innerHTML;
+                        htmx.process(targetElement);
+                    }
+                });
+                
+                console.log(`✅ Multipart: Processed ${oobElements.length} OOB updates`);
+            }
+            
+            // Return success for completion tracking
+            return { success: true };
+        } else {
+            // Fallback JSON response
+            return await response.json();
+        }
     }
 
     /**
