@@ -198,6 +198,18 @@
         <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/inputs/pagination.html</p>
       </div>
 
+      <!-- Filter Bar -->
+      <div class="mb-10">
+        <h3 class="text-lg font-medium mb-3">Filter Bar</h3>
+        <div class="p-4 border transition-colors
+             bg-white
+             theme-dark:bg-arkumu-dark 
+             theme-dark:border-arkumu-light">
+            {% include 'components/inputs/filter_bar.html' with result_count="4" result_label="Ergebnisse" tag1="Video, Spielfilme" tag2="Instrumentalmusik" tag3="autonome Projekte" search_placeholder="Suche" sort_option1="Sortieren nach Datum" sort_option2="Sortieren nach Titel" sort_option3="Sortieren nach Relevanz" %}
+        </div>
+        <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/inputs/filter_bar.html</p>
+      </div>
+
       <!-- Text Field -->
       <div class="mb-10">
         <h3 class="text-lg font-medium mb-3">Text Field</h3>

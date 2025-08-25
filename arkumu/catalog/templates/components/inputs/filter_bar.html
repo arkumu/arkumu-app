@@ -1,0 +1,221 @@
+<!-- Filter Bar Component with Theme Support -->
+<div class="filter-bar-component w-full p-6">
+  
+  <!-- Active Filter Tags Row -->
+  <div class="flex flex-wrap items-center gap-2 mb-6">
+    <!-- Active filter tags with X button -->
+    {% if tag1 %}
+    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                border-arkumu-dark text-arkumu-dark bg-white
+                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+      <span class="mr-2">{{ tag1|default:"Video, Spielfilme" }}</span>
+      <button class="hover:opacity-70" 
+              hx-delete="/filter/remove/{{ tag1_id|default:'tag1' }}" 
+              hx-target="closest .filter-bar-component"
+              hx-swap="outerHTML">×</button>
+    </div>
+    {% endif %}
+    
+    {% if tag2 %}
+    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                border-arkumu-dark text-arkumu-dark bg-white
+                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+      <span class="mr-2">{{ tag2|default:"Instrumentalmusik" }}</span>
+      <button class="hover:opacity-70" 
+              hx-delete="/filter/remove/{{ tag2_id|default:'tag2' }}" 
+              hx-target="closest .filter-bar-component"
+              hx-swap="outerHTML">×</button>
+    </div>
+    {% endif %}
+    
+    {% if tag3 %}
+    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                border-arkumu-dark text-arkumu-dark bg-white
+                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+      <span class="mr-2">{{ tag3|default:"autonome Projekte" }}</span>
+      <button class="hover:opacity-70" 
+              hx-delete="/filter/remove/{{ tag3_id|default:'tag3' }}" 
+              hx-target="closest .filter-bar-component"
+              hx-swap="outerHTML">×</button>
+    </div>
+    {% endif %}
+    
+    <!-- Default tags if none provided -->
+    {% if not tag1 and not tag2 and not tag3 %}
+    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                border-arkumu-dark text-arkumu-dark bg-white
+                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+      <span class="mr-2">Video, Spielfilme</span>
+      <button class="hover:opacity-70" 
+              hx-delete="/filter/remove/video-spielfilme" 
+              hx-target="closest .filter-bar-component"
+              hx-swap="outerHTML">×</button>
+    </div>
+    
+    <div class="inline-flex items-center px-3 py-1 text-xs border transition-colors
+                border-arkumu-dark text-arkumu-dark bg-white
+                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+      <span class="mr-2">Instrumentalmusik</span>
+      <button class="hover:opacity-70" 
+              hx-delete="/filter/remove/instrumentalmusik" 
+              hx-target="closest .filter-bar-component"
+              hx-swap="outerHTML">×</button>
+    </div>
+    
+    <div class="inline-flex items-center px-3 py-1 text-xs border transition-colors
+                border-arkumu-dark text-arkumu-dark bg-white
+                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+      <span class="mr-2">autonome Projekte</span>
+      <button class="hover:opacity-70" 
+              hx-delete="/filter/remove/autonome-projekte" 
+              hx-target="closest .filter-bar-component"
+              hx-swap="outerHTML">×</button>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Bottom Row: Results count, Search, Sort -->
+  <div class="flex items-center justify-between">
+    
+    <!-- Results Count (Left) -->
+    <div class="text-sm font-mono transition-colors
+                text-arkumu-dark
+                theme-dark:text-arkumu-light
+                theme-blue:text-arkumu-blue">
+      {{ result_count|default:"4" }} {{ result_label|default:"Ergebnisse" }}
+    </div>
+    
+    <!-- Right Side: Search and Sort -->
+    <div class="flex items-center gap-4">
+      
+      <!-- Search Bar -->
+      <div class="relative">
+        <input type="text" 
+               name="search"
+               placeholder="{{ search_placeholder|default:'Suche' }}"
+               value="{{ search_value|default:'' }}"
+               class="w-64 px-3 py-2 text-sm border transition-colors
+                      border-gray-400 bg-white
+                      theme-dark:border-gray-600 theme-dark:bg-arkumu-dark
+                      theme-blue:border-arkumu-blue theme-blue:bg-white
+                      text-arkumu-dark
+                      theme-dark:text-arkumu-light
+                      theme-blue:text-arkumu-blue
+                      placeholder-gray-500
+                      theme-dark:placeholder-gray-400
+                      theme-blue:placeholder-gray-500
+                      focus:outline-none focus:border-gray-600"
+               hx-post="/search" 
+               hx-trigger="keyup changed delay:300ms" 
+               hx-target="#results-container">
+        
+        <!-- Search Icon -->
+        <div class="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+          <svg class="w-4 h-4 transition-colors
+                     text-gray-500
+                     theme-dark:text-gray-400
+                     theme-blue:text-gray-500" 
+               fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </div>
+      </div>
+      
+      <!-- Sort Dropdown -->
+      <div class="relative">
+        <select name="sort" 
+                class="appearance-none border px-4 py-2 text-sm transition-colors
+                       border-gray-400 bg-white
+                       theme-dark:border-gray-600 theme-dark:bg-arkumu-dark
+                       theme-blue:border-arkumu-blue theme-blue:bg-white
+                       text-arkumu-dark
+                       theme-dark:text-arkumu-light
+                       theme-blue:text-arkumu-blue
+                       focus:outline-none focus:border-gray-600 pr-8"
+                hx-post="/sort" 
+                hx-target="#results-container"
+                hx-trigger="change">
+          <option value="date">{{ sort_option1|default:"Sortieren nach Datum" }}</option>
+          <option value="title">{{ sort_option2|default:"Sortieren nach Titel" }}</option>
+          <option value="relevance">{{ sort_option3|default:"Sortieren nach Relevanz" }}</option>
+        </select>
+        
+        <!-- Dropdown Arrow -->
+        <div class="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none transition-colors
+                    text-arkumu-dark
+                    theme-dark:text-arkumu-light
+                    theme-blue:text-arkumu-blue">
+          ∨
+        </div>
+      </div>
+      
+      <!-- View Toggle Icons -->
+      <div class="flex border transition-colors
+                  border-gray-400
+                  theme-dark:border-gray-600
+                  theme-blue:border-arkumu-blue">
+        
+        <!-- Grid View Button -->
+        <button class="p-2 transition-colors hover:opacity-70
+                       bg-white border-r
+                       theme-dark:bg-arkumu-dark theme-dark:border-gray-600
+                       theme-blue:bg-white theme-blue:border-arkumu-blue
+                       border-gray-400
+                       theme-dark:border-gray-600
+                       theme-blue:border-arkumu-blue"
+                hx-post="/view/grid" 
+                hx-target="#results-container">
+          <svg class="w-4 h-4 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue" 
+               fill="currentColor" viewBox="0 0 24 24">
+            <path d="M3 3h7v7H3V3zm0 11h7v7H3v-7zm11-11h7v7h-7V3zm0 11h7v7h-7v-7z"/>
+          </svg>
+        </button>
+        
+        <!-- List View Button -->
+        <button class="p-2 transition-colors hover:opacity-70
+                       bg-white border-r
+                       theme-dark:bg-arkumu-dark theme-dark:border-gray-600
+                       theme-blue:bg-white theme-blue:border-arkumu-blue
+                       border-gray-400
+                       theme-dark:border-gray-600
+                       theme-blue:border-arkumu-blue"
+                hx-post="/view/list" 
+                hx-target="#results-container">
+          <svg class="w-4 h-4 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue" 
+               fill="currentColor" viewBox="0 0 24 24">
+            <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
+          </svg>
+        </button>
+        
+        <!-- Map View Button -->
+        <button class="p-2 transition-colors hover:opacity-70
+                       bg-white
+                       theme-dark:bg-arkumu-dark
+                       theme-blue:bg-white"
+                hx-post="/view/map" 
+                hx-target="#results-container">
+          <svg class="w-4 h-4 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue" 
+               fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+        </button>
+      </div>
+      
+    </div>
+  </div>
+</div>
