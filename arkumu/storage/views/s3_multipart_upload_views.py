@@ -407,8 +407,10 @@ def multipart_upload_complete(request):
                 request=request
             )
             
-            # OOB updates for toast and file browser refresh
+            # OOB updates for progress, toast and file browser refresh
             oob_updates = {
+                'upload-status': '',  # Clear status
+                'upload-progress': '<div class="mt-4 hidden"></div>',  # Hide progress  
                 'toast-container': toast_html
             }
             

@@ -496,12 +496,23 @@ def streaming_upload_form(request):
                     request=request
                 )
                 
-                # OOB updates to clear status, hide progress, show toast, and refresh file browser
+                # Calculate overall upload progress for HTMX OOB updates
+                chunk_info = f"Chunk {int(chunk_index)+1}/{total_chunks}" if chunk_index and total_chunks else "Processing"
+                files_completed = sum(1 for f in files if f)  # Count processed files
+                progress_text = f"{chunk_info} - {files_completed}/{len(files)} files uploaded"
+                
+                # OOB updates for progress, status, toast, and file browser
                 oob_updates = {
-                    'upload-status': '',  # Clear the upload status area
-                    'upload-progress': '<div class="mt-4 hidden"></div>',
+                    'upload-status': f'<div class="text-sm text-gray-600">{progress_text}</div>',
+                    'upload-progress': '<div class="mt-4"></div>',  # Keep progress visible during upload
                     'toast-container': toast_html  # Replace all toast content completely
                 }
+                
+                # On final completion, clear progress and show completion
+                if is_final_chunk or total_chunks == '1' or not request.POST.get('chunk_index'):
+                    oob_updates['upload-status'] = ''  # Clear status
+                    oob_updates['upload-progress'] = '<div class="mt-4 hidden"></div>'  # Hide progress
+                    logger.info(f"🎯 FINAL CHUNK: Clearing progress display")
                 
                 # Always refresh file browser after upload - simpler and more reliable
                 if organization:
