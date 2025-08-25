@@ -181,6 +181,7 @@ class UploadFormHandler {
         const MULTIPART_THRESHOLD = 5 * 1024 * 1024; // 5MB
         const largeFiles = [];
         const smallFiles = [];
+        const totalFiles = this.selectedFiles.length; // Store original total
         
         for (const file of this.selectedFiles) {
             console.log(`📏 File: ${file.name} (${file.size} bytes, ${(file.size / (1024*1024)).toFixed(2)}MB)`);
@@ -193,7 +194,7 @@ class UploadFormHandler {
             }
         }
         
-        console.log(`📊 File distribution: ${largeFiles.length} large files (multipart), ${smallFiles.length} small files (regular)`);
+        console.log(`📊 File distribution: ${largeFiles.length} large files (multipart), ${smallFiles.length} small files (regular) - Total: ${totalFiles} files`);
         
         // Upload small files using regular chunked upload
         if (smallFiles.length > 0) {
@@ -207,7 +208,7 @@ class UploadFormHandler {
             }
         }
         
-        // Upload large files using S3 multipart
+        // Upload large files using S3 multipart  
         if (largeFiles.length > 0) {
             console.log(`🔄 Uploading ${largeFiles.length} large files using S3 multipart`);
             const originalFiles = this.selectedFiles;
@@ -273,13 +274,11 @@ class UploadFormHandler {
             this.progressPercentage.textContent = `${Math.round(progress.percentage)}%`;
         }
         
-        // Update progress text
+        // Update progress text - simplified to avoid incorrect counts
         if (this.progressText) {
             let text = 'Uploading...';
             
-            if (progress.processedFiles !== undefined && progress.totalFiles !== undefined) {
-                text = `Uploading ${progress.processedFiles}/${progress.totalFiles} files`;
-            } else if (progress.processedChunks !== undefined && progress.totalChunks !== undefined) {
+            if (progress.processedChunks !== undefined && progress.totalChunks !== undefined) {
                 text = `Processing chunk ${progress.processedChunks}/${progress.totalChunks}`;
             }
             
