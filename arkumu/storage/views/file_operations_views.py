@@ -157,6 +157,16 @@ def organization_contents(request, organization=None):
                 structure = {
                     "children": contents
                 }
+                # Debug logging to see what we're getting
+                logger.info(f"📁 BROWSE_DEBUG: org='{organization}' prefix='{prefix}', found {len(contents)} items")
+                folder_count = len([item for item in contents if item.get('type') == 'folder'])
+                file_count = len([item for item in contents if item.get('type') == 'file'])
+                logger.info(f"  Breakdown: {folder_count} folders, {file_count} files")
+                logger.info(f"  Template: organization_folder_contents_partial.html")
+                
+                for item in contents[:3]:  # Show first 3 items  
+                    logger.info(f"  Item: '{item.get('name', 'no-name')}' (type: {item.get('type', 'no-type')}) size: {item.get('size', 'no-size')}")
+                
                 return render(request, "dashboard/organization_folder_contents_partial.html", {
                     "structure": structure,
                     "organization": organization,

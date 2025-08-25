@@ -8,28 +8,31 @@ Template for displaying organization folder contents with lazy loading
             {% if item.type == 'folder' %}
                 <div class="p-1" data-folder-path="{{ item.path }}">
                     <div class="flex items-center">
-                        <button class="btn btn-ghost btn-xs mr-1 folder-toggle"
-                                data-folder-path="{{ item.path }}"
-                                data-folder-state="closed"
-                                hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
-                                hx-target=".folder-contents[data-folder-path='{{ item.path }}'][data-organization='{{ organization }}']"
-                                hx-swap="innerHTML"
-                                hx-trigger="click"
-                                hx-indicator=".loading-indicator[data-folder-path='{{ item.path }}']"
-                                onclick="toggleFolderVisibility('{{ item.path }}', '{{ organization }}')">
-                            <svg class="w-4 h-4 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                            </svg>
-                        </button>
-                        <span class="text-sm font-medium">
-                            {{ item.name }}
-                        </span>
+                        <details class="collapse collapse-arrow">
+                            <summary class="collapse-title font-medium p-0 min-h-0">
+                                <div class="flex items-center py-1">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
+                                    </svg>
+                                    <span class="text-sm font-medium">
+                                        {{ item.name }}
+                                    </span>
+                                </div>
+                            </summary>
+                            <div class="collapse-content p-0"
+                                 hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
+                                 hx-trigger="toggle from:closest details"
+                                 hx-swap="innerHTML"
+                                 hx-indicator=".loading-indicator[data-folder-path='{{ item.path }}']">
+                                <!-- Content loaded here when expanded -->
+                            </div>
+                        </details>
                         
                         <div class="ml-auto flex items-center space-x-2">
                             <button class="btn btn-ghost btn-xs text-success" 
                                     title="Refresh folder"
                                     hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
-                                    hx-target=".folder-contents[data-folder-path='{{ item.path }}'][data-organization='{{ organization }}']"
+                                    hx-target="closest div .collapse-content"
                                     hx-swap="innerHTML"
                                     hx-indicator=".loading-indicator[data-folder-path='{{ item.path }}']">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -146,23 +149,4 @@ Template for displaying organization folder contents with lazy loading
 }
 </style>
 
-<script>
-function toggleFolderVisibility(folderPath, organization) {
-    const folderContents = document.querySelector(`.folder-contents[data-folder-path='${folderPath}'][data-organization='${organization}']`);
-    const toggleButton = document.querySelector(`.folder-toggle[data-folder-path='${folderPath}']`);
-    
-    if (folderContents && toggleButton) {
-        const isOpen = toggleButton.dataset.folderState === 'open';
-        
-        if (isOpen) {
-            // Close folder
-            folderContents.classList.add('hidden');
-            toggleButton.dataset.folderState = 'closed';
-        } else {
-            // Open folder
-            folderContents.classList.remove('hidden');
-            toggleButton.dataset.folderState = 'open';
-        }
-    }
-}
-</script> 
+ 
