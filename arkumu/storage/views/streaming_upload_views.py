@@ -280,9 +280,31 @@ def streaming_upload_form(request):
                         'files_processed': i + 1,
                         'total_files': len(files)
                     }, timeout=3600)  # Cache for 1 hour
-                # Generate S3 key with flat storage structure - upload directly to selected folder
-                s3_key = f"{folder_name}/{uploaded_file.name}"
-                logger.info(f"📁 FLAT_STORAGE: Storing file as: {s3_key}")
+                # Check if folder structure should be preserved
+                preserve_structure = request.POST.get('preserve_folder_structure', '') == 'true'
+                
+                # Look up path using filename as key (no index matching needed)
+                if preserve_structure:
+                    path_key = f"path_{uploaded_file.name}"
+                    relative_path = request.POST.get(path_key)
+                    
+                    if relative_path:
+                        # webkitRelativePath includes the root folder name, strip it
+                        if '/' in relative_path:
+                            clean_relative_path = relative_path.split('/', 1)[1]
+                        else:
+                            clean_relative_path = relative_path
+                        
+                        s3_key = f"{folder_name}/{clean_relative_path}"
+                        logger.info(f"📁 FOLDER: {uploaded_file.name} -> {s3_key}")
+                    else:
+                        # No path found, use flat storage
+                        s3_key = f"{folder_name}/{uploaded_file.name}"
+                        logger.info(f"📁 FLAT: {uploaded_file.name} -> {s3_key}")
+                else:
+                    # Fallback to flat storage structure
+                    s3_key = f"{folder_name}/{uploaded_file.name}"
+                    logger.info(f"📁 FLAT_STORAGE: Storing file as: {s3_key}")
                 
                 # Sanitize filename for S3 metadata (ASCII only) using uri_utils
                 from arkumu.common.uri_utils import normalize_string_nfc, slugify_uri_part
@@ -437,6 +459,13 @@ def streaming_upload_form(request):
         result['total_size_bytes'] = total_size  # Use S3 reported size
         result['total_size_formatted'] = format_file_size(total_size)
         
+        # Check if this is the final chunk
+        is_final_chunk = request.POST.get('is_final_chunk', 'false') == 'true'
+        chunk_index = request.POST.get('chunk_index', '0')
+        total_chunks = request.POST.get('total_chunks', '1')
+        
+        logger.info(f"📦 CHUNK INFO: Chunk {int(chunk_index)+1}/{total_chunks}, is_final={is_final_chunk}")
+        
         # Check if this is an HTMX request
         is_htmx = request.headers.get('HX-Request')
         logger.info(f"🔍 DEBUG: HX-Request header = '{is_htmx}'")
@@ -474,12 +503,33 @@ def streaming_upload_form(request):
                     'toast-container': toast_html  # Replace all toast content completely
                 }
                 
-                # Add file browser refresh OOB update using the mixin's template helper
+                # Always refresh file browser after upload - simpler and more reliable
                 if organization:
-                    # Use the mixin's file browser template helper with eager loading
+                    logger.info(f"🔄 REFRESH: Refreshing file browser after upload completion")
+                    
+                    # Small delay to ensure S3 operations are complete
+                    import time as time_module
+                    time_module.sleep(0.5)  # Brief delay to ensure S3 operations complete
+                    
+                    # Clear cache explicitly before refresh to ensure we see all files
+                    from django.core.cache import cache
+                    cache_keys = [
+                        f"bucket_contents_{organization}_",
+                        f"bucket_contents_{organization}_data_",
+                        f"bucket_contents_{organization}_metadata_",
+                        f"file_count_{organization}_data_",
+                        f"file_count_{organization}_metadata_"
+                    ]
+                    for key in cache_keys:
+                        cache.delete(key)
+                        logger.info(f"🗑️ Cleared cache key: {key}")
+                    
+                    # Use the mixin's file browser template helper with force_fresh
                     file_browser_html = helper.render_file_browser_template(request, organization)
                     oob_updates['file-browser-content'] = file_browser_html
                     logger.info(f"🔄 OOB DEBUG: Added file browser refresh using mixin helper - HTML length: {len(file_browser_html)}")
+                elif organization and not is_final_chunk:
+                    logger.info(f"⏳ INTERMEDIATE CHUNK {int(chunk_index)+1}/{total_chunks}: Skipping file browser refresh")
                     
                     # Add debugging HTML to check if element exists
                 else:

@@ -190,6 +190,20 @@ class S3MultipartUploadHandler {
         formData.append('folderName', folderName);
         formData.append('organization', organization);
         formData.append('baseFolder', baseFolder);
+        
+        // Check if we're in folder mode and should preserve structure
+        const fileInput = document.getElementById('file-input');
+        const isFolderMode = fileInput && fileInput.hasAttribute('webkitdirectory');
+        
+        if (isFolderMode) {
+            formData.append('preserve_folder_structure', 'true');
+            
+            // Send the file's relative path using filename as key
+            const relativePath = file.webkitRelativePath || file.name;
+            formData.append(`path_${file.name}`, relativePath);
+            console.log(`📁 Multipart init: ${file.name} -> ${relativePath}`);
+        }
+        
         formData.append('csrfmiddlewaretoken', this.getCsrfToken());
 
         const response = await fetch(this.initUrl, {

@@ -110,11 +110,30 @@ def multipart_upload_init(request):
         normalized_filename_part = normalize_string_nfc(filename_without_ext)
         sanitized_filename = normalized_filename_part + file_extension
         
-        # Build S3 key
-        if folder_name:
-            s3_key = f"{folder_name}/{sanitized_filename}"
+        # Build S3 key with folder structure preservation
+        preserve_structure = request.POST.get('preserve_folder_structure', '') == 'true'
+        
+        if preserve_structure:
+            # Look up path using filename as key (same as streaming upload)
+            path_key = f"path_{filename}"
+            relative_path = request.POST.get(path_key)
+            
+            if relative_path and folder_name:
+                # webkitRelativePath includes the root folder name, strip it
+                if '/' in relative_path:
+                    clean_relative_path = relative_path.split('/', 1)[1]
+                else:
+                    clean_relative_path = sanitized_filename
+                
+                s3_key = f"{folder_name}/{clean_relative_path}"
+                logger.info(f"📁 MULTIPART FOLDER: {filename} -> {s3_key}")
+            else:
+                # Fallback to flat structure
+                s3_key = f"{folder_name}/{sanitized_filename}" if folder_name else sanitized_filename
+                logger.info(f"📁 MULTIPART FLAT: {filename} -> {s3_key}")
         else:
-            s3_key = sanitized_filename
+            # Regular flat structure
+            s3_key = f"{folder_name}/{sanitized_filename}" if folder_name else sanitized_filename
         
         s3_file_object = S3FileObject.objects.create(
             session=upload_session,

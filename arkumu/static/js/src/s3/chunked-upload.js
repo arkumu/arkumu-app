@@ -113,8 +113,9 @@ class ChunkedUploadHandler {
             endIndex: 0
         };
         
-        // Sort files by size (largest first) for better packing
-        const sortedFiles = Array.from(files).sort((a, b) => b.size - a.size);
+        // Don't sort files - maintain original order to preserve path mapping
+        // Sorting would break the correspondence between files and their webkitRelativePath
+        const sortedFiles = Array.from(files);
         
         sortedFiles.forEach((file, index) => {
             // Check if adding this file would exceed limits
@@ -231,11 +232,33 @@ class ChunkedUploadHandler {
         if (organization) {
             formData.append('organization', organization);
         }
+        
+        // Send chunk information so server knows when we're done
+        formData.append('chunk_index', chunk.index);
+        formData.append('total_chunks', this.chunks.length);
+        formData.append('is_final_chunk', chunk.index === this.chunks.length - 1);
 
-        // Add all files in this chunk
-        chunk.files.forEach(file => {
-            formData.append('files', file);
-        });
+        // Check if we're in folder mode and should preserve structure
+        const fileInput = document.getElementById('file-input');
+        const isFolderMode = fileInput && fileInput.hasAttribute('webkitdirectory');
+        
+        if (isFolderMode) {
+            formData.append('preserve_folder_structure', 'true');
+            
+            // Add files and use filename as key for paths to ensure matching
+            chunk.files.forEach((file, index) => {
+                formData.append('files', file);
+                // Use the filename as key to ensure we can match them on the server
+                const relativePath = file.webkitRelativePath || file.name;
+                formData.append(`path_${file.name}`, relativePath);
+                console.log(`📁 Upload: ${file.name} -> ${relativePath}`);
+            });
+        } else {
+            // Regular file upload - no folder structure
+            chunk.files.forEach(file => {
+                formData.append('files', file);
+            });
+        }
 
         // Add CSRF token
         formData.append('csrfmiddlewaretoken', this.getCsrfToken());
@@ -269,36 +292,35 @@ class ChunkedUploadHandler {
             
             return result;
         } else {
-            // HTMX HTML response - for the final chunk only, process OOB updates
+            // HTMX HTML response - always process for proper updates
             const html = await response.text();
             
-            // Check if this is the last chunk
-            if (chunk.index === this.chunks.length - 1) {
-                console.log('📡 Final chunk: Processing HTMX OOB updates...');
+            // Don't process file browser updates from individual chunks
+            // The server will only send file browser updates on the final chunk
+            console.log(`📦 Chunk ${chunk.index + 1}/${this.chunks.length} response received`);
+            
+            // Create a temporary container to parse the HTML
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            
+            // Let HTMX process the OOB swaps from the temporary container
+            if (typeof htmx !== 'undefined') {
+                htmx.process(temp);
                 
-                // Create a temporary container to parse the HTML
-                const temp = document.createElement('div');
-                temp.innerHTML = html;
+                // Process each OOB element
+                const oobElements = temp.querySelectorAll('[hx-swap-oob]');
+                oobElements.forEach(element => {
+                    const swapStyle = element.getAttribute('hx-swap-oob');
+                    const targetId = element.id;
+                    const targetElement = document.getElementById(targetId);
+                    
+                    if (targetElement && swapStyle === 'innerHTML') {
+                        targetElement.innerHTML = element.innerHTML;
+                        htmx.process(targetElement);
+                    }
+                });
                 
-                // Let HTMX process the OOB swaps from the temporary container
-                if (typeof htmx !== 'undefined') {
-                    htmx.process(temp);
-                    
-                    // Process each OOB element
-                    const oobElements = temp.querySelectorAll('[hx-swap-oob]');
-                    oobElements.forEach(element => {
-                        const swapStyle = element.getAttribute('hx-swap-oob');
-                        const targetId = element.id;
-                        const targetElement = document.getElementById(targetId);
-                        
-                        if (targetElement && swapStyle === 'innerHTML') {
-                            targetElement.innerHTML = element.innerHTML;
-                            htmx.process(targetElement);
-                        }
-                    });
-                    
-                    console.log(`✅ Processed ${oobElements.length} OOB updates`);
-                }
+                console.log(`✅ Processed ${oobElements.length} OOB updates`);
             }
             
             // Return success for chunk completion tracking

@@ -299,11 +299,46 @@ class UploadFormHandler {
         
         if (summary.success) {
             console.log('🔄 UploadFormHandler: Upload completed successfully');
+            console.log('📊 Summary details:', summary);
+            
+            // Manually refresh file browser for multipart uploads (since they don't use OOB updates)
+            this.refreshFileBrowser();
         } else {
             const message = summary.cancelled 
                 ? 'Upload was cancelled'
                 : summary.error || 'Upload failed';
             this.showError(message);
+        }
+    }
+
+    refreshFileBrowser() {
+        // Trigger HTMX request to refresh file browser content
+        const organization = this.organizationInput ? this.organizationInput.value : '';
+        console.log('🔄 refreshFileBrowser called, organization:', organization);
+        console.log('🔄 organizationInput element:', this.organizationInput);
+        
+        if (organization) {
+            console.log('🔄 Refreshing file browser after multipart upload...');
+            console.log('🔄 Using URL:', `/storage/oob/file-browser-refresh/${organization}/`);
+            
+            // Use HTMX to refresh the file browser content
+            if (typeof htmx !== 'undefined') {
+                console.log('🔄 HTMX is available, making request...');
+                htmx.ajax('GET', `/storage/oob/file-browser-refresh/${organization}/`, {
+                    target: '#file-browser-content',
+                    swap: 'innerHTML'
+                }).then(() => {
+                    console.log('✅ HTMX request completed');
+                }).catch((error) => {
+                    console.error('❌ HTMX request failed:', error);
+                });
+            } else {
+                // Fallback - reload the page
+                console.warn('HTMX not available, reloading page');
+                window.location.reload();
+            }
+        } else {
+            console.warn('⚠️ No organization found, cannot refresh file browser');
         }
     }
 
