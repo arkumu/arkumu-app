@@ -402,6 +402,28 @@ class BucketService:
             if contents:
                 logger.info(f"📁 Items found: {[item.get('name', 'unnamed') + ' (' + item.get('type', 'unknown') + ')' for item in contents[:5]]}")  # Show first 5 items
             
+            # Sort contents naturally to preserve filesystem folder order (1, 2, 10, 11 instead of 1, 10, 11, 2)
+            # Folders first, then files, both sorted naturally
+            import re
+            
+            def natural_sort_key(item):
+                """Natural sorting key that handles numbers in strings correctly."""
+                name = item.get('name', '')
+                # Split name into parts: text and numbers
+                parts = re.split(r'(\d+)', name.lower())
+                # Convert numeric parts to integers for proper sorting
+                return [int(part) if part.isdigit() else part for part in parts]
+            
+            # Separate folders and files, then sort each group naturally
+            folders = [item for item in contents if item.get('type') == 'folder']
+            files = [item for item in contents if item.get('type') == 'file']
+            
+            folders.sort(key=natural_sort_key)
+            files.sort(key=natural_sort_key)
+            
+            # Combine: folders first, then files (maintains filesystem convention)
+            contents = folders + files
+            
             # Cache the results for 5 minutes (300 seconds)
             logger.info(f"⏱️ CACHE SET: Caching {len(contents)} items with key {cache_key}")
             self.cache.set(cache_key, contents, timeout=300)

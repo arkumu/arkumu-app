@@ -228,6 +228,7 @@ class ChunkedUploadHandler {
         
         // Use the base folder directly (no concatenation needed)
         formData.append('folder_name', folderName);
+        formData.append('base_folder', baseFolder);  // Add base_folder for validation
         
         if (organization) {
             formData.append('organization', organization);
