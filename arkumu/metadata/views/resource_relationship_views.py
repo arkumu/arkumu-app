@@ -50,7 +50,7 @@ class ResourceRelationshipExplorerView(GeneralLoginRequiredMixin, CSVMappingTemp
             relationships = service.get_related_resources(
                 resource.uri,
                 max_depth=1,  # Start with depth 1 for initial load
-                organization=organization
+                organization=None  # Don't filter by organization - this was the problem!
             )
             
             # Extract the related resources from the relationships structure

@@ -10,7 +10,15 @@ from arkumu.metadata.views.bulk_arkumu_mapping_views import (
 )
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
-from arkumu.metadata.views.data_explorer import DataExplorerView, ResourceDetailView, DataExplorerResultsView
+
+# Use optimized views for better performance
+from arkumu.metadata.views.data_explorer_optimized import (
+    OptimizedDataExplorerView as DataExplorerView,
+    OptimizedResourceDetailView as ResourceDetailView,  # Now fixed!
+    SemanticStatsView
+)
+# For results view, we'll use the same optimized view with different template
+from arkumu.metadata.views.data_explorer import DataExplorerResultsView
 from arkumu.metadata.views.csv_mapping import saved_mappings_api
 from arkumu.metadata.views.csv_mapping.views import mapping_validation_views, mapping_save_views, mapping_load_views, mapping_delete_views
 from arkumu.metadata.views.csv_mapping.views import core_editor_views, dataset_views, column_views, utility_views, relationship_views, ontology_views
@@ -33,9 +41,10 @@ urlpatterns = [
     # Data Explorer (unified resource and triple browsing)
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
     path('data-explorer/results/', DataExplorerResultsView.as_view(), name='data_explorer_results'),
+    path('data-explorer/stats/', SemanticStatsView.as_view(), name='semantic_stats'),  # For async stats loading
     
-    # Resource details (still needed for individual resource pages)
-    path('resources/<uuid:resource_id>/', resource_views.resource_detail, name='resource_detail'),
+    # Resource details (optimized views)
+    path('resources/<uuid:resource_id>/', ResourceDetailView.as_view(pk_url_kwarg='resource_id'), name='resource_detail'),
     path('resources/<uuid:resource_id>/graph-legacy/', resource_views.resource_graph, name='resource_graph_legacy'),
     path('resource-detail/<uuid:pk>/', ResourceDetailView.as_view(), name='resource_detail_modal'),
     

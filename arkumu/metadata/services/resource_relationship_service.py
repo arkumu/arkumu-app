@@ -34,12 +34,18 @@ class ResourceRelationshipService:
             return cached_result
         
         try:
-            # Get the starting resource
-            resource_query = Resource.objects.filter(uri=resource_uri)
+            # Get the starting resource - try with organization filter first
+            resource = None
             if organization:
-                resource_query = resource_query.filter(organization__code=organization)
+                resource = Resource.objects.filter(
+                    uri=resource_uri, 
+                    organization__code=organization
+                ).first()
             
-            resource = resource_query.first()
+            # If not found with organization filter, try without (more permissive)
+            if not resource:
+                resource = Resource.objects.filter(uri=resource_uri).first()
+            
             if not resource:
                 raise Resource.DoesNotExist(f"Resource with URI {resource_uri} not found")
             

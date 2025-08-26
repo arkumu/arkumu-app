@@ -1,0 +1,27 @@
+<!-- Semantic Statistics Partial - Loaded via HTMX -->
+<table class="table table-xs">
+    <thead>
+        <tr>
+            <th>Total Resources</th>
+            <th>Total Relationships</th>
+            <th>Semantic Classes</th>
+            <th>Typed Instances</th>
+            <th>Properties</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="font-bold">{{ semantic_stats.total_resources|default:"0" }}</td>
+            <td class="font-bold">{{ semantic_stats.total_triples|default:"0" }}</td>
+            <td class="font-bold">{{ semantic_stats.semantic_classes|default:"0" }}</td>
+            <td class="font-bold">{{ semantic_stats.typed_instances|default:"0" }}</td>
+            <td class="font-bold">{{ semantic_stats.semantic_properties|default:"0" }}</td>
+        </tr>
+    </tbody>
+</table>
+
+<!-- Auto-refresh stats every 60 seconds -->
+<div hx-get="{% url 'metadata:semantic_stats' %}"
+     hx-trigger="every 60s"
+     hx-target="#stats-container"
+     hx-swap="innerHTML"></div>

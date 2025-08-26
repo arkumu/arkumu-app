@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Metadata Data Explorer{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-6 py-12">
+    <!-- Compact Header -->
+    <div class="bg-base-200 rounded-box mb-4 p-4">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold">Resource Explorer</h1>
+                <p class="text-sm text-base-content/70">Explore semantic resources, classes, properties, and relationships</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Lazy-loaded Statistics Table -->
+    <div id="stats-container" 
+         class="mb-4 overflow-x-auto min-h-[60px]"
+         hx-get="{% url 'metadata:semantic_stats' %}"
+         hx-trigger="load">
+        <!-- Subtle loading state -->
+        <table class="table table-xs opacity-50">
+            <thead>
+                <tr>
+                    <th>Total Resources</th>
+                    <th>Total Relationships</th>
+                    <th>Organizations</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="text-base-content/40">Loading...</td>
+                    <td class="text-base-content/40">Loading...</td>
+                    <td class="text-base-content/40">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="flex flex-col lg:flex-row gap-8">
+        <!-- Filters Sidebar -->
+        <div class="lg:w-80 flex-shrink-0">
+            <div class="card bg-base-100 shadow-xl sticky top-6 border border-base-300">
+                <div class="card-body p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                            </svg>
+                            Filters
+                        </h2>
+                        <span class="text-xs text-base-content/60">Auto-apply on change</span>
+                    </div>
+                
+                <form hx-get="{% url 'metadata:data_explorer_results' %}" 
+                      hx-target="#results-pane" 
+                      hx-trigger="change from:body, search from:#search-input delay:500ms"
+                      hx-indicator="#loading-indicator">
+                    
+                    <!-- Search with debounce -->
+                    <div class="form-control mb-4">
+                        <input type="text" 
+                               id="search-input"
+                               name="search" 
+                               placeholder="🔍 Search resources..." 
+                               class="input input-bordered input-sm w-full"
+                               value="{{ current_filters.search }}">
+                    </div>
+                    
+                    <div class="divider text-xs my-2">FILTERS</div>
+                    
+                    <!-- Resource Types -->
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Resource Types</span>
+                            {% if current_filters.resource_type %}
+                            <span class="badge badge-primary badge-xs">{{ current_filters.resource_type|length }} selected</span>
+                            {% endif %}
+                        </label>
+                        <div class="space-y-1">
+                            {% for type in filter_options.resource_types %}
+                            <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 px-2 py-1 rounded">
+                                <input type="checkbox" 
+                                       name="resource_type" 
+                                       value="{{ type.value }}"
+                                       class="checkbox checkbox-xs"
+                                       {% if type.value in current_filters.resource_type %}checked{% endif %}>
+                                <span class="text-xs">{{ type.label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <!-- Triple Usage -->
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Triple Usage</span>
+                            {% if current_filters.triple_usage %}
+                            <span class="badge badge-info badge-xs">Active</span>
+                            {% endif %}
+                        </label>
+                        <select name="triple_usage" class="select select-bordered select-xs w-full">
+                            <option value="">All Resources</option>
+                            {% for usage in filter_options.triple_usage %}
+                            <option value="{{ usage.value }}" {% if usage.value == current_filters.triple_usage %}selected{% endif %}>
+                                {{ usage.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Organizations -->
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Organizations</span>
+                            {% if current_filters.organization %}
+                            <span class="badge badge-secondary badge-xs">{{ current_filters.organization|length }} selected</span>
+                            {% endif %}
+                        </label>
+                        <div class="max-h-32 overflow-y-auto space-y-1 border border-base-300 rounded p-1">
+                            {% for org in filter_options.organizations %}
+                            <label class="flex items-center gap-2 cursor-pointer hover:bg-base-200 px-2 py-1 rounded">
+                                <input type="checkbox" 
+                                       name="organization" 
+                                       value="{{ org }}"
+                                       class="checkbox checkbox-xs"
+                                       {% if org in current_filters.organization %}checked{% endif %}>
+                                <span class="text-xs">{{ org }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <!-- Ontology Linking -->
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">External Ontology Links</span>
+                        </label>
+                        <select name="externally_linked" class="select select-bordered select-xs w-full">
+                            <option value="">All Resources</option>
+                            <option value="true" {% if current_filters.externally_linked == 'true' %}selected{% endif %}>
+                                With External Links
+                            </option>
+                            <option value="false" {% if current_filters.externally_linked == 'false' %}selected{% endif %}>
+                                No External Links
+                            </option>
+                        </select>
+                    </div>
+                    
+                    <!-- Clear Filters -->
+                    <div class="mt-4">
+                        <a href="{% url 'metadata:data_explorer' %}" 
+                           class="btn btn-ghost btn-xs w-full">
+                            Clear All Filters
+                        </a>
+                    </div>
+                </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Area -->
+        <div class="flex-1">
+            <!-- Subtle loading indicator -->
+            <div id="loading-indicator" class="htmx-indicator">
+                <div class="absolute top-2 right-2 z-10">
+                    <span class="loading loading-spinner loading-xs text-primary"></span>
+                </div>
+            </div>
+            
+            <!-- Results will be loaded here -->
+            <div id="results-pane" 
+                 hx-get="{% url 'metadata:data_explorer_results' %}"
+                 hx-trigger="load"
+                 hx-include="[name]"
+                 class="min-h-[200px]">
+                <!-- Subtle initial loading - just empty space, no spinner -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- HTMX configuration for better UX -->
+<script>
+    document.body.addEventListener('htmx:beforeRequest', function(event) {
+        // Subtle fade during requests (reduced from 0.5 to 0.8)
+        if (event.detail.elt.id === 'results-pane') {
+            event.detail.elt.style.opacity = '0.8';
+        }
+    });
+    
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        // Remove visual feedback after requests
+        if (event.detail.elt.id === 'results-pane') {
+            event.detail.elt.style.opacity = '1';
+        }
+    });
+</script>
+
+<!-- Resource Detail Modal -->
+<dialog id="resource-modal" class="modal modal-bottom sm:modal-middle">
+    <div class="modal-box max-w-4xl">
+        <form method="dialog">
+            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        </form>
+        <div id="modal-content">
+            <!-- Resource detail content loads here via HTMX -->
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+{% endblock %}
