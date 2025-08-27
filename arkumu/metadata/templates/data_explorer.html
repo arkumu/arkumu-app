@@ -116,7 +116,28 @@
         
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-                <h2 class="card-title">Resources</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="card-title">Resources</h2>
+                    <div class="dropdown dropdown-end">
+                        <label tabindex="0" class="btn btn-sm btn-outline gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Export
+                        </label>
+                        <ul tabindex="0" class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52">
+                            <li>
+                                <a hx-get="{% url 'metadata:export_data_json' %}"
+                                   hx-vals='{"export_type": "current", "view": "resources"}'
+                                   hx-include="#resource-filter-form"
+                                   hx-swap="none"
+                                   onclick="htmx.ajax('GET', this.getAttribute('hx-get'), {values: htmx.values(this), target: null}).then(() => { window.location = this.getAttribute('hx-get') + '?' + new URLSearchParams({...htmx.values(this), ...htmx.values(htmx.find('#resource-filter-form'))}).toString(); })">
+                                    Export Current Results as JSON
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
                 <div id="resource-results">
                     {% include "partials/resource_list.html" %}
                 </div>
@@ -190,7 +211,43 @@
         
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-                <h2 class="card-title">Triples</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="card-title">Triples</h2>
+                    <div class="dropdown dropdown-end">
+                        <label tabindex="0" class="btn btn-sm btn-outline gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Export
+                        </label>
+                        <ul tabindex="0" class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-72">
+                            <li>
+                                <a hx-get="{% url 'metadata:export_data_json' %}"
+                                   hx-vals='{"export_type": "current", "view": "triples"}'
+                                   hx-include="#triple-search-form"
+                                   hx-swap="none"
+                                   onclick="htmx.ajax('GET', this.getAttribute('hx-get'), {values: htmx.values(this), target: null}).then(() => { window.location = this.getAttribute('hx-get') + '?' + new URLSearchParams({...htmx.values(this), ...htmx.values(htmx.find('#triple-search-form'))}).toString(); })">
+                                    Export Current Results as JSON
+                                </a>
+                            </li>
+                            <li class="menu-title">
+                                <span>Export Property Literals</span>
+                            </li>
+                            <li>
+                                <div class="form-control p-2">
+                                    <input type="text" id="property-uri-input" 
+                                           placeholder="Enter property URI..." 
+                                           class="input input-bordered input-sm w-full">
+                                </div>
+                            </li>
+                            <li>
+                                <a onclick="exportPropertyLiterals()">
+                                    Export All Literals for Property
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
                 <div id="triple-results">
                     {% include "partials/triple_list.html" %}
                 </div>
@@ -388,5 +445,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initial hint update
     updateSearchModeHint();
 });
+
+// Function to export property literals
+function exportPropertyLiterals() {
+    const propertyUri = document.getElementById('property-uri-input').value;
+    if (!propertyUri) {
+        alert('Please enter a property URI');
+        return;
+    }
+    
+    // Build the export URL with the property URI
+    const params = new URLSearchParams({
+        'export_type': 'property',
+        'property_uri': propertyUri,
+        'view': 'triples'
+    });
+    
+    // Trigger download
+    window.location = "{% url 'metadata:export_data_json' %}?" + params.toString();
+}
 </script>
 {% endblock %} 

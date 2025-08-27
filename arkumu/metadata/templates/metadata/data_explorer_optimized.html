@@ -12,6 +12,53 @@
                 <h1 class="text-2xl font-bold">Resource Explorer</h1>
                 <p class="text-sm text-base-content/70">Explore semantic resources, classes, properties, and relationships</p>
             </div>
+            <div class="dropdown dropdown-end">
+                <label tabindex="0" class="btn btn-sm btn-outline gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Export Data
+                </label>
+                <ul tabindex="0" class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-80 z-50">
+                    <li>
+                        <a onclick="exportCurrentResults()">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Export Current Results as JSON
+                        </a>
+                    </li>
+                    <li class="menu-title mt-2">
+                        <span>Export Property Literals</span>
+                    </li>
+                    <li>
+                        <div class="form-control p-2">
+                            <input type="text" id="property-uri-export" 
+                                   placeholder="Enter property URI (e.g., dcterms:title)..." 
+                                   class="input input-bordered input-sm w-full">
+                        </div>
+                    </li>
+                    <li>
+                        <a onclick="exportPropertyLiterals()">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                            Export All Literals for Property
+                        </a>
+                    </li>
+                    <li class="menu-title mt-2">
+                        <span>Export All Triples</span>
+                    </li>
+                    <li>
+                        <a onclick="exportAllTriplesForResource()">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                            Export Triples for Selected Resource
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
     
@@ -197,6 +244,60 @@
             event.detail.elt.style.opacity = '1';
         }
     });
+    
+    // Export functions
+    function exportCurrentResults() {
+        // Get current filter values
+        const form = document.querySelector('form[hx-get]');
+        const formData = new FormData(form);
+        const params = new URLSearchParams(formData);
+        params.append('export_type', 'current');
+        params.append('view', 'resources');
+        
+        // Trigger download
+        window.location = "{% url 'metadata:export_data_json' %}?" + params.toString();
+    }
+    
+    function exportPropertyLiterals() {
+        const propertyUri = document.getElementById('property-uri-export').value;
+        if (!propertyUri) {
+            alert('Please enter a property URI');
+            return;
+        }
+        
+        const params = new URLSearchParams({
+            'export_type': 'property',
+            'property_uri': propertyUri,
+            'view': 'triples'
+        });
+        
+        window.location = "{% url 'metadata:export_data_json' %}?" + params.toString();
+    }
+    
+    function exportAllTriplesForResource() {
+        // Get the first selected resource or prompt for URI
+        const selectedResource = document.querySelector('input[name="selected_resource"]:checked');
+        let resourceUri = '';
+        
+        if (selectedResource) {
+            resourceUri = selectedResource.value;
+        } else {
+            resourceUri = prompt('Enter resource URI to export its triples:');
+        }
+        
+        if (!resourceUri) {
+            alert('Please select a resource or enter a URI');
+            return;
+        }
+        
+        const params = new URLSearchParams({
+            'export_type': 'current',
+            'view': 'relationships',
+            'resource_uri': resourceUri
+        });
+        
+        window.location = "{% url 'metadata:export_data_json' %}?" + params.toString();
+    }
 </script>
 
 <!-- Resource Detail Modal -->

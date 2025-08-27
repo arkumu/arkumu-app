@@ -42,6 +42,7 @@ urlpatterns = [
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
     path('data-explorer/results/', DataExplorerResultsView.as_view(), name='data_explorer_results'),
     path('data-explorer/stats/', SemanticStatsView.as_view(), name='semantic_stats'),  # For async stats loading
+    path('data-explorer/export/json/', data_explorer_views.export_data_as_json, name='export_data_json'),  # JSON export
     
     # Resource details (optimized views)
     path('resources/<uuid:resource_id>/', ResourceDetailView.as_view(pk_url_kwarg='resource_id'), name='resource_detail'),

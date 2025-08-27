@@ -20,32 +20,16 @@ from arkumu.metadata.models.harmonization import HarmonizationExecution
 
 
 class BulkMappingAccessMixin:
-    """Mixin to restrict bulk mapping access to specific organizations."""
+    """Mixin to allow bulk mapping access for all authenticated users."""
     
-    # Organizations allowed to use bulk mapping
+    # Organizations that can be mapped using bulk mapping
     ALLOWED_BULK_MAPPING_ORGS = ['rsh', 'fuk', 'det']
     
     def dispatch(self, request, *args, **kwargs):
-        """Check if user's organization is allowed to use bulk mapping."""
-        # Allow superusers to bypass restrictions
-        if request.user.is_superuser:
-            return super().dispatch(request, *args, **kwargs)
-            
-        # Check if user has an organization
-        if not hasattr(request.user, 'organization') or not request.user.organization:
-            messages.error(request, "You must be associated with an organization to access bulk mapping.")
-            return redirect('metadata:csv_mapping_editor')
-        
-        # Check if user's organization is allowed to use bulk mapping
-        user_org_code = request.user.organization.code.lower()
-        if user_org_code not in self.ALLOWED_BULK_MAPPING_ORGS:
-            messages.warning(
-                request, 
-                f"Bulk mapping is not available for {request.user.organization.name}. "
-                "Please use the manual CSV Mapping Editor instead."
-            )
-            return redirect('metadata:csv_mapping_editor')
-        
+        """Allow all authenticated users to access bulk mapping."""
+        # All authenticated users can access bulk mapping
+        # The ALLOWED_BULK_MAPPING_ORGS list only restricts which organizations
+        # can be selected for mapping, not who can access the feature
         return super().dispatch(request, *args, **kwargs)
 
 
