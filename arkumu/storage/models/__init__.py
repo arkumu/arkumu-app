@@ -3,6 +3,7 @@ from .s3_file_objects import S3FileObject
 from .upload_sessions import UploadSession
 from .acl_permissions import ACLPermissions
 from .resumable_uploads import ResumableUploadSession, ResumableUploadChunk
+from .upload_tracking import AsyncUploadSession, AsyncUploadFile
 
 __all__ = [
     'S3ResourceLocation', 
@@ -10,5 +11,7 @@ __all__ = [
     'UploadSession', 
     'ACLPermissions',
     'ResumableUploadSession',
-    'ResumableUploadChunk'
+    'ResumableUploadChunk',
+    'AsyncUploadSession',
+    'AsyncUploadFile'
 ]

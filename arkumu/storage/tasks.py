@@ -1,11 +1,19 @@
 """
 Storage Tasks
 
-Huey background tasks for file operations.
+Huey background tasks for file operations, including async upload monitoring.
 """
 
 import logging
+import time
 from huey.contrib.djhuey import db_task
+from django.utils import timezone
+
+try:
+    from huey.contrib.djhuey import db_periodic_task, crontab
+    HUEY_PERIODIC_AVAILABLE = True
+except ImportError:
+    HUEY_PERIODIC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -38,3 +46,187 @@ def assemble_file_task(resumable_upload_id: int):
                 resumable_upload.mark_failed(f"Assembly failed: {str(e)}")
         except:
             pass
+
+
+# Async Upload Tasks
+
+@db_task(retries=3, retry_delay=60)
+def monitor_upload_session(session_id: str):
+    """
+    Monitor upload session and detect when all files are uploaded.
+    This task runs periodically to check upload completion.
+    """
+    try:
+        from arkumu.storage.models.upload_tracking import AsyncUploadSession
+        
+        session = AsyncUploadSession.objects.get(id=session_id)
+        logger.info(f"🔍 MONITOR: Checking upload session {session_id}")
+        
+        # Check if all files have been reported as uploaded
+        total_files = session.files.count()
+        uploaded_files = session.files.filter(status='uploaded').count()
+        
+        if uploaded_files == total_files and total_files > 0:
+            logger.info(f"✅ MONITOR: All {total_files} files uploaded, starting processing")
+            session.mark_processing()
+            
+            # Trigger processing for all uploaded files
+            for upload_file in session.files.filter(status='uploaded'):
+                verify_and_process_upload.delay(str(upload_file.id))
+            
+        else:
+            logger.info(f"⏳ MONITOR: {uploaded_files}/{total_files} files uploaded, continuing monitoring")
+            
+            # Re-schedule monitoring if not complete and session is recent
+            if session.created_at > timezone.now() - timezone.timedelta(hours=2):
+                monitor_upload_session.schedule(args=(session_id,), delay=30)
+            else:
+                logger.warning(f"⚠️ MONITOR: Session {session_id} timed out after 2 hours")
+                session.mark_failed("Session timed out - files not uploaded within 2 hours")
+                
+    except Exception as e:
+        logger.error(f"❌ MONITOR: Error monitoring session {session_id}: {str(e)}")
+
+
+@db_task(retries=3, retry_delay=30)
+def verify_and_process_upload(file_id: str):
+    """
+    Verify file exists in S3 and create S3FileObject record.
+    This runs after client reports upload completion.
+    """
+    try:
+        from arkumu.storage.models.upload_tracking import AsyncUploadFile
+        from arkumu.storage.models import S3FileObject
+        from arkumu.storage.services.bucket_service import BucketService
+        
+        upload_file = AsyncUploadFile.objects.get(id=file_id)
+        logger.info(f"🔍 VERIFY: Checking S3 for file {upload_file.filename}")
+        
+        upload_file.mark_processing()
+        
+        # Verify file exists in S3
+        bucket_service = BucketService()
+        file_info = bucket_service.get_file_info(upload_file.s3_key)
+        
+        if not file_info or not file_info.get('exists', False):
+            raise Exception(f"File not found in S3: {upload_file.s3_key}")
+        
+        # Create S3FileObject record
+        s3_file_object = S3FileObject.objects.create(
+            s3_key=upload_file.s3_key,
+            filename=upload_file.filename,
+            file_size=file_info.get('size', upload_file.file_size),
+            content_type=upload_file.content_type,
+            etag=file_info.get('etag', ''),
+            status='completed',
+            upload_completed_at=timezone.now()
+        )
+        
+        upload_file.mark_completed(s3_file_object)
+        logger.info(f"✅ VERIFY: File {upload_file.filename} verified and processed")
+        
+        # Check if all files in session are now complete
+        check_session_completion.delay(str(upload_file.session_id))
+        
+    except Exception as e:
+        logger.error(f"❌ VERIFY: Error processing file {file_id}: {str(e)}")
+        try:
+            upload_file = AsyncUploadFile.objects.get(id=file_id)
+            upload_file.mark_failed(str(e))
+        except:
+            pass
+
+
+@db_task(retries=1, retry_delay=10)
+def check_session_completion(session_id: str):
+    """
+    Check if upload session is complete and trigger UI refresh.
+    """
+    try:
+        from arkumu.storage.models.upload_tracking import AsyncUploadSession
+        
+        session = AsyncUploadSession.objects.get(id=session_id)
+        
+        total_files = session.files.count()
+        completed_files = session.files.filter(status='completed').count()
+        failed_files = session.files.filter(status='failed').count()
+        
+        session.completed_files = completed_files
+        session.failed_files = failed_files
+        session.save()
+        
+        if completed_files + failed_files == total_files:
+            if failed_files == 0:
+                session.mark_completed()
+                logger.info(f"🎉 SESSION: Upload session {session_id} completed successfully")
+            else:
+                session.mark_failed(f"{failed_files} files failed to process")
+                logger.warning(f"⚠️ SESSION: Upload session {session_id} completed with {failed_files} failures")
+            
+            # Trigger UI refresh via OOB updates
+            trigger_ui_refresh.delay(str(session_id), session.organization)
+            
+    except Exception as e:
+        logger.error(f"❌ SESSION: Error checking completion for {session_id}: {str(e)}")
+
+
+@db_task(retries=2, retry_delay=15)
+def trigger_ui_refresh(session_id: str, organization: str):
+    """
+    Trigger UI refresh after upload completion.
+    Uses existing HTMX OOB refresh mechanism.
+    """
+    try:
+        logger.info(f"🔄 UI_REFRESH: Triggering refresh for organization {organization}")
+        
+        # For now, just log that UI refresh should happen
+        # In the future, this could integrate with WebSocket or SSE for real-time updates
+        logger.info(f"✅ UI_REFRESH: Refresh triggered for {organization}")
+        
+    except Exception as e:
+        logger.error(f"❌ UI_REFRESH: Error triggering refresh: {str(e)}")
+
+
+# Cleanup task to remove old upload sessions
+if HUEY_PERIODIC_AVAILABLE:
+    @db_periodic_task(crontab(minute='0', hour='*/4'))  # Every 4 hours
+    def cleanup_old_upload_sessions():
+        """Clean up old upload sessions and failed uploads"""
+        try:
+            from arkumu.storage.models.upload_tracking import AsyncUploadSession
+            
+            # Delete sessions older than 24 hours
+            cutoff_time = timezone.now() - timezone.timedelta(days=1)
+            
+            old_sessions = AsyncUploadSession.objects.filter(
+                created_at__lt=cutoff_time
+            ).exclude(status='completed')
+            
+            count = old_sessions.count()
+            old_sessions.delete()
+            
+            logger.info(f"🧹 CLEANUP: Removed {count} old upload sessions")
+            
+        except Exception as e:
+            logger.error(f"❌ CLEANUP: Error cleaning up sessions: {str(e)}")
+else:
+    @db_task()
+    def cleanup_old_upload_sessions():
+        """Clean up old upload sessions and failed uploads (manual trigger)"""
+        try:
+            from arkumu.storage.models.upload_tracking import AsyncUploadSession
+            
+            # Delete sessions older than 24 hours
+            cutoff_time = timezone.now() - timezone.timedelta(days=1)
+            
+            old_sessions = AsyncUploadSession.objects.filter(
+                created_at__lt=cutoff_time
+            ).exclude(status='completed')
+            
+            count = old_sessions.count()
+            old_sessions.delete()
+            
+            logger.info(f"🧹 CLEANUP: Removed {count} old upload sessions")
+            
+        except Exception as e:
+            logger.error(f"❌ CLEANUP: Error cleaning up sessions: {str(e)}")

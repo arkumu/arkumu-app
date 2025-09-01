@@ -453,3 +453,46 @@ def batch_upload(request):
         })
     
     return render(request, 'upload/batch_upload.html')
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def upload_complete_oob_refresh(request, organization):
+    """
+    OOB refresh endpoint for file browser after upload completion.
+    
+    Uses the template helpers mixin to render fresh file browser content
+    and returns it as an OOB update to refresh the UI.
+    """
+    logger.info(f"🔄 UPLOAD_OOB_REFRESH: Refreshing file browser for organization: {organization}")
+    
+    try:
+        # Import template helpers mixin
+        from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+        
+        # Create a temporary instance to use the mixin methods
+        template_helper = CSVMappingTemplateHelperMixin()
+        
+        # Render fresh file browser content
+        file_browser_html = template_helper.render_file_browser_template(request, organization)
+        
+        logger.info(f"✅ UPLOAD_OOB_REFRESH: Generated file browser HTML (length: {len(file_browser_html)})")
+        
+        # Build OOB response to update the file browser
+        oob_updates = {
+            'file-browser-content': file_browser_html
+        }
+        
+        # Return empty main content with OOB update
+        response_html = template_helper.build_oob_response("", oob_updates)
+        
+        from django.http import HttpResponse
+        return HttpResponse(response_html)
+        
+    except Exception as e:
+        logger.error(f"❌ UPLOAD_OOB_REFRESH: Error refreshing file browser: {e}")
+        return HttpResponse(
+            f'<div id="file-browser-content" hx-swap-oob="innerHTML">'
+            f'<div class="alert alert-error"><span>Error refreshing file browser: {str(e)}</span></div>'
+            f'</div>'
+        )
