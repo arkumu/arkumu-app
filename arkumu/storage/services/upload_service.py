@@ -26,7 +26,7 @@ class UploadService:
         """
         Initialize the simplified UploadService with presigned URL support only.
         """
-        logger.info("Initializing simplified UploadService for presigned URL uploads...")
+        logger.info("🔧 Initializing simplified UploadService for presigned URL uploads...")
         
         # Get the singleton instance of BaseStorageService for S3 operations
         self.base_s3_service = BaseStorageService()
@@ -34,7 +34,7 @@ class UploadService:
         # Initialize presigned URL service only
         self.presigned_url_service = PresignedURLService()
         
-        logger.info(f"UploadService initialized with endpoint: {self.base_s3_service.endpoint_url}")
+        logger.info(f"✅ UploadService initialized with endpoint: {self.base_s3_service.endpoint_url}")
 
     # Utility methods
     
@@ -69,18 +69,25 @@ class UploadService:
         Returns:
             Dictionary with presigned POST URL and form fields
         """
+        logger.info(f"🔗 GENERATE_PRESIGNED_URL: file_name={file_name}, content_type={content_type}, path_prefix={path_prefix}, max_file_size={max_file_size}")
+        
         s3_key = self._generate_file_key(file_name, path_prefix)
+        logger.info(f"📁 Generated S3 key: {s3_key}")
         
         # Default max file size to 5GB for single uploads
         if max_file_size is None:
             max_file_size = 5 * 1024 * 1024 * 1024  # 5GB
             
-        return self.presigned_url_service.generate_upload_url(
+        logger.info(f"🔧 Calling presigned_url_service.generate_upload_url...")
+        result = self.presigned_url_service.generate_upload_url(
             key=s3_key, 
             content_type=content_type, 
             expiry=expiration,
             max_file_size=max_file_size
         )
+        logger.info(f"🔗 Presigned URL service result: success={result.get('success', False)}")
+        
+        return result
     
     def generate_batch_presigned_upload_urls(self, file_requests: List[Dict[str, Any]], 
                                            path_prefix: Optional[str] = None,
@@ -209,6 +216,7 @@ class UploadService:
         Returns:
             Dictionary with validation result
         """
+        logger.info(f"🔍 VALIDATE_UPLOAD: file_name={file_name}, file_size={file_size}, content_type={content_type}, user_id={user_id}")
         errors = []
         warnings = []
         
@@ -236,13 +244,15 @@ class UploadService:
             errors.extend(key_validation['errors'])
         warnings.extend(key_validation['warnings'])
         
-        return {
+        result = {
             'valid': len(errors) == 0,
             'errors': errors,
             'warnings': warnings,
             'normalized_s3_key': upload_utils.normalize_s3_key(s3_key),
             'should_use_multipart': file_size > max_single_size
         }
+        logger.info(f"✅ VALIDATION_RESULT: valid={result['valid']}, errors={result['errors']}, should_use_multipart={result['should_use_multipart']}")
+        return result
     
     def validate_s3_key(self, s3_key: str) -> Dict[str, Any]:
         """Validate S3 key format and characters."""

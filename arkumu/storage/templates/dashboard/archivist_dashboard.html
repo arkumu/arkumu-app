@@ -88,6 +88,31 @@
                 <div id="dashboard-upload-area" class="mt-4 space-y-2">
                     <!-- Upload forms will be inserted here by JavaScript -->
                 </div>
+                
+                <!-- Batch Upload Controls -->
+                <div id="upload-controls" class="mt-4 hidden">
+                    <div class="divider">Upload Actions</div>
+                    <div class="flex justify-between items-center">
+                        <div class="text-sm text-base-content/70">
+                            <span id="files-count">0</span> files ready to upload
+                        </div>
+                        <div class="space-x-2">
+                            <button type="button" 
+                                    class="btn btn-outline btn-sm"
+                                    onclick="clearAllUploads()">
+                                Clear All
+                            </button>
+                            <button type="button" 
+                                    class="btn btn-primary btn-sm"
+                                    onclick="startAllUploads()">
+                                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                Start All Uploads
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -219,42 +244,454 @@ document.getElementById('dashboard-file-picker').addEventListener('change', func
         return;
     }
     
-    // Build folder path: organization/baseFolder
-    const folderPath = `${organization}/${baseFolder}`;
+    // Build folder path: baseFolder/organization (data or metadata first)
+    const folderPath = `${baseFolder}/${organization}`;
+    
+    console.log('📁 Upload structure:', {
+        organization: organization,
+        baseFolder: baseFolder, 
+        folderPath: folderPath,
+        fileCount: files.length
+    });
     
     // Clear previous uploads
     uploadArea.innerHTML = '';
     
-    // Process each file
-    files.forEach(file => {
-        // Create container for this upload
-        const uploadContainer = document.createElement('div');
-        uploadContainer.classList.add('upload-file-container');
-        uploadArea.appendChild(uploadContainer);
+    // Use batch endpoint for better performance
+    console.log('📦 Processing batch upload for', files.length, 'files');
+    
+    // Prepare batch request data
+    const batchData = {
+        files: files.map(file => ({
+            name: file.name,
+            // Include relative path for folder structure preservation
+            relativePath: file.webkitRelativePath || file.name,
+            size: file.size,
+            type: file.type
+        })),
+        folder: folderPath
+    };
+    
+    // Make single batch request
+    console.log('🚀 Sending batch request:', batchData);
+    console.log('🔑 CSRF token found:', getCsrfToken() ? 'Yes' : 'No');
+    
+    fetch('/storage/upload/presigned/batch/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        },
+        credentials: 'include',
+        body: JSON.stringify(batchData)
+    })
+    .then(response => {
+        console.log('📡 Response received:', response.status, response.statusText);
+        console.log('📡 Response headers:', response.headers);
         
-        // Build URL parameters
-        const params = new URLSearchParams({
-            filename: file.name,
-            filetype: file.type,
-            filesize: file.size.toString(),
-            folder: folderPath  // Use organization/baseFolder structure
-        });
+        if (!response.ok) {
+            console.error('❌ HTTP Error:', response.status, response.statusText);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         
-        // Use HTMX to get presigned URL and form
-        htmx.ajax('GET', `/storage/upload/presigned/url/?${params}`, {
-            target: uploadContainer,
-            swap: 'innerHTML'
-        }).then(() => {
-            // Auto-populate the file input after form loads
-            const fileInput = uploadContainer.querySelector('input[type="file"][name="file"]');
-            if (fileInput) {
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                fileInput.files = dt.files;
-            }
-        });
+        return response.json();
+    })
+    .then(data => {
+        console.log('✅ Batch response parsed:', data);
+        
+        // Handle partial success (some files succeeded, some failed)
+        if (data.uploads && data.uploads.length > 0) {
+            console.log(`🎯 Processing ${data.uploads.length} successful upload(s)`);
+            // Process each successful upload
+            data.uploads.forEach((uploadInfo, index) => {
+                // Find matching file by name since some may have been filtered out
+                const file = files.find(f => f.name === uploadInfo.filename);
+                if (file) {
+                    console.log(`📄 Creating card for: ${uploadInfo.filename} (type: ${uploadInfo.type})`);
+                    createUploadCard(uploadInfo, file);
+                } else {
+                    console.warn(`⚠️ Could not find file object for: ${uploadInfo.filename}`);
+                }
+            });
+            
+            // Update upload controls
+            updateUploadControls();
+            console.log('🎉 Upload cards created for successful files');
+        }
+        
+        if (!data.success && (!data.uploads || data.uploads.length === 0)) {
+            console.error('❌ Batch upload completely failed:', data.error);
+            alert('Failed to prepare uploads: ' + (data.error || 'Unknown error'));
+        }
+        
+        if (data.errors && data.errors.length > 0) {
+            console.warn('⚠️ Some files had errors:', data.errors);
+            data.errors.forEach(error => {
+                console.error(`❌ ${error.filename}: ${error.errors.join(', ')}`);
+            });
+        }
+    })
+    .catch(error => {
+        console.error('❌ Batch request failed:', error);
+        console.error('❌ Error details:', error.name, error.message);
+        console.error('❌ Stack trace:', error.stack);
+        alert('Failed to prepare uploads: ' + error.message);
     });
 });
+
+// Helper function to get CSRF token
+function getCsrfToken() {
+    const tokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (tokenElement) return tokenElement.value;
+    
+    // Fallback: get from cookie
+    const name = 'csrftoken';
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Create upload card for each file (replaces HTMX template loading)
+function createUploadCard(uploadInfo, file) {
+    console.log('🏗️ Creating upload card for:', uploadInfo.filename, 'type:', uploadInfo.type);
+    
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    if (!uploadArea) {
+        console.error('❌ Upload area not found!');
+        return;
+    }
+    
+    const uploadContainer = document.createElement('div');
+    uploadContainer.classList.add('upload-file-container');
+    
+    console.log('📦 Upload info received:', uploadInfo);
+    
+    if (uploadInfo.type === 'single') {
+        // Create single upload card
+        uploadContainer.innerHTML = `
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                ${getFileIcon(uploadInfo.filetype)}
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-sm font-medium text-base-content">${uploadInfo.filename}</h3>
+                                <p class="text-xs text-base-content/60">
+                                    ${formatFileSize(uploadInfo.filesize)} • ${uploadInfo.filetype}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="removeUploadCard(this)">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- S3 Upload Form -->
+                    <form class="mt-4 s3-upload-form" data-filename="${uploadInfo.filename}" data-s3-key="${uploadInfo.s3_key}">
+                        <!-- Progress Indicator -->
+                        <div class="upload-progress hidden mb-4">
+                            <div class="flex items-center space-x-2">
+                                <span class="loading loading-spinner loading-sm"></span>
+                                <span class="text-sm">Uploading to S3...</span>
+                            </div>
+                            <progress class="progress progress-primary w-full" max="100"></progress>
+                        </div>
+                        
+                        <!-- Upload Button -->
+                        <div class="flex justify-between items-center mt-4">
+                            <div class="text-xs text-base-content/60">
+                                Direct upload to S3 • Max ${formatFileSize(uploadInfo.max_file_size || 5368709120)}
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                Upload ${uploadInfo.filename}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        
+        // Add to DOM
+        console.log('➕ Adding single upload card to DOM');
+        uploadArea.appendChild(uploadContainer);
+        
+        // Setup S3 upload handling
+        console.log('⚙️ Setting up S3 upload for:', uploadInfo.filename);
+        setupS3Upload(uploadContainer, uploadInfo, file);
+        
+    } else if (uploadInfo.type === 'multipart') {
+        // Create multipart upload card
+        uploadContainer.innerHTML = `
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                ${getFileIcon(uploadInfo.filetype)}
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-sm font-medium text-base-content">${uploadInfo.filename}</h3>
+                                <p class="text-xs text-base-content/60">
+                                    ${formatFileSize(uploadInfo.filesize)} • ${uploadInfo.filetype} • Large file (multipart)
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="removeUploadCard(this)">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Multipart Upload Controls -->
+                    <div class="mt-4">
+                        <div class="upload-progress hidden mb-4">
+                            <div class="flex items-center space-x-2">
+                                <span class="loading loading-spinner loading-sm"></span>
+                                <span class="text-sm">Uploading chunks to S3...</span>
+                            </div>
+                            <progress class="progress progress-primary w-full" max="100"></progress>
+                        </div>
+                        
+                        <div class="flex justify-between items-center">
+                            <div class="text-xs text-base-content/60">
+                                Multipart upload • ${uploadInfo.filename}
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm multipart-upload-btn" 
+                                    data-upload-id="${uploadInfo.upload_id}" 
+                                    data-s3-key="${uploadInfo.s3_key}">
+                                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                Start Multipart Upload
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add to DOM
+        uploadArea.appendChild(uploadContainer);
+        
+        // Setup multipart upload handling
+        setupMultipartUpload(uploadContainer, uploadInfo, file);
+    }
+}
+
+// Helper functions
+function getFileIcon(filetype) {
+    console.log('🎨 Getting icon for filetype:', filetype);
+    if (filetype.includes('image/')) {
+        return `<svg class="h-8 w-8 text-success" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
+        </svg>`;
+    } else if (filetype.includes('video/')) {
+        return `<svg class="h-8 w-8 text-info" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+        </svg>`;
+    } else {
+        return `<svg class="h-8 w-8 text-base-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
+        </svg>`;
+    }
+}
+
+function formatFileSize(bytes) {
+    console.log('📏 Formatting file size:', bytes);
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function removeUploadCard(button) {
+    const card = button.closest('.upload-file-container');
+    if (card) {
+        card.remove();
+        updateUploadControls();
+    }
+}
+
+function setupS3Upload(container, uploadInfo, file) {
+    const form = container.querySelector('.s3-upload-form');
+    const progressDiv = container.querySelector('.upload-progress');
+    const uploadButton = form.querySelector('button[type="submit"]');
+    
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        console.log('🚀 Starting S3 upload for:', uploadInfo.filename);
+        
+        // Show progress
+        if (progressDiv) {
+            progressDiv.classList.remove('hidden');
+        }
+        
+        // Disable button
+        uploadButton.disabled = true;
+        uploadButton.innerHTML = `
+            <span class="loading loading-spinner loading-sm mr-2"></span>
+            Uploading...
+        `;
+        
+        // Create FormData for S3 upload
+        const formData = new FormData();
+        
+        // Add S3 fields
+        Object.entries(uploadInfo.fields).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
+        
+        // Add file (handle zero-byte files specially)
+        if (file.size === 0) {
+            // For zero-byte files, create an empty blob
+            console.log('📄 Handling zero-byte file:', file.name);
+            formData.append('file', new Blob([], {type: file.type}));
+        } else {
+            formData.append('file', file);
+        }
+        
+        // Create XMLHttpRequest for S3 upload
+        const xhr = new XMLHttpRequest();
+        
+        // Handle upload progress
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                console.log(`📊 Upload progress: ${percentComplete.toFixed(1)}%`);
+                
+                const progressBar = progressDiv?.querySelector('progress');
+                if (progressBar) {
+                    progressBar.value = percentComplete;
+                }
+            }
+        });
+        
+        // Handle upload completion
+        xhr.addEventListener('load', function() {
+            console.log('🎉 S3 upload completed!', xhr.status);
+            
+            if (xhr.status >= 200 && xhr.status < 300) {
+                // Success
+                container.innerHTML = `
+                    <div class="alert alert-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>✅ ${uploadInfo.filename} uploaded successfully!</span>
+                    </div>
+                `;
+                updateUploadControls();
+            } else {
+                // Error
+                console.error('❌ S3 upload failed:', xhr.status, xhr.statusText);
+                showUploadError(container, 'Upload failed: ' + xhr.statusText);
+            }
+        });
+        
+        // Handle upload error
+        xhr.addEventListener('error', function() {
+            console.error('❌ S3 upload error');
+            showUploadError(container, 'Upload failed: Network error');
+        });
+        
+        // Send to S3
+        xhr.open('POST', uploadInfo.url);
+        xhr.send(formData);
+    });
+}
+
+function setupMultipartUpload(container, uploadInfo, file) {
+    const button = container.querySelector('.multipart-upload-btn');
+    const progressDiv = container.querySelector('.upload-progress');
+    
+    button.addEventListener('click', function() {
+        console.log('🚀 Starting multipart upload for:', uploadInfo.filename);
+        
+        // Show progress
+        if (progressDiv) {
+            progressDiv.classList.remove('hidden');
+        }
+        
+        // Disable button
+        button.disabled = true;
+        button.innerHTML = `
+            <span class="loading loading-spinner loading-sm mr-2"></span>
+            Uploading chunks...
+        `;
+        
+        // TODO: Implement multipart upload logic
+        // This would involve:
+        // 1. Calculate chunk size and number of parts
+        // 2. Get presigned URLs for each part
+        // 3. Upload parts in parallel
+        // 4. Complete multipart upload
+        
+        // For now, show placeholder
+        setTimeout(() => {
+            container.innerHTML = `
+                <div class="alert alert-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>📦 Multipart upload for ${uploadInfo.filename} - Implementation pending</span>
+                </div>
+            `;
+            updateUploadControls();
+        }, 2000);
+    });
+}
+
+function showUploadError(container, message) {
+    const form = container.querySelector('.s3-upload-form');
+    const uploadButton = form?.querySelector('button[type="submit"]');
+    const progressDiv = container.querySelector('.upload-progress');
+    
+    // Re-enable button
+    if (uploadButton) {
+        uploadButton.disabled = false;
+        uploadButton.innerHTML = `
+            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Retry Upload
+        `;
+    }
+    
+    // Hide progress
+    if (progressDiv) {
+        progressDiv.classList.add('hidden');
+    }
+    
+    // Show error message
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'alert alert-error mt-2';
+    errorDiv.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <span>❌ ${message}</span>
+    `;
+    container.appendChild(errorDiv);
+}
 
 // Drag and drop support for dashboard
 const dashboardDropArea = document.getElementById('presigned-upload-area');
@@ -348,6 +785,90 @@ document.addEventListener('htmx:afterRequest', function(event) {
         }, 100);
     }
 });
+
+// Batch Upload Control Functions
+function updateUploadControls() {
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    const uploadControls = document.getElementById('upload-controls');
+    const filesCount = document.getElementById('files-count');
+    
+    const uploadForms = uploadArea.querySelectorAll('.card form, .card .multipart-upload-btn');
+    const count = uploadForms.length;
+    
+    if (count > 0) {
+        uploadControls.classList.remove('hidden');
+        filesCount.textContent = count;
+    } else {
+        uploadControls.classList.add('hidden');
+    }
+}
+
+function clearAllUploads() {
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    uploadArea.innerHTML = '';
+    
+    // Reset file input
+    const fileInput = document.getElementById('dashboard-file-picker');
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    
+    updateUploadControls();
+}
+
+function startAllUploads() {
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    
+    console.log('🚀 Starting all uploads...');
+    
+    // Find all S3 upload forms
+    const s3Forms = uploadArea.querySelectorAll('.s3-upload-form');
+    console.log('📋 Found', s3Forms.length, 'S3 forms');
+    
+    s3Forms.forEach((form, index) => {
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton && !submitButton.disabled) {
+            console.log('🎯 Triggering upload', index + 1, 'of', s3Forms.length);
+            submitButton.click();
+        } else {
+            console.log('⏭️ Skipping disabled form', index + 1);
+        }
+    });
+    
+    // Find all multipart upload buttons
+    const multipartButtons = uploadArea.querySelectorAll('.multipart-upload-btn');
+    console.log('📦 Found', multipartButtons.length, 'multipart buttons');
+    
+    multipartButtons.forEach((button, index) => {
+        if (!button.disabled) {
+            console.log('🎯 Triggering multipart upload', index + 1);
+            button.click();
+        }
+    });
+    
+    // Show feedback
+    const startButton = document.querySelector('#upload-controls .btn-primary');
+    if (startButton) {
+        startButton.disabled = true;
+        startButton.innerHTML = `
+            <span class="loading loading-spinner loading-sm mr-2"></span>
+            Uploading...
+        `;
+        
+        console.log('🔄 Batch upload initiated');
+        
+        // Re-enable after a delay (uploads will handle their own state)
+        setTimeout(() => {
+            startButton.disabled = false;
+            startButton.innerHTML = `
+                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Start All Uploads
+            `;
+        }, 3000);
+    }
+}
 </script>
 
 {% endblock %}

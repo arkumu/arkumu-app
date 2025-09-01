@@ -18,7 +18,9 @@ class PresignedURLService:
     def __init__(self):
         """Initialize with singleton BaseStorageService."""
         self.base_service = BaseStorageService()
-        self.s3_client = self.base_service.s3_client
+        # Use presigned_client for browser-accessible URLs instead of s3_client
+        self.s3_client = getattr(self.base_service, 'presigned_client', self.base_service.s3_client)
+        logger.info(f"🔗 PresignedURLService initialized with client endpoint: {getattr(self.s3_client, '_endpoint', 'Unknown')}")
         
     def generate_upload_url(
         self, 

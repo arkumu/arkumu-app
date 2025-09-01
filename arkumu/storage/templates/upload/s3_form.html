@@ -42,21 +42,19 @@
         <form action="{{ presigned_url }}" 
               method="post" 
               enctype="multipart/form-data"
-              hx-post="{{ presigned_url }}"
-              hx-trigger="submit"
-              hx-target="closest .card"
-              hx-swap="outerHTML"
-              hx-indicator="closest .card .upload-progress"
-              class="mt-4">
+              class="mt-4 s3-upload-form"
+              data-filename="{{ filename }}"
+              data-s3-key="{{ s3_key }}">
             
             <!-- S3 Required Fields -->
             {% for key, value in fields.items %}
                 <input type="hidden" name="{{ key }}" value="{{ value }}">
             {% endfor %}
             
-            <!-- File Input (hidden, will be populated by JavaScript) -->
+            <!-- File Input (will be populated by JavaScript) -->
             <input type="file" 
                    name="file" 
+                   class="s3-file-input"
                    style="display: none;" 
                    required>
             
@@ -86,11 +84,149 @@
 </div>
 
 <script>
-// Show progress when upload starts
-document.querySelector('.card form').addEventListener('htmx:beforeRequest', function(evt) {
-    const progressDiv = this.querySelector('.upload-progress');
-    if (progressDiv) {
-        progressDiv.classList.remove('hidden');
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('.s3-upload-form');
+    if (!form) return;
+    
+    const fileInput = form.querySelector('.s3-file-input');
+    const uploadButton = form.querySelector('button[type="submit"]');
+    const progressDiv = form.querySelector('.upload-progress');
+    const filename = form.dataset.filename;
+    
+    console.log('🔗 S3 Form initialized for:', filename);
+    
+    // Find the original file from the dashboard file input
+    const dashboardFileInput = document.getElementById('dashboard-file-picker');
+    if (dashboardFileInput && dashboardFileInput.files.length > 0) {
+        // Find matching file by name
+        const files = Array.from(dashboardFileInput.files);
+        const matchingFile = files.find(file => file.name === filename);
+        
+        if (matchingFile) {
+            console.log('✅ Found matching file:', matchingFile.name, matchingFile.size + ' bytes');
+            
+            // Create a new DataTransfer to set the file input
+            const dt = new DataTransfer();
+            dt.items.add(matchingFile);
+            fileInput.files = dt.files;
+            
+            console.log('📁 File populated in S3 form input');
+        } else {
+            console.error('❌ Could not find matching file for:', filename);
+        }
+    } else {
+        console.error('❌ No files found in dashboard file input');
+    }
+    
+    // Handle form submission with XMLHttpRequest for proper S3 upload
+    form.addEventListener('submit', function(e) {
+        e.preventDefault(); // Prevent default form submission
+        
+        console.log('🚀 S3 form submitting for:', filename);
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+            console.error('❌ No file selected for upload');
+            alert('No file selected. Please try selecting the file again.');
+            return;
+        }
+        
+        const file = fileInput.files[0];
+        console.log('📤 Uploading file:', file.name, file.size + ' bytes');
+        
+        // Show progress
+        if (progressDiv) {
+            progressDiv.classList.remove('hidden');
+        }
+        
+        // Disable button
+        uploadButton.disabled = true;
+        uploadButton.innerHTML = `
+            <span class="loading loading-spinner loading-sm mr-2"></span>
+            Uploading...
+        `;
+        
+        // Create FormData from the form
+        const formData = new FormData(form);
+        
+        // Create XMLHttpRequest for S3 upload
+        const xhr = new XMLHttpRequest();
+        
+        // Handle upload progress
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                console.log(`📊 Upload progress: ${percentComplete.toFixed(1)}%`);
+                
+                // Update progress bar if available
+                const progressBar = progressDiv?.querySelector('progress');
+                if (progressBar) {
+                    progressBar.value = percentComplete;
+                }
+            }
+        });
+        
+        // Handle upload completion
+        xhr.addEventListener('load', function() {
+            console.log('🎉 S3 upload completed!', xhr.status);
+            
+            if (xhr.status >= 200 && xhr.status < 300) {
+                // Success - replace form with success message
+                form.outerHTML = `
+                    <div class="alert alert-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>✅ ${filename} uploaded successfully!</span>
+                    </div>
+                `;
+                
+                // Update upload controls
+                if (typeof updateUploadControls === 'function') {
+                    updateUploadControls();
+                }
+            } else {
+                // Error
+                console.error('❌ S3 upload failed:', xhr.status, xhr.statusText);
+                showUploadError('Upload failed: ' + xhr.statusText);
+            }
+        });
+        
+        // Handle upload error
+        xhr.addEventListener('error', function() {
+            console.error('❌ S3 upload error');
+            showUploadError('Upload failed: Network error');
+        });
+        
+        // Send the form data to S3
+        xhr.open('POST', form.action);
+        xhr.send(formData);
+    });
+    
+    // Helper function to show upload error
+    function showUploadError(message) {
+        // Re-enable button
+        uploadButton.disabled = false;
+        uploadButton.innerHTML = `
+            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Upload {{ filename }}
+        `;
+        
+        // Hide progress
+        if (progressDiv) {
+            progressDiv.classList.add('hidden');
+        }
+        
+        // Show error message
+        form.insertAdjacentHTML('afterend', `
+            <div class="alert alert-error mt-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span>❌ ${message}</span>
+            </div>
+        `);
     }
 });
 </script>

@@ -1,7 +1,7 @@
 from django.urls import path
 
 from . import views
-from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views, simple_multipart_upload, file_browser_oob_views, s3_multipart_upload_views, htmx_upload_views
+from .views import direct_upload_views, streaming_upload_views, file_operations_views, dashboard_views, upload_status_view, resumable_upload_views, simple_multipart_upload, file_browser_oob_views, s3_multipart_upload_views, upload_views
 
 app_name = "storage"
 
@@ -18,13 +18,13 @@ urlpatterns = [
     path('upload/complete/', direct_upload_views.upload_complete, name='upload_complete'),
     
     # Presigned URL Upload endpoints  
-    path("upload/presigned/", htmx_upload_views.upload_form, name="presigned_upload_form"),
-    path("upload/presigned/url/", htmx_upload_views.get_presigned_url, name="get_presigned_url"),
-    path("upload/presigned/success/", htmx_upload_views.upload_success, name="presigned_upload_success"),
-    path("upload/presigned/cancel/", htmx_upload_views.cancel_upload, name="cancel_presigned_upload"),
-    path("upload/presigned/multipart/complete/", htmx_upload_views.complete_multipart_upload, name="multipart_complete"),
-    path("upload/presigned/multipart/abort/", htmx_upload_views.abort_multipart_upload, name="multipart_abort"),
-    path("upload/presigned/batch/", htmx_upload_views.batch_upload, name="batch_presigned_upload"),
+    path("upload/presigned/", upload_views.upload_form, name="presigned_upload_form"),
+    path("upload/presigned/url/", upload_views.get_presigned_url, name="get_presigned_url"),
+    path("upload/presigned/success/", upload_views.upload_success, name="presigned_upload_success"),
+    path("upload/presigned/cancel/", upload_views.cancel_upload, name="cancel_presigned_upload"),
+    path("upload/presigned/multipart/complete/", upload_views.complete_multipart_upload, name="multipart_complete"),
+    path("upload/presigned/multipart/abort/", upload_views.abort_multipart_upload, name="multipart_abort"),
+    path("upload/presigned/batch/", upload_views.batch_presigned_urls, name="batch_presigned_urls"),
     
     # New streaming upload endpoints
     path("upload/streaming/", streaming_upload_views.streaming_upload_form, name="streaming_upload_form"),
