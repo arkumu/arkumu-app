@@ -1,311 +1,136 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block title %}HTMX File Upload{% endblock %}
+
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="hero">
-        <div class="hero-content text-center">
-            <h1 class="text-3xl font-bold text-gray-800">Upload to Ingest Bucket</h1>
-        </div>
-    </div>
-    
-    <div class="card bg-base-100 shadow-xl max-w-2xl mx-auto">
+<div class="container mx-auto p-6 max-w-4xl">
+    <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
-            <form id="upload-form">
-                {% csrf_token %}
+            <h1 class="card-title text-2xl mb-4">Upload Files</h1>
+            
+            <!-- File Selection Area -->
+            <div class="border-2 border-dashed border-base-300 rounded-lg p-8 text-center">
+                <div class="mb-4">
+                    <svg class="mx-auto h-12 w-12 text-base-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
                 
-                <div class="form-control w-full mb-6">
+                <label for="file-picker" class="cursor-pointer">
+                    <span class="mt-2 block text-sm font-medium text-base-content">
+                        Click to select files or drag and drop
+                    </span>
+                    <input id="file-picker" 
+                           type="file" 
+                           class="hidden" 
+                           multiple 
+                           accept="*/*">
+                </label>
+                
+                <!-- Optional Folder Name -->
+                <div class="mt-4 max-w-sm mx-auto">
                     <label class="label">
-                        <span class="label-text font-bold">Select Folder:</span>
+                        <span class="label-text">Folder name (optional)</span>
                     </label>
-                    <div id="file-upload-container" class="border-2 border-dashed border-base-300 rounded-lg p-6 text-center hover:border-primary transition-colors">
-                        <input type="file" id="folder-input" class="hidden" webkitdirectory directory>
-                        <div class="cursor-pointer" id="folder-select-button">
-                            <svg class="mx-auto h-12 w-12 text-base-content/50" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" 
-                                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            <p class="mt-1 text-sm">
-                                <span class="text-primary hover:text-primary-focus">
-                                    Click to select folder
-                                </span>
-                            </p>
-                            <p class="mt-1 text-xs text-base-content/70">
-                                Find and select the folder containing your files
-                            </p>
-                        </div>
-                    </div>
+                    <input type="text" 
+                           id="folder-name" 
+                           placeholder="e.g., my-documents" 
+                           class="input input-bordered w-full" />
                 </div>
-                
-                <!-- Selected folder info -->
-                <div id="file-list" class="mt-4 max-h-60 overflow-y-auto hidden">
-                    <div class="alert">
-                        <div>
-                            <h3 class="font-medium">Selected Folder: <span id="selected-folder-name" class="font-bold"></span></h3>
-                            <div id="file-stats" class="mt-2 text-sm">
-                                <p id="file-count"></p>
-                                <p id="file-size"></p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Upload progress indicator -->
-                <div id="upload-progress" class="mb-6 hidden">
-                    <div class="flex items-center mb-2">
-                        <div class="w-full">
-                            <div class="flex justify-between mb-1">
-                                <span class="text-sm font-medium" id="progress-text">Preparing...</span>
-                                <span class="text-sm font-medium" id="progress-percentage">0%</span>
-                            </div>
-                            <progress class="progress progress-primary w-full" id="progress-bar" value="0" max="100"></progress>
-                        </div>
-                    </div>
-                    <p class="text-xs text-base-content/70 mt-1">
-                        Large folders may take several minutes to upload. Please don't close this page.
-                    </p>
-                </div>
-                
-                <!-- Upload status area -->
-                <div id="upload-status" class="mb-6">
-                    <!-- This will be populated with status messages -->
-                </div>
-                
-                <div class="flex items-center justify-between">
-                    <a href="{% url 'storage:archivist_dashboard' %}" 
-                       class="btn btn-neutral">
-                        Cancel
-                    </a>
-                    <button id="upload-button" type="button" 
-                            class="btn btn-primary">
-                        Upload Folder
-                    </button>
-                </div>
-            </form>
+            </div>
+            
+            <!-- Upload Area - Gets populated with upload forms -->
+            <div id="upload-area" class="mt-6 space-y-4">
+                <!-- Upload forms will be inserted here -->
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Include the S3 client and multipart upload handler scripts -->
-<script src="{% static 'js/src/s3/s3-client.js' %}"></script>
-<script src="{% static 'js/src/s3/multipart-upload.js' %}"></script>
-
 <script>
-// Initialize upload handler once when the page loads
-const s3Client = new S3Client();
-const uploadHandler = new MultipartUploadHandler(s3Client);
-
-// Update progress bar and text
-window.updateUploadProgress = function(message, percentage) {
-    const progressBar = document.getElementById('progress-bar');
-    const progressText = document.getElementById('progress-text');
-    const progressPercentage = document.getElementById('progress-percentage');
-    const progressContainer = document.getElementById('upload-progress');
+document.getElementById('file-picker').addEventListener('change', function(e) {
+    const files = Array.from(e.target.files);
+    const folderName = document.getElementById('folder-name').value.trim();
+    const uploadArea = document.getElementById('upload-area');
     
-    progressContainer.classList.remove('hidden');
-    progressBar.value = percentage;
-    progressText.textContent = message;
-    progressPercentage.textContent = `${percentage}%`;
-};
-
-// Update folder info display
-window.updateFolderInfo = function(folderName, fileCount, totalSize) {
-    document.getElementById('selected-folder-name').textContent = folderName;
-    document.getElementById('file-count').textContent = `Files: ${fileCount}`;
-    document.getElementById('file-size').textContent = `Total size: ${formatFileSize(totalSize)}`;
-    document.getElementById('file-list').classList.remove('hidden');
-};
-
-// Helper function to format file size
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
+    if (files.length === 0) return;
     
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    // Clear previous uploads
+    uploadArea.innerHTML = '';
     
-    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+    // Process each file
+    files.forEach(file => {
+        // Create container for this upload
+        const uploadContainer = document.createElement('div');
+        uploadContainer.classList.add('upload-file-container');
+        uploadArea.appendChild(uploadContainer);
+        
+        // Build URL parameters
+        const params = new URLSearchParams({
+            filename: file.name,
+            filetype: file.type,
+            filesize: file.size.toString()
+        });
+        
+        if (folderName) {
+            params.append('folder', folderName);
+        }
+        
+        // Use HTMX to get presigned URL and form
+        htmx.ajax('GET', `/storage/upload/presigned/url/?${params}`, {
+            target: uploadContainer,
+            swap: 'innerHTML'
+        }).then(() => {
+            // Auto-populate the file input after form loads
+            const fileInput = uploadContainer.querySelector('input[type="file"][name="file"]');
+            if (fileInput) {
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+            }
+        });
+    });
+});
+
+// Drag and drop support
+const dropArea = document.querySelector('.border-dashed');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
+});
+
+['dragenter', 'dragover'].forEach(eventName => {
+    dropArea.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, unhighlight, false);
+});
+
+dropArea.addEventListener('drop', handleDrop, false);
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
 }
 
-// Add event listener for the folder select button
-document.getElementById('folder-select-button').addEventListener('click', function() {
-    document.getElementById('folder-input').click();
-});
+function highlight() {
+    dropArea.classList.add('border-primary');
+}
 
-// Handle folder selection
-document.getElementById('folder-input').addEventListener('change', function() {
-    const files = this.files;
-    if (files.length > 0) {
-        // Get folder name from the first file's path
-        const folderName = files[0].webkitRelativePath.split('/')[0];
-        let totalSize = 0;
-        
-        // Calculate total size
-        for (let i = 0; i < files.length; i++) {
-            totalSize += files[i].size;
-        }
-        
-        // Update folder info
-        window.updateFolderInfo(folderName, files.length, totalSize);
-        
-        // Store files for upload
-        window.selectedFiles = Array.from(files);
-    }
-});
+function unhighlight() {
+    dropArea.classList.remove('border-primary');
+}
 
-// Add event listener for the upload button
-document.getElementById('upload-button').addEventListener('click', async function() {
-    const button = this;
-    const statusArea = document.getElementById('upload-status');
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
     
-    if (!window.selectedFiles) {
-        window.showErrorMessage({
-            message: 'Please select a folder first.'
-        });
-        return;
-    }
-    
-    try {
-        // Disable button and show progress
-        button.disabled = true;
-        button.innerHTML = '<span class="loading loading-spinner"></span> Uploading...';
-        window.updateUploadProgress('Preparing upload...', 0);
-        
-        const files = window.selectedFiles;
-        const folderName = files[0].webkitRelativePath.split('/')[0];
-        
-        // Upload each file
-        let successful = 0;
-        let failed = [];
-        
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const filePath = file.webkitRelativePath;
-            
-            try {
-                // Start upload
-                window.updateUploadProgress(`Uploading ${filePath}...`, (i / files.length) * 100);
-                const startResult = await uploadHandler.startUpload(file, folderName);
-                
-                if (!startResult.success) {
-                    throw new Error(startResult.error);
-                }
-                
-                // Upload all parts
-                const partSize = 5 * 1024 * 1024; // 5MB per part
-                const partCount = Math.ceil(file.size / partSize);
-                
-                for (let partNumber = 1; partNumber <= partCount; partNumber++) {
-                    const partProgress = (partNumber / partCount) * 100;
-                    window.updateUploadProgress(
-                        `Uploading ${filePath} (Part ${partNumber}/${partCount})...`,
-                        (i / files.length) * 100 + (partProgress / files.length)
-                    );
-                    
-                    const partResult = await uploadHandler.uploadPart(file, partNumber);
-                    if (!partResult.success) {
-                        throw new Error(partResult.error);
-                    }
-                }
-                
-                // Complete the upload
-                const result = await uploadHandler.completeUpload(file.name);
-                if (!result.success) {
-                    throw new Error(result.error);
-                }
-                
-                successful++;
-            } catch (error) {
-                console.error(`Failed to upload ${filePath}:`, error);
-                failed.push(filePath);
-                
-                // Try to abort the upload if it was started
-                try {
-                    await uploadHandler.abortUpload(file.name);
-                } catch (abortError) {
-                    console.error(`Failed to abort upload for ${filePath}:`, abortError);
-                }
-            }
-        }
-        
-        // Show results
-        if (failed.length > 0) {
-            window.showErrorMessage({
-                message: `Upload completed with ${successful} successful and ${failed.length} failed files.`,
-                failedFiles: failed
-            });
-        } else {
-            window.showSuccessMessage({
-                successful: successful,
-                total: files.length
-            });
-        }
-    } catch (error) {
-        console.error('Error during upload:', error);
-        window.showErrorMessage({
-            message: `Upload failed: ${error.message || 'Unknown error'}`
-        });
-    } finally {
-        // Reset button
-        button.disabled = false;
-        button.innerHTML = 'Upload Folder';
-    }
-});
-
-// Show success message
-window.showSuccessMessage = function(result) {
-    document.getElementById('upload-status').innerHTML = `
-        <div class="alert alert-success">
-            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div>
-                <h3 class="font-bold">Upload Successful!</h3>
-                <div class="text-xs">Uploaded ${result.successful} files</div>
-            </div>
-            <div class="mt-3">
-                <a href="{% url 'storage:archivist_dashboard' %}" 
-                   class="btn btn-success btn-sm">
-                    Go to Dashboard
-                </a>
-            </div>
-        </div>
-    `;
-};
-
-// Show error message
-window.showErrorMessage = function(error) {
-    let errorMessage = error.message || error.error || 'An unknown error occurred';
-    let failedFilesList = '';
-    
-    if (error.failedFiles && error.failedFiles.length > 0) {
-        failedFilesList = `
-            <div class="mt-2">
-                <p class="font-medium">Failed files:</p>
-                <ul class="list-disc pl-5 mt-1">
-                    ${error.failedFiles.map(file => `<li>${file}</li>`).join('')}
-                </ul>
-            </div>
-        `;
-    }
-    
-    document.getElementById('upload-status').innerHTML = `
-        <div class="alert alert-error">
-            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div>
-                <h3 class="font-bold">Upload Error</h3>
-                <div class="text-xs">${errorMessage}</div>
-                ${failedFilesList}
-            </div>
-            <div class="mt-3">
-                <button onclick="location.reload()" 
-                   class="btn btn-error btn-sm">
-                    Try Again
-                </button>
-            </div>
-        </div>
-    `;
-};
+    const fileInput = document.getElementById('file-picker');
+    fileInput.files = files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+}
 </script>
-{% endblock %} 
+{% endblock %}

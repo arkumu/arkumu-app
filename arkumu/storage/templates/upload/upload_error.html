@@ -1,0 +1,45 @@
+<!-- Upload Error -->
+<div class="card bg-error text-error-content border border-error">
+    <div class="card-body">
+        <div class="flex items-center space-x-3">
+            <div class="flex-shrink-0">
+                <svg class="h-8 w-8" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                </svg>
+            </div>
+            
+            <div class="flex-1">
+                <h3 class="text-sm font-medium">
+                    {% if filename %}{{ filename }}{% else %}Upload Failed{% endif %}
+                </h3>
+                <p class="text-xs opacity-80 mt-1">
+                    ❌ {{ error }}
+                </p>
+            </div>
+            
+            <div class="flex-shrink-0">
+                <button type="button" 
+                        class="btn btn-ghost btn-sm"
+                        onclick="this.closest('.card').remove()">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Retry Option -->
+        {% if filename %}
+        <div class="mt-3">
+            <button type="button" 
+                    class="btn btn-ghost btn-sm"
+                    onclick="window.location.reload()">
+                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Try Again
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>

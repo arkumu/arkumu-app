@@ -23,27 +23,19 @@
                     Upload Files to S3
                 </h2>
                 
-                <!-- Upload Form -->
-                <form id="streaming-upload-form" 
-                      class="upload-form"
-                      enctype="multipart/form-data"
-                      onsubmit="return false;">
-                    {% csrf_token %}
-                    
+                <!-- Organization and Folder Selection -->
+                <div class="space-y-4 mb-4">
                     <!-- Organization selection -->
-                    <div id="upload-org-selector" class="form-control mb-4">
+                    <div id="upload-org-selector" class="form-control">
                         {% include 'dashboard/partials/upload_org_selector.html' %}
                     </div>
                     
-                    <!-- Hidden organization field for JavaScript access -->
-                    <input type="hidden" id="organization-hidden" name="organization" value="" />
-                    
                     <!-- Base folder selection (data or metadata) -->
-                    <div class="form-control mb-4">
+                    <div class="form-control">
                         <label class="label">
                             <span class="label-text">Base Folder</span>
                         </label>
-                        <select id="base-folder" name="base_folder" class="select select-bordered w-full select-sm" required>
+                        <select id="base-folder" name="base_folder" class="select select-bordered w-full select-sm">
                             <option value="" disabled selected>Choose a folder...</option>
                             <option value="data">data</option>
                             <option value="metadata">metadata</option>
@@ -52,79 +44,49 @@
                             Files will be uploaded to S3 within these base folders
                         </div>
                     </div>
+                </div>
+
+                <!-- Presigned Upload Area -->
+                <div id="presigned-upload-area" class="border-2 border-dashed border-base-300 rounded-lg p-4 text-center">
+                    <div class="mb-3">
+                        <svg class="mx-auto h-8 w-8 text-base-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                    
+                    <label for="dashboard-file-picker" class="cursor-pointer">
+                        <span class="mt-2 block text-sm font-medium text-base-content">
+                            Click to select files or drag and drop
+                        </span>
+                        <input id="dashboard-file-picker" 
+                               type="file" 
+                               class="hidden" 
+                               multiple 
+                               accept="*/*">
+                    </label>
                     
                     <!-- Upload Mode Switcher -->
-                    <div class="form-control mb-4">
-                        <label class="label">
-                            <span class="label-text font-semibold">Upload Mode</span>
-                        </label>
-                        <div class="flex gap-2 mb-3">
+                    <div class="mt-3">
+                        <div class="flex gap-2 justify-center">
                             <button type="button" 
-                                    class="btn btn-outline btn-sm flex-1 btn-active" 
+                                    class="btn btn-outline btn-xs flex-1 max-w-24 btn-active" 
                                     id="files-mode-btn"
                                     onclick="switchToFilesMode()">
-                                📄 Select Files
+                                📄 Files
                             </button>
                             <button type="button" 
-                                    class="btn btn-outline btn-sm flex-1" 
+                                    class="btn btn-outline btn-xs flex-1 max-w-24" 
                                     id="folder-mode-btn"
                                     onclick="switchToFolderMode()">
-                                📁 Select Folder
+                                📁 Folder
                             </button>
                         </div>
-                    </div>
-                    
-                    <!-- File Upload Input -->
-                    <div class="form-control mb-4" id="upload-input-section">
-                        <label class="label">
-                            <span class="label-text" id="upload-label">Select Files</span>
-                        </label>
-                        <input type="file" id="file-input" name="files" multiple class="file-input file-input-bordered file-input-sm w-full" required />
-                        <div class="text-xs text-gray-500 mt-1" id="upload-help">
-                            You can select multiple files to upload to S3 at once
-                        </div>
-                        
-                        <!-- File Selection Info -->
-                        <div id="selected-files-info" class="mt-2 p-2 bg-base-200 rounded hidden">
-                            <div class="text-sm">
-                                <span id="file-count">0 files selected</span> 
-                                (<span id="total-size">0 B</span>)
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="form-control">
-                        <button type="button" id="upload-button" class="btn btn-primary btn-sm">Upload to S3</button>
-                    </div>
-                </form>
-                
-                <!-- Progress section -->
-                <div id="upload-progress" class="mt-4 hidden">
-                    <div class="mb-2">
-                        <div class="flex justify-between text-sm">
-                            <span id="progress-text">Ready to upload</span>
-                            <span id="progress-percentage">0%</span>
-                        </div>
-                        <progress class="progress progress-primary w-full" id="progress-bar" value="0" max="100"></progress>
-                    </div>
-                    <div class="text-xs text-gray-500">
-                        <span id="progress-details"></span>
                     </div>
                 </div>
                 
-                <!-- Status section -->
-                <div id="upload-status" class="mt-4"></div>
-                
-                <!-- Results section (for upload handler) -->
-                <div id="upload-results" class="mt-4 hidden">
-                    <div class="alert alert-success">
-                        <h3 class="font-bold">Upload Complete!</h3>
-                        <div class="text-sm">
-                            <span id="result-files-count">0</span> files uploaded
-                            (<span id="result-total-size">0 B</span>)
-                            in <span id="result-duration">0s</span>
-                        </div>
-                    </div>
+                <!-- Upload Results Area -->
+                <div id="dashboard-upload-area" class="mt-4 space-y-2">
+                    <!-- Upload forms will be inserted here by JavaScript -->
                 </div>
             </div>
         </div>
@@ -176,29 +138,14 @@
 </dialog>
 
 
-<!-- Upload JavaScript -->
-<script src="{% static 'js/src/s3/chunked-upload.js' %}"></script>
-<script src="{% static 'js/src/s3/s3-multipart-upload.js' %}"></script>
-<script src="{% static 'js/src/s3/upload-form-handler.js' %}"></script>
-
 <!-- File Viewer JavaScript -->
 <script src="{% static 'js/src/modal.js' %}"></script>
 <script src="{% static 'js/src/file-viewer/file-viewer-handler.js' %}" type="module"></script>
 
-<!-- Upload Configuration -->
 <script>
-// Configure upload method
-window.uploadConfig = {
-    useS3Multipart: true  // Set to true to enable S3 native multipart upload
-};
-</script>
-
-<script>
-// Upload mode switching
+// Upload mode switching for dashboard
 function switchToFilesMode() {
-    const fileInput = document.getElementById('file-input');
-    const uploadLabel = document.getElementById('upload-label');
-    const uploadHelp = document.getElementById('upload-help');
+    const fileInput = document.getElementById('dashboard-file-picker');
     const filesBtn = document.getElementById('files-mode-btn');
     const folderBtn = document.getElementById('folder-mode-btn');
     
@@ -210,9 +157,6 @@ function switchToFilesMode() {
         fileInput.value = ''; // Clear selection when switching modes
     }
     
-    if (uploadLabel) uploadLabel.textContent = 'Select Files';
-    if (uploadHelp) uploadHelp.textContent = 'You can select multiple files to upload to S3 at once';
-    
     // Update button states
     if (filesBtn) {
         filesBtn.classList.add('btn-active');
@@ -223,18 +167,11 @@ function switchToFilesMode() {
         folderBtn.classList.add('btn-outline');
     }
     
-    console.log('📄 Switched to files mode');
-    
-    // Notify upload handler if it exists
-    if (window.uploadFormHandler && window.uploadFormHandler.refreshFileInput) {
-        window.uploadFormHandler.refreshFileInput();
-    }
+    console.log('📄 Dashboard: Switched to files mode');
 }
 
 function switchToFolderMode() {
-    const fileInput = document.getElementById('file-input');
-    const uploadLabel = document.getElementById('upload-label');
-    const uploadHelp = document.getElementById('upload-help');
+    const fileInput = document.getElementById('dashboard-file-picker');
     const filesBtn = document.getElementById('files-mode-btn');
     const folderBtn = document.getElementById('folder-mode-btn');
     
@@ -246,9 +183,6 @@ function switchToFolderMode() {
         fileInput.value = ''; // Clear selection when switching modes
     }
     
-    if (uploadLabel) uploadLabel.textContent = 'Select Folder';
-    if (uploadHelp) uploadHelp.textContent = 'Choose a folder to upload all its files and subfolders';
-    
     // Update button states
     if (folderBtn) {
         folderBtn.classList.add('btn-active');
@@ -259,28 +193,108 @@ function switchToFolderMode() {
         filesBtn.classList.add('btn-outline');
     }
     
-    console.log('📁 Switched to folder mode');
-    
-    // Notify upload handler if it exists
-    if (window.uploadFormHandler && window.uploadFormHandler.refreshFileInput) {
-        window.uploadFormHandler.refreshFileInput();
-    }
+    console.log('📁 Dashboard: Switched to folder mode');
 }
 
-// Organization selector sync
-document.addEventListener('change', function(e) {
-    // Sync organization selector with hidden field
-    if (e.target && e.target.name === 'organization') {
-        console.log('🏢 ORGANIZATION CHANGE:', e.target.value);
-        const orgField = document.getElementById('organization-hidden');
-        if (orgField) {
-            orgField.value = e.target.value;
-        }
+// Presigned URL Upload System for Dashboard
+document.getElementById('dashboard-file-picker').addEventListener('change', function(e) {
+    const files = Array.from(e.target.files);
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
+    const baseFolderSelector = document.getElementById('base-folder');
+    
+    if (files.length === 0) return;
+    
+    // Validate organization and base folder selection
+    const organization = orgSelector ? orgSelector.value : '';
+    const baseFolder = baseFolderSelector ? baseFolderSelector.value : '';
+    
+    if (!organization) {
+        alert('Please select an organization first');
+        return;
     }
+    
+    if (!baseFolder) {
+        alert('Please select a base folder (data or metadata)');
+        return;
+    }
+    
+    // Build folder path: organization/baseFolder
+    const folderPath = `${organization}/${baseFolder}`;
+    
+    // Clear previous uploads
+    uploadArea.innerHTML = '';
+    
+    // Process each file
+    files.forEach(file => {
+        // Create container for this upload
+        const uploadContainer = document.createElement('div');
+        uploadContainer.classList.add('upload-file-container');
+        uploadArea.appendChild(uploadContainer);
+        
+        // Build URL parameters
+        const params = new URLSearchParams({
+            filename: file.name,
+            filetype: file.type,
+            filesize: file.size.toString(),
+            folder: folderPath  // Use organization/baseFolder structure
+        });
+        
+        // Use HTMX to get presigned URL and form
+        htmx.ajax('GET', `/storage/upload/presigned/url/?${params}`, {
+            target: uploadContainer,
+            swap: 'innerHTML'
+        }).then(() => {
+            // Auto-populate the file input after form loads
+            const fileInput = uploadContainer.querySelector('input[type="file"][name="file"]');
+            if (fileInput) {
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+            }
+        });
+    });
 });
 
-// Upload system now handled entirely by upload-form-handler.js
-// Mode switching allows both individual files and entire folders
+// Drag and drop support for dashboard
+const dashboardDropArea = document.getElementById('presigned-upload-area');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dashboardDropArea.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
+});
+
+['dragenter', 'dragover'].forEach(eventName => {
+    dashboardDropArea.addEventListener(eventName, highlightDashboard, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dashboardDropArea.addEventListener(eventName, unhighlightDashboard, false);
+});
+
+dashboardDropArea.addEventListener('drop', handleDashboardDrop, false);
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function highlightDashboard() {
+    dashboardDropArea.classList.add('border-primary');
+}
+
+function unhighlightDashboard() {
+    dashboardDropArea.classList.remove('border-primary');
+}
+
+function handleDashboardDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    const fileInput = document.getElementById('dashboard-file-picker');
+    fileInput.files = files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+}
 
 // File viewer integration
 document.addEventListener('htmx:afterRequest', function(event) {

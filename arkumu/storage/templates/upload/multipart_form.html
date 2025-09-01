@@ -1,0 +1,159 @@
+<!-- Multipart Upload Form for Large Files -->
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="flex-shrink-0">
+                    <svg class="h-8 w-8 text-warning" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                
+                <div class="flex-1">
+                    <h3 class="text-sm font-medium text-base-content">{{ filename }}</h3>
+                    <p class="text-xs text-base-content/60">
+                        {{ filesize|filesizeformat }} • Large file ({{ part_info.part_count }} parts)
+                    </p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+                <button type="button" 
+                        class="btn btn-ghost btn-sm"
+                        hx-post="/storage/upload/presigned/multipart/abort/"
+                        hx-vals='{"upload_id": "{{ upload_id }}", "s3_key": "{{ s3_key }}", "filename": "{{ filename }}"}'
+                        hx-target="closest .card"
+                        hx-swap="outerHTML">
+                    Cancel
+                </button>
+            </div>
+        </div>
+        
+        <!-- Multipart Upload Control -->
+        <div class="mt-4" id="multipart-upload-{{ upload_id }}">
+            
+            <!-- Progress Display -->
+            <div class="multipart-progress mb-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm">Upload Progress</span>
+                    <span class="text-sm font-mono progress-text">0 / {{ part_info.part_count }} parts</span>
+                </div>
+                <progress class="progress progress-primary w-full" value="0" max="{{ part_info.part_count }}"></progress>
+            </div>
+            
+            <!-- File Input (hidden, will be populated by JavaScript) -->
+            <input type="file" 
+                   id="multipart-file-{{ upload_id }}"
+                   style="display: none;" 
+                   required>
+            
+            <!-- Upload Button -->
+            <div class="flex justify-between items-center">
+                <div class="text-xs text-base-content/60">
+                    Multipart upload • {{ part_info.chunk_size|filesizeformat }} per part
+                </div>
+                <button type="button" 
+                        class="btn btn-primary btn-sm multipart-upload-btn"
+                        onclick="startMultipartUpload('{{ upload_id }}', '{{ s3_key }}', '{{ filename }}')">
+                    <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Upload Large File
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Multipart upload data
+window.multipartUploads = window.multipartUploads || {};
+window.multipartUploads['{{ upload_id }}'] = {
+    partUrls: {{ part_urls|safe }},
+    partInfo: {{ part_info|safe }},
+    uploadId: '{{ upload_id }}',
+    s3Key: '{{ s3_key }}',
+    filename: '{{ filename }}'
+};
+
+async function startMultipartUpload(uploadId, s3Key, filename) {
+    const uploadData = window.multipartUploads[uploadId];
+    const fileInput = document.getElementById(`multipart-file-${uploadId}`);
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('No file selected');
+        return;
+    }
+    
+    const progressBar = document.querySelector(`#multipart-upload-${uploadId} .progress`);
+    const progressText = document.querySelector(`#multipart-upload-${uploadId} .progress-text`);
+    const uploadBtn = document.querySelector(`#multipart-upload-${uploadId} .multipart-upload-btn`);
+    
+    // Disable upload button
+    uploadBtn.disabled = true;
+    uploadBtn.innerHTML = `
+        <span class="loading loading-spinner loading-sm mr-2"></span>
+        Uploading...
+    `;
+    
+    try {
+        const chunkSize = uploadData.partInfo.chunk_size;
+        const parts = [];
+        let uploadedParts = 0;
+        
+        // Upload parts in parallel (limit concurrency)
+        const uploadPromises = uploadData.partUrls.map(async (partData) => {
+            const partNumber = partData.part_number;
+            const start = (partNumber - 1) * chunkSize;
+            const end = Math.min(start + chunkSize, file.size);
+            const chunk = file.slice(start, end);
+            
+            const response = await fetch(partData.presigned_url, {
+                method: 'PUT',
+                body: chunk
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Part ${partNumber} upload failed: ${response.statusText}`);
+            }
+            
+            const etag = response.headers.get('ETag');
+            uploadedParts++;
+            
+            // Update progress
+            progressBar.value = uploadedParts;
+            progressText.textContent = `${uploadedParts} / ${uploadData.partInfo.part_count} parts`;
+            
+            return {
+                ETag: etag,
+                PartNumber: partNumber
+            };
+        });
+        
+        // Wait for all parts to complete
+        const completedParts = await Promise.all(uploadPromises);
+        
+        // Complete multipart upload
+        htmx.ajax('POST', '/storage/upload/presigned/multipart/complete/', {
+            values: {
+                upload_id: uploadId,
+                s3_key: s3Key,
+                filename: filename,
+                parts: JSON.stringify(completedParts)
+            },
+            target: `#multipart-upload-${uploadId}`.closest('.card'),
+            swap: 'outerHTML'
+        });
+        
+    } catch (error) {
+        console.error('Multipart upload failed:', error);
+        
+        // Show error
+        htmx.ajax('GET', `/storage/upload/presigned/cancel/?filename=${encodeURIComponent(filename)}`, {
+            target: `#multipart-upload-${uploadId}`.closest('.card'),
+            swap: 'outerHTML'
+        });
+    }
+}
+</script>
