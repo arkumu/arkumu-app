@@ -16,7 +16,7 @@
     </div>
     
     <!-- File Tree Structure using DaisyUI menu -->
-    <ul class="menu menu-lg bg-base-100 w-full border border-base-300 rounded-box shadow-sm">
+    <ul class="menu menu-lg w-full">
         {% for item in contents %}
             {% if item.type == 'folder' %}
                 <li data-folder-path="{{ item.path }}">

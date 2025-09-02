@@ -172,7 +172,7 @@ function createFolderUploadSummary(uploads, uploadArea) {
                         <div>
                             <h3 class="text-lg font-semibold">Folder Upload Ready</h3>
                             <div class="text-sm opacity-60">
-                                ${uploads.length} files • ${formatFileSize(folderStats.totalSize)} • ${folderStats.folderCount} folders
+                                ${uploads.length} files
                             </div>
                         </div>
                     </div>
@@ -199,18 +199,6 @@ function createFolderUploadSummary(uploads, uploadArea) {
                     `).join('')}
                 </div>
                 
-                <!-- Overall Progress -->
-                <div class="mb-4">
-                    <div class="flex justify-between text-sm mb-1">
-                        <span>Upload Progress</span>
-                        <span class="folder-progress-text">Ready to start</span>
-                    </div>
-                    <progress class="progress progress-primary w-full" value="0" max="100" id="folder-progress-bar"></progress>
-                    <div class="flex justify-between text-xs opacity-60 mt-1">
-                        <span><span id="completed-count">0</span> completed</span>
-                        <span><span id="failed-count">0</span> failed</span>
-                    </div>
-                </div>
                 
                 <!-- Collapsible File List -->
                 <div class="collapse collapse-arrow bg-base-200">
@@ -227,7 +215,10 @@ function createFolderUploadSummary(uploads, uploadArea) {
                                     </div>
                                     <div class="list-col-grow">
                                         <div class="text-sm">${upload.filename}</div>
-                                        <div class="text-xs opacity-60">${upload.relativePath || upload.filename}</div>
+                                        ${upload.relativePath && upload.relativePath !== upload.filename ? 
+                                            `<div class="text-xs opacity-60">${upload.relativePath}</div>` : 
+                                            ''
+                                        }
                                     </div>
                                     <div class="status-badge">
                                         <div class="badge badge-outline badge-xs">Ready</div>
@@ -1373,48 +1364,6 @@ function showUploadErrorLegacy(container, message) {
     container.appendChild(errorDiv);
 }
 
-// Drag and drop support for dashboard
-function initializeDragAndDrop() {
-    const dashboardDropArea = document.getElementById('presigned-upload-area');
-    if (!dashboardDropArea) return;
-
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dashboardDropArea.addEventListener(eventName, preventDefaults, false);
-        document.body.addEventListener(eventName, preventDefaults, false);
-    });
-
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dashboardDropArea.addEventListener(eventName, highlightDashboard, false);
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-        dashboardDropArea.addEventListener(eventName, unhighlightDashboard, false);
-    });
-
-    dashboardDropArea.addEventListener('drop', handleDashboardDrop, false);
-
-    function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-
-    function highlightDashboard() {
-        dashboardDropArea.classList.add('border-primary');
-    }
-
-    function unhighlightDashboard() {
-        dashboardDropArea.classList.remove('border-primary');
-    }
-
-    function handleDashboardDrop(e) {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        
-        const fileInput = document.getElementById('dashboard-file-picker');
-        fileInput.files = files;
-        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-}
 
 // File viewer integration
 function initializeFileViewer() {
@@ -1563,7 +1512,6 @@ function startAllUploads() {
 // Initialize all dashboard upload functionality
 function initializeDashboard() {
     initializeDashboardUpload();
-    initializeDragAndDrop();
     initializeFileViewer();
 }
 
