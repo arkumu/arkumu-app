@@ -345,11 +345,21 @@ async function startUploads(uploads, files) {
     
     await Promise.allSettled(uploadPromises);
     
-    // Show completion message
-    showUploadComplete(uploads.length);
+    // Extract uploaded filenames to verify they exist
+    const uploadedFiles = uploads.map(upload => ({
+        filename: upload.filename,
+        path: upload.relativePath || upload.filename
+    }));
     
-    // Refresh file browser using OOB update
-    await refreshFileBrowserOOB();
+    // Show coordinated "verifying files" message instead of immediate success
+    showUploadVerifying(uploads.length, uploadedFiles);
+    
+    // Add small delay to improve S3 consistency before refresh
+    console.log('⏳ Waiting 1.5s for S3 eventual consistency...');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Refresh file browser with expected files list for verification
+    await refreshFileBrowserOOB(uploadedFiles);
 }
 
 async function uploadFileDirectly(uploadInfo, file) {
@@ -428,8 +438,36 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
     });
 }
 
-// Add completion helper
+// Upload verifying helper - shows coordinated loading state
+function showUploadVerifying(fileCount, uploadedFiles) {
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    const verifyingMessage = document.createElement('div');
+    verifyingMessage.className = 'alert alert-info mt-4';
+    verifyingMessage.id = 'upload-verifying-message';
+    
+    const fileNames = uploadedFiles.slice(0, 3).map(f => f.filename).join(', ') + 
+                     (uploadedFiles.length > 3 ? ` and ${uploadedFiles.length - 3} more` : '');
+    
+    verifyingMessage.innerHTML = `
+        <div class="flex items-center gap-3">
+            <span class="loading loading-spinner loading-sm"></span>
+            <div>
+                <div class="font-medium">Files uploaded, verifying availability...</div>
+                <div class="text-sm opacity-70">Uploaded: ${fileNames}</div>
+            </div>
+        </div>
+    `;
+    uploadArea.appendChild(verifyingMessage);
+}
+
+// Final completion helper - called after files are confirmed in browser
 function showUploadComplete(fileCount) {
+    // Remove the verifying message if it exists
+    const verifyingMessage = document.getElementById('upload-verifying-message');
+    if (verifyingMessage) {
+        verifyingMessage.remove();
+    }
+    
     const uploadArea = document.getElementById('dashboard-upload-area');
     const completionMessage = document.createElement('div');
     completionMessage.className = 'alert alert-success mt-4';
@@ -437,7 +475,7 @@ function showUploadComplete(fileCount) {
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
         </svg>
-        <span>🎉 All ${fileCount} files uploaded successfully!</span>
+        <span>✅ All ${fileCount} files uploaded and verified!</span>
         <button class="btn btn-ghost btn-sm" onclick="this.closest('.alert').remove()">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -447,62 +485,71 @@ function showUploadComplete(fileCount) {
     uploadArea.appendChild(completionMessage);
 }
 
-// Refresh file browser using OOB update
-async function refreshFileBrowserOOB() {
+// Refresh file browser with retry logic for S3 consistency
+async function refreshFileBrowserOOB(expectedFiles = []) {
     try {
         // Get the organization from the upload org selector
         const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
         const organization = orgSelector ? orgSelector.value : '';
         
         if (!organization) {
-            console.log('⚠️ OOB_REFRESH: No organization selected, skipping file browser refresh');
+            console.log('⚠️ REFRESH: No organization selected, skipping file browser refresh');
             return;
         }
         
-        console.log('🔄 OOB_REFRESH: Refreshing file browser for organization:', organization);
-        
-        const response = await fetch(`/storage/upload/oob-refresh/${organization}/`, {
-            method: 'GET',
-            headers: {
-                'X-CSRFToken': getCsrfToken(),
-            },
-            credentials: 'include'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        console.log('🔄 REFRESH: Refreshing file browser for organization:', organization);
+        if (expectedFiles.length > 0) {
+            console.log('📋 REFRESH: Expecting to find files:', expectedFiles.map(f => f.filename));
         }
         
-        const oobHTML = await response.text();
-        console.log('✅ OOB_REFRESH: Received OOB update HTML (length:', oobHTML.length, ')');
-        
-        // Create a temporary container to parse the OOB updates
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = oobHTML;
-        
-        // Find and process OOB updates
-        const oobElements = tempDiv.querySelectorAll('[hx-swap-oob]');
-        oobElements.forEach(oobElement => {
-            const targetId = oobElement.id;
-            const swapType = oobElement.getAttribute('hx-swap-oob');
+        // Use HTMX to refresh the file browser with retry logic for S3 consistency
+        if (window.htmx) {
+            let url = `/storage/dashboard/refresh/${organization}/`;
             
-            console.log(`🔄 OOB_REFRESH: Processing OOB update for #${targetId} with swap: ${swapType}`);
-            
-            const targetElement = document.getElementById(targetId);
-            if (targetElement) {
-                if (swapType === 'innerHTML') {
-                    targetElement.innerHTML = oobElement.innerHTML;
-                } else if (swapType === 'outerHTML') {
-                    targetElement.outerHTML = oobElement.outerHTML;
-                }
-                console.log(`✅ OOB_REFRESH: Updated #${targetId}`);
-            } else {
-                console.warn(`⚠️ OOB_REFRESH: Target element #${targetId} not found`);
+            // Add expected files as query parameters for server-side verification
+            if (expectedFiles.length > 0) {
+                const params = new URLSearchParams();
+                expectedFiles.forEach((file, index) => {
+                    params.append(`expected_${index}`, file.filename);
+                });
+                url += '?' + params.toString();
             }
-        });
+            
+            console.log('📡 REFRESH: Fetching fresh file list from:', url);
+            
+            // Use HTMX's ajax method to replace the content
+            htmx.ajax('GET', url, {
+                target: '#file-browser-content',
+                swap: 'innerHTML'
+            });
+            
+            // Set up a listener to show final success when files are confirmed
+            if (expectedFiles.length > 0) {
+                // Listen for successful refresh completion
+                document.addEventListener('htmx:afterRequest', function onRefreshComplete(event) {
+                    if (event.detail.xhr.responseURL && event.detail.xhr.responseURL.includes('/storage/dashboard/refresh/')) {
+                        // Check if the response doesn't contain retry messages
+                        const responseText = event.detail.xhr.responseText;
+                        if (responseText && !responseText.includes('Waiting for uploaded files') && !responseText.includes('Loading files')) {
+                            // Files were successfully found, show final success
+                            setTimeout(() => {
+                                showUploadComplete(expectedFiles.length);
+                            }, 500); // Small delay to let DOM settle
+                            
+                            // Remove this listener
+                            document.removeEventListener('htmx:afterRequest', onRefreshComplete);
+                        }
+                    }
+                });
+            }
+            
+            console.log('✅ REFRESH: File browser refresh initiated with S3 consistency handling');
+        } else {
+            console.error('❌ REFRESH: HTMX not available');
+        }
         
     } catch (error) {
-        console.error('❌ OOB_REFRESH: Error refreshing file browser:', error);
+        console.error('❌ REFRESH: Error refreshing file browser:', error);
     }
 }
 

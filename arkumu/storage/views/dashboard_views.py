@@ -399,6 +399,154 @@ def upload_mode_toggle(request):
 
 @require_http_methods(["GET"])
 @general_login_required
+def refresh_file_browser(request, organization):
+    """
+    Refresh file browser with retry logic and file existence verification.
+    
+    This handles the timing issue where files uploaded directly to S3 might not
+    be immediately visible due to eventual consistency. It can verify that
+    specific expected files exist before returning success.
+    """
+    logger.info(f"🔄 REFRESH: Refreshing file browser for organization: {organization}")
+    
+    # Get retry parameters and expected files
+    retry_count = int(request.GET.get('retry', 0))
+    max_retries = 3
+    
+    # Extract expected files from query parameters
+    expected_files = []
+    for key, value in request.GET.items():
+        if key.startswith('expected_'):
+            expected_files.append(value)
+    
+    if expected_files:
+        logger.info(f"📋 REFRESH: Looking for expected files: {expected_files}")
+    
+    try:
+        bucket_service = BucketService()
+        bucket_name = bucket_service.get_organization_bucket(organization)
+        
+        # Always use force_fresh to bypass cache
+        contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
+        
+        # If we have expected files, verify they exist
+        if expected_files:
+            # Get all file names from the listing (including in subfolders)
+            all_files = []
+            for item in contents:
+                if item['type'] == 'file':
+                    all_files.append(item['name'])
+                elif item['type'] == 'folder':
+                    # Check subfolders for files
+                    try:
+                        subfolder_contents = bucket_service.list_bucket_contents(
+                            bucket_name, item['path'], force_fresh=True
+                        )
+                        for subitem in subfolder_contents:
+                            if subitem['type'] == 'file':
+                                all_files.append(subitem['name'])
+                    except:
+                        pass  # Continue if subfolder check fails
+            
+            missing_files = [f for f in expected_files if f not in all_files]
+            
+            if missing_files and retry_count < max_retries:
+                retry_delay = (retry_count + 1) * 1000  # 1s, 2s, 3s delays
+                logger.info(f"⏳ REFRESH: Missing files {missing_files}, retrying in {retry_delay}ms (attempt {retry_count + 1}/{max_retries})")
+                
+                # Build retry URL with all parameters
+                params = request.GET.copy()
+                params['retry'] = retry_count + 1
+                retry_url = f'/storage/dashboard/refresh/{organization}/?{params.urlencode()}'
+                
+                return HttpResponse(f'''
+                    <div class="alert alert-info">
+                        <div class="flex items-center gap-2">
+                            <span class="loading loading-spinner loading-sm"></span>
+                            <div>
+                                <div>Waiting for uploaded files... (attempt {retry_count + 1}/{max_retries + 1})</div>
+                                <div class="text-xs opacity-60">Missing: {", ".join(missing_files[:3])}</div>
+                            </div>
+                        </div>
+                        <script>
+                            setTimeout(() => {{
+                                htmx.ajax('GET', '{retry_url}', {{
+                                    target: '#file-browser-content',
+                                    swap: 'innerHTML'
+                                }});
+                            }}, {retry_delay});
+                        </script>
+                    </div>
+                ''')
+            elif missing_files:
+                logger.warning(f"⚠️ REFRESH: Files still missing after max retries: {missing_files}")
+            else:
+                logger.info(f"✅ REFRESH: All expected files found: {expected_files}")
+        
+        # Add file counts for data and metadata folders
+        for item in contents:
+            if item['type'] == 'folder' and item['name'] in ['data', 'metadata']:
+                item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'], force_fresh=True)
+        
+        logger.info(f"✅ REFRESH: Found {len(contents)} items for {organization}")
+        
+        # Render the organization files partial
+        context = {
+            'organization': organization,
+            'bucket_name': bucket_name,
+            'contents': contents,
+            'selected_org_slug': organization,
+            'prefix': ''
+        }
+        
+        html = render_to_string(
+            'dashboard/organization_files_partial.html',
+            context,
+            request=request
+        )
+        
+        return HttpResponse(html)
+        
+    except Exception as e:
+        logger.error(f"❌ REFRESH: Error refreshing file browser for {organization}: {str(e)}")
+        
+        # If we haven't exceeded max retries, return a retry instruction
+        if retry_count < max_retries:
+            retry_delay = (retry_count + 1) * 1000  # 1s, 2s, 3s delays
+            logger.info(f"🔄 REFRESH: Retrying due to error in {retry_delay}ms (attempt {retry_count + 1}/{max_retries})")
+            
+            # Build retry URL with all parameters
+            params = request.GET.copy()
+            params['retry'] = retry_count + 1
+            retry_url = f'/storage/dashboard/refresh/{organization}/?{params.urlencode()}'
+            
+            return HttpResponse(f'''
+                <div class="alert alert-warning">
+                    <span>Loading files... (attempt {retry_count + 1}/{max_retries + 1})</span>
+                    <script>
+                        setTimeout(() => {{
+                            htmx.ajax('GET', '{retry_url}', {{
+                                target: '#file-browser-content',
+                                swap: 'innerHTML'
+                            }});
+                        }}, {retry_delay});
+                    </script>
+                </div>
+            ''')
+        else:
+            # Max retries exceeded
+            return HttpResponse(f'''
+                <div class="alert alert-error">
+                    <span>Error loading files: {str(e)}</span>
+                    <button class="btn btn-ghost btn-sm" onclick="htmx.ajax('GET', '/storage/dashboard/refresh/{organization}/', {{target: '#file-browser-content', swap: 'innerHTML'}})">
+                        Retry
+                    </button>
+                </div>
+            ''')
+
+
+@require_http_methods(["GET"])
+@general_login_required
 def dismiss_message(request):
     """
     HTMX endpoint for dismissing upload success messages.
