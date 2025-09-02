@@ -80,8 +80,8 @@ async function initializeDashboardUpload() {
             return;
         }
         
-        // Build folder path: baseFolder/organization
-        const folderPath = `${baseFolder}/${organization}`;
+        // Build folder path: just baseFolder
+        const folderPath = baseFolder;
         
         console.log('🚀 ASYNC: Starting async upload session');
         
@@ -151,54 +151,26 @@ function createAsyncUploadCards(uploads, uploadArea) {
 }
 
 function createFolderUploadSummary(uploads, uploadArea) {
-    // Analyze folder structure and files
-    const folderStats = analyzeFolderStructure(uploads);
-    
     const summaryContainer = document.createElement('div');
     summaryContainer.classList.add('async-upload-summary');
     summaryContainer.innerHTML = `
         <div class="card bg-base-100 shadow-sm">
-            <div class="card-body">
-                <!-- Folder Summary Header -->
-                <div class="flex items-center justify-between mb-4">
-                    <div class="flex items-center gap-3">
-                        <div class="avatar placeholder">
-                            <div class="bg-primary text-primary-content w-12 rounded-lg">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                                </svg>
-                            </div>
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-semibold">Folder Upload Ready</h3>
-                            <div class="text-sm opacity-60">
-                                ${uploads.length} files
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Cancel All Button -->
-                    <button class="btn btn-ghost btn-sm" onclick="cancelFolderUpload()" title="Cancel entire upload">
+            <div class="card-body p-4">
+                <!-- Action Buttons -->
+                <div class="flex gap-2 mb-4">
+                    <button class="btn btn-primary flex-1" onclick="startAllUploads()">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Start Upload
+                    </button>
+                    <button class="btn btn-ghost" onclick="cancelFolderUpload()" title="Cancel entire upload">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                         Cancel All
                     </button>
                 </div>
-                
-                <!-- File Type Breakdown -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    ${Object.entries(folderStats.fileTypes).map(([type, count]) => `
-                        <div class="stat bg-base-200 rounded-lg p-3">
-                            <div class="stat-figure text-primary">
-                                ${getFileTypeIcon(type)}
-                            </div>
-                            <div class="stat-value text-lg">${count}</div>
-                            <div class="stat-desc text-xs">${type}</div>
-                        </div>
-                    `).join('')}
-                </div>
-                
                 
                 <!-- Collapsible File List -->
                 <div class="collapse collapse-arrow bg-base-200">

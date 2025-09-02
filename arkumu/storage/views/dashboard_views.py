@@ -423,8 +423,28 @@ def refresh_file_browser(request, organization):
         logger.info(f"📋 REFRESH: Looking for expected files: {expected_files}")
     
     try:
+        # Clear all possible cache keys for this organization
+        from django.core.cache import cache
+        cache_patterns = [
+            f"bucket_contents_{organization}_",
+            f"bucket_contents_{bucket_name}_" if 'bucket_name' in locals() else None,
+            f"file_count_{organization}_",
+            f"file_count_{organization}_data_",
+            f"file_count_{organization}_metadata_",
+        ]
+        
+        # Clear cache keys that exist
+        for pattern in cache_patterns:
+            if pattern:
+                cache.delete(pattern)
+                logger.info(f"🗑️ REFRESH: Cleared cache key: {pattern}")
+        
         bucket_service = BucketService()
         bucket_name = bucket_service.get_organization_bucket(organization)
+        
+        # Clear bucket-specific cache too
+        cache.delete(f"bucket_contents_{bucket_name}_")
+        logger.info(f"🗑️ REFRESH: Cleared cache key: bucket_contents_{bucket_name}_")
         
         # Always use force_fresh to bypass cache
         contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
