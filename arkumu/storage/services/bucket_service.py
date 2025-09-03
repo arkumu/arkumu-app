@@ -128,8 +128,8 @@ class BucketService:
             self.base_s3_service.s3_client.head_bucket(Bucket=bucket_name)
             logger.info(f"✅ Organization bucket '{bucket_name}' already exists.")
             
-            # Ensure CORS is configured for existing bucket (only if not check_only)
-            if not check_only:
+            # Skip CORS check for Dell EMC (already configured via AWS CLI)
+            if not check_only and self.base_s3_service.is_minio:
                 logger.info(f"🔧 Checking CORS for existing bucket '{bucket_name}'...")
                 cors_result = self.base_s3_service.ensure_cors_enabled(bucket_name)
                 if cors_result.get("success"):
@@ -160,13 +160,14 @@ class BucketService:
                 if self.base_s3_service.ensure_bucket_exists(bucket_name):
                     logger.info(f"✅ Organization bucket '{bucket_name}' created successfully.")
                     
-                    # Ensure CORS is configured for the new bucket
-                    logger.info(f"🔧 Setting up CORS for organization bucket '{bucket_name}'...")
-                    cors_result = self.base_s3_service.ensure_cors_enabled(bucket_name)
-                    if cors_result.get("success"):
-                        logger.info(f"✅ CORS configured for bucket '{bucket_name}': {cors_result.get('message')}")
-                    else:
-                        logger.warning(f"⚠️ CORS setup failed for bucket '{bucket_name}': {cors_result.get('error')}")
+                    # Only set up CORS for MinIO (Dell EMC CORS is managed via AWS CLI)
+                    if self.base_s3_service.is_minio:
+                        logger.info(f"🔧 Setting up CORS for organization bucket '{bucket_name}'...")
+                        cors_result = self.base_s3_service.ensure_cors_enabled(bucket_name)
+                        if cors_result.get("success"):
+                            logger.info(f"✅ CORS configured for bucket '{bucket_name}': {cors_result.get('message')}")
+                        else:
+                            logger.warning(f"⚠️ CORS setup failed for bucket '{bucket_name}': {cors_result.get('error')}")
                     
                     return {"success": True, "bucket_name": bucket_name, "status": "created"}
                 else:
