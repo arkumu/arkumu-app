@@ -234,7 +234,7 @@ function createIndividualFilesList(uploads, uploadArea) {
         listItem.dataset.filename = uploadInfo.filename;
         
         const fileIcon = getFileIconForType(uploadInfo.filename);
-        const fileSize = formatFileSize(uploadInfo.file_size || 0);
+        // File size shown in modal when clicked, not needed in cards
         
         listItem.innerHTML = `
             <!-- File Icon -->
@@ -245,7 +245,7 @@ function createIndividualFilesList(uploads, uploadArea) {
             <!-- File Info (Growing Column) -->
             <div class="list-col-grow">
                 <div class="font-medium text-base-content">${uploadInfo.filename}</div>
-                <div class="text-xs opacity-60 file-status">Ready to upload • ${fileSize}</div>
+                <div class="text-xs opacity-60 file-status">Ready to upload</div>
             </div>
             
             <!-- Upload Progress -->
@@ -381,7 +381,7 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                 }
                 
                 // Update file status text
-                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}% • ${formatFileSize(fileSize)}`, 'uploading');
+                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}%`, 'uploading');
             }
         });
         
@@ -517,7 +517,7 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
                 }
                 
                 // Update file status text
-                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}% • ${formatFileSize(fileSize)}`, 'uploading');
+                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}%`, 'uploading');
             }
         });
         
@@ -1360,7 +1360,7 @@ function createUploadCard(uploadInfo, file) {
                             <div class="flex-1">
                                 <h3 class="text-sm font-medium text-base-content">${uploadInfo.filename}</h3>
                                 <p class="text-xs text-base-content/60">
-                                    ${formatFileSize(uploadInfo.filesize)} • ${uploadInfo.filetype}
+                                    ${uploadInfo.filetype}
                                 </p>
                             </div>
                         </div>
@@ -1385,7 +1385,7 @@ function createUploadCard(uploadInfo, file) {
                         <!-- Upload Button -->
                         <div class="flex justify-between items-center mt-4">
                             <div class="text-xs text-base-content/60">
-                                Direct upload to S3 • Max ${formatFileSize(uploadInfo.max_file_size || 5368709120)}
+                                Direct upload to S3
                             </div>
                             <button type="submit" class="btn btn-primary btn-sm">
                                 <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1420,7 +1420,7 @@ function createUploadCard(uploadInfo, file) {
                             <div class="flex-1">
                                 <h3 class="text-sm font-medium text-base-content">${uploadInfo.filename}</h3>
                                 <p class="text-xs text-base-content/60">
-                                    ${formatFileSize(uploadInfo.filesize)} • ${uploadInfo.filetype} • Large file (multipart)
+                                    ${uploadInfo.filetype} • Large file (multipart)
                                 </p>
                             </div>
                         </div>
@@ -1485,14 +1485,6 @@ function getFileIcon(filetype) {
     }
 }
 
-function formatFileSize(bytes) {
-    console.log('📏 Formatting file size:', bytes);
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
 
 function removeUploadCard(button) {
     const card = button.closest('.upload-file-container');
