@@ -52,7 +52,7 @@
                             hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
                             hx-trigger="{% if item.name == 'data' or item.name == 'metadata' %}load, {% endif %}toggle from:closest details"
                             hx-swap="innerHTML"
-                            hx-indicator=".loading-indicator[data-folder-path='{{ item.path }}']">
+                            hx-indicator="#loading-indicator"
                             <!-- Submenu content loaded here -->
                         </ul>
                     </details>
