@@ -166,6 +166,7 @@ class BaseStorageService:
             # Dell EMC ECS compatible configuration with checksum validation disabled
             custom_s3_config = Config(
                 s3={'addressing_style': 'path'},
+                signature_version='s3v4',  # Force AWS4 signature for Dell EMC compatibility
                 retries={'max_attempts': 1, 'mode': 'standard'},
                 connect_timeout=60,
                 read_timeout=120,
@@ -196,6 +197,7 @@ class BaseStorageService:
                     'endpoint_url': browser_endpoint,
                     'config': Config(
                         s3={'addressing_style': 'path'},
+                        signature_version='s3v4',  # Force AWS4 signature for Dell EMC compatibility
                         retries={'max_attempts': 2, 'mode': 'standard'},
                         connect_timeout=5,
                         read_timeout=10,

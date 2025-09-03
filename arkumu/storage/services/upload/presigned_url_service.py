@@ -73,23 +73,25 @@ class PresignedURLService:
                 fields["x-amz-server-side-encryption"] = "AES256"
                 conditions.append({"x-amz-server-side-encryption": "AES256"})
             
-            # Generate presigned POST data
-            response = self.s3_client.generate_presigned_post(
-                Bucket=bucket_name,
-                Key=key,
-                Fields=fields,
-                Conditions=conditions,
+            # Use PUT URLs with s3v4 signature for Dell EMC compatibility
+            put_url = self.s3_client.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': bucket_name,
+                    'Key': key,
+                    'ContentType': content_type or 'application/octet-stream'
+                },
                 ExpiresIn=expiry
             )
             
-            logger.info(f"Generated presigned URL for {key} in {bucket_name}, expires in {expiry}s")
-            logger.info(f"🔗 DEBUG: Generated URL: {response['url']}")
-            logger.info(f"🔗 DEBUG: Fields: {response['fields']}")
+            logger.info(f"Generated presigned PUT URL for {key} in {bucket_name}, expires in {expiry}s")
+            logger.info(f"🔗 DEBUG: Generated PUT URL: {put_url}")
             
             return {
                 'success': True,
-                'url': response['url'],
-                'fields': response['fields'],
+                'url': put_url,
+                'method': 'PUT',  # Use PUT method for Dell EMC
+                'fields': {},  # PUT doesn't need form fields
                 'key': key,
                 'bucket': bucket_name,
                 'expires_at': (datetime.now() + timedelta(seconds=expiry)).isoformat(),

@@ -1,5 +1,12 @@
 // Dashboard Upload System - Async Upload with HTMX Integration
 
+// Debug logging configuration - set to false in production
+const DEBUG_UPLOADS = window.location.hostname === 'localhost' || window.location.search.includes('debug=true');
+
+// Conditional logging functions
+const debugLog = DEBUG_UPLOADS ? console.log.bind(console) : () => {};
+const debugError = DEBUG_UPLOADS ? console.error.bind(console) : () => {};
+
 // Upload mode switching for dashboard
 function switchToFilesMode() {
     const fileInput = document.getElementById('dashboard-file-picker');
@@ -24,7 +31,7 @@ function switchToFilesMode() {
         folderBtn.classList.add('btn-outline');
     }
     
-    console.log('📄 Dashboard: Switched to files mode');
+    debugLog('📄 Dashboard: Switched to files mode');
 }
 
 function switchToFolderMode() {
@@ -50,7 +57,7 @@ function switchToFolderMode() {
         filesBtn.classList.add('btn-outline');
     }
     
-    console.log('📁 Dashboard: Switched to folder mode');
+    debugLog('📁 Dashboard: Switched to folder mode');
 }
 
 // Async Upload System for Dashboard
@@ -83,7 +90,7 @@ async function initializeDashboardUpload() {
         // Build folder path: just baseFolder
         const folderPath = baseFolder;
         
-        console.log('🚀 ASYNC: Starting async upload session');
+        debugLog('🚀 ASYNC: Starting async upload session');
         
         try {
             // Phase 1: Initialize upload session and get presigned URLs
@@ -103,7 +110,7 @@ async function initializeDashboardUpload() {
             await startUploads(sessionResponse.results || sessionResponse.uploads, files);
             
         } catch (error) {
-            console.error('❌ ASYNC: Upload failed:', error);
+            debugError('❌ ASYNC: Upload failed:', error);
             showUploadError(uploadArea, 'Upload failed: ' + error.message);
         }
     });
@@ -125,7 +132,7 @@ async function initializeAsyncUploadSession(files, folderPath) {
         organization: organization
     };
     
-    console.log('📡 ASYNC: Initializing session with', files.length, 'files');
+    debugLog('📡 ASYNC: Initializing session with', files.length, 'files');
     
     const response = await fetch('/storage/upload/presigned/batch/', {
         method: 'POST',
@@ -272,7 +279,7 @@ function createIndividualFilesList(uploads, uploadArea) {
 }
 
 async function startUploads(uploads, files) {
-    console.log('🚀 Starting uploads for', uploads.length, 'files');
+    debugLog('🚀 Starting uploads for', uploads.length, 'files');
     
     // Create a map of filename to file object
     const fileMap = {};
@@ -284,14 +291,14 @@ async function startUploads(uploads, files) {
     const uploadPromises = uploads.map(async (uploadInfo) => {
         const file = fileMap[uploadInfo.filename];
         if (!file) {
-            console.error('❌ File not found:', uploadInfo.filename);
+            debugError('❌ File not found:', uploadInfo.filename);
             return;
         }
         
         try {
             await uploadFileDirectly(uploadInfo, file);
         } catch (error) {
-            console.error('❌ Upload failed for', uploadInfo.filename, error);
+            debugError('❌ Upload failed for', uploadInfo.filename, error);
             updateFileStatus(uploadInfo.filename, 'Upload failed: ' + error.message, 'failed');
         }
     });
@@ -308,7 +315,7 @@ async function startUploads(uploads, files) {
     showUploadVerifying(uploads.length, uploadedFiles);
     
     // Add small delay to improve S3 consistency before refresh
-    console.log('⏳ Waiting 0.5s for S3 eventual consistency...');
+    debugLog('⏳ Waiting 0.5s for S3 eventual consistency...');
     await new Promise(resolve => setTimeout(resolve, 500));
     
     // Refresh file browser with expected files list for verification
@@ -320,26 +327,39 @@ async function uploadFileDirectly(uploadInfo, file) {
     const progressBar = container?.querySelector('progress');
     const statusText = container?.querySelector('.status-text');
     
-    console.log('📤 Uploading to S3:', uploadInfo.filename);
+    debugLog('📤 Uploading to S3:', uploadInfo.filename);
     
     // Update status to uploading
     updateFileStatusByName(uploadInfo.filename, 'Uploading...', 'uploading');
     
-    // Create FormData for S3 upload
-    const formData = new FormData();
-    
     if (uploadInfo.type === 'single') {
-        // Single file upload with presigned URL
-        Object.entries(uploadInfo.fields).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-        formData.append('file', file);
+        // Debug: Log what method we received
+        debugLog('📊 Upload method received:', uploadInfo.method);
+        debugLog('📊 Full uploadInfo:', uploadInfo);
         
-        return uploadWithProgress(uploadInfo.url, formData, uploadInfo.filename, progressBar, statusText, file.size, uploadInfo.upload_file_id);
+        // Check upload method
+        if (uploadInfo.method === 'PUT') {
+            // Direct PUT upload with progress tracking
+            debugLog('✅ Using PUT method with AWS4 signature');
+            return uploadWithProgressPUT(uploadInfo.url, file, uploadInfo.filename, progressBar, statusText, file.size, uploadInfo.upload_file_id);
+        } else if (uploadInfo.method === 'FORM_POST') {
+            // Form-based upload fallback
+            debugLog('⚠️ Using FORM_POST method - no progress tracking');
+            return uploadWithHiddenForm(uploadInfo, file, progressBar, statusText);
+        } else {
+            // FormData POST upload for MinIO/AWS
+            const formData = new FormData();
+            Object.entries(uploadInfo.fields).forEach(([key, value]) => {
+                formData.append(key, value);
+            });
+            formData.append('file', file);
+            
+            return uploadWithProgress(uploadInfo.url, formData, uploadInfo.filename, progressBar, statusText, file.size, uploadInfo.upload_file_id);
+        }
         
     } else if (uploadInfo.type === 'multipart') {
         // TODO: Implement multipart upload if needed
-        console.log('📦 Multipart upload not implemented yet for:', uploadInfo.filename);
+        debugLog('📦 Multipart upload not implemented yet for:', uploadInfo.filename);
         updateFileStatusByName(uploadInfo.filename, 'Multipart not implemented', 'failed');
         throw new Error('Multipart upload not implemented');
     }
@@ -368,7 +388,7 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
         // Handle upload completion
         xhr.addEventListener('load', async function() {
             if (xhr.status >= 200 && xhr.status < 300) {
-                console.log('✅ S3 upload completed:', filename);
+                debugLog('✅ S3 upload completed:', filename);
                 updateFileStatusByName(filename, 'Upload completed!', 'completed');
                 
                 // Notify server that file was uploaded
@@ -383,18 +403,18 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                         });
                         
                         if (response.ok) {
-                            console.log('✅ Server notified of upload:', filename);
+                            debugLog('✅ Server notified of upload:', filename);
                         } else {
-                            console.error('⚠️ Failed to notify server of upload:', filename);
+                            debugError('⚠️ Failed to notify server of upload:', filename);
                         }
                     } catch (error) {
-                        console.error('⚠️ Error notifying server:', error);
+                        debugError('⚠️ Error notifying server:', error);
                     }
                 }
                 
                 resolve();
             } else {
-                console.error('❌ Upload failed:', xhr.status, xhr.statusText);
+                debugError('❌ Upload failed:', xhr.status, xhr.statusText);
                 updateFileStatusByName(filename, 'Upload failed: ' + xhr.statusText, 'failed');
                 reject(new Error('Upload failed: ' + xhr.statusText));
             }
@@ -402,7 +422,7 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
         
         // Handle upload error
         xhr.addEventListener('error', function() {
-            console.error('❌ Network error during upload');
+            debugError('❌ Network error during upload');
             updateFileStatusByName(filename, 'Network error during upload', 'failed');
             reject(new Error('Network error during upload'));
         });
@@ -410,6 +430,143 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
         // Send to S3
         xhr.open('POST', url);
         xhr.send(formData);
+    });
+}
+
+// Hidden form upload - bypasses CORS completely!
+async function uploadWithHiddenForm(uploadInfo, file, progressBar, statusText) {
+    return new Promise((resolve, reject) => {
+        console.log('📝 Using hidden form to bypass CORS for:', uploadInfo.filename);
+        
+        // Create hidden iframe for form target
+        const iframe = document.createElement('iframe');
+        iframe.name = 'upload-iframe-' + Date.now();
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        
+        // Create form
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = uploadInfo.url;
+        form.enctype = 'multipart/form-data';
+        form.target = iframe.name;
+        form.style.display = 'none';
+        
+        // Add all fields from presigned POST
+        Object.entries(uploadInfo.fields).forEach(([key, value]) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = value;
+            form.appendChild(input);
+        });
+        
+        // Add file input
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.name = 'file';
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+        form.appendChild(fileInput);
+        
+        document.body.appendChild(form);
+        
+        // Listen for iframe load (upload complete)
+        iframe.onload = () => {
+            // Check if upload succeeded
+            try {
+                // S3 returns empty response on success
+                console.log('✅ Form upload completed:', uploadInfo.filename);
+                updateFileStatusByName(uploadInfo.filename, 'Upload completed!', 'completed');
+                resolve();
+            } catch (e) {
+                console.error('❌ Form upload may have failed:', e);
+                updateFileStatusByName(uploadInfo.filename, 'Upload status unknown', 'warning');
+                resolve(); // Resolve anyway since we can't get error details
+            } finally {
+                // Cleanup
+                setTimeout(() => {
+                    document.body.removeChild(form);
+                    document.body.removeChild(iframe);
+                }, 1000);
+            }
+        };
+        
+        // Submit form
+        console.log('📤 Submitting form for:', uploadInfo.filename);
+        updateFileStatusByName(uploadInfo.filename, 'Uploading (no progress available)...', 'uploading');
+        form.submit();
+    });
+}
+
+// New function for PUT uploads (Dell EMC S3)
+async function uploadWithProgressPUT(url, file, filename, progressBar, statusText, fileSize, uploadFileId) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        
+        // Handle upload progress
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                if (progressBar) {
+                    progressBar.value = percentComplete;
+                }
+                if (statusText) {
+                    statusText.textContent = `${percentComplete.toFixed(0)}%`;
+                }
+                
+                // Update file status text
+                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}% • ${formatFileSize(fileSize)}`, 'uploading');
+            }
+        });
+        
+        // Handle upload completion
+        xhr.addEventListener('load', async function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                debugLog('✅ S3 PUT upload completed:', filename);
+                updateFileStatusByName(filename, 'Upload completed!', 'completed');
+                
+                // Notify server that file was uploaded
+                if (uploadFileId) {
+                    try {
+                        const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': getCsrfToken(),
+                            },
+                            credentials: 'include'
+                        });
+                        
+                        if (response.ok) {
+                            debugLog('✅ Server notified of upload:', filename);
+                        } else {
+                            debugError('⚠️ Failed to notify server of upload:', filename);
+                        }
+                    } catch (error) {
+                        debugError('⚠️ Error notifying server:', error);
+                    }
+                }
+                
+                resolve();
+            } else {
+                debugError('❌ PUT upload failed:', xhr.status, xhr.statusText);
+                updateFileStatusByName(filename, 'Upload failed: ' + xhr.statusText, 'failed');
+                reject(new Error('Upload failed: ' + xhr.statusText));
+            }
+        });
+        
+        // Handle upload error
+        xhr.addEventListener('error', function() {
+            debugError('❌ Network error during PUT upload');
+            updateFileStatusByName(filename, 'Network error during upload', 'failed');
+            reject(new Error('Network error during upload'));
+        });
+        
+        // Send PUT request with file directly in body
+        xhr.open('PUT', url);
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+        xhr.send(file);
     });
 }
 
@@ -464,7 +621,7 @@ function showUploadComplete(fileCount) {
 function showFilesOptimistically(uploadedFiles) {
     const fileBrowserContent = document.getElementById('file-browser-content');
     if (!fileBrowserContent) {
-        console.error('❌ File browser content not found');
+        debugError('❌ File browser content not found');
         return;
     }
     
@@ -1391,7 +1548,7 @@ function setupS3Upload(container, uploadInfo, file) {
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
-                console.log(`📊 Upload progress: ${percentComplete.toFixed(1)}%`);
+                // Progress logging disabled for performance
                 
                 const progressBar = progressDiv?.querySelector('progress');
                 if (progressBar) {

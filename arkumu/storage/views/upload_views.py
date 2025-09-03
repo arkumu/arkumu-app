@@ -173,6 +173,7 @@ def batch_presigned_urls(request):
                             'filename': filename,
                             'type': 'single',
                             'url': result['url'],
+                            'method': result.get('method', 'POST'),  # Include method for frontend
                             'fields': result['fields'],
                             's3_key': result['key'],
                             'filesize': filesize,
