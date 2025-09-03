@@ -16,30 +16,28 @@ logger = logging.getLogger(__name__)
 
 def generate_file_key(file_name: str, path_prefix: Optional[str] = None) -> str:
     """
-    Generate consistent S3 key (path) for a file with sanitization.
-    Always replaces spaces with underscores for consistency.
+    Generate consistent S3 key (path) for a file using the same normalization as everywhere else.
     
     Args:
         file_name: The name of the file
         path_prefix: Path prefix to prepend to the file name
         
     Returns:
-        The sanitized S3 key with underscores instead of spaces
+        The normalized S3 key using the same method as normalize_s3_key()
     """
-    # Sanitize filename - replace spaces with underscores
-    clean_file_name = file_name.replace(' ', '_')
-    
-    # Build the full S3 key (path) with sanitization
+    # Build the raw S3 key (path)
     if path_prefix:
         # Ensure the path has no leading or trailing slashes and strip whitespace
         clean_prefix = path_prefix.strip().strip('/')
-        # Sanitize the path prefix - replace spaces with underscores
-        clean_prefix = clean_prefix.replace(' ', '_')
         if clean_prefix:
-            return f"{clean_prefix}/{clean_file_name}"
+            raw_key = f"{clean_prefix}/{file_name}"
+        else:
+            raw_key = file_name
+    else:
+        raw_key = file_name
     
-    # Just return the sanitized file name if no prefix
-    return clean_file_name
+    # Use the SAME normalization method used everywhere else
+    return normalize_s3_key(raw_key)
 
 
 def safe_head_object(bucket_name: str, s3_key: str) -> Optional[Dict[str, Any]]:
