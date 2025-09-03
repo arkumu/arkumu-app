@@ -9,6 +9,8 @@ from django.core.cache import cache
 from django.http import Http404, HttpResponse
 from django.template.loader import render_to_string
 from django.middleware.csrf import get_token
+from django.shortcuts import render
+
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.metadata.services.catalog_navigation_service import CatalogNavigationService
@@ -419,3 +421,56 @@ class LiveSearchFilterView(GeneralLoginRequiredMixin, CatalogSearchMixin, View):
         }
         
         return HttpResponse(self.build_oob_response("", oob_updates))
+
+class DesignSearch:
+    def design_search_results(request):
+        query = request.GET.get('query', None)
+        results = [{"year":"2024",
+             "image":"images/main/card_1.png",
+             "institution":"Folkwang Universität der Kunst",
+             "title":"Handmade in Ethiopia",
+             "subtitle":"Projekt",
+             "contributor1_name":"Johanna Schwer",
+             "contributor1_role":"Betreuerin",
+             "contributor2_name":"Judith Schanz",
+             "contributor2_role":"Betreuerin",
+             "contributor3_name":"Martina Allerbech",
+             "contributor3_role":"Designerin, Beraterin",
+             "category1":"Industrial Design",
+             "category2":"Transformation Design",
+             "button_text":"Projekt ansehen"
+            },
+            {"year":"2024",
+             "image":"images/main/card_1.png",
+             "institution":"Folkwang Universität der Kunst",
+             "title":"Handmade in Ethiopia",
+             "subtitle":"Projekt",
+             "contributor1_name":"Johanna Schwer",
+             "contributor1_role":"Betreuerin",
+             "contributor2_name":"Judith Schanz",
+             "contributor2_role":"Betreuerin",
+             "contributor3_name":"Martina Allerbech",
+             "contributor3_role":"Designerin, Beraterin",
+             "category1":"Industrial Design",
+             "category2":"Transformation Design",
+             "button_text":"Projekt ansehen"
+            },
+            {"year":"2024",
+             "image":"images/main/card_1.png",
+             "institution":"Folkwang Universität der Kunst",
+             "title":"Handmade in Ethiopia",
+             "subtitle":"Projekt",
+             "contributor1_name":"Johanna Schwer",
+             "contributor1_role":"Betreuerin",
+             "contributor2_name":"Judith Schanz",
+             "contributor2_role":"Betreuerin",
+             "contributor3_name":"Martina Allerbech",
+             "contributor3_role":"Designerin, Beraterin",
+             "category1":"Industrial Design",
+             "category2":"Transformation Design",
+             "button_text":"Projekt ansehen"
+            },]
+        context = {'query': query,
+            'results': results}
+
+        return render(request, 'catalog/design_search_results.html', context)

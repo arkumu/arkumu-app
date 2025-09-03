@@ -7,7 +7,8 @@ from .views import (
     HarmonizedResourceListView,
     HarmonizedResourceDetailView,
     HarmonizedSearchView,
-    LiveSearchFilterView
+    LiveSearchFilterView,
+    DesignSearch
 )
 
 app_name = 'catalog'
@@ -31,6 +32,7 @@ urlpatterns = [
     path('org/<str:org_code>/', HarmonizedResourceListView.as_view(), name='org_resources'),
     
     # Design showcase pages with local catalog templates - login required
+    path('design_search_results', login_required(DesignSearch.design_search_results), name='design_search_results'),
     path('design/', login_required(TemplateView.as_view(template_name="catalog/design.html")), name='design'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
