@@ -123,10 +123,9 @@ def verify_and_process_upload(file_id: str):
         # Create S3FileObject record
         s3_file_object = S3FileObject.objects.create(
             s3_key=upload_file.s3_key,
-            filename=upload_file.filename,
-            file_size=file_info.get('size', upload_file.file_size),
+            file_name=upload_file.filename,
+            file_size_bytes=file_info.get('file_size', upload_file.file_size),
             content_type=upload_file.content_type,
-            etag=file_info.get('etag', ''),
             status='completed',
             upload_completed_at=timezone.now()
         )
