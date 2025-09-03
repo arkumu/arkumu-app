@@ -432,8 +432,11 @@ class BaseStorageService:
         logger.info(f"CORS: Using allowed origins: {allowed_origins}")
         
         required_rule = {
-            'AllowedHeaders': ['*'], 'AllowedMethods': ['POST', 'PUT', 'OPTIONS'],
-            'AllowedOrigins': allowed_origins, 'ExposeHeaders': []
+            'AllowedHeaders': ['*'], 
+            'AllowedMethods': ['GET', 'POST', 'PUT', 'DELETE', 'HEAD'],
+            'AllowedOrigins': allowed_origins, 
+            'ExposeHeaders': ['ETag', 'x-amz-request-id'],
+            'MaxAgeSeconds': 3000
         }
         try:
             cors_config = self.s3_client.get_bucket_cors(Bucket=bucket_name)
