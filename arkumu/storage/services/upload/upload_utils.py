@@ -32,6 +32,8 @@ def generate_file_key(file_name: str, path_prefix: Optional[str] = None) -> str:
     if path_prefix:
         # Ensure the path has no leading or trailing slashes and strip whitespace
         clean_prefix = path_prefix.strip().strip('/')
+        # Also sanitize the path prefix (replace spaces with underscores)
+        clean_prefix = clean_prefix.replace(' ', '_')
         if clean_prefix:
             return f"{clean_prefix}/{clean_file_name}"
     
