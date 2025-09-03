@@ -127,7 +127,7 @@ class UploadService:
         )
     
     def initiate_multipart_upload(self, file_name: str, content_type: str = 'application/octet-stream',
-                                 path_prefix: Optional[str] = None) -> Dict[str, Any]:
+                                 path_prefix: Optional[str] = None, organization: Optional[str] = None) -> Dict[str, Any]:
         """
         Initialize a browser-based multipart upload for large files.
         
@@ -135,6 +135,7 @@ class UploadService:
             file_name: Name of the file to upload
             content_type: MIME type of the file
             path_prefix: Optional path prefix for S3 key
+            organization: Optional organization name for bucket selection
             
         Returns:
             Dictionary with upload_id and S3 key
@@ -142,7 +143,8 @@ class UploadService:
         s3_key = self._generate_file_key(file_name, path_prefix)
         return self.presigned_url_service.initiate_multipart_upload(
             key=s3_key, 
-            content_type=content_type
+            content_type=content_type,
+            organization=organization
         )
     
     def generate_presigned_multipart_urls(self, s3_key: str, upload_id: str, 

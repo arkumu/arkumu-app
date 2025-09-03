@@ -270,7 +270,8 @@ class PresignedURLService:
         key: str,
         content_type: str = 'application/octet-stream',
         bucket_name: Optional[str] = None,
-        metadata: Optional[Dict[str, str]] = None
+        metadata: Optional[Dict[str, str]] = None,
+        organization: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Initiate a multipart upload for large files.
@@ -280,11 +281,28 @@ class PresignedURLService:
             content_type: MIME type of the file
             bucket_name: Target bucket (uses default if None)
             metadata: Custom metadata to attach
+            organization: Organization name for bucket selection
             
         Returns:
             Dict containing upload_id and S3 key
         """
         try:
+            # Use organization bucket if provided
+            if organization and not bucket_name:
+                from arkumu.storage.services.bucket_service import BucketService
+                bucket_service = BucketService()
+                # Ensure organization bucket exists
+                bucket_result = bucket_service.ensure_organization_bucket_exists(organization)
+                if bucket_result.get("success", False):
+                    bucket_name = bucket_result["bucket_name"]
+                    logger.info(f"🪣 Using organization bucket: {bucket_name} for {organization}")
+                else:
+                    logger.error(f"❌ Failed to get organization bucket for {organization}: {bucket_result.get('error')}")
+                    return {
+                        'success': False,
+                        'error': f'Failed to access organization bucket: {bucket_result.get("error", "Unknown error")}'
+                    }
+            
             bucket_name = bucket_name or self.base_service.production_bucket
             
             # Prepare create multipart upload parameters

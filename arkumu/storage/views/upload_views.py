@@ -123,7 +123,8 @@ def batch_presigned_urls(request):
                     init_result = upload_service.initiate_multipart_upload(
                         file_name=os.path.basename(full_path),  # Just filename for multipart
                         content_type=filetype,
-                        path_prefix=file_dir  # Directory path
+                        path_prefix=file_dir,  # Directory path
+                        organization=organization  # Pass organization for bucket selection
                     )
                     
                     if init_result['success']:
