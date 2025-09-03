@@ -72,13 +72,15 @@ def monitor_upload_session(session_id: str):
             
             # Trigger processing for all uploaded files
             for upload_file in session.files.filter(status='uploaded'):
-                verify_and_process_upload.delay(str(upload_file.id))
+                # In Django Huey, call tasks directly (no .delay() needed)
+                verify_and_process_upload(str(upload_file.id))
             
         else:
             logger.info(f"⏳ MONITOR: {uploaded_files}/{total_files} files uploaded, continuing monitoring")
             
             # Re-schedule monitoring if not complete and session is recent
             if session.created_at > timezone.now() - timezone.timedelta(hours=2):
+                # Schedule next check (Django Huey uses schedule() method)
                 monitor_upload_session.schedule(args=(session_id,), delay=30)
             else:
                 logger.warning(f"⚠️ MONITOR: Session {session_id} timed out after 2 hours")
@@ -126,7 +128,8 @@ def verify_and_process_upload(file_id: str):
         logger.info(f"✅ VERIFY: File {upload_file.filename} verified and processed")
         
         # Check if all files in session are now complete
-        check_session_completion.delay(str(upload_file.session_id))
+        # In Django Huey, call tasks directly (no .delay() needed)
+        check_session_completion(str(upload_file.session_id))
         
     except Exception as e:
         logger.error(f"❌ VERIFY: Error processing file {file_id}: {str(e)}")
@@ -164,7 +167,8 @@ def check_session_completion(session_id: str):
                 logger.warning(f"⚠️ SESSION: Upload session {session_id} completed with {failed_files} failures")
             
             # Trigger UI refresh via OOB updates
-            trigger_ui_refresh.delay(str(session_id), session.organization)
+            # In Django Huey, call tasks directly (no .delay() needed)
+            trigger_ui_refresh(str(session_id), session.organization)
             
     except Exception as e:
         logger.error(f"❌ SESSION: Error checking completion for {session_id}: {str(e)}")

@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.users.mixins import general_login_required
+from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def batch_presigned_urls(request):
         data = json.loads(request.body)
         files = data.get('files', [])
         folder = data.get('folder', '')
+        organization = data.get('organization', '')
         
         if not files:
             logger.error("❌ No files provided in batch request")
@@ -53,11 +55,25 @@ def batch_presigned_urls(request):
                 'error': 'No files provided'
             }, status=400)
         
-        logger.info(f"📁 Processing {len(files)} files with folder='{folder}'")
+        logger.info(f"📁 Processing {len(files)} files with folder='{folder}' for organization='{organization}'")
+        
+        # Get the correct bucket for the organization
+        from arkumu.storage.services.bucket_service import BucketService
+        bucket_service = BucketService()
+        bucket_name = bucket_service.get_organization_bucket(organization) if organization else None
+        
+        # Create upload session for tracking
+        session = AsyncUploadSession.objects.create(
+            user=request.user,
+            total_files=len(files),
+            organization=organization  # Store organization in session
+        )
+        logger.info(f"📝 Created upload session {session.id} for {len(files)} files in bucket {bucket_name}")
         
         upload_service = UploadService()
         results = []
         errors = []
+        upload_files_created = []
         
         for file_info in files:
             filename = file_info.get('name')
@@ -136,10 +152,23 @@ def batch_presigned_urls(request):
                         file_name=os.path.basename(full_path),  # Just filename
                         content_type=filetype,
                         path_prefix=file_dir,  # Full directory path preserves structure
-                        max_file_size=filesize
+                        max_file_size=filesize,
+                        bucket_name=bucket_name  # Use organization bucket
                     )
                     
                     if result['success']:
+                        # Create AsyncUploadFile record for tracking
+                        upload_file = AsyncUploadFile.objects.create(
+                            session=session,
+                            filename=filename,
+                            s3_key=result['key'],
+                            file_size=filesize,
+                            content_type=filetype,
+                            status='pending'
+                        )
+                        upload_files_created.append(upload_file)
+                        logger.info(f"📄 Created upload file record {upload_file.id} for {filename}")
+                        
                         results.append({
                             'filename': filename,
                             'type': 'single',
@@ -148,7 +177,8 @@ def batch_presigned_urls(request):
                             's3_key': result['key'],
                             'filesize': filesize,
                             'filetype': filetype,
-                            'max_file_size': result.get('max_file_size')
+                            'max_file_size': result.get('max_file_size'),
+                            'upload_file_id': str(upload_file.id)
                         })
                     else:
                         errors.append({
@@ -165,11 +195,20 @@ def batch_presigned_urls(request):
         
         response_data = {
             'success': len(errors) == 0,
-            'uploads': results
+            'uploads': results,
+            'session_id': str(session.id)
         }
         
         if errors:
             response_data['errors'] = errors
+        
+        # Start monitoring the upload session if files were created
+        if upload_files_created:
+            logger.info(f"🚀 Starting monitoring for session {session.id}")
+            # Import here to avoid circular import issues
+            from arkumu.storage.tasks import monitor_upload_session
+            # In Django Huey, call the task directly (no .delay() needed)
+            monitor_upload_session(str(session.id))
         
         logger.info(f"✅ BATCH_PRESIGNED_URLS: {len(results)} successful, {len(errors)} errors")
         return JsonResponse(response_data)
@@ -414,6 +453,33 @@ def upload_success(request):
         's3_key': s3_key,
         'is_multipart': False
     })
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def mark_file_uploaded(request, file_id):
+    """
+    Mark a file as uploaded after successful S3 upload.
+    This triggers the verification process.
+    """
+    try:
+        upload_file = AsyncUploadFile.objects.get(id=file_id, session__user=request.user)
+        upload_file.mark_uploaded()
+        logger.info(f"✅ Marked file {upload_file.filename} as uploaded")
+        
+        # Check if all files in session are uploaded
+        session = upload_file.session
+        if session.files.filter(status='uploaded').count() == session.total_files:
+            logger.info(f"🎉 All files in session {session.id} uploaded, triggering verification")
+            # Monitor will handle verification
+        
+        return JsonResponse({'success': True})
+    except AsyncUploadFile.DoesNotExist:
+        logger.error(f"❌ Upload file {file_id} not found")
+        return JsonResponse({'success': False, 'error': 'File not found'}, status=404)
+    except Exception as e:
+        logger.error(f"❌ Error marking file uploaded: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 @general_login_required

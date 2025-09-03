@@ -85,6 +85,9 @@ urlpatterns = [
     # Upload completion OOB refresh
     path("upload/oob-refresh/<str:organization>/", upload_views.upload_complete_oob_refresh, name="upload_complete_oob_refresh"),
     
+    # Mark file as uploaded
+    path("upload/mark-uploaded/<str:file_id>/", upload_views.mark_file_uploaded, name="mark_file_uploaded"),
+    
     # Simple test endpoint for debugging OOB updates
     path("test/oob-refresh/<str:organization>/", file_browser_oob_views.test_oob_refresh, name="test_oob_refresh"),
 ] 

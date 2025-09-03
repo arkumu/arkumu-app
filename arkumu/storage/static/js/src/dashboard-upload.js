@@ -110,6 +110,10 @@ async function initializeDashboardUpload() {
 }
 
 async function initializeAsyncUploadSession(files, folderPath) {
+    // Get the selected organization
+    const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
+    const organization = orgSelector ? orgSelector.value : '';
+    
     const batchData = {
         files: files.map(file => ({
             name: file.name,
@@ -117,7 +121,8 @@ async function initializeAsyncUploadSession(files, folderPath) {
             size: file.size,
             type: file.type
         })),
-        folder: folderPath
+        folder: folderPath,
+        organization: organization
     };
     
     console.log('📡 ASYNC: Initializing session with', files.length, 'files');
@@ -156,21 +161,6 @@ function createFolderUploadSummary(uploads, uploadArea) {
     summaryContainer.innerHTML = `
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body p-4">
-                <!-- Action Buttons -->
-                <div class="flex gap-2 mb-4">
-                    <button class="btn btn-primary flex-1" onclick="startAllUploads()">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        Start Upload
-                    </button>
-                    <button class="btn btn-ghost" onclick="cancelFolderUpload()" title="Cancel entire upload">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        Cancel All
-                    </button>
-                </div>
                 
                 <!-- Collapsible File List -->
                 <div class="collapse collapse-arrow bg-base-200">
@@ -345,7 +335,7 @@ async function uploadFileDirectly(uploadInfo, file) {
         });
         formData.append('file', file);
         
-        return uploadWithProgress(uploadInfo.url, formData, uploadInfo.filename, progressBar, statusText, file.size);
+        return uploadWithProgress(uploadInfo.url, formData, uploadInfo.filename, progressBar, statusText, file.size, uploadInfo.upload_file_id);
         
     } else if (uploadInfo.type === 'multipart') {
         // TODO: Implement multipart upload if needed
@@ -355,7 +345,7 @@ async function uploadFileDirectly(uploadInfo, file) {
     }
 }
 
-async function uploadWithProgress(url, formData, filename, progressBar, statusText, fileSize) {
+async function uploadWithProgress(url, formData, filename, progressBar, statusText, fileSize, uploadFileId) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         
@@ -376,10 +366,32 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
         });
         
         // Handle upload completion
-        xhr.addEventListener('load', function() {
+        xhr.addEventListener('load', async function() {
             if (xhr.status >= 200 && xhr.status < 300) {
                 console.log('✅ S3 upload completed:', filename);
                 updateFileStatusByName(filename, 'Upload completed!', 'completed');
+                
+                // Notify server that file was uploaded
+                if (uploadFileId) {
+                    try {
+                        const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': getCsrfToken(),
+                            },
+                            credentials: 'include'
+                        });
+                        
+                        if (response.ok) {
+                            console.log('✅ Server notified of upload:', filename);
+                        } else {
+                            console.error('⚠️ Failed to notify server of upload:', filename);
+                        }
+                    } catch (error) {
+                        console.error('⚠️ Error notifying server:', error);
+                    }
+                }
+                
                 resolve();
             } else {
                 console.error('❌ Upload failed:', xhr.status, xhr.statusText);
@@ -1411,75 +1423,7 @@ function updateUploadControls() {
     }
 }
 
-function clearAllUploads() {
-    const uploadArea = document.getElementById('dashboard-upload-area');
-    if (uploadArea) {
-        uploadArea.innerHTML = '';
-    }
-    
-    // Reset file input
-    const fileInput = document.getElementById('dashboard-file-picker');
-    if (fileInput) {
-        fileInput.value = '';
-    }
-    
-    updateUploadControls();
-}
 
-function startAllUploads() {
-    const uploadArea = document.getElementById('dashboard-upload-area');
-    if (!uploadArea) return;
-    
-    console.log('🚀 Starting all uploads...');
-    
-    // Find all S3 upload forms
-    const s3Forms = uploadArea.querySelectorAll('.s3-upload-form');
-    console.log('📋 Found', s3Forms.length, 'S3 forms');
-    
-    s3Forms.forEach((form, index) => {
-        const submitButton = form.querySelector('button[type="submit"]');
-        if (submitButton && !submitButton.disabled) {
-            console.log('🎯 Triggering upload', index + 1, 'of', s3Forms.length);
-            submitButton.click();
-        } else {
-            console.log('⏭️ Skipping disabled form', index + 1);
-        }
-    });
-    
-    // Find all multipart upload buttons
-    const multipartButtons = uploadArea.querySelectorAll('.multipart-upload-btn');
-    console.log('📦 Found', multipartButtons.length, 'multipart buttons');
-    
-    multipartButtons.forEach((button, index) => {
-        if (!button.disabled) {
-            console.log('🎯 Triggering multipart upload', index + 1);
-            button.click();
-        }
-    });
-    
-    // Show feedback
-    const startButton = document.querySelector('#upload-controls .btn-primary');
-    if (startButton) {
-        startButton.disabled = true;
-        startButton.innerHTML = `
-            <span class="loading loading-spinner loading-sm mr-2"></span>
-            Uploading...
-        `;
-        
-        console.log('🔄 Batch upload initiated');
-        
-        // Re-enable after a delay (uploads will handle their own state)
-        setTimeout(() => {
-            startButton.disabled = false;
-            startButton.innerHTML = `
-                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Start All Uploads
-            `;
-        }, 3000);
-    }
-}
 
 // Initialize all dashboard upload functionality
 function initializeDashboard() {
@@ -1501,5 +1445,3 @@ window.cancelFolderUpload = cancelFolderUpload;
 window.removeUploadByFilename = removeUploadByFilename;
 window.removeAsyncUploadFile = removeAsyncUploadFile;
 window.removeUploadCard = removeUploadCard;
-window.clearAllUploads = clearAllUploads;
-window.startAllUploads = startAllUploads;

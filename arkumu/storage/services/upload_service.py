@@ -55,7 +55,8 @@ class UploadService:
     def generate_presigned_upload_url(self, file_name: str, content_type: str = 'application/octet-stream',
                                     path_prefix: Optional[str] = None, 
                                     expiration: int = 3600,
-                                    max_file_size: Optional[int] = None) -> Dict[str, Any]:
+                                    max_file_size: Optional[int] = None,
+                                    bucket_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate presigned POST URL for single file upload.
         
@@ -80,6 +81,7 @@ class UploadService:
             
         logger.info(f"🔧 Calling presigned_url_service.generate_upload_url...")
         result = self.presigned_url_service.generate_upload_url(
+            bucket_name=bucket_name,  # Pass the specific bucket
             key=s3_key, 
             content_type=content_type, 
             expiry=expiration,
