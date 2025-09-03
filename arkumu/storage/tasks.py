@@ -117,7 +117,7 @@ def verify_and_process_upload(file_id: str):
         upload_service = UploadService()
         file_info = upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
         
-        if not file_info or not file_info.get('exists', False):
+        if not file_info or not file_info.get('success', False):
             raise Exception(f"File not found in S3: {upload_file.s3_key}")
         
         # Create S3FileObject record
