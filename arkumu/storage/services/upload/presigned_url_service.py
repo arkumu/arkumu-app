@@ -83,6 +83,8 @@ class PresignedURLService:
             )
             
             logger.info(f"Generated presigned URL for {key} in {bucket_name}, expires in {expiry}s")
+            logger.info(f"🔗 DEBUG: Generated URL: {response['url']}")
+            logger.info(f"🔗 DEBUG: Fields: {response['fields']}")
             
             return {
                 'success': True,

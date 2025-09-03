@@ -215,8 +215,16 @@ class BaseStorageService:
                 self.presigned_client = boto3.client(**presigned_kwargs)
                 logger.info(f"Created separate presigned client with endpoint: {browser_endpoint}")
             else: # Not MinIO but has endpoint_url (e.g. Dell EMC ViPR, other S3 compatible)
-                 # Ensure presigned_client exists, can be same as s3_client if no special browser URL needed
-                if not hasattr(self, 'presigned_client'):
+                # Check for browser endpoint for Dell EMC systems
+                browser_endpoint = os.environ.get('AWS_S3_BROWSER_ENDPOINT_URL', None)
+                if browser_endpoint:
+                    logger.info(f"Using browser endpoint URL for presigned client from environment: {browser_endpoint}")
+                    # Create separate presigned client with browser endpoint
+                    presigned_kwargs = client_kwargs.copy()
+                    presigned_kwargs['endpoint_url'] = browser_endpoint
+                    self.presigned_client = boto3.client(**presigned_kwargs)
+                    logger.info(f"Created separate presigned client with browser endpoint: {browser_endpoint}")
+                elif not hasattr(self, 'presigned_client'):
                     self.presigned_client = boto3.client(**client_kwargs)
                     logger.info("Created presigned client (same as main client for Dell EMC/S3-compatible endpoint).")
 
@@ -397,13 +405,35 @@ class BaseStorageService:
 
     def ensure_cors_enabled(self, bucket_name: str = None) -> Dict[str, Any]:
         if bucket_name is None: bucket_name = self.ingest_bucket
-        if self.is_minio or self.endpoint_url:
-            logger.info("⚠️ CORS: Skipping for MinIO/non-AWS S3.")
-            return {"success": True, "message": "CORS skipped for MinIO/non-AWS S3", "updated": False}
+        if self.is_minio:
+            logger.info("⚠️ CORS: Skipping for MinIO.")
+            return {"success": True, "message": "CORS skipped for MinIO", "updated": False}
         logger.info(f"CORS: Checking for bucket: {bucket_name}")
+        
+        # Configure allowed origins based on environment
+        allowed_origins = ['*']  # Default fallback
+        if hasattr(settings, 'ALLOWED_HOSTS') and settings.ALLOWED_HOSTS:
+            # Convert ALLOWED_HOSTS to full URLs for CORS origins
+            allowed_origins = []
+            for host in settings.ALLOWED_HOSTS:
+                if host != '*' and host != 'localhost' and host != '127.0.0.1':
+                    allowed_origins.extend([f'https://{host}', f'http://{host}'])
+            # Add common development origins
+            allowed_origins.extend([
+                'https://dev.arkumu.uni-koeln.de',
+                'http://localhost:8000',
+                'http://127.0.0.1:8000'
+            ])
+            # Remove duplicates
+            allowed_origins = list(set(allowed_origins))
+            if not allowed_origins:
+                allowed_origins = ['*']
+        
+        logger.info(f"CORS: Using allowed origins: {allowed_origins}")
+        
         required_rule = {
-            'AllowedHeaders': ['*'], 'AllowedMethods': ['POST'],
-            'AllowedOrigins': ['*'], 'ExposeHeaders': []
+            'AllowedHeaders': ['*'], 'AllowedMethods': ['POST', 'PUT', 'OPTIONS'],
+            'AllowedOrigins': allowed_origins, 'ExposeHeaders': []
         }
         try:
             cors_config = self.s3_client.get_bucket_cors(Bucket=bucket_name)

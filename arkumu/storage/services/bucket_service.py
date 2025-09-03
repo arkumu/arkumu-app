@@ -128,6 +128,18 @@ class BucketService:
             self.base_s3_service.s3_client.head_bucket(Bucket=bucket_name)
             logger.info(f"✅ Organization bucket '{bucket_name}' already exists.")
             
+            # Ensure CORS is configured for existing bucket (only if not check_only)
+            if not check_only:
+                logger.info(f"🔧 Checking CORS for existing bucket '{bucket_name}'...")
+                cors_result = self.base_s3_service.ensure_cors_enabled(bucket_name)
+                if cors_result.get("success"):
+                    if cors_result.get("updated"):
+                        logger.info(f"✅ CORS updated for bucket '{bucket_name}': {cors_result.get('message')}")
+                    else:
+                        logger.debug(f"✅ CORS already configured for bucket '{bucket_name}'")
+                else:
+                    logger.warning(f"⚠️ CORS check failed for bucket '{bucket_name}': {cors_result.get('error')}")
+            
             # Cache the positive result for 30 minutes
             self.cache.set(cache_key, True, timeout=1800)
             
@@ -147,6 +159,15 @@ class BucketService:
                 logger.info(f"🔄 Auto-creating organization bucket '{bucket_name}' via BaseStorageService...")
                 if self.base_s3_service.ensure_bucket_exists(bucket_name):
                     logger.info(f"✅ Organization bucket '{bucket_name}' created successfully.")
+                    
+                    # Ensure CORS is configured for the new bucket
+                    logger.info(f"🔧 Setting up CORS for organization bucket '{bucket_name}'...")
+                    cors_result = self.base_s3_service.ensure_cors_enabled(bucket_name)
+                    if cors_result.get("success"):
+                        logger.info(f"✅ CORS configured for bucket '{bucket_name}': {cors_result.get('message')}")
+                    else:
+                        logger.warning(f"⚠️ CORS setup failed for bucket '{bucket_name}': {cors_result.get('error')}")
+                    
                     return {"success": True, "bucket_name": bucket_name, "status": "created"}
                 else:
                     logger.error(f"❌ Failed to create organization bucket '{bucket_name}' via BaseStorageService.")
