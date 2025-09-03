@@ -202,13 +202,9 @@ def batch_presigned_urls(request):
         if errors:
             response_data['errors'] = errors
         
-        # Start monitoring the upload session if files were created
+        # Session created - verification will be triggered when files are uploaded
         if upload_files_created:
-            logger.info(f"🚀 Starting monitoring for session {session.id}")
-            # Import here to avoid circular import issues
-            from arkumu.storage.tasks import monitor_upload_session
-            # In Django Huey, call the task directly (no .delay() needed)
-            monitor_upload_session(str(session.id))
+            logger.info(f"🚀 Session {session.id} created with {len(results)} files - waiting for uploads")
         
         logger.info(f"✅ BATCH_PRESIGNED_URLS: {len(results)} successful, {len(errors)} errors")
         return JsonResponse(response_data)
@@ -469,9 +465,19 @@ def mark_file_uploaded(request, file_id):
         
         # Check if all files in session are uploaded
         session = upload_file.session
-        if session.files.filter(status='uploaded').count() == session.total_files:
-            logger.info(f"🎉 All files in session {session.id} uploaded, triggering verification")
-            # Monitor will handle verification
+        uploaded_count = session.files.filter(status='uploaded').count()
+        total_count = session.total_files
+        
+        logger.info(f"📊 Session {session.id}: {uploaded_count}/{total_count} files uploaded")
+        
+        if uploaded_count == total_count:
+            logger.info(f"🎉 All files in session {session.id} uploaded, starting verification immediately")
+            session.mark_processing()
+            
+            # Trigger verification for all files immediately - no polling needed
+            from arkumu.storage.tasks import verify_and_process_upload
+            for upload_file_obj in session.files.filter(status='uploaded'):
+                verify_and_process_upload.delay(str(upload_file_obj.id))
         
         return JsonResponse({'success': True})
     except AsyncUploadFile.DoesNotExist:
@@ -480,6 +486,7 @@ def mark_file_uploaded(request, file_id):
     except Exception as e:
         logger.error(f"❌ Error marking file uploaded: {str(e)}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 
 @general_login_required

@@ -308,8 +308,8 @@ async function startUploads(uploads, files) {
     showUploadVerifying(uploads.length, uploadedFiles);
     
     // Add small delay to improve S3 consistency before refresh
-    console.log('⏳ Waiting 1.5s for S3 eventual consistency...');
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    console.log('⏳ Waiting 0.5s for S3 eventual consistency...');
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // Refresh file browser with expected files list for verification
     await refreshFileBrowserOOB(uploadedFiles);
@@ -460,8 +460,193 @@ function showUploadComplete(fileCount) {
     uploadArea.appendChild(completionMessage);
 }
 
-// Refresh file browser with retry logic for S3 consistency
-async function refreshFileBrowserOOB(expectedFiles = []) {
+// Optimistic Updates: Show files immediately with verification badges
+function showFilesOptimistically(uploadedFiles) {
+    const fileBrowserContent = document.getElementById('file-browser-content');
+    if (!fileBrowserContent) {
+        console.error('❌ File browser content not found');
+        return;
+    }
+    
+    console.log('📋 OPTIMISTIC: Adding', uploadedFiles.length, 'files to file browser');
+    
+    // Create optimistic file entries
+    uploadedFiles.forEach(file => {
+        const fileElement = createOptimisticFileElement(file);
+        // Find the file list and prepend new files
+        const fileList = fileBrowserContent.querySelector('.file-list, .list, [class*="file"]');
+        if (fileList) {
+            fileList.insertBefore(fileElement, fileList.firstChild);
+        } else {
+            // If no file list exists, create one
+            const listContainer = document.createElement('div');
+            listContainer.className = 'optimistic-file-list space-y-2';
+            listContainer.appendChild(fileElement);
+            fileBrowserContent.insertBefore(listContainer, fileBrowserContent.firstChild);
+        }
+    });
+    
+    console.log('✅ OPTIMISTIC: Files displayed immediately');
+}
+
+function createOptimisticFileElement(file) {
+    const fileElement = document.createElement('div');
+    fileElement.className = 'file-item optimistic-file p-3 bg-base-100 border border-base-300 rounded-lg';
+    fileElement.dataset.filename = file.filename;
+    fileElement.dataset.optimistic = 'true';
+    
+    const extension = file.filename.split('.').pop().toLowerCase();
+    const icon = getFileIconForType(file.filename);
+    
+    fileElement.innerHTML = `
+        <div class="flex items-center gap-3">
+            <!-- File Icon -->
+            <div class="flex-shrink-0">
+                ${icon}
+            </div>
+            
+            <!-- File Info -->
+            <div class="flex-1 min-w-0">
+                <div class="font-medium text-base-content truncate">${file.filename}</div>
+                <div class="text-sm text-base-content/60">${file.path !== file.filename ? file.path : ''}</div>
+            </div>
+            
+            <!-- Verification Status Badge -->
+            <div class="verification-badge">
+                <div class="badge badge-warning badge-sm gap-1">
+                    <span class="loading loading-spinner loading-xs"></span>
+                    Verifying
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return fileElement;
+}
+
+// Verification polling for real-time updates
+function startVerificationPolling(uploadedFiles) {
+    console.log('🔄 POLLING: Starting verification status polling');
+    
+    const pollInterval = 2000; // Poll every 2 seconds
+    const maxPolls = 30; // Stop after 60 seconds
+    let pollCount = 0;
+    
+    const polling = setInterval(async () => {
+        pollCount++;
+        console.log(`📡 POLLING: Check ${pollCount}/${maxPolls}`);
+        
+        try {
+            // Get the organization for API call
+            const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
+            const organization = orgSelector ? orgSelector.value : '';
+            
+            if (!organization) {
+                console.log('⚠️ POLLING: No organization selected, stopping');
+                clearInterval(polling);
+                return;
+            }
+            
+            // Check verification status
+            const response = await fetch(`/storage/api/verification-status/${organization}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken(),
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    files: uploadedFiles.map(f => f.filename)
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                updateVerificationStatus(data.files || []);
+                
+                // Check if all files are verified
+                const allVerified = data.files.every(f => f.status === 'verified' || f.status === 'failed');
+                if (allVerified) {
+                    console.log('✅ POLLING: All files verified, stopping');
+                    clearInterval(polling);
+                    showFinalUploadSuccess(uploadedFiles.length);
+                }
+            }
+            
+        } catch (error) {
+            console.error('❌ POLLING: Error checking status:', error);
+        }
+        
+        // Stop polling after max attempts
+        if (pollCount >= maxPolls) {
+            console.log('⏰ POLLING: Max attempts reached, stopping');
+            clearInterval(polling);
+        }
+        
+    }, pollInterval);
+}
+
+function updateVerificationStatus(fileStatuses) {
+    fileStatuses.forEach(fileStatus => {
+        const fileElement = document.querySelector(`[data-filename="${fileStatus.filename}"][data-optimistic="true"]`);
+        if (!fileElement) return;
+        
+        const badge = fileElement.querySelector('.verification-badge');
+        if (!badge) return;
+        
+        let badgeHTML = '';
+        switch (fileStatus.status) {
+            case 'verified':
+                badgeHTML = '<div class="badge badge-success badge-sm">✅ Verified</div>';
+                fileElement.classList.add('verified');
+                break;
+            case 'failed':
+                badgeHTML = `<div class="badge badge-error badge-sm">❌ Failed</div>`;
+                fileElement.classList.add('failed');
+                break;
+            case 'verifying':
+            default:
+                badgeHTML = `
+                    <div class="badge badge-warning badge-sm gap-1">
+                        <span class="loading loading-spinner loading-xs"></span>
+                        Verifying
+                    </div>
+                `;
+                break;
+        }
+        
+        badge.innerHTML = badgeHTML;
+    });
+}
+
+function showFinalUploadSuccess(fileCount) {
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    if (!uploadArea) return;
+    
+    // Remove verifying message if it exists
+    const verifyingMessage = document.getElementById('upload-verifying-message');
+    if (verifyingMessage) {
+        verifyingMessage.remove();
+    }
+    
+    const completionMessage = document.createElement('div');
+    completionMessage.className = 'alert alert-success mt-4';
+    completionMessage.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+        <span>🎉 All ${fileCount} files uploaded and verified!</span>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.alert').remove()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    `;
+    uploadArea.appendChild(completionMessage);
+}
+
+// Refresh file browser - simple and clean
+async function refreshFileBrowserOOB(uploadedFiles = []) {
     try {
         // Get the organization from the upload org selector
         const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
@@ -473,22 +658,10 @@ async function refreshFileBrowserOOB(expectedFiles = []) {
         }
         
         console.log('🔄 REFRESH: Refreshing file browser for organization:', organization);
-        if (expectedFiles.length > 0) {
-            console.log('📋 REFRESH: Expecting to find files:', expectedFiles.map(f => f.filename));
-        }
         
-        // Use HTMX to refresh the file browser with retry logic for S3 consistency
+        // Use HTMX to refresh the file browser
         if (window.htmx) {
-            let url = `/storage/dashboard/refresh/${organization}/`;
-            
-            // Add expected files as query parameters for server-side verification
-            if (expectedFiles.length > 0) {
-                const params = new URLSearchParams();
-                expectedFiles.forEach((file, index) => {
-                    params.append(`expected_${index}`, file.filename);
-                });
-                url += '?' + params.toString();
-            }
+            const url = `/storage/dashboard/refresh/${organization}/`;
             
             console.log('📡 REFRESH: Fetching fresh file list from:', url);
             
@@ -498,27 +671,14 @@ async function refreshFileBrowserOOB(expectedFiles = []) {
                 swap: 'innerHTML'
             });
             
-            // Set up a listener to show final success when files are confirmed
-            if (expectedFiles.length > 0) {
-                // Listen for successful refresh completion
-                document.addEventListener('htmx:afterRequest', function onRefreshComplete(event) {
-                    if (event.detail.xhr.responseURL && event.detail.xhr.responseURL.includes('/storage/dashboard/refresh/')) {
-                        // Check if the response doesn't contain retry messages
-                        const responseText = event.detail.xhr.responseText;
-                        if (responseText && !responseText.includes('Waiting for uploaded files') && !responseText.includes('Loading files')) {
-                            // Files were successfully found, show final success
-                            setTimeout(() => {
-                                showUploadComplete(expectedFiles.length);
-                            }, 500); // Small delay to let DOM settle
-                            
-                            // Remove this listener
-                            document.removeEventListener('htmx:afterRequest', onRefreshComplete);
-                        }
-                    }
-                });
+            // Show success message after refresh
+            if (uploadedFiles.length > 0) {
+                setTimeout(() => {
+                    showUploadComplete(uploadedFiles.length);
+                }, 1000); // Give refresh time to complete
             }
             
-            console.log('✅ REFRESH: File browser refresh initiated with S3 consistency handling');
+            console.log('✅ REFRESH: File browser refresh initiated');
         } else {
             console.error('❌ REFRESH: HTMX not available');
         }
