@@ -133,12 +133,17 @@ def batch_presigned_urls(request):
                             'upload_id': init_result['upload_id'],
                             's3_key': init_result['s3_key'],
                             'filesize': filesize,
-                            'filetype': filetype
+                            'filetype': filetype,
+                            'folder': file_dir,  # Add folder path for JavaScript
+                            'organization': organization,  # Add organization info
+                            'base_folder': folder  # Add base folder info
                         })
                     else:
+                        error_msg = init_result.get('error', 'Multipart upload initialization failed')
+                        logger.error(f"❌ Multipart init failed for {filename}: {error_msg}")
                         errors.append({
                             'filename': filename,
-                            'errors': [init_result.get('error', 'Multipart initialization failed')]
+                            'errors': [f"Large file upload failed: {error_msg}. Try splitting file or contact support."]
                         })
                 else:
                     # Single upload

@@ -223,7 +223,7 @@ class UploadService:
         warnings = []
         
         # File size validation
-        max_single_size = 5 * 1024 * 1024 * 1024  # 5GB
+        max_single_size = 100 * 1024 * 1024  # 100MB - AWS recommends multipart for files > 100MB
         if file_size > max_single_size:
             # Large files should use multipart upload
             warnings.append(f"File size {self.base_s3_service._format_size(file_size)} exceeds single upload limit. Use multipart upload.")

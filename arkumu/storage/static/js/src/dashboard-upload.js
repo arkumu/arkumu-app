@@ -359,9 +359,10 @@ async function uploadFileDirectly(uploadInfo, file) {
         
     } else if (uploadInfo.type === 'multipart') {
         // TODO: Implement multipart upload if needed
-        debugLog('📦 Multipart upload not implemented yet for:', uploadInfo.filename);
-        updateFileStatusByName(uploadInfo.filename, 'Multipart not implemented', 'failed');
-        throw new Error('Multipart upload not implemented');
+        // Use S3 multipart upload handler for large files
+        debugLog('📦 Starting S3 multipart upload for:', uploadInfo.filename);
+        updateFileStatusByName(uploadInfo.filename, 'Initializing multipart upload...', 'uploading');
+        return await handleMultipartUpload(uploadInfo, file);
     }
 }
 
@@ -1745,6 +1746,40 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeDashboard);
 } else {
     initializeDashboard();
+}
+
+// Handle multipart upload using S3MultipartUploadHandler
+async function handleMultipartUpload(uploadInfo, file) {
+    try {
+        // Get organization info
+        const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
+        const baseFolderSelector = document.getElementById('base-folder');
+        const organization = orgSelector ? orgSelector.value : '';
+        const baseFolder = baseFolderSelector ? baseFolderSelector.value : '';
+        
+        // Use the existing S3MultipartUploadHandler
+        const multipartHandler = new S3MultipartUploadHandler({
+            onProgress: (progress) => {
+                updateFileStatusByName(uploadInfo.filename, `Uploading ${progress.fileProgress}%`, 'uploading');
+            },
+            onFileComplete: (file, result) => {
+                updateFileStatusByName(uploadInfo.filename, 'Upload completed!', 'completed');
+            },
+            onError: (error) => {
+                updateFileStatusByName(uploadInfo.filename, 'Upload failed: ' + error.message, 'failed');
+            }
+        });
+        
+        // Upload the single large file with proper folder path
+        const folderName = uploadInfo.folder || '';
+        debugLog('📁 Multipart upload folder info:', { organization, baseFolder, folderName });
+        await multipartHandler.uploadFiles([file], folderName, organization, baseFolder);
+        
+    } catch (error) {
+        debugError('❌ Multipart upload failed:', error);
+        updateFileStatusByName(uploadInfo.filename, 'Multipart upload failed: ' + error.message, 'failed');
+        throw error;
+    }
 }
 
 // Export functions for global access
