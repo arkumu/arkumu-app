@@ -106,10 +106,16 @@ def verify_and_process_upload(file_id: str):
         
         upload_file.mark_processing()
         
-        # Verify file exists in S3
+        # Verify file exists in S3 using the correct organization bucket
         from arkumu.storage.services.upload_service import UploadService
+        from arkumu.storage.services.bucket_service import BucketService
+        
+        # Get the organization bucket name
+        bucket_service = BucketService()
+        bucket_name = bucket_service.get_organization_bucket(upload_file.session.organization)
+        
         upload_service = UploadService()
-        file_info = upload_service.get_file_info(upload_file.s3_key)
+        file_info = upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
         
         if not file_info or not file_info.get('exists', False):
             raise Exception(f"File not found in S3: {upload_file.s3_key}")
