@@ -105,42 +105,54 @@ class HasTriplesFilter(SimpleListFilter):
         return queryset
 
 
+
+
 @admin.register(Resource)
 class ResourceAdmin(admin.ModelAdmin):
     list_display = [
-        'display_value',
+        'id_short',
         'resource_type_badge',
+        'display_uri',
+        'display_name',
+        'display_value_truncated',
         'organization_link',
         'public_access_badge',
-        'triple_usage_display',
+        'display_language_datatype',
         'is_placeholder_badge',
+        'triple_usage_display',
         'created_at'
     ]
     
     list_filter = [
-        'resource_type',
+        'resource_type',  # Indexed through constraints
         ResourceTypeFilter,
-        'public_access_level',
+        'public_access_level',  # Has composite index with is_public_approved
         PublicAccessFilter,
         'is_placeholder',
         'is_public',
         'is_externally_linked',
         HasTriplesFilter,
-        'organization',
+        'organization',  # Has index
         'created_at',
         ('public_approved_by', admin.RelatedOnlyFieldListFilter),
+        ('language', admin.AllValuesFieldListFilter),  # For literal filtering
+        ('datatype', admin.AllValuesFieldListFilter),  # For literal filtering
     ]
     
+    # Simple search fields using Django's default search
     search_fields = [
         'uri',
-        'name',
+        'name', 
         'value',
+        'organization__name',
+        'organization__code',
     ]
     
     readonly_fields = [
         'id',
         'created_at',
         'updated_at',
+        'value_hash',
         'resource_display',
         'triple_relationships',
         'public_access_info',
@@ -149,37 +161,66 @@ class ResourceAdmin(admin.ModelAdmin):
     ]
     
     fieldsets = (
-        (None, {
-            'fields': ('resource_type', 'uri', 'name', 'value', 'resource_display')
+        (_('Basic Information'), {
+            'fields': (
+                'id',
+                'resource_type',
+                'is_placeholder',
+            ),
+            'description': 'Core resource identification and type.'
         }),
-        (_('Organization'), {
-            'fields': ('organization',),
-            'description': 'Organization ownership.',
+        (_('Resource Content'), {
+            'fields': (
+                'uri',
+                'name', 
+                'value',
+                'value_hash',
+            ),
+            'description': 'The actual content of the resource - URI for identified resources, value for literals.'
+        }),
+        (_('Literal-Specific Properties'), {
+            'fields': (
+                'datatype',
+                'language',
+                'literal_info',
+                'literal_source_breakdown'
+            ),
+            'description': 'Properties that only apply to LITERAL type resources.',
+        }),
+        (_('Organization & Ownership'), {
+            'fields': (
+                'organization',
+            ),
+            'description': 'Organization that owns this resource.',
         }),
         (_('Public Access Control'), {
             'fields': (
                 'public_access_level',
-                'is_public_approved',
                 'is_public',
+                'is_public_approved',
                 'is_externally_linked',
                 'public_approved_at',
                 'public_approved_by',
                 'public_access_info'
             ),
-            'classes': ('collapse',),
+            'description': 'Controls who can see and use this resource across organizations.',
         }),
-        (_('Literal Properties'), {
-            'fields': ('datatype', 'language', 'literal_info', 'literal_source_breakdown'),
-            'classes': ('collapse',),
-            'description': 'Properties specific to literal resources.',
-        }),
-        (_('Metadata'), {
-            'fields': ('is_placeholder', 'created_at', 'updated_at', 'id'),
+        (_('Timestamps'), {
+            'fields': (
+                'created_at',
+                'updated_at',
+            ),
             'classes': ('collapse',),
         }),
         (_('Triple Relationships'), {
             'fields': ('triple_relationships',),
             'classes': ('collapse',),
+            'description': 'How this resource is used in triple statements.',
+        }),
+        (_('Summary View'), {
+            'fields': ('resource_display',),
+            'classes': ('collapse',),
+            'description': 'Formatted summary of all resource information.',
         }),
     )
     
@@ -357,30 +398,99 @@ class ResourceAdmin(admin.ModelAdmin):
     is_placeholder_badge.admin_order_field = 'is_placeholder'
     
     def resource_display(self, obj):
-        """Detailed resource display for detail view."""
-        html = '<div style="line-height: 1.8;">'
+        """Comprehensive resource display showing ALL fields."""
+        html = '<div style="line-height: 2; background: #f8f9fa; padding: 15px; border-radius: 5px;">'    
+        html += '<h4 style="margin-top: 0; color: #495057;">Complete Resource Information</h4>'
         
-        # Type and main identifier
-        html += f'<strong>Type:</strong> {obj.get_resource_type_display()}<br>'
+        # Basic Info
+        html += '<div style="margin-bottom: 15px;">'
+        html += '<strong style="color: #007bff;">BASIC INFORMATION</strong><br>'
+        html += f'<strong>ID:</strong> <code>{obj.id}</code><br>'
+        html += f'<strong>Type:</strong> {obj.get_resource_type_display()} ({obj.resource_type})<br>'
+        html += f'<strong>Is Placeholder:</strong> {"Yes ⚠️" if obj.is_placeholder else "No"}<br>'
+        html += '</div>'
         
+        # Content Fields
+        html += '<div style="margin-bottom: 15px;">'
+        html += '<strong style="color: #28a745;">CONTENT FIELDS</strong><br>'
+        html += f'<strong>URI:</strong> {f"<a href='{obj.uri}' target='_blank'>{obj.uri}</a>" if obj.uri else "<em>None</em>"}<br>'
+        html += f'<strong>Name:</strong> {obj.name if obj.name else "<em>None</em>"}<br>'
+        html += f'<strong>Value:</strong> <code>{obj.value}</code><br>' if obj.value else '<strong>Value:</strong> <em>None</em><br>'
+        html += f'<strong>Value Hash:</strong> <code style="font-size: 10px; word-break: break-all;">{obj.value_hash}</code><br>' if obj.value_hash else '<strong>Value Hash:</strong> <em>None</em><br>'
+        html += '</div>'
+        
+        # Literal Properties
         if obj.resource_type == ResourceType.LITERAL:
-            html += f'<strong>Value:</strong> <code>{obj.value}</code><br>'
-            if obj.language:
-                html += f'<strong>Language:</strong> {obj.language}<br>'
-            if obj.datatype:
-                html += f'<strong>Datatype:</strong> <code>{obj.datatype}</code><br>'
-        else:
-            if obj.uri:
-                html += f'<strong>URI:</strong> <a href="{obj.uri}" target="_blank">{obj.uri}</a><br>'
-            if obj.name:
-                html += f'<strong>Name:</strong> {obj.name}<br>'
+            html += '<div style="margin-bottom: 15px;">'
+            html += '<strong style="color: #e83e8c;">LITERAL PROPERTIES</strong><br>'
+            html += f'<strong>Language:</strong> {obj.language if obj.language else "<em>None</em>"}<br>'
+            html += f'<strong>Datatype:</strong> <code>{obj.datatype}</code><br>' if obj.datatype else '<strong>Datatype:</strong> <em>None (plain string)</em><br>'
+            html += f'<strong>Full Representation:</strong> <code>{str(obj)}</code><br>'
+            html += '</div>'
         
-        if obj.source:
-            html += f'<strong>Source:</strong> {obj.source}<br>'
+        # Organization
+        html += '<div style="margin-bottom: 15px;">'
+        html += '<strong style="color: #ffc107;">ORGANIZATION</strong><br>'
+        if obj.organization:
+            org_url = reverse('admin:users_organization_change', args=[obj.organization.pk])
+            html += f'<strong>Organization:</strong> <a href="{org_url}">{obj.organization.name} ({obj.organization.code})</a><br>'
+        else:
+            html += '<strong>Organization:</strong> <em>None</em><br>'
+        html += '</div>'
+        
+        # Public Access
+        html += '<div style="margin-bottom: 15px;">'
+        html += '<strong style="color: #17a2b8;">PUBLIC ACCESS SETTINGS</strong><br>'
+        html += f'<strong>Access Level:</strong> {obj.get_public_access_level_display()} ({obj.public_access_level})<br>'
+        html += f'<strong>Is Public:</strong> {"Yes" if obj.is_public else "No"}<br>'
+        html += f'<strong>Is Approved:</strong> {"Yes ✓" if obj.is_public_approved else "No ✗"}<br>'
+        html += f'<strong>Externally Linked:</strong> {"Yes 🔗" if obj.is_externally_linked else "No"}<br>'
+        if obj.public_approved_at and obj.public_approved_by:
+            approver_url = reverse('admin:users_user_change', args=[obj.public_approved_by.pk])
+            html += f'<strong>Approved By:</strong> <a href="{approver_url}">{obj.public_approved_by.get_display_name()}</a><br>'
+            html += f'<strong>Approved At:</strong> {obj.public_approved_at.strftime("%Y-%m-%d %H:%M:%S")}<br>'
+        html += '</div>'
+        
+        # Timestamps
+        html += '<div style="margin-bottom: 15px;">'
+        html += '<strong style="color: #6c757d;">TIMESTAMPS</strong><br>'
+        html += f'<strong>Created:</strong> {obj.created_at.strftime("%Y-%m-%d %H:%M:%S") if obj.created_at else "Unknown"}<br>'
+        html += f'<strong>Updated:</strong> {obj.updated_at.strftime("%Y-%m-%d %H:%M:%S") if obj.updated_at else "Unknown"}<br>'
+        html += '</div>'
         
         html += '</div>'
         return mark_safe(html)
-    resource_display.short_description = _('Resource Details')
+    resource_display.short_description = _('Complete Resource Details')
+    
+    def display_value(self, obj):
+        """Display the resource value with appropriate formatting - LEGACY method for compatibility."""
+        if obj.resource_type == ResourceType.LITERAL:
+            value = f'"{obj.value}"'
+            if obj.language:
+                value += f'@{obj.language}'
+            elif obj.datatype:
+                value += f'^^{obj.datatype}'
+            return format_html(
+                '<code style="background: #f8f9fa; padding: 2px 4px; '
+                'border-radius: 3px;">{}</code>',
+                value
+            )
+        elif obj.uri:
+            display_uri = obj.uri
+            if len(display_uri) > 60:
+                display_uri = display_uri[:57] + '...'
+            return format_html(
+                '<a href="{}" target="_blank" title="{}">{}</a>',
+                obj.uri,
+                obj.uri,
+                display_uri
+            )
+        elif obj.name:
+            return format_html('<strong>{}</strong>', obj.name)
+        else:
+            return format_html('<em style="color: #6c757d;">Resource {}</em>', obj.id)
+    display_value.short_description = _('Resource')
+    display_value.admin_order_field = 'uri'
     
     def triple_relationships(self, obj):
         """Show detailed triple relationships."""
@@ -467,8 +577,12 @@ class ResourceAdmin(admin.ModelAdmin):
         html = '<div style="line-height: 1.8;">'
         html += f'<strong>Value:</strong> <code>{obj.value}</code><br>'
         
+        if obj.value_hash:
+            html += f'<strong>Value Hash (SHA-256):</strong><br>'
+            html += f'<code style="font-size: 11px; word-break: break-all;">{obj.value_hash}</code><br>'
+        
         if obj.language:
-            html += f'<strong>Language Tag:</strong> <code>{obj.language}</code><br>'
+            html += f'<br><strong>Language Tag:</strong> <code>{obj.language}</code><br>'
         
         if obj.datatype:
             html += f'<strong>Datatype URI:</strong> <code>{obj.datatype}</code><br>'
@@ -628,6 +742,111 @@ class ResourceAdmin(admin.ModelAdmin):
         )
     set_private_level.short_description = _("Set to private level")
     
+    def has_value_hash(self, obj):
+        """Display whether resource has a value hash."""
+        if obj.value_hash:
+            return format_html(
+                '<span style="color: #28a745; font-size: 11px;" '
+                'title="{}">✓ Hash</span>',
+                obj.value_hash[:16] + '...'
+            )
+        return ''
+    has_value_hash.short_description = _('Hash')
+    has_value_hash.admin_order_field = 'value_hash'
+    
+    def id_short(self, obj):
+        """Display shortened UUID."""
+        return format_html(
+            '<code style="font-size: 10px; color: #6c757d;" title="{}">{}</code>',
+            str(obj.id),
+            str(obj.id)[:8]
+        )
+    id_short.short_description = _('ID')
+    id_short.admin_order_field = 'id'
+    
+    def display_uri(self, obj):
+        """Display URI for non-literal resources."""
+        if obj.resource_type == ResourceType.LITERAL:
+            return format_html('<span style="color: #6c757d;">—</span>')
+        
+        if obj.uri:
+            display_uri = obj.uri
+            if len(display_uri) > 40:
+                display_uri = display_uri[:37] + '...'
+            return format_html(
+                '<a href="{}" target="_blank" title="{}" '
+                'style="text-decoration: none; color: #007bff;">{}</a>',
+                obj.uri,
+                obj.uri,
+                display_uri
+            )
+        return format_html('<span style="color: #dc3545;">⚠️ No URI</span>')
+    display_uri.short_description = _('URI')
+    display_uri.admin_order_field = 'uri'
+    
+    def display_name(self, obj):
+        """Display the name field."""
+        if obj.name:
+            if len(obj.name) > 30:
+                return format_html(
+                    '<span title="{}">{}</span>',
+                    obj.name,
+                    obj.name[:27] + '...'
+                )
+            return obj.name
+        return format_html('<span style="color: #6c757d;">—</span>')
+    display_name.short_description = _('Name')
+    display_name.admin_order_field = 'name'
+    
+    def display_value_truncated(self, obj):
+        """Display truncated value for literals."""
+        if obj.resource_type != ResourceType.LITERAL:
+            return format_html('<span style="color: #6c757d;">—</span>')
+        
+        if obj.value:
+            value = obj.value
+            if len(value) > 50:
+                value = value[:47] + '...'
+            return format_html(
+                '<code style="background: #f8f9fa; padding: 2px 4px; '
+                'border-radius: 3px; font-size: 11px;" title="{}">{}</code>',
+                obj.value[:500],  # Show more in tooltip
+                value
+            )
+        return format_html('<span style="color: #dc3545;">⚠️ No value</span>')
+    display_value_truncated.short_description = _('Value')
+    display_value_truncated.admin_order_field = 'value'
+    
+    def display_language_datatype(self, obj):
+        """Display language and datatype for literals."""
+        if obj.resource_type != ResourceType.LITERAL:
+            return ''
+        
+        badges = []
+        if obj.language:
+            badges.append(format_html(
+                '<span style="background: #17a2b8; color: white; padding: 1px 4px; '
+                'border-radius: 3px; font-size: 10px;">@{}</span>',
+                obj.language
+            ))
+        if obj.datatype:
+            # Shorten common datatypes
+            display_dt = obj.datatype
+            if 'XMLSchema#' in display_dt:
+                display_dt = 'xsd:' + display_dt.split('#')[-1]
+            elif '/' in display_dt:
+                display_dt = '...' + display_dt.split('/')[-1]
+            
+            badges.append(format_html(
+                '<span style="background: #6610f2; color: white; padding: 1px 4px; '
+                'border-radius: 3px; font-size: 10px;" title="{}">^^{}</span>',
+                obj.datatype,
+                display_dt if len(display_dt) < 20 else display_dt[:17] + '...'
+            ))
+        
+        return format_html(' '.join(badges)) if badges else ''
+    display_language_datatype.short_description = _('Lang/Type')
+    
     def get_actions(self, request):
         """Only show public access actions to users with permission."""
         actions = super().get_actions(request)
@@ -638,3 +857,10 @@ class ResourceAdmin(admin.ModelAdmin):
             actions.pop('revoke_public_access', None)
         
         return actions
+    
+    
+    
+    class Media:
+        css = {
+            'all': ('admin/css/resource_admin.css',)
+        }

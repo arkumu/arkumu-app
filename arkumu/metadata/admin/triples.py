@@ -98,6 +98,7 @@ class TripleAdmin(admin.ModelAdmin):
         'predicate_display',
         'object_display',
         'source_info',
+        'is_derived_badge',
         'validation_status',
         'created_at'
     ]
@@ -105,7 +106,9 @@ class TripleAdmin(admin.ModelAdmin):
     list_filter = [
         ResourceTypeInTripleFilter,
         SourceFilter,
+        'is_derived',
         'created_at',
+        ('source', admin.RelatedOnlyFieldListFilter),
         ('subject__organization', admin.RelatedOnlyFieldListFilter),
         ('predicate__resource_type', admin.ChoicesFieldListFilter),
         ('object__resource_type', admin.ChoicesFieldListFilter),
@@ -136,6 +139,10 @@ class TripleAdmin(admin.ModelAdmin):
         (None, {
             'fields': ('subject', 'predicate', 'object', 'triple_visualization')
         }),
+        (_('Source & Type'), {
+            'fields': ('source', 'is_derived'),
+            'description': 'Triple source organization and derivation status.',
+        }),
         (_('Validation & Analysis'), {
             'fields': ('validation_details', 'source_analysis'),
             'classes': ('collapse',),
@@ -149,6 +156,7 @@ class TripleAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimize queries with select_related."""
         return super().get_queryset(request).select_related(
+            'source',
             'subject__organization',
             'predicate',
             'object__organization'
@@ -280,47 +288,39 @@ class TripleAdmin(admin.ModelAdmin):
     
     def source_info(self, obj):
         """Display source/organization information."""
-        sources = set()
-        orgs = set()
+        badges = []
         
-        if obj.subject.source:
-            sources.add(obj.subject.source)
+        # Triple source (from Triple model)
+        if obj.source:
+            badges.append(format_html(
+                '<span style="background: #17a2b8; color: white; padding: 2px 6px; '
+                'border-radius: 3px; font-size: 11px;" title="Source organization">{}</span>',
+                obj.source.name
+            ))
+        elif obj.is_derived:
+            badges.append(format_html(
+                '<span style="background: #6610f2; color: white; padding: 2px 6px; '
+                'border-radius: 3px; font-size: 11px;">Derived</span>'
+            ))
+        
+        # Check if resources are from different organizations
+        orgs = set()
         if obj.subject.organization:
             orgs.add(obj.subject.organization.code)
-            
-        if obj.object.source:
-            sources.add(obj.object.source)
         if obj.object.organization:
             orgs.add(obj.object.organization.code)
         
-        badges = []
-        
-        # Source badge
-        if len(sources) == 1:
-            badges.append(format_html(
-                '<span style="background: #17a2b8; color: white; padding: 2px 6px; '
-                'border-radius: 3px; font-size: 11px;">{}</span>',
-                list(sources)[0]
-            ))
-        elif len(sources) > 1:
-            badges.append(format_html(
-                '<span style="background: #ffc107; color: #000; padding: 2px 6px; '
-                'border-radius: 3px; font-size: 11px;" title="{}">Mixed</span>',
-                ', '.join(sources)
-            ))
-        
-        # Organization badge
-        if len(orgs) == 1:
-            badges.append(format_html(
-                '<span style="background: #28a745; color: white; padding: 2px 6px; '
-                'border-radius: 3px; font-size: 11px;">{}</span>',
-                list(orgs)[0]
-            ))
-        elif len(orgs) > 1:
+        if len(orgs) > 1:
             badges.append(format_html(
                 '<span style="background: #dc3545; color: white; padding: 2px 6px; '
                 'border-radius: 3px; font-size: 11px;" title="{}">Cross-org</span>',
                 ', '.join(orgs)
+            ))
+        elif len(orgs) == 1:
+            badges.append(format_html(
+                '<span style="background: #28a745; color: white; padding: 2px 6px; '
+                'border-radius: 3px; font-size: 11px;">{}</span>',
+                list(orgs)[0]
             ))
         
         return format_html(' '.join(badges)) if badges else '-'
@@ -354,6 +354,21 @@ class TripleAdmin(admin.ModelAdmin):
                 '; '.join(issues)
             )
     validation_status.short_description = _('Valid')
+    
+    def is_derived_badge(self, obj):
+        """Display whether triple is derived or archival."""
+        if obj.is_derived:
+            return format_html(
+                '<span style="background: #6610f2; color: white; padding: 2px 6px; '
+                'border-radius: 3px; font-size: 11px;">📊 Derived</span>'
+            )
+        else:
+            return format_html(
+                '<span style="background: #6c757d; color: white; padding: 2px 6px; '
+                'border-radius: 3px; font-size: 11px;">🏛️ Archival</span>'
+            )
+    is_derived_badge.short_description = _('Type')
+    is_derived_badge.admin_order_field = 'is_derived'
     
     def triple_visualization(self, obj):
         """Visual representation of the triple."""
@@ -445,9 +460,19 @@ class TripleAdmin(admin.ModelAdmin):
         
         html = '<div style="line-height: 1.8;">'
         
+        # Triple source
+        html += '<strong>Triple Source:</strong><br>'
+        if obj.source:
+            org_url = reverse('admin:users_organization_change', args=[obj.source.pk])
+            html += f'&nbsp;&nbsp;Organization: <a href="{org_url}">{obj.source.name}</a><br>'
+            html += f'&nbsp;&nbsp;Type: Archival<br>'
+        elif obj.is_derived:
+            html += '&nbsp;&nbsp;Type: System-Derived<br>'
+        else:
+            html += '&nbsp;&nbsp;<em>No source specified</em><br>'
+        
         # Subject source
-        html += '<strong>Subject:</strong><br>'
-        html += f'&nbsp;&nbsp;Source: {obj.subject.source or "<em>None</em>"}<br>'
+        html += '<br><strong>Subject Resource:</strong><br>'
         if obj.subject.organization:
             org_url = reverse('admin:users_organization_change', args=[obj.subject.organization.pk])
             html += f'&nbsp;&nbsp;Organization: <a href="{org_url}">{obj.subject.organization.name}</a><br>'
@@ -455,8 +480,7 @@ class TripleAdmin(admin.ModelAdmin):
             html += '&nbsp;&nbsp;Organization: <em>None</em><br>'
         
         # Predicate source
-        html += '<br><strong>Predicate:</strong><br>'
-        html += f'&nbsp;&nbsp;Source: {obj.predicate.source or "<em>None</em>"}<br>'
+        html += '<br><strong>Predicate Resource:</strong><br>'
         if obj.predicate.organization:
             org_url = reverse('admin:users_organization_change', args=[obj.predicate.organization.pk])
             html += f'&nbsp;&nbsp;Organization: <a href="{org_url}">{obj.predicate.organization.name}</a><br>'
@@ -464,8 +488,7 @@ class TripleAdmin(admin.ModelAdmin):
             html += '&nbsp;&nbsp;Organization: <em>None</em><br>'
         
         # Object source
-        html += '<br><strong>Object:</strong><br>'
-        html += f'&nbsp;&nbsp;Source: {obj.object.source or "<em>None</em>"}<br>'
+        html += '<br><strong>Object Resource:</strong><br>'
         if obj.object.organization:
             org_url = reverse('admin:users_organization_change', args=[obj.object.organization.pk])
             html += f'&nbsp;&nbsp;Organization: <a href="{org_url}">{obj.object.organization.name}</a><br>'
@@ -473,7 +496,6 @@ class TripleAdmin(admin.ModelAdmin):
             html += '&nbsp;&nbsp;Organization: <em>None</em><br>'
         
         # Analysis
-        sources = {obj.subject.source, obj.predicate.source, obj.object.source} - {None, ''}
         orgs = {
             obj.subject.organization.code if obj.subject.organization else None,
             obj.predicate.organization.code if obj.predicate.organization else None,
@@ -481,15 +503,16 @@ class TripleAdmin(admin.ModelAdmin):
         } - {None}
         
         html += '<br><strong>Analysis:</strong><br>'
-        if len(sources) <= 1:
-            html += '&nbsp;&nbsp;<span style="color: #28a745;">✓ Consistent source</span><br>'
-        else:
-            html += f'&nbsp;&nbsp;<span style="color: #ffc107;">⚠️ Mixed sources: {", ".join(sources)}</span><br>'
+        
+        if obj.is_derived:
+            html += '&nbsp;&nbsp;<span style="color: #6610f2;">📊 System-derived triple</span><br>'
+        elif obj.source:
+            html += f'&nbsp;&nbsp;<span style="color: #17a2b8;">🏛️ Archival triple from {obj.source.name}</span><br>'
         
         if len(orgs) <= 1:
-            html += '&nbsp;&nbsp;<span style="color: #28a745;">✓ Same organization</span><br>'
+            html += '&nbsp;&nbsp;<span style="color: #28a745;">✓ Same organization resources</span><br>'
         else:
-            html += f'&nbsp;&nbsp;<span style="color: #dc3545;">⚠️ Cross-organization: {", ".join(orgs)}</span><br>'
+            html += f'&nbsp;&nbsp;<span style="color: #dc3545;">⚠️ Cross-organization resources: {", ".join(orgs)}</span><br>'
         
         html += '</div>'
         return mark_safe(html)
