@@ -20,7 +20,9 @@
         var savedTheme = localStorage.getItem('arkumu-theme') || 'light';
         document.documentElement.classList.add('js-loaded');
         document.documentElement.classList.add('theme-' + savedTheme);
-        document.body.classList.add('theme-' + savedTheme);
+        document.addEventListener("DOMContentLoaded", function() {
+          document.body.classList.add('theme-' + savedTheme);
+        });
       })();
     </script>
     
