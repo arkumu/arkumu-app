@@ -15,7 +15,8 @@ from django.shortcuts import render
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.metadata.services.catalog_navigation_service import CatalogNavigationService
 from arkumu.metadata.services.faceted_search_service import FacetedSearchService
-from arkumu.metadata.models import Resource
+from arkumu.metadata.models import Resource, Triple
+
 
 
 class CatalogSearchMixin:
@@ -424,7 +425,17 @@ class LiveSearchFilterView(GeneralLoginRequiredMixin, CatalogSearchMixin, View):
 
 class DesignSearch:
     def design_search_results(request):
+
+
+
+
         query = request.GET.get('query', None)
+
+        triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
+        resource = [ob.__dict__ for ob in Resource.objects.all()[:5]]
+
+
+
         results = [{"year":"2024",
              "image":"images/main/card_1.png",
              "institution":"Folkwang Universität der Kunst",
@@ -470,7 +481,7 @@ class DesignSearch:
              "category2":"Transformation Design",
              "button_text":"Projekt ansehen"
             },]
-        context = {'query': query,
+        context = {"triple": triple, 'resource': resource, 'query': query,
             'results': results}
 
         return render(request, 'catalog/design_search_results.html', context)

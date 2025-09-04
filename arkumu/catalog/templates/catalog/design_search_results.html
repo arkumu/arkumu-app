@@ -1,6 +1,11 @@
   <div class="w-full mt-20 mb-24" id="search_results">
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6
   p-6 rounded-lg">
+triple:
+
+{{triple}}
+  resource:
+    {{resource}}
     {% for result in results%}
     <div class="card-container">
         {% include 'components/cards/card.html' with year=result.year image=result.image institution=result.institution title=result.title subtitle=result.subtitle contributor1_name=result.contributor1_name contributor1_role=result.contributor1_role contributor2_name=result.contributor2_name contributor2_role=result.contributor2_role contributor3_name=result.contributor3_name contributor3_role=result.contributor3_role category1=result.category1 category2=result.category2 button_text=result.button_text %}
