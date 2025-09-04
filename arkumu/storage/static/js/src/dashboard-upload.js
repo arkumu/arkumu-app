@@ -7,6 +7,119 @@ const DEBUG_UPLOADS = window.location.hostname === 'localhost' || window.locatio
 const debugLog = DEBUG_UPLOADS ? console.log.bind(console) : () => {};
 const debugError = DEBUG_UPLOADS ? console.error.bind(console) : () => {};
 
+// Global upload tracker for coordinating multiple uploads
+const uploadTracker = {
+    activeUploads: new Map(), // filename -> upload state
+    totalFiles: 0,
+    completedFiles: 0,
+    failedFiles: 0,
+    totalBytes: 0,
+    uploadedBytes: 0,
+    startTime: null,
+    
+    startSession(files) {
+        this.totalFiles = files.length;
+        this.completedFiles = 0;
+        this.failedFiles = 0;
+        this.totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+        this.uploadedBytes = 0;
+        this.startTime = Date.now();
+        this.activeUploads.clear();
+    },
+    
+    trackFile(filename, size) {
+        this.activeUploads.set(filename, {
+            size: size,
+            uploadedBytes: 0,
+            progress: 0,
+            status: 'queued',
+            startTime: null
+        });
+    },
+    
+    updateFileProgress(filename, uploadedBytes, totalBytes) {
+        const file = this.activeUploads.get(filename);
+        if (file) {
+            file.uploadedBytes = uploadedBytes;
+            file.progress = (uploadedBytes / totalBytes) * 100;
+            file.status = 'uploading';
+            if (!file.startTime) {
+                file.startTime = Date.now();
+            }
+            
+            // Update global progress
+            this.calculateGlobalProgress();
+        }
+    },
+    
+    completeFile(filename) {
+        const file = this.activeUploads.get(filename);
+        if (file) {
+            file.status = 'completed';
+            file.progress = 100;
+            this.completedFiles++;
+            this.uploadedBytes += file.size;
+            this.calculateGlobalProgress();
+        }
+    },
+    
+    failFile(filename) {
+        const file = this.activeUploads.get(filename);
+        if (file) {
+            file.status = 'failed';
+            this.failedFiles++;
+            this.calculateGlobalProgress();
+        }
+    },
+    
+    calculateGlobalProgress() {
+        // Update overall folder progress if exists
+        const overallProgress = document.getElementById('folder-overall-progress');
+        const uploadStatus = document.getElementById('folder-upload-status');
+        
+        if (this.totalFiles > 0) {
+            const processedFiles = this.completedFiles + this.failedFiles;
+            const progress = (processedFiles / this.totalFiles) * 100;
+            
+            if (overallProgress) {
+                overallProgress.value = progress;
+            }
+            if (uploadStatus) {
+                uploadStatus.textContent = `${processedFiles} / ${this.totalFiles} files`;
+            }
+            
+            // Calculate and display overall speed
+            const elapsed = (Date.now() - this.startTime) / 1000;
+            if (elapsed > 0 && this.uploadedBytes > 0) {
+                const speed = this.uploadedBytes / elapsed;
+                const speedElement = document.getElementById('folder-upload-speed');
+                if (speedElement) {
+                    speedElement.textContent = formatSpeed(speed);
+                }
+                
+                // Calculate ETA
+                const remainingBytes = this.totalBytes - this.uploadedBytes;
+                const eta = remainingBytes / speed;
+                const etaElement = document.getElementById('folder-upload-eta');
+                if (etaElement) {
+                    etaElement.textContent = `ETA: ${formatTime(eta)}`;
+                }
+            }
+        }
+    },
+    
+    getStatus() {
+        return {
+            totalFiles: this.totalFiles,
+            completedFiles: this.completedFiles,
+            failedFiles: this.failedFiles,
+            progress: this.totalFiles > 0 ? ((this.completedFiles + this.failedFiles) / this.totalFiles) * 100 : 0,
+            uploadedBytes: this.uploadedBytes,
+            totalBytes: this.totalBytes
+        };
+    }
+};
+
 // Upload mode switching for dashboard
 function switchToFilesMode() {
     const fileInput = document.getElementById('dashboard-file-picker');
@@ -168,6 +281,20 @@ function createFolderUploadSummary(uploads, uploadArea) {
     summaryContainer.innerHTML = `
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body p-4">
+                <!-- Overall Progress -->
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-sm font-semibold">Upload Progress</h3>
+                        <span class="text-sm text-base-content/70">
+                            <span id="folder-upload-status">0 / ${uploads.length} files</span>
+                        </span>
+                    </div>
+                    <progress id="folder-overall-progress" class="progress progress-primary w-full" value="0" max="100"></progress>
+                    <div class="flex justify-between text-xs text-base-content/60 mt-1">
+                        <span id="folder-upload-speed"></span>
+                        <span id="folder-upload-eta"></span>
+                    </div>
+                </div>
                 
                 <!-- Collapsible File List -->
                 <div class="collapse collapse-arrow bg-base-200">
@@ -188,11 +315,17 @@ function createFolderUploadSummary(uploads, uploadArea) {
                                             `<div class="text-xs opacity-60">${upload.relativePath}</div>` : 
                                             ''
                                         }
+                                        <div class="upload-progress hidden mt-1">
+                                            <progress class="progress progress-primary progress-xs w-full" value="0" max="100"></progress>
+                                        </div>
+                                    </div>
+                                    <div class="upload-progress-indicator hidden">
+                                        <span class="text-xs status-text">0%</span>
                                     </div>
                                     <div class="status-badge">
                                         <div class="badge badge-outline badge-xs">Ready</div>
                                     </div>
-                                    <button class="btn btn-ghost btn-xs btn-square" onclick="removeUploadByFilename('${upload.filename}')" title="Remove file">
+                                    <button class="btn btn-ghost btn-xs btn-square remove-file-btn" onclick="removeUploadByFilename('${upload.filename}')" title="Remove file">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                         </svg>
@@ -253,6 +386,7 @@ function createIndividualFilesList(uploads, uploadArea) {
                 <div class="flex items-center gap-2">
                     <span class="loading loading-spinner loading-sm"></span>
                     <span class="text-xs status-text">0%</span>
+                    <span class="text-xs upload-speed hidden"></span>
                 </div>
             </div>
             
@@ -271,6 +405,10 @@ function createIndividualFilesList(uploads, uploadArea) {
             <!-- Full-width progress bar (hidden by default) -->
             <div class="upload-progress list-col-wrap hidden mt-2">
                 <progress class="progress progress-primary w-full" value="0" max="100"></progress>
+                <div class="flex justify-between text-xs text-base-content/60 mt-1">
+                    <span class="upload-details"></span>
+                    <span class="upload-eta"></span>
+                </div>
             </div>
         `;
         
@@ -281,10 +419,14 @@ function createIndividualFilesList(uploads, uploadArea) {
 async function startUploads(uploads, files) {
     debugLog('🚀 Starting uploads for', uploads.length, 'files');
     
+    // Initialize upload tracker
+    uploadTracker.startSession(files);
+    
     // Create a map of filename to file object
     const fileMap = {};
     files.forEach(file => {
         fileMap[file.name] = file;
+        uploadTracker.trackFile(file.name, file.size);
     });
     
     // Upload each file
@@ -292,14 +434,17 @@ async function startUploads(uploads, files) {
         const file = fileMap[uploadInfo.filename];
         if (!file) {
             debugError('❌ File not found:', uploadInfo.filename);
+            uploadTracker.failFile(uploadInfo.filename);
             return;
         }
         
         try {
             await uploadFileDirectly(uploadInfo, file);
+            uploadTracker.completeFile(uploadInfo.filename);
         } catch (error) {
             debugError('❌ Upload failed for', uploadInfo.filename, error);
             updateFileStatus(uploadInfo.filename, 'Upload failed: ' + error.message, 'failed');
+            uploadTracker.failFile(uploadInfo.filename);
         }
     });
     
@@ -326,11 +471,15 @@ async function uploadFileDirectly(uploadInfo, file) {
     const container = document.querySelector(`[data-filename="${uploadInfo.filename}"]`);
     const progressBar = container?.querySelector('progress');
     const statusText = container?.querySelector('.status-text');
+    const uploadDetails = container?.querySelector('.upload-details');
+    const uploadEta = container?.querySelector('.upload-eta');
+    const uploadSpeed = container?.querySelector('.upload-speed');
     
     debugLog('📤 Uploading to S3:', uploadInfo.filename);
     
-    // Update status to uploading
-    updateFileStatusByName(uploadInfo.filename, 'Uploading...', 'uploading');
+    // Update status to uploading and show progress bar immediately
+    updateFileStatusByName(uploadInfo.filename, 'Starting upload...', 'uploading');
+    showUploadProgress(container);
     
     if (uploadInfo.type === 'single') {
         // Debug: Log what method we received
@@ -369,11 +518,17 @@ async function uploadFileDirectly(uploadInfo, file) {
 async function uploadWithProgress(url, formData, filename, progressBar, statusText, fileSize, uploadFileId) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+        let lastLoaded = 0;
+        let lastTime = startTime;
         
         // Handle upload progress
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
+                const currentTime = Date.now();
+                const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+                
                 if (progressBar) {
                     progressBar.value = percentComplete;
                 }
@@ -381,8 +536,30 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                     statusText.textContent = `${percentComplete.toFixed(0)}%`;
                 }
                 
-                // Update file status text
-                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}%`, 'uploading');
+                // Calculate upload speed and ETA
+                if (timeDiff > 0.5) { // Update every 500ms
+                    const bytesUploaded = e.loaded - lastLoaded;
+                    const uploadSpeed = bytesUploaded / timeDiff;
+                    const remainingBytes = e.total - e.loaded;
+                    const remainingTime = remainingBytes / uploadSpeed;
+                    
+                    updateUploadMetrics(filename, {
+                        progress: percentComplete,
+                        loaded: e.loaded,
+                        total: e.total,
+                        speed: uploadSpeed,
+                        remainingTime: remainingTime
+                    });
+                    
+                    lastLoaded = e.loaded;
+                    lastTime = currentTime;
+                }
+                
+                // Update tracker
+                uploadTracker.updateFileProgress(filename, e.loaded, e.total);
+                
+                // Update file status text (don't repeat percentage, it's shown in status-text)
+                updateFileStatusByName(filename, 'Uploading...', 'uploading');
             }
         });
         
@@ -505,11 +682,17 @@ async function uploadWithHiddenForm(uploadInfo, file, progressBar, statusText) {
 async function uploadWithProgressPUT(url, file, filename, progressBar, statusText, fileSize, uploadFileId) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+        let lastLoaded = 0;
+        let lastTime = startTime;
         
         // Handle upload progress
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
+                const currentTime = Date.now();
+                const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+                
                 if (progressBar) {
                     progressBar.value = percentComplete;
                 }
@@ -517,8 +700,30 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
                     statusText.textContent = `${percentComplete.toFixed(0)}%`;
                 }
                 
-                // Update file status text
-                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}%`, 'uploading');
+                // Calculate upload speed and ETA
+                if (timeDiff > 0.5) { // Update every 500ms
+                    const bytesUploaded = e.loaded - lastLoaded;
+                    const uploadSpeed = bytesUploaded / timeDiff;
+                    const remainingBytes = e.total - e.loaded;
+                    const remainingTime = remainingBytes / uploadSpeed;
+                    
+                    updateUploadMetrics(filename, {
+                        progress: percentComplete,
+                        loaded: e.loaded,
+                        total: e.total,
+                        speed: uploadSpeed,
+                        remainingTime: remainingTime
+                    });
+                    
+                    lastLoaded = e.loaded;
+                    lastTime = currentTime;
+                }
+                
+                // Update tracker
+                uploadTracker.updateFileProgress(filename, e.loaded, e.total);
+                
+                // Update file status text (don't repeat percentage, it's shown in status-text)
+                updateFileStatusByName(filename, 'Uploading...', 'uploading');
             }
         });
         
@@ -863,76 +1068,95 @@ function updateSessionStatus(sessionStatus) {
 
 function updateFolderUploadProgress(sessionStatus) {
     // Update overall progress bar
-    const progressBar = document.getElementById('folder-progress-bar');
-    const progressText = document.querySelector('.folder-progress-text');
-    const completedCount = document.getElementById('completed-count');
-    const failedCount = document.getElementById('failed-count');
+    const overallProgress = document.getElementById('folder-overall-progress');
+    const uploadStatus = document.getElementById('folder-upload-status');
+    const uploadSpeed = document.getElementById('folder-upload-speed');
+    const uploadEta = document.getElementById('folder-upload-eta');
     
-    if (progressBar && sessionStatus.total_files > 0) {
-        const progress = ((sessionStatus.completed_files + sessionStatus.failed_files) / sessionStatus.total_files) * 100;
-        progressBar.value = progress;
+    const completedFiles = sessionStatus.completed_files || 0;
+    const failedFiles = sessionStatus.failed_files || 0;
+    const totalFiles = sessionStatus.total_files || 0;
+    const processedFiles = completedFiles + failedFiles;
+    
+    if (overallProgress && totalFiles > 0) {
+        const progress = (processedFiles / totalFiles) * 100;
+        overallProgress.value = progress;
     }
     
-    if (progressText) {
-        if (sessionStatus.status === 'completed') {
-            progressText.textContent = 'Upload completed!';
-        } else if (sessionStatus.status === 'failed') {
-            progressText.textContent = 'Upload failed';
-        } else {
-            progressText.textContent = `${sessionStatus.completed_files + sessionStatus.failed_files}/${sessionStatus.total_files} processed`;
-        }
-    }
-    
-    if (completedCount) {
-        completedCount.textContent = sessionStatus.completed_files || 0;
-    }
-    
-    if (failedCount) {
-        failedCount.textContent = sessionStatus.failed_files || 0;
+    if (uploadStatus) {
+        uploadStatus.textContent = `${processedFiles} / ${totalFiles} files`;
     }
     
     // Update individual file statuses in the collapsible list if visible
-    sessionStatus.files.forEach(fileStatus => {
-        const fileContainer = document.querySelector(`[data-file-id*="${fileStatus.filename}"]`);
+    sessionStatus.files?.forEach(fileStatus => {
+        const fileContainer = document.querySelector(`[data-filename="${fileStatus.filename}"]`);
         if (fileContainer) {
             const statusBadge = fileContainer.querySelector('.status-badge');
+            const progressBar = fileContainer.querySelector('.upload-progress progress');
+            const progressDiv = fileContainer.querySelector('.upload-progress');
+            const progressIndicator = fileContainer.querySelector('.upload-progress-indicator');
+            const statusText = fileContainer.querySelector('.status-text');
+            
             if (statusBadge) {
                 let badgeClass = 'badge-outline';
-                let statusText = fileStatus.status;
+                let statusLabel = fileStatus.status;
                 
                 switch (fileStatus.status) {
                     case 'completed':
                         badgeClass = 'badge-success';
-                        statusText = '✅ Done';
+                        statusLabel = '✅ Done';
+                        if (progressDiv) progressDiv.classList.add('hidden');
+                        if (progressIndicator) progressIndicator.classList.add('hidden');
                         break;
                     case 'failed':
                         badgeClass = 'badge-error';
-                        statusText = '❌ Failed';
+                        statusLabel = '❌ Failed';
+                        if (progressDiv) progressDiv.classList.add('hidden');
+                        if (progressIndicator) progressIndicator.classList.add('hidden');
                         break;
+                    case 'uploading':
                     case 'processing':
-                        badgeClass = 'badge-warning';
-                        statusText = 'Processing';
+                        badgeClass = 'badge-info animate-pulse';
+                        statusLabel = 'Uploading';
+                        if (progressDiv) progressDiv.classList.remove('hidden');
+                        if (progressIndicator) progressIndicator.classList.remove('hidden');
                         break;
-                    case 'uploaded':
-                        badgeClass = 'badge-info';
-                        statusText = 'Uploaded';
+                    case 'queued':
+                    default:
+                        badgeClass = 'badge-outline';
+                        statusLabel = 'Queued';
                         break;
                 }
                 
-                statusBadge.innerHTML = `<div class="badge ${badgeClass} badge-xs">${statusText}</div>`;
+                statusBadge.innerHTML = `<div class="badge ${badgeClass} badge-xs">${statusLabel}</div>`;
+            }
+            
+            // Update progress if available
+            if (fileStatus.progress !== undefined) {
+                if (progressBar) {
+                    progressBar.value = fileStatus.progress;
+                }
+                if (statusText) {
+                    statusText.textContent = `${Math.round(fileStatus.progress)}%`;
+                }
             }
         }
     });
 }
 
 function updateFileStatus(fileId, statusText, status) {
-    const container = document.querySelector(`[data-file-id="${fileId}"]`);
+    // Try to find container by file-id or filename
+    let container = document.querySelector(`[data-file-id="${fileId}"]`);
+    if (!container) {
+        container = document.querySelector(`[data-filename="${fileId}"]`);
+    }
     if (!container) return;
     
     const statusElement = container.querySelector('.file-status');
     const statusBadge = container.querySelector('.status-badge');
     const progressDiv = container.querySelector('.upload-progress');
     const progressIndicator = container.querySelector('.upload-progress-indicator');
+    const progressBar = container.querySelector('progress');
     const removeBtn = container.querySelector('.remove-file-btn');
     
     if (statusElement) {
@@ -942,7 +1166,7 @@ function updateFileStatus(fileId, statusText, status) {
     // Update status badge and visual indicators
     if (status === 'uploading') {
         if (statusBadge) {
-            statusBadge.innerHTML = '<div class="badge badge-info badge-sm">Uploading</div>';
+            statusBadge.innerHTML = '<div class="badge badge-info badge-sm animate-pulse">Uploading</div>';
         }
         if (progressIndicator) {
             progressIndicator.classList.remove('hidden');
@@ -970,17 +1194,34 @@ function updateFileStatus(fileId, statusText, status) {
             progressDiv.classList.add('hidden'); // Hide progress bar during processing
         }
     } else if (status === 'completed') {
+        // Set progress to 100% before hiding
+        if (progressBar) {
+            progressBar.value = 100;
+        }
+        
+        // Update badge to success
         if (statusBadge) {
             statusBadge.innerHTML = '<div class="badge badge-success badge-sm">✅ Complete</div>';
         }
+        
+        // Hide all progress indicators
         if (progressIndicator) {
             progressIndicator.classList.add('hidden');
         }
         if (progressDiv) {
-            progressDiv.classList.add('hidden');
+            setTimeout(() => {
+                progressDiv.classList.add('hidden');
+            }, 500); // Small delay to show 100% before hiding
         }
+        
         // Add subtle success styling to the entire row
+        container.classList.remove('bg-warning/5', 'bg-error/5');
         container.classList.add('bg-success/5');
+        
+        // Hide remove button for completed uploads
+        if (removeBtn) {
+            removeBtn.style.display = 'none';
+        }
     } else if (status === 'failed') {
         if (statusBadge) {
             statusBadge.innerHTML = '<div class="badge badge-error badge-sm">❌ Failed</div>';
@@ -992,6 +1233,7 @@ function updateFileStatus(fileId, statusText, status) {
             progressDiv.classList.add('hidden');
         }
         // Add subtle error styling to the entire row
+        container.classList.remove('bg-success/5', 'bg-warning/5');
         container.classList.add('bg-error/5');
         if (removeBtn) {
             removeBtn.style.display = 'block'; // Show remove button again for failed uploads
@@ -1000,19 +1242,24 @@ function updateFileStatus(fileId, statusText, status) {
 }
 
 function updateFileStatusByName(filename, status, error) {
-    const containers = document.querySelectorAll('.upload-file-container');
+    // Find containers by data-filename attribute (more reliable)
+    const containers = document.querySelectorAll(`[data-filename="${filename}"]`);
     containers.forEach(container => {
-        const nameElement = container.querySelector('h3');
-        if (nameElement && nameElement.textContent === filename) {
-            const statusElement = container.querySelector('.file-status');
-            if (statusElement) {
-                statusElement.textContent = status;
-            }
-            
-            if (status === 'completed') {
-                updateFileStatus(container.dataset.fileId, 'Upload completed successfully!', 'completed');
-            } else if (status === 'failed') {
-                updateFileStatus(container.dataset.fileId, error || 'Upload failed', 'failed');
+        const statusElement = container.querySelector('.file-status');
+        if (statusElement) {
+            statusElement.textContent = status;
+        }
+        
+        // Call the main updateFileStatus function to handle visual updates
+        if (status.includes('completed') || status.includes('Complete')) {
+            updateFileStatus(container.dataset.fileId || filename, 'Upload completed successfully!', 'completed');
+        } else if (status.includes('failed') || status.includes('Failed')) {
+            updateFileStatus(container.dataset.fileId || filename, error || 'Upload failed', 'failed');
+        } else if (status.includes('Uploading')) {
+            // Keep uploading status
+            const statusBadge = container.querySelector('.status-badge');
+            if (statusBadge) {
+                statusBadge.innerHTML = '<div class="badge badge-info badge-sm animate-pulse">Uploading</div>';
             }
         }
     });
@@ -1331,6 +1578,96 @@ function getCsrfToken() {
         }
     }
     return cookieValue;
+}
+
+// Show upload progress UI
+function showUploadProgress(container) {
+    if (!container) return;
+    
+    const progressIndicator = container.querySelector('.upload-progress-indicator');
+    const progressDiv = container.querySelector('.upload-progress');
+    const statusBadge = container.querySelector('.status-badge');
+    
+    if (progressIndicator) {
+        progressIndicator.classList.remove('hidden');
+    }
+    if (progressDiv) {
+        progressDiv.classList.remove('hidden');
+    }
+    if (statusBadge) {
+        statusBadge.innerHTML = '<div class="badge badge-info badge-sm animate-pulse">Uploading</div>';
+    }
+}
+
+// Update upload metrics (speed, ETA, etc.)
+function updateUploadMetrics(filename, metrics) {
+    const container = document.querySelector(`[data-filename="${filename}"]`);
+    if (!container) return;
+    
+    const uploadSpeed = container.querySelector('.upload-speed');
+    const uploadDetails = container.querySelector('.upload-details');
+    const uploadEta = container.querySelector('.upload-eta');
+    
+    // Format speed
+    if (uploadSpeed && metrics.speed) {
+        const speedStr = formatSpeed(metrics.speed);
+        uploadSpeed.textContent = `• ${speedStr}`;
+        uploadSpeed.classList.remove('hidden');
+    }
+    
+    // Format uploaded/total
+    if (uploadDetails && metrics.loaded && metrics.total) {
+        const loadedStr = formatFileSize(metrics.loaded);
+        const totalStr = formatFileSize(metrics.total);
+        uploadDetails.textContent = `${loadedStr} / ${totalStr}`;
+    }
+    
+    // Format ETA
+    if (uploadEta && metrics.remainingTime) {
+        const etaStr = formatTime(metrics.remainingTime);
+        uploadEta.textContent = `ETA: ${etaStr}`;
+    }
+}
+
+// Format upload speed
+function formatSpeed(bytesPerSecond) {
+    if (bytesPerSecond === 0) return '0 B/s';
+    
+    const k = 1024;
+    const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+    const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+    
+    return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Format time remaining
+function formatTime(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return 'calculating...';
+    
+    seconds = Math.round(seconds);
+    
+    if (seconds < 60) {
+        return `${seconds}s`;
+    } else if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+    } else {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // Legacy upload card functions (kept for compatibility)
@@ -1757,10 +2094,37 @@ async function handleMultipartUpload(uploadInfo, file) {
         const organization = orgSelector ? orgSelector.value : '';
         const baseFolder = baseFolderSelector ? baseFolderSelector.value : '';
         
+        // Show upload progress UI immediately
+        const container = document.querySelector(`[data-filename="${uploadInfo.filename}"]`);
+        showUploadProgress(container);
+        
         // Use the existing S3MultipartUploadHandler
         const multipartHandler = new S3MultipartUploadHandler({
             onProgress: (progress) => {
-                updateFileStatusByName(uploadInfo.filename, `Uploading ${progress.fileProgress}%`, 'uploading');
+                // Update main status (without percentage, shown in status-text)
+                updateFileStatusByName(uploadInfo.filename, 'Uploading multipart...', 'uploading');
+                
+                // Update progress bar
+                if (container) {
+                    const progressBar = container.querySelector('progress');
+                    const statusText = container.querySelector('.status-text');
+                    
+                    if (progressBar) {
+                        progressBar.value = progress.fileProgress;
+                    }
+                    if (statusText) {
+                        statusText.textContent = `${progress.fileProgress}%`;
+                    }
+                    
+                    // Update detailed metrics
+                    updateUploadMetrics(uploadInfo.filename, {
+                        progress: progress.fileProgress,
+                        loaded: progress.uploadedSize,
+                        total: file.size,
+                        speed: 0, // Multipart doesn't provide speed directly
+                        remainingTime: 0
+                    });
+                }
             },
             onFileComplete: (file, result) => {
                 updateFileStatusByName(uploadInfo.filename, 'Upload completed!', 'completed');

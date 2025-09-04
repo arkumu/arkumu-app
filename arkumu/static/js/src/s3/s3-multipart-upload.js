@@ -159,6 +159,17 @@ class S3MultipartUploadHandler {
             // Step 3: Complete multipart upload
             const result = await this.completeMultipartUpload(uploadId, s3Key, parts);
             
+            // Ensure progress shows 100% after completion
+            this.onProgress({
+                file: file.name,
+                fileProgress: 100,
+                globalProgress: Math.round(((this.completedFiles + 1) / this.totalFiles) * 100),
+                uploadedSize: this.uploadedSize + (file.size - this.uploadedSize),
+                totalSize: this.totalSize,
+                completedFiles: this.completedFiles,
+                totalFiles: this.totalFiles
+            });
+            
             // Remove from active uploads
             this.activeUploads.delete(file.name);
             
@@ -192,7 +203,7 @@ class S3MultipartUploadHandler {
         formData.append('baseFolder', baseFolder);
         
         // Check if we're in folder mode and should preserve structure
-        const fileInput = document.getElementById('file-input');
+        const fileInput = document.getElementById('file-input') || document.getElementById('dashboard-file-picker');
         const isFolderMode = fileInput && fileInput.hasAttribute('webkitdirectory');
         
         if (isFolderMode) {
@@ -415,16 +426,33 @@ class S3MultipartUploadHandler {
      */
     updateFileProgress(file, uploadedChunks, totalChunks) {
         const fileProgress = uploadedChunks / totalChunks;
-        const chunkSize = Math.min(this.chunkSize, file.size - (uploadedChunks - 1) * this.chunkSize);
         
-        // Update global progress
-        this.uploadedSize += chunkSize;
+        // Calculate the actual bytes uploaded for this file so far
+        let bytesUploadedForFile = 0;
+        for (let i = 0; i < uploadedChunks; i++) {
+            const chunkStart = i * this.chunkSize;
+            const chunkEnd = Math.min(chunkStart + this.chunkSize, file.size);
+            bytesUploadedForFile += (chunkEnd - chunkStart);
+        }
+        
+        // For multipart uploads, recalculate total uploaded size
+        let totalUploadedBytes = 0;
+        this.activeUploads.forEach((upload, filename) => {
+            if (filename === file.name) {
+                totalUploadedBytes += bytesUploadedForFile;
+            } else if (upload.completedBytes) {
+                totalUploadedBytes += upload.completedBytes;
+            }
+        });
+        
+        // Add completed files' sizes
+        totalUploadedBytes += (this.completedFiles * file.size); // Approximate for now
         
         this.onProgress({
             file: file.name,
             fileProgress: Math.round(fileProgress * 100),
-            globalProgress: Math.round((this.uploadedSize / this.totalSize) * 100),
-            uploadedSize: this.uploadedSize,
+            globalProgress: Math.round((totalUploadedBytes / this.totalSize) * 100),
+            uploadedSize: totalUploadedBytes,
             totalSize: this.totalSize,
             completedFiles: this.completedFiles,
             totalFiles: this.totalFiles

@@ -18,9 +18,11 @@ class PresignedURLService:
     def __init__(self):
         """Initialize with singleton BaseStorageService."""
         self.base_service = BaseStorageService()
-        # Use presigned_client for browser-accessible URLs instead of s3_client
-        self.s3_client = getattr(self.base_service, 'presigned_client', self.base_service.s3_client)
-        logger.info(f"🔗 PresignedURLService initialized with client endpoint: {getattr(self.s3_client, '_endpoint', 'Unknown')}")
+        # Use presigned_client for generating browser-accessible URLs
+        # But keep s3_client for server-side operations
+        self.s3_client = self.base_service.s3_client  # For server-side operations (create_multipart_upload, etc.)
+        self.presigned_client = getattr(self.base_service, 'presigned_client', self.base_service.s3_client)  # For generating presigned URLs
+        logger.info(f"🔗 PresignedURLService initialized with client endpoint: s3({getattr(self.s3_client, '_endpoint', 'Unknown')})")
         
     def generate_upload_url(
         self, 
@@ -74,7 +76,7 @@ class PresignedURLService:
                 conditions.append({"x-amz-server-side-encryption": "AES256"})
             
             # Use PUT URLs with s3v4 signature for Dell EMC compatibility
-            put_url = self.s3_client.generate_presigned_url(
+            put_url = self.presigned_client.generate_presigned_url(
                 'put_object',
                 Params={
                     'Bucket': bucket_name,
@@ -132,7 +134,7 @@ class PresignedURLService:
             
             urls = []
             for part_number in parts:
-                url = self.s3_client.generate_presigned_url(
+                url = self.presigned_client.generate_presigned_url(
                     'upload_part',
                     Params={
                         'Bucket': bucket_name,
@@ -196,7 +198,7 @@ class PresignedURLService:
             if response_content_disposition:
                 params['ResponseContentDisposition'] = response_content_disposition
             
-            url = self.s3_client.generate_presigned_url(
+            url = self.presigned_client.generate_presigned_url(
                 'get_object',
                 Params=params,
                 ExpiresIn=expiry
