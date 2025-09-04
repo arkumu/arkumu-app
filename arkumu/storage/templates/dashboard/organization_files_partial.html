@@ -29,7 +29,7 @@
                                 </svg>
                                 <span class="text-base">{{ item.name }}</span>
                                 {% if item.file_count is not None %}
-                                    <span class="badge badge-primary badge-sm">{{ item.file_count }}</span>
+                                    <span class="badge badge-sm bg-white text-primary border border-primary/20">{{ item.file_count }}</span>
                                 {% endif %}
                             </span>
                             
@@ -52,7 +52,7 @@
                             hx-get="{% url 'storage:organization_contents_browse' %}?organization={{ organization }}&prefix={{ item.path }}"
                             hx-trigger="{% if item.name == 'data' or item.name == 'metadata' %}load, {% endif %}toggle from:closest details"
                             hx-swap="innerHTML"
-                            hx-indicator=".loading-indicator[data-folder-path='{{ item.path }}']">
+                            hx-indicator="#loading-indicator"
                             <!-- Submenu content loaded here -->
                         </ul>
                     </details>

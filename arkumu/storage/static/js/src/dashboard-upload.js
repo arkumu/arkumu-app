@@ -1,5 +1,125 @@
 // Dashboard Upload System - Async Upload with HTMX Integration
 
+// Debug logging configuration - set to false in production
+const DEBUG_UPLOADS = window.location.hostname === 'localhost' || window.location.search.includes('debug=true');
+
+// Conditional logging functions
+const debugLog = DEBUG_UPLOADS ? console.log.bind(console) : () => {};
+const debugError = DEBUG_UPLOADS ? console.error.bind(console) : () => {};
+
+// Global upload tracker for coordinating multiple uploads
+const uploadTracker = {
+    activeUploads: new Map(), // filename -> upload state
+    totalFiles: 0,
+    completedFiles: 0,
+    failedFiles: 0,
+    totalBytes: 0,
+    uploadedBytes: 0,
+    startTime: null,
+    
+    startSession(files) {
+        this.totalFiles = files.length;
+        this.completedFiles = 0;
+        this.failedFiles = 0;
+        this.totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+        this.uploadedBytes = 0;
+        this.startTime = Date.now();
+        this.activeUploads.clear();
+    },
+    
+    trackFile(filename, size) {
+        this.activeUploads.set(filename, {
+            size: size,
+            uploadedBytes: 0,
+            progress: 0,
+            status: 'queued',
+            startTime: null
+        });
+    },
+    
+    updateFileProgress(filename, uploadedBytes, totalBytes) {
+        const file = this.activeUploads.get(filename);
+        if (file) {
+            file.uploadedBytes = uploadedBytes;
+            file.progress = (uploadedBytes / totalBytes) * 100;
+            file.status = 'uploading';
+            if (!file.startTime) {
+                file.startTime = Date.now();
+            }
+            
+            // Update global progress
+            this.calculateGlobalProgress();
+        }
+    },
+    
+    completeFile(filename) {
+        const file = this.activeUploads.get(filename);
+        if (file) {
+            file.status = 'completed';
+            file.progress = 100;
+            this.completedFiles++;
+            this.uploadedBytes += file.size;
+            this.calculateGlobalProgress();
+        }
+    },
+    
+    failFile(filename) {
+        const file = this.activeUploads.get(filename);
+        if (file) {
+            file.status = 'failed';
+            this.failedFiles++;
+            this.calculateGlobalProgress();
+        }
+    },
+    
+    calculateGlobalProgress() {
+        // Update overall folder progress if exists
+        const overallProgress = document.getElementById('folder-overall-progress');
+        const uploadStatus = document.getElementById('folder-upload-status');
+        
+        if (this.totalFiles > 0) {
+            const processedFiles = this.completedFiles + this.failedFiles;
+            const progress = (processedFiles / this.totalFiles) * 100;
+            
+            if (overallProgress) {
+                overallProgress.value = progress;
+            }
+            if (uploadStatus) {
+                uploadStatus.textContent = `${processedFiles} / ${this.totalFiles} files`;
+            }
+            
+            // Calculate and display overall speed
+            const elapsed = (Date.now() - this.startTime) / 1000;
+            if (elapsed > 0 && this.uploadedBytes > 0) {
+                const speed = this.uploadedBytes / elapsed;
+                const speedElement = document.getElementById('folder-upload-speed');
+                if (speedElement) {
+                    speedElement.textContent = formatSpeed(speed);
+                }
+                
+                // Calculate ETA
+                const remainingBytes = this.totalBytes - this.uploadedBytes;
+                const eta = remainingBytes / speed;
+                const etaElement = document.getElementById('folder-upload-eta');
+                if (etaElement) {
+                    etaElement.textContent = `ETA: ${formatTime(eta)}`;
+                }
+            }
+        }
+    },
+    
+    getStatus() {
+        return {
+            totalFiles: this.totalFiles,
+            completedFiles: this.completedFiles,
+            failedFiles: this.failedFiles,
+            progress: this.totalFiles > 0 ? ((this.completedFiles + this.failedFiles) / this.totalFiles) * 100 : 0,
+            uploadedBytes: this.uploadedBytes,
+            totalBytes: this.totalBytes
+        };
+    }
+};
+
 // Upload mode switching for dashboard
 function switchToFilesMode() {
     const fileInput = document.getElementById('dashboard-file-picker');
@@ -24,7 +144,7 @@ function switchToFilesMode() {
         folderBtn.classList.add('btn-outline');
     }
     
-    console.log('📄 Dashboard: Switched to files mode');
+    debugLog('📄 Dashboard: Switched to files mode');
 }
 
 function switchToFolderMode() {
@@ -50,7 +170,7 @@ function switchToFolderMode() {
         filesBtn.classList.add('btn-outline');
     }
     
-    console.log('📁 Dashboard: Switched to folder mode');
+    debugLog('📁 Dashboard: Switched to folder mode');
 }
 
 // Async Upload System for Dashboard
@@ -83,7 +203,7 @@ async function initializeDashboardUpload() {
         // Build folder path: just baseFolder
         const folderPath = baseFolder;
         
-        console.log('🚀 ASYNC: Starting async upload session');
+        debugLog('🚀 ASYNC: Starting async upload session');
         
         try {
             // Phase 1: Initialize upload session and get presigned URLs
@@ -103,13 +223,17 @@ async function initializeDashboardUpload() {
             await startUploads(sessionResponse.results || sessionResponse.uploads, files);
             
         } catch (error) {
-            console.error('❌ ASYNC: Upload failed:', error);
+            debugError('❌ ASYNC: Upload failed:', error);
             showUploadError(uploadArea, 'Upload failed: ' + error.message);
         }
     });
 }
 
 async function initializeAsyncUploadSession(files, folderPath) {
+    // Get the selected organization
+    const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
+    const organization = orgSelector ? orgSelector.value : '';
+    
     const batchData = {
         files: files.map(file => ({
             name: file.name,
@@ -117,10 +241,11 @@ async function initializeAsyncUploadSession(files, folderPath) {
             size: file.size,
             type: file.type
         })),
-        folder: folderPath
+        folder: folderPath,
+        organization: organization
     };
     
-    console.log('📡 ASYNC: Initializing session with', files.length, 'files');
+    debugLog('📡 ASYNC: Initializing session with', files.length, 'files');
     
     const response = await fetch('/storage/upload/presigned/batch/', {
         method: 'POST',
@@ -156,20 +281,19 @@ function createFolderUploadSummary(uploads, uploadArea) {
     summaryContainer.innerHTML = `
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body p-4">
-                <!-- Action Buttons -->
-                <div class="flex gap-2 mb-4">
-                    <button class="btn btn-primary flex-1" onclick="startAllUploads()">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        Start Upload
-                    </button>
-                    <button class="btn btn-ghost" onclick="cancelFolderUpload()" title="Cancel entire upload">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        Cancel All
-                    </button>
+                <!-- Overall Progress -->
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-sm font-semibold">Upload Progress</h3>
+                        <span class="text-sm text-base-content/70">
+                            <span id="folder-upload-status">0 / ${uploads.length} files</span>
+                        </span>
+                    </div>
+                    <progress id="folder-overall-progress" class="progress progress-primary w-full" value="0" max="100"></progress>
+                    <div class="flex justify-between text-xs text-base-content/60 mt-1">
+                        <span id="folder-upload-speed"></span>
+                        <span id="folder-upload-eta"></span>
+                    </div>
                 </div>
                 
                 <!-- Collapsible File List -->
@@ -191,11 +315,17 @@ function createFolderUploadSummary(uploads, uploadArea) {
                                             `<div class="text-xs opacity-60">${upload.relativePath}</div>` : 
                                             ''
                                         }
+                                        <div class="upload-progress hidden mt-1">
+                                            <progress class="progress progress-primary progress-xs w-full" value="0" max="100"></progress>
+                                        </div>
+                                    </div>
+                                    <div class="upload-progress-indicator hidden">
+                                        <span class="text-xs status-text">0%</span>
                                     </div>
                                     <div class="status-badge">
                                         <div class="badge badge-outline badge-xs">Ready</div>
                                     </div>
-                                    <button class="btn btn-ghost btn-xs btn-square" onclick="removeUploadByFilename('${upload.filename}')" title="Remove file">
+                                    <button class="btn btn-ghost btn-xs btn-square remove-file-btn" onclick="removeUploadByFilename('${upload.filename}')" title="Remove file">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                         </svg>
@@ -237,7 +367,7 @@ function createIndividualFilesList(uploads, uploadArea) {
         listItem.dataset.filename = uploadInfo.filename;
         
         const fileIcon = getFileIconForType(uploadInfo.filename);
-        const fileSize = formatFileSize(uploadInfo.file_size || 0);
+        // File size shown in modal when clicked, not needed in cards
         
         listItem.innerHTML = `
             <!-- File Icon -->
@@ -248,7 +378,7 @@ function createIndividualFilesList(uploads, uploadArea) {
             <!-- File Info (Growing Column) -->
             <div class="list-col-grow">
                 <div class="font-medium text-base-content">${uploadInfo.filename}</div>
-                <div class="text-xs opacity-60 file-status">Ready to upload • ${fileSize}</div>
+                <div class="text-xs opacity-60 file-status">Ready to upload</div>
             </div>
             
             <!-- Upload Progress -->
@@ -256,6 +386,7 @@ function createIndividualFilesList(uploads, uploadArea) {
                 <div class="flex items-center gap-2">
                     <span class="loading loading-spinner loading-sm"></span>
                     <span class="text-xs status-text">0%</span>
+                    <span class="text-xs upload-speed hidden"></span>
                 </div>
             </div>
             
@@ -274,6 +405,10 @@ function createIndividualFilesList(uploads, uploadArea) {
             <!-- Full-width progress bar (hidden by default) -->
             <div class="upload-progress list-col-wrap hidden mt-2">
                 <progress class="progress progress-primary w-full" value="0" max="100"></progress>
+                <div class="flex justify-between text-xs text-base-content/60 mt-1">
+                    <span class="upload-details"></span>
+                    <span class="upload-eta"></span>
+                </div>
             </div>
         `;
         
@@ -282,27 +417,34 @@ function createIndividualFilesList(uploads, uploadArea) {
 }
 
 async function startUploads(uploads, files) {
-    console.log('🚀 Starting uploads for', uploads.length, 'files');
+    debugLog('🚀 Starting uploads for', uploads.length, 'files');
+    
+    // Initialize upload tracker
+    uploadTracker.startSession(files);
     
     // Create a map of filename to file object
     const fileMap = {};
     files.forEach(file => {
         fileMap[file.name] = file;
+        uploadTracker.trackFile(file.name, file.size);
     });
     
     // Upload each file
     const uploadPromises = uploads.map(async (uploadInfo) => {
         const file = fileMap[uploadInfo.filename];
         if (!file) {
-            console.error('❌ File not found:', uploadInfo.filename);
+            debugError('❌ File not found:', uploadInfo.filename);
+            uploadTracker.failFile(uploadInfo.filename);
             return;
         }
         
         try {
             await uploadFileDirectly(uploadInfo, file);
+            uploadTracker.completeFile(uploadInfo.filename);
         } catch (error) {
-            console.error('❌ Upload failed for', uploadInfo.filename, error);
+            debugError('❌ Upload failed for', uploadInfo.filename, error);
             updateFileStatus(uploadInfo.filename, 'Upload failed: ' + error.message, 'failed');
+            uploadTracker.failFile(uploadInfo.filename);
         }
     });
     
@@ -318,8 +460,8 @@ async function startUploads(uploads, files) {
     showUploadVerifying(uploads.length, uploadedFiles);
     
     // Add small delay to improve S3 consistency before refresh
-    console.log('⏳ Waiting 1.5s for S3 eventual consistency...');
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    debugLog('⏳ Waiting 0.5s for S3 eventual consistency...');
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // Refresh file browser with expected files list for verification
     await refreshFileBrowserOOB(uploadedFiles);
@@ -329,40 +471,64 @@ async function uploadFileDirectly(uploadInfo, file) {
     const container = document.querySelector(`[data-filename="${uploadInfo.filename}"]`);
     const progressBar = container?.querySelector('progress');
     const statusText = container?.querySelector('.status-text');
+    const uploadDetails = container?.querySelector('.upload-details');
+    const uploadEta = container?.querySelector('.upload-eta');
+    const uploadSpeed = container?.querySelector('.upload-speed');
     
-    console.log('📤 Uploading to S3:', uploadInfo.filename);
+    debugLog('📤 Uploading to S3:', uploadInfo.filename);
     
-    // Update status to uploading
-    updateFileStatusByName(uploadInfo.filename, 'Uploading...', 'uploading');
-    
-    // Create FormData for S3 upload
-    const formData = new FormData();
+    // Update status to uploading and show progress bar immediately
+    updateFileStatusByName(uploadInfo.filename, 'Starting upload...', 'uploading');
+    showUploadProgress(container);
     
     if (uploadInfo.type === 'single') {
-        // Single file upload with presigned URL
-        Object.entries(uploadInfo.fields).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-        formData.append('file', file);
+        // Debug: Log what method we received
+        debugLog('📊 Upload method received:', uploadInfo.method);
+        debugLog('📊 Full uploadInfo:', uploadInfo);
         
-        return uploadWithProgress(uploadInfo.url, formData, uploadInfo.filename, progressBar, statusText, file.size);
+        // Check upload method
+        if (uploadInfo.method === 'PUT') {
+            // Direct PUT upload with progress tracking
+            debugLog('✅ Using PUT method with AWS4 signature');
+            return uploadWithProgressPUT(uploadInfo.url, file, uploadInfo.filename, progressBar, statusText, file.size, uploadInfo.upload_file_id);
+        } else if (uploadInfo.method === 'FORM_POST') {
+            // Form-based upload fallback
+            debugLog('⚠️ Using FORM_POST method - no progress tracking');
+            return uploadWithHiddenForm(uploadInfo, file, progressBar, statusText);
+        } else {
+            // FormData POST upload for MinIO/AWS
+            const formData = new FormData();
+            Object.entries(uploadInfo.fields).forEach(([key, value]) => {
+                formData.append(key, value);
+            });
+            formData.append('file', file);
+            
+            return uploadWithProgress(uploadInfo.url, formData, uploadInfo.filename, progressBar, statusText, file.size, uploadInfo.upload_file_id);
+        }
         
     } else if (uploadInfo.type === 'multipart') {
         // TODO: Implement multipart upload if needed
-        console.log('📦 Multipart upload not implemented yet for:', uploadInfo.filename);
-        updateFileStatusByName(uploadInfo.filename, 'Multipart not implemented', 'failed');
-        throw new Error('Multipart upload not implemented');
+        // Use S3 multipart upload handler for large files
+        debugLog('📦 Starting S3 multipart upload for:', uploadInfo.filename);
+        updateFileStatusByName(uploadInfo.filename, 'Initializing multipart upload...', 'uploading');
+        return await handleMultipartUpload(uploadInfo, file);
     }
 }
 
-async function uploadWithProgress(url, formData, filename, progressBar, statusText, fileSize) {
+async function uploadWithProgress(url, formData, filename, progressBar, statusText, fileSize, uploadFileId) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+        let lastLoaded = 0;
+        let lastTime = startTime;
         
         // Handle upload progress
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
+                const currentTime = Date.now();
+                const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+                
                 if (progressBar) {
                     progressBar.value = percentComplete;
                 }
@@ -370,19 +536,63 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                     statusText.textContent = `${percentComplete.toFixed(0)}%`;
                 }
                 
-                // Update file status text
-                updateFileStatusByName(filename, `Uploading ${percentComplete.toFixed(0)}% • ${formatFileSize(fileSize)}`, 'uploading');
+                // Calculate upload speed and ETA
+                if (timeDiff > 0.5) { // Update every 500ms
+                    const bytesUploaded = e.loaded - lastLoaded;
+                    const uploadSpeed = bytesUploaded / timeDiff;
+                    const remainingBytes = e.total - e.loaded;
+                    const remainingTime = remainingBytes / uploadSpeed;
+                    
+                    updateUploadMetrics(filename, {
+                        progress: percentComplete,
+                        loaded: e.loaded,
+                        total: e.total,
+                        speed: uploadSpeed,
+                        remainingTime: remainingTime
+                    });
+                    
+                    lastLoaded = e.loaded;
+                    lastTime = currentTime;
+                }
+                
+                // Update tracker
+                uploadTracker.updateFileProgress(filename, e.loaded, e.total);
+                
+                // Update file status text (don't repeat percentage, it's shown in status-text)
+                updateFileStatusByName(filename, 'Uploading...', 'uploading');
             }
         });
         
         // Handle upload completion
-        xhr.addEventListener('load', function() {
+        xhr.addEventListener('load', async function() {
             if (xhr.status >= 200 && xhr.status < 300) {
-                console.log('✅ S3 upload completed:', filename);
+                debugLog('✅ S3 upload completed:', filename);
                 updateFileStatusByName(filename, 'Upload completed!', 'completed');
+                
+                // Notify server that file was uploaded
+                if (uploadFileId) {
+                    try {
+                        const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': getCsrfToken(),
+                            },
+                            credentials: 'include'
+                        });
+                        
+                        if (response.ok) {
+                            debugLog('✅ Server notified of upload:', filename);
+                        } else {
+                            debugError('⚠️ Failed to notify server of upload:', filename);
+                        }
+                    } catch (error) {
+                        debugError('⚠️ Error notifying server:', error);
+                    }
+                }
+                
                 resolve();
             } else {
-                console.error('❌ Upload failed:', xhr.status, xhr.statusText);
+                debugError('❌ Upload failed:', xhr.status, xhr.statusText);
                 updateFileStatusByName(filename, 'Upload failed: ' + xhr.statusText, 'failed');
                 reject(new Error('Upload failed: ' + xhr.statusText));
             }
@@ -390,7 +600,7 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
         
         // Handle upload error
         xhr.addEventListener('error', function() {
-            console.error('❌ Network error during upload');
+            debugError('❌ Network error during upload');
             updateFileStatusByName(filename, 'Network error during upload', 'failed');
             reject(new Error('Network error during upload'));
         });
@@ -398,6 +608,171 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
         // Send to S3
         xhr.open('POST', url);
         xhr.send(formData);
+    });
+}
+
+// Hidden form upload - bypasses CORS completely!
+async function uploadWithHiddenForm(uploadInfo, file, progressBar, statusText) {
+    return new Promise((resolve, reject) => {
+        console.log('📝 Using hidden form to bypass CORS for:', uploadInfo.filename);
+        
+        // Create hidden iframe for form target
+        const iframe = document.createElement('iframe');
+        iframe.name = 'upload-iframe-' + Date.now();
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        
+        // Create form
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = uploadInfo.url;
+        form.enctype = 'multipart/form-data';
+        form.target = iframe.name;
+        form.style.display = 'none';
+        
+        // Add all fields from presigned POST
+        Object.entries(uploadInfo.fields).forEach(([key, value]) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = value;
+            form.appendChild(input);
+        });
+        
+        // Add file input
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.name = 'file';
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+        form.appendChild(fileInput);
+        
+        document.body.appendChild(form);
+        
+        // Listen for iframe load (upload complete)
+        iframe.onload = () => {
+            // Check if upload succeeded
+            try {
+                // S3 returns empty response on success
+                console.log('✅ Form upload completed:', uploadInfo.filename);
+                updateFileStatusByName(uploadInfo.filename, 'Upload completed!', 'completed');
+                resolve();
+            } catch (e) {
+                console.error('❌ Form upload may have failed:', e);
+                updateFileStatusByName(uploadInfo.filename, 'Upload status unknown', 'warning');
+                resolve(); // Resolve anyway since we can't get error details
+            } finally {
+                // Cleanup
+                setTimeout(() => {
+                    document.body.removeChild(form);
+                    document.body.removeChild(iframe);
+                }, 1000);
+            }
+        };
+        
+        // Submit form
+        console.log('📤 Submitting form for:', uploadInfo.filename);
+        updateFileStatusByName(uploadInfo.filename, 'Uploading (no progress available)...', 'uploading');
+        form.submit();
+    });
+}
+
+// New function for PUT uploads (Dell EMC S3)
+async function uploadWithProgressPUT(url, file, filename, progressBar, statusText, fileSize, uploadFileId) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+        let lastLoaded = 0;
+        let lastTime = startTime;
+        
+        // Handle upload progress
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                const currentTime = Date.now();
+                const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+                
+                if (progressBar) {
+                    progressBar.value = percentComplete;
+                }
+                if (statusText) {
+                    statusText.textContent = `${percentComplete.toFixed(0)}%`;
+                }
+                
+                // Calculate upload speed and ETA
+                if (timeDiff > 0.5) { // Update every 500ms
+                    const bytesUploaded = e.loaded - lastLoaded;
+                    const uploadSpeed = bytesUploaded / timeDiff;
+                    const remainingBytes = e.total - e.loaded;
+                    const remainingTime = remainingBytes / uploadSpeed;
+                    
+                    updateUploadMetrics(filename, {
+                        progress: percentComplete,
+                        loaded: e.loaded,
+                        total: e.total,
+                        speed: uploadSpeed,
+                        remainingTime: remainingTime
+                    });
+                    
+                    lastLoaded = e.loaded;
+                    lastTime = currentTime;
+                }
+                
+                // Update tracker
+                uploadTracker.updateFileProgress(filename, e.loaded, e.total);
+                
+                // Update file status text (don't repeat percentage, it's shown in status-text)
+                updateFileStatusByName(filename, 'Uploading...', 'uploading');
+            }
+        });
+        
+        // Handle upload completion
+        xhr.addEventListener('load', async function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                debugLog('✅ S3 PUT upload completed:', filename);
+                updateFileStatusByName(filename, 'Upload completed!', 'completed');
+                
+                // Notify server that file was uploaded
+                if (uploadFileId) {
+                    try {
+                        const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': getCsrfToken(),
+                            },
+                            credentials: 'include'
+                        });
+                        
+                        if (response.ok) {
+                            debugLog('✅ Server notified of upload:', filename);
+                        } else {
+                            debugError('⚠️ Failed to notify server of upload:', filename);
+                        }
+                    } catch (error) {
+                        debugError('⚠️ Error notifying server:', error);
+                    }
+                }
+                
+                resolve();
+            } else {
+                debugError('❌ PUT upload failed:', xhr.status, xhr.statusText);
+                updateFileStatusByName(filename, 'Upload failed: ' + xhr.statusText, 'failed');
+                reject(new Error('Upload failed: ' + xhr.statusText));
+            }
+        });
+        
+        // Handle upload error
+        xhr.addEventListener('error', function() {
+            debugError('❌ Network error during PUT upload');
+            updateFileStatusByName(filename, 'Network error during upload', 'failed');
+            reject(new Error('Network error during upload'));
+        });
+        
+        // Send PUT request with file directly in body
+        xhr.open('PUT', url);
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+        xhr.send(file);
     });
 }
 
@@ -448,8 +823,193 @@ function showUploadComplete(fileCount) {
     uploadArea.appendChild(completionMessage);
 }
 
-// Refresh file browser with retry logic for S3 consistency
-async function refreshFileBrowserOOB(expectedFiles = []) {
+// Optimistic Updates: Show files immediately with verification badges
+function showFilesOptimistically(uploadedFiles) {
+    const fileBrowserContent = document.getElementById('file-browser-content');
+    if (!fileBrowserContent) {
+        debugError('❌ File browser content not found');
+        return;
+    }
+    
+    console.log('📋 OPTIMISTIC: Adding', uploadedFiles.length, 'files to file browser');
+    
+    // Create optimistic file entries
+    uploadedFiles.forEach(file => {
+        const fileElement = createOptimisticFileElement(file);
+        // Find the file list and prepend new files
+        const fileList = fileBrowserContent.querySelector('.file-list, .list, [class*="file"]');
+        if (fileList) {
+            fileList.insertBefore(fileElement, fileList.firstChild);
+        } else {
+            // If no file list exists, create one
+            const listContainer = document.createElement('div');
+            listContainer.className = 'optimistic-file-list space-y-2';
+            listContainer.appendChild(fileElement);
+            fileBrowserContent.insertBefore(listContainer, fileBrowserContent.firstChild);
+        }
+    });
+    
+    console.log('✅ OPTIMISTIC: Files displayed immediately');
+}
+
+function createOptimisticFileElement(file) {
+    const fileElement = document.createElement('div');
+    fileElement.className = 'file-item optimistic-file p-3 bg-base-100 border border-base-300 rounded-lg';
+    fileElement.dataset.filename = file.filename;
+    fileElement.dataset.optimistic = 'true';
+    
+    const extension = file.filename.split('.').pop().toLowerCase();
+    const icon = getFileIconForType(file.filename);
+    
+    fileElement.innerHTML = `
+        <div class="flex items-center gap-3">
+            <!-- File Icon -->
+            <div class="flex-shrink-0">
+                ${icon}
+            </div>
+            
+            <!-- File Info -->
+            <div class="flex-1 min-w-0">
+                <div class="font-medium text-base-content truncate">${file.filename}</div>
+                <div class="text-sm text-base-content/60">${file.path !== file.filename ? file.path : ''}</div>
+            </div>
+            
+            <!-- Verification Status Badge -->
+            <div class="verification-badge">
+                <div class="badge badge-warning badge-sm gap-1">
+                    <span class="loading loading-spinner loading-xs"></span>
+                    Verifying
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return fileElement;
+}
+
+// Verification polling for real-time updates
+function startVerificationPolling(uploadedFiles) {
+    console.log('🔄 POLLING: Starting verification status polling');
+    
+    const pollInterval = 2000; // Poll every 2 seconds
+    const maxPolls = 30; // Stop after 60 seconds
+    let pollCount = 0;
+    
+    const polling = setInterval(async () => {
+        pollCount++;
+        console.log(`📡 POLLING: Check ${pollCount}/${maxPolls}`);
+        
+        try {
+            // Get the organization for API call
+            const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
+            const organization = orgSelector ? orgSelector.value : '';
+            
+            if (!organization) {
+                console.log('⚠️ POLLING: No organization selected, stopping');
+                clearInterval(polling);
+                return;
+            }
+            
+            // Check verification status
+            const response = await fetch(`/storage/api/verification-status/${organization}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken(),
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    files: uploadedFiles.map(f => f.filename)
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                updateVerificationStatus(data.files || []);
+                
+                // Check if all files are verified
+                const allVerified = data.files.every(f => f.status === 'verified' || f.status === 'failed');
+                if (allVerified) {
+                    console.log('✅ POLLING: All files verified, stopping');
+                    clearInterval(polling);
+                    showFinalUploadSuccess(uploadedFiles.length);
+                }
+            }
+            
+        } catch (error) {
+            console.error('❌ POLLING: Error checking status:', error);
+        }
+        
+        // Stop polling after max attempts
+        if (pollCount >= maxPolls) {
+            console.log('⏰ POLLING: Max attempts reached, stopping');
+            clearInterval(polling);
+        }
+        
+    }, pollInterval);
+}
+
+function updateVerificationStatus(fileStatuses) {
+    fileStatuses.forEach(fileStatus => {
+        const fileElement = document.querySelector(`[data-filename="${fileStatus.filename}"][data-optimistic="true"]`);
+        if (!fileElement) return;
+        
+        const badge = fileElement.querySelector('.verification-badge');
+        if (!badge) return;
+        
+        let badgeHTML = '';
+        switch (fileStatus.status) {
+            case 'verified':
+                badgeHTML = '<div class="badge badge-success badge-sm">✅ Verified</div>';
+                fileElement.classList.add('verified');
+                break;
+            case 'failed':
+                badgeHTML = `<div class="badge badge-error badge-sm">❌ Failed</div>`;
+                fileElement.classList.add('failed');
+                break;
+            case 'verifying':
+            default:
+                badgeHTML = `
+                    <div class="badge badge-warning badge-sm gap-1">
+                        <span class="loading loading-spinner loading-xs"></span>
+                        Verifying
+                    </div>
+                `;
+                break;
+        }
+        
+        badge.innerHTML = badgeHTML;
+    });
+}
+
+function showFinalUploadSuccess(fileCount) {
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    if (!uploadArea) return;
+    
+    // Remove verifying message if it exists
+    const verifyingMessage = document.getElementById('upload-verifying-message');
+    if (verifyingMessage) {
+        verifyingMessage.remove();
+    }
+    
+    const completionMessage = document.createElement('div');
+    completionMessage.className = 'alert alert-success mt-4';
+    completionMessage.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+        <span>🎉 All ${fileCount} files uploaded and verified!</span>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.alert').remove()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    `;
+    uploadArea.appendChild(completionMessage);
+}
+
+// Refresh file browser - simple and clean
+async function refreshFileBrowserOOB(uploadedFiles = []) {
     try {
         // Get the organization from the upload org selector
         const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
@@ -461,22 +1021,10 @@ async function refreshFileBrowserOOB(expectedFiles = []) {
         }
         
         console.log('🔄 REFRESH: Refreshing file browser for organization:', organization);
-        if (expectedFiles.length > 0) {
-            console.log('📋 REFRESH: Expecting to find files:', expectedFiles.map(f => f.filename));
-        }
         
-        // Use HTMX to refresh the file browser with retry logic for S3 consistency
+        // Use HTMX to refresh the file browser
         if (window.htmx) {
-            let url = `/storage/dashboard/refresh/${organization}/`;
-            
-            // Add expected files as query parameters for server-side verification
-            if (expectedFiles.length > 0) {
-                const params = new URLSearchParams();
-                expectedFiles.forEach((file, index) => {
-                    params.append(`expected_${index}`, file.filename);
-                });
-                url += '?' + params.toString();
-            }
+            const url = `/storage/dashboard/refresh/${organization}/`;
             
             console.log('📡 REFRESH: Fetching fresh file list from:', url);
             
@@ -486,27 +1034,14 @@ async function refreshFileBrowserOOB(expectedFiles = []) {
                 swap: 'innerHTML'
             });
             
-            // Set up a listener to show final success when files are confirmed
-            if (expectedFiles.length > 0) {
-                // Listen for successful refresh completion
-                document.addEventListener('htmx:afterRequest', function onRefreshComplete(event) {
-                    if (event.detail.xhr.responseURL && event.detail.xhr.responseURL.includes('/storage/dashboard/refresh/')) {
-                        // Check if the response doesn't contain retry messages
-                        const responseText = event.detail.xhr.responseText;
-                        if (responseText && !responseText.includes('Waiting for uploaded files') && !responseText.includes('Loading files')) {
-                            // Files were successfully found, show final success
-                            setTimeout(() => {
-                                showUploadComplete(expectedFiles.length);
-                            }, 500); // Small delay to let DOM settle
-                            
-                            // Remove this listener
-                            document.removeEventListener('htmx:afterRequest', onRefreshComplete);
-                        }
-                    }
-                });
+            // Show success message after refresh
+            if (uploadedFiles.length > 0) {
+                setTimeout(() => {
+                    showUploadComplete(uploadedFiles.length);
+                }, 1000); // Give refresh time to complete
             }
             
-            console.log('✅ REFRESH: File browser refresh initiated with S3 consistency handling');
+            console.log('✅ REFRESH: File browser refresh initiated');
         } else {
             console.error('❌ REFRESH: HTMX not available');
         }
@@ -533,76 +1068,95 @@ function updateSessionStatus(sessionStatus) {
 
 function updateFolderUploadProgress(sessionStatus) {
     // Update overall progress bar
-    const progressBar = document.getElementById('folder-progress-bar');
-    const progressText = document.querySelector('.folder-progress-text');
-    const completedCount = document.getElementById('completed-count');
-    const failedCount = document.getElementById('failed-count');
+    const overallProgress = document.getElementById('folder-overall-progress');
+    const uploadStatus = document.getElementById('folder-upload-status');
+    const uploadSpeed = document.getElementById('folder-upload-speed');
+    const uploadEta = document.getElementById('folder-upload-eta');
     
-    if (progressBar && sessionStatus.total_files > 0) {
-        const progress = ((sessionStatus.completed_files + sessionStatus.failed_files) / sessionStatus.total_files) * 100;
-        progressBar.value = progress;
+    const completedFiles = sessionStatus.completed_files || 0;
+    const failedFiles = sessionStatus.failed_files || 0;
+    const totalFiles = sessionStatus.total_files || 0;
+    const processedFiles = completedFiles + failedFiles;
+    
+    if (overallProgress && totalFiles > 0) {
+        const progress = (processedFiles / totalFiles) * 100;
+        overallProgress.value = progress;
     }
     
-    if (progressText) {
-        if (sessionStatus.status === 'completed') {
-            progressText.textContent = 'Upload completed!';
-        } else if (sessionStatus.status === 'failed') {
-            progressText.textContent = 'Upload failed';
-        } else {
-            progressText.textContent = `${sessionStatus.completed_files + sessionStatus.failed_files}/${sessionStatus.total_files} processed`;
-        }
-    }
-    
-    if (completedCount) {
-        completedCount.textContent = sessionStatus.completed_files || 0;
-    }
-    
-    if (failedCount) {
-        failedCount.textContent = sessionStatus.failed_files || 0;
+    if (uploadStatus) {
+        uploadStatus.textContent = `${processedFiles} / ${totalFiles} files`;
     }
     
     // Update individual file statuses in the collapsible list if visible
-    sessionStatus.files.forEach(fileStatus => {
-        const fileContainer = document.querySelector(`[data-file-id*="${fileStatus.filename}"]`);
+    sessionStatus.files?.forEach(fileStatus => {
+        const fileContainer = document.querySelector(`[data-filename="${fileStatus.filename}"]`);
         if (fileContainer) {
             const statusBadge = fileContainer.querySelector('.status-badge');
+            const progressBar = fileContainer.querySelector('.upload-progress progress');
+            const progressDiv = fileContainer.querySelector('.upload-progress');
+            const progressIndicator = fileContainer.querySelector('.upload-progress-indicator');
+            const statusText = fileContainer.querySelector('.status-text');
+            
             if (statusBadge) {
                 let badgeClass = 'badge-outline';
-                let statusText = fileStatus.status;
+                let statusLabel = fileStatus.status;
                 
                 switch (fileStatus.status) {
                     case 'completed':
                         badgeClass = 'badge-success';
-                        statusText = '✅ Done';
+                        statusLabel = '✅ Done';
+                        if (progressDiv) progressDiv.classList.add('hidden');
+                        if (progressIndicator) progressIndicator.classList.add('hidden');
                         break;
                     case 'failed':
                         badgeClass = 'badge-error';
-                        statusText = '❌ Failed';
+                        statusLabel = '❌ Failed';
+                        if (progressDiv) progressDiv.classList.add('hidden');
+                        if (progressIndicator) progressIndicator.classList.add('hidden');
                         break;
+                    case 'uploading':
                     case 'processing':
-                        badgeClass = 'badge-warning';
-                        statusText = 'Processing';
+                        badgeClass = 'badge-info animate-pulse';
+                        statusLabel = 'Uploading';
+                        if (progressDiv) progressDiv.classList.remove('hidden');
+                        if (progressIndicator) progressIndicator.classList.remove('hidden');
                         break;
-                    case 'uploaded':
-                        badgeClass = 'badge-info';
-                        statusText = 'Uploaded';
+                    case 'queued':
+                    default:
+                        badgeClass = 'badge-outline';
+                        statusLabel = 'Queued';
                         break;
                 }
                 
-                statusBadge.innerHTML = `<div class="badge ${badgeClass} badge-xs">${statusText}</div>`;
+                statusBadge.innerHTML = `<div class="badge ${badgeClass} badge-xs">${statusLabel}</div>`;
+            }
+            
+            // Update progress if available
+            if (fileStatus.progress !== undefined) {
+                if (progressBar) {
+                    progressBar.value = fileStatus.progress;
+                }
+                if (statusText) {
+                    statusText.textContent = `${Math.round(fileStatus.progress)}%`;
+                }
             }
         }
     });
 }
 
 function updateFileStatus(fileId, statusText, status) {
-    const container = document.querySelector(`[data-file-id="${fileId}"]`);
+    // Try to find container by file-id or filename
+    let container = document.querySelector(`[data-file-id="${fileId}"]`);
+    if (!container) {
+        container = document.querySelector(`[data-filename="${fileId}"]`);
+    }
     if (!container) return;
     
     const statusElement = container.querySelector('.file-status');
     const statusBadge = container.querySelector('.status-badge');
     const progressDiv = container.querySelector('.upload-progress');
     const progressIndicator = container.querySelector('.upload-progress-indicator');
+    const progressBar = container.querySelector('progress');
     const removeBtn = container.querySelector('.remove-file-btn');
     
     if (statusElement) {
@@ -612,7 +1166,7 @@ function updateFileStatus(fileId, statusText, status) {
     // Update status badge and visual indicators
     if (status === 'uploading') {
         if (statusBadge) {
-            statusBadge.innerHTML = '<div class="badge badge-info badge-sm">Uploading</div>';
+            statusBadge.innerHTML = '<div class="badge badge-info badge-sm animate-pulse">Uploading</div>';
         }
         if (progressIndicator) {
             progressIndicator.classList.remove('hidden');
@@ -640,17 +1194,34 @@ function updateFileStatus(fileId, statusText, status) {
             progressDiv.classList.add('hidden'); // Hide progress bar during processing
         }
     } else if (status === 'completed') {
+        // Set progress to 100% before hiding
+        if (progressBar) {
+            progressBar.value = 100;
+        }
+        
+        // Update badge to success
         if (statusBadge) {
             statusBadge.innerHTML = '<div class="badge badge-success badge-sm">✅ Complete</div>';
         }
+        
+        // Hide all progress indicators
         if (progressIndicator) {
             progressIndicator.classList.add('hidden');
         }
         if (progressDiv) {
-            progressDiv.classList.add('hidden');
+            setTimeout(() => {
+                progressDiv.classList.add('hidden');
+            }, 500); // Small delay to show 100% before hiding
         }
+        
         // Add subtle success styling to the entire row
+        container.classList.remove('bg-warning/5', 'bg-error/5');
         container.classList.add('bg-success/5');
+        
+        // Hide remove button for completed uploads
+        if (removeBtn) {
+            removeBtn.style.display = 'none';
+        }
     } else if (status === 'failed') {
         if (statusBadge) {
             statusBadge.innerHTML = '<div class="badge badge-error badge-sm">❌ Failed</div>';
@@ -662,6 +1233,7 @@ function updateFileStatus(fileId, statusText, status) {
             progressDiv.classList.add('hidden');
         }
         // Add subtle error styling to the entire row
+        container.classList.remove('bg-success/5', 'bg-warning/5');
         container.classList.add('bg-error/5');
         if (removeBtn) {
             removeBtn.style.display = 'block'; // Show remove button again for failed uploads
@@ -670,19 +1242,24 @@ function updateFileStatus(fileId, statusText, status) {
 }
 
 function updateFileStatusByName(filename, status, error) {
-    const containers = document.querySelectorAll('.upload-file-container');
+    // Find containers by data-filename attribute (more reliable)
+    const containers = document.querySelectorAll(`[data-filename="${filename}"]`);
     containers.forEach(container => {
-        const nameElement = container.querySelector('h3');
-        if (nameElement && nameElement.textContent === filename) {
-            const statusElement = container.querySelector('.file-status');
-            if (statusElement) {
-                statusElement.textContent = status;
-            }
-            
-            if (status === 'completed') {
-                updateFileStatus(container.dataset.fileId, 'Upload completed successfully!', 'completed');
-            } else if (status === 'failed') {
-                updateFileStatus(container.dataset.fileId, error || 'Upload failed', 'failed');
+        const statusElement = container.querySelector('.file-status');
+        if (statusElement) {
+            statusElement.textContent = status;
+        }
+        
+        // Call the main updateFileStatus function to handle visual updates
+        if (status.includes('completed') || status.includes('Complete')) {
+            updateFileStatus(container.dataset.fileId || filename, 'Upload completed successfully!', 'completed');
+        } else if (status.includes('failed') || status.includes('Failed')) {
+            updateFileStatus(container.dataset.fileId || filename, error || 'Upload failed', 'failed');
+        } else if (status.includes('Uploading')) {
+            // Keep uploading status
+            const statusBadge = container.querySelector('.status-badge');
+            if (statusBadge) {
+                statusBadge.innerHTML = '<div class="badge badge-info badge-sm animate-pulse">Uploading</div>';
             }
         }
     });
@@ -1003,6 +1580,96 @@ function getCsrfToken() {
     return cookieValue;
 }
 
+// Show upload progress UI
+function showUploadProgress(container) {
+    if (!container) return;
+    
+    const progressIndicator = container.querySelector('.upload-progress-indicator');
+    const progressDiv = container.querySelector('.upload-progress');
+    const statusBadge = container.querySelector('.status-badge');
+    
+    if (progressIndicator) {
+        progressIndicator.classList.remove('hidden');
+    }
+    if (progressDiv) {
+        progressDiv.classList.remove('hidden');
+    }
+    if (statusBadge) {
+        statusBadge.innerHTML = '<div class="badge badge-info badge-sm animate-pulse">Uploading</div>';
+    }
+}
+
+// Update upload metrics (speed, ETA, etc.)
+function updateUploadMetrics(filename, metrics) {
+    const container = document.querySelector(`[data-filename="${filename}"]`);
+    if (!container) return;
+    
+    const uploadSpeed = container.querySelector('.upload-speed');
+    const uploadDetails = container.querySelector('.upload-details');
+    const uploadEta = container.querySelector('.upload-eta');
+    
+    // Format speed
+    if (uploadSpeed && metrics.speed) {
+        const speedStr = formatSpeed(metrics.speed);
+        uploadSpeed.textContent = `• ${speedStr}`;
+        uploadSpeed.classList.remove('hidden');
+    }
+    
+    // Format uploaded/total
+    if (uploadDetails && metrics.loaded && metrics.total) {
+        const loadedStr = formatFileSize(metrics.loaded);
+        const totalStr = formatFileSize(metrics.total);
+        uploadDetails.textContent = `${loadedStr} / ${totalStr}`;
+    }
+    
+    // Format ETA
+    if (uploadEta && metrics.remainingTime) {
+        const etaStr = formatTime(metrics.remainingTime);
+        uploadEta.textContent = `ETA: ${etaStr}`;
+    }
+}
+
+// Format upload speed
+function formatSpeed(bytesPerSecond) {
+    if (bytesPerSecond === 0) return '0 B/s';
+    
+    const k = 1024;
+    const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+    const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+    
+    return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Format time remaining
+function formatTime(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return 'calculating...';
+    
+    seconds = Math.round(seconds);
+    
+    if (seconds < 60) {
+        return `${seconds}s`;
+    } else if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+    } else {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
 // Legacy upload card functions (kept for compatibility)
 function createUploadCard(uploadInfo, file) {
     console.log('🏗️ Creating upload card for:', uploadInfo.filename, 'type:', uploadInfo.type);
@@ -1031,7 +1698,7 @@ function createUploadCard(uploadInfo, file) {
                             <div class="flex-1">
                                 <h3 class="text-sm font-medium text-base-content">${uploadInfo.filename}</h3>
                                 <p class="text-xs text-base-content/60">
-                                    ${formatFileSize(uploadInfo.filesize)} • ${uploadInfo.filetype}
+                                    ${uploadInfo.filetype}
                                 </p>
                             </div>
                         </div>
@@ -1056,7 +1723,7 @@ function createUploadCard(uploadInfo, file) {
                         <!-- Upload Button -->
                         <div class="flex justify-between items-center mt-4">
                             <div class="text-xs text-base-content/60">
-                                Direct upload to S3 • Max ${formatFileSize(uploadInfo.max_file_size || 5368709120)}
+                                Direct upload to S3
                             </div>
                             <button type="submit" class="btn btn-primary btn-sm">
                                 <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1091,7 +1758,7 @@ function createUploadCard(uploadInfo, file) {
                             <div class="flex-1">
                                 <h3 class="text-sm font-medium text-base-content">${uploadInfo.filename}</h3>
                                 <p class="text-xs text-base-content/60">
-                                    ${formatFileSize(uploadInfo.filesize)} • ${uploadInfo.filetype} • Large file (multipart)
+                                    ${uploadInfo.filetype} • Large file (multipart)
                                 </p>
                             </div>
                         </div>
@@ -1156,14 +1823,6 @@ function getFileIcon(filetype) {
     }
 }
 
-function formatFileSize(bytes) {
-    console.log('📏 Formatting file size:', bytes);
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
 
 function removeUploadCard(button) {
     const card = button.closest('.upload-file-container');
@@ -1219,7 +1878,7 @@ function setupS3Upload(container, uploadInfo, file) {
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
-                console.log(`📊 Upload progress: ${percentComplete.toFixed(1)}%`);
+                // Progress logging disabled for performance
                 
                 const progressBar = progressDiv?.querySelector('progress');
                 if (progressBar) {
@@ -1411,75 +2070,7 @@ function updateUploadControls() {
     }
 }
 
-function clearAllUploads() {
-    const uploadArea = document.getElementById('dashboard-upload-area');
-    if (uploadArea) {
-        uploadArea.innerHTML = '';
-    }
-    
-    // Reset file input
-    const fileInput = document.getElementById('dashboard-file-picker');
-    if (fileInput) {
-        fileInput.value = '';
-    }
-    
-    updateUploadControls();
-}
 
-function startAllUploads() {
-    const uploadArea = document.getElementById('dashboard-upload-area');
-    if (!uploadArea) return;
-    
-    console.log('🚀 Starting all uploads...');
-    
-    // Find all S3 upload forms
-    const s3Forms = uploadArea.querySelectorAll('.s3-upload-form');
-    console.log('📋 Found', s3Forms.length, 'S3 forms');
-    
-    s3Forms.forEach((form, index) => {
-        const submitButton = form.querySelector('button[type="submit"]');
-        if (submitButton && !submitButton.disabled) {
-            console.log('🎯 Triggering upload', index + 1, 'of', s3Forms.length);
-            submitButton.click();
-        } else {
-            console.log('⏭️ Skipping disabled form', index + 1);
-        }
-    });
-    
-    // Find all multipart upload buttons
-    const multipartButtons = uploadArea.querySelectorAll('.multipart-upload-btn');
-    console.log('📦 Found', multipartButtons.length, 'multipart buttons');
-    
-    multipartButtons.forEach((button, index) => {
-        if (!button.disabled) {
-            console.log('🎯 Triggering multipart upload', index + 1);
-            button.click();
-        }
-    });
-    
-    // Show feedback
-    const startButton = document.querySelector('#upload-controls .btn-primary');
-    if (startButton) {
-        startButton.disabled = true;
-        startButton.innerHTML = `
-            <span class="loading loading-spinner loading-sm mr-2"></span>
-            Uploading...
-        `;
-        
-        console.log('🔄 Batch upload initiated');
-        
-        // Re-enable after a delay (uploads will handle their own state)
-        setTimeout(() => {
-            startButton.disabled = false;
-            startButton.innerHTML = `
-                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Start All Uploads
-            `;
-        }, 3000);
-    }
-}
 
 // Initialize all dashboard upload functionality
 function initializeDashboard() {
@@ -1494,6 +2085,67 @@ if (document.readyState === 'loading') {
     initializeDashboard();
 }
 
+// Handle multipart upload using S3MultipartUploadHandler
+async function handleMultipartUpload(uploadInfo, file) {
+    try {
+        // Get organization info
+        const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
+        const baseFolderSelector = document.getElementById('base-folder');
+        const organization = orgSelector ? orgSelector.value : '';
+        const baseFolder = baseFolderSelector ? baseFolderSelector.value : '';
+        
+        // Show upload progress UI immediately
+        const container = document.querySelector(`[data-filename="${uploadInfo.filename}"]`);
+        showUploadProgress(container);
+        
+        // Use the existing S3MultipartUploadHandler
+        const multipartHandler = new S3MultipartUploadHandler({
+            onProgress: (progress) => {
+                // Update main status (without percentage, shown in status-text)
+                updateFileStatusByName(uploadInfo.filename, 'Uploading multipart...', 'uploading');
+                
+                // Update progress bar
+                if (container) {
+                    const progressBar = container.querySelector('progress');
+                    const statusText = container.querySelector('.status-text');
+                    
+                    if (progressBar) {
+                        progressBar.value = progress.fileProgress;
+                    }
+                    if (statusText) {
+                        statusText.textContent = `${progress.fileProgress}%`;
+                    }
+                    
+                    // Update detailed metrics
+                    updateUploadMetrics(uploadInfo.filename, {
+                        progress: progress.fileProgress,
+                        loaded: progress.uploadedSize,
+                        total: file.size,
+                        speed: 0, // Multipart doesn't provide speed directly
+                        remainingTime: 0
+                    });
+                }
+            },
+            onFileComplete: (file, result) => {
+                updateFileStatusByName(uploadInfo.filename, 'Upload completed!', 'completed');
+            },
+            onError: (error) => {
+                updateFileStatusByName(uploadInfo.filename, 'Upload failed: ' + error.message, 'failed');
+            }
+        });
+        
+        // Upload the single large file with proper folder path
+        const folderName = uploadInfo.folder || '';
+        debugLog('📁 Multipart upload folder info:', { organization, baseFolder, folderName });
+        await multipartHandler.uploadFiles([file], folderName, organization, baseFolder);
+        
+    } catch (error) {
+        debugError('❌ Multipart upload failed:', error);
+        updateFileStatusByName(uploadInfo.filename, 'Multipart upload failed: ' + error.message, 'failed');
+        throw error;
+    }
+}
+
 // Export functions for global access
 window.switchToFilesMode = switchToFilesMode;
 window.switchToFolderMode = switchToFolderMode;
@@ -1501,5 +2153,3 @@ window.cancelFolderUpload = cancelFolderUpload;
 window.removeUploadByFilename = removeUploadByFilename;
 window.removeAsyncUploadFile = removeAsyncUploadFile;
 window.removeUploadCard = removeUploadCard;
-window.clearAllUploads = clearAllUploads;
-window.startAllUploads = startAllUploads;

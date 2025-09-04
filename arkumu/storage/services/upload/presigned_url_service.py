@@ -18,9 +18,11 @@ class PresignedURLService:
     def __init__(self):
         """Initialize with singleton BaseStorageService."""
         self.base_service = BaseStorageService()
-        # Use presigned_client for browser-accessible URLs instead of s3_client
-        self.s3_client = getattr(self.base_service, 'presigned_client', self.base_service.s3_client)
-        logger.info(f"🔗 PresignedURLService initialized with client endpoint: {getattr(self.s3_client, '_endpoint', 'Unknown')}")
+        # Use presigned_client for generating browser-accessible URLs
+        # But keep s3_client for server-side operations
+        self.s3_client = self.base_service.s3_client  # For server-side operations (create_multipart_upload, etc.)
+        self.presigned_client = getattr(self.base_service, 'presigned_client', self.base_service.s3_client)  # For generating presigned URLs
+        logger.info(f"🔗 PresignedURLService initialized with client endpoint: s3({getattr(self.s3_client, '_endpoint', 'Unknown')})")
         
     def generate_upload_url(
         self, 
@@ -73,21 +75,25 @@ class PresignedURLService:
                 fields["x-amz-server-side-encryption"] = "AES256"
                 conditions.append({"x-amz-server-side-encryption": "AES256"})
             
-            # Generate presigned POST data
-            response = self.s3_client.generate_presigned_post(
-                Bucket=bucket_name,
-                Key=key,
-                Fields=fields,
-                Conditions=conditions,
+            # Use PUT URLs with s3v4 signature for Dell EMC compatibility
+            put_url = self.presigned_client.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': bucket_name,
+                    'Key': key,
+                    'ContentType': content_type or 'application/octet-stream'
+                },
                 ExpiresIn=expiry
             )
             
-            logger.info(f"Generated presigned URL for {key} in {bucket_name}, expires in {expiry}s")
+            logger.info(f"Generated presigned PUT URL for {key} in {bucket_name}, expires in {expiry}s")
+            logger.info(f"🔗 DEBUG: Generated PUT URL: {put_url}")
             
             return {
                 'success': True,
-                'url': response['url'],
-                'fields': response['fields'],
+                'url': put_url,
+                'method': 'PUT',  # Use PUT method for Dell EMC
+                'fields': {},  # PUT doesn't need form fields
                 'key': key,
                 'bucket': bucket_name,
                 'expires_at': (datetime.now() + timedelta(seconds=expiry)).isoformat(),
@@ -128,7 +134,7 @@ class PresignedURLService:
             
             urls = []
             for part_number in parts:
-                url = self.s3_client.generate_presigned_url(
+                url = self.presigned_client.generate_presigned_url(
                     'upload_part',
                     Params={
                         'Bucket': bucket_name,
@@ -192,7 +198,7 @@ class PresignedURLService:
             if response_content_disposition:
                 params['ResponseContentDisposition'] = response_content_disposition
             
-            url = self.s3_client.generate_presigned_url(
+            url = self.presigned_client.generate_presigned_url(
                 'get_object',
                 Params=params,
                 ExpiresIn=expiry
@@ -266,7 +272,8 @@ class PresignedURLService:
         key: str,
         content_type: str = 'application/octet-stream',
         bucket_name: Optional[str] = None,
-        metadata: Optional[Dict[str, str]] = None
+        metadata: Optional[Dict[str, str]] = None,
+        organization: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Initiate a multipart upload for large files.
@@ -276,11 +283,28 @@ class PresignedURLService:
             content_type: MIME type of the file
             bucket_name: Target bucket (uses default if None)
             metadata: Custom metadata to attach
+            organization: Organization name for bucket selection
             
         Returns:
             Dict containing upload_id and S3 key
         """
         try:
+            # Use organization bucket if provided
+            if organization and not bucket_name:
+                from arkumu.storage.services.bucket_service import BucketService
+                bucket_service = BucketService()
+                # Ensure organization bucket exists
+                bucket_result = bucket_service.ensure_organization_bucket_exists(organization)
+                if bucket_result.get("success", False):
+                    bucket_name = bucket_result["bucket_name"]
+                    logger.info(f"🪣 Using organization bucket: {bucket_name} for {organization}")
+                else:
+                    logger.error(f"❌ Failed to get organization bucket for {organization}: {bucket_result.get('error')}")
+                    return {
+                        'success': False,
+                        'error': f'Failed to access organization bucket: {bucket_result.get("error", "Unknown error")}'
+                    }
+            
             bucket_name = bucket_name or self.base_service.production_bucket
             
             # Prepare create multipart upload parameters

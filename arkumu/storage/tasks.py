@@ -50,11 +50,12 @@ def assemble_file_task(resumable_upload_id: int):
 
 # Async Upload Tasks
 
-@db_task(retries=3, retry_delay=60)
-def monitor_upload_session(session_id: str):
+# DISABLED: Replaced with direct event trigger in mark_file_uploaded view
+# @db_task(retries=3, retry_delay=60)
+def monitor_upload_session_DISABLED(session_id: str):
     """
-    Monitor upload session and detect when all files are uploaded.
-    This task runs periodically to check upload completion.
+    DISABLED: This polling task is replaced with direct triggers.
+    Now mark_file_uploaded directly triggers verification when all files uploaded.
     """
     try:
         from arkumu.storage.models.upload_tracking import AsyncUploadSession
@@ -72,13 +73,15 @@ def monitor_upload_session(session_id: str):
             
             # Trigger processing for all uploaded files
             for upload_file in session.files.filter(status='uploaded'):
-                verify_and_process_upload.delay(str(upload_file.id))
+                # In Django Huey, call tasks directly (no .delay() needed)
+                verify_and_process_upload(str(upload_file.id))
             
         else:
             logger.info(f"⏳ MONITOR: {uploaded_files}/{total_files} files uploaded, continuing monitoring")
             
             # Re-schedule monitoring if not complete and session is recent
             if session.created_at > timezone.now() - timezone.timedelta(hours=2):
+                # Schedule next check (Django Huey uses schedule() method)
                 monitor_upload_session.schedule(args=(session_id,), delay=30)
             else:
                 logger.warning(f"⚠️ MONITOR: Session {session_id} timed out after 2 hours")
@@ -104,29 +107,45 @@ def verify_and_process_upload(file_id: str):
         
         upload_file.mark_processing()
         
-        # Verify file exists in S3
-        bucket_service = BucketService()
-        file_info = bucket_service.get_file_info(upload_file.s3_key)
+        # Verify file exists in S3 with retry for eventual consistency
+        from arkumu.storage.services.upload_service import UploadService
+        from arkumu.storage.services.bucket_service import BucketService
+        import time
         
-        if not file_info or not file_info.get('exists', False):
-            raise Exception(f"File not found in S3: {upload_file.s3_key}")
+        # Get the organization bucket name
+        bucket_service = BucketService()
+        bucket_name = bucket_service.get_organization_bucket(upload_file.session.organization)
+        
+        upload_service = UploadService()
+        
+        # Retry logic for S3 eventual consistency
+        max_retries = 3
+        for attempt in range(max_retries):
+            file_info = upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
+            
+            if file_info and file_info.get('success', False):
+                logger.info(f"✅ File verified in S3 on attempt {attempt + 1}: {upload_file.s3_key}")
+                break
+            
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                logger.warning(f"⏳ File not found in S3 (attempt {attempt + 1}), retrying in {wait_time}s: {upload_file.s3_key}")
+                time.sleep(wait_time)
+            else:
+                raise Exception(f"File not found in S3 after {max_retries} attempts: {upload_file.s3_key}")
         
         # Create S3FileObject record
         s3_file_object = S3FileObject.objects.create(
             s3_key=upload_file.s3_key,
-            filename=upload_file.filename,
-            file_size=file_info.get('size', upload_file.file_size),
+            file_name=upload_file.filename,
+            file_size_bytes=file_info.get('file_size', upload_file.file_size),
             content_type=upload_file.content_type,
-            etag=file_info.get('etag', ''),
             status='completed',
             upload_completed_at=timezone.now()
         )
         
         upload_file.mark_completed(s3_file_object)
         logger.info(f"✅ VERIFY: File {upload_file.filename} verified and processed")
-        
-        # Check if all files in session are now complete
-        check_session_completion.delay(str(upload_file.session_id))
         
     except Exception as e:
         logger.error(f"❌ VERIFY: Error processing file {file_id}: {str(e)}")
@@ -164,7 +183,8 @@ def check_session_completion(session_id: str):
                 logger.warning(f"⚠️ SESSION: Upload session {session_id} completed with {failed_files} failures")
             
             # Trigger UI refresh via OOB updates
-            trigger_ui_refresh.delay(str(session_id), session.organization)
+            # In Django Huey, call tasks directly (no .delay() needed)
+            trigger_ui_refresh(str(session_id), session.organization)
             
     except Exception as e:
         logger.error(f"❌ SESSION: Error checking completion for {session_id}: {str(e)}")
