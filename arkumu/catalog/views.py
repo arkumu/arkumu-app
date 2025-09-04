@@ -433,8 +433,7 @@ class DesignSearch:
 
         triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
         resource = [ob.__dict__ for ob in Resource.objects.all()[:5]]
-
-
+        resource = Resource.objects.all().filter(name="Bevorzugter Titel")
 
         results = [{"year":"2024",
              "image":"images/main/card_1.png",
