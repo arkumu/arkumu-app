@@ -1,6 +1,7 @@
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from arkumu.metadata.models import Mapping
+from arkumu.users.models import Organization
 from arkumu.importer.services.schema_service import SchemaService
 from arkumu.common.uri_utils import slugify_uri_part
 import logging
@@ -31,7 +32,7 @@ def convert_schema_data_to_blueprint(schema_data, schema_service, organization_i
         # Build properties from schema
         for prop_name in node.get('properties', []):
             properties[prop_name] = {
-                'property_uri': f"http://data.arkumu.org/{organization_id}/properties/{slugify_uri_part(prop_name)}",
+                'property_uri': f"http://arkumu.org/data/{organization_id}/properties/{slugify_uri_part(prop_name)}",
                 'source_column': prop_name,
                 'data_type': 'string',  # Default type, could be enhanced
                 'is_anchor': prop_name in anchor_columns,
@@ -87,8 +88,8 @@ def generate_uri_patterns(blueprint):
     for entity_key, entity_config in blueprint.get('entities', {}).items():
         slugified_entity = slugify_uri_part(entity_key)
         patterns['entities'][entity_key] = {
-            'pattern': f"http://data.arkumu.org/{org_name}/entities/{slugified_entity}/{{anchor_value}}",
-            'example': f"http://data.arkumu.org/{org_name}/entities/{slugified_entity}/{slugify_uri_part('john_doe_123')}",
+            'pattern': f"http://arkumu.org/data/{org_name}/entities/{slugified_entity}/{{anchor_value}}",
+            'example': f"http://arkumu.org/data/{org_name}/entities/{slugified_entity}/{slugify_uri_part('john_doe_123')}",
             'anchor_columns': entity_config.get('anchor_columns', [])
         }
     
@@ -96,7 +97,7 @@ def generate_uri_patterns(blueprint):
     patterns['properties'] = {}
     for entity_key, entity_config in blueprint.get('entities', {}).items():
         for prop_name, prop_config in entity_config.get('properties', {}).items():
-            prop_uri = prop_config.get('property_uri', f"http://data.arkumu.org/{org_name}/properties/{slugify_uri_part(prop_name)}")
+            prop_uri = prop_config.get('property_uri', f"http://arkumu.org/data/{org_name}/properties/{slugify_uri_part(prop_name)}")
             patterns['properties'][prop_name] = {
                 'uri': prop_uri,
                 'source_column': prop_config.get('source_column', prop_name),
@@ -106,7 +107,7 @@ def generate_uri_patterns(blueprint):
     # Dataset URI patterns
     patterns['datasets'] = {}
     for entity_key in blueprint.get('entities', {}).keys():
-        patterns['datasets'][entity_key] = f"http://data.arkumu.org/{org_name}/datasets/{slugify_uri_part(entity_key)}"
+        patterns['datasets'][entity_key] = f"http://arkumu.org/data/{org_name}/datasets/{slugify_uri_part(entity_key)}"
     
     # Junction URI patterns
     patterns['junctions'] = {}
@@ -115,8 +116,8 @@ def generate_uri_patterns(blueprint):
         secondary_entity = junction_config.get('secondary_entity')
         slugified_junction = slugify_uri_part(junction_key)
         patterns['junctions'][junction_key] = {
-            'pattern': f"http://data.arkumu.org/{org_name}/junctions/{slugified_junction}/{{primary_id}}_{{secondary_id}}",
-            'example': f"http://data.arkumu.org/{org_name}/junctions/{slugified_junction}/{slugify_uri_part('john_123_acme')}",
+            'pattern': f"http://arkumu.org/data/{org_name}/junctions/{slugified_junction}/{{primary_id}}_{{secondary_id}}",
+            'example': f"http://arkumu.org/data/{org_name}/junctions/{slugified_junction}/{slugify_uri_part('john_123_acme')}",
             'primary_entity': primary_entity,
             'secondary_entity': secondary_entity,
             'context_attributes': junction_config.get('context_attributes', [])
@@ -151,8 +152,13 @@ def rdf_preview_visualizer(request, mapping_id):
     mapping = get_object_or_404(Mapping, pk=mapping_id)
     
     try:
-        # Generate schema data using SchemaService
-        schema_service = SchemaService(mapping_id=str(mapping.id))
+        # Generate schema data using SchemaService (use consistent URI pattern)
+        organization = get_object_or_404(Organization, pk=mapping.organization_id)
+        schema_service = SchemaService(
+            mapping_id=str(mapping.id),
+            institution=organization.code,
+            base_uri="http://arkumu.org/data"
+        )
         schema_data = schema_service.get_schema_visualization_data()
         
         # Convert schema data to blueprint format for our RDF generation
@@ -202,8 +208,13 @@ def rdf_preview_property_mappings_sorted(request, mapping_id):
     mapping = get_object_or_404(Mapping, pk=mapping_id)
     
     try:
-        # Generate schema data using SchemaService
-        schema_service = SchemaService(mapping_id=str(mapping.id))
+        # Generate schema data using SchemaService (use consistent URI pattern)
+        organization = get_object_or_404(Organization, pk=mapping.organization_id)
+        schema_service = SchemaService(
+            mapping_id=str(mapping.id),
+            institution=organization.code,
+            base_uri="http://arkumu.org/data"
+        )
         schema_data = schema_service.get_schema_visualization_data()
         
         # Convert schema data to blueprint format for our RDF generation

@@ -13,7 +13,7 @@ class TestCatalogUriGenerator:
         """Test generator initializes with defaults."""
         generator = CatalogUriGenerator()
         
-        assert generator.base_uri == "http://data.arkumu.org/catalog/"
+        assert generator.base_uri == "http://arkumu.org/data/catalog/"
         assert generator.CATALOG_INSTITUTION_CODE == "catalog"
     
     def test_custom_base_uri(self):
@@ -28,7 +28,7 @@ class TestCatalogUriGenerator:
         generator = CatalogUriGenerator()
         
         uri = generator.generate_property_uri("artwork_title")
-        expected = "http://data.arkumu.org/catalog/catalog/properties/artwork-title"
+        expected = "http://arkumu.org/data/catalog/catalog/properties/artwork-title"
         
         assert uri == expected
     
@@ -40,14 +40,14 @@ class TestCatalogUriGenerator:
         
         # Should be slugified
         assert "artwork-title-and-description" in uri
-        assert uri.startswith("http://data.arkumu.org/catalog/catalog/properties/")
+        assert uri.startswith("http://arkumu.org/data/catalog/catalog/properties/")
     
     def test_generate_class_uri(self):
         """Test generating class URIs."""
         generator = CatalogUriGenerator()
         
         uri = generator.generate_class_uri("Artwork")
-        expected = "http://data.arkumu.org/catalog/catalog/classes/artwork"
+        expected = "http://arkumu.org/data/catalog/catalog/classes/artwork"
         
         assert uri == expected
     
@@ -56,7 +56,7 @@ class TestCatalogUriGenerator:
         generator = CatalogUriGenerator()
         
         uri = generator.generate_concept_uri("Digital Media")
-        expected = "http://data.arkumu.org/catalog/catalog/concepts/digital-media"
+        expected = "http://arkumu.org/data/catalog/catalog/concepts/digital-media"
         
         assert uri == expected
     
@@ -65,7 +65,7 @@ class TestCatalogUriGenerator:
         generator = CatalogUriGenerator()
         
         uri = generator.generate_vocabulary_uri("Media Types")
-        expected = "http://data.arkumu.org/catalog/catalog/vocabularies/media-types"
+        expected = "http://arkumu.org/data/catalog/catalog/vocabularies/media-types"
         
         assert uri == expected
     
@@ -74,7 +74,7 @@ class TestCatalogUriGenerator:
         generator = CatalogUriGenerator()
         
         uri = generator.generate_mapping_uri("khm", "title-mapping-001")
-        expected = "http://data.arkumu.org/catalog/catalog/mappings/khm/title-mapping-001"
+        expected = "http://arkumu.org/data/catalog/catalog/mappings/khm/title-mapping-001"
         
         assert uri == expected
     
@@ -83,7 +83,7 @@ class TestCatalogUriGenerator:
         generator = CatalogUriGenerator()
         
         uri = generator.generate_mapping_uri("khm")
-        expected = "http://data.arkumu.org/catalog/catalog/mappings/khm"
+        expected = "http://arkumu.org/data/catalog/catalog/mappings/khm"
         
         assert uri == expected
     
@@ -91,7 +91,7 @@ class TestCatalogUriGenerator:
         """Test identifying catalog URIs correctly."""
         generator = CatalogUriGenerator()
         
-        catalog_uri = "http://data.arkumu.org/catalog/catalog/properties/title"
+        catalog_uri = "http://arkumu.org/data/catalog/catalog/properties/title"
         
         assert generator.is_catalog_uri(catalog_uri) is True
     
@@ -107,7 +107,7 @@ class TestCatalogUriGenerator:
         """Test extracting identifier from catalog URI."""
         generator = CatalogUriGenerator()
         
-        catalog_uri = "http://data.arkumu.org/catalog/catalog/properties/title"
+        catalog_uri = "http://arkumu.org/data/catalog/catalog/properties/title"
         identifier = generator.extract_catalog_identifier(catalog_uri)
         
         assert identifier == "title"
@@ -116,7 +116,7 @@ class TestCatalogUriGenerator:
         """Test extracting identifier from complex catalog URI."""
         generator = CatalogUriGenerator()
         
-        catalog_uri = "http://data.arkumu.org/catalog/catalog/mappings/khm/title-mapping-001"
+        catalog_uri = "http://arkumu.org/data/catalog/catalog/mappings/khm/title-mapping-001"
         identifier = generator.extract_catalog_identifier(catalog_uri)
         
         assert identifier == "title-mapping-001"
@@ -135,7 +135,7 @@ class TestCatalogUriGenerator:
         generator = CatalogUriGenerator()
         
         # Missing the catalog institution code part
-        malformed_uri = "http://data.arkumu.org/catalog/properties/title"
+        malformed_uri = "http://arkumu.org/data/catalog/properties/title"
         
         with pytest.raises(ValueError, match="Unexpected catalog URI format"):
             generator.extract_catalog_identifier(malformed_uri)

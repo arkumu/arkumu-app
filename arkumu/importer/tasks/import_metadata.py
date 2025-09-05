@@ -430,8 +430,8 @@ def run_mapping_aware_import_workflow(
                 logger.error(f"Organization with code '{institution}' not found")
                 raise ValueError(f"Organization with code '{institution}' not found")
         
-        # Initialize schema service for complete schema management
-        schema_service = SchemaService(mapping_id)
+        # Initialize schema service for complete schema management (fix URI consistency)
+        schema_service = SchemaService(mapping_id, institution=organization.code, base_uri=base_uri)
         
         # Initialize processor with organization and session for progress updates
         processor = MappingAwareProcessor(
@@ -1413,8 +1413,8 @@ def _initialize_mapping_schemas_sync(
             logger.error(f"Organization with code '{institution}' not found")
             return {"status": "error", "error_message": f"Organization with code '{institution}' not found", "error_type": "OrganizationNotFound"}
         
-        # Initialize schema service for complete schema management
-        schema_service = SchemaService(mapping_id)
+        # Initialize schema service for complete schema management (fix URI consistency)
+        schema_service = SchemaService(mapping_id, institution=organization.code, base_uri=base_uri)
         
         # Initialize processor 
         statistics = ExecutionStatistics()
@@ -1519,8 +1519,8 @@ def initialize_mapping_schemas(
             logger.error(f"Organization with code '{institution}' not found")
             return {"status": "error", "error_message": f"Organization with code '{institution}' not found", "error_type": "OrganizationNotFound"}
         
-        # Initialize schema service for complete schema management
-        schema_service = SchemaService(mapping_id)
+        # Initialize schema service for complete schema management (fix URI consistency)
+        schema_service = SchemaService(mapping_id, institution=organization.code, base_uri=base_uri)
         
         # Initialize processor 
         statistics = ExecutionStatistics()
@@ -1678,7 +1678,7 @@ def process_dataset_data(
         
         try:
             # SchemaService handles cache validation and regeneration automatically
-            schema_service = SchemaService(mapping_id=mapping_id)
+            schema_service = SchemaService(mapping_id=mapping_id, base_uri=base_uri)
             # This will load from cache if valid, or regenerate if missing/invalid
             schema_service._ensure_schema_loaded()
             cached_blueprints = schema_service._processor.dataset_blueprints

@@ -29,7 +29,7 @@ class SchemaService:
     """
     
     def __init__(self, mapping_id: str, institution: str = "ARKUMU", 
-                 base_uri: str = "http://data.arkumu.org"):
+                 base_uri: str = "http://arkumu.org/data"):
         """
         Initialize schema service for a specific mapping.
         
