@@ -10,6 +10,7 @@ from django.http import Http404, HttpResponse
 from django.template.loader import render_to_string
 from django.middleware.csrf import get_token
 from django.shortcuts import render
+from django.db.models import Prefetch
 
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
@@ -423,6 +424,22 @@ class LiveSearchFilterView(GeneralLoginRequiredMixin, CatalogSearchMixin, View):
         
         return HttpResponse(self.build_oob_response("", oob_updates))
 
+class Entity:
+    def __init__(self, triple:Triple):
+        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=triple.subject_id)}
+    
+        self.triple = triple
+    
+    def get_predicate(self, str):
+        for entity_field_triple in Triple.objects.filter(subject_id=self.triple.subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name == str:
+                return Resource.objects.get(id=entity_field_triple.predicate_id)
+            
+    def get_object(self, str):
+        for entity_field_triple in Triple.objects.filter(subject_id=self.triple.subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name == str:
+                return Resource.objects.get(id=entity_field_triple.object_id)
+
 class DesignSearch:
     def design_search_results(request):
 
@@ -431,9 +448,34 @@ class DesignSearch:
 
         query = request.GET.get('query', None)
 
-        triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
-        resource = [ob.__dict__ for ob in Resource.objects.all()[:5]]
-        resource = Resource.objects.all().filter(name="Bevorzugter Titel")
+       # triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
+       # resource = [ob.__dict__ for ob in Resource.objects.all()[:5]]
+
+
+        #TODO Python fixen das es schneller wird
+
+        resource = Resource.objects.filter(name="Bevorzugter Titel").last()
+        triples = Triple.objects.filter(predicate__id=resource.id)[:5]
+        # entities = [{Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=triple.subject_id)} for triple in triples]
+
+        # entity =  entities[1]
+        # ereignis = entity["Ereignis"]
+        entities = [Entity(triple) for triple in triples]
+        entity =  entities[1]
+        resource = entity.__dict__
+        ereignis = entity.Ereignis
+        pred = entity.get_predicate("Ereignis")
+        obj = entity.get_object("Ereignis")
+        
+        triple = Triple.objects.filter(object_id=obj.id).last()
+
+
+        informationstreager = []
+        
+       
+        # triple = pred.__dict__
+        resource = pred
+
 
         results = [{"year":"2024",
              "image":"images/main/card_1.png",
