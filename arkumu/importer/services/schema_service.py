@@ -29,7 +29,7 @@ class SchemaService:
     """
     
     def __init__(self, mapping_id: str, institution: str = "ARKUMU", 
-                 base_uri: str = "http://data.arkumu.org"):
+                 base_uri: str = "http://arkumu.org/data"):
         """
         Initialize schema service for a specific mapping.
         
@@ -57,8 +57,8 @@ class SchemaService:
             logger.error(f"Failed to load mapping or organization: {e}")
             raise ValueError(f"Cannot load schema - mapping or organization not found: {e}")
         
-        # Check cache first
-        cache_key = f"complete_schema_blueprints_mapping_{self.mapping_id}"
+        # Check cache first - include base_uri in cache key to invalidate old URIs
+        cache_key = f"complete_schema_blueprints_mapping_{self.mapping_id}_{hash(self.base_uri)}"
         cached_blueprints = cache.get(cache_key)
         
         if cached_blueprints:

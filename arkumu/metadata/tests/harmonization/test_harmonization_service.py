@@ -70,7 +70,7 @@ def test_rules(test_organization, test_user):
     rule1 = HarmonizationRule.objects.create(
         source_organization=test_organization,
         source_property_pattern=".*title.*",
-        catalog_property_uri="http://data.arkumu.org/catalog/catalog/properties/title",
+        catalog_property_uri="http://arkumu.org/data/catalog/catalog/properties/title",
         catalog_property_label="title",
         mapping_type="exact",
         priority=10,
@@ -82,7 +82,7 @@ def test_rules(test_organization, test_user):
     rule2 = HarmonizationRule.objects.create(
         source_organization=test_organization,
         source_property_pattern="artist_name",
-        catalog_property_uri="http://data.arkumu.org/catalog/catalog/properties/creator",
+        catalog_property_uri="http://arkumu.org/data/catalog/catalog/properties/creator",
         catalog_property_label="creator", 
         mapping_type="close",
         priority=5,
