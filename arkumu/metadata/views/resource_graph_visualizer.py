@@ -372,6 +372,52 @@ class ResourceGraphService:
                         'triple': triple,
                         'direction': 'incoming'
                     })
+            
+            # IMPORTANT: Get relationships where this resource is used as a PREDICATE
+            # This is crucial for PROPERTY resources which are typically predicates
+            if resource.resource_type == ResourceType.PROPERTY:
+                predicate_query = Triple.objects.filter(predicate=resource).select_related('subject', 'object')
+                if organization_code:
+                    predicate_query = predicate_query.filter(
+                        Q(subject__organization__code=organization_code) |
+                        Q(object__organization__code=organization_code)
+                    )
+                predicate_triples = predicate_query[:50]
+                
+                for triple in predicate_triples:
+                    if len(nodes) >= max_nodes:
+                        break
+                    
+                    # Add both subject and object nodes
+                    if triple.subject and triple.subject.id not in nodes:
+                        nodes[triple.subject.id] = {
+                            'resource': triple.subject,
+                            'depth': depth + 1,
+                            'is_central': False
+                        }
+                        if depth + 1 < max_depth and triple.subject.id not in processed_resources:
+                            queue.append((triple.subject, depth + 1))
+                            processed_resources.add(triple.subject.id)
+                    
+                    if triple.object and triple.object.id not in nodes:
+                        nodes[triple.object.id] = {
+                            'resource': triple.object,
+                            'depth': depth + 1,
+                            'is_central': False
+                        }
+                        if depth + 1 < max_depth and triple.object.id not in processed_resources:
+                            queue.append((triple.object, depth + 1))
+                            processed_resources.add(triple.object.id)
+                    
+                    # Create edge showing this property connects subject to object
+                    if triple.subject and triple.object:
+                        edges.append({
+                            'subject_id': triple.subject.id,
+                            'object_id': triple.object.id,
+                            'predicate': resource,  # The property itself is the predicate
+                            'triple': triple,
+                            'direction': 'property_link'
+                        })
         
         # Remove any nodes that don't have connections
         connected_node_ids = set()
@@ -421,6 +467,8 @@ class ResourceGraphService:
                 # Get direct connections (both outgoing and incoming)
                 connections = self._get_direct_connections(current_resource, max_per_resource=100, organization_code=organization_code)
                 
+                logger.info(f"Level {level}: Resource {current_resource.id} has {len(connections)} connections")
+                
                 for connection in connections:
                     related_resource = connection['related_resource']
                     
@@ -457,6 +505,8 @@ class ResourceGraphService:
         self.stats['nodes_added'] = len(nodes)
         self.stats['edges_added'] = len(edges)
         self.stats['max_depth_reached'] = levels
+        
+        logger.info(f"Graph built with {len(nodes)} nodes and {len(edges)} edges")
         
         return {'nodes': nodes, 'edges': edges}
     
@@ -504,6 +554,42 @@ class ResourceGraphService:
                 'triple': triple,
                 'direction': 'incoming'
             })
+        
+        # IMPORTANT: For PROPERTY resources, also get triples where this resource IS the predicate
+        # This shows all the connections this property makes between resources
+        if resource.resource_type == ResourceType.PROPERTY:
+            predicate_query = Triple.objects.filter(predicate=resource).select_related('subject', 'object')
+            if organization_code:
+                predicate_query = predicate_query.filter(
+                    Q(subject__organization__code=organization_code) |
+                    Q(object__organization__code=organization_code)
+                )
+            predicate_triples = predicate_query[:max_per_resource]
+            
+            logger.info(f"Property {resource.id} used as predicate in {predicate_triples.count()} triples")
+            
+            for triple in predicate_triples:
+                # For properties as predicates, we want to show both the subjects and objects
+                # that are connected through this property
+                if triple.subject and triple.object:
+                    # Add the subject as a related resource
+                    connections.append({
+                        'related_resource': triple.subject,
+                        'subject_id': triple.subject.id,
+                        'object_id': triple.object.id,
+                        'predicate': resource,  # The property itself is the predicate
+                        'triple': triple,
+                        'direction': 'property_link'
+                    })
+                    # Add the object as a related resource
+                    connections.append({
+                        'related_resource': triple.object,
+                        'subject_id': triple.subject.id,
+                        'object_id': triple.object.id,
+                        'predicate': resource,  # The property itself is the predicate
+                        'triple': triple,
+                        'direction': 'property_link'
+                    })
         
         return connections
     

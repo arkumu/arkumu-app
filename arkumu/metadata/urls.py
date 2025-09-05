@@ -15,10 +15,11 @@ from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer,
 from arkumu.metadata.views.data_explorer_optimized import (
     OptimizedDataExplorerView as DataExplorerView,
     OptimizedResourceDetailView as ResourceDetailView,  # Now fixed!
-    SemanticStatsView
+    DataExplorerResultsView,
+    SemanticStatsView,
+    ResourceTripleCountsView,
+    BatchTripleCountsView
 )
-# For results view, we'll use the same optimized view with different template
-from arkumu.metadata.views.data_explorer import DataExplorerResultsView
 from arkumu.metadata.views.csv_mapping import saved_mappings_api
 from arkumu.metadata.views.csv_mapping.views import mapping_validation_views, mapping_save_views, mapping_load_views, mapping_delete_views
 from arkumu.metadata.views.csv_mapping.views import core_editor_views, dataset_views, column_views, utility_views, relationship_views, ontology_views
@@ -42,6 +43,8 @@ urlpatterns = [
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
     path('data-explorer/results/', DataExplorerResultsView.as_view(), name='data_explorer_results'),
     path('data-explorer/stats/', SemanticStatsView.as_view(), name='semantic_stats'),  # For async stats loading
+    path('data-explorer/triple-counts/<uuid:resource_id>/', ResourceTripleCountsView.as_view(), name='resource_triple_counts'),  # HTMX triple counts
+    path('data-explorer/batch-counts/', BatchTripleCountsView.as_view(), name='batch_triple_counts'),  # Batch triple counts
     path('data-explorer/export/json/', data_explorer_views.export_data_as_json, name='export_data_json'),  # JSON export
     
     # Resource details (optimized views)

@@ -171,7 +171,7 @@ class TestDataExplorerOntologyLinking(TestCase):
         self.assertTrue(triple.is_derived)
         
         # Verify it appears in the data explorer query results
-        from arkumu.metadata.views.data_explorer import DataExplorerView
+        from arkumu.metadata.views.data_explorer_optimized import OptimizedDataExplorerView as DataExplorerView
         
         # Test that the resource now shows as having an ontology link
         triples_with_same_as = Triple.objects.filter(
