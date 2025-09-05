@@ -57,8 +57,8 @@ class SchemaService:
             logger.error(f"Failed to load mapping or organization: {e}")
             raise ValueError(f"Cannot load schema - mapping or organization not found: {e}")
         
-        # Check cache first - include base_uri in cache key to invalidate old URIs
-        cache_key = f"complete_schema_blueprints_mapping_{self.mapping_id}_{hash(self.base_uri)}"
+        # Check cache first
+        cache_key = f"complete_schema_blueprints_mapping_{self.mapping_id}"
         cached_blueprints = cache.get(cache_key)
         
         if cached_blueprints:
