@@ -222,7 +222,7 @@ class ResourceManager:
     
     def create_value_resources_bulk(self, values: List[Tuple[str, str]]) -> Dict[str, Resource]:
         """
-        Create literal value resources in bulk.
+        Create literal value resources in bulk, pre-filtering duplicates to eliminate constraint violations.
         
         Args:
             values: List of (value, datatype) tuples
@@ -230,8 +230,14 @@ class ResourceManager:
         Returns:
             Dictionary mapping values to resources
         """
+        if not values:
+            return {}
+            
+        # Phase 1: Prepare resources and collect URIs
         value_resources_to_create = []
         value_map = {}
+        uris_to_check = []
+        uri_to_value = {}  # Map URIs back to original values
         
         for value, datatype in values:
             if not value or not value.strip():
@@ -242,6 +248,11 @@ class ResourceManager:
             from arkumu.common.hash_utils import generate_value_hash_and_normalize
             value_hash, normalized_value = generate_value_hash_and_normalize(value)
             
+            # Skip if we've already seen this URI in this batch
+            if canonical_uri in uri_to_value:
+                value_map[value] = value_map[uri_to_value[canonical_uri]]
+                continue
+                
             value_resource = Resource(
                 uri=canonical_uri,
                 value=normalized_value,  # Store normalized value for consistent searching
@@ -254,14 +265,53 @@ class ResourceManager:
             )
             value_resources_to_create.append(value_resource)
             value_map[value] = value_resource
+            uris_to_check.append(canonical_uri)
+            uri_to_value[canonical_uri] = value
         
-        if value_resources_to_create:
+        if not value_resources_to_create:
+            return value_map
+            
+        # Phase 2: Check which resources already exist in database
+        existing_resources = self.get_existing_resources_bulk(uris_to_check)
+        logger.debug(f"Found {len(existing_resources)} existing value resources out of {len(uris_to_check)} requested")
+        
+        # Phase 3: Filter out resources that already exist
+        new_resources_to_create = []
+        actual_creates = 0
+        
+        for resource in value_resources_to_create:
+            if resource.uri in existing_resources:
+                # Use existing resource in the value map
+                original_value = uri_to_value[resource.uri]
+                value_map[original_value] = existing_resources[resource.uri]
+            else:
+                # Keep for creation
+                new_resources_to_create.append(resource)
+                actual_creates += 1
+        
+        # Phase 4: Create only new resources
+        if new_resources_to_create:
+            logger.debug(f"Creating {len(new_resources_to_create)} new value resources (filtered from {len(value_resources_to_create)} attempted)")
             Resource.objects.bulk_create(
-                value_resources_to_create,
-                ignore_conflicts=True,
+                new_resources_to_create,
+                ignore_conflicts=True,  # Keep as safety net
                 batch_size=500
             )
-            self.statistics.increment_resources_created(len(value_resources_to_create))
+            
+            # Update statistics with actual creates and track efficiency
+            self.statistics.increment_resources_created(actual_creates)
+            self.statistics.track_resource_filtering(len(value_resources_to_create), actual_creates)
+            
+            # Fetch created resources to get their database IDs
+            new_uris = [r.uri for r in new_resources_to_create]
+            created_resources = Resource.objects.filter(uri__in=new_uris)
+            created_resource_map = {r.uri: r for r in created_resources}
+            
+            # Update value_map with database objects
+            for resource in new_resources_to_create:
+                if resource.uri in created_resource_map:
+                    original_value = uri_to_value[resource.uri]
+                    value_map[original_value] = created_resource_map[resource.uri]
         
         return value_map
     
@@ -271,7 +321,7 @@ class ResourceManager:
                                      column_resources: Dict[str, Resource],
                                      row_resources: Optional[Dict[str, Resource]] = None) -> List[Triple]:
         """
-        Create structural triples (dataset→column, dataset→row, etc.).
+        Create structural triples (dataset→column, dataset→row, etc.), pre-filtering duplicates.
         
         Args:
             dataset_resource: The dataset resource
@@ -281,11 +331,11 @@ class ResourceManager:
         Returns:
             List of created triples
         """
-        structural_triples = []
+        structural_triples_to_create = []
         
         # Dataset → hasPart → Column
         for column_resource in column_resources.values():
-            structural_triples.append(
+            structural_triples_to_create.append(
                 Triple(subject=dataset_resource, predicate=self.has_part_prop, object=column_resource, 
                       source=self.organization, is_derived=False)
             )
@@ -293,26 +343,29 @@ class ResourceManager:
         # Dataset → hasPart → Row (if row topology is enabled)
         if row_resources:
             for row_resource in row_resources.values():
-                structural_triples.append(
+                structural_triples_to_create.append(
                     Triple(subject=dataset_resource, predicate=self.has_part_prop, object=row_resource,
                           source=self.organization, is_derived=False)
                 )
         
-        if structural_triples:
-            # # Count before bulk create
-            # count_before = Triple.objects.count()
-            Triple.objects.bulk_create(structural_triples, ignore_conflicts=True)
-            # # Count after and update metrics with actual created count
-            # count_after = Triple.objects.count()
-            # actually_created = count_after - count_before
-            # self.statistics.current_metrics.triples_created += actually_created
-            self.statistics.current_metrics.triples_created += len(structural_triples)
+        if structural_triples_to_create:
+            # Check for existing triples to avoid duplicates
+            existing_count = self._filter_existing_triples(structural_triples_to_create)
+            new_triples_count = len(structural_triples_to_create) - existing_count
+            
+            if new_triples_count > 0:
+                logger.debug(f"Creating {new_triples_count} new structural triples (filtered from {len(structural_triples_to_create)} attempted)")
+                Triple.objects.bulk_create(structural_triples_to_create, ignore_conflicts=True)
+                self.statistics.current_metrics.triples_created += new_triples_count
+                self.statistics.track_triple_filtering(len(structural_triples_to_create) + existing_count, new_triples_count)
+            else:
+                logger.debug(f"All {len(structural_triples_to_create)} structural triples already exist, skipping creation")
         
-        return structural_triples
+        return structural_triples_to_create
     
     def create_value_triples_bulk(self, cell_value_pairs: List[Tuple[Resource, Resource]]) -> List[Triple]:
         """
-        Create value triples (cell→rdf:value→literal).
+        Create value triples (cell→rdf:value→literal), pre-filtering duplicates.
         
         Args:
             cell_value_pairs: List of (cell_resource, value_resource) tuples
@@ -320,28 +373,165 @@ class ResourceManager:
         Returns:
             List of created triples
         """
-        value_triples = [
+        value_triples_to_create = [
             Triple(subject=cell_resource, predicate=self.rdf_value_prop, object=value_resource,
                   source=self.organization, is_derived=False)
             for cell_resource, value_resource in cell_value_pairs
         ]
         
-        if value_triples:
-            # # Count before bulk create
-            # count_before = Triple.objects.count()
-            Triple.objects.bulk_create(value_triples, ignore_conflicts=True)
-            # # Count after and update metrics with actual created count
-            # count_after = Triple.objects.count()
-            # actually_created = count_after - count_before
-            # self.statistics.current_metrics.triples_created += actually_created
-            self.statistics.current_metrics.triples_created += len(value_triples)
+        if value_triples_to_create:
+            # Check for existing triples to avoid duplicates
+            existing_count = self._filter_existing_triples(value_triples_to_create)
+            new_triples_count = len(value_triples_to_create) - existing_count
+            
+            if new_triples_count > 0:
+                logger.debug(f"Creating {new_triples_count} new value triples (filtered from {len(value_triples_to_create)} attempted)")
+                Triple.objects.bulk_create(value_triples_to_create, ignore_conflicts=True)
+                self.statistics.current_metrics.triples_created += new_triples_count
+            else:
+                logger.debug(f"All {len(value_triples_to_create)} value triples already exist, skipping creation")
         
-        return value_triples
+        return value_triples_to_create
     
     def get_existing_resources_bulk(self, uris: List[str]) -> Dict[str, Resource]:
         """Efficiently fetch existing resources for a list of URIs."""
         existing = Resource.objects.filter(uri__in=uris).select_related()
         return {resource.uri: resource for resource in existing}
+    
+    def _filter_existing_triples(self, triples_to_create: List[Triple]) -> int:
+        """
+        Filter out existing triples from the list, modifying it in place.
+        
+        Args:
+            triples_to_create: List of Triple objects to filter
+            
+        Returns:
+            Number of existing triples found and removed
+        """
+        if not triples_to_create:
+            return 0
+            
+        # Build query conditions for existing triples
+        existing_conditions = []
+        for triple in triples_to_create:
+            existing_conditions.append({
+                'subject': triple.subject,
+                'predicate': triple.predicate,
+                'object': triple.object,
+                'source': triple.source
+            })
+        
+        # Query for existing triples (limit check to avoid performance issues)
+        if len(existing_conditions) > 1000:
+            logger.warning(f"Large triple batch ({len(existing_conditions)}), checking existence may be slow")
+            
+        # Use a more efficient approach for large batches
+        existing_triples = set()
+        
+        # Check in smaller batches to avoid query complexity
+        batch_size = 500
+        for i in range(0, len(triples_to_create), batch_size):
+            batch = triples_to_create[i:i + batch_size]
+            
+            # Create a query for this batch
+            from django.db.models import Q
+            query = Q()
+            for triple in batch:
+                query |= Q(
+                    subject=triple.subject,
+                    predicate=triple.predicate,
+                    object=triple.object,
+                    source=triple.source
+                )
+            
+            # Find existing triples in this batch
+            batch_existing = Triple.objects.filter(query).values_list(
+                'subject', 'predicate', 'object', 'source'
+            )
+            
+            existing_triples.update(batch_existing)
+        
+        # Filter out existing triples
+        original_count = len(triples_to_create)
+        filtered_triples = []
+        
+        for triple in triples_to_create:
+            triple_key = (triple.subject.id, triple.predicate.id, triple.object.id, triple.source.id if triple.source else None)
+            if triple_key not in existing_triples:
+                filtered_triples.append(triple)
+        
+        # Update the original list in place
+        triples_to_create.clear()
+        triples_to_create.extend(filtered_triples)
+        
+        existing_count = original_count - len(filtered_triples)
+        if existing_count > 0:
+            logger.debug(f"Filtered out {existing_count} existing triples from batch of {original_count}")
+            
+        return existing_count
+    
+    def _create_property_resources_bulk(self, property_uris: List[str]) -> Dict[str, Resource]:
+        """
+        Create property resources in bulk, pre-filtering duplicates.
+        
+        Args:
+            property_uris: List of property URIs to create
+            
+        Returns:
+            Dict mapping property URIs to Resource objects
+        """
+        if not property_uris:
+            return {}
+            
+        # Check for existing property resources
+        existing_resources = self.get_existing_resources_bulk(property_uris)
+        logger.debug(f"Found {len(existing_resources)} existing property resources out of {len(property_uris)} requested")
+        
+        # Filter out resources that already exist
+        new_property_resources = []
+        final_resource_map = {}
+        
+        for property_uri in property_uris:
+            if property_uri in existing_resources:
+                # Use existing resource
+                final_resource_map[property_uri] = existing_resources[property_uri]
+            else:
+                # Create new resource
+                property_resource = Resource(
+                    uri=property_uri,
+                    resource_type=ResourceType.PROPERTY,
+                    name=property_uri.split('/')[-1],
+                    is_placeholder=False,
+                    organization=self.organization
+                )
+                new_property_resources.append(property_resource)
+                final_resource_map[property_uri] = property_resource
+        
+        # Create only new property resources
+        if new_property_resources:
+            try:
+                logger.debug(f"Creating {len(new_property_resources)} new property resources")
+                Resource.objects.bulk_create(
+                    new_property_resources,
+                    ignore_conflicts=True,
+                    batch_size=500
+                )
+                
+                # Fetch created resources with database IDs
+                new_uris = [r.uri for r in new_property_resources]
+                created_resources = Resource.objects.filter(uri__in=new_uris)
+                created_resource_map = {res.uri: res for res in created_resources}
+                
+                # Update final map with database objects
+                for resource in new_property_resources:
+                    if resource.uri in created_resource_map:
+                        final_resource_map[resource.uri] = created_resource_map[resource.uri]
+                        
+            except Exception as e:
+                logger.error(f"Failed to create property resources: {e}", exc_info=True)
+                raise
+        
+        return final_resource_map
     
     def generate_entity_uri(self, dataset_name: str, entity_id: str) -> str:
         """Generate URI for an entity."""
@@ -527,7 +717,7 @@ class ResourceManager:
     
     def create_entity_resources_bulk(self, entity_data: List[Tuple[str, str]]) -> Dict[str, Resource]:
         """
-        Create entity resources in bulk.
+        Create entity resources in bulk, pre-filtering duplicates to eliminate constraint violations.
         
         Args:
             entity_data: List of (dataset_name, entity_id) tuples
@@ -535,10 +725,15 @@ class ResourceManager:
         Returns:
             Dict mapping entity URIs to Resource objects
         """
+        if not entity_data:
+            return {}
+            
         logger.debug(f"Creating {len(entity_data)} entity resources in bulk")
         
+        # Phase 1: Prepare resources and collect URIs
         entity_resources_to_create = []
         entity_uri_map = {}
+        uris_to_check = []
         
         for dataset_name, entity_id in entity_data:
             entity_uri = self.generate_entity_uri(dataset_name, entity_id)
@@ -556,42 +751,69 @@ class ResourceManager:
             )
             entity_resources_to_create.append(entity_resource)
             entity_uri_map[entity_uri] = entity_resource
+            uris_to_check.append(entity_uri)
         
-        if entity_resources_to_create:
+        if not entity_resources_to_create:
+            return entity_uri_map
+            
+        # Phase 2: Check which resources already exist in database
+        existing_resources = self.get_existing_resources_bulk(uris_to_check)
+        logger.debug(f"Found {len(existing_resources)} existing entity resources out of {len(uris_to_check)} requested")
+        
+        # Phase 3: Filter out resources that already exist
+        new_resources_to_create = []
+        final_resource_map = {}
+        actual_creates = 0
+        
+        for resource in entity_resources_to_create:
+            if resource.uri in existing_resources:
+                # Use existing resource
+                final_resource_map[resource.uri] = existing_resources[resource.uri]
+            else:
+                # Keep for creation
+                new_resources_to_create.append(resource)
+                final_resource_map[resource.uri] = resource  # Will be updated after creation
+                actual_creates += 1
+        
+        # Phase 4: Create only new resources
+        if new_resources_to_create:
             try:
+                logger.debug(f"Creating {len(new_resources_to_create)} new entity resources (filtered from {len(entity_resources_to_create)} attempted)")
                 Resource.objects.bulk_create(
-                    entity_resources_to_create,
-                    ignore_conflicts=True,
+                    new_resources_to_create,
+                    ignore_conflicts=True,  # Keep as safety net
                     batch_size=500
                 )
-                self.statistics.increment_resources_created(len(entity_resources_to_create))
-                logger.debug(f"Successfully created {len(entity_resources_to_create)} entity resources")
+                self.statistics.increment_resources_created(actual_creates)
+                self.statistics.track_resource_filtering(len(entity_resources_to_create), actual_creates)
+                logger.debug(f"Successfully created {actual_creates} new entity resources")
+                
+                # Fetch created resources with their database IDs
+                new_uris = [r.uri for r in new_resources_to_create]
+                created_resources = Resource.objects.filter(uri__in=new_uris)
+                created_resource_map = {res.uri: res for res in created_resources}
+                
+                # Update final map with database objects
+                for resource in new_resources_to_create:
+                    if resource.uri in created_resource_map:
+                        final_resource_map[resource.uri] = created_resource_map[resource.uri]
+                        
             except Exception as e:
                 logger.error(f"Failed to bulk create entity resources: {e}", exc_info=True)
                 raise
         
-        # Fetch the created resources with their database IDs
-        try:
-            created_resources = Resource.objects.filter(
-                uri__in=[res.uri for res in entity_resources_to_create]
-            )
-            result = {res.uri: res for res in created_resources}
-            
-            # If no resources found in database (e.g., in tests with mocked objects),
-            # return the in-memory resources we created
-            if not result and entity_resources_to_create:
-                logger.debug("No resources found in database, using in-memory resources for testing")
-                result = entity_uri_map
-            
-            logger.debug(f"Retrieved {len(result)} entity resources from database")
-            return result
-        except Exception as e:
-            logger.error(f"Failed to retrieve created entity resources: {e}", exc_info=True)
-            raise
+        # If no resources found in database (e.g., in tests with mocked objects),
+        # return the in-memory resources we prepared
+        if not final_resource_map and entity_resources_to_create:
+            logger.debug("No resources found in database, using in-memory resources for testing")
+            final_resource_map = entity_uri_map
+        
+        logger.debug(f"Retrieved {len(final_resource_map)} total entity resources ({actual_creates} new, {len(existing_resources)} existing)")
+        return final_resource_map
     
     def create_property_triples_bulk(self, property_data: List[Tuple[Resource, str, str]]) -> List[Triple]:
         """
-        Create property triples for entities in bulk.
+        Create property triples for entities in bulk, pre-filtering duplicates.
         
         Args:
             property_data: List of (entity_resource, property_uri, value) tuples
@@ -612,74 +834,13 @@ class ResourceManager:
             property_uris.add(property_uri)
             values_to_create.add(value)
         
-        # Create property resources
-        property_resources = {}
-        property_resources_to_create = []
+        # Create property resources with pre-filtering
+        property_resources = self._create_property_resources_bulk(list(property_uris))
         
-        for property_uri in property_uris:
-            property_resource = Resource(
-                uri=property_uri,
-                resource_type=ResourceType.PROPERTY,
-                name=property_uri.split('/')[-1],
-                is_placeholder=False,
-                organization=self.organization
-            )
-            property_resources_to_create.append(property_resource)
-            property_resources[property_uri] = property_resource
-        
-        if property_resources_to_create:
-            try:
-                Resource.objects.bulk_create(
-                    property_resources_to_create,
-                    ignore_conflicts=True,
-                    batch_size=500
-                )
-                # Refresh property resources from database
-                created_properties = Resource.objects.filter(
-                    uri__in=list(property_uris)
-                )
-                property_resources = {res.uri: res for res in created_properties}
-            except Exception as e:
-                logger.error(f"Failed to create property resources: {e}", exc_info=True)
-                raise
-        
-        # Create value resources
-        value_resources = {}
-        value_resources_to_create = []
-        
-        for value in values_to_create:
-            if not value or not value.strip():
-                continue
-                
-            # Generate hash manually since bulk_create doesn't call save()
-            from arkumu.common.hash_utils import generate_value_hash_and_normalize
-            
-            # Normalize once and get both hash and normalized value
-            value_hash, normalized_value = generate_value_hash_and_normalize(value)
-                
-            value_resource = Resource(
-                value=normalized_value,  # Store normalized value since bulk_create doesn't call save()
-                value_hash=value_hash,  # Set hash manually for bulk_create
-                resource_type=ResourceType.LITERAL,
-                name=normalized_value[:100] if len(normalized_value) > 100 else normalized_value,  # Only truncate display name
-                datatype="http://www.w3.org/2001/XMLSchema#string",
-                language="de",  # Default to German language
-                organization=None  # Literals have no organization
-            )
-            value_resources_to_create.append(value_resource)
-            value_resources[value] = value_resource
-        
-        if value_resources_to_create:
-            try:
-                Resource.objects.bulk_create(
-                    value_resources_to_create,
-                    ignore_conflicts=True,
-                    batch_size=500
-                )
-                self.statistics.increment_resources_created(len(value_resources_to_create))
-            except Exception as e:
-                logger.error(f"Failed to create value resources: {e}", exc_info=True)
-                raise
+        # Create value resources with pre-filtering (reuse existing logic)
+        value_tuples = [(value, "http://www.w3.org/2001/XMLSchema#string") for value in values_to_create if value and value.strip()]
+        value_resources_map = self.create_value_resources_bulk(value_tuples)
+        value_resources = {value: resource for value, resource in value_resources_map.items()}
         
         # Create the triples
         triples_to_create = []
@@ -702,29 +863,31 @@ class ResourceManager:
                 triples_to_create.append(triple)
         
         if triples_to_create:
-            try:
-                # # Count before bulk create
-                # count_before = Triple.objects.count()
-                Triple.objects.bulk_create(
-                    triples_to_create,
-                    ignore_conflicts=True,
-                    batch_size=500
-                )
-                # # Count after and update metrics with actual created count
-                # count_after = Triple.objects.count()
-                # actually_created = count_after - count_before
-                # self.statistics.current_metrics.triples_created += actually_created
-                self.statistics.current_metrics.triples_created += len(triples_to_create)
-                logger.debug(f"Successfully created {len(triples_to_create)} property triples")
-            except Exception as e:
-                logger.error(f"Failed to create property triples: {e}", exc_info=True)
-                raise
+            # Pre-filter existing triples
+            existing_count = self._filter_existing_triples(triples_to_create)
+            new_triples_count = len(triples_to_create)
+            
+            if new_triples_count > 0:
+                try:
+                    logger.debug(f"Creating {new_triples_count} new property triples (filtered from {new_triples_count + existing_count} attempted)")
+                    Triple.objects.bulk_create(
+                        triples_to_create,
+                        ignore_conflicts=True,  # Keep as safety net
+                        batch_size=500
+                    )
+                    self.statistics.current_metrics.triples_created += new_triples_count
+                    logger.debug(f"Successfully created {new_triples_count} property triples")
+                except Exception as e:
+                    logger.error(f"Failed to create property triples: {e}", exc_info=True)
+                    raise
+            else:
+                logger.debug(f"All {existing_count} property triples already exist, skipping creation")
         
         return triples_to_create 
 
     def create_dataset_entity_links_bulk(self, entity_resources: List[Resource], dataset_resource: Resource) -> List[Triple]:
         """
-        Create dataset-entity linking triples (entity → dcterms:isPartOf → dataset).
+        Create dataset-entity linking triples (entity → dcterms:isPartOf → dataset), pre-filtering duplicates.
         
         Args:
             entity_resources: List of entity resources to link to the dataset
@@ -736,9 +899,9 @@ class ResourceManager:
         if not entity_resources or not dataset_resource or not self.is_part_of_prop:
             return []
         
-        dataset_entity_triples = []
+        dataset_entity_triples_to_create = []
         for entity_resource in entity_resources:
-            dataset_entity_triples.append(
+            dataset_entity_triples_to_create.append(
                 Triple(
                     subject=entity_resource,
                     predicate=self.is_part_of_prop,
@@ -748,19 +911,21 @@ class ResourceManager:
                 )
             )
         
-        if dataset_entity_triples:
-            try:
-                # # Count before bulk create
-                # count_before = Triple.objects.count()
-                Triple.objects.bulk_create(dataset_entity_triples, ignore_conflicts=True)
-                # # Count after and update metrics with actual created count
-                # count_after = Triple.objects.count()
-                # actually_created = count_after - count_before
-                # self.statistics.current_metrics.triples_created += actually_created
-                self.statistics.current_metrics.triples_created += len(dataset_entity_triples)
-                logger.debug(f"Created {len(dataset_entity_triples)} dataset-entity linking triples")
-            except Exception as e:
-                logger.error(f"Failed to create dataset-entity linking triples: {e}", exc_info=True)
-                raise
+        if dataset_entity_triples_to_create:
+            # Pre-filter existing triples
+            existing_count = self._filter_existing_triples(dataset_entity_triples_to_create)
+            new_triples_count = len(dataset_entity_triples_to_create)
+            
+            if new_triples_count > 0:
+                try:
+                    logger.debug(f"Creating {new_triples_count} new dataset-entity linking triples (filtered from {new_triples_count + existing_count} attempted)")
+                    Triple.objects.bulk_create(dataset_entity_triples_to_create, ignore_conflicts=True)
+                    self.statistics.current_metrics.triples_created += new_triples_count
+                    logger.debug(f"Created {new_triples_count} dataset-entity linking triples")
+                except Exception as e:
+                    logger.error(f"Failed to create dataset-entity linking triples: {e}", exc_info=True)
+                    raise
+            else:
+                logger.debug(f"All {existing_count} dataset-entity linking triples already exist, skipping creation")
         
-        return dataset_entity_triples
+        return dataset_entity_triples_to_create

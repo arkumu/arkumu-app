@@ -60,7 +60,16 @@ class ExecutionMetrics:
     
     # Dataset processing
     datasets_skipped: int = 0
-    stub_entities_created: int = 0
+    
+    # Efficiency tracking (new metrics for constraint violation prevention)
+    resources_attempted: int = 0  # Total resource creation attempts
+    resources_filtered: int = 0   # Resources filtered out as duplicates
+    triples_attempted: int = 0    # Total triple creation attempts  
+    triples_filtered: int = 0     # Triples filtered out as duplicates
+    
+    # Batch processing metrics
+    batch_operations: int = 0     # Number of batch operations performed
+    avg_batch_size: float = 0.0   # Average batch size
     
     def duration_seconds(self) -> float:
         """Calculate execution duration in seconds."""
@@ -112,7 +121,16 @@ class ExecutionMetrics:
         
         # Dataset processing
         self.datasets_skipped += other.datasets_skipped
-        self.stub_entities_created += other.stub_entities_created
+        
+        # Efficiency tracking
+        self.resources_attempted += other.resources_attempted
+        self.resources_filtered += other.resources_filtered
+        self.triples_attempted += other.triples_attempted
+        self.triples_filtered += other.triples_filtered
+        
+        # Batch processing metrics
+        self.batch_operations += other.batch_operations
+        # Average batch size is recalculated, not summed
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -135,7 +153,13 @@ class ExecutionMetrics:
             'properties_created': self.properties_created,
             'stub_entities_created': self.stub_entities_created,
             'relationships_created': self.relationships_created,
-            'datasets_skipped': self.datasets_skipped
+            'datasets_skipped': self.datasets_skipped,
+            'resources_attempted': self.resources_attempted,
+            'resources_filtered': self.resources_filtered,
+            'triples_attempted': self.triples_attempted,
+            'triples_filtered': self.triples_filtered,
+            'batch_operations': self.batch_operations,
+            'avg_batch_size': self.avg_batch_size
         }
 
 
@@ -204,6 +228,37 @@ class ExecutionStatistics:
         """Increment skipped datasets count."""
         self.current_metrics.datasets_skipped += count
     
+    def track_resource_filtering(self, attempted: int, actual_created: int, dataset_name: Optional[str] = None) -> None:
+        """Track resource creation efficiency (attempted vs actual)."""
+        filtered = attempted - actual_created
+        self.current_metrics.resources_attempted += attempted
+        self.current_metrics.resources_filtered += filtered
+        if dataset_name and dataset_name in self.dataset_metrics:
+            self.dataset_metrics[dataset_name].resources_attempted += attempted
+            self.dataset_metrics[dataset_name].resources_filtered += filtered
+    
+    def track_triple_filtering(self, attempted: int, actual_created: int, dataset_name: Optional[str] = None) -> None:
+        """Track triple creation efficiency (attempted vs actual)."""
+        filtered = attempted - actual_created
+        self.current_metrics.triples_attempted += attempted
+        self.current_metrics.triples_filtered += filtered
+        if dataset_name and dataset_name in self.dataset_metrics:
+            self.dataset_metrics[dataset_name].triples_attempted += attempted
+            self.dataset_metrics[dataset_name].triples_filtered += filtered
+    
+    def track_batch_operation(self, batch_size: int, dataset_name: Optional[str] = None) -> None:
+        """Track batch processing operations."""
+        self.current_metrics.batch_operations += 1
+        # Update running average of batch sizes
+        total_items = (self.current_metrics.avg_batch_size * (self.current_metrics.batch_operations - 1)) + batch_size
+        self.current_metrics.avg_batch_size = total_items / self.current_metrics.batch_operations
+        
+        if dataset_name and dataset_name in self.dataset_metrics:
+            self.dataset_metrics[dataset_name].batch_operations += 1
+            dataset_total = (self.dataset_metrics[dataset_name].avg_batch_size * 
+                           (self.dataset_metrics[dataset_name].batch_operations - 1)) + batch_size
+            self.dataset_metrics[dataset_name].avg_batch_size = dataset_total / self.dataset_metrics[dataset_name].batch_operations
+    
     def merge_metrics(self, metrics: ExecutionMetrics) -> None:
         """Merge external metrics into current statistics."""
         self.current_metrics.merge(metrics)
@@ -239,6 +294,23 @@ class ExecutionStatistics:
             logger.info(f"Datasets skipped: {overall['datasets_skipped']}")
         logger.info(f"Rows: {overall['rows_processed']}, Cells: {overall['cells_processed']}")
         logger.info(f"Resources: {overall['resources_created']} created, {overall['resources_updated']} updated")
+        
+        # Efficiency metrics
+        if overall.get('resources_attempted', 0) > 0:
+            efficiency = (overall['resources_created'] / overall['resources_attempted']) * 100
+            logger.info(f"Resource efficiency: {efficiency:.1f}% ({overall['resources_created']}/{overall['resources_attempted']})")
+            if overall.get('resources_filtered', 0) > 0:
+                logger.info(f"Resources filtered (duplicates): {overall['resources_filtered']}")
+        
+        if overall.get('triples_attempted', 0) > 0:
+            triple_efficiency = (overall['triples_created'] / overall['triples_attempted']) * 100
+            logger.info(f"Triple efficiency: {triple_efficiency:.1f}% ({overall['triples_created']}/{overall['triples_attempted']})")
+            if overall.get('triples_filtered', 0) > 0:
+                logger.info(f"Triples filtered (duplicates): {overall['triples_filtered']}")
+        
+        if overall.get('batch_operations', 0) > 0:
+            logger.info(f"Batch operations: {overall['batch_operations']}, avg size: {overall.get('avg_batch_size', 0):.1f}")
+        
         logger.info(f"FK relationships: {overall['fk_relationships_created']}")
         logger.info(f"External ontology matches: {overall['external_ontology_matches']}")
         if overall['errors'] > 0:

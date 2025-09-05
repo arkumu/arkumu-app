@@ -456,6 +456,9 @@ class MappingAwareProcessor:
                 groups['anchor'].append(column)
             elif column.column_type.value == 'foreign_key':
                 groups['foreign_key'].append(column)
+                # Log if this FK is also multi-value
+                if column.is_multi_value:
+                    logger.debug(f"   Column '{column.column_name}' is both FK and multi-value")
             elif column.is_multi_value:
                 groups['multi_value'].append(column)
             elif column.column_type.value == 'relationship_context':
@@ -498,9 +501,15 @@ class MappingAwareProcessor:
                                row_data: Dict[str, Any],
                                columns: List[ColumnConfig],
                                context: ProcessingContext):
-        """Process regular columns as simple properties"""
-        if columns and context.log_details:
+        """Process regular columns as simple properties with optimized batching"""
+        if not columns:
+            return
+            
+        if context.log_details:
             logger.debug(f"Processing {len(columns)} regular columns for entity {entity_resource.uri}")
+        
+        # Collect all regular column triples for batch creation
+        batch_property_data = []
         
         for column in columns:
             value = row_data.get(column.column_name)
@@ -508,22 +517,31 @@ class MappingAwareProcessor:
                 # Create property URI from arkumu_type
                 property_uri = self._generate_property_uri(column.arkumu_type)
                 
-                # Create property triple
-                self.resource_manager.create_property_triple(
+                # Add to batch
+                batch_property_data.append((
                     entity_resource,
                     property_uri,
-                    str(value).strip(),
-                    column.datatype
-                )
+                    str(value).strip()
+                ))
+        
+        # Create all regular column triples in batch if we have any
+        if batch_property_data:
+            logger.debug(f"Creating {len(batch_property_data)} regular property triples in batch")
+            self.resource_manager.create_property_triples_bulk(batch_property_data)
     
     def _process_anchor_columns(self,
                               entity_resource,
                               row_data: Dict[str, Any],
                               columns: List[ColumnConfig],
                               context: ProcessingContext):
-        """Process anchor columns (primary key properties)"""
-        if columns:
-            logger.debug(f"Processing {len(columns)} anchor columns: {[col.column_name for col in columns]}")
+        """Process anchor columns (primary key properties) with optimized batching"""
+        if not columns:
+            return
+            
+        logger.debug(f"Processing {len(columns)} anchor columns: {[col.column_name for col in columns]}")
+        
+        # Collect all anchor column triples for batch creation
+        batch_property_data = []
         
         for column in columns:
             value = row_data.get(column.column_name)
@@ -531,68 +549,108 @@ class MappingAwareProcessor:
                 # Create identifier property
                 property_uri = self._generate_property_uri(column.arkumu_type)
                 
-                # Create property triple
-                self.resource_manager.create_property_triple(
+                # Add to batch
+                batch_property_data.append((
                     entity_resource,
                     property_uri,
-                    str(value).strip(),
-                    column.datatype
-                )
+                    str(value).strip()
+                ))
+        
+        # Create all anchor column triples in batch if we have any
+        if batch_property_data:
+            logger.debug(f"Creating {len(batch_property_data)} anchor property triples in batch")
+            self.resource_manager.create_property_triples_bulk(batch_property_data)
     
     def _process_multi_value_columns(self,
                                    entity_resource,
                                    row_data: Dict[str, Any],
                                    columns: List[ColumnConfig],
                                    context: ProcessingContext):
-        """Process multi-value columns (comma-separated values)"""
-        if columns:
-            logger.debug(f"Processing {len(columns)} multi-value columns: {[col.column_name for col in columns]}")
+        """Process multi-value columns (comma-separated values) with optimized batching"""
+        if not columns:
+            return
+            
+        logger.debug(f"Processing {len(columns)} multi-value columns: {[col.column_name for col in columns]}")
+        
+        # Collect all multi-value triples for batch creation
+        batch_property_data = []
         
         for column in columns:
             value = row_data.get(column.column_name)
-            if value is not None and str(value).strip():
-                # Split the value using the configured separator
-                values = self._split_multi_value(str(value), column.multi_value_separator)
+            if not value or not str(value).strip():
+                continue
                 
-                # Create property URI
-                property_uri = self._generate_property_uri(column.arkumu_type)
-                
-                # Create a property triple for each value
-                for single_value in values:
-                    if single_value.strip():
-                        self.resource_manager.create_property_triple(
-                            entity_resource,
-                            property_uri,
-                            single_value.strip(),
-                            column.datatype
-                        )
+            # Split the value using the configured separator
+            values = self._split_multi_value(str(value), column.multi_value_separator)
+            
+            # Generate property URI once for all values in this column
+            property_uri = self._generate_property_uri(column.arkumu_type)
+            
+            # Add each value to the batch
+            for single_value in values:
+                if single_value.strip():
+                    batch_property_data.append((
+                        entity_resource,
+                        property_uri,
+                        single_value.strip()
+                    ))
+                    # Track multi-value processing statistics
+                    self.statistics.current_metrics.multi_value_items_created += 1
+        
+        # Create all multi-value triples in batch if we have any
+        if batch_property_data:
+            logger.debug(f"Creating {len(batch_property_data)} multi-value property triples in batch")
+            self.resource_manager.create_property_triples_bulk(batch_property_data)
+            # Update statistics for multi-value cell processing
+            self.statistics.current_metrics.multi_value_cells_split += len(columns)
     
     def _queue_fk_relationships(self,
                               entity_uri: str,
                               row_data: Dict[str, Any],
                               columns: List[ColumnConfig],
                               context: ProcessingContext):
-        """Queue FK relationships for later resolution"""
+        """Queue FK relationships for later resolution with improved batching"""
+        
+        if not columns:
+            return
+            
+        logger.debug(f"🔗 Queueing FK relationships for {len(columns)} FK columns")
+        
+        # Group FK relationships by target dataset for better batching
+        relationships_by_target = {}
         
         for column in columns:
             value = row_data.get(column.column_name)
-            if value is not None and str(value).strip():
-                # Handle multi-value FKs
-                if column.is_multi_value:
-                    fk_values = self._split_multi_value(str(value), column.multi_value_separator)
-                else:
-                    fk_values = [str(value).strip()]
+            if not value or not str(value).strip():
+                continue
                 
-                # Queue each FK relationship
-                for fk_value in fk_values:
-                    if fk_value.strip():
-                        self.pending_relationships.append({
-                            'source_entity_uri': entity_uri,
-                            'source_column': column.column_name,
-                            'target_value': fk_value.strip(),
-                            'target_dataset': self._get_target_dataset_for_column(column, context),
-                            'relationship_type': column.arkumu_type
-                        })
+            target_dataset = self._get_target_dataset_for_column(column, context)
+            
+            # Handle multi-value FKs
+            if column.is_multi_value:
+                fk_values = self._split_multi_value(str(value), column.multi_value_separator)
+            else:
+                fk_values = [str(value).strip()]
+            
+            # Group by target dataset for more efficient resolution
+            if target_dataset not in relationships_by_target:
+                relationships_by_target[target_dataset] = []
+            
+            for fk_value in fk_values:
+                if fk_value.strip():
+                    relationships_by_target[target_dataset].append({
+                        'source_entity_uri': entity_uri,
+                        'source_column': column.column_name,
+                        'target_value': fk_value.strip(),
+                        'target_dataset': target_dataset,
+                        'relationship_type': column.arkumu_type,
+                        'is_multi_value': column.is_multi_value
+                    })
+        
+        # Add grouped relationships to pending queue
+        for target_dataset, relationships in relationships_by_target.items():
+            self.pending_relationships.extend(relationships)
+            logger.debug(f"   🔗 Queued {len(relationships)} relationships targeting {target_dataset}")
     
     def _process_external_ontology_columns(self,
                                          entity_resource,
@@ -641,97 +699,62 @@ class MappingAwareProcessor:
                                f"{external_uri} -> owl:sameAs -> literal_resource('{cleaned_value}')")
     
     def _resolve_pending_relationships(self, context: ProcessingContext):
-        """Resolve all pending FK relationships"""
+        """Resolve all pending FK relationships with improved batching and efficiency"""
         
+        if not self.pending_relationships:
+            logger.info("🔗 FK RESOLUTION: No pending relationships to resolve")
+            return
+            
         logger.info(f"\n{'='*60}")
-        logger.info(f"Resolving {len(self.pending_relationships)} pending FK relationships")
+        logger.info(f"🔗 FK RESOLUTION: Starting resolution of {len(self.pending_relationships)} pending FK relationships")
         
-        # Log FK relationship types
-        fk_by_type = {}
-        for pending_fk in self.pending_relationships:
-            fk_type = f"{pending_fk['source_dataset']} -> {pending_fk['target_dataset']}"
-            fk_by_type[fk_type] = fk_by_type.get(fk_type, 0) + 1
+        # Group relationships by target dataset for batch processing
+        relationships_by_target = self._group_relationships_by_target()
         
-        if fk_by_type:
-            logger.info("FK relationships by type:")
-            for fk_type, count in sorted(fk_by_type.items()):
-                logger.info(f"  - {fk_type}: {count}")
+        # Log relationship distribution
+        logger.info("FK relationships by target dataset:")
+        for target_dataset, relationships in relationships_by_target.items():
+            logger.info(f"  - {target_dataset}: {len(relationships)}")
         
-        resolved_count = 0
-        failed_count = 0
-        orphaned_count = 0
-        missing_source_count = 0
+        # Process relationships in batches by target dataset
+        total_resolved = 0
+        total_failed = 0
+        total_orphaned = 0
+        total_missing_source = 0
         
-        # Group relationships by target dataset to identify orphaned references
-        skipped_datasets = set()
-        for dataset_config in context.execution_config.datasets:
-            if dataset_config.dataset_name not in context.all_csv_sources:
-                skipped_datasets.add(dataset_config.dataset_name)
+        skipped_datasets = self._identify_skipped_datasets(context)
         
-        for relationship in self.pending_relationships:
-            try:
-                # Check if target dataset was skipped
-                target_dataset = relationship['target_dataset']
-                if target_dataset in skipped_datasets:
-                    # Check if we created stub structure for this dataset
-                    if hasattr(context, 'stub_datasets') and target_dataset in context.stub_datasets:
-                        logger.debug(f"Creating stub entity for FK relationship to dataset '{target_dataset}': " +
-                                   f"{relationship['source_dataset']}.{relationship['source_column']} -> " +
-                                   f"{target_dataset}.{relationship.get('target_column', 'unknown')}")
-                        # Continue processing to create stub entity
-                    else:
-                        logger.debug(f"Skipping FK relationship to orphaned dataset '{target_dataset}': " +
-                                   f"{relationship['source_dataset']}.{relationship['source_column']} -> " +
-                                   f"{target_dataset}.{relationship.get('target_column', 'unknown')}")
-                        orphaned_count += 1
-                        continue
-                
-                # Generate target entity URI
-                target_entity_uri = self._generate_target_entity_uri(
-                    relationship['target_dataset'],
-                    relationship['target_value'],
-                    context
-                )
-                
-                # Get or create target entity
-                target_entity = self._get_or_create_target_entity(target_entity_uri, relationship, context)
-                
-                # Get source entity
-                source_entity = context.entity_cache.get(relationship['source_entity_uri'])
-                
-                if source_entity and target_entity:
-                    # Create relationship triple
-                    property_uri = self._generate_property_uri(relationship['relationship_type'])
-                    self.resource_manager.create_relationship_triple(
-                        source_entity,
-                        property_uri,
-                        target_entity
-                    )
-                    resolved_count += 1
-                elif not source_entity:
-                    logger.warning(f"Missing source entity for FK relationship: {relationship['source_entity_uri']}")
-                    missing_source_count += 1
+        for target_dataset, relationships in relationships_by_target.items():
+            logger.debug(f"🔄 Processing {len(relationships)} FK relationships targeting '{target_dataset}'")
+            
+            # Check if target dataset was skipped
+            if target_dataset in skipped_datasets:
+                if hasattr(context, 'stub_datasets') and target_dataset in context.stub_datasets:
+                    logger.debug(f"Creating stub entities for relationships to '{target_dataset}' (has stub structure)")
                 else:
-                    logger.warning(f"Could not resolve FK relationship: {relationship}")
-                    failed_count += 1
-                    
-            except Exception as e:
-                logger.error(f"Failed to resolve FK relationship {relationship}: {e}")
-                failed_count += 1
+                    logger.debug(f"Skipping relationships to orphaned dataset '{target_dataset}' (no CSV data)")
+                    total_orphaned += len(relationships)
+                    continue
+            
+            # Process this batch of relationships
+            batch_results = self._resolve_relationship_batch(relationships, context)
+            total_resolved += batch_results['resolved']
+            total_failed += batch_results['failed']
+            total_missing_source += batch_results['missing_source']
         
-        # Enhanced logging with detailed breakdown
+        # Log final summary
         total_relationships = len(self.pending_relationships)
         logger.info(f"FK resolution completed:")
-        logger.info(f"  ✅ Resolved: {resolved_count}")
-        logger.info(f"  ❌ Failed: {failed_count}")
-        logger.info(f"  🔗 Orphaned (skipped datasets): {orphaned_count}")
-        logger.info(f"  👻 Missing source entities: {missing_source_count}")
+        logger.info(f"  ✅ Resolved: {total_resolved}")
+        logger.info(f"  ❌ Failed: {total_failed}")
+        logger.info(f"  🔗 Orphaned (skipped datasets): {total_orphaned}")
+        logger.info(f"  👻 Missing source entities: {total_missing_source}")
         logger.info(f"  📊 Total processed: {total_relationships}")
         
-        # Add warnings to statistics for orphaned relationships
-        if orphaned_count > 0:
+        # Update statistics
+        if total_orphaned > 0:
             self.statistics.add_warning(
-                f"Skipped {orphaned_count} FK relationships due to orphaned references to missing/empty datasets"
+                f"Skipped {total_orphaned} FK relationships due to orphaned references to missing/empty datasets"
             )
         
         # Clear pending relationships
@@ -998,13 +1021,134 @@ class MappingAwareProcessor:
     
     def _get_target_dataset_for_column(self, column: ColumnConfig, context: ProcessingContext) -> str:
         """Get target dataset for an FK column"""
+        # Check if column has direct FK config (it's a dictionary)
+        if hasattr(column, 'fk_config') and column.fk_config:
+            if isinstance(column.fk_config, dict):
+                target_dataset = column.fk_config.get('target_dataset')
+            else:
+                target_dataset = getattr(column.fk_config, 'target_dataset', None)
+            if target_dataset:
+                logger.debug(f"✅ Found target dataset from column.fk_config: {target_dataset}")
+                return target_dataset
+        
         # Look up the target dataset from FK relationships
         for fk_rel in context.execution_config.fk_relationships:
             if fk_rel.source_column == column.column_name:
+                logger.debug(f"✅ Found target dataset from execution_config.fk_relationships: {fk_rel.target_dataset}")
                 return fk_rel.target_dataset
         
+        # Log warning when no FK config found
+        logger.warning(f"⚠️ No FK configuration found for column '{column.column_name}'")
+        logger.warning(f"   Available FK relationships in config: {[fr.source_column for fr in context.execution_config.fk_relationships]}")
+        
         # Fallback to placeholder if not found
-        return f"target_dataset_for_{column.column_name}"
+        fallback = f"target_dataset_for_{column.column_name}"
+        logger.warning(f"   Using fallback target dataset: {fallback}")
+        return fallback
+    
+    def _group_relationships_by_target(self) -> Dict[str, List[Dict]]:
+        """Group pending relationships by target dataset for batch processing"""
+        relationships_by_target = {}
+        
+        for relationship in self.pending_relationships:
+            target_dataset = relationship['target_dataset']
+            if target_dataset not in relationships_by_target:
+                relationships_by_target[target_dataset] = []
+            relationships_by_target[target_dataset].append(relationship)
+        
+        return relationships_by_target
+    
+    def _identify_skipped_datasets(self, context: ProcessingContext) -> Set[str]:
+        """Identify datasets that were skipped (no CSV data provided)"""
+        skipped_datasets = set()
+        for dataset_config in context.execution_config.datasets:
+            if dataset_config.dataset_name not in context.all_csv_sources:
+                skipped_datasets.add(dataset_config.dataset_name)
+        return skipped_datasets
+    
+    def _resolve_relationship_batch(self, relationships: List[Dict], context: ProcessingContext) -> Dict[str, int]:
+        """Resolve a batch of relationships targeting the same dataset"""
+        results = {'resolved': 0, 'failed': 0, 'missing_source': 0}
+        
+        # Pre-process target entities for this batch
+        target_entities_cache = self._prepare_target_entities_batch(relationships, context)
+        
+        for relationship in relationships:
+            try:
+                source_entity_uri = relationship['source_entity_uri']
+                target_value = relationship['target_value']
+                
+                # Get source entity from context cache
+                source_entity = context.entity_cache.get(source_entity_uri)
+                if not source_entity:
+                    logger.debug(f"❌ Missing source entity: {source_entity_uri}")
+                    results['missing_source'] += 1
+                    continue
+                
+                # Get target entity from batch cache
+                target_entity_uri = self._generate_target_entity_uri(
+                    relationship['target_dataset'],
+                    target_value,
+                    context
+                )
+                
+                target_entity = target_entities_cache.get(target_entity_uri)
+                if not target_entity:
+                    logger.debug(f"❌ Could not resolve target entity: {target_entity_uri}")
+                    results['failed'] += 1
+                    continue
+                
+                # Create relationship triple
+                property_uri = self._generate_property_uri(relationship['relationship_type'])
+                triple = self.resource_manager.create_relationship_triple(
+                    source_entity,
+                    property_uri,
+                    target_entity
+                )
+                results['resolved'] += 1
+                
+                logger.debug(f"✅ FK RESOLVED: {source_entity.uri} -[{property_uri}]-> {target_entity.uri}")
+                
+            except Exception as e:
+                logger.error(f"Failed to resolve FK relationship {relationship}: {e}")
+                results['failed'] += 1
+        
+        logger.debug(f"Batch results: {results['resolved']} resolved, {results['failed']} failed, {results['missing_source']} missing source")
+        return results
+    
+    def _prepare_target_entities_batch(self, relationships: List[Dict], context: ProcessingContext) -> Dict[str, Resource]:
+        """Pre-create or fetch target entities for a batch of relationships"""
+        target_entities = {}
+        target_dataset = relationships[0]['target_dataset']  # All relationships in batch have same target
+        
+        # Collect unique target values
+        target_values = set()
+        for relationship in relationships:
+            target_values.add(relationship['target_value'])
+        
+        logger.debug(f"Preparing {len(target_values)} target entities for dataset '{target_dataset}'")
+        
+        # Generate target entity URIs
+        for target_value in target_values:
+            target_entity_uri = self._generate_target_entity_uri(target_dataset, target_value, context)
+            
+            # Check if entity already exists in context cache
+            if target_entity_uri in context.entity_cache:
+                target_entities[target_entity_uri] = context.entity_cache[target_entity_uri]
+            else:
+                # Create or get target entity (potentially as stub)
+                target_entity = self._get_or_create_target_entity(target_entity_uri, {
+                    'target_dataset': target_dataset,
+                    'target_value': target_value
+                }, context)
+                
+                if target_entity:
+                    target_entities[target_entity_uri] = target_entity
+                    # Add to context cache for future use
+                    context.entity_cache[target_entity_uri] = target_entity
+        
+        logger.debug(f"Prepared {len(target_entities)} target entities for '{target_dataset}'")
+        return target_entities
     
     def _generate_target_entity_uri(self, target_dataset: str, target_value: str, context: ProcessingContext) -> str:
         """Generate URI for target entity"""
@@ -1017,6 +1161,14 @@ class MappingAwareProcessor:
             return context.entity_cache[target_uri]
         
         target_dataset = relationship['target_dataset']
+        
+        # Try to find if entity was already created in database
+        try:
+            existing_entity = Resource.objects.get(uri=target_uri)
+            context.entity_cache[target_uri] = existing_entity
+            return existing_entity
+        except Resource.DoesNotExist:
+            pass  # Entity doesn't exist, create stub
         
         # Create stub entity
         stub_entity = self.resource_manager.create_entity_resource(
@@ -1575,15 +1727,17 @@ class MappingAwareProcessor:
     
     def _create_fk_relationship_definition(self, column, source_dataset):
         """Create FK relationship definition."""
+        # fk_config is a dictionary, not an object
+        fk_config = column.fk_config
         return {
             'source_dataset': source_dataset,
             'source_column': column.column_name,
             'source_property': column.arkumu_type,
-            'target_dataset': column.fk_config.target_dataset,
-            'target_column': column.fk_config.target_column,
+            'target_dataset': fk_config.get('target_dataset', ''),
+            'target_column': fk_config.get('target_column', ''),
             'relationship_type': column.arkumu_type,
-            'is_multi_value': column.column_type.value == 'multi_value',
-            'fk_config': column.fk_config
+            'is_multi_value': column.is_multi_value,
+            'fk_config': fk_config
         }
     
     def _create_all_schema_metadata_triples(self):
