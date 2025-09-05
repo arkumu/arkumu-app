@@ -53,7 +53,7 @@ class TestHarmonizedSearchView:
         )
         
         catalog_resource = Resource.objects.create(
-            uri='http://data.arkumu.org/catalog/project',
+            uri='http://arkumu.org/data/catalog/project',
             name='Catalog Project',
             resource_type=ResourceType.CLASS
         )

@@ -11,8 +11,8 @@ from django.template.loader import render_to_string
 from django.middleware.csrf import get_token
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
-from arkumu.metadata.services.catalog_navigation_service import CatalogNavigationService
-from arkumu.metadata.services.faceted_search_service import FacetedSearchService
+from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
+from arkumu.catalog.services.faceted_search_service import FacetedSearchService
 from arkumu.metadata.models import Resource
 
 

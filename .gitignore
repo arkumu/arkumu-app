@@ -6,6 +6,9 @@ __pycache__/
 
 .claude/
 
+# CORS policy files (environment-specific configuration)
+cors-policy.json
+
 # C extensions
 *.so
 

@@ -14,7 +14,7 @@ class CatalogUriGenerator:
     following existing URI conventions.
     """
     
-    DEFAULT_CATALOG_BASE_URI = "http://data.arkumu.org/catalog/"
+    DEFAULT_CATALOG_BASE_URI = "http://arkumu.org/data/catalog/"
     CATALOG_INSTITUTION_CODE = "catalog"  # Pre-slugified institution code
     
     def __init__(self, base_uri: str = None):
@@ -39,7 +39,7 @@ class CatalogUriGenerator:
         Example:
             >>> generator = CatalogUriGenerator()
             >>> generator.generate_property_uri("artwork_title")
-            'http://data.arkumu.org/catalog/catalog/properties/artwork-title'
+            'http://arkumu.org/data/catalog/catalog/properties/artwork-title'
         """
         return mint_uri(
             self.base_uri,
@@ -61,7 +61,7 @@ class CatalogUriGenerator:
         Example:
             >>> generator = CatalogUriGenerator()
             >>> generator.generate_class_uri("Artwork") 
-            'http://data.arkumu.org/catalog/catalog/classes/artwork'
+            'http://arkumu.org/data/catalog/catalog/classes/artwork'
         """
         return mint_uri(
             self.base_uri,
@@ -83,7 +83,7 @@ class CatalogUriGenerator:
         Example:
             >>> generator = CatalogUriGenerator()
             >>> generator.generate_concept_uri("Digital Media")
-            'http://data.arkumu.org/catalog/catalog/concepts/digital-media'
+            'http://arkumu.org/data/catalog/catalog/concepts/digital-media'
         """
         return mint_uri(
             self.base_uri,
@@ -105,7 +105,7 @@ class CatalogUriGenerator:
         Example:
             >>> generator = CatalogUriGenerator()
             >>> generator.generate_vocabulary_uri("Media Types")
-            'http://data.arkumu.org/catalog/catalog/vocabularies/media-types'
+            'http://arkumu.org/data/catalog/catalog/vocabularies/media-types'
         """
         return mint_uri(
             self.base_uri,
@@ -128,7 +128,7 @@ class CatalogUriGenerator:
         Example:
             >>> generator = CatalogUriGenerator()
             >>> generator.generate_mapping_uri("khm", "title-mapping-001")
-            'http://data.arkumu.org/catalog/catalog/mappings/khm/title-mapping-001'
+            'http://arkumu.org/data/catalog/catalog/mappings/khm/title-mapping-001'
         """
         if mapping_id:
             return mint_uri(
@@ -170,7 +170,7 @@ class CatalogUriGenerator:
             
         Example:
             >>> generator = CatalogUriGenerator()
-            >>> uri = 'http://data.arkumu.org/catalog/catalog/properties/title'
+            >>> uri = 'http://arkumu.org/data/catalog/catalog/properties/title'
             >>> generator.extract_catalog_identifier(uri)
             'title'
         """

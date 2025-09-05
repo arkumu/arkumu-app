@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from arkumu.metadata.models import Resource, Triple
 from arkumu.users.models import Organization
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
-from arkumu.metadata.services.faceted_search_service import FacetedSearchService
+from arkumu.catalog.services.faceted_search_service import FacetedSearchService
 
 User = get_user_model()
 
@@ -50,7 +50,7 @@ class TestSearchWithFacets:
         )
         
         catalog_resource = Resource.objects.create(
-            uri='http://data.arkumu.org/catalog/project',
+            uri='http://arkumu.org/data/catalog/project',
             name='Catalog Project',
             resource_type=ResourceType.CLASS
         )

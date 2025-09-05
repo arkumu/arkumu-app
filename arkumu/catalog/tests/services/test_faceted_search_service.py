@@ -7,7 +7,7 @@ from django.test import TestCase
 from arkumu.metadata.models import Resource, Triple
 from arkumu.users.models import Organization
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
-from arkumu.metadata.services.faceted_search_service import FacetedSearchService
+from arkumu.catalog.services.faceted_search_service import FacetedSearchService
 from arkumu.users.models import User
 
 User = get_user_model()
@@ -53,7 +53,7 @@ class TestFacetedSearchService:
     def catalog_resource(self):
         """Create catalog target resource."""
         return Resource.objects.create(
-            uri='http://data.arkumu.org/catalog/project',
+            uri='http://arkumu.org/data/catalog/project',
             name='Catalog Project',
             resource_type=ResourceType.CLASS
         )
