@@ -9,12 +9,6 @@
         <span>No files found in {{ organization|title }}</span>
     </div>
 {% else %}
-    <div class="card card-sm bg-base-100 shadow-sm mb-4">
-        <div class="card-body">
-            <h3 class="card-title text-lg">{{ organization|title }} Files</h3>
-        </div>
-    </div>
-    
     <!-- File Tree Structure using DaisyUI menu -->
     <ul class="menu menu-lg w-full">
         {% for item in contents %}

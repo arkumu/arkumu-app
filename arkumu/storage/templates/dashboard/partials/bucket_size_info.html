@@ -1,0 +1,71 @@
+{% comment %}
+Partial template for displaying bucket size information with refresh button.
+Used by HTMX to update bucket size stats dynamically.
+{% endcomment %}
+
+<div class="flex items-center gap-2">
+    <div id="bucket-size-{{ organization }}" class="stats bg-base-200 shadow-inner">
+        <div class="stat">
+            <div class="stat-figure text-secondary">
+                {% if success %}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V8z" />
+                    </svg>
+                {% else %}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                {% endif %}
+            </div>
+            <div class="stat-title text-xs">
+                {{ organization|upper }} Bucket Size
+                {% if bucket_name %}
+                    <span class="text-xs opacity-60">({{ bucket_name }})</span>
+                {% endif %}
+            </div>
+            
+            {% if success %}
+                <div class="stat-value text-lg">{{ total_size_formatted }}</div>
+                <div class="stat-desc">
+                    {{ object_count|floatformat:0 }} object{{ object_count|pluralize }}
+                    {% if calculation_duration > 0 %}
+                        <span class="text-xs opacity-60">• {{ calculation_duration|floatformat:2 }}s</span>
+                    {% endif %}
+                </div>
+            {% else %}
+                <div class="stat-value text-error text-sm">Error</div>
+                <div class="stat-desc text-error text-xs">
+                    {{ error|truncatechars:50 }}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Refresh Button -->
+    <div class="tooltip tooltip-left" data-tip="Refresh bucket size">
+        <button class="btn btn-circle btn-sm btn-ghost"
+                hx-get="{% url 'storage:bucket_size_info' organization %}?force_fresh=true"
+                hx-target="#bucket-size-container"
+                hx-swap="innerHTML"
+                hx-indicator="#bucket-size-loading">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+        </button>
+    </div>
+    
+    <!-- Loading Indicator (Hidden by default) -->
+    <div id="bucket-size-loading" class="htmx-indicator">
+        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+    </div>
+</div>
+
+{% if success and calculation_duration > 2 %}
+    <!-- Show a brief indicator if calculation took a while -->
+    <div class="text-xs text-base-content/50 mt-1 flex items-center gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Calculated in {{ calculation_duration|floatformat:1 }}s
+    </div>
+{% endif %}

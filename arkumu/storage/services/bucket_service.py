@@ -636,3 +636,130 @@ class BucketService:
                 "error": f"Unexpected error: {str(e)}"
             }
 
+    def get_bucket_total_size(self, bucket_name: str, force_fresh: bool = False) -> Dict[str, Any]:
+        """
+        Calculate the total size of all objects in a bucket.
+        Uses Redis caching to avoid expensive S3 API calls (30 minute TTL).
+        
+        Args:
+            bucket_name: Name of the S3 bucket
+            force_fresh: If True, bypass cache and recalculate
+            
+        Returns:
+            Dict containing:
+                - success: bool
+                - total_size: int (bytes)
+                - total_size_formatted: str (human readable)
+                - object_count: int (total number of objects)
+                - error: str (if success is False)
+        """
+        cache_key = f"bucket_total_size_{bucket_name}"
+        
+        # Check cache first (30 minute TTL) unless force_fresh is True
+        if not force_fresh:
+            cached_result = self.cache.get(cache_key)
+            if cached_result is not None:
+                logger.info(f"📊 Found cached bucket size for {bucket_name}: {cached_result.get('total_size_formatted', '0 B')}")
+                return cached_result
+        else:
+            logger.info(f"📊 Force fresh calculation for bucket {bucket_name} (cache bypassed)")
+        
+        start_time = time.time()
+        logger.info(f"📊 BUCKET SIZE CALCULATION START: {bucket_name} at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+        
+        total_size = 0
+        object_count = 0
+        
+        try:
+            # Use paginator to handle large buckets efficiently
+            paginator = self.base_s3_service.s3_client.get_paginator('list_objects_v2')
+            
+            for page_num, page in enumerate(paginator.paginate(Bucket=bucket_name), 1):
+                page_objects = page.get('Contents', [])
+                page_size = sum(obj.get('Size', 0) for obj in page_objects)
+                page_count = len(page_objects)
+                
+                total_size += page_size
+                object_count += page_count
+                
+                # Log progress for large buckets
+                if page_num % 10 == 0:
+                    logger.info(f"📊 Processed {page_num} pages, current total: {self.base_s3_service._format_size(total_size)}, objects: {object_count}")
+            
+            end_time = time.time()
+            calculation_duration = end_time - start_time
+            
+            result = {
+                "success": True,
+                "total_size": total_size,
+                "total_size_formatted": self.base_s3_service._format_size(total_size),
+                "object_count": object_count,
+                "calculation_duration": calculation_duration
+            }
+            
+            # Cache the results for 30 minutes (1800 seconds)
+            logger.info(f"📊 BUCKET SIZE COMPLETE: {bucket_name} = {result['total_size_formatted']} ({object_count} objects) in {calculation_duration:.3f}s")
+            self.cache.set(cache_key, result, timeout=1800)
+            
+            return result
+            
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"❌ Error calculating bucket size for {bucket_name}: {error_code}")
+            return {
+                "success": False,
+                "error": f"S3 error: {error_code}",
+                "total_size": 0,
+                "total_size_formatted": "0 B",
+                "object_count": 0
+            }
+        except Exception as e:
+            logger.exception(f"❌ Unexpected error calculating bucket size for {bucket_name}")
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "total_size": 0,
+                "total_size_formatted": "0 B", 
+                "object_count": 0
+            }
+
+    def get_organization_bucket_size(self, organization_id: str, force_fresh: bool = False) -> Dict[str, Any]:
+        """
+        Calculate the total size of an organization's bucket.
+        Convenience wrapper around get_bucket_total_size.
+        
+        Args:
+            organization_id: Organization ID (e.g., 'fuk', 'khm', 'det', etc.)
+            force_fresh: If True, bypass cache and recalculate
+            
+        Returns:
+            Dict containing size information and organization details
+        """
+        bucket_name = self._get_organization_bucket_name(organization_id)
+        logger.info(f"📊 Calculating size for organization '{organization_id}' bucket '{bucket_name}'")
+        
+        # Ensure bucket exists before calculating size
+        bucket_result = self.ensure_organization_bucket_exists(organization_id, check_only=True)
+        if not bucket_result["success"]:
+            logger.error(f"Cannot calculate size - bucket '{bucket_name}' not accessible: {bucket_result.get('error', 'Unknown error')}")
+            return {
+                "success": False,
+                "organization_id": organization_id,
+                "bucket_name": bucket_name,
+                "error": f"Bucket '{bucket_name}' not accessible: {bucket_result.get('error', 'Unknown error')}",
+                "total_size": 0,
+                "total_size_formatted": "0 B",
+                "object_count": 0
+            }
+        
+        # Get bucket size
+        size_result = self.get_bucket_total_size(bucket_name, force_fresh)
+        
+        # Add organization context
+        size_result.update({
+            "organization_id": organization_id,
+            "bucket_name": bucket_name
+        })
+        
+        return size_result
+

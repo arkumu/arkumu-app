@@ -558,7 +558,7 @@ def upload_complete_oob_refresh(request, organization):
         
         logger.info(f"✅ UPLOAD_OOB_REFRESH: Generated file browser HTML (length: {len(file_browser_html)})")
         
-        # Build OOB response to update the file browser
+        # Build OOB response to update file browser only (bucket size has manual refresh button)
         oob_updates = {
             'file-browser-content': file_browser_html
         }
