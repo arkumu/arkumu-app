@@ -1,10 +1,10 @@
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.core.paginator import Paginator
 from django.db.models import Q, Count, Exists, OuterRef, Case, When, Value, CharField, Subquery, F, Prefetch
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page, cache_control
-from django.views.generic import ListView, DetailView
+from django.views.generic import ListView, DetailView, View
 from django.conf import settings
 from django.core.cache import cache
 from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
@@ -16,13 +16,24 @@ logger = logging.getLogger(__name__)
 class OptimizedDataExplorerView(ListView):
     """Optimized data explorer with reduced database queries"""
     model = Resource
-    template_name = 'metadata/data_explorer_optimized.html'  # Use optimized template with HTMX
+    template_name = 'metadata/data_explorer.html'
     context_object_name = 'resources'
     paginate_by = 20
     
     def get_queryset(self):
-        """Optimized queryset with single annotation query."""
-        # Build base queryset with all annotations in ONE query
+        """Ultra-optimized queryset WITHOUT expensive Count queries."""
+        # Cache the queryset for this request
+        cache_key = f'explorer_qs_{self.request.user.id if self.request.user.is_authenticated else "anon"}_{self.request.GET.urlencode()}'
+        cached_ids = cache.get(cache_key)
+        
+        if cached_ids and not self.request.GET.get('nocache'):
+            # Return cached results
+            queryset = Resource.objects.filter(id__in=cached_ids).select_related('organization')
+            # Maintain order from cached IDs
+            preserved = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(cached_ids)])
+            return queryset.order_by(preserved)
+        
+        # Build base queryset - NO COUNT ANNOTATIONS for speed
         queryset = (
             Resource.objects
             .exclude(is_placeholder=True)
@@ -38,26 +49,29 @@ class OptimizedDataExplorerView(ListView):
         # Apply access control first (reduces dataset early)
         queryset = self._apply_access_control(queryset)
         
-        # Apply filters before expensive annotations
+        # Apply filters before any annotations
         queryset = self.apply_filters(queryset)
         
-        # Add annotations only to filtered results
-        queryset = queryset.annotate(
-            subject_count=Count('subject_triples', distinct=True),
-            predicate_count=Count('predicate_triples', distinct=True),
-            object_count=Count('object_triples', distinct=True),
-            
-            # Simplified ontology check - just check existence
-            has_ontology_links=Exists(
-                Triple.objects.filter(
-                    subject=OuterRef('pk'),
-                    predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
-                    is_derived=True
+        # Only add the ontology check if filtering by it
+        if self.request.GET.get('externally_linked'):
+            queryset = queryset.annotate(
+                has_ontology_links=Exists(
+                    Triple.objects.filter(
+                        subject=OuterRef('pk'),
+                        predicate__uri='http://www.w3.org/2002/07/owl#sameAs',
+                        is_derived=True
+                    )
                 )
             )
-        )
         
-        return self.apply_sorting(queryset)
+        # Apply sorting
+        queryset = self.apply_sorting(queryset)
+        
+        # Cache the result IDs for 60 seconds
+        result_ids = list(queryset.values_list('id', flat=True)[:1000])  # Limit cache size
+        cache.set(cache_key, result_ids, 60)
+        
+        return queryset
     
     def _apply_access_control(self, queryset):
         """Centralized access control logic."""
@@ -185,20 +199,23 @@ class OptimizedDataExplorerView(ListView):
         return queryset
     
     def apply_sorting(self, queryset):
-        """Optimized sorting."""
+        """Optimized sorting without count fields."""
         sort_by = self.request.GET.get('sort', 'created')
         sort_order = self.request.GET.get('order', 'desc')
         
+        # Remove count-based sorts since we don't have those annotations anymore
         valid_sorts = {
             'type': 'resource_type',
             'resource': 'name',
             'organization': 'organization__name',
             'created': 'created_at',
             'updated': 'updated_at',
-            'subject_count': 'subject_count',
-            'predicate_count': 'predicate_count',
-            'object_count': 'object_count',
         }
+        
+        # If user tries to sort by counts, fallback to created date
+        if sort_by in ['subject_count', 'predicate_count', 'object_count', 'total_triples']:
+            sort_by = 'created'
+            # Could show a message that count sorting requires loading all counts first
         
         if sort_by not in valid_sorts:
             sort_by = 'created'
@@ -210,11 +227,6 @@ class OptimizedDataExplorerView(ListView):
                 sort_name=Coalesce('name', 'uri')
             )
             field = 'sort_name'
-        elif sort_by == 'total_triples':
-            queryset = queryset.annotate(
-                total_usage=F('subject_count') + F('predicate_count') + F('object_count')
-            )
-            field = 'total_usage'
         else:
             field = valid_sorts[sort_by]
         
@@ -276,6 +288,98 @@ class OptimizedDataExplorerView(ListView):
         context['load_stats_async'] = True  # Template will load via HTMX
         
         return context
+
+
+class DataExplorerResultsView(OptimizedDataExplorerView):
+    """HTMX endpoint for filtered results"""
+    template_name = 'metadata/data_explorer_results.html'
+
+
+class ResourceTripleCountsView(View):
+    """HTMX endpoint for loading triple counts asynchronously."""
+    
+    @method_decorator(cache_control(max_age=300))  # Browser cache for 5 minutes
+    def get(self, request, resource_id):
+        """Return triple counts for a single resource."""
+        cache_key = f'triple_counts_{resource_id}'
+        counts = cache.get(cache_key)
+        
+        if not counts:
+            try:
+                resource = Resource.objects.get(id=resource_id)
+                counts = {
+                    'subject_count': resource.subject_triples.count(),
+                    'predicate_count': resource.predicate_triples.count(),
+                    'object_count': resource.object_triples.count(),
+                    'total': resource.subject_triples.count() + 
+                            resource.predicate_triples.count() + 
+                            resource.object_triples.count()
+                }
+                # Cache for 5 minutes
+                cache.set(cache_key, counts, 300)
+            except Resource.DoesNotExist:
+                counts = {'subject_count': 0, 'predicate_count': 0, 'object_count': 0, 'total': 0}
+        
+        # Return HTML snippet for HTMX with DaisyUI styling
+        if counts['total'] > 0:
+            html = f"""
+            <div class="flex gap-1">
+                <span class="badge badge-ghost badge-xs">S:{counts['subject_count']}</span>
+                <span class="badge badge-ghost badge-xs">P:{counts['predicate_count']}</span>
+                <span class="badge badge-ghost badge-xs">O:{counts['object_count']}</span>
+            </div>
+            """
+        else:
+            html = '<span class="text-xs text-base-content/30">-</span>'
+        
+        return HttpResponse(html)
+
+
+class BatchTripleCountsView(View):
+    """HTMX endpoint for loading multiple triple counts at once."""
+    
+    def post(self, request):
+        """Load counts for multiple resources efficiently."""
+        resource_ids = request.POST.getlist('resource_ids[]')
+        
+        if not resource_ids:
+            return JsonResponse({'counts': {}})
+        
+        # Check cache first
+        cached_counts = {}
+        uncached_ids = []
+        
+        for res_id in resource_ids:
+            cache_key = f'triple_counts_{res_id}'
+            cached = cache.get(cache_key)
+            if cached:
+                cached_counts[res_id] = cached
+            else:
+                uncached_ids.append(res_id)
+        
+        # Batch fetch uncached counts
+        if uncached_ids:
+            from django.db.models import Count
+            
+            resources = Resource.objects.filter(
+                id__in=uncached_ids
+            ).annotate(
+                subject_count=Count('subject_triples', distinct=True),
+                predicate_count=Count('predicate_triples', distinct=True),
+                object_count=Count('object_triples', distinct=True)
+            ).values('id', 'subject_count', 'predicate_count', 'object_count')
+            
+            for res in resources:
+                counts = {
+                    'subject_count': res['subject_count'],
+                    'predicate_count': res['predicate_count'],
+                    'object_count': res['object_count'],
+                    'total': res['subject_count'] + res['predicate_count'] + res['object_count']
+                }
+                cached_counts[str(res['id'])] = counts
+                cache.set(f'triple_counts_{res["id"]}', counts, 300)
+        
+        return JsonResponse({'counts': cached_counts})
 
 
 class SemanticStatsView(ListView):

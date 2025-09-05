@@ -122,21 +122,13 @@
                     {% endif %}
                 </td>
                 
-                <!-- Triple Usage -->
+                <!-- Triple Usage (Lazy Loaded with HTMX) -->
                 <td>
-                    <div class="flex gap-1 flex-wrap">
-                        {% if resource.subject_count %}
-                            <span class="text-xs font-mono">S:{{ resource.subject_count }}</span>
-                        {% endif %}
-                        {% if resource.predicate_count %}
-                            <span class="text-xs font-mono">P:{{ resource.predicate_count }}</span>
-                        {% endif %}
-                        {% if resource.object_count %}
-                            <span class="text-xs font-mono">O:{{ resource.object_count }}</span>
-                        {% endif %}
-                        {% if not resource.subject_count and not resource.predicate_count and not resource.object_count %}
-                            <span class="text-xs text-base-content/30">-</span>
-                        {% endif %}
+                    <div class="flex gap-1 flex-wrap"
+                         hx-get="{% url 'metadata:resource_triple_counts' resource.id %}"
+                         hx-trigger="intersect once"
+                         hx-swap="innerHTML">
+                        <span class="loading loading-spinner loading-xs"></span>
                     </div>
                 </td>
                 
@@ -153,8 +145,8 @@
                             </button>
                         {% endif %}
                         <div class="text-xs text-base-content/70">
-                            {% if resource.ontology_count > 0 %}
-                                {{ resource.ontology_count }} ontolog{{ resource.ontology_count|pluralize:"y,ies" }}
+                            {% if resource.has_ontology_links %}
+                                <span class="text-success">Linked</span>
                             {% else %}
                                 <span class="text-base-content/40">None</span>
                             {% endif %}
