@@ -484,7 +484,7 @@ def mark_file_uploaded(request, file_id):
             # Trigger verification for all files immediately - no polling needed
             from arkumu.storage.tasks import verify_and_process_upload
             for upload_file_obj in session.files.filter(status='uploaded'):
-                verify_and_process_upload.delay(str(upload_file_obj.id))
+                verify_and_process_upload(str(upload_file_obj.id))
         
         return JsonResponse({'success': True})
     except AsyncUploadFile.DoesNotExist:
