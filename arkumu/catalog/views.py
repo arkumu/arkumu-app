@@ -17,6 +17,7 @@ from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
 from arkumu.catalog.services.faceted_search_service import FacetedSearchService
 from arkumu.metadata.models import Resource
+from arkumu.metadata.models import Triple
 
 
 class CatalogSearchMixin:
