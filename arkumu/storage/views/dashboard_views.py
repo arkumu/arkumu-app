@@ -88,10 +88,41 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
             request=request
         )
         
+        # Render bucket size container update
+        if selected_org_slug:
+            bucket_size_html = f'''
+                <div hx-get="/storage/dashboard/bucket-size/{selected_org_slug}/"
+                     hx-trigger="load"
+                     hx-swap="innerHTML"
+                     class="min-h-[60px] flex items-center justify-center">
+                    <!-- Loading indicator -->
+                    <div class="flex items-center gap-2 text-base-content/50">
+                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                        <span class="text-sm">Calculating size...</span>
+                    </div>
+                </div>
+            '''
+        else:
+            bucket_size_html = '''
+                <div class="stats bg-base-200 shadow-inner opacity-50">
+                    <div class="stat">
+                        <div class="stat-figure text-secondary">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V8z" />
+                            </svg>
+                        </div>
+                        <div class="stat-title text-xs">Bucket Size</div>
+                        <div class="stat-value text-lg">---</div>
+                        <div class="stat-desc">Select organization</div>
+                    </div>
+                </div>
+            '''
+        
         return {
             'upload-org-selector': upload_selector,
             'file-browser-content': file_browser_content,
-            's3-browser-title': s3_browser_title
+            's3-browser-title': s3_browser_title,
+            'bucket-size-container': bucket_size_html
         }
     
     def get(self, request):
@@ -574,6 +605,87 @@ def dismiss_message(request):
     """
     # Return empty response - this will cause HTMX to remove the target element
     return HttpResponse('')
+
+
+@require_http_methods(["GET"])
+@general_login_required
+def bucket_size_info(request, organization):
+    """
+    HTMX endpoint for getting bucket size information.
+    Calculates total bucket size and returns formatted display.
+    
+    Args:
+        organization (str): Organization ID (e.g., 'fuk', 'khm', 'det', etc.)
+    
+    Returns:
+        Rendered partial template with bucket size information
+    """
+    logger.info(f"📊 BUCKET SIZE: Getting size info for organization: {organization}")
+    
+    try:
+        bucket_service = BucketService()
+        
+        # Get force_fresh parameter from query
+        force_fresh = request.GET.get('force_fresh', 'false').lower() == 'true'
+        
+        # Calculate bucket size (this method includes caching)
+        size_result = bucket_service.get_organization_bucket_size(organization, force_fresh=force_fresh)
+        
+        if size_result['success']:
+            logger.info(f"📊 BUCKET SIZE: {organization} = {size_result['total_size_formatted']} ({size_result['object_count']} objects)")
+            
+            # Render the bucket size partial template
+            context = {
+                'organization': organization,
+                'bucket_name': size_result['bucket_name'],
+                'total_size': size_result['total_size'],
+                'total_size_formatted': size_result['total_size_formatted'],
+                'object_count': size_result['object_count'],
+                'calculation_duration': size_result.get('calculation_duration', 0),
+                'success': True
+            }
+            
+            html = render_to_string(
+                'dashboard/partials/bucket_size_info.html',
+                context,
+                request=request
+            )
+            
+            return HttpResponse(html)
+        else:
+            # Error case
+            logger.error(f"❌ BUCKET SIZE: Error for {organization}: {size_result.get('error', 'Unknown error')}")
+            
+            context = {
+                'organization': organization,
+                'error': size_result.get('error', 'Unknown error'),
+                'success': False
+            }
+            
+            html = render_to_string(
+                'dashboard/partials/bucket_size_info.html',
+                context,
+                request=request
+            )
+            
+            return HttpResponse(html)
+            
+    except Exception as e:
+        logger.exception(f"❌ BUCKET SIZE: Unexpected error for {organization}: {str(e)}")
+        
+        context = {
+            'organization': organization,
+            'error': f"Unexpected error: {str(e)}",
+            'success': False
+        }
+        
+        html = render_to_string(
+            'dashboard/partials/bucket_size_info.html',
+            context,
+            request=request
+        )
+        
+        return HttpResponse(html)
 
 
 

@@ -159,23 +159,26 @@ class BaseStorageService:
                 # Use SSL with verification disabled for self-signed certificates
                 client_kwargs['use_ssl'] = True
                 client_kwargs['verify'] = False
+                logger.info(f"===> Using HTTPS with SSL verification disabled for endpoint: {self.endpoint_url}")
             else:
                 # Use plaintext HTTP
                 client_kwargs['use_ssl'] = False
+                logger.info(f"===> Using plaintext HTTP for endpoint: {self.endpoint_url}")
             
             # Dell EMC ECS compatible configuration with checksum validation disabled
             custom_s3_config = Config(
                 s3={'addressing_style': 'path'},
                 signature_version='s3v4',  # Force AWS4 signature for Dell EMC compatibility
                 retries={'max_attempts': 1, 'mode': 'standard'},
-                connect_timeout=60,
-                read_timeout=120,
+                connect_timeout=30,  # Reduced from 60 to fail faster
+                read_timeout=30,     # Reduced from 120 to fail faster  
                 max_pool_connections=max_pool_connections,  # Use environment variable
                 # Disable strict checksum validation for Dell EMC ViPR compatibility
                 request_checksum_calculation='when_required',
                 response_checksum_validation='when_required'
             )
             client_kwargs['config'] = custom_s3_config
+            logger.info(f"===> Using custom S3 config: connect_timeout=30s, read_timeout=30s, signature=s3v4")
             
             if self.is_minio:
                 
@@ -235,12 +238,6 @@ class BaseStorageService:
         s3_create_end = time.time()
         logger.info(f"⏱️ S3 CLIENT CREATED: boto3.client() took {s3_create_end - s3_create_start:.3f}s")
         
-        # Test S3 connection and log results
-        test_start = time.time()
-        self._test_s3_connection()
-        test_end = time.time()
-        logger.info(f"⏱️ S3 CONNECTION TEST: Took {test_end - test_start:.3f}s")
-        
         # If not using a specific endpoint_url (i.e., targeting AWS S3 directly) 
         # and presigned_client wasn't created, make it the same as s3_client.
         if not self.endpoint_url and not hasattr(self, 'presigned_client'):
@@ -251,53 +248,7 @@ class BaseStorageService:
             self.presigned_client = self.s3_client 
             logger.info("Fallback: presigned client set to main client for custom S3 endpoint.")
 
-    def _test_s3_connection(self):
-        """
-        Test S3 connection and log detailed results for debugging.
-        """
-        logger.info("===> Testing S3 connection...")
-        logger.info(f"===> Endpoint: {self.endpoint_url}")
-        logger.info(f"===> Region: {self.region}")
-        logger.info("===> S3 credentials validated")
-        
-        try:
-            # Test basic connection by listing buckets
-            logger.info("===> Attempting to list buckets...")
-            list_start = time.time()
-            response = self.s3_client.list_buckets()
-            list_end = time.time()
-            logger.info(f"⏱️ S3 LIST BUCKETS: Took {list_end - list_start:.3f}s")
-            buckets = [bucket['Name'] for bucket in response.get('Buckets', [])]
-            logger.info(f"✅ S3 connection successful! Found {len(buckets)} buckets: {buckets}")
-            
-            # Test specific organization buckets
-            from arkumu.storage.services.bucket_service import PREDEFINED_ORGANIZATIONS
-            for org_id in PREDEFINED_ORGANIZATIONS:
-                try:
-                    self.s3_client.head_bucket(Bucket=org_id)
-                    logger.info(f"✅ Organization bucket '{org_id}' exists and is accessible")
-                except ClientError as e:
-                    error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-                    if error_code in ['404', 'NoSuchBucket']:
-                        logger.warning(f"⚠️ Organization bucket '{org_id}' does not exist")
-                    elif error_code in ['403', 'Forbidden']:
-                        logger.error(f"❌ Organization bucket '{org_id}' exists but access denied")
-                    else:
-                        logger.error(f"❌ Error checking bucket '{org_id}': {error_code}")
-                
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            error_message = e.response.get('Error', {}).get('Message', str(e))
-            logger.error(f"❌ S3 connection failed with ClientError: {error_code} - {error_message}")
-            logger.error(f"❌ Full error response: {e.response}")
-        except Exception as e:
-            logger.error(f"❌ S3 connection failed with unexpected error: {type(e).__name__}: {str(e)}")
-            import traceback
-            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
-
-    # ... other helper methods (_is_minio_environment, _get_access_key, etc.) ...
-    # ... ensure_bucket_exists, ensure_cors_enabled, delete_object etc. ...
-    # The set_client_and_buckets method is no longer needed as sub-services will get the BaseStorageService instance.
+    # Helper methods for configuration
 
 # Make sure all previous helper methods from BaseStorageService are still here and are instance methods.
 # The following is a placeholder for brevity - ensure all methods from the previous version of
@@ -407,9 +358,11 @@ class BaseStorageService:
 
     def ensure_cors_enabled(self, bucket_name: str = None) -> Dict[str, Any]:
         if bucket_name is None: bucket_name = self.ingest_bucket
-        if self.is_minio:
-            logger.info("⚠️ CORS: Skipping for MinIO.")
-            return {"success": True, "message": "CORS skipped for MinIO", "updated": False}
+        # Skip CORS for MinIO and custom S3 endpoints (like Dell EMC)
+        if self.is_minio or self.endpoint_url:
+            storage_type = 'MinIO' if self.is_minio else 'custom S3 endpoint'
+            logger.info(f"⚠️ CORS: Skipping for {storage_type}.")
+            return {"success": True, "message": f"CORS skipped for {storage_type}", "updated": False}
         logger.info(f"CORS: Checking for bucket: {bucket_name}")
         
         # Configure allowed origins based on environment

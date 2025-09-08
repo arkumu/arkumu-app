@@ -572,10 +572,13 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                 // Notify server that file was uploaded
                 if (uploadFileId) {
                     try {
+                        const csrfToken = getCsrfToken();
+                        debugLog('🔑 CSRF Token for mark-uploaded:', csrfToken ? 'Found' : 'Missing');
+                        
                         const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
                             method: 'POST',
                             headers: {
-                                'X-CSRFToken': getCsrfToken(),
+                                'X-CSRFToken': csrfToken,
                             },
                             credentials: 'include'
                         });
@@ -583,7 +586,8 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                         if (response.ok) {
                             debugLog('✅ Server notified of upload:', filename);
                         } else {
-                            debugError('⚠️ Failed to notify server of upload:', filename);
+                            const errorText = await response.text();
+                            debugError('⚠️ Failed to notify server of upload:', filename, `Status: ${response.status}, Error: ${errorText.substring(0, 200)}`);
                         }
                     } catch (error) {
                         debugError('⚠️ Error notifying server:', error);
@@ -736,10 +740,13 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
                 // Notify server that file was uploaded
                 if (uploadFileId) {
                     try {
+                        const csrfToken = getCsrfToken();
+                        debugLog('🔑 CSRF Token for mark-uploaded:', csrfToken ? 'Found' : 'Missing');
+                        
                         const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
                             method: 'POST',
                             headers: {
-                                'X-CSRFToken': getCsrfToken(),
+                                'X-CSRFToken': csrfToken,
                             },
                             credentials: 'include'
                         });
@@ -747,7 +754,8 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
                         if (response.ok) {
                             debugLog('✅ Server notified of upload:', filename);
                         } else {
-                            debugError('⚠️ Failed to notify server of upload:', filename);
+                            const errorText = await response.text();
+                            debugError('⚠️ Failed to notify server of upload:', filename, `Status: ${response.status}, Error: ${errorText.substring(0, 200)}`);
                         }
                     } catch (error) {
                         debugError('⚠️ Error notifying server:', error);

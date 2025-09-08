@@ -410,7 +410,7 @@ def delete_object(request, bucket_type, object_type, object_path):
                     helper = CSVMappingTemplateHelperMixin()
                     oob_updates = {
                         'toast-container': toast_html,  # Add toast to container via OOB
-                        'file-browser-content': file_browser_html
+                        'file-browser-content': file_browser_html  # Only refresh file browser (bucket size has manual refresh)
                     }
                     
                     # Return empty main content with OOB updates
