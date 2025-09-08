@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 
 from arkumu.metadata.models import Resource, Triple, HarmonizationRule
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
-from arkumu.metadata.services.catalog_navigation_service import CatalogNavigationService
+from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
 from arkumu.users.models import Organization
 
 User = get_user_model()

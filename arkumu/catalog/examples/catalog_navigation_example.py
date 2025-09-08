@@ -6,7 +6,7 @@ and their related resources using the harmonization mappings.
 """
 
 from django.contrib.auth import get_user_model
-from arkumu.metadata.services.catalog_navigation_service import CatalogNavigationService
+from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
 
 User = get_user_model()
 

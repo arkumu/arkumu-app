@@ -93,13 +93,13 @@ def arkumu_types():
 def catalog_resources():
     """Create catalog target resources for harmonization."""
     project_catalog = Resource.objects.create(
-        uri='http://data.arkumu.org/catalog/project',
+        uri='http://arkumu.org/data/catalog/project',
         name='Catalog Project',
         resource_type=ResourceType.CLASS
     )
     
     event_catalog = Resource.objects.create(
-        uri='http://data.arkumu.org/catalog/event',
+        uri='http://arkumu.org/data/catalog/event',
         name='Catalog Event',
         resource_type=ResourceType.CLASS
     )

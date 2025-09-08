@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from arkumu.metadata.models import Resource, Triple, HarmonizationRule
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
 from arkumu.users.models import Organization
-from arkumu.metadata.services.faceted_search_service import FacetedSearchService
+from arkumu.catalog.services.faceted_search_service import FacetedSearchService
 from arkumu.catalog.views import HarmonizedSearchView, LiveSearchFilterView
 
 User = get_user_model()
@@ -166,7 +166,7 @@ class TestHarmonizedSearchDebug(TestCase):
     
     def test_harmonized_types_lookup(self):
         """Test that _get_harmonized_types returns correct organization-specific types."""
-        from arkumu.metadata.services.catalog_navigation_service import CatalogNavigationService
+        from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
         
         service = CatalogNavigationService(self.user)
         harmonized_types = service._get_harmonized_types('http://arkumu.org/types/projekt')
