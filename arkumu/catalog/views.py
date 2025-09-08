@@ -427,16 +427,15 @@ class LiveSearchFilterView(GeneralLoginRequiredMixin, CatalogSearchMixin, View):
 class Entity:
     def __init__(self, triple:Triple):
         self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=triple.subject_id)}
-    
-        self.triple = triple
+        self.id = triple.subject_id
     
     def get_predicate(self, str):
-        for entity_field_triple in Triple.objects.filter(subject_id=self.triple.subject_id):
+        for entity_field_triple in Triple.objects.filter(subject_id=self.id):
             if Resource.objects.get(id=entity_field_triple.predicate_id).name == str:
                 return Resource.objects.get(id=entity_field_triple.predicate_id)
             
     def get_object(self, str):
-        for entity_field_triple in Triple.objects.filter(subject_id=self.triple.subject_id):
+        for entity_field_triple in Triple.objects.filter(subject_id=self.id):
             if Resource.objects.get(id=entity_field_triple.predicate_id).name == str:
                 return Resource.objects.get(id=entity_field_triple.object_id)
 
@@ -456,25 +455,33 @@ class DesignSearch:
 
         resource = Resource.objects.filter(name="Bevorzugter Titel").last()
         triples = Triple.objects.filter(predicate__id=resource.id)[:5]
-        # entities = [{Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=triple.subject_id)} for triple in triples]
 
-        # entity =  entities[1]
-        # ereignis = entity["Ereignis"]
         entities = [Entity(triple) for triple in triples]
         entity =  entities[1]
         resource = entity.__dict__
         ereignis = entity.Ereignis
-        pred = entity.get_predicate("Ereignis")
+
+        #these are needed as a work-around until foreign keys are fixed
+        pred_akteurin_im_ereignis = Resource.objects.get(id="d48eb6c2-7b92-4539-884a-4c9aae479e4e")
+        pred_im_ereignis = Resource.objects.get(id="d12a9e0b-9f8b-49ad-8501-0314754ebbe0")
+        pred_akteurin_id = Resource.objects.get(id="3f6dc408-0c1d-46ef-a9c2-d8276a8e13a5")
+
+
+
         obj = entity.get_object("Ereignis")
         
-        triple = Triple.objects.filter(object_id=obj.id).last()
+        triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=obj.id)
+
+        entities_cross_table = [Entity(triple) for triple in triples_cross_table]
+        triples_akteure = [Triple.objects.get(predicate_id=pred_akteurin_id, object_id=entity.get_object("AkteurIn im Ereignis").id) for entity in entities_cross_table]
+        entities_akteure = [Entity(triple) for triple in triples_akteure]
+        triple = f"{[entities_akteure.__dict__ for entities_akteure in entities_akteure]}"
+
+
 
 
         informationstreager = []
         
-       
-        # triple = pred.__dict__
-        resource = pred
 
 
         results = [{"year":"2024",
