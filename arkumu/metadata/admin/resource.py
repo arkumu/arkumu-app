@@ -608,12 +608,27 @@ class ResourceAdmin(admin.ModelAdmin):
         from django.db.models import Count
         from arkumu.users.models import Organization
         
-        org_usage = (
-            Organization.objects
-            .filter(triple_set__object=obj)
-            .annotate(usage_count=Count('triple_set'))
-            .order_by('-usage_count', 'name')
+        # Query organizations that have triples using this resource as object
+        # Use the Triple model directly to avoid related_name issues
+        from arkumu.metadata.models import Triple
+        
+        triple_counts = (
+            Triple.objects
+            .filter(object=obj)
+            .values('source__name', 'source__id')
+            .annotate(usage_count=Count('id'))
+            .order_by('-usage_count', 'source__name')
         )
+        
+        org_usage = []
+        for item in triple_counts:
+            if item['source__id']:
+                try:
+                    org = Organization.objects.get(id=item['source__id'])
+                    org.usage_count = item['usage_count']
+                    org_usage.append(org)
+                except Organization.DoesNotExist:
+                    continue
         
         if not org_usage:
             return format_html('<em style="color: #6c757d;">No organization usage found</em>')
