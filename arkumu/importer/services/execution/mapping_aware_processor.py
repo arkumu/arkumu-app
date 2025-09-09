@@ -701,7 +701,8 @@ class MappingAwareProcessor:
             logger.debug(f"Creating {len(batch_property_data)} multi-value property triples in batch")
             self.resource_manager.create_property_triples_bulk(batch_property_data)
             # Update statistics for multi-value cell processing
-            self.statistics.current_metrics.multi_value_cells_split += len(columns)
+            # Count ONE cell processed (this entity had multi-value columns with data)
+            self.statistics.current_metrics.multi_value_cells_split += 1
             try:
                 self.statistics.current_metrics.triples_created += len(batch_property_data)
             except Exception:
