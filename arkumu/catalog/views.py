@@ -19,6 +19,8 @@ from arkumu.catalog.services.faceted_search_service import FacetedSearchService
 from arkumu.metadata.models import Resource
 from arkumu.metadata.models import Triple
 
+from functools import singledispatchmethod
+
 
 class CatalogSearchMixin:
     """Mixin for live search updates using HTMX."""
@@ -425,9 +427,26 @@ class LiveSearchFilterView(GeneralLoginRequiredMixin, CatalogSearchMixin, View):
         return HttpResponse(self.build_oob_response("", oob_updates))
 
 class Entity:
-    def __init__(self, triple:Triple):
-        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=triple.subject_id)}
-        self.id = triple.subject_id
+
+    @singledispatchmethod
+    def __init__(self, arg):
+        raise NotImplementedError("Not implemented for these arguments")
+
+    @__init__.register
+    def _(self, arg: Resource):
+        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=arg.id)}
+        self.id = arg.id
+
+    @__init__.register
+    def _(self, arg: Triple):
+        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=arg.subject_id)}
+        self.id = arg.subject_id
+
+    @__init__.register
+    def _(self, arg: str):
+        subject = Resource.objects.get(uri=arg)
+        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=subject.id)}
+        self.id = subject.id
     
     def get_predicate(self, str):
         for entity_field_triple in Triple.objects.filter(subject_id=self.id):
@@ -442,9 +461,6 @@ class Entity:
 class DesignSearch:
     def design_search_results(request):
 
-
-
-
         query = request.GET.get('query', None)
 
        # triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
@@ -455,81 +471,123 @@ class DesignSearch:
 
         resource = Resource.objects.filter(name="Bevorzugter Titel").last()
         triples = Triple.objects.filter(predicate__id=resource.id)[:5]
+        projects = [Entity(triple) for triple in triples]
+        results_ret = []
 
-        entities = [Entity(triple) for triple in triples]
-        entity =  entities[1]
-        resource = entity.__dict__
-        ereignis = entity.Ereignis
+        for project in projects:
+            # triple = f"{project.__dict__}"
+            resource = Resource.objects.get(id=project.id)
+            source = resource.uri.split("/")[4]
+            resource = project.__dict__
 
-        #these are needed as a work-around until foreign keys are fixed
-        pred_akteurin_im_ereignis = Resource.objects.get(id="d48eb6c2-7b92-4539-884a-4c9aae479e4e")
-        pred_im_ereignis = Resource.objects.get(id="d12a9e0b-9f8b-49ad-8501-0314754ebbe0")
-        pred_akteurin_id = Resource.objects.get(id="3f6dc408-0c1d-46ef-a9c2-d8276a8e13a5")
+            title = project.__dict__["Bevorzugter Titel"]
+            subtitle = ""
+            try:
+                subtitle = project.__dict__["Bevorzugter Untertitel"]
+            except: 
+                pass
+            results_temp_1 = {
+                    "year":"2024",
+                    "image":"images/main/card_1.png",
+                    "institution":source,
+                    "title":title,
+                    "subtitle":subtitle
+                    }
+            results_temp_2 = {}
+
+
+            try:
+                ereignis = project.__dict__["Ereignis"]
+
+                #these are needed as a work-around until foreign keys are fixed
+                pred_akteurin_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{source}/properties/akteurin-ereignis-id")
+                pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{source}/properties/im-ereignis")
+                pred_akteurin_id = Resource.objects.get(uri=f"http://arkumu.org/data/{source}/properties/akteurin-id")
 
 
 
-        obj = entity.get_object("Ereignis")
+                obj = project.get_object("Ereignis")
+                
+                triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=obj.id)
+
+                entities_cross_table = [Entity(triple) for triple in triples_cross_table]
+                triples_akteure = [Triple.objects.get(predicate_id=pred_akteurin_id, object_id=entity.get_object("AkteurIn im Ereignis").id) for entity in entities_cross_table]
+                entities_akteure = [Entity(triple) for triple in triples_akteure]
+                rolls_strings = [entity.__dict__["Beruf und Tätigkeit"].split(",") for entity in entities_akteure]
+                rolls_uris = [[f"http://arkumu.org/data/{source}/entities/rolle/{roll}" for roll in akteur_rolls] for akteur_rolls in rolls_strings]
+                entities_rolls = [[Entity(roll) for roll in akteur_rolls] for akteur_rolls in rolls_uris]
+                rolls_name = [[roll.__dict__["Deutscher Name der Rolle (Breadcrumb)"].split(">")[-1].strip() for roll in akteur_rolls] for akteur_rolls in entities_rolls]
+                akteur_rolls_string = [", ".join(rolls) for rolls in rolls_name]
+                informationstreager = []
+                triple = f"{[entity_akteur.__dict__ for entity_akteur in entities_akteure]}"
+                for i, akteur in enumerate(entities_akteure):
+                    results_temp_2.update({f"contributor{i}_name" : akteur.__dict__["Deutscher Name"],
+                                            f"contributor{i}_role" : akteur_rolls_string[i]})
+                
+                # triple = f"{[roll.__dict__ for akteur_rolls in entities_rolls for roll in akteur_rolls]}"
+                # triple = f"{[akteur.__dict__ for akteur in entities_akteure]}"
+            except:
+                pass
+
+            results_temp_3 =     {"category1":"Industrial Design",
+             "category2":"Transformation Design",
+             "button_text":"Projekt ansehen"
+            }
         
-        triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=obj.id)
-
-        entities_cross_table = [Entity(triple) for triple in triples_cross_table]
-        triples_akteure = [Triple.objects.get(predicate_id=pred_akteurin_id, object_id=entity.get_object("AkteurIn im Ereignis").id) for entity in entities_cross_table]
-        entities_akteure = [Entity(triple) for triple in triples_akteure]
-        triple = f"{[entities_akteure.__dict__ for entities_akteure in entities_akteure]}"
-
-
-
-
-        informationstreager = []
+            results_temp_1.update(results_temp_2)
+            results_temp_1.update(results_temp_3)
+            results_ret.append(results_temp_1)
+        #     triple = f"{project.__dict__}"
         
 
 
-        results = [{"year":"2024",
-             "image":"images/main/card_1.png",
-             "institution":"Folkwang Universität der Kunst",
-             "title":"Handmade in Ethiopia",
-             "subtitle":"Projekt",
-             "contributor1_name":"Johanna Schwer",
-             "contributor1_role":"Betreuerin",
-             "contributor2_name":"Judith Schanz",
-             "contributor2_role":"Betreuerin",
-             "contributor3_name":"Martina Allerbech",
-             "contributor3_role":"Designerin, Beraterin",
-             "category1":"Industrial Design",
-             "category2":"Transformation Design",
-             "button_text":"Projekt ansehen"
-            },
-            {"year":"2024",
-             "image":"images/main/card_1.png",
-             "institution":"Folkwang Universität der Kunst",
-             "title":"Handmade in Ethiopia",
-             "subtitle":"Projekt",
-             "contributor1_name":"Johanna Schwer",
-             "contributor1_role":"Betreuerin",
-             "contributor2_name":"Judith Schanz",
-             "contributor2_role":"Betreuerin",
-             "contributor3_name":"Martina Allerbech",
-             "contributor3_role":"Designerin, Beraterin",
-             "category1":"Industrial Design",
-             "category2":"Transformation Design",
-             "button_text":"Projekt ansehen"
-            },
-            {"year":"2024",
-             "image":"images/main/card_1.png",
-             "institution":"Folkwang Universität der Kunst",
-             "title":"Handmade in Ethiopia",
-             "subtitle":"Projekt",
-             "contributor1_name":"Johanna Schwer",
-             "contributor1_role":"Betreuerin",
-             "contributor2_name":"Judith Schanz",
-             "contributor2_role":"Betreuerin",
-             "contributor3_name":"Martina Allerbech",
-             "contributor3_role":"Designerin, Beraterin",
-             "category1":"Industrial Design",
-             "category2":"Transformation Design",
-             "button_text":"Projekt ansehen"
-            },]
+        # results_ret = [
+        #     # {"year":"2024",
+        #     #  "image":"images/main/card_1.png",
+        #     #  "institution":"Folkwang Universität der Kunst",
+        #     #  "title":"Handmade in Ethiopia",
+        #     #  "subtitle":"Projekt",
+        #     #  "contributor1_name":"Johanna Schwer",
+        #     #  "contributor1_role":akteur_rolls_string[0],
+        #     #  "contributor2_name":"Judith Schanz",
+        #     #  "contributor2_role":akteur_rolls_string[1],
+        #     #  "contributor3_name":"Martina Allerbech",
+        #     #  "contributor3_role":"Designerin, Beraterin",
+        #     #  "category1":"Industrial Design",
+        #     #  "category2":"Transformation Design",
+        #     #  "button_text":"Projekt ansehen"
+        #     # },
+        #     {"year":"2024",
+        #      "image":"images/main/card_1.png",
+        #      "institution":"Folkwang Universität der Kunst",
+        #      "title":"Handmade in Ethiopia",
+        #      "subtitle":"Projekt",
+        #      "contributor1_name":"Johanna Schwer",
+        #      "contributor1_role":"Betreuerin",
+        #      "contributor2_name":"Judith Schanz",
+        #      "contributor2_role":"Betreuerin",
+        #      "contributor3_name":"Martina Allerbech",
+        #      "contributor3_role":"Designerin, Beraterin",
+        #      "category1":"Industrial Design",
+        #      "category2":"Transformation Design",
+        #      "button_text":"Projekt ansehen"
+        #     },
+        #     {"year":"2024",
+        #      "image":"images/main/card_1.png",
+        #      "institution":"Folkwang Universität der Kunst",
+        #      "title":"Handmade in Ethiopia",
+        #      "subtitle":"Projekt",
+        #      "contributor1_name":"Johanna Schwer",
+        #      "contributor1_role":"Betreuerin",
+        #      "contributor2_name":"Judith Schanz",
+        #      "contributor2_role":"Betreuerin",
+        #      "contributor3_name":"Martina Allerbech",
+        #      "contributor3_role":"Designerin, Beraterin",
+        #      "category1":"Industrial Design",
+        #      "category2":"Transformation Design",
+        #      "button_text":"Projekt ansehen"
+        #     },]
         context = {"triple": triple, 'resource': resource, 'query': query,
-            'results': results}
+            'results': results_ret}
 
         return render(request, 'catalog/design_search_results.html', context)
