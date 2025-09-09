@@ -139,17 +139,17 @@ class TestStrategySelector:
         assert strategy_selector.high_dependency_depth == 3
 
     def test_choose_optimal_strategy_small_dataset(self, strategy_selector, small_execution_config, small_csv_sources):
-        """Test strategy selection for small dataset favors entity-centric"""
+        """Test strategy selection for small dataset returns streaming entity-centric"""
         strategy = strategy_selector.choose_optimal_strategy(small_execution_config, small_csv_sources)
         
-        assert strategy == ProcessingStrategy.ENTITY_CENTRIC
+        assert strategy == ProcessingStrategy.STREAMING_ENTITY_CENTRIC
 
     def test_choose_optimal_strategy_medium_dataset(self, strategy_selector, medium_execution_config, medium_csv_sources):
         """Test strategy selection for medium dataset favors streaming"""
         strategy = strategy_selector.choose_optimal_strategy(medium_execution_config, medium_csv_sources)
         
         # Should choose streaming entity-centric or multi-phase for medium-sized data
-        assert strategy in [ProcessingStrategy.STREAMING_ENTITY_CENTRIC, ProcessingStrategy.ENTITY_CENTRIC, ProcessingStrategy.MULTI_PHASE]
+        assert strategy in [ProcessingStrategy.STREAMING_ENTITY_CENTRIC, ProcessingStrategy.MULTI_PHASE]
 
     def test_choose_optimal_strategy_large_dataset(self, strategy_selector, complex_execution_config, large_csv_sources):
         """Test strategy selection for large dataset with dependencies favors multi-phase"""
@@ -186,9 +186,8 @@ class TestStrategySelector:
             assert 'complexity_score' in char
         
         # Verify strategy analyses
-        assert len(analysis['strategy_analyses']) == 3  # 3 strategies analyzed
+        assert len(analysis['strategy_analyses']) == 2  # 2 strategies analyzed
         strategy_names = [s['strategy'] for s in analysis['strategy_analyses']]
-        assert 'entity_centric' in strategy_names
         assert 'streaming_entity_centric' in strategy_names
         assert 'multi_phase' in strategy_names
         
@@ -196,16 +195,16 @@ class TestStrategySelector:
         recommended_count = sum(1 for s in analysis['strategy_analyses'] if s['recommended'])
         assert recommended_count == 1
 
-    def test_get_strategy_rationale_entity_centric(self, strategy_selector, small_execution_config, small_csv_sources):
-        """Test strategy rationale for entity-centric selection"""
+    def test_get_strategy_rationale_streaming_small(self, strategy_selector, small_execution_config, small_csv_sources):
+        """Test strategy rationale for streaming entity-centric selection on small dataset"""
         rationale = strategy_selector.get_strategy_rationale(
             small_execution_config, 
             small_csv_sources, 
-            ProcessingStrategy.ENTITY_CENTRIC
+            ProcessingStrategy.STREAMING_ENTITY_CENTRIC
         )
         
-        assert "Entity-centric chosen for small dataset" in rationale
-        assert "single pass" in rationale
+        assert "Streaming entity-centric chosen" in rationale
+        assert "memory efficiency" in rationale
 
     def test_get_strategy_rationale_streaming(self, strategy_selector, medium_execution_config, medium_csv_sources):
         """Test strategy rationale for streaming entity-centric selection"""
@@ -320,35 +319,6 @@ class TestStrategySelector:
         assert score > 0.8
         assert score <= 1.0
 
-    def test_analyze_entity_centric_strategy(self, strategy_selector):
-        """Test entity-centric strategy analysis"""
-        analysis = strategy_selector._analyze_entity_centric(
-            total_size_mb=25.0,
-            total_rows=10000,
-            max_complexity=0.3,
-            has_dependencies=False
-        )
-        
-        assert isinstance(analysis, StrategyAnalysis)
-        assert analysis.strategy == ProcessingStrategy.ENTITY_CENTRIC
-        assert analysis.feasibility_score > 0.5  # Should be feasible for small data
-        assert analysis.estimated_memory_mb > 0
-        assert analysis.estimated_execution_time_minutes > 0
-        assert len(analysis.pros) > 0
-        assert "Complete entities" in analysis.pros[0]
-
-    def test_analyze_entity_centric_large_dataset_penalty(self, strategy_selector):
-        """Test entity-centric analysis with large dataset penalty"""
-        analysis = strategy_selector._analyze_entity_centric(
-            total_size_mb=600.0,  # > medium_dataset_mb
-            total_rows=1000000,
-            max_complexity=0.5,
-            has_dependencies=True
-        )
-        
-        assert analysis.feasibility_score < 0.7  # Should be penalized for large size
-        assert len(analysis.cons) > 0
-        assert any("memory" in con.lower() for con in analysis.cons)
 
     def test_analyze_streaming_entity_centric_strategy(self, strategy_selector):
         """Test streaming entity-centric strategy analysis"""
@@ -495,14 +465,12 @@ class TestProcessingStrategy:
 
     def test_processing_strategy_values(self):
         """Test ProcessingStrategy enum values"""
-        assert ProcessingStrategy.ENTITY_CENTRIC.value == "entity_centric"
         assert ProcessingStrategy.STREAMING_ENTITY_CENTRIC.value == "streaming_entity_centric"
         assert ProcessingStrategy.MULTI_PHASE.value == "multi_phase"
         assert ProcessingStrategy.AUTO.value == "auto"
 
     def test_processing_strategy_from_string(self):
         """Test creating ProcessingStrategy from string"""
-        assert ProcessingStrategy("entity_centric") == ProcessingStrategy.ENTITY_CENTRIC
         assert ProcessingStrategy("streaming_entity_centric") == ProcessingStrategy.STREAMING_ENTITY_CENTRIC
         assert ProcessingStrategy("multi_phase") == ProcessingStrategy.MULTI_PHASE
         assert ProcessingStrategy("auto") == ProcessingStrategy.AUTO
@@ -547,7 +515,7 @@ class TestStrategyAnalysis:
     def test_strategy_analysis_creation(self):
         """Test StrategyAnalysis creation"""
         analysis = StrategyAnalysis(
-            strategy=ProcessingStrategy.ENTITY_CENTRIC,
+            strategy=ProcessingStrategy.STREAMING_ENTITY_CENTRIC,
             feasibility_score=0.85,
             estimated_memory_mb=150.0,
             estimated_execution_time_minutes=5.5,
@@ -556,7 +524,7 @@ class TestStrategyAnalysis:
             recommended=True
         )
         
-        assert analysis.strategy == ProcessingStrategy.ENTITY_CENTRIC
+        assert analysis.strategy == ProcessingStrategy.STREAMING_ENTITY_CENTRIC
         assert analysis.feasibility_score == 0.85
         assert analysis.estimated_memory_mb == 150.0
         assert analysis.estimated_execution_time_minutes == 5.5

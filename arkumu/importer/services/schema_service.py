@@ -11,6 +11,8 @@ from datetime import datetime
 
 from django.core.cache import cache
 from django.db import transaction
+import time
+import random
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.mappings import Mapping
@@ -82,23 +84,115 @@ class SchemaService:
                 logger.warning(f"Cached blueprints invalid: {e}. Regenerating schema...")
                 # Cache will be cleared by validation function, continue to regeneration
         
-        # Schema not in cache - need to create it
-        logger.info(f"🏗️  Creating schema for mapping {self.mapping_id}")
+        # Schema not in cache - need to create it with distributed locking
+        self._create_schema_with_locking(organization)
+    
+    def _create_schema_with_locking(self, organization):
+        """Create schema with distributed locking to prevent concurrent creation."""
+        lock_key = f"schema_creation_lock_mapping_{self.mapping_id}"
+        cache_key = f"complete_schema_blueprints_mapping_{self.mapping_id}"
         
-        # Load mapping configuration
-        adapter = MappingAdapter()
-        execution_config = adapter.translate_to_execution_config(self.mapping_id)
+        # Try to acquire distributed lock
+        lock_timeout = 300  # 5 minutes max for schema creation
+        lock_acquired = False
         
-        # Create processor and generate complete schema
-        self._processor = CompleteSchemaProcessor(
-            organization=organization,
-            base_uri=self.base_uri,
-            statistics=ExecutionStatistics()
-        )
-        
-        # This will create and cache the complete schema
-        self._processor._create_complete_schema_blueprints(execution_config)
-        self._schema_loaded = True
+        try:
+            # Use cache-based distributed lock with timeout
+            lock_acquired = cache.add(lock_key, "locked", timeout=lock_timeout)
+            
+            if lock_acquired:
+                logger.info(f"🔒 Acquired schema creation lock for mapping {self.mapping_id}")
+                
+                # Double-check cache after acquiring lock (another process may have completed)
+                cached_blueprints = cache.get(cache_key)
+                if cached_blueprints:
+                    try:
+                        self._validate_cached_resources(cached_blueprints)
+                        logger.info(f"📋 Found valid cached schema after acquiring lock for mapping {self.mapping_id}")
+                        
+                        # Use the cached version
+                        self._processor = CompleteSchemaProcessor(
+                            organization=organization,
+                            base_uri=self.base_uri,
+                            statistics=ExecutionStatistics()
+                        )
+                        self._processor.dataset_blueprints = cached_blueprints
+                        self._schema_loaded = True
+                        return
+                    except ValueError:
+                        logger.info(f"Cached schema invalid even after lock, recreating...")
+                
+                # Create the schema (we have the lock)
+                logger.info(f"🏗️  Creating schema for mapping {self.mapping_id} (with lock)")
+                
+                # Load mapping configuration
+                adapter = MappingAdapter()
+                execution_config = adapter.translate_to_execution_config(self.mapping_id)
+                
+                # Create processor and generate complete schema
+                self._processor = CompleteSchemaProcessor(
+                    organization=organization,
+                    base_uri=self.base_uri,
+                    statistics=ExecutionStatistics()
+                )
+                
+                # This will create and cache the complete schema
+                self._processor._create_complete_schema_blueprints(execution_config)
+                self._schema_loaded = True
+                
+                logger.info(f"✅ Schema creation completed for mapping {self.mapping_id}")
+                
+            else:
+                # Lock not acquired - another process is creating schema
+                logger.info(f"⏳ Waiting for concurrent schema creation for mapping {self.mapping_id}")
+                
+                # Wait for the other process to complete (with exponential backoff)
+                max_wait_time = 300  # 5 minutes max wait
+                wait_time = 1
+                total_waited = 0
+                
+                while total_waited < max_wait_time:
+                    time.sleep(wait_time + random.uniform(0, 0.5))  # Add jitter
+                    total_waited += wait_time
+                    
+                    # Check if schema is now available in cache
+                    cached_blueprints = cache.get(cache_key)
+                    if cached_blueprints:
+                        try:
+                            self._validate_cached_resources(cached_blueprints)
+                            logger.info(f"📋 Schema became available after waiting {total_waited}s for mapping {self.mapping_id}")
+                            
+                            # Use the cached version
+                            self._processor = CompleteSchemaProcessor(
+                                organization=organization,
+                                base_uri=self.base_uri,
+                                statistics=ExecutionStatistics()
+                            )
+                            self._processor.dataset_blueprints = cached_blueprints
+                            self._schema_loaded = True
+                            return
+                        except ValueError:
+                            logger.warning(f"Cached schema invalid, continuing to wait...")
+                    
+                    # Check if lock is still held (other process still working)
+                    if not cache.get(lock_key):
+                        logger.warning(f"Schema creation lock released but no valid cache found, breaking wait loop...")
+                        # Lock released but no cache - break out and try to create ourselves
+                        break
+                    
+                    # Exponential backoff with max
+                    wait_time = min(wait_time * 1.5, 10)
+                
+                raise RuntimeError(f"Timeout waiting for schema creation for mapping {self.mapping_id}")
+                
+        finally:
+            # Release lock if we acquired it
+            if lock_acquired:
+                try:
+                    cache.delete(lock_key)
+                    logger.debug(f"🔓 Released schema creation lock for mapping {self.mapping_id}")
+                except:
+                    pass  # Lock might have expired, that's ok
     
     def _validate_cached_resources(self, blueprints: Dict[str, Any]):
         """

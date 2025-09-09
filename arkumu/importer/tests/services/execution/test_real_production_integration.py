@@ -758,12 +758,12 @@ class TestRealProductionIntegration:
         
         # Create a valid mapping first for this test
         from arkumu.metadata.models import Mapping
-        from arkumu.metadata.models import Organization
+        from arkumu.users.models import Organization
         
         # Ensure test organization exists
         org, created = Organization.objects.get_or_create(
             code="TEST_ORG",
-            defaults={"name": "Test Organization", "country": "Test"}
+            defaults={"name": "Test Organization"}
         )
         
         # Create minimal test mapping
@@ -829,7 +829,7 @@ class TestRealProductionIntegration:
         
         # Clean up test data
         try:
-            from arkumu.metadata.models import Organization
+            from arkumu.users.models import Organization
             Organization.objects.filter(code="TEST_ORG").delete()
         except Exception as e:
             logger.warning(f"Error cleaning up test organization: {e}")
@@ -867,12 +867,12 @@ class TestRealProductionIntegration:
         
         try:
             # Import Organization from the correct location
-            from arkumu.metadata.models.organizations import Organization
+            from arkumu.users.models import Organization
             
             # Test that we can create an organization
             org, created = Organization.objects.get_or_create(
                 code="TEST_ERROR_ORG",
-                defaults={"name": "Test Error Organization", "country": "Test"}
+                defaults={"name": "Test Error Organization"}
             )
             
             assert org is not None

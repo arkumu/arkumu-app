@@ -31,7 +31,7 @@ def run_import(session_pk: int):
         
         # Update status and initial progress
         session.mark_started()
-        publish_progress(str(session_pk), {
+        publish_progress(f"task_state_{run_import.task_id}", {
             'status': 'started',
             'message': 'Import job started',
             'percentage': 0,
@@ -71,7 +71,7 @@ def run_import(session_pk: int):
             if not execution_config or not execution_config.datasets:
                 logger.warning(f"No valid execution config for session {session_pk}")
                 session.mark_completed({'message': 'No valid configuration'})
-                publish_progress(str(session_pk), {
+                publish_progress(f"task_state_{run_import.task_id}", {
                     'status': 'completed',
                     'message': 'No valid configuration found',
                     'percentage': 100,
@@ -96,7 +96,7 @@ def run_import(session_pk: int):
                 total_rows += len(mock_rows)
             
             # Update progress with total count
-            publish_progress(str(session_pk), {
+            publish_progress(f"task_state_{run_import.task_id}", {
                 'status': 'processing',
                 'message': 'Processing data...',
                 'percentage': 25,
@@ -104,12 +104,12 @@ def run_import(session_pk: int):
                 'total': total_rows
             })
             
-            # Run processor with entity-centric strategy
+            # Run processor with streaming entity-centric strategy (supports FK resolution)
             from arkumu.importer.services.mapping_consumer import ProcessingStrategy
             metrics = processor.process_with_execution_config(
                 execution_config, 
                 csv_sources, 
-                ProcessingStrategy.ENTITY_CENTRIC
+                ProcessingStrategy.STREAMING_ENTITY_CENTRIC
             )
             
             # Update session with results
@@ -123,7 +123,7 @@ def run_import(session_pk: int):
         # Success notification
         session.mark_completed(session.ingestion_stats)
         
-        publish_progress(str(session_pk), {
+        publish_progress(f"task_state_{run_import.task_id}", {
             'status': 'completed',
             'message': 'Import completed successfully',
             'percentage': 100,
@@ -144,7 +144,7 @@ def run_import(session_pk: int):
         # Error handling - session is guaranteed to exist here
         session.mark_failed(str(exc))
         
-        publish_progress(str(session_pk), {
+        publish_progress(f"task_state_{run_import.task_id}", {
             'status': 'failed',
             'message': f'Import failed: {str(exc)}',
             'percentage': session.get_progress_percentage()

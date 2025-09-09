@@ -411,6 +411,13 @@ class ExecutionStatistics:
             if is_multi_value:
                 self.dataset_metrics[dataset_name].fk_multi_value_relationships += 1
     
+    def track_fk_relationships_queued(self, count: int, dataset_name: Optional[str] = None) -> None:
+        """Track multiple FK relationships queued for resolution."""
+        self.current_metrics.fk_relationships_queued += count
+        
+        if dataset_name and dataset_name in self.dataset_metrics:
+            self.dataset_metrics[dataset_name].fk_relationships_queued += count
+    
     def track_fk_resolution_result(self, resolved: int, failed: int, orphaned: int, stub_created: int, missing_source: int, unique_sources: int) -> None:
         """Track FK resolution results."""
         self.current_metrics.fk_relationships_resolved += resolved

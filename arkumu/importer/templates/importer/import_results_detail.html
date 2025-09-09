@@ -44,7 +44,7 @@
                     </svg>
                 </div>
                 <div class="stat-title">Resources</div>
-                <div class="stat-value text-primary">{{ analysis.import_results.total_resources|default:0 }}</div>
+                <div class="stat-value text-primary">{{ analysis.import_results.resources_created|default:0 }}</div>
                 <div class="stat-desc">entities created</div>
             </div>
 
@@ -55,7 +55,7 @@
                     </svg>
                 </div>
                 <div class="stat-title">Relationships</div>
-                <div class="stat-value text-secondary">{{ analysis.import_results.relationship_triples|default:0 }}</div>
+                <div class="stat-value text-secondary">{{ analysis.import_results.relationships_created|default:0 }}</div>
                 <div class="stat-desc">connections made</div>
             </div>
 
@@ -66,7 +66,7 @@
                     </svg>
                 </div>
                 <div class="stat-title">Triples</div>
-                <div class="stat-value text-accent">{{ analysis.import_results.total_triples|default:0 }}</div>
+                <div class="stat-value text-accent">{{ analysis.import_results.triples_created|default:0 }}</div>
                 <div class="stat-desc">facts stored</div>
             </div>
 
@@ -78,7 +78,7 @@
                 </div>
                 <div class="stat-title">Status</div>
                 <div class="stat-value text-info text-sm">
-                    {% if analysis.import_results.total_resources > 0 %}SUCCESS{% else %}NO DATA{% endif %}
+                    {% if analysis.import_results.resources_created > 0 %}SUCCESS{% else %}NO DATA{% endif %}
                 </div>
                 <div class="stat-desc">import result</div>
             </div>
@@ -102,6 +102,10 @@
                                 <div class="flex justify-between">
                                     <span class="opacity-70">Files Processed</span>
                                     <span class="font-medium">{{ analysis.total_datasets|default:0 }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Rows Processed</span>
+                                    <span class="font-medium">{{ analysis.import_results.rows_processed|default:0 }}</span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span class="opacity-70">Duration</span>
@@ -148,31 +152,84 @@
                         </div>
                     </div>
 
-                    <!-- Mapping vs Actual (Top Datasets) -->
+                    <!-- Processing Statistics -->
                     <div class="card bg-base-200">
                         <div class="card-body">
-                            <h3 class="card-title text-lg">Top Datasets by Entities</h3>
-                            {% if analysis.top_datasets %}
+                            <h3 class="card-title text-lg">Processing Statistics</h3>
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Multi-Value Items</span>
+                                    <div class="badge badge-accent">{{ analysis.import_results.multi_value_items_created|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Multi-Value Cells</span>
+                                    <div class="badge badge-accent">{{ analysis.import_results.multi_value_cells_split|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">FK Relationships</span>
+                                    <div class="badge badge-error">{{ analysis.import_results.fk_relationships_total|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Resources Created</span>
+                                    <div class="badge badge-primary">{{ analysis.import_results.resources_created|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Triples Created</span>
+                                    <div class="badge badge-info">{{ analysis.import_results.triples_created|default:0 }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Per-Dataset Processing Statistics -->
+                    <div class="card bg-base-200 col-span-full">
+                        <div class="card-body">
+                            <h3 class="card-title text-lg">Per-Dataset Processing Statistics</h3>
+                            {% if analysis.import_results.per_dataset_stats %}
                             <div class="overflow-x-auto">
-                                <table class="table table-sm">
+                                <table class="table table-sm table-zebra">
                                     <thead>
                                         <tr>
                                             <th>Dataset</th>
-                                            <th class="text-right">Entities</th>
+                                            <th class="text-right">Rows</th>
+                                            <th class="text-right">Regular Props</th>
+                                            <th class="text-right">Anchors</th>
+                                            <th class="text-right">Multi Items</th>
+                                            <th class="text-right">Multi Cells</th>
+                                            <th class="text-right">FK Queued</th>
+                                            <th class="text-right">FK Resolved</th>
+                                            <th class="text-right">FK Failed</th>
+                                            <th class="text-right">Junctions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {% for row in analysis.top_datasets %}
+                                        {% for dataset_name, stats in analysis.import_results.per_dataset_stats.items %}
                                         <tr>
-                                            <td class="font-medium">{{ row.dataset }}</td>
-                                            <td class="text-right">{{ row.entities }}</td>
+                                            <td class="font-medium">{{ dataset_name }}</td>
+                                            <td class="text-right">{{ stats.rows|default:0 }}</td>
+                                            <td class="text-right">{{ stats.props_regular|default:0 }}</td>
+                                            <td class="text-right">{{ stats.props_anchor|default:0 }}</td>
+                                            <td class="text-right">{{ stats.props_multi_items|default:0 }}</td>
+                                            <td class="text-right">{{ stats.props_multi_cells|default:0 }}</td>
+                                            <td class="text-right">{{ stats.fk_queued|default:0 }}</td>
+                                            <td class="text-right">
+                                                <span class="badge badge-success badge-xs">{{ stats.fk_resolved|default:0 }}</span>
+                                            </td>
+                                            <td class="text-right">
+                                                {% if stats.fk_failed > 0 %}
+                                                    <span class="badge badge-error badge-xs">{{ stats.fk_failed }}</span>
+                                                {% else %}
+                                                    {{ stats.fk_failed|default:0 }}
+                                                {% endif %}
+                                            </td>
+                                            <td class="text-right">{{ stats.junctions|default:0 }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
                                 </table>
                             </div>
                             {% else %}
-                            <div class="text-sm opacity-70">No per-dataset breakdown available.</div>
+                            <div class="text-sm opacity-70">No per-dataset statistics available.</div>
                             {% endif %}
                         </div>
                     </div>
@@ -670,14 +727,23 @@
                             <div class="stat-desc">Total duration</div>
                         </div>
                         <div class="stat">
-                            <div class="stat-title">Resources/Time</div>
-                            <div class="stat-value text-sm">~{{ analysis.import_results.total_resources|default:0 }}/min</div>
+                            <div class="stat-title">Rows/Time</div>
+                            <div class="stat-value text-sm">~{{ analysis.import_results.rows_processed|default:0 }}/min</div>
                             <div class="stat-desc">Processing rate</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-title">FK Success Rate</div>
+                            <div class="stat-value text-sm">
+                                {% if analysis.import_results.fk_relationships_total > 0 %}
+                                    {% widthratio analysis.import_results.fk_relationships_resolved analysis.import_results.fk_relationships_total 100 %}%
+                                {% else %}N/A{% endif %}
+                            </div>
+                            <div class="stat-desc">FK resolution</div>
                         </div>
                         <div class="stat">
                             <div class="stat-title">Success Rate</div>
                             <div class="stat-value text-sm">
-                                {% if analysis.import_results.total_resources > 0 %}100%{% else %}0%{% endif %}
+                                {% if analysis.import_results.resources_created > 0 %}100%{% else %}0%{% endif %}
                             </div>
                             <div class="stat-desc">Data imported</div>
                         </div>

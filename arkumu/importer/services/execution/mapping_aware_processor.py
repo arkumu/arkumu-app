@@ -8,7 +8,7 @@ and multi-value columns.
 
 import logging
 from typing import Dict, Any, List, Optional, Union, Tuple, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import polars as pl
 import hashlib
@@ -37,6 +37,8 @@ class ProcessingContext:
     processed_datasets: Set[str]  # Track which datasets have been processed
     log_details: bool = False  # Control detailed logging
     blueprints: Optional[Dict[str, Any]] = None  # Schema blueprints for enhanced processing
+    # Lightweight per‑dataset counters for concise logging summaries
+    dataset_counters: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
 
 class MappingAwareProcessor:
@@ -261,14 +263,21 @@ class MappingAwareProcessor:
                         pass
 
                 context.processed_datasets.add(dataset_config.dataset_name)
+                
+                # Log FK queue status after completing dataset
+                if len(self.pending_relationships) > 0:
+                    logger.info(f"✅ Dataset '{dataset_config.dataset_name}' completed. FK Queue Status: {len(self.pending_relationships)} relationships queued for resolution")
         finally:
-            # Always attempt to resolve queued FK relationships even if some datasets errored
-            logger.info("FK resolve: starting")
-            try:
-                self._resolve_pending_relationships(context)
-            finally:
-                logger.info("FK resolve: finished")
+            # DO NOT resolve FK relationships here - they should only be resolved after ALL datasets are processed
+            # FK relationships are queued in self.pending_relationships and will be resolved at the very end
+            logger.info("FK queuing completed - relationships will be resolved after all datasets finish")
+            logger.info(f"Current FK queue size: {len(self.pending_relationships)} relationships")
         
+        # After all datasets have been processed, resolve all queued FK relationships
+        # This ensures FK triples are created only after entities for all datasets exist
+        # and makes the log line "🔗 FK RESOLUTION START" appear in runtime logs.
+        self._resolve_pending_relationships(context)
+
         # Log processing summary
         self._log_processing_summary(context)
         
@@ -293,6 +302,22 @@ class MappingAwareProcessor:
         
         # Group columns by type for efficient processing
         column_groups = self._group_columns_by_type(dataset_config.columns)
+        # Initialize per-dataset counters (concise summary logging)
+        dc = context.dataset_counters.setdefault(dataset_name, {
+            'rows': 0,
+            'props_regular': 0,
+            'props_anchor': 0,
+            'props_multi_items': 0,
+            'props_multi_cells': 0,
+            'fk_queued': 0,
+            'fk_multi_items': 0,
+            'fk_resolved': 0,
+            'fk_failed': 0,
+            'fk_missing': 0,
+            'fk_stubs': 0,
+            'junctions': 0,
+            'junction_attrs': 0,
+        })
         
         # Track entities created for this chunk
         chunk_entities = []
@@ -305,6 +330,10 @@ class MappingAwareProcessor:
             # Log slow processing every 10 entities for detailed debugging
             if row_idx % 10 == 0 and total_chunk_rows > 50:
                 logger.debug(f"🐌 Processing entity {row_idx}/{total_chunk_rows} for {dataset_name} (checking for slowdowns)")
+            
+            # Periodic FK queue status (every 100 rows for large datasets)
+            if row_idx % 100 == 0 and len(self.pending_relationships) > 0:
+                logger.info(f"🔗 FK Queue Status [{dataset_name}]: {len(self.pending_relationships)} total relationships queued (row {row_idx}/{total_chunk_rows})")
             
             entity_uri = self._generate_entity_uri(dataset_name, row_data, dataset_config)
             
@@ -349,6 +378,7 @@ class MappingAwareProcessor:
             
             # Track row processing
             self.statistics.current_metrics.rows_processed += 1
+            dc['rows'] += 1
             
             # Log progress every 100 entities within chunk
             if row_idx % 100 == 0:
@@ -585,6 +615,10 @@ class MappingAwareProcessor:
                 self.statistics.current_metrics.triples_created += len(batch_property_data)
             except Exception:
                 pass
+            # Per-dataset concise counters
+            ds = context.current_dataset or entity_resource.resource_type
+            context.dataset_counters.setdefault(ds, {}).setdefault('props_regular', 0)
+            context.dataset_counters[ds]['props_regular'] += len(batch_property_data)
     
     def _process_anchor_columns(self,
                               entity_resource,
@@ -621,6 +655,10 @@ class MappingAwareProcessor:
                 self.statistics.current_metrics.triples_created += len(batch_property_data)
             except Exception:
                 pass
+            # Per-dataset concise counters
+            ds = context.current_dataset or entity_resource.resource_type
+            context.dataset_counters.setdefault(ds, {}).setdefault('props_anchor', 0)
+            context.dataset_counters[ds]['props_anchor'] += len(batch_property_data)
     
     def _process_multi_value_columns(self,
                                    entity_resource,
@@ -668,6 +706,13 @@ class MappingAwareProcessor:
                 self.statistics.current_metrics.triples_created += len(batch_property_data)
             except Exception:
                 pass
+            # Per-dataset concise counters
+            ds = context.current_dataset or entity_resource.resource_type
+            # Items created equals number of created triples for the multi-value properties
+            context.dataset_counters.setdefault(ds, {}).setdefault('props_multi_items', 0)
+            context.dataset_counters[ds]['props_multi_items'] += len(batch_property_data)
+            context.dataset_counters.setdefault(ds, {}).setdefault('props_multi_cells', 0)
+            context.dataset_counters[ds]['props_multi_cells'] += len(columns)
     
     def _queue_fk_relationships(self,
                               entity_uri: str,
@@ -698,17 +743,16 @@ class MappingAwareProcessor:
         if context.log_details:
             logger.debug(f"FK queue: {len(columns)} FK columns for {entity_uri}")
         
+        
         # Group FK relationships by target dataset for better batching
         relationships_by_target = {}
         total_fk_values_processed = 0
+        total_multi_value_items = 0
         
         for column in columns:
             value = row_data.get(column.column_name)
-            if context.log_details:
-                logger.debug(f"FK column '{column.column_name}' value='{value}' multi={column.is_multi_value}")
             
             if not value or not str(value).strip():
-                logger.debug(f"   ⚠️  FK SKIP: Empty value for column '{column.column_name}'")
                 continue
                 
             target_dataset = self._get_target_dataset_for_column(column, context)
@@ -720,6 +764,7 @@ class MappingAwareProcessor:
                 fk_values = self._split_multi_value(str(value), column.multi_value_separator)
                 if context.log_details:
                     logger.debug(f"FK multi-value split {len(fk_values)} values")
+                total_multi_value_items += len(fk_values)
             else:
                 fk_values = [str(value).strip()]
                 if context.log_details:
@@ -734,6 +779,7 @@ class MappingAwareProcessor:
                     norm_val = MappingUtils.normalize_fk_value(fk_value)
                     relationship = {
                         'source_entity_uri': entity_uri,
+                        'source_dataset': context.current_dataset,
                         'source_column': column.column_name,
                         'target_value': norm_val,
                         'target_dataset': target_dataset,
@@ -760,11 +806,28 @@ class MappingAwareProcessor:
             if context.log_details:
                 logger.debug(f"FK batch queued {len(relationships)} -> '{target_dataset}'")
         
-        logger.info(f"FK queued: {total_relationships_queued} relationships across {len(relationships_by_target)} targets")
+        # Smart FK queuing logs: only show significant batches or when explicitly requested
+        if total_relationships_queued > 0:
+            # Only log at INFO level for large batches or when detail logging is enabled
+            if context.log_details:
+                logger.info(f"FK queued: {total_relationships_queued} relationships across {len(relationships_by_target)} targets")
+            elif total_relationships_queued >= 50:  # Only log large batches
+                logger.info(f"FK batch queued: {total_relationships_queued} relationships → {len(relationships_by_target)} targets")
+            else:
+                logger.debug(f"FK queued: {total_relationships_queued} relationships across {len(relationships_by_target)} targets")
+        # Per-dataset concise counters
+        ds = context.current_dataset
+        if ds:
+            counters = context.dataset_counters.setdefault(ds, {})
+            counters['fk_queued'] = counters.get('fk_queued', 0) + total_relationships_queued
+            counters['fk_multi_items'] = counters.get('fk_multi_items', 0) + total_multi_value_items
         
         # Update statistics
         current_pending_total = len(self.pending_relationships)
         logger.debug(f"   📊 FK QUEUE STATS: Total pending relationships now: {current_pending_total}")
+        
+        if total_relationships_queued > 0:
+            self.statistics.track_fk_relationships_queued(total_relationships_queued)
     
     def _process_external_ontology_columns(self,
                                          entity_resource,
@@ -827,10 +890,10 @@ class MappingAwareProcessor:
                                f"{external_uri} -> owl:sameAs -> literal_resource('{cleaned_value}')")
     
     def _process_relationship_context_columns(self,
-                                            entity_resource,
-                                            row_data: Dict[str, Any], 
-                                            columns: List[ColumnConfig],
-                                            context: ProcessingContext):
+                                             entity_resource,
+                                             row_data: Dict[str, Any],
+                                             columns: List[ColumnConfig],
+                                             context: ProcessingContext):
         """Process relationship context columns as regular properties"""
         if columns:
             logger.debug(f"Processing {len(columns)} relationship context columns: {[col.column_name for col in columns]}")
@@ -850,6 +913,8 @@ class MappingAwareProcessor:
                 )
                 
                 logger.debug(f"Created relationship context property: entity -> {property_uri} -> '{cleaned_value}'")
+                # Count as part of junction attributes only when used inside explicit junction processing.
+                # Here we treat them as regular properties and do not change per-dataset counters.
     
     def _resolve_pending_relationships(self, context: ProcessingContext):
         """Resolve all pending FK relationships with comprehensive logging and improved batching.
@@ -912,18 +977,13 @@ class MappingAwareProcessor:
         for target_dataset, relationships in relationships_by_target.items():
             logger.info(f"\n🔄 FK BATCH PROCESSING: {len(relationships)} relationships → '{target_dataset}'")
             
-            # Check if target dataset was skipped
+            # Check if target dataset has CSV data in this import batch
             if target_dataset in skipped_datasets:
-                if hasattr(context, 'stub_datasets') and target_dataset in context.stub_datasets:
-                    logger.info(f"   🏗️  STUB RESOLUTION: Creating stub entities for '{target_dataset}' (has stub structure)")
-                else:
-                    logger.warning(f"   🚫 ORPHANED BATCH: Skipping relationships to missing dataset '{target_dataset}' (no CSV data)")
-                    total_orphaned += len(relationships)
-                    
-                    # Log detailed orphaned relationship information
-                    orphaned_sources = set(rel['source_entity_uri'] for rel in relationships)
-                    logger.warning(f"     👻 Orphaned relationships affect {len(orphaned_sources)} source entities")
-                    continue
+                logger.info(f"   📋 CROSS-BATCH RESOLUTION: Target dataset '{target_dataset}' has no CSV data in current batch")
+                logger.info(f"   🔍 ENTITY LOOKUP: Attempting to resolve relationships using existing database entities")
+                # Continue processing - let target entity preparation handle existence checks
+            else:
+                logger.info(f"   📊 SAME-BATCH RESOLUTION: Target dataset '{target_dataset}' has CSV data in current batch")
             
             # Process this batch of relationships with detailed logging
             logger.info(f"   ⚡ BATCH START: Resolving {len(relationships)} FK relationships for '{target_dataset}'")
@@ -958,8 +1018,18 @@ class MappingAwareProcessor:
             avg_relationships_per_source = total_resolved / len(total_unique_sources) if total_unique_sources else 0
             logger.info(f"  📈 Average FK relationships per entity: {avg_relationships_per_source:.2f}")
         
-        # Update statistics and handle warnings
+        # Update statistics and handle warnings  
         self.statistics.current_metrics.relationships_created += total_resolved
+        
+        if total_relationships > 0:
+            self.statistics.track_fk_resolution_result(
+                resolved=total_resolved,
+                failed=total_failed, 
+                orphaned=total_orphaned,
+                stub_created=total_stub_created,
+                missing_source=total_missing_source,
+                unique_sources=len(total_unique_sources)
+            )
         
         if total_orphaned > 0:
             self.statistics.add_warning(
@@ -1174,6 +1244,12 @@ class MappingAwareProcessor:
         self.statistics.current_metrics.relationships_created += relationships_created
         if context_attributes_added > 0:
             self.statistics.current_metrics.cells_processed += context_attributes_added
+        # Update concise per-dataset counters for the junction dataset
+        ds = rel_context.dataset_name
+        dc = context.dataset_counters.setdefault(ds, {})
+        dc['junctions'] = dc.get('junctions', 0) + 1
+        if context_attributes_added:
+            dc['junction_attrs'] = dc.get('junction_attrs', 0) + context_attributes_added
     
     # Helper methods
     
@@ -1396,6 +1472,7 @@ class MappingAwareProcessor:
                 relationship_type = relationship['relationship_type']
                 is_multi_value = relationship.get('is_multi_value', False)
                 multi_value_index = relationship.get('multi_value_index')
+                source_dataset = relationship.get('source_dataset')
                 
                 unique_sources.add(source_entity_uri)
                 relationship_types.add(relationship_type)
@@ -1412,6 +1489,9 @@ class MappingAwareProcessor:
                     
                     logger.warning(f"      👻 MISSING SOURCE: Entity {source_entity_uri} not found in cache")
                     results['missing_source'] += 1
+                    if source_dataset:
+                        dc = context.dataset_counters.setdefault(source_dataset, {})
+                        dc['fk_missing'] = dc.get('fk_missing', 0) + 1
                     continue
                 
                 # Get target entity from batch cache
@@ -1426,6 +1506,9 @@ class MappingAwareProcessor:
                     
                     logger.warning(f"      🎯 MISSING TARGET: Could not resolve target entity {target_entity_uri}")
                     results['failed'] += 1
+                    if source_dataset:
+                        dc = context.dataset_counters.setdefault(source_dataset, {})
+                        dc['fk_failed'] = dc.get('fk_failed', 0) + 1
                     continue
                 
                 # Check if target entity is a stub (was created due to missing CSV data)
@@ -1433,6 +1516,9 @@ class MappingAwareProcessor:
                 if is_stub:
                     results['stub_created'] += 1
                     logger.debug(f"      🏗️ STUB TARGET: Linking to stub entity {target_entity_uri}")
+                    if source_dataset:
+                        dc = context.dataset_counters.setdefault(source_dataset, {})
+                        dc['fk_stubs'] = dc.get('fk_stubs', 0) + 1
                 
                 # Create relationship triple with timing
                 resolution_start = datetime.now()
@@ -1453,10 +1539,16 @@ class MappingAwareProcessor:
                         pass
                     
                     logger.debug(f"      ✅ FK SUCCESS: {source_entity.uri} -[{property_uri}]→ {target_entity.uri}")
+                    if source_dataset:
+                        dc = context.dataset_counters.setdefault(source_dataset, {})
+                        dc['fk_resolved'] = dc.get('fk_resolved', 0) + 1
                 else:
                     
                     logger.error(f"      ❌ FK TRIPLE CREATION FAILED: Could not create triple for relationship")
                     results['failed'] += 1
+                    if source_dataset:
+                        dc = context.dataset_counters.setdefault(source_dataset, {})
+                        dc['fk_failed'] = dc.get('fk_failed', 0) + 1
                 
             except Exception as e:
                 
@@ -1576,7 +1668,8 @@ class MappingAwareProcessor:
         
         # Try to find if entity was already created in database
         try:
-            existing_entity = Resource.objects.get(uri=target_uri, resource_type='IRI')
+            from arkumu.metadata.models.resource import ResourceType as _RT
+            existing_entity = Resource.objects.get(uri=target_uri, resource_type=_RT.IRI)
             logger.debug(f"✅ Found existing target entity in database: {target_uri}")
             context.entity_cache[target_uri] = existing_entity
             return existing_entity
@@ -1590,17 +1683,19 @@ class MappingAwareProcessor:
                 
             # Debug: Check if similar entities exist (for debugging)
             target_value = target_uri.split('/')[-1]
+            from arkumu.metadata.models.resource import ResourceType as _RT
             similar = Resource.objects.filter(
                 uri__icontains=target_value,
-                resource_type='IRI',
+                resource_type=_RT.IRI,
                 organization=self.organization
             ).count()
             logger.debug(f"🔍 Similar entities found for '{target_value}': {similar}")
             
             # Debug: Check if target dataset entities exist at all
+            from arkumu.metadata.models.resource import ResourceType as _RT
             dataset_entities = Resource.objects.filter(
                 uri__contains=f"/entities/{target_dataset}/",
-                resource_type='IRI',
+                resource_type=_RT.IRI,
                 organization=self.organization
             ).count()
             logger.debug(f"🔍 Total entities in target dataset '{target_dataset}': {dataset_entities}")
@@ -1608,8 +1703,27 @@ class MappingAwareProcessor:
             pass  # Entity doesn't exist, create stub
         
         # Create stub entity
-        logger.error(f"🚨 CRITICAL FK BUG: Creating stub entity for {target_uri} - this should NOT happen if entities are processed correctly!")
-        logger.error(f"🚨 This indicates FK resolution is running before target entities are created in dataset: {target_dataset}")
+        # Decide log severity based on whether the target dataset is part of this run
+        try:
+            is_skipped = target_dataset not in context.all_csv_sources
+        except Exception:
+            is_skipped = False
+
+        if is_skipped:
+            # Cross-batch scenario: target dataset not included in current csv_sources
+            logger.info(
+                f"🧩 CROSS-BATCH: Creating stub entity for {target_uri} because target dataset "
+                f"'{target_dataset}' is not included in this run; it will be resolved when that dataset is processed"
+            )
+        else:
+            # Same-batch scenario but target not found → this is unexpected
+            logger.error(
+                f"🚨 CRITICAL FK BUG: Creating stub entity for {target_uri} - target dataset '{target_dataset}' "
+                f"is included in this run, so target entities should exist before FK resolution"
+            )
+            logger.error(
+                f"🚨 This indicates FK resolution is running before target entities are created in dataset: {target_dataset}"
+            )
         
         stub_entity = self.resource_manager.create_entity_resource(
             target_uri,
@@ -1880,7 +1994,7 @@ class MappingAwareProcessor:
         return column_configs
     
     def _log_processing_summary(self, context: ProcessingContext):
-        """Log comprehensive processing summary"""
+        """Log comprehensive processing summary with concise per‑dataset lines"""
         logger.info(f"\n{'='*60}")
         logger.info("PROCESSING SUMMARY")
         logger.info(f"{'='*60}")
@@ -1932,7 +2046,19 @@ class MappingAwareProcessor:
         logger.info(f"  - Relationships created: {metrics.relationships_created}")
         if metrics.errors:
             logger.info(f"  - Errors: {metrics.errors}")
-        
+
+        # Concise per-dataset summaries (one line each)
+        if context.dataset_counters:
+            logger.info("\nPer-dataset summary:")
+            for ds, c in context.dataset_counters.items():
+                logger.info(
+                    f"  • {ds}: rows={c.get('rows',0)}, props={c.get('props_regular',0)}/{c.get('props_anchor',0)}"
+                    f", mv={c.get('props_multi_items',0)} (cells={c.get('props_multi_cells',0)})"
+                    f", fk queued={c.get('fk_queued',0)} res={c.get('fk_resolved',0)} fail={c.get('fk_failed',0)}"
+                    f" miss={c.get('fk_missing',0)} stubs={c.get('fk_stubs',0)}"
+                    f", junctions={c.get('junctions',0)} attrs={c.get('junction_attrs',0)}"
+                )
+
         logger.info(f"{'='*60}\n")
     
     def _merge_bulk_stats_to_execution_metrics(self, bulk_stats):
