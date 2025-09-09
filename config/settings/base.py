@@ -359,7 +359,7 @@ HUEY = {
         'url': REDIS_URL,
     },
     'consumer': {
-        'workers': 2,
+        'workers': 4,
         'worker_type': 'thread',
         'initial_delay': 0.1,  # Smallest polling interval
         'backoff': 1.15,  # Exponential backoff rate

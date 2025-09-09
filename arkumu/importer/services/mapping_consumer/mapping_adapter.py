@@ -266,9 +266,17 @@ class MappingAdapter:
         # Translate to execution format
         execution_config = self.config_translator.translate_mapping_config(config)
         
+        # Log correct column counts using MappingUtils analysis  
+        from arkumu.importer.utils.mapping_utils import MappingUtils
+        column_analysis = MappingUtils.analyze_mapping_structure(config)
+        
         logger.info(f"Successfully translated mapping {mapping_id} to execution config")
         logger.debug(f"Execution config: {len(execution_config.datasets)} datasets, "
-                    f"{len(execution_config.column_configurations)} columns, "
+                    f"{column_analysis['total_columns']} total columns "
+                    f"(regular: {column_analysis['regular_columns']}, "
+                    f"FK: {column_analysis['foreign_key_columns']}, "
+                    f"multi-value: {column_analysis['multi_value_columns']}, "
+                    f"multi-value FK: {column_analysis['multi_value_fk_columns']}), "
                     f"{len(execution_config.fk_relationships)} FK relationships")
         
         return execution_config

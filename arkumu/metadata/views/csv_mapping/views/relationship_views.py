@@ -199,14 +199,20 @@ class SaveInlineFKConfigView(GeneralLoginRequiredMixin,
             updated_column = None
             for col in existing_columns:
                 if col.get('id') == column_id:
+                    # Extract source dataset and column from the column's metadata
+                    source_dataset = col.get('dataset', '')
+                    source_column = col.get('name', '')
+                    
                     col['is_fk'] = True
                     col['fk_config'] = {
                         'direction': fk_direction,
+                        'source_dataset': source_dataset,  # Add source dataset
+                        'source_column': source_column,    # Add source column
                         'target_dataset': target_dataset,
                         'target_column': target_column,
                     }
                     updated_column = col
-                    logger.info(f"CSV_SAVE_INLINE_FK_CONFIG: ✅ Updated column '{column_id}' with FK config")
+                    logger.info(f"CSV_SAVE_INLINE_FK_CONFIG: ✅ Updated column '{column_id}' with FK config: {source_dataset}.{source_column} -> {target_dataset}.{target_column}")
                     break
             
             if not updated_column:

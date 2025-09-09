@@ -22,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture
 def fuk_mapping_from_s3(db):
-    """Load the fuk_mapping.json from S3 bucket"""
+    """Load the folkwang-mapping.json from S3 bucket"""
     bucket_service = BucketService()
     bucket_name = 'fuk'
-    file_path = 'metadata/fuk_mapping.json'
+    file_path = 'metadata/folkwang-mapping.json'
     
     logger.info(f"Loading mapping configuration from S3: {bucket_name}/{file_path}")
     
@@ -46,7 +46,7 @@ def fuk_mapping_from_s3(db):
             raise Exception(f"Unexpected result format from get_file_content: {result}")
             
     except Exception as e:
-        logger.error(f"Failed to load fuk_mapping.json from S3: {e}")
+        logger.error(f"Failed to load folkwang-mapping.json from S3: {e}")
         # Fallback to a minimal test mapping if S3 file not available
         logger.warning("Using fallback minimal mapping configuration")
         return {

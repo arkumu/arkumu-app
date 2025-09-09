@@ -763,6 +763,15 @@ def cancellable_task(task_id_param: str = 'upload_session_id',
                 kwargs['task_context'] = context
                 
                 # Execute the original function
+                # In test/immediate mode, djhuey tasks can be executed synchronously via call_local
+                try:
+                    huey_settings = getattr(settings, 'HUEY', {})
+                    immediate = bool(huey_settings.get('immediate'))
+                except Exception:
+                    immediate = False
+
+                if immediate and hasattr(func, 'call_local'):
+                    return func.call_local(*args, **kwargs)
                 return func(*args, **kwargs)
         
         return wrapper

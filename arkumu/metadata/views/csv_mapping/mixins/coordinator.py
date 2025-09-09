@@ -1274,7 +1274,17 @@ class CSVMappingCoordinatorMixin(BaseCoordinatorMixin, CSVDataMixin, MappingWork
                 
             # Extract FK configurations
             if column_data.get('fk_config'):
+                # Parse source info from the column_id key (e.g., 'org::dataset::column' or 'dataset::column')
+                parsed = self.parse_column_id(column_id)
+                source_dataset = parsed.get('dataset') or ''
+                source_column = parsed.get('column') or ''
+                # Normalize dataset: strip optional .csv suffix
+                if source_dataset.endswith('.csv'):
+                    source_dataset = source_dataset[:-4]
+
                 fk_relationships[column_id] = {
+                    'source_dataset': source_dataset,
+                    'source_column': source_column,
                     'target_dataset': column_data['fk_config'].get('target_dataset'),
                     'target_column': column_data['fk_config'].get('target_column'),
                     'display_column': column_data['fk_config'].get('display_column'),

@@ -105,8 +105,27 @@ class ChunkedProcessor:
             logger.warning(f"Strategy {strategy} not optimal for large datasets, using STREAMING_ENTITY_CENTRIC")
             strategy = ProcessingStrategy.STREAMING_ENTITY_CENTRIC
         
-        # Process each dataset in chunks
-        for dataset_config in execution_config.datasets:
+        # Use dependency resolver to determine correct processing order
+        from ..mapping_consumer import DependencyResolver
+        dependency_resolver = DependencyResolver()
+        phases = dependency_resolver.resolve_dependencies(execution_config)
+        
+        # Process datasets in dependency order (phase by phase)
+        logger.info(f"Processing {len(phases)} dependency phases with {len(csv_sources)} datasets")
+        
+        for phase in phases:
+            logger.info(f"🔄 Processing {phase.phase_name}: {len(phase.datasets)} datasets")
+            for dataset_name in phase.datasets:
+                # Find the dataset config for this dataset
+                dataset_config = None
+                for config in execution_config.datasets:
+                    if config.dataset_name == dataset_name:
+                        dataset_config = config
+                        break
+                
+                if not dataset_config:
+                    logger.warning(f"No dataset config found for: {dataset_name}")
+                    continue
             dataset_name = dataset_config.dataset_name
             
             if dataset_name not in csv_sources:
@@ -164,7 +183,7 @@ class ChunkedProcessor:
             
             try:
                 # Process chunk with mapping-aware processor
-                chunk_metrics = self._process_chunk_with_entity_centric(
+                chunk_metrics = self._process_chunk_with_streaming_entity_centric(
                     dataset_config, chunk_data, chunk_context
                 )
                 
@@ -201,11 +220,11 @@ class ChunkedProcessor:
                 logger.error(f"Failed to process chunk {chunk_number} for dataset '{dataset_name}': {e}")
                 self.statistics.current_metrics.errors += 1
     
-    def _process_chunk_with_entity_centric(self,
+    def _process_chunk_with_streaming_entity_centric(self,
                                          dataset_config,
                                          chunk_data: List[Dict],
                                          context: ProcessingContext) -> ExecutionMetrics:
-        """Process a chunk using entity-centric approach"""
+        """Process a chunk using streaming entity-centric approach"""
         
         # Create a fresh metrics instance for this chunk
         chunk_statistics = ExecutionStatistics()
@@ -223,7 +242,7 @@ class ChunkedProcessor:
         return chunk_processor.process_with_execution_config(
             context.execution_config,
             context.all_csv_sources,
-            ProcessingStrategy.ENTITY_CENTRIC  # Use entity-centric for each chunk
+            ProcessingStrategy.STREAMING_ENTITY_CENTRIC  # Use streaming entity-centric for each chunk
         )
     
     def _read_csv_chunks_from_file(self, file_path: str) -> Iterator[List[Dict]]:
@@ -269,28 +288,41 @@ class ChunkedProcessor:
             yield chunk
     
     def _resolve_pending_relationships_final(self):
-        """Resolve any remaining pending relationships"""
+        """Resolve any remaining pending relationships using MappingAwareProcessor logic"""
         
         if not self.pending_relationships:
+            logger.info("No pending FK relationships to resolve")
             return
         
-        logger.info(f"Resolving {len(self.pending_relationships)} pending relationships")
+        logger.info(f"🔗 FINAL FK RESOLUTION: Resolving {len(self.pending_relationships)} pending relationships after all datasets completed")
         
-        relationships_resolved = 0
+        # Create a processor instance to handle FK resolution
+        final_processor = MappingAwareProcessor(
+            institution=self.institution,
+            base_uri=self.base_uri,
+            statistics=self.statistics
+        )
         
-        for relationship in self.pending_relationships:
-            try:
-                # Attempt to resolve relationship
-                # This would use the mapping processor's relationship resolution logic
-                # For now, we'll create stub entities for unresolved targets
-                relationships_resolved += 1
-                
-            except Exception as e:
-                logger.error(f"Failed to resolve relationship: {e}")
-                self.statistics.current_metrics.errors += 1
+        # Share the accumulated entity cache and pending relationships
+        final_processor.entity_cache = self.entity_cache
+        final_processor.pending_relationships = self.pending_relationships
         
-        logger.info(f"Resolved {relationships_resolved} relationships")
-        self.pending_relationships.clear()
+        # Create a context for FK resolution (datasets are already processed)
+        context = ProcessingContext(
+            execution_config=None,  # Not needed for FK resolution only
+            current_dataset="",
+            all_csv_sources={},  # Not needed for FK resolution
+            entity_cache=self.entity_cache,
+            processed_datasets=set()  # All datasets are considered processed at this point
+        )
+        
+        # Use the processor's FK resolution logic
+        try:
+            final_processor._resolve_pending_relationships(context)
+            logger.info("🔗 FINAL FK RESOLUTION: Successfully completed")
+        except Exception as e:
+            logger.error(f"🔗 FINAL FK RESOLUTION: Failed with error: {e}")
+            self.statistics.current_metrics.errors += 1
     
     def _cleanup_memory(self):
         """Perform memory cleanup between chunks"""

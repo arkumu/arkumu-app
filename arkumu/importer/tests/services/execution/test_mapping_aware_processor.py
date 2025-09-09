@@ -83,10 +83,10 @@ class TestMappingAwareProcessor:
     
     @patch('arkumu.metadata.models.Resource.objects')
     @patch('arkumu.metadata.models.triples.Triple.objects')
-    def test_process_with_entity_centric_strategy(self, mock_triple_objects, mock_resource_objects,
+    def test_process_with_streaming_entity_centric_strategy(self, mock_triple_objects, mock_resource_objects,
                                                 test_organization, test_base_uri, 
                                                 execution_statistics, execution_config_simple):
-        """Test processing with entity-centric strategy"""
+        """Test processing with streaming entity-centric strategy"""
         # Mock database operations
         mock_resource = create_mock_resource()
         mock_resource_objects.get_or_create.return_value = (mock_resource, True)

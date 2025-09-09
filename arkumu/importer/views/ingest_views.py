@@ -719,9 +719,10 @@ def analyze_mapping(request):
         # Initialize mapping adapter
         mapping_adapter = MappingAdapter()
         
-        # Get mapping info and execution config
+        # Get mapping info, execution config, and raw mapping config
         mapping_info = mapping_adapter.get_mapping_info(mapping_id)
         execution_config = mapping_adapter.translate_to_execution_config(mapping_id)
+        raw_mapping_config = mapping_adapter.load_mapping_config(mapping_id)  # For correct analysis
         
         # Analyze selected files
         file_analysis = _analyze_selected_files(selected_files, organization_code)
@@ -732,8 +733,8 @@ def analyze_mapping(request):
             file_analysis['files_by_dataset']
         )
         
-        # Analyze mapping complexity
-        complexity_analysis = _analyze_mapping_complexity(execution_config, mapping_info)
+        # Analyze mapping complexity using centralized utility
+        complexity_analysis = _analyze_mapping_complexity(execution_config, mapping_info, raw_mapping_config)
         
         # Determine execution strategy
         execution_strategy = _determine_execution_strategy(
@@ -897,47 +898,61 @@ def _match_datasets_to_files(execution_datasets, files_by_dataset):
     }
 
 
-def _analyze_mapping_complexity(execution_config, mapping_info):
+def _analyze_mapping_complexity(execution_config, mapping_info, raw_mapping_config=None):
     """
     Analyze mapping complexity to determine processing requirements.
     
     Args:
         execution_config: ExecutionConfig object
         mapping_info: MappingInfo object
+        raw_mapping_config: Raw mapping config dict (optional, for correct analysis)
         
     Returns:
         Dictionary with complexity analysis
     """
-    # Count column types
-    column_types = {}
-    for col_config in execution_config.column_configurations.values():
-        col_type = col_config.column_type.value
-        column_types[col_type] = column_types.get(col_type, 0) + 1
-    
-    # Calculate complexity score
-    complexity_score = 0
-    
-    # Dataset complexity
-    if len(execution_config.datasets) > 3:
-        complexity_score += 2
-    elif len(execution_config.datasets) > 1:
-        complexity_score += 1
-    
-    # Column complexity
-    if mapping_info.total_columns > 20:
-        complexity_score += 2
-    elif mapping_info.total_columns > 10:
-        complexity_score += 1
-    
-    # Relationship complexity
-    if len(execution_config.fk_relationships) > 5:
-        complexity_score += 2
-    elif len(execution_config.fk_relationships) > 0:
-        complexity_score += 1
-    
-    # External ontology complexity
-    if len(execution_config.external_ontologies) > 0:
-        complexity_score += 1
+    # Use centralized MappingUtils analysis if raw config available 
+    if raw_mapping_config:
+        from arkumu.importer.utils.mapping_utils import MappingUtils
+        column_analysis = MappingUtils.analyze_mapping_structure(raw_mapping_config)
+        column_types = {
+            'regular': column_analysis['regular_columns'],
+            'anchor': column_analysis['anchor_columns'], 
+            'foreign_key': column_analysis['foreign_key_columns'],
+            'multi_value': column_analysis['multi_value_columns'],
+            'multi_value_foreign_key': column_analysis['multi_value_fk_columns'],
+            'relationship_context': column_analysis['relationship_context_columns'],
+            'external_ontology': column_analysis['external_ontology_columns']
+        }
+    else:
+        # Fallback to execution_config (PROBLEMATIC method)
+        column_types = {}
+        for col_config in execution_config.column_configurations.values():
+            col_type = col_config.column_type.value
+            column_types[col_type] = column_types.get(col_type, 0) + 1
+        # Fallback complexity calculation for execution_config method
+        complexity_score = 0
+        
+        # Dataset complexity
+        if len(execution_config.datasets) > 3:
+            complexity_score += 2
+        elif len(execution_config.datasets) > 1:
+            complexity_score += 1
+        
+        # Column complexity
+        if mapping_info.total_columns > 20:
+            complexity_score += 2
+        elif mapping_info.total_columns > 10:
+            complexity_score += 1
+        
+        # Relationship complexity
+        if len(execution_config.fk_relationships) > 5:
+            complexity_score += 2
+        elif len(execution_config.fk_relationships) > 0:
+            complexity_score += 1
+        
+        # External ontology complexity
+        if len(execution_config.external_ontologies) > 0:
+            complexity_score += 1
     
     # Multi-value columns complexity
     multi_value_count = column_types.get('multi_value', 0)

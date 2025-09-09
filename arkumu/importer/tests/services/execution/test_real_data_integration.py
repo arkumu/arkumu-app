@@ -732,3 +732,6 @@ class TestMappingComplexityAnalysis:
         
         # Score > 5 should be high complexity
         assert complexity_score > 5
+
+
+# FK Resolution debugging has been moved to separate test file: test_fk_resolution_debug.py

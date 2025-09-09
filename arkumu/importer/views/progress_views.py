@@ -42,9 +42,6 @@ def import_progress_view(request, session_pk):
                 cache_key = f"task_state_{task.task_id}"
                 progress_data = cache.get(cache_key)
                 
-                logger.info(f"Progress lookup - Task: {task.dataset_name}, Key: {cache_key}, Found: {progress_data is not None}")
-                if progress_data:
-                    logger.info(f"Progress data: {progress_data}")
                 
                 if not progress_data:
                     progress_data = {
@@ -52,7 +49,6 @@ def import_progress_view(request, session_pk):
                         'message': 'Waiting to start...',
                         'percentage': 0
                     }
-                    logger.info(f"Using default progress data for {task.dataset_name}")
                 
                 # Update counts
                 if progress_data.get('status') == 'completed':

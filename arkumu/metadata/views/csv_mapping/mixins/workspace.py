@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 
 from arkumu.common.uri_utils import slugify_uri_part
+from arkumu.importer.utils.mapping_utils import MappingUtils
 
 logger = logging.getLogger(__name__)
 
@@ -326,26 +327,54 @@ class MappingWorkspaceMixin:
     
     def get_workspace_statistics(self, request, organization_id):
         """
-        Get statistics about the current workspace.
+        Get comprehensive statistics about the current workspace using MappingUtils.
         
         Args:
             request: Django request object
             organization_id (str): Organization ID
             
         Returns:
-            dict: Workspace statistics
+            dict: Comprehensive workspace statistics and analysis
         """
         columns = self.get_workspace_columns(request, organization_id)
         
-        stats = {
+        if not columns:
+            return {
+                'total_columns': 0,
+                'mapping_analysis': {},
+                'validation': {'is_valid': True, 'warnings': [], 'errors': []},
+                'complexity': {'complexity_score': 0, 'is_simple': True}
+            }
+        
+        # Convert session columns to mapping config format for MappingUtils
+        mapping_config = MappingUtils.convert_from_session_format(columns)
+        
+        # Get comprehensive analysis using MappingUtils
+        mapping_analysis = MappingUtils.analyze_mapping_structure(mapping_config)
+        validation_results = MappingUtils.validate_mapping_structure(mapping_config)
+        complexity_analysis = MappingUtils.calculate_mapping_complexity(mapping_config)
+        
+        # Legacy stats for backward compatibility
+        basic_stats = {
             'total_columns': len(columns),
-            'anchor_columns': len([col for col in columns if col.get('is_anchor', False)]),
-            'fk_columns': len([col for col in columns if col.get('is_fk', False)]),
-            'multi_value_columns': len([col for col in columns if col.get('is_multi_value', False)]),
+            'anchor_columns': mapping_analysis.get('anchor_columns', 0),
+            'fk_columns': mapping_analysis.get('foreign_key_columns', 0),
+            'multi_value_columns': mapping_analysis.get('multi_value_columns', 0),
+            'multi_value_fk_columns': mapping_analysis.get('multi_value_fk_columns', 0),
+            'relationship_context_columns': mapping_analysis.get('relationship_context_columns', 0),
+            'external_ontology_columns': mapping_analysis.get('external_ontology_columns', 0),
             'datasets_represented': len(set(col.get('dataset') for col in columns if col.get('dataset'))),
         }
         
-        return stats
+        # Combine all analyses
+        return {
+            **basic_stats,
+            'mapping_analysis': mapping_analysis,
+            'validation': validation_results,
+            'complexity': complexity_analysis,
+            'column_combinations': mapping_analysis.get('combination_details', {}),
+            'special_combinations': mapping_analysis.get('special_combinations', [])
+        }
     
     def get_dataset_selected_columns(self, request, organization_id, dataset_name, source_name):
         """
@@ -364,4 +393,96 @@ class MappingWorkspaceMixin:
         return [
             col['name'] for col in workspace_columns 
             if col.get('dataset') == dataset_name and col.get('source') == source_name
-        ] 
+        ]
+    
+    def validate_workspace(self, request, organization_id):
+        """
+        Validate the current workspace configuration using MappingUtils.
+        
+        Args:
+            request: Django request object
+            organization_id (str): Organization ID
+            
+        Returns:
+            dict: Validation results with errors, warnings, and suggestions
+        """
+        columns = self.get_workspace_columns(request, organization_id)
+        
+        if not columns:
+            return {
+                'is_valid': True,
+                'errors': [],
+                'warnings': [],
+                'info': [],
+                'suggestions': ['Add some columns to start building your mapping']
+            }
+        
+        # Convert to mapping config format for validation
+        mapping_config = MappingUtils.convert_from_session_format(columns)
+        
+        # Use MappingUtils for comprehensive validation
+        validation_results = MappingUtils.validate_mapping_structure(mapping_config)
+        
+        # Add workspace-specific suggestions
+        suggestions = []
+        analysis = MappingUtils.analyze_mapping_structure(mapping_config)
+        
+        # Check for common issues and provide suggestions
+        if analysis.get('anchor_columns', 0) == 0:
+            suggestions.append("Consider setting anchor columns for your datasets to improve data quality")
+        
+        if analysis.get('multi_value_fk_columns', 0) > 0:
+            mv_fk_details = analysis.get('multi_value_fk_details', [])
+            suggestions.append(f"You have {len(mv_fk_details)} multi-value FK columns that will require special processing")
+        
+        complexity = MappingUtils.calculate_mapping_complexity(mapping_config)
+        if complexity.get('is_complex', False):
+            suggestions.append(f"This mapping has a complexity score of {complexity.get('complexity_score', 0)}. Consider reviewing for optimization opportunities")
+        
+        # Combine with workspace validation results
+        validation_results['suggestions'] = suggestions
+        
+        return validation_results
+    
+    def get_column_type_analysis(self, request, organization_id):
+        """
+        Get detailed column type analysis using MappingUtils.
+        
+        Args:
+            request: Django request object
+            organization_id (str): Organization ID
+            
+        Returns:
+            dict: Detailed column type analysis
+        """
+        columns = self.get_workspace_columns(request, organization_id)
+        
+        if not columns:
+            return {
+                'column_groups': {},
+                'characteristic_groups': {},
+                'combinations': {},
+                'total_columns': 0
+            }
+        
+        # Convert to mapping config format
+        mapping_config = MappingUtils.convert_from_session_format(columns)
+        
+        # Get detailed column analysis
+        column_groups = MappingUtils.group_columns_by_type(mapping_config)
+        characteristic_groups = MappingUtils.group_columns_by_characteristics(mapping_config)
+        
+        # Get combination analysis
+        combinations = {
+            'anchor_fk': MappingUtils.get_columns_with_combination(mapping_config, ['is_anchor', 'is_fk']),
+            'anchor_multi_value': MappingUtils.get_columns_with_combination(mapping_config, ['is_anchor', 'is_multi_value']),
+            'multi_value_fk': MappingUtils.get_columns_with_combination(mapping_config, ['is_multi_value', 'is_fk']),
+            'anchor_multi_value_fk': MappingUtils.get_columns_with_combination(mapping_config, ['is_anchor', 'is_multi_value', 'is_fk'])
+        }
+        
+        return {
+            'column_groups': column_groups,
+            'characteristic_groups': characteristic_groups,
+            'combinations': combinations,
+            'total_columns': len(columns)
+        } 

@@ -154,7 +154,7 @@ class TestEmptyDatasetResourceCreation:
         metrics = processor.process_with_execution_config(
             execution_config=execution_config,
             csv_sources=csv_sources,
-            strategy=ProcessingStrategy.ENTITY_CENTRIC
+            strategy=ProcessingStrategy.STREAMING_ENTITY_CENTRIC
         )
         
         # Verify dataset resource was created
