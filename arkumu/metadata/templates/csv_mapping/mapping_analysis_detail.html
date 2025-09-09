@@ -1,0 +1,298 @@
+{% extends 'base_org.html' %}
+{% load static %}
+
+{% block title %}{{ mapping.name }} - Mapping Analysis - {{ organization.name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-6 py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <nav class="text-sm breadcrumbs">
+                <ul>
+                    <li><a href="{% url 'csv_mapping:mapping_analysis_dashboard' organization.code %}" class="link link-primary">Analysis Dashboard</a></li>
+                    <li>{{ mapping.name }}</li>
+                </ul>
+            </nav>
+            <h1 class="text-3xl font-bold text-base-content mt-2">{{ mapping.name }}</h1>
+            <p class="text-base-content/70 mt-1">Detailed mapping execution analysis</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="badge badge-primary">{{ organization.code|upper }}</div>
+            <button class="btn btn-sm btn-outline" onclick="window.print()">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a2 2 0 002 2h6a2 2 0 002-2v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm0 8H7v4h6v-4z" clip-rule="evenodd"/>
+                </svg>
+                Print Report
+            </button>
+        </div>
+    </div>
+
+    {% if error %}
+    <!-- Error state -->
+    <div class="flex items-center justify-center h-64">
+        <div class="text-center p-8">
+            <svg class="w-16 h-16 mx-auto mb-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+            <h4 class="text-lg font-semibold mb-2 text-red-600">Analysis Error</h4>
+            <p class="text-base-content/60 max-w-md">{{ error }}</p>
+        </div>
+    </div>
+    {% else %}
+    
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+        <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+            <div class="stat-title text-xs">Datasets</div>
+            <div class="stat-value text-2xl text-primary">{{ analysis.total_datasets }}</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+            <div class="stat-title text-xs">Total Columns</div>
+            <div class="stat-value text-2xl text-secondary">{{ analysis.column_analysis.total_columns }}</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+            <div class="stat-title text-xs">FK Relationships</div>
+            <div class="stat-value text-2xl text-error">{{ analysis.total_fk_relationships }}</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+            <div class="stat-title text-xs">Junction Tables</div>
+            <div class="stat-value text-2xl text-neutral">{{ analysis.total_relationship_contexts }}</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+            <div class="stat-title text-xs">Resources Created</div>
+            <div class="stat-value text-2xl text-info">{{ analysis.database_metrics.total_resources }}</div>
+        </div>
+        <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+            <div class="stat-title text-xs">Triples Created</div>
+            <div class="stat-value text-2xl text-success">{{ analysis.database_metrics.total_triples }}</div>
+        </div>
+    </div>
+
+    <!-- Column Type Analysis -->
+    <div class="card bg-base-100 border border-base-300 shadow-sm mb-8">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Column Type Distribution</h2>
+            
+            <!-- Percentages -->
+            {% if analysis.column_type_percentages %}
+            <div class="mb-6">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    <div class="text-center">
+                        <div class="radial-progress text-base-content" style="--value:{{ analysis.column_type_percentages.regular }}" role="progressbar">{{ analysis.column_type_percentages.regular }}%</div>
+                        <div class="text-sm mt-2">Regular ({{ analysis.column_analysis.regular_columns }})</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="radial-progress text-warning" style="--value:{{ analysis.column_type_percentages.anchor }}" role="progressbar">{{ analysis.column_type_percentages.anchor }}%</div>
+                        <div class="text-sm mt-2">Anchor ({{ analysis.column_analysis.anchor_columns }})</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="radial-progress text-error" style="--value:{{ analysis.column_type_percentages.foreign_key }}" role="progressbar">{{ analysis.column_type_percentages.foreign_key }}%</div>
+                        <div class="text-sm mt-2">Foreign Key ({{ analysis.column_analysis.foreign_key_columns }})</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="radial-progress text-accent" style="--value:{{ analysis.column_type_percentages.multi_value }}" role="progressbar">{{ analysis.column_type_percentages.multi_value }}%</div>
+                        <div class="text-sm mt-2">Multi-Value ({{ analysis.column_analysis.multi_value_columns }})</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="radial-progress text-neutral" style="--value:{{ analysis.column_type_percentages.relationship_context }}" role="progressbar">{{ analysis.column_type_percentages.relationship_context }}%</div>
+                        <div class="text-sm mt-2">Junction ({{ analysis.column_analysis.relationship_context_columns }})</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="radial-progress text-info" style="--value:{{ analysis.column_type_percentages.external_ontology }}" role="progressbar">{{ analysis.column_type_percentages.external_ontology }}%</div>
+                        <div class="text-sm mt-2">Ontology ({{ analysis.column_analysis.external_ontology_columns }})</div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Detailed breakdown by dataset -->
+            <div class="divider">Dataset Breakdown</div>
+            <div class="space-y-3">
+                {% for dataset_name, dataset_stats in analysis.dataset_breakdown.items %}
+                <div class="collapse collapse-arrow border border-base-300 bg-base-50">
+                    <input type="checkbox" class="peer" /> 
+                    <div class="collapse-title flex items-center gap-3">
+                        <div class="badge badge-primary">{{ dataset_name }}</div>
+                        <span class="text-sm text-base-content/60">{{ dataset_stats.total }} columns</span>
+                        <div class="flex gap-1 ml-auto">
+                            {% if dataset_stats.anchor > 0 %}<span class="badge badge-warning badge-xs">{{ dataset_stats.anchor }} anchor</span>{% endif %}
+                            {% if dataset_stats.foreign_key > 0 %}<span class="badge badge-error badge-xs">{{ dataset_stats.foreign_key }} FK</span>{% endif %}
+                            {% if dataset_stats.multi_value > 0 %}<span class="badge badge-accent badge-xs">{{ dataset_stats.multi_value }} multi</span>{% endif %}
+                            {% if dataset_stats.relationship_context > 0 %}<span class="badge badge-neutral badge-xs">{{ dataset_stats.relationship_context }} junction</span>{% endif %}
+                            {% if dataset_stats.external_ontology > 0 %}<span class="badge badge-info badge-xs">{{ dataset_stats.external_ontology }} ontology</span>{% endif %}
+                        </div>
+                    </div>
+                    <div class="collapse-content">
+                        <div class="grid grid-cols-2 md:grid-cols-6 gap-3 p-4">
+                            <div class="bg-base-200 rounded p-2 text-center">
+                                <div class="text-xs">Regular</div>
+                                <div class="text-lg font-bold">{{ dataset_stats.regular }}</div>
+                            </div>
+                            <div class="bg-warning/20 rounded p-2 text-center">
+                                <div class="text-xs text-warning">Anchor</div>
+                                <div class="text-lg font-bold text-warning">{{ dataset_stats.anchor }}</div>
+                            </div>
+                            <div class="bg-error/20 rounded p-2 text-center">
+                                <div class="text-xs text-error">FK</div>
+                                <div class="text-lg font-bold text-error">{{ dataset_stats.foreign_key }}</div>
+                            </div>
+                            <div class="bg-accent/20 rounded p-2 text-center">
+                                <div class="text-xs text-accent">Multi</div>
+                                <div class="text-lg font-bold text-accent">{{ dataset_stats.multi_value }}</div>
+                            </div>
+                            <div class="bg-neutral/20 rounded p-2 text-center">
+                                <div class="text-xs text-neutral">Junction</div>
+                                <div class="text-lg font-bold text-neutral">{{ dataset_stats.relationship_context }}</div>
+                            </div>
+                            <div class="bg-info/20 rounded p-2 text-center">
+                                <div class="text-xs text-info">Ontology</div>
+                                <div class="text-lg font-bold text-info">{{ dataset_stats.external_ontology }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Metrics -->
+    {% if analysis.detailed_metrics %}
+    <div class="grid md:grid-cols-2 gap-8 mb-8">
+        
+        <!-- Junction Table Details -->
+        {% if analysis.detailed_metrics.relationship_context_details %}
+        <div class="card bg-base-100 border border-base-300 shadow-sm">
+            <div class="card-body">
+                <h3 class="card-title text-neutral">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732L14.146 12.8l-1.179 4.456a1 1 0 01-1.934 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732L9.854 7.2l1.179-4.456A1 1 0 0112 2z" clip-rule="evenodd"/>
+                    </svg>
+                    Junction Table Attributes
+                </h3>
+                <div class="space-y-2">
+                    {% for context in analysis.detailed_metrics.relationship_context_details %}
+                    <div class="bg-neutral/10 border border-neutral/30 rounded p-3">
+                        <div class="font-medium">{{ context.dataset }}.{{ context.column }}</div>
+                        <div class="text-sm text-base-content/60">{{ context.arkumu_type }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Multi-Value Details -->
+        {% if analysis.detailed_metrics.multivalue_details %}
+        <div class="card bg-base-100 border border-base-300 shadow-sm">
+            <div class="card-body">
+                <h3 class="card-title text-accent">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+                        <path fill-rule="evenodd" d="M4 5a2 2 0 012-2v1a1 1 0 002 0V3a2 2 0 012 0v1a1 1 0 002 0V3a2 2 0 012 2v6.586l-.293.293a1 1 0 00-.293.707V17a1 1 0 01-1 1H6a1 1 0 01-1-1v-3.414a1 1 0 00-.293-.707L4.293 11.586A1 1 0 004 11.414V5zm8 5a1 1 0 10-2 0v1a1 1 0 002 0v-1zm0-3a1 1 0 10-2 0v1a1 1 0 002 0V7z" clip-rule="evenodd"/>
+                    </svg>
+                    Multi-Value Columns
+                </h3>
+                <div class="space-y-2">
+                    {% for mv in analysis.detailed_metrics.multivalue_details %}
+                    <div class="bg-accent/10 border border-accent/30 rounded p-3">
+                        <div class="font-medium">{{ mv.dataset }}.{{ mv.column }}</div>
+                        <div class="text-sm text-base-content/60">{{ mv.arkumu_type }}</div>
+                        <div class="text-xs text-base-content/50">Separator: "{{ mv.separator }}"</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+    </div>
+    {% endif %}
+
+    <!-- Processing Results -->
+    <div class="card bg-base-100 border border-base-300 shadow-sm mb-8">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Processing Results</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-primary mb-2">{{ analysis.database_metrics.total_resources }}</div>
+                    <div class="text-sm text-base-content/70">Total Resources</div>
+                    <div class="text-xs text-base-content/50">Including entities, properties, and datasets</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-secondary mb-2">{{ analysis.database_metrics.total_triples }}</div>
+                    <div class="text-sm text-base-content/70">Total Triples</div>
+                    <div class="text-xs text-base-content/50">RDF statements created</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-accent mb-2">{{ analysis.database_metrics.entity_resources }}</div>
+                    <div class="text-sm text-base-content/70">Entity Resources</div>
+                    <div class="text-xs text-base-content/50">Actual data entities</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-info mb-2">{{ analysis.database_metrics.property_triples }}</div>
+                    <div class="text-sm text-base-content/70">Property Triples</div>
+                    <div class="text-xs text-base-content/50">Attribute statements</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sample Data -->
+    {% if sample_resources %}
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Sample Generated Data</h2>
+            
+            <!-- Sample Resources -->
+            <div class="collapse collapse-arrow border border-base-300 mb-4">
+                <input type="checkbox" class="peer" />
+                <div class="collapse-title">
+                    <h3 class="font-semibold">Sample Resources ({{ sample_resources|length }})</h3>
+                </div>
+                <div class="collapse-content">
+                    <div class="space-y-2">
+                        {% for resource in sample_resources %}
+                        <div class="bg-base-50 rounded p-3 font-mono text-sm">
+                            <div class="font-semibold text-primary">{{ resource.uri }}</div>
+                            <div class="text-base-content/70">Type: {{ resource.resource_type }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sample Triples -->
+            <div class="collapse collapse-arrow border border-base-300">
+                <input type="checkbox" class="peer" />
+                <div class="collapse-title">
+                    <h3 class="font-semibold">Sample Triples ({{ sample_triples|length }})</h3>
+                </div>
+                <div class="collapse-content">
+                    <div class="space-y-2">
+                        {% for triple in sample_triples %}
+                        <div class="bg-base-50 rounded p-3 font-mono text-xs">
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="text-primary">{{ triple.subject.uri|truncatechars:40 }}</div>
+                                <div class="text-secondary">{{ triple.predicate.uri|truncatechars:40 }}</div>
+                                <div class="text-accent">
+                                    {% if triple.object.resource_type == 'LITERAL' %}
+                                        "{{ triple.object.value|truncatechars:40 }}"
+                                    {% else %}
+                                        {{ triple.object.uri|truncatechars:40 }}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% endif %}
+</div>
+{% endblock %}

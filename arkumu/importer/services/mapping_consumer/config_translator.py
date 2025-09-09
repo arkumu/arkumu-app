@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from arkumu.common.uri_utils import normalize_string_nfc
+from arkumu.importer.utils.mapping_utils import MappingUtils
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class ColumnType(Enum):
     ANCHOR = "anchor"
     FOREIGN_KEY = "foreign_key"
     MULTI_VALUE = "multi_value"
+    MULTI_VALUE_FOREIGN_KEY = "multi_value_foreign_key"
     RELATIONSHIP_CONTEXT = "relationship_context"
     EXTERNAL_ONTOLOGY = "external_ontology"
 
@@ -41,6 +43,10 @@ class ColumnConfig:
     is_multi_value: bool = False
     multi_value_separator: str = ","
     confidence: Optional[float] = None
+    
+    # FK configuration
+    is_fk: bool = False
+    fk_config: Optional[Dict[str, Any]] = None
     
     # External ontology configuration
     is_external_ontology: bool = False
@@ -225,7 +231,19 @@ class ConfigTranslator:
             for qualified_key, config in workspace_columns.items():
                 parts = qualified_key.split("::")
                 if len(parts) >= 3:
-                    org, dataset, column = normalize_string_nfc(parts[0]), normalize_string_nfc(parts[1]), normalize_string_nfc("::".join(parts[2:]))
+                    # Format: org::dataset[.csv]::column (column may itself contain '::')
+                    org, dataset, column = (
+                        normalize_string_nfc(parts[0]),
+                        normalize_string_nfc(parts[1].removesuffix('.csv')),
+                        normalize_string_nfc("::".join(parts[2:]))
+                    )
+                    if dataset not in normalized:
+                        normalized[dataset] = {}
+                    normalized[dataset][column] = config
+                elif len(parts) == 2:
+                    # Legacy format without org: dataset[.csv]::column
+                    dataset = normalize_string_nfc(parts[0].removesuffix('.csv'))
+                    column = normalize_string_nfc("::".join(parts[1:]))
                     if dataset not in normalized:
                         normalized[dataset] = {}
                     normalized[dataset][column] = config
@@ -265,72 +283,184 @@ class ConfigTranslator:
                     is_multi_value=column_config.get('is_multi_value', False),
                     multi_value_separator=column_config.get('multi_value_separator', ','),
                     confidence=column_config.get('confidence'),
+                    is_fk=column_config.get('is_fk', False) or bool(column_config.get('fk_config')),
+                    fk_config=column_config.get('fk_config'),
                     is_external_ontology=column_config.get('is_external_ontology', False),
                     external_ontology_config=column_config.get('external_ontology'),
                     original_config=column_config
                 )
                 
-                # Determine column type
-                if col_config.is_anchor:
-                    col_config.column_type = ColumnType.ANCHOR
-                elif column_config.get('is_relationship_context', False):
-                    col_config.column_type = ColumnType.RELATIONSHIP_CONTEXT
-                elif col_config.is_external_ontology:
-                    col_config.column_type = ColumnType.EXTERNAL_ONTOLOGY
-                elif col_config.is_multi_value:
-                    col_config.column_type = ColumnType.MULTI_VALUE
-                else:
-                    col_config.column_type = ColumnType.REGULAR
+                # Determine column type using centralized MappingUtils
+                # Create a proper config dict for MappingUtils from the ColumnConfig object
+                mapping_utils_config = {
+                    'is_fk': col_config.is_fk,
+                    'fk_config': col_config.fk_config,
+                    'is_anchor': col_config.is_anchor,
+                    'is_multi_value': col_config.is_multi_value,
+                    'is_external_ontology': col_config.is_external_ontology,
+                    'is_relationship_context': False  # Will be set later by relationship context processing
+                }
+                detected_type = MappingUtils.detect_column_type(mapping_utils_config)
+                col_config.column_type = ColumnType(detected_type)
                 
                 # Store in execution config
                 key = f"{dataset_name}.{column_name}"
                 execution_config.column_configurations[key] = col_config
     
-    def _translate_fk_relationships(self, fk_relationships: Dict[str, Any],
-                                  execution_config: ExecutionConfig):
+    def _translate_fk_relationships(self, fk_relationships, execution_config: ExecutionConfig):
         """Translate FK relationships"""
         
-        for fk_id, fk_config in fk_relationships.items():
-            fk_relationship = FKRelationship(
-                source_column=normalize_string_nfc(fk_config.get('source_column', '')),
-                source_dataset=normalize_string_nfc(fk_config.get('source_dataset', '')),
-                target_column=normalize_string_nfc(fk_config.get('target_column', '')),
-                target_dataset=normalize_string_nfc(fk_config.get('target_dataset', '')),
-                relationship_type=fk_config.get('relationship_type', 'relatedTo'),
-                direction=fk_config.get('direction', 'outgoing'),
-                is_multi_value=fk_config.get('is_multi_value', False),
-                multi_value_separator=fk_config.get('multi_value_separator', ','),
-                confidence=fk_config.get('confidence')
-            )
+        # Handle both dict and list formats for FK relationships
+        if isinstance(fk_relationships, list):
+            # List format: [{"id": "fk1", "source_dataset": "A", ...}, ...]
+            for fk_config in fk_relationships:
+                fk_id = fk_config.get('id', f"fk_{len(execution_config.fk_relationships)}")
+                self._process_fk_relationship(fk_id, fk_config, execution_config)
+        elif isinstance(fk_relationships, dict):
+            # Dict format: {"fk1": {"source_dataset": "A", ...}, ...}
+            for fk_id, fk_config in fk_relationships.items():
+                self._process_fk_relationship(fk_id, fk_config, execution_config)
+    
+    def _process_fk_relationship(self, fk_id: str, fk_config: dict, execution_config: ExecutionConfig):
+        """Process a single FK relationship configuration"""
+        
+        # CRITICAL FIX: Extract source info from fk_id if not in fk_config
+        source_dataset = fk_config.get('source_dataset')
+        source_column = fk_config.get('source_column')
+        
+        # If source info missing, parse from the key (fk_id)
+        if not source_dataset or not source_column:
+            # Key format: "org::dataset::column" or "dataset::column"; column may contain additional '::'
+            parts = fk_id.split('::')
+            if len(parts) >= 3:
+                # parts[0] = org, parts[1] = dataset, parts[2:] = column
+                source_dataset = parts[1]
+                source_column = "::".join(parts[2:])
+            elif len(parts) == 2:
+                # Legacy format without org
+                source_dataset = parts[0]
+                source_column = parts[1]
             
-            execution_config.fk_relationships.append(fk_relationship)
+            # Remove .csv extension if present on dataset
+            if source_dataset and source_dataset.endswith('.csv'):
+                source_dataset = source_dataset[:-4]
             
-            # Update column type for FK columns
-            source_key = f"{fk_relationship.source_dataset}.{fk_relationship.source_column}"
-            if source_key in execution_config.column_configurations:
-                execution_config.column_configurations[source_key].column_type = ColumnType.FOREIGN_KEY
+            logger.info(f"Extracted source info from FK key '{fk_id}': {source_dataset}.{source_column}")
+        
+        # CRITICAL FIX: Check column configuration for accurate multi-value info
+        is_multi_value = fk_config.get('is_multi_value', False)
+        multi_value_separator = fk_config.get('multi_value_separator', ',')
+        
+        # Cross-reference with column configuration (source of truth for multi-value info)
+        source_key = f"{source_dataset}.{source_column}"
+        if source_key in execution_config.column_configurations:
+            col_config = execution_config.column_configurations[source_key]
+            # Use column configuration as authoritative source for multi-value info
+            if col_config.is_multi_value:
+                is_multi_value = True
+                multi_value_separator = col_config.multi_value_separator
+                logger.info(f"Corrected multi-value info from column config for FK: {source_key} (was: {fk_config.get('is_multi_value', False)}, now: True)")
+        
+        fk_relationship = FKRelationship(
+            source_column=normalize_string_nfc(source_column or ''),
+            source_dataset=normalize_string_nfc(source_dataset or ''),
+            target_column=normalize_string_nfc(fk_config.get('target_column', '')),
+            target_dataset=normalize_string_nfc(fk_config.get('target_dataset', '')),
+            relationship_type=fk_config.get('relationship_type', 'relatedTo'),
+            direction=fk_config.get('direction', 'outgoing'),
+            is_multi_value=is_multi_value,
+            multi_value_separator=multi_value_separator,
+            confidence=fk_config.get('confidence')
+        )
+        
+        execution_config.fk_relationships.append(fk_relationship)
+        
+        # Update column type for FK columns (consider multi-value FK combination)
+        source_key = f"{fk_relationship.source_dataset}.{fk_relationship.source_column}"
+        if source_key in execution_config.column_configurations:
+            col_config = execution_config.column_configurations[source_key]
+            # Set appropriate column type based on combination
+            if col_config.is_multi_value and col_config.is_fk:
+                col_config.column_type = ColumnType.MULTI_VALUE_FOREIGN_KEY
+                logger.debug(f"Set column type to MULTI_VALUE_FOREIGN_KEY: {source_key}")
+            else:
+                col_config.column_type = ColumnType.FOREIGN_KEY
     
     def _translate_relationship_contexts(self, relationship_contexts: Dict[str, Any],
                                        execution_config: ExecutionConfig):
         """Translate relationship contexts (junction table attributes)"""
         
-        for context_id, context_config in relationship_contexts.items():
-            rel_context = RelationshipContext(
-                context_id=context_id,
-                primary_fk=normalize_string_nfc(context_config.get('primary_fk', '')),
-                secondary_fk=normalize_string_nfc(context_config.get('secondary_fk', '')),
-                context_columns=[normalize_string_nfc(col) for col in context_config.get('context_columns', [])],
-                context_type=context_config.get('context_type', 'junction'),
-                dataset_name=normalize_string_nfc(context_config.get('dataset_name', ''))
-            )
-            
-            execution_config.relationship_contexts.append(rel_context)
-            
-            # Update column types for relationship context columns
-            for column_name in rel_context.context_columns:
-                key = f"{rel_context.dataset_name}.{column_name}"
-                if key in execution_config.column_configurations:
-                    execution_config.column_configurations[key].column_type = ColumnType.RELATIONSHIP_CONTEXT
+        # Handle both dict and list formats for relationship_contexts
+        if isinstance(relationship_contexts, list):
+            # If it's a list, iterate directly
+            for context_config in relationship_contexts:
+                context_id = context_config.get('context_id', 'unknown')
+                self._process_relationship_context(context_id, context_config, execution_config)
+        else:
+            # If it's a dict, iterate over items
+            for context_id, context_config in relationship_contexts.items():
+                self._process_relationship_context(context_id, context_config, execution_config)
+    
+    def _process_relationship_context(self, context_id: str, context_config: Dict[str, Any],
+                                     execution_config: ExecutionConfig):
+        """Process a single relationship context"""
+        
+        # CRITICAL FIX: Extract dataset name from context_id if not in config
+        dataset_name = context_config.get('dataset_name', '')
+        if not dataset_name:
+            # Extract from context_id format: "org::dataset::column"
+            parts = context_id.split('::')
+            if len(parts) >= 3:
+                dataset_name = parts[1]
+                # Remove .csv extension if present
+                if dataset_name.endswith('.csv'):
+                    dataset_name = dataset_name[:-4]
+                logger.info(f"Extracted dataset name from relationship context ID '{context_id}': {dataset_name}")
+        
+        # CRITICAL FIX: Handle actual field names from database
+        # Database stores: primary_fk_column, secondary_fk_column
+        # ConfigTranslator expected: primary_fk, secondary_fk
+        primary_fk = context_config.get('primary_fk') or context_config.get('primary_fk_column', '')
+        secondary_fk = context_config.get('secondary_fk') or context_config.get('secondary_fk_column', '')
+        
+        # TODO: Identify context columns by analyzing workspace_columns for this dataset
+        # For now, we'll identify them as non-FK, non-anchor columns in the junction table
+        context_columns = []
+        if dataset_name:
+            # Find all columns for this dataset that are not FKs or anchors
+            for col_key, col_config in execution_config.column_configurations.items():
+                if col_config.dataset_name == dataset_name:
+                    # Skip FK columns and anchor columns
+                    if not col_config.is_fk and not col_config.is_anchor:
+                        # This is likely a context column
+                        context_columns.append(col_config.column_name)
+                        logger.debug(f"Identified context column: {dataset_name}.{col_config.column_name}")
+        
+        rel_context = RelationshipContext(
+            context_id=context_id,
+            primary_fk=normalize_string_nfc(primary_fk),
+            secondary_fk=normalize_string_nfc(secondary_fk),
+            context_columns=[normalize_string_nfc(col) for col in context_columns],
+            context_type=context_config.get('context_type', 'junction'),
+            dataset_name=normalize_string_nfc(dataset_name)
+        )
+        
+        # Add primary and secondary entity types if provided
+        if 'primary_entity_type' in context_config:
+            rel_context.primary_entity_type = normalize_string_nfc(context_config.get('primary_entity_type', ''))
+        if 'secondary_entity_type' in context_config:
+            rel_context.secondary_entity_type = normalize_string_nfc(context_config.get('secondary_entity_type', ''))
+        
+        execution_config.relationship_contexts.append(rel_context)
+        
+        logger.info(f"Processed relationship context '{context_id}': {dataset_name} with {len(context_columns)} context columns")
+        
+        # Update column types for relationship context columns
+        for column_name in rel_context.context_columns:
+            key = f"{rel_context.dataset_name}.{column_name}"
+            if key in execution_config.column_configurations:
+                execution_config.column_configurations[key].column_type = ColumnType.RELATIONSHIP_CONTEXT
+                logger.debug(f"Marked column as RELATIONSHIP_CONTEXT: {key}")
     
     def _translate_external_ontologies(self, external_ontologies: Dict[str, Any],
                                      execution_config: ExecutionConfig):

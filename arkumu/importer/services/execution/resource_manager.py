@@ -548,7 +548,7 @@ class ResourceManager:
                        f"{safe_primary}_{safe_secondary}")
     
     def create_entity_resource(self, entity_uri: str, dataset_name: str, is_stub: bool = False) -> Resource:
-        """Create or get an entity resource."""
+        """Create or get an entity resource, with stub resolution logic."""
         try:
             with transaction.atomic():
                 entity_id = entity_uri.split('/')[-1]
@@ -562,10 +562,23 @@ class ResourceManager:
                     }
                 )
                 
+                # STUB RESOLUTION LOGIC: If entity exists and it's a stub, but we're creating a real entity
+                if not created and not is_stub and entity_resource.is_placeholder:
+                    logger.info(f"🔄 STUB RESOLUTION: Converting stub to real entity: {entity_uri}")
+                    # Convert stub to real entity
+                    entity_resource.is_placeholder = False
+                    entity_resource.save(update_fields=['is_placeholder'])
+                    
+                    if self.statistics:
+                        self.statistics.current_metrics.stub_entities_resolved += 1
+                    
+                    logger.debug(f"   ✅ RESOLVED: Stub entity {entity_uri} converted to real entity")
+                
                 if created and self.statistics:
                     self.statistics.current_metrics.resources_created += 1
                     if is_stub:
                         self.statistics.current_metrics.stub_entities_created += 1
+                        logger.debug(f"   🏗️ STUB CREATED: {entity_uri} (will be resolved when real data is processed)")
                 
                 return entity_resource
                 

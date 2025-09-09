@@ -1,0 +1,710 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Import Results - {{ session.mapping.name|default:"Unknown Mapping" }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-base-200">
+    <!-- Header -->
+    <div class="navbar bg-base-100 border-b border-base-300">
+        <div class="navbar-start">
+            <div class="breadcrumbs text-sm">
+                <ul>
+                    <li><a href="{% url 'importer:import_results_dashboard' %}" class="link link-primary">Import History</a></li>
+                    <li class="opacity-50">{{ session.mapping.name|default:"Session Results" }}</li>
+                </ul>
+            </div>
+        </div>
+        <div class="navbar-end">
+            <div class="badge badge-primary">{{ current_org.code|upper|default:"ORG" }}</div>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="flex items-center justify-center h-96">
+        <div class="alert alert-error shadow-lg max-w-md">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div>
+                <h3 class="font-bold">Analysis Error</h3>
+                <div class="text-xs">{{ error }}</div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    <div class="container mx-auto p-6 max-w-7xl">
+        <!-- Status Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="stat bg-base-100 rounded-box shadow">
+                <div class="stat-figure text-primary">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <div class="stat-title">Resources</div>
+                <div class="stat-value text-primary">{{ analysis.import_results.total_resources|default:0 }}</div>
+                <div class="stat-desc">entities created</div>
+            </div>
+
+            <div class="stat bg-base-100 rounded-box shadow">
+                <div class="stat-figure text-secondary">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                    </svg>
+                </div>
+                <div class="stat-title">Relationships</div>
+                <div class="stat-value text-secondary">{{ analysis.import_results.relationship_triples|default:0 }}</div>
+                <div class="stat-desc">connections made</div>
+            </div>
+
+            <div class="stat bg-base-100 rounded-box shadow">
+                <div class="stat-figure text-accent">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1V10a1 1 0 00-1-1h-2z"/>
+                    </svg>
+                </div>
+                <div class="stat-title">Triples</div>
+                <div class="stat-value text-accent">{{ analysis.import_results.total_triples|default:0 }}</div>
+                <div class="stat-desc">facts stored</div>
+            </div>
+
+            <div class="stat bg-base-100 rounded-box shadow">
+                <div class="stat-figure text-info">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <div class="stat-title">Status</div>
+                <div class="stat-value text-info text-sm">
+                    {% if analysis.import_results.total_resources > 0 %}SUCCESS{% else %}NO DATA{% endif %}
+                </div>
+                <div class="stat-desc">import result</div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="tabs tabs-lifted mb-6">
+            <input type="radio" name="results_tab" role="tab" class="tab" aria-label="Overview" checked />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
+                <!-- Overview Content -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Import Summary -->
+                    <div class="card bg-base-200">
+                        <div class="card-body">
+                            <h3 class="card-title text-lg">Import Summary</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Mapping Used</span>
+                                    <span class="font-medium">{{ session.mapping.name|default:"N/A" }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Files Processed</span>
+                                    <span class="font-medium">{{ analysis.total_datasets|default:0 }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Duration</span>
+                                    <span class="font-medium">{{ session.completed_at|timesince:session.created_at }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Completed</span>
+                                    <span class="font-medium">{{ session.completed_at|date:"M j, Y H:i" }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column Analysis -->
+                    <div class="card bg-base-200">
+                        <div class="card-body">
+                            <h3 class="card-title text-lg">Column Types Processed</h3>
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Regular</span>
+                                    <div class="badge badge-ghost">{{ analysis.column_analysis.regular_columns|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Anchors</span>
+                                    <div class="badge badge-primary">{{ analysis.column_analysis.anchor_columns|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Foreign Keys</span>
+                                    <div class="badge badge-error">{{ analysis.column_analysis.foreign_key_columns|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Multi-Value</span>
+                                    <div class="badge badge-accent">{{ analysis.column_analysis.multi_value_columns|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Multi-FK</span>
+                                    <div class="badge badge-warning">{{ analysis.column_analysis.multi_value_fk_columns|default:0 }}</div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="opacity-70">Contexts</span>
+                                    <div class="badge badge-neutral">{{ analysis.column_analysis.relationship_context_columns|default:0 }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mapping vs Actual (Top Datasets) -->
+                    <div class="card bg-base-200">
+                        <div class="card-body">
+                            <h3 class="card-title text-lg">Top Datasets by Entities</h3>
+                            {% if analysis.top_datasets %}
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Dataset</th>
+                                            <th class="text-right">Entities</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in analysis.top_datasets %}
+                                        <tr>
+                                            <td class="font-medium">{{ row.dataset }}</td>
+                                            <td class="text-right">{{ row.entities }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="text-sm opacity-70">No per-dataset breakdown available.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <input type="radio" name="results_tab" role="tab" class="tab" aria-label="Real Data" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
+                <!-- Real Data Content - Organized by Column Types -->
+                <div class="grid gap-4">
+                    <!-- Dataset Breakdown by Mapping Column Types -->
+                    {% if analysis.dataset_breakdown %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-base-300 peer-checked:bg-base-300">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1V10a1 1 0 00-1-1h-2z"/></svg>
+                                <span class="font-semibold">Dataset Breakdown (Mapping)</span>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="overflow-x-auto">
+                                <table class="table table-zebra table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Dataset</th>
+                                            <th class="text-right">Regular</th>
+                                            <th class="text-right">Anchor</th>
+                                            <th class="text-right">FK</th>
+                                            <th class="text-right">Multi</th>
+                                            <th class="text-right">Context</th>
+                                            <th class="text-right">External</th>
+                                            <th class="text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for name, stats in analysis.dataset_breakdown.items %}
+                                        <tr>
+                                            <td class="font-medium">{{ name }}</td>
+                                            <td class="text-right">{{ stats.regular }}</td>
+                                            <td class="text-right">{{ stats.anchor }}</td>
+                                            <td class="text-right">{{ stats.foreign_key }}</td>
+                                            <td class="text-right">{{ stats.multi_value }}</td>
+                                            <td class="text-right">{{ stats.relationship_context }}</td>
+                                            <td class="text-right">{{ stats.external_ontology }}</td>
+                                            <td class="text-right">{{ stats.total }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Regular Columns Data -->
+                    {% if real_regular_data %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" checked />
+                        <div class="collapse-title bg-neutral text-neutral-content peer-checked:bg-neutral peer-checked:text-neutral-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                <span class="font-semibold">Regular Properties</span>
+                                <div class="badge badge-neutral-content">{{ real_regular_data|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-4">
+                                {% for column in real_regular_data %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-neutral">
+                                    <div class="card-body p-4">
+                                        <h4 class="font-semibold text-lg mb-2">{{ column.column_name }}</h4>
+                                        <div class="text-xs text-base-content/60 mb-3">{{ column.dataset }} • {{ column.triple_count }} triples</div>
+                                        <div class="space-y-2">
+                                            {% for triple in column.triples %}
+                                            <div class="font-mono text-sm bg-base-200 p-2 rounded">
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <span class="badge badge-primary badge-xs">SUBJECT</span>
+                                                    <span class="text-primary break-all">{{ triple.subject_uri|slice:"-60:" }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-4 mb-1">
+                                                    <span class="badge badge-neutral badge-xs">PREDICATE</span>
+                                                    <span class="text-neutral font-medium">{{ column.column_name }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-8">
+                                                    <span class="badge badge-accent badge-xs">OBJECT</span>
+                                                    {% if triple.is_iri %}
+                                                        <span class="text-accent break-all">{{ triple.object_value|slice:"-60:" }}</span>
+                                                        <span class="badge badge-info badge-xs">IRI</span>
+                                                    {% else %}
+                                                        <span class="text-accent">"{{ triple.object_value|truncatechars:80 }}"</span>
+                                                        <span class="badge badge-success badge-xs">LITERAL</span>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Anchor Columns Data -->
+                    {% if real_anchor_data %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-primary text-primary-content peer-checked:bg-primary peer-checked:text-primary-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M4 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1V10a1 1 0 00-1-1h-2z"/>
+                                </svg>
+                                <span class="font-semibold">Anchor Properties (Primary Keys)</span>
+                                <div class="badge badge-primary-content">{{ real_anchor_data|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-4">
+                                {% for column in real_anchor_data %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-primary">
+                                    <div class="card-body p-4">
+                                        <h4 class="font-semibold text-lg mb-2 flex items-center gap-2">
+                                            🔑 {{ column.column_name }}
+                                        </h4>
+                                        <div class="text-xs text-base-content/60 mb-3">{{ column.dataset }} • {{ column.triple_count }} triples • Primary Key</div>
+                                        <div class="space-y-2">
+                                            {% for triple in column.triples %}
+                                            <div class="font-mono text-sm bg-base-200 p-2 rounded">
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <span class="badge badge-primary badge-xs">SUBJECT</span>
+                                                    <span class="text-primary break-all font-bold">{{ triple.subject_uri|slice:"-60:" }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-4 mb-1">
+                                                    <span class="badge badge-primary badge-xs">🔑 ANCHOR</span>
+                                                    <span class="text-primary font-bold">{{ column.column_name }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-8">
+                                                    <span class="badge badge-accent badge-xs">OBJECT</span>
+                                                    {% if triple.is_iri %}
+                                                        <span class="text-accent break-all font-bold">{{ triple.object_value|slice:"-60:" }}</span>
+                                                        <span class="badge badge-info badge-xs">IRI</span>
+                                                    {% else %}
+                                                        <span class="text-accent font-bold">"{{ triple.object_value|truncatechars:80 }}"</span>
+                                                        <span class="badge badge-success badge-xs">PRIMARY KEY</span>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                            {% if column.triples|length > 3 %}
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Foreign Key Columns Data -->
+                    {% if real_fk_data %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-error text-error-content peer-checked:bg-error peer-checked:text-error-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                                </svg>
+                                <span class="font-semibold">Foreign Key Relationships</span>
+                                <div class="badge badge-error-content">{{ real_fk_data|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-4">
+                                {% for column in real_fk_data %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-error">
+                                    <div class="card-body p-4">
+                                        <!-- FK Relationship Overview (like mapping overview) -->
+                                        <div class="bg-error/10 border border-error/30 rounded p-4 mb-4">
+                                            <h4 class="font-semibold text-lg mb-2 flex items-center gap-2">
+                                                🔗 {{ column.column_name }}
+                                            </h4>
+                                            <div class="text-sm mb-2">
+                                                <strong>Links to:</strong> <span class="font-mono text-error">{{ column.target_dataset }}.{{ column.target_column }}</span>
+                                            </div>
+                                            <div class="text-xs text-base-content/60">
+                                                {{ column.dataset }} → {{ column.target_dataset }} • {{ column.triple_count }} actual FK relationships found in database
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Actual Triple Evidence -->
+                                        <h5 class="font-medium mb-3 text-error flex items-center gap-2">
+                                            📋 <span>Actual Triples (Proof these FK relationships were created):</span>
+                                        </h5>
+                                        <div class="space-y-2 max-h-96 overflow-y-auto">
+                                            {% for triple in column.triples %}
+                                            <div class="font-mono text-sm bg-base-200 p-3 rounded border">
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <span class="badge badge-primary badge-xs">SUBJECT</span>
+                                                    <span class="text-primary break-all">{{ triple.subject_uri|slice:"-60:" }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-4 mb-1">
+                                                    <span class="badge badge-error badge-xs">🔗 PREDICATE</span>
+                                                    <span class="text-error font-medium">{{ column.column_name }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-8 mb-1">
+                                                    <span class="badge badge-accent badge-xs">OBJECT</span>
+                                                    {% if triple.is_iri %}
+                                                        <span class="text-accent break-all">{{ triple.object_value|slice:"-60:" }}</span>
+                                                        <span class="badge badge-success badge-xs">✅ ENTITY LINK</span>
+                                                    {% else %}
+                                                        <span class="text-accent">"{{ triple.object_value|truncatechars:80 }}"</span>
+                                                        <span class="badge badge-warning badge-xs">FK VALUE</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="text-xs text-success mt-2 ml-8 bg-success/10 p-2 rounded">
+                                                    ✅ <strong>FK relationship verified:</strong> {{ column.dataset }} successfully references {{ column.target_dataset }}
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Multi-Value Columns Data -->
+                    {% if real_multivalue_data %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-accent text-accent-content peer-checked:bg-accent peer-checked:text-accent-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M4 6h16M4 10h16M4 14h16"/>
+                                </svg>
+                                <span class="font-semibold">Multi-Value Properties</span>
+                                <div class="badge badge-accent-content">{{ real_multivalue_data|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-4">
+                                {% for column in real_multivalue_data %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-accent">
+                                    <div class="card-body p-4">
+                                        <h4 class="font-semibold text-lg mb-2 flex items-center gap-2">
+                                            🔀 {{ column.column_name }}
+                                        </h4>
+                                        <div class="text-xs text-base-content/60 mb-3">{{ column.dataset }} • {{ column.triple_count }} values • separator: "{{ column.separator }}"</div>
+                                        <div class="space-y-2">
+                                            {% for triple in column.triples %}
+                                            <div class="font-mono text-sm bg-base-200 p-2 rounded">
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <span class="badge badge-primary badge-xs">SUBJECT</span>
+                                                    <span class="text-primary break-all">{{ triple.subject_uri|slice:"-60:" }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-4 mb-1">
+                                                    <span class="badge badge-accent badge-xs">🔀 MULTI</span>
+                                                    <span class="text-accent font-medium">{{ column.column_name }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-8">
+                                                    <span class="badge badge-accent badge-xs">OBJECT</span>
+                                                    {% if triple.is_iri %}
+                                                        <span class="text-accent break-all">{{ triple.object_value|slice:"-60:" }}</span>
+                                                        <span class="badge badge-info badge-xs">IRI</span>
+                                                    {% else %}
+                                                        <span class="text-accent">"{{ triple.object_value|truncatechars:80 }}"</span>
+                                                        <span class="badge badge-secondary badge-xs">MULTI-VALUE</span>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Relationship Context Columns Data -->
+                    {% if real_context_data %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-info text-info-content peer-checked:bg-info peer-checked:text-info-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1V10a1 1 0 00-1-1h-2z"/>
+                                </svg>
+                                <span class="font-semibold">Junction/Context Properties</span>
+                                <div class="badge badge-info-content">{{ real_context_data|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-4">
+                                {% for column in real_context_data %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-info">
+                                    <div class="card-body p-4">
+                                        <h4 class="font-semibold text-lg mb-2 flex items-center gap-2">
+                                            📊 {{ column.column_name }}
+                                        </h4>
+                                        <div class="text-xs text-base-content/60 mb-3">{{ column.dataset }} • {{ column.triple_count }} context values • Junction table property</div>
+                                        <div class="space-y-2">
+                                            {% for triple in column.triples %}
+                                            <div class="font-mono text-sm bg-base-200 p-2 rounded">
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <span class="badge badge-primary badge-xs">SUBJECT</span>
+                                                    <span class="text-primary break-all">{{ triple.subject_uri|slice:"-60:" }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-4 mb-1">
+                                                    <span class="badge badge-info badge-xs">📊 CONTEXT</span>
+                                                    <span class="text-info font-medium">{{ column.column_name }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2 ml-8 mb-1">
+                                                    <span class="badge badge-accent badge-xs">OBJECT</span>
+                                                    {% if triple.is_iri %}
+                                                        <span class="text-accent break-all">{{ triple.object_value|slice:"-60:" }}</span>
+                                                        <span class="badge badge-info badge-xs">IRI</span>
+                                                    {% else %}
+                                                        <span class="text-accent">"{{ triple.object_value|truncatechars:80 }}"</span>
+                                                        <span class="badge badge-warning badge-xs">JUNCTION DATA</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="text-xs text-base-content/50 ml-8">Context for relationship junction</div>
+                                            </div>
+                                            {% endfor %}
+                                            {% if column.triples|length > 3 %}
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Multi-Value FK Annotations -->
+                    {% if sample_multivalue_fk_annotations %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-warning text-warning-content peer-checked:bg-warning peer-checked:text-warning-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
+                                </svg>
+                                <span class="font-semibold">Multi-Value FK Relationships</span>
+                                <div class="badge badge-warning-content">{{ sample_multivalue_fk_annotations|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-3">
+                                {% for annotation in sample_multivalue_fk_annotations|slice:":6" %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-warning">
+                                    <div class="card-body p-3">
+                                        <div class="font-mono text-sm space-y-1">
+                                            <div class="text-primary font-medium">{{ annotation.from_entity|slice:"-40:" }}</div>
+                                            <div class="flex items-center gap-2 ml-4">
+                                                <div class="badge badge-warning badge-xs">🔀🔗 {{ annotation.relationship|slice:"-25:" }}</div>
+                                                <span class="text-warning">[{{ annotation.relationship_count }} relationships]</span>
+                                            </div>
+                                            <div class="ml-8 text-xs space-y-1">
+                                                {% for target in annotation.target_entities|slice:":3" %}
+                                                <div class="flex items-center gap-2">
+                                                    <span class="w-2 h-2 bg-warning rounded-full"></span>
+                                                    <span class="badge badge-accent badge-xs">→</span>
+                                                    <span class="break-all">{{ target|slice:"-30:" }}</span>
+                                                </div>
+                                                {% endfor %}
+                                                {% if annotation.relationship_count > 3 %}
+                                                <div class="text-info">... and {{ annotation.relationship_count|add:"-3" }} more relationships</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="text-xs text-base-content/60 mt-1">{{ annotation.from_dataset }} ({{ annotation.column_name }}) - Multi-FK relationships</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Relationship Context Annotations -->
+                    {% if sample_context_annotations %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-info text-info-content peer-checked:bg-info peer-checked:text-info-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1V10a1 1 0 00-1-1h-2z"/>
+                                </svg>
+                                <span class="font-semibold">Junction/Context Properties</span>
+                                <div class="badge badge-info-content">{{ sample_context_annotations|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-3">
+                                {% for annotation in sample_context_annotations|slice:":8" %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-info">
+                                    <div class="card-body p-3">
+                                        <div class="font-mono text-sm space-y-1">
+                                            <div class="text-primary font-medium">{{ annotation.junction_entity|slice:"-45:" }}</div>
+                                            <div class="flex items-center gap-2 ml-4">
+                                                <div class="badge badge-info badge-xs">📊 {{ annotation.context_property|slice:"-30:" }}</div>
+                                                <span class="text-accent">"{{ annotation.context_value|truncatechars:40 }}"</span>
+                                            </div>
+                                            <div class="text-xs text-base-content/60 mt-1">{{ annotation.dataset }} ({{ annotation.column_name }}) - Junction table context</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- External Ontology Annotations -->
+                    {% if sample_external_annotations %}
+                    <div class="collapse collapse-arrow bg-base-200">
+                        <input type="checkbox" class="peer" />
+                        <div class="collapse-title bg-secondary text-secondary-content peer-checked:bg-secondary peer-checked:text-secondary-content">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 16.455V14a2 2 0 00-2-2h-.5A2.5 2.5 0 0116 9.5v-1a2 2 0 00-2-2 2 2 0 100-4 2 2 0 00-2 2v.5A2.5 2.5 0 0113.5 7H13a2 2 0 00-2 2 2 2 0 11-4 0 2 2 0 00-2-2H3.5A2.5 2.5 0 011 4.5V3a2 2 0 002-2 2 2 0 100 4z"/>
+                                </svg>
+                                <span class="font-semibold">External Ontology Links</span>
+                                <div class="badge badge-secondary-content">{{ sample_external_annotations|length }}</div>
+                            </div>
+                        </div>
+                        <div class="collapse-content bg-base-200 peer-checked:bg-base-200">
+                            <div class="pt-4 space-y-3">
+                                {% for annotation in sample_external_annotations|slice:":8" %}
+                                <div class="card bg-base-100 shadow-sm border-l-4 border-secondary">
+                                    <div class="card-body p-3">
+                                        <div class="font-mono text-sm space-y-1">
+                                            <div class="text-primary font-medium">{{ annotation.subject_uri|slice:"-45:" }}</div>
+                                            <div class="flex items-center gap-2 ml-4">
+                                                <div class="badge badge-secondary badge-xs">🌐 {{ annotation.predicate_uri|slice:"-25:" }}</div>
+                                                <span class="text-accent break-all">{{ annotation.external_uri|slice:"-35:" }}</span>
+                                            </div>
+                                            <div class="text-xs text-base-content/60 mt-1">{{ annotation.dataset }} ({{ annotation.column_name }}) - {{ annotation.ontology_domain }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                </div>
+            </div>
+
+            <input type="radio" name="results_tab" role="tab" class="tab" aria-label="Analysis" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
+                <!-- Analysis Content -->
+                <div class="grid gap-6">
+                    <!-- Complexity Analysis -->
+                    {% if analysis.complexity_analysis %}
+                    <div class="alert">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <div>
+                            <h3 class="font-bold">Mapping Complexity</h3>
+                            <div class="text-sm space-y-1">
+                                <p>Score: <span class="badge">{{ analysis.complexity_analysis.complexity_score|default:0 }}</span></p>
+                                <p>Classification: 
+                                    {% if analysis.complexity_analysis.is_simple %}
+                                        <span class="badge badge-success">Simple</span>
+                                    {% elif analysis.complexity_analysis.is_complex %}
+                                        <span class="badge badge-error">Complex</span>
+                                    {% else %}
+                                        <span class="badge badge-warning">Medium</span>
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Performance Metrics -->
+                    <div class="stats stats-vertical lg:stats-horizontal shadow">
+                        <div class="stat">
+                            <div class="stat-title">Processing Time</div>
+                            <div class="stat-value text-sm">{{ session.completed_at|timesince:session.created_at }}</div>
+                            <div class="stat-desc">Total duration</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-title">Resources/Time</div>
+                            <div class="stat-value text-sm">~{{ analysis.import_results.total_resources|default:0 }}/min</div>
+                            <div class="stat-desc">Processing rate</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-title">Success Rate</div>
+                            <div class="stat-value text-sm">
+                                {% if analysis.import_results.total_resources > 0 %}100%{% else %}0%{% endif %}
+                            </div>
+                            <div class="stat-desc">Data imported</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% endif %}
+</div>
+
+<script>
+// Auto-expand first collapse on Sample Data tab
+document.addEventListener('DOMContentLoaded', function() {
+    const sampleDataTab = document.querySelector('input[name="results_tab"]:nth-of-type(2)');
+    if (sampleDataTab) {
+        sampleDataTab.addEventListener('change', function() {
+            if (this.checked) {
+                const firstCollapse = document.querySelector('.tab-content .collapse input[type="checkbox"]');
+                if (firstCollapse && !firstCollapse.checked) {
+                    firstCollapse.checked = true;
+                }
+            }
+        });
+    }
+});
+</script>
+
+{% endblock %}

@@ -22,6 +22,7 @@ from .statistics import ExecutionStatistics, ExecutionMetrics
 from arkumu.common.enums import UpdateStrategy
 from arkumu.metadata.services.mapping import FKConfig as BulkFKRelationship
 from arkumu.importer.utils.progress import publish_progress
+from arkumu.importer.utils.mapping_utils import MappingUtils
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,10 @@ class MappingAwareProcessor:
     """
     
     def __init__(self,
-                 organization,
-                 base_uri: str,
-                 statistics: ExecutionStatistics,
+                 organization=None,
+                 statistics: ExecutionStatistics = None,
+                 institution: Optional[str] = None,
+                 base_uri: str = "",
                  ingest_session = None,
                  channel_id: Optional[str] = None):
         """
@@ -66,8 +68,9 @@ class MappingAwareProcessor:
             ingest_session: IngestSession instance for progress tracking
             channel_id: SSE channel ID for progress updates
         """
+        # Support both old signature (organization, base_uri, ...) and tests passing institution directly
         self.organization = organization
-        self.institution = organization.code if organization else "default"
+        self.institution = institution or (organization.code if organization else "default")
         self.base_uri = base_uri
         self.statistics = statistics
         self.channel_id = channel_id
@@ -88,6 +91,8 @@ class MappingAwareProcessor:
         # Processing state
         self.entity_cache = {}
         self.pending_relationships = []
+        
+        # Enhanced FK relationship debugging removed - using built-in debug logging
         
         # Schema-first blueprint tracking
         self.dataset_blueprints = {}
@@ -163,59 +168,60 @@ class MappingAwareProcessor:
         
         # FIXED: Only process datasets that are actually present in CSV sources
         # This prevents false warnings about missing datasets that aren't being processed
-        for dataset_name in context.all_csv_sources.keys():
-            # Find the corresponding dataset configuration (with consistent URI slugification)
-            from arkumu.common.uri_utils import slugify_uri_part
-            
-            dataset_config = None
-            slugified_csv_name = slugify_uri_part(dataset_name)
-            for config in context.execution_config.datasets:
-                if slugify_uri_part(config.dataset_name) == slugified_csv_name:
-                    dataset_config = config
-                    break
-            
-            if not dataset_config:
-                # Log available configurations for debugging
-                available_configs = [config.dataset_name for config in context.execution_config.datasets]
-                logger.warning(f"CSV data provided for '{dataset_name}' (slugified: '{slugified_csv_name}') but no mapping configuration found. Available: {available_configs}")
-                continue
+        try:
+            for dataset_name in context.all_csv_sources.keys():
+                # Find the corresponding dataset configuration (with consistent URI slugification)
+                from arkumu.common.uri_utils import slugify_uri_part
                 
-            logger.info(f"🔍 PROCESSING: Dataset '{dataset_name}' (has CSV data)")
-            logger.info(f"📊 Available csv_sources: {list(context.all_csv_sources.keys())}")
-            
-            context.current_dataset = dataset_config.dataset_name
-            csv_data = context.all_csv_sources[dataset_name]
-            
-            # Convert to DataFrame for chunked processing
-            # Handle the test data format: {'headers': [...], 'rows': [...]}
-            if isinstance(csv_data, dict) and 'rows' in csv_data:
-                df = self.data_processor.ensure_dataframe(csv_data['rows'])
-            else:
-                df = self.data_processor.ensure_dataframe(csv_data)
-            
-            # Check if dataset is empty
-            total_rows = df.height
-            if total_rows == 0:
-                logger.warning(f"Dataset {dataset_config.dataset_name} is empty, creating dataset resource with schema metadata")
-                self.statistics.increment_datasets_skipped()
+                dataset_config = None
+                slugified_csv_name = slugify_uri_part(dataset_name)
+                for config in context.execution_config.datasets:
+                    if slugify_uri_part(config.dataset_name) == slugified_csv_name:
+                        dataset_config = config
+                        break
                 
-                # IMPORTANT: Still create the dataset resource even for empty datasets
-                # This ensures the dataset URI exists in the graph
-                dataset_resource = self.resource_manager.create_dataset_resource(dataset_config.dataset_name)
-                logger.info(f"Created dataset resource for empty dataset '{dataset_config.dataset_name}'")
+                if not dataset_config:
+                    # Log available configurations for debugging
+                    available_configs = [config.dataset_name for config in context.execution_config.datasets]
+                    logger.warning(f"CSV data provided for '{dataset_name}' (slugified: '{slugified_csv_name}') but no mapping configuration found. Available: {available_configs}")
+                    continue
                 
-                # IMPORTANT: Create schema metadata triples for empty datasets
-                # This ensures the dataset is properly connected to its column structure from the mapping
-                self._create_schema_metadata_for_empty_dataset(dataset_config, dataset_resource, context)
+                logger.info(f"🔍 PROCESSING: Dataset '{dataset_name}' (has CSV data)")
+                logger.info(f"📊 Available csv_sources: {list(context.all_csv_sources.keys())}")
                 
-                # Check for orphaned FK references pointing to this empty dataset
-                self._check_orphaned_fk_references(dataset_config.dataset_name, context)
-                context.processed_datasets.add(dataset_config.dataset_name)
-                continue
-            
-            # Track all entities for this dataset across all chunks
-            dataset_entities = []
-            dataset_name = dataset_config.dataset_name
+                context.current_dataset = dataset_config.dataset_name
+                csv_data = context.all_csv_sources[dataset_name]
+                
+                # Convert to DataFrame for chunked processing
+                # Handle the test data format: {'headers': [...], 'rows': [...]}
+                if isinstance(csv_data, dict) and 'rows' in csv_data:
+                    df = self.data_processor.ensure_dataframe(csv_data['rows'])
+                else:
+                    df = self.data_processor.ensure_dataframe(csv_data)
+                
+                # Check if dataset is empty
+                total_rows = df.height
+                if total_rows == 0:
+                    logger.warning(f"Dataset {dataset_config.dataset_name} is empty, creating dataset resource with schema metadata")
+                    self.statistics.increment_datasets_skipped()
+                    
+                    # IMPORTANT: Still create the dataset resource even for empty datasets
+                    # This ensures the dataset URI exists in the graph
+                    dataset_resource = self.resource_manager.create_dataset_resource(dataset_config.dataset_name)
+                    logger.info(f"Created dataset resource for empty dataset '{dataset_config.dataset_name}'")
+                    
+                    # IMPORTANT: Create schema metadata triples for empty datasets
+                    # This ensures the dataset is properly connected to its column structure from the mapping
+                    self._create_schema_metadata_for_empty_dataset(dataset_config, dataset_resource, context)
+                    
+                    # Check for orphaned FK references pointing to this empty dataset
+                    self._check_orphaned_fk_references(dataset_config.dataset_name, context)
+                    context.processed_datasets.add(dataset_config.dataset_name)
+                    continue
+                
+                # Track all entities for this dataset across all chunks
+                dataset_entities = []
+                dataset_name = dataset_config.dataset_name
             
             # Create dataset resource once for the entire dataset
             dataset_resource = self.resource_manager.create_dataset_resource(dataset_name)
@@ -241,18 +247,27 @@ class MappingAwareProcessor:
                 
                 logger.info(f"✅ Chunk {chunk_num}/{total_chunks} completed: {len(chunk_entities)} entities created ({len(dataset_entities)} total)")
             
-            # Create dataset-entity linking triples for ALL entities in the dataset
-            logger.info(f"Creating dataset-entity links for {dataset_name} ({len(dataset_entities)} entities)")
-            if dataset_entities:
-                dataset_entity_triples = self.resource_manager.create_dataset_entity_links_bulk(
-                    dataset_entities, dataset_resource
-                )
-                logger.info(f"Created {len(dataset_entity_triples)} dataset-entity linking triples for {dataset_name}")
-            
-            context.processed_datasets.add(dataset_config.dataset_name)
-        
-        # Resolve relationships
-        self._resolve_pending_relationships(context)
+                # Create dataset-entity linking triples for ALL entities in the dataset
+                logger.info(f"Creating dataset-entity links for {dataset_name} ({len(dataset_entities)} entities)")
+                if dataset_entities:
+                    dataset_entity_triples = self.resource_manager.create_dataset_entity_links_bulk(
+                        dataset_entities, dataset_resource
+                    )
+                    logger.info(f"Created {len(dataset_entity_triples)} dataset-entity linking triples for {dataset_name}")
+                    try:
+                        self.statistics.current_metrics.triples_created += len(dataset_entity_triples)
+                        self.statistics.current_metrics.relationships_created += len(dataset_entity_triples)
+                    except Exception:
+                        pass
+
+                context.processed_datasets.add(dataset_config.dataset_name)
+        finally:
+            # Always attempt to resolve queued FK relationships even if some datasets errored
+            logger.info("FK resolve: starting")
+            try:
+                self._resolve_pending_relationships(context)
+            finally:
+                logger.info("FK resolve: finished")
         
         # Log processing summary
         self._log_processing_summary(context)
@@ -297,9 +312,21 @@ class MappingAwareProcessor:
             entity_resource = self.resource_manager.create_entity_resource(entity_uri, dataset_name)
             context.entity_cache[entity_uri] = entity_resource
             chunk_entities.append(entity_resource)
+            # Metrics: one row processed and one resource created for entity
+            try:
+                self.statistics.current_metrics.rows_processed += 1
+                self.statistics.current_metrics.resources_created += 1
+            except Exception:
+                pass
             
             # Link entity to its type via rdf:type
             self._create_rdf_type_relationship(entity_resource, dataset_name)
+            try:
+                # rdf:type is a relationship triple
+                self.statistics.current_metrics.relationships_created += 1
+                self.statistics.current_metrics.triples_created += 1
+            except Exception:
+                pass
             
             # Process regular columns
             self._process_regular_columns(entity_resource, row_data, column_groups['regular'], context)
@@ -310,11 +337,15 @@ class MappingAwareProcessor:
             # Process multi-value columns
             self._process_multi_value_columns(entity_resource, row_data, column_groups['multi_value'], context)
             
-            # Queue FK relationships for later resolution
-            self._queue_fk_relationships(entity_uri, row_data, column_groups['foreign_key'], context)
+            # Queue FK relationships for later resolution (includes multi-value FKs)
+            all_fk_columns = column_groups['foreign_key'] + column_groups['multi_value_foreign_key']
+            self._queue_fk_relationships(entity_uri, row_data, all_fk_columns, context)
             
             # Process external ontology columns
             self._process_external_ontology_columns(entity_resource, row_data, column_groups['external_ontology'], context)
+            
+            # Process relationship context columns (as regular properties)
+            self._process_relationship_context_columns(entity_resource, row_data, column_groups['relationship_context'], context)
             
             # Track row processing
             self.statistics.current_metrics.rows_processed += 1
@@ -360,6 +391,7 @@ class MappingAwareProcessor:
         logger.info(f"  - Anchor columns: {len(column_groups['anchor'])}")
         logger.info(f"  - Multi-value columns: {len(column_groups['multi_value'])}")
         logger.info(f"  - Foreign key columns: {len(column_groups['foreign_key'])}")
+        logger.info(f"  - Multi-value FK columns: {len(column_groups['multi_value_foreign_key'])}")
         logger.info(f"  - External ontology columns: {len(column_groups['external_ontology'])}")
         logger.info(f"  - Relationship context columns: {len(column_groups['relationship_context'])}")
         
@@ -384,11 +416,15 @@ class MappingAwareProcessor:
             # Process multi-value columns
             self._process_multi_value_columns(entity_resource, row_data, column_groups['multi_value'], context)
             
-            # Queue FK relationships for later resolution
-            self._queue_fk_relationships(entity_uri, row_data, column_groups['foreign_key'], context)
+            # Queue FK relationships for later resolution (includes multi-value FKs)
+            all_fk_columns = column_groups['foreign_key'] + column_groups['multi_value_foreign_key']
+            self._queue_fk_relationships(entity_uri, row_data, all_fk_columns, context)
             
             # Process external ontology columns
             self._process_external_ontology_columns(entity_resource, row_data, column_groups['external_ontology'], context)
+            
+            # Process relationship context columns (as regular properties)
+            self._process_relationship_context_columns(entity_resource, row_data, column_groups['relationship_context'], context)
             
             # Track row processing
             self.statistics.current_metrics.rows_processed += 1
@@ -438,35 +474,52 @@ class MappingAwareProcessor:
             self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
             self._process_multi_value_columns(entity_resource, row_data, column_groups['multi_value'], context)
             self._process_external_ontology_columns(entity_resource, row_data, column_groups['external_ontology'], context)
+            self._process_relationship_context_columns(entity_resource, row_data, column_groups['relationship_context'], context)
     
     def _group_columns_by_type(self, columns: List[ColumnConfig]) -> Dict[str, List[ColumnConfig]]:
-        """Group columns by their type for efficient processing"""
+        """Group columns by their type using centralized column analysis utility"""
         
+        # Convert columns to mapping config format for centralized analysis
+        mapping_config = {"workspace_columns": {}}
+        for column in columns:
+            mapping_config["workspace_columns"][column.column_name] = {
+                "is_multi_value": column.is_multi_value,
+                "is_fk": column.column_type.value == 'foreign_key' or bool(getattr(column, 'fk_config', None)),
+                "is_anchor": column.is_anchor,
+                "is_external_ontology": column.is_external_ontology,
+                "is_relationship_context": column.column_type.value == 'relationship_context',
+                "column_name": column.column_name,
+                "arkumu_type": column.arkumu_type
+            }
+        
+        # Use centralized analysis from MappingUtils
+        analysis_result = MappingUtils.analyze_mapping_structure(mapping_config)
+        
+        # Use MappingUtils to group columns by type
+        column_groups = MappingUtils.group_columns_by_type(mapping_config)
+        
+        # Convert to the expected format with column objects
         groups = {
             'regular': [],
             'anchor': [],
             'foreign_key': [],
             'multi_value': [],
+            'multi_value_foreign_key': [],
             'relationship_context': [],
             'external_ontology': []
         }
         
-        for column in columns:
-            if column.is_anchor:
-                groups['anchor'].append(column)
-            elif column.column_type.value == 'foreign_key':
-                groups['foreign_key'].append(column)
-                # Log if this FK is also multi-value
-                if column.is_multi_value:
-                    logger.debug(f"   Column '{column.column_name}' is both FK and multi-value")
-            elif column.is_multi_value:
-                groups['multi_value'].append(column)
-            elif column.column_type.value == 'relationship_context':
-                groups['relationship_context'].append(column)
-            elif column.is_external_ontology:
-                groups['external_ontology'].append(column)
-            else:
-                groups['regular'].append(column)
+        # Create lookup for columns by name
+        column_lookup = {col.column_name: col for col in columns}
+        
+        # Map column names to column objects using centralized grouping
+        for column_type, column_names in column_groups.items():
+            if column_type in groups:
+                for col_name in column_names:
+                    if col_name in column_lookup:
+                        groups[column_type].append(column_lookup[col_name])
+                        if column_type == 'multi_value_foreign_key':
+                            logger.debug(f"   Column '{col_name}' is multi-value FK - will be processed specially")
         
         return groups
     
@@ -528,6 +581,10 @@ class MappingAwareProcessor:
         if batch_property_data:
             logger.debug(f"Creating {len(batch_property_data)} regular property triples in batch")
             self.resource_manager.create_property_triples_bulk(batch_property_data)
+            try:
+                self.statistics.current_metrics.triples_created += len(batch_property_data)
+            except Exception:
+                pass
     
     def _process_anchor_columns(self,
                               entity_resource,
@@ -560,6 +617,10 @@ class MappingAwareProcessor:
         if batch_property_data:
             logger.debug(f"Creating {len(batch_property_data)} anchor property triples in batch")
             self.resource_manager.create_property_triples_bulk(batch_property_data)
+            try:
+                self.statistics.current_metrics.triples_created += len(batch_property_data)
+            except Exception:
+                pass
     
     def _process_multi_value_columns(self,
                                    entity_resource,
@@ -603,54 +664,107 @@ class MappingAwareProcessor:
             self.resource_manager.create_property_triples_bulk(batch_property_data)
             # Update statistics for multi-value cell processing
             self.statistics.current_metrics.multi_value_cells_split += len(columns)
+            try:
+                self.statistics.current_metrics.triples_created += len(batch_property_data)
+            except Exception:
+                pass
     
     def _queue_fk_relationships(self,
                               entity_uri: str,
                               row_data: Dict[str, Any],
                               columns: List[ColumnConfig],
                               context: ProcessingContext):
-        """Queue FK relationships for later resolution with improved batching"""
+        """Queue FK relationships for later resolution with comprehensive logging and batching.
+        
+        This method processes FK columns and queues relationships for batch resolution.
+        Each FK relationship links a source entity to one or more target entities in other datasets.
+        
+        Args:
+            entity_uri: URI of the source entity
+            row_data: Raw row data containing FK values
+            columns: List of FK column configurations
+            context: Processing context with entity cache and configuration
+        
+        FK Resolution Flow:
+        1. Extract FK values from row data (handling multi-value columns)
+        2. Determine target dataset for each FK column
+        3. Group relationships by target dataset for efficient batch processing
+        4. Queue relationships for later resolution after all entities are created
+        """
         
         if not columns:
             return
             
-        logger.debug(f"🔗 Queueing FK relationships for {len(columns)} FK columns")
+        if context.log_details:
+            logger.debug(f"FK queue: {len(columns)} FK columns for {entity_uri}")
         
         # Group FK relationships by target dataset for better batching
         relationships_by_target = {}
+        total_fk_values_processed = 0
         
         for column in columns:
             value = row_data.get(column.column_name)
+            if context.log_details:
+                logger.debug(f"FK column '{column.column_name}' value='{value}' multi={column.is_multi_value}")
+            
             if not value or not str(value).strip():
+                logger.debug(f"   ⚠️  FK SKIP: Empty value for column '{column.column_name}'")
                 continue
                 
             target_dataset = self._get_target_dataset_for_column(column, context)
+            if context.log_details:
+                logger.debug(f"FK target: {column.column_name} -> {target_dataset}")
             
             # Handle multi-value FKs
             if column.is_multi_value:
                 fk_values = self._split_multi_value(str(value), column.multi_value_separator)
+                if context.log_details:
+                    logger.debug(f"FK multi-value split {len(fk_values)} values")
             else:
                 fk_values = [str(value).strip()]
+                if context.log_details:
+                    logger.debug("FK single-value detected")
             
             # Group by target dataset for more efficient resolution
             if target_dataset not in relationships_by_target:
                 relationships_by_target[target_dataset] = []
             
-            for fk_value in fk_values:
+            for fk_idx, fk_value in enumerate(fk_values):
                 if fk_value.strip():
-                    relationships_by_target[target_dataset].append({
+                    norm_val = MappingUtils.normalize_fk_value(fk_value)
+                    relationship = {
                         'source_entity_uri': entity_uri,
                         'source_column': column.column_name,
-                        'target_value': fk_value.strip(),
+                        'target_value': norm_val,
                         'target_dataset': target_dataset,
                         'relationship_type': column.arkumu_type,
-                        'is_multi_value': column.is_multi_value
-                    })
+                        'is_multi_value': column.is_multi_value,
+                        'multi_value_index': fk_idx if column.is_multi_value else None
+                    }
+                    relationships_by_target[target_dataset].append(relationship)
+                    total_fk_values_processed += 1
+                    
+                    # FK debugging removed for simplicity
+                    
+                    if context.log_details:
+                        logger.debug(f"FK queued: {entity_uri} -[{column.arkumu_type}]→ {target_dataset}.{fk_value.strip()}")
+                else:
+                    if context.log_details:
+                        logger.debug("FK skip: empty value in multi-list")
         
-        # Add grouped relationships to pending queue
+        # Add grouped relationships to pending queue and log statistics
+        total_relationships_queued = 0
         for target_dataset, relationships in relationships_by_target.items():
             self.pending_relationships.extend(relationships)
-            logger.debug(f"   🔗 Queued {len(relationships)} relationships targeting {target_dataset}")
+            total_relationships_queued += len(relationships)
+            if context.log_details:
+                logger.debug(f"FK batch queued {len(relationships)} -> '{target_dataset}'")
+        
+        logger.info(f"FK queued: {total_relationships_queued} relationships across {len(relationships_by_target)} targets")
+        
+        # Update statistics
+        current_pending_total = len(self.pending_relationships)
+        logger.debug(f"   📊 FK QUEUE STATS: Total pending relationships now: {current_pending_total}")
     
     def _process_external_ontology_columns(self,
                                          entity_resource,
@@ -674,6 +788,10 @@ class MappingAwareProcessor:
                     cleaned_value,
                     "http://www.w3.org/2001/XMLSchema#string"
                 )
+                try:
+                    self.statistics.current_metrics.triples_created += 1
+                except Exception:
+                    pass
                 
                 # 2. HARD LINKING: Link external ontology to our literal resource
                 external_uri = self._generate_external_ontology_uri(column, cleaned_value)
@@ -687,78 +805,175 @@ class MappingAwareProcessor:
                         external_uri,
                         column.external_ontology_config.get('ontology_type', 'external')
                     )
+                    try:
+                        self.statistics.current_metrics.resources_created += 1
+                        self.statistics.current_metrics.external_ontology_items_created += 1
+                    except Exception:
+                        pass
                     
                     # Create owl:sameAs from external ontology to our literal resource
                     self.resource_manager.create_owl_same_as_triple(
                         external_resource,
                         literal_resource
                     )
+                    try:
+                        self.statistics.current_metrics.triples_created += 1
+                        self.statistics.current_metrics.relationships_created += 1
+                    except Exception:
+                        pass
                     
                     logger.debug(f"Created both soft and hard links for {column.column_name}: "
                                f"entity -> {property_uri} -> '{cleaned_value}' and "
                                f"{external_uri} -> owl:sameAs -> literal_resource('{cleaned_value}')")
     
+    def _process_relationship_context_columns(self,
+                                            entity_resource,
+                                            row_data: Dict[str, Any], 
+                                            columns: List[ColumnConfig],
+                                            context: ProcessingContext):
+        """Process relationship context columns as regular properties"""
+        if columns:
+            logger.debug(f"Processing {len(columns)} relationship context columns: {[col.column_name for col in columns]}")
+        
+        for column in columns:
+            value = row_data.get(column.column_name)
+            if value is not None and str(value).strip():
+                cleaned_value = str(value).strip()
+                
+                # Create property triple (entity -> property -> literal)
+                property_uri = self._generate_property_uri(column.arkumu_type)
+                self.resource_manager.create_property_triple(
+                    entity_resource,
+                    property_uri,
+                    cleaned_value,
+                    "http://www.w3.org/2001/XMLSchema#string"
+                )
+                
+                logger.debug(f"Created relationship context property: entity -> {property_uri} -> '{cleaned_value}'")
+    
     def _resolve_pending_relationships(self, context: ProcessingContext):
-        """Resolve all pending FK relationships with improved batching and efficiency"""
+        """Resolve all pending FK relationships with comprehensive logging and improved batching.
+        
+        This is the core FK resolution engine that processes queued relationships and creates
+        the actual RDF triples linking entities across datasets.
+        
+        FK Resolution Process:
+        1. Group relationships by target dataset for efficient batch processing
+        2. For each target dataset batch:
+           a. Check if target dataset exists (skip orphaned references)
+           b. Pre-create or fetch target entities
+           c. Resolve each relationship by creating RDF triples
+        3. Log comprehensive statistics and handle failures gracefully
+        
+        Args:
+            context: Processing context containing entity cache and dataset information
+        """
         
         if not self.pending_relationships:
             logger.info("🔗 FK RESOLUTION: No pending relationships to resolve")
             return
             
         logger.info(f"\n{'='*60}")
-        logger.info(f"🔗 FK RESOLUTION: Starting resolution of {len(self.pending_relationships)} pending FK relationships")
+        logger.info(f"🔗 FK RESOLUTION START: Processing {len(self.pending_relationships)} pending FK relationships")
         
         # Group relationships by target dataset for batch processing
         relationships_by_target = self._group_relationships_by_target()
         
-        # Log relationship distribution
-        logger.info("FK relationships by target dataset:")
+        # Log detailed relationship distribution
+        logger.info(f"📊 FK RESOLUTION BREAKDOWN: Relationships grouped by target dataset:")
+        total_unique_sources = set()
+        total_multi_value_relationships = 0
+        
         for target_dataset, relationships in relationships_by_target.items():
-            logger.info(f"  - {target_dataset}: {len(relationships)}")
+            sources_in_batch = set(rel['source_entity_uri'] for rel in relationships)
+            multi_value_in_batch = sum(1 for rel in relationships if rel.get('is_multi_value', False))
+            
+            total_unique_sources.update(sources_in_batch)
+            total_multi_value_relationships += multi_value_in_batch
+            
+            logger.info(f"  📦 {target_dataset}: {len(relationships)} relationships from {len(sources_in_batch)} source entities")
+            logger.info(f"     🔀 Multi-value relationships: {multi_value_in_batch}")
+            
+            # Log sample relationship types
+            relationship_types = set(rel['relationship_type'] for rel in relationships[:5])
+            logger.debug(f"     🏷️  Sample relationship types: {list(relationship_types)}")
+        
+        logger.info(f"📊 FK RESOLUTION TOTALS: {len(total_unique_sources)} unique source entities, {total_multi_value_relationships} multi-value relationships")
         
         # Process relationships in batches by target dataset
         total_resolved = 0
         total_failed = 0
         total_orphaned = 0
         total_missing_source = 0
+        total_stub_created = 0
         
         skipped_datasets = self._identify_skipped_datasets(context)
         
         for target_dataset, relationships in relationships_by_target.items():
-            logger.debug(f"🔄 Processing {len(relationships)} FK relationships targeting '{target_dataset}'")
+            logger.info(f"\n🔄 FK BATCH PROCESSING: {len(relationships)} relationships → '{target_dataset}'")
             
             # Check if target dataset was skipped
             if target_dataset in skipped_datasets:
                 if hasattr(context, 'stub_datasets') and target_dataset in context.stub_datasets:
-                    logger.debug(f"Creating stub entities for relationships to '{target_dataset}' (has stub structure)")
+                    logger.info(f"   🏗️  STUB RESOLUTION: Creating stub entities for '{target_dataset}' (has stub structure)")
                 else:
-                    logger.debug(f"Skipping relationships to orphaned dataset '{target_dataset}' (no CSV data)")
+                    logger.warning(f"   🚫 ORPHANED BATCH: Skipping relationships to missing dataset '{target_dataset}' (no CSV data)")
                     total_orphaned += len(relationships)
+                    
+                    # Log detailed orphaned relationship information
+                    orphaned_sources = set(rel['source_entity_uri'] for rel in relationships)
+                    logger.warning(f"     👻 Orphaned relationships affect {len(orphaned_sources)} source entities")
                     continue
             
-            # Process this batch of relationships
+            # Process this batch of relationships with detailed logging
+            logger.info(f"   ⚡ BATCH START: Resolving {len(relationships)} FK relationships for '{target_dataset}'")
+            batch_start_time = datetime.now()
+            
             batch_results = self._resolve_relationship_batch(relationships, context)
+            
+            batch_duration = datetime.now() - batch_start_time
+            logger.info(f"   ⏱️  BATCH COMPLETE: {batch_results['resolved']} resolved, {batch_results['failed']} failed, {batch_results['missing_source']} missing source (took {batch_duration.total_seconds():.2f}s)")
+            
             total_resolved += batch_results['resolved']
             total_failed += batch_results['failed']
             total_missing_source += batch_results['missing_source']
+            total_stub_created += batch_results.get('stub_created', 0)
         
-        # Log final summary
+        # Calculate resolution statistics
         total_relationships = len(self.pending_relationships)
-        logger.info(f"FK resolution completed:")
-        logger.info(f"  ✅ Resolved: {total_resolved}")
-        logger.info(f"  ❌ Failed: {total_failed}")
-        logger.info(f"  🔗 Orphaned (skipped datasets): {total_orphaned}")
-        logger.info(f"  👻 Missing source entities: {total_missing_source}")
-        logger.info(f"  📊 Total processed: {total_relationships}")
+        success_rate = (total_resolved / total_relationships * 100) if total_relationships > 0 else 0
         
-        # Update statistics
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🔗 FK RESOLUTION COMPLETE: Final Statistics")
+        logger.info(f"{'='*60}")
+        logger.info(f"  ✅ Successfully resolved: {total_resolved} ({success_rate:.1f}%)")
+        logger.info(f"  ❌ Resolution failures: {total_failed}")
+        logger.info(f"  🔗 Orphaned (missing datasets): {total_orphaned}")
+        logger.info(f"  👻 Missing source entities: {total_missing_source}")
+        logger.info(f"  🏗️  Stub entities created: {total_stub_created}")
+        logger.info(f"  📊 Total relationships processed: {total_relationships}")
+        
+        # Log performance metrics
+        if total_resolved > 0:
+            avg_relationships_per_source = total_resolved / len(total_unique_sources) if total_unique_sources else 0
+            logger.info(f"  📈 Average FK relationships per entity: {avg_relationships_per_source:.2f}")
+        
+        # Update statistics and handle warnings
+        self.statistics.current_metrics.relationships_created += total_resolved
+        
         if total_orphaned > 0:
             self.statistics.add_warning(
                 f"Skipped {total_orphaned} FK relationships due to orphaned references to missing/empty datasets"
             )
         
+        if total_failed > 0:
+            self.statistics.add_warning(
+                f"Failed to resolve {total_failed} FK relationships due to missing target entities or other errors"
+            )
+        
         # Clear pending relationships
         self.pending_relationships = []
+        logger.info(f"🧹 FK CLEANUP: Cleared pending relationships queue")
     
     def _process_all_fk_relationships(self, context: ProcessingContext):
         """Process all FK relationships (for multi-phase)"""
@@ -818,72 +1033,147 @@ class MappingAwareProcessor:
                 self._process_junction_entity(rel_context, row_data, context)
     
     def _process_junction_entity(self, rel_context, row_data: Dict[str, Any], context: ProcessingContext):
-        """Process a single junction entity with relationship context"""
+        """Process a single junction entity with relationship context and comprehensive logging.
         
-        # Generate junction entity URI
+        Junction entities represent many-to-many relationships with additional attributes.
+        They connect two entities from different datasets while carrying contextual information.
+        
+        Relationship Context Flow:
+        1. Extract primary and secondary FK values from row data
+        2. Generate unique junction entity URI combining both FK values
+        3. Create junction entity with its own type and properties
+        4. Link junction to both primary and secondary entities via relationships
+        5. Add any contextual attributes as properties of the junction entity
+        
+        Args:
+            rel_context: Relationship context configuration
+            row_data: Raw CSV row data containing FK values and context attributes
+            context: Processing context with entity cache
+        """
+        
+        context_id = rel_context.context_id
+        logger.debug(f"🔗 JUNCTION START: Processing junction entity for context '{context_id}'")
+        
+        # Extract FK values with detailed logging
         primary_value = row_data.get(rel_context.primary_fk, '')
         secondary_value = row_data.get(rel_context.secondary_fk, '')
         
+        logger.debug(f"   🔑 PRIMARY FK: '{rel_context.primary_fk}' = '{primary_value}'")
+        logger.debug(f"   🔒 SECONDARY FK: '{rel_context.secondary_fk}' = '{secondary_value}'")
+        
         if not primary_value or not secondary_value:
-            logger.warning(f"Missing FK values for junction entity: {rel_context.context_id}")
+            logger.warning(f"   ⚠️  JUNCTION SKIP: Missing FK values for junction entity '{context_id}'")
+            logger.warning(f"      Primary FK '{rel_context.primary_fk}': '{primary_value}'")
+            logger.warning(f"      Secondary FK '{rel_context.secondary_fk}': '{secondary_value}'")
             return
         
+        # Generate unique junction entity URI
         junction_uri = self.resource_manager.generate_junction_uri(
             rel_context.dataset_name,
             str(primary_value),
             str(secondary_value)
         )
         
-        # Create junction entity
+        logger.debug(f"   🎯 JUNCTION URI: {junction_uri}")
+        
+        # Create junction entity with specific type
+        junction_type = f"{rel_context.dataset_name}_junction"
         junction_entity = self.resource_manager.create_entity_resource(
             junction_uri,
-            f"{rel_context.dataset_name}_junction"
+            junction_type
         )
         
-        # Link junction entity to its type via rdf:type
-        self._create_rdf_type_relationship(junction_entity, f"{rel_context.dataset_name}_junction")
+        logger.debug(f"   ✅ JUNCTION CREATED: Entity '{junction_uri}' of type '{junction_type}'")
         
-        # Add context properties
-        for context_column in rel_context.context_columns:
-            value = row_data.get(context_column)
-            if value is not None and str(value).strip():
-                property_uri = self._generate_property_uri(f"junction_{context_column}")
-                self.resource_manager.create_property_triple(
-                    junction_entity,
-                    property_uri,
-                    str(value).strip(),
-                    "http://www.w3.org/2001/XMLSchema#string"
-                )
+        # Link junction entity to its type via rdf:type
+        self._create_rdf_type_relationship(junction_entity, junction_type)
+        
+        # Process contextual attributes with detailed logging
+        context_attributes_added = 0
+        if hasattr(rel_context, 'context_columns'):
+            logger.debug(f"   🏷️  JUNCTION ATTRIBUTES: Processing {len(rel_context.context_columns)} context attributes")
+            
+            for context_column in rel_context.context_columns:
+                value = row_data.get(context_column)
+                if value is not None and str(value).strip():
+                    property_uri = self._generate_property_uri(f"junction_{context_column}")
+                    triple = self.resource_manager.create_property_triple(
+                        junction_entity,
+                        property_uri,
+                        str(value).strip(),
+                        "http://www.w3.org/2001/XMLSchema#string"
+                    )
+                    
+                    if triple:
+                        context_attributes_added += 1
+                        logger.debug(f"     🏷️  ATTRIBUTE: '{context_column}' = '{value}'")
+                    else:
+                        logger.warning(f"     ❌ ATTRIBUTE FAILED: Could not create attribute '{context_column}'")
+                else:
+                    logger.debug(f"     ⚠️  ATTRIBUTE SKIP: Empty value for '{context_column}'")
+        else:
+            logger.debug(f"   🏷️  JUNCTION ATTRIBUTES: No context columns defined")
+        
+        # Resolve target datasets for FK relationships
+        primary_dataset = self._get_target_dataset_from_fk(rel_context.primary_fk, context)
+        secondary_dataset = self._get_target_dataset_from_fk(rel_context.secondary_fk, context)
+        
+        logger.debug(f"   🔗 JUNCTION LINKS: primary → '{primary_dataset}', secondary → '{secondary_dataset}'")
         
         # Create relationships to primary and secondary entities
         primary_entity_uri = self._generate_target_entity_uri(
-            self._get_target_dataset_from_fk(rel_context.primary_fk, context),
+            primary_dataset,
             str(primary_value),
             context
         )
         
         secondary_entity_uri = self._generate_target_entity_uri(
-            self._get_target_dataset_from_fk(rel_context.secondary_fk, context),
+            secondary_dataset,
             str(secondary_value),
             context
         )
         
-        # Create relationship triples
+        relationships_created = 0
+        
+        # Link to primary entity
         if primary_entity_uri in context.entity_cache:
             property_uri = self._generate_property_uri("involves_primary")
-            self.resource_manager.create_relationship_triple(
+            primary_triple = self.resource_manager.create_relationship_triple(
                 junction_entity,
                 property_uri,
                 context.entity_cache[primary_entity_uri]
             )
+            if primary_triple:
+                relationships_created += 1
+                logger.debug(f"   🔗 PRIMARY LINK: {junction_uri} -[involves_primary]→ {primary_entity_uri}")
+            else:
+                logger.warning(f"   ❌ PRIMARY LINK FAILED: Could not link to primary entity")
+        else:
+            logger.warning(f"   👻 PRIMARY MISSING: Entity {primary_entity_uri} not found in cache")
         
+        # Link to secondary entity
         if secondary_entity_uri in context.entity_cache:
             property_uri = self._generate_property_uri("involves_secondary")
-            self.resource_manager.create_relationship_triple(
+            secondary_triple = self.resource_manager.create_relationship_triple(
                 junction_entity,
                 property_uri,
                 context.entity_cache[secondary_entity_uri]
             )
+            if secondary_triple:
+                relationships_created += 1
+                logger.debug(f"   🔗 SECONDARY LINK: {junction_uri} -[involves_secondary]→ {secondary_entity_uri}")
+            else:
+                logger.warning(f"   ❌ SECONDARY LINK FAILED: Could not link to secondary entity")
+        else:
+            logger.warning(f"   👻 SECONDARY MISSING: Entity {secondary_entity_uri} not found in cache")
+        
+        # Log junction entity completion summary
+        logger.info(f"   ✅ JUNCTION COMPLETE: Context '{context_id}' → {context_attributes_added} attributes, {relationships_created} relationships")
+        
+        # Update statistics
+        self.statistics.current_metrics.relationships_created += relationships_created
+        if context_attributes_added > 0:
+            self.statistics.current_metrics.cells_processed += context_attributes_added
     
     # Helper methods
     
@@ -1067,21 +1357,60 @@ class MappingAwareProcessor:
         return skipped_datasets
     
     def _resolve_relationship_batch(self, relationships: List[Dict], context: ProcessingContext) -> Dict[str, int]:
-        """Resolve a batch of relationships targeting the same dataset"""
-        results = {'resolved': 0, 'failed': 0, 'missing_source': 0}
+        """Resolve a batch of relationships targeting the same dataset with comprehensive logging.
         
-        # Pre-process target entities for this batch
+        This method processes a batch of FK relationships all targeting the same dataset,
+        optimizing performance through batch target entity preparation.
+        
+        Args:
+            relationships: List of relationship dictionaries with source/target information
+            context: Processing context containing entity cache
+            
+        Returns:
+            Dictionary with resolution statistics: resolved, failed, missing_source, stub_created
+        """
+        results = {'resolved': 0, 'failed': 0, 'missing_source': 0, 'stub_created': 0}
+        
+        if not relationships:
+            return results
+            
+        target_dataset = relationships[0]['target_dataset']
+        if context.log_details:
+            logger.debug(f"FK prepare targets: {len(relationships)} -> '{target_dataset}'")
+        
+        # Pre-process target entities for this batch with detailed logging
         target_entities_cache = self._prepare_target_entities_batch(relationships, context)
         
-        for relationship in relationships:
+        if context.log_details:
+            logger.debug(f"FK cache prepared: {len(target_entities_cache)} targets")
+        
+        # Track unique source entities and relationship types for statistics
+        unique_sources = set()
+        relationship_types = set()
+        multi_value_count = 0
+        
+        for i, relationship in enumerate(relationships, 1):
             try:
                 source_entity_uri = relationship['source_entity_uri']
                 target_value = relationship['target_value']
+                relationship_type = relationship['relationship_type']
+                is_multi_value = relationship.get('is_multi_value', False)
+                multi_value_index = relationship.get('multi_value_index')
+                
+                unique_sources.add(source_entity_uri)
+                relationship_types.add(relationship_type)
+                if is_multi_value:
+                    multi_value_count += 1
+                
+                logger.debug(f"    🔗 FK RESOLVE {i}/{len(relationships)}: {source_entity_uri} -[{relationship_type}]→ {target_dataset}.{target_value}")
+                if is_multi_value and multi_value_index is not None:
+                    logger.debug(f"      🔢 Multi-value index: {multi_value_index}")
                 
                 # Get source entity from context cache
                 source_entity = context.entity_cache.get(source_entity_uri)
                 if not source_entity:
-                    logger.debug(f"❌ Missing source entity: {source_entity_uri}")
+                    
+                    logger.warning(f"      👻 MISSING SOURCE: Entity {source_entity_uri} not found in cache")
                     results['missing_source'] += 1
                     continue
                 
@@ -1094,48 +1423,112 @@ class MappingAwareProcessor:
                 
                 target_entity = target_entities_cache.get(target_entity_uri)
                 if not target_entity:
-                    logger.debug(f"❌ Could not resolve target entity: {target_entity_uri}")
+                    
+                    logger.warning(f"      🎯 MISSING TARGET: Could not resolve target entity {target_entity_uri}")
                     results['failed'] += 1
                     continue
                 
-                # Create relationship triple
-                property_uri = self._generate_property_uri(relationship['relationship_type'])
+                # Check if target entity is a stub (was created due to missing CSV data)
+                is_stub = getattr(target_entity, 'is_placeholder', False)
+                if is_stub:
+                    results['stub_created'] += 1
+                    logger.debug(f"      🏗️ STUB TARGET: Linking to stub entity {target_entity_uri}")
+                
+                # Create relationship triple with timing
+                resolution_start = datetime.now()
+                property_uri = self._generate_property_uri(relationship_type)
                 triple = self.resource_manager.create_relationship_triple(
                     source_entity,
                     property_uri,
                     target_entity
                 )
-                results['resolved'] += 1
+                resolution_time_ms = (datetime.now() - resolution_start).total_seconds() * 1000
                 
-                logger.debug(f"✅ FK RESOLVED: {source_entity.uri} -[{property_uri}]-> {target_entity.uri}")
+                if triple:
+                    results['resolved'] += 1
+                    try:
+                        self.statistics.current_metrics.relationships_created += 1
+                        self.statistics.current_metrics.triples_created += 1
+                    except Exception:
+                        pass
+                    
+                    logger.debug(f"      ✅ FK SUCCESS: {source_entity.uri} -[{property_uri}]→ {target_entity.uri}")
+                else:
+                    
+                    logger.error(f"      ❌ FK TRIPLE CREATION FAILED: Could not create triple for relationship")
+                    results['failed'] += 1
                 
             except Exception as e:
-                logger.error(f"Failed to resolve FK relationship {relationship}: {e}")
+                
+                logger.error(f"      💥 FK EXCEPTION: Failed to resolve relationship {i}: {e}")
+                logger.debug(f"         Relationship data: {relationship}")
                 results['failed'] += 1
         
-        logger.debug(f"Batch results: {results['resolved']} resolved, {results['failed']} failed, {results['missing_source']} missing source")
+        # Log batch completion statistics
+        success_rate = (results['resolved'] / len(relationships) * 100) if relationships else 0
+        
+        logger.info(f"FK resolve [{target_dataset}]: queued={len(relationships)} resolved={results['resolved']} failed={results['failed']}")
+        if context.log_details:
+            logger.debug(f"FK stats: missing_source={results['missing_source']} stubs={results['stub_created']} multi={multi_value_count} unique_sources={len(unique_sources)} types={list(relationship_types)}")
+        
         return results
     
     def _prepare_target_entities_batch(self, relationships: List[Dict], context: ProcessingContext) -> Dict[str, Resource]:
-        """Pre-create or fetch target entities for a batch of relationships"""
+        """Pre-create or fetch target entities for a batch of relationships with comprehensive logging.
+        
+        This optimization method pre-processes all target entities for a batch of relationships
+        targeting the same dataset, reducing database queries and improving performance.
+        
+        Args:
+            relationships: List of relationship dictionaries (all targeting same dataset)
+            context: Processing context containing entity cache and configuration
+            
+        Returns:
+            Dictionary mapping target entity URIs to Resource objects
+        """
         target_entities = {}
         target_dataset = relationships[0]['target_dataset']  # All relationships in batch have same target
         
-        # Collect unique target values
-        target_values = set()
+        # Collect unique target values with frequency analysis
+        target_value_frequencies = {}
         for relationship in relationships:
-            target_values.add(relationship['target_value'])
+            target_value = relationship['target_value']
+            target_value_frequencies[target_value] = target_value_frequencies.get(target_value, 0) + 1
         
-        logger.debug(f"Preparing {len(target_values)} target entities for dataset '{target_dataset}'")
+        unique_target_values = set(target_value_frequencies.keys())
+        logger.debug(f"    🎯 TARGET PREP: Processing {len(unique_target_values)} unique target values for '{target_dataset}'")
         
-        # Generate target entity URIs
-        for target_value in target_values:
-            target_entity_uri = self._generate_target_entity_uri(target_dataset, target_value, context)
+        # Log target value frequency analysis (helpful for debugging data quality)
+        if len(target_value_frequencies) <= 10:
+            logger.debug(f"      📊 Target value frequencies: {target_value_frequencies}")
+        else:
+            # Show top 5 most frequent target values
+            top_values = sorted(target_value_frequencies.items(), key=lambda x: x[1], reverse=True)[:5]
+            logger.debug(f"      📊 Top 5 target values: {dict(top_values)} (and {len(target_value_frequencies)-5} others)")
+        
+        # Track preparation statistics
+        cache_hits = 0
+        cache_misses = 0
+        stubs_created = 0
+        existing_entities = 0
+        
+        # Generate target entity URIs and prepare entities
+        for target_value in unique_target_values:
+            norm_val = MappingUtils.normalize_fk_value(target_value)
+            target_entity_uri = self._generate_target_entity_uri(target_dataset, norm_val, context)
+            frequency = target_value_frequencies[target_value]
+            
+            logger.debug(f"      🔍 TARGET: '{target_value}' → {target_entity_uri} (referenced {frequency} times)")
             
             # Check if entity already exists in context cache
             if target_entity_uri in context.entity_cache:
                 target_entities[target_entity_uri] = context.entity_cache[target_entity_uri]
+                cache_hits += 1
+                logger.debug(f"        💾 CACHE HIT: Found in entity cache")
             else:
+                cache_misses += 1
+                logger.debug(f"        🔍 CACHE MISS: Creating/fetching target entity")
+                
                 # Create or get target entity (potentially as stub)
                 target_entity = self._get_or_create_target_entity(target_entity_uri, {
                     'target_dataset': target_dataset,
@@ -1146,8 +1539,26 @@ class MappingAwareProcessor:
                     target_entities[target_entity_uri] = target_entity
                     # Add to context cache for future use
                     context.entity_cache[target_entity_uri] = target_entity
+                    
+                    # Check if it's a newly created stub
+                    if getattr(target_entity, 'is_placeholder', False):
+                        stubs_created += 1
+                        logger.debug(f"        🏗️ STUB CREATED: New stub entity for missing target")
+                    else:
+                        existing_entities += 1
+                        logger.debug(f"        ✅ EXISTING: Found existing entity in database")
+                else:
+                    logger.warning(f"        ❌ FAILED: Could not create/fetch target entity {target_entity_uri}")
         
-        logger.debug(f"Prepared {len(target_entities)} target entities for '{target_dataset}'")
+        # Log preparation statistics
+        preparation_success_rate = (len(target_entities) / len(unique_target_values) * 100) if unique_target_values else 0
+        
+        logger.info(f"    📦 TARGET PREP COMPLETE for '{target_dataset}':")
+        logger.info(f"      ✅ Prepared: {len(target_entities)}/{len(unique_target_values)} entities ({preparation_success_rate:.1f}%)")
+        logger.info(f"      💾 Cache hits: {cache_hits}, misses: {cache_misses}")
+        logger.info(f"      🏗️ Stubs created: {stubs_created}")
+        logger.info(f"      📁 Existing entities: {existing_entities}")
+        
         return target_entities
     
     def _generate_target_entity_uri(self, target_dataset: str, target_value: str, context: ProcessingContext) -> str:
@@ -1158,19 +1569,48 @@ class MappingAwareProcessor:
         """Get existing target entity or create stub with metadata from mapping"""
         # Check cache first
         if target_uri in context.entity_cache:
+            logger.debug(f"✅ Found target entity in cache: {target_uri}")
             return context.entity_cache[target_uri]
         
         target_dataset = relationship['target_dataset']
         
         # Try to find if entity was already created in database
         try:
-            existing_entity = Resource.objects.get(uri=target_uri)
+            existing_entity = Resource.objects.get(uri=target_uri, resource_type='IRI')
+            logger.debug(f"✅ Found existing target entity in database: {target_uri}")
             context.entity_cache[target_uri] = existing_entity
             return existing_entity
         except Resource.DoesNotExist:
+            # Debug: Check if entity exists with different resource type
+            all_resources = Resource.objects.filter(uri=target_uri)
+            if all_resources.exists():
+                logger.warning(f"❌ Target entity exists but wrong type: {target_uri}, types: {[r.resource_type for r in all_resources]}")
+            else:
+                logger.warning(f"❌ Target entity not found in database: {target_uri}")
+                
+            # Debug: Check if similar entities exist (for debugging)
+            target_value = target_uri.split('/')[-1]
+            similar = Resource.objects.filter(
+                uri__icontains=target_value,
+                resource_type='IRI',
+                organization=self.organization
+            ).count()
+            logger.debug(f"🔍 Similar entities found for '{target_value}': {similar}")
+            
+            # Debug: Check if target dataset entities exist at all
+            dataset_entities = Resource.objects.filter(
+                uri__contains=f"/entities/{target_dataset}/",
+                resource_type='IRI',
+                organization=self.organization
+            ).count()
+            logger.debug(f"🔍 Total entities in target dataset '{target_dataset}': {dataset_entities}")
+            
             pass  # Entity doesn't exist, create stub
         
         # Create stub entity
+        logger.error(f"🚨 CRITICAL FK BUG: Creating stub entity for {target_uri} - this should NOT happen if entities are processed correctly!")
+        logger.error(f"🚨 This indicates FK resolution is running before target entities are created in dataset: {target_dataset}")
+        
         stub_entity = self.resource_manager.create_entity_resource(
             target_uri,
             target_dataset,
@@ -1462,7 +1902,7 @@ class MappingAwareProcessor:
                 total_regular += len(column_groups['regular'])
                 total_anchor += len(column_groups['anchor'])
                 total_multi_value += len(column_groups['multi_value'])
-                total_fk += len(column_groups['foreign_key'])
+                total_fk += len(column_groups['foreign_key']) + len(column_groups['multi_value_foreign_key'])
                 total_ontology += len(column_groups['external_ontology'])
                 total_relationship_context += len(column_groups['relationship_context'])
         

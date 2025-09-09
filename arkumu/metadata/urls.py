@@ -28,6 +28,7 @@ from arkumu.metadata.views.csv_mapping.views.execution_views import (
     GetMappingExecutionStatusView, 
     ValidateMappingExecutionView
 )
+from arkumu.metadata.views.csv_mapping.views import mapping_analysis_views
 
 app_name = 'metadata'
 
@@ -284,6 +285,11 @@ urlpatterns = [
     path('csv-mapping/execute/', ExecuteGUIMappingView.as_view(), name='execute_gui_mapping'),
     path('csv-mapping/execution-status/', GetMappingExecutionStatusView.as_view(), name='mapping_execution_status'),
     path('csv-mapping/validate-execution/', ValidateMappingExecutionView.as_view(), name='validate_mapping_execution'),
+    
+    # Mapping Analysis URLs
+    path('csv-mapping/analysis/<str:organization_id>/', mapping_analysis_views.mapping_analysis_dashboard, name='mapping_analysis_dashboard'),
+    path('csv-mapping/analysis/<str:organization_id>/<uuid:mapping_id>/', mapping_analysis_views.mapping_analysis_detail, name='mapping_analysis_detail'),
+    path('csv-mapping/analysis/<str:organization_id>/<uuid:mapping_id>/api/', mapping_analysis_views.mapping_analysis_api, name='mapping_analysis_api'),
     
     # Model Graph Visualization URLs
     path('model-graph/', model_graph_views.model_graph_main, name='model_graph'),

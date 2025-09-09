@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import import_views, ingest_views, progress_views, mock_views, progress
+from .views import import_views, ingest_views, progress_views, mock_views, progress, import_analysis_views
 
 app_name = "importer"
 
@@ -25,6 +25,11 @@ urlpatterns = [
     path("mappings/import/", ingest_views.import_selected_mappings, name="import_selected_mappings"),
     path("mappings/close-modal/", ingest_views.close_import_modal, name="close_import_modal"),
     # Organization changes now handled in main ingest_data view
+    
+    # Import Results Analysis URLs  
+    path("results-analysis/", import_analysis_views.import_results_dashboard, name="import_results_dashboard"),
+    path("results-analysis/<uuid:session_id>/", import_analysis_views.import_results_detail, name="import_results_detail"),
+    path("results-analysis/<uuid:session_id>/api/", import_analysis_views.import_results_api, name="import_results_api"),
     
     # CSV ingest endpoint (existing)
     path("ingest-file/", import_views.ingest_file, name="ingest_file"),
