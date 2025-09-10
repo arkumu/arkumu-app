@@ -67,58 +67,6 @@ def mapping_analysis_dashboard(request, organization_id):
         })
 
 
-@login_required  
-@require_http_methods(['GET'])
-def mapping_analysis_detail(request, organization_id, mapping_id):
-    """
-    Detailed analysis view for a specific mapping showing:
-    - Column type breakdown and statistics
-    - Processing results and metrics
-    - Data quality insights
-    - Performance analysis
-    """
-    try:
-        # Get organization and mapping
-        organization = get_object_or_404(Organization, code=organization_id)
-        mapping = get_object_or_404(Mapping, id=mapping_id, organization_id=organization_id)
-        
-        # Get detailed analysis
-        analysis = _analyze_mapping_execution(mapping, organization, detailed=True)
-        if not analysis:
-            return render(request, 'csv_mapping/mapping_analysis_detail.html', {
-                'error': 'No analysis data available for this mapping',
-                'organization': organization,
-                'mapping': mapping
-            })
-        
-        # Get sample data from database
-        sample_resources = Resource.objects.filter(
-            organization=organization,
-            uri__contains=f'/data/{organization.code}'
-        ).select_related().prefetch_related('subject_triples', 'object_triples')[:10]
-        
-        sample_triples = Triple.objects.filter(
-            source=organization
-        ).select_related('subject', 'predicate', 'object')[:20]
-        
-        context = {
-            'organization': organization,
-            'mapping': mapping,
-            'analysis': analysis,
-            'sample_resources': sample_resources,
-            'sample_triples': sample_triples
-        }
-        
-        return render(request, 'csv_mapping/mapping_analysis_detail.html', context)
-        
-    except Exception as e:
-        logger.error(f"Error in mapping analysis detail: {e}")
-        return render(request, 'csv_mapping/mapping_analysis_detail.html', {
-            'error': f"Failed to load detailed analysis: {str(e)}",
-            'organization': {'code': organization_id},
-            'mapping': {'name': 'Unknown Mapping'}
-        })
-
 
 @login_required
 @require_http_methods(['GET'])
