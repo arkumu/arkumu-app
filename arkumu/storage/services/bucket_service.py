@@ -533,8 +533,8 @@ class BucketService:
 
     def export_successful_imports_csv(self, organization_id: str) -> Dict[str, Any]:
         """
-        Build a CSV export by scanning the actual S3 bucket for the organization.
-        This provides a complete and deduplicated view of all files in the bucket.
+        Build a CSV export using S3FileObject records with S3 existence verification.
+        This provides fast access to files with rich metadata and checksums.
 
         Columns:
         - file_name
@@ -542,7 +542,10 @@ class BucketService:
         - file_size_bytes
         - file_size_human
         - s3_key
-        - checksum_sha256 (calculated on-demand)
+        - checksum_sha256 (from DB or calculated on-demand)
+        - upload_session
+        - created_at
+        - status
 
         Returns a dict with:
         - success: bool
@@ -552,6 +555,8 @@ class BucketService:
         - error: optional error message
         """
         try:
+            from arkumu.storage.models.s3_file_objects import S3FileObject
+            
             bucket_name = self.get_organization_bucket(organization_id)
 
             # Ensure bucket exists (check only)
@@ -559,91 +564,94 @@ class BucketService:
             if not ensure.get("success"):
                 return {"success": False, "error": ensure.get("error", "Bucket not accessible")}
 
-            logger.info(f"📊 S3 SCAN: Starting bucket scan for organization '{organization_id}' bucket '{bucket_name}'")
+            logger.info(f"📊 DB EXPORT: Starting export for organization '{organization_id}' using S3FileObject records")
 
             output = io.StringIO()
             writer = csv.writer(output)
             writer.writerow([
                 "file_name",
-                "folder_name",
+                "folder_name", 
                 "file_size_bytes",
                 "file_size_human",
                 "s3_key",
                 "checksum_sha256",
+                "upload_session",
+                "created_at",
+                "status"
             ])
 
             count = 0
             total_size = 0
+            verified_count = 0
+            missing_count = 0
             
-            # Use direct boto3 API to get all files recursively (more reliable)
-            logger.info(f"📋 LISTING: Getting all files from bucket using direct boto3...")
-            try:
-                # Use boto3 paginator to get ALL objects recursively
-                paginator = self.base_s3_service.s3_client.get_paginator('list_objects_v2')
-                
-                all_files = []
-                for page in paginator.paginate(Bucket=bucket_name):
-                    if 'Contents' in page:
-                        for obj in page['Contents']:
-                            # Skip folder markers (keys ending with /)
-                            if not obj['Key'].endswith('/'):
-                                all_files.append({
-                                    'key': obj['Key'],
-                                    'size': obj.get('Size', 0),
-                                    'modified': obj.get('LastModified')
-                                })
-                
-                logger.info(f"📋 FOUND: {len(all_files)} files in bucket {bucket_name}")
-                
-                for file_info in all_files:
-                    s3_key = file_info['key']
-                    file_size = file_info['size']
+            # Query S3FileObject records for this organization
+            # We need to find files that match the organization bucket
+            logger.info(f"📋 DB QUERY: Getting S3FileObject records for organization '{organization_id}'")
+            
+            # Query files that are completed and have the organization bucket
+            file_objects = S3FileObject.objects.filter(
+                status__in=['completed', 'verified']
+            ).select_related('session').order_by('created_at')
+            
+            # Filter by organization - we need to match against the session or infer from s3_key
+            org_file_objects = []
+            for file_obj in file_objects:
+                # Check if file belongs to this organization
+                if (hasattr(file_obj.session, 'organization') and 
+                    file_obj.session.organization == organization_id):
+                    org_file_objects.append(file_obj)
+                elif file_obj.s3_key.startswith(f"{organization_id}/") or bucket_name in file_obj.s3_key:
+                    org_file_objects.append(file_obj)
+            
+            logger.info(f"📋 FOUND: {len(org_file_objects)} S3FileObject records for organization '{organization_id}'")
+            
+            for file_obj in org_file_objects:
+                # Verify file exists in S3
+                exists = file_obj.exists_in_s3(self.base_s3_service)
+                if not exists:
+                    missing_count += 1
+                    logger.warning(f"⚠️ File missing from S3: {file_obj.s3_key}")
+                    continue
                     
-                    # Extract file name and folder from S3 key
-                    file_name = os.path.basename(s3_key)
-                    folder_parts = s3_key.split('/')
-                    folder_name = '/'.join(folder_parts[:-1]) if len(folder_parts) > 1 else ""
-                    
-                    # Calculate checksum on-demand using boto3
-                    checksum_sha256 = ""
-                    try:
-                        # First, try to get checksum from S3 metadata (fast)
-                        head = self.base_s3_service.s3_client.head_object(Bucket=bucket_name, Key=s3_key)
-                        checksum_sha256 = head.get("ChecksumSHA256") or ""
-                        if not checksum_sha256:
-                            # Try custom metadata
-                            meta = head.get("Metadata", {}) or {}
-                            checksum_sha256 = meta.get("sha256", "")
-                        
-                        # If no checksum found in metadata, calculate it on-demand
-                        if not checksum_sha256:
-                            logger.info(f"📊 CHECKSUM: Calculating SHA256 for {s3_key} ({self.base_s3_service._format_size(file_size)})...")
-                            checksum_sha256 = self._calculate_file_checksum(bucket_name, s3_key)
-                            if checksum_sha256:
-                                logger.info(f"✅ CHECKSUM: SHA256 for {file_name}: {checksum_sha256[:16]}...")
-                                
-                    except Exception as e:
-                        logger.debug(f"Checksum processing failed for {s3_key}: {e}")
-                        checksum_sha256 = ""
-
+                verified_count += 1
+                
+                # Extract file name and folder from S3 key
+                file_name = file_obj.file_name or os.path.basename(file_obj.s3_key)
+                folder_parts = file_obj.s3_key.split('/')
+                folder_name = '/'.join(folder_parts[:-1]) if len(folder_parts) > 1 else ""
+                
+                # Use stored checksum or calculate on-demand
+                checksum_sha256 = file_obj.sha256_checksum
+                if not checksum_sha256:
+                    logger.info(f"📊 CHECKSUM: Calculating SHA256 for {file_name} ({self.base_s3_service._format_size(file_obj.file_size_bytes)})...")
+                    checksum_sha256 = file_obj.calculate_checksum(self.base_s3_service)
+                    if checksum_sha256:
+                        logger.info(f"✅ CHECKSUM: SHA256 for {file_name}: {checksum_sha256[:16]}...")
+                
+                try:
+                    # Write CSV row with database information
                     writer.writerow([
                         file_name,
                         folder_name,
-                        file_size,
-                        self.base_s3_service._format_size(file_size),
-                        s3_key,
-                        checksum_sha256,
+                        file_obj.file_size_bytes,
+                        self.base_s3_service._format_size(file_obj.file_size_bytes),
+                        file_obj.s3_key,
+                        checksum_sha256 or "",
+                        str(file_obj.session.id) if file_obj.session else "",
+                        file_obj.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        file_obj.status
                     ])
                     count += 1
-                    total_size += file_size
+                    total_size += file_obj.file_size_bytes
                     
                     # Log progress every 10 files for better visibility
                     if count % 10 == 0:
-                        logger.info(f"📊 PROGRESS: Processed {count}/{len(all_files)} files, total size: {self.base_s3_service._format_size(total_size)}")
+                        logger.info(f"📊 PROGRESS: Processed {count}/{len(org_file_objects)} files, total size: {self.base_s3_service._format_size(total_size)}")
 
-            except Exception as scan_error:
-                logger.error(f"❌ S3 SCAN: Error scanning bucket {bucket_name}: {scan_error}")
-                return {"success": False, "error": f"Failed to scan S3 bucket: {str(scan_error)}"}
+                except Exception as e:
+                    logger.error(f"❌ Error processing file {file_obj.s3_key}: {e}")
+                    continue
 
             csv_bytes = output.getvalue().encode("utf-8")
             output.close()
@@ -651,7 +659,9 @@ class BucketService:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"s3_export_{organization_id}_{timestamp}.csv"
 
-            logger.info(f"✅ S3 SCAN: Export completed - {count} files, total size: {self.base_s3_service._format_size(total_size)}")
+            logger.info(f"✅ DB EXPORT: Export completed - {count} verified files out of {len(org_file_objects)} DB records")
+            if missing_count > 0:
+                logger.warning(f"⚠️ {missing_count} files found in DB but missing from S3")
 
             return {
                 "success": True,

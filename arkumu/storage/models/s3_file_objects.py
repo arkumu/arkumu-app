@@ -1,8 +1,11 @@
 from django.db import models
 import uuid
+import logging
 from django.utils import timezone
 from .upload_sessions import UploadSession
 from arkumu.metadata.models.resource import Resource
+
+logger = logging.getLogger(__name__)
 
 class S3FileObject(models.Model):
     """Represents a file in S3"""
@@ -28,6 +31,8 @@ class S3FileObject(models.Model):
         default='pending'
     )
     etag = models.CharField(max_length=255, blank=True)  # S3 ETag for verification
+    sha256_checksum = models.CharField(max_length=64, blank=True, help_text="SHA256 checksum of the file content")
+    checksum_calculated_at = models.DateTimeField(null=True, blank=True, help_text="When the checksum was calculated")
     error_message = models.TextField(blank=True)
     
     # New fields for tracking import context
@@ -77,6 +82,55 @@ class S3FileObject(models.Model):
         """Mark the file as verified in S3"""
         self.status = 'verified'
         self.save()
+    
+    def calculate_checksum(self, storage_service=None):
+        """Calculate SHA256 checksum for this file in S3"""
+        if not storage_service:
+            from arkumu.storage.services.base_storage_service import BaseStorageService
+            storage_service = BaseStorageService()
+        
+        try:
+            # Extract bucket and key from s3_key
+            if self.s3_key.startswith('s3://'):
+                # Handle full S3 URL
+                parts = self.s3_key[5:].split('/', 1)
+                bucket = parts[0]
+                key = parts[1] if len(parts) > 1 else ''
+            else:
+                # Assume it's just the key and use default bucket logic
+                bucket = self.session.organization if hasattr(self.session, 'organization') else 'fuk'  # fallback
+                key = self.s3_key
+            
+            checksum = storage_service._calculate_file_checksum(bucket, key)
+            if checksum:
+                self.sha256_checksum = checksum
+                self.checksum_calculated_at = timezone.now()
+                self.save()
+                return checksum
+        except Exception as e:
+            logger.error(f"Failed to calculate checksum for {self.s3_key}: {e}")
+        
+        return None
+    
+    def exists_in_s3(self, storage_service=None):
+        """Check if this file actually exists in S3"""
+        if not storage_service:
+            from arkumu.storage.services.base_storage_service import BaseStorageService
+            storage_service = BaseStorageService()
+        
+        try:
+            # Extract bucket and key from s3_key
+            if self.s3_key.startswith('s3://'):
+                parts = self.s3_key[5:].split('/', 1)
+                bucket = parts[0]
+                key = parts[1] if len(parts) > 1 else ''
+            else:
+                bucket = self.session.organization if hasattr(self.session, 'organization') else 'fuk'
+                key = self.s3_key
+            
+            return storage_service.s3_client.head_object(Bucket=bucket, Key=key)
+        except Exception:
+            return False
     
     @classmethod
     def create_from_upload(cls, session, file_name, original_path, s3_key, 
