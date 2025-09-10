@@ -26,7 +26,7 @@
                 border-arkumu-dark text-arkumu-dark
                 theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                 theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
-      {{ year|default:"2024" }}
+      {{ year|default:"" }}
     </div>
     
     <!-- Horizontal line -->
@@ -40,7 +40,7 @@
                 bg-arkumu-dark text-arkumu-light
                 theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
                 theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
-      {{ institution|default:"Folkwang Universität der Kunst" }}
+      {{ institution|default:"" }}
     </div>
   </div>
   
@@ -57,13 +57,13 @@
                    text-arkumu-dark
                    theme-dark:text-arkumu-light
                    theme-blue:text-arkumu-blue">
-          {{ title|default:"Handmade in Ethiopia" }}
+          {{ title}}
         </h3>
         <p class="text-sm mb-3 underline transition-colors
                   text-arkumu-dark
                   theme-dark:text-arkumu-light
                   theme-blue:text-arkumu-blue">
-          {{ subtitle|default:"Projekt" }}
+          {{ subtitle }}
         </p>
       </div>
       
@@ -77,12 +77,6 @@
         {% if contributor3_name %}<div class="mb-1 underline">{{ contributor3_name }} {% if contributor3_role %}[{{ contributor3_role }}]{% endif %}</div>{% endif %}
         {% if contributor4_name %}<div class="mb-1 underline">{{ contributor4_name }} {% if contributor4_role %}[{{ contributor4_role }}]{% endif %}</div>{% endif %}
         {% if additional_contributors %}<div class="mb-1 underline">{{ additional_contributors }}</div>{% endif %}
-        
-        {% if not contributor1_name and not contributor2_name and not contributor3_name and not contributor4_name and not additional_contributors %}
-          <div class="mb-1 underline">Johanna Schwer [Betreuerin]</div>
-          <div class="mb-1 underline">Judith Schanz [Betreuerin]</div>
-          <div class="mb-1 underline">Martina Allerbech [Designerin, Beraterin]</div>
-        {% endif %}
       </div>
       
       <!-- Categories / Tags -->
@@ -103,17 +97,7 @@
                                       border border-arkumu-dark text-arkumu-dark
                                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">{{ category4 }}</span>{% endif %}
-        
-        {% if not category1 and not category2 and not category3 and not category4 %}
-          <span class="inline-block px-2 py-1 mr-1 mb-2 transition-colors
-                       border border-arkumu-dark text-arkumu-dark
-                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
-                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">Industrial Design</span>
-          <span class="inline-block px-2 py-1 mr-1 mb-2 transition-colors
-                       border border-arkumu-dark text-arkumu-dark
-                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
-                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">Transformation Design</span>
-        {% endif %}
+        {% if additional_categories %}<span class="mb-1 underline">{{ additional_categories }}</span>{% endif %}
       </div>
       
       <!-- View Project Button -->

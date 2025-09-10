@@ -4,22 +4,25 @@ Catalog views using harmonization rules for unified resource browsing.
 
 from django.views.generic import ListView, DetailView, TemplateView, View
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Q, F
 from django.core.cache import cache
 from django.http import Http404, HttpResponse
 from django.template.loader import render_to_string
 from django.middleware.csrf import get_token
 from django.shortcuts import render
 from django.db.models import Prefetch
-
+from django.contrib.postgres.search import TrigramSimilarity
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
 from arkumu.catalog.services.faceted_search_service import FacetedSearchService
+from arkumu.metadata.models.resource import ResourceType
 from arkumu.metadata.models import Resource
 from arkumu.metadata.models import Triple
 
 from functools import singledispatchmethod
+
+#from rapidfuzz import process
 
 
 class CatalogSearchMixin:
@@ -434,33 +437,74 @@ class Entity:
 
     @__init__.register
     def _(self, arg: Resource):
-        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=arg.id)}
-        self.id = arg.id
+        self.init_helper(arg.id)
 
     @__init__.register
     def _(self, arg: Triple):
-        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=arg.subject_id)}
-        self.id = arg.subject_id
+        self.init_helper(arg.subject_id)
 
     @__init__.register
     def _(self, arg: str):
         subject = Resource.objects.get(uri=arg)
-        self.__dict__ = {Resource.objects.get(id=entity_field_triple.predicate_id).name: Resource.objects.get(id=entity_field_triple.object_id).value for entity_field_triple in Triple.objects.filter(subject_id=subject.id)}
-        self.id = subject.id
+        self.init_helper(subject.id)
+
+    def init_helper(self, subject_id):
+        self.id = subject_id
+        self.resources = {}
+        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.resources:
+                self.resources[Resource.objects.get(id=entity_field_triple.predicate_id).name] = [Resource.objects.get(id=entity_field_triple.object_id)]
+            else:
+                self.resources[Resource.objects.get(id=entity_field_triple.predicate_id).name].append(Resource.objects.get(id=entity_field_triple.object_id))
+        self.properties = {}
+        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.properties:
+                self.properties[Resource.objects.get(id=entity_field_triple.predicate_id).name] = [Resource.objects.get(id=entity_field_triple.predicate_id)]
+            else:
+                self.properties[Resource.objects.get(id=entity_field_triple.predicate_id).name].append(Resource.objects.get(id=entity_field_triple.predicate_id))
+        self.field_names = []
+        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.field_names:
+                self.field_names.append(Resource.objects.get(id=entity_field_triple.predicate_id).name)
+
+    def __repr__(self):
+        ret = {field_name : [resource.value for resource in self.resources[field_name]] if self.resources[field_name][0].resource_type == ResourceType.LITERAL else [resource.uri for resource in self.resources[field_name]] for field_name in self.field_names}
+        return f"Entity with id: {self.id} \nvalues: {ret}"
+
+    def __str__(self):
+        return self.__repr__()
+
+def split_breadcrumb(breadcrumb: str):
+    return breadcrumb.split(">")[-1].strip()
+
+def search_algo(search_string):
+    title_predicate = Resource.objects.filter(name="Bevorzugter Titel").last()
+    if not title_predicate:
+        return []
+    if search_string == "":
+        return  [Entity(triple) for triple in Triple.objects.filter(predicate=title_predicate).all()[:5]]
+
+    results = Triple.objects.filter(predicate=title_predicate).annotate(
+        text_value=F('object__value')  # Get the actual text value
+    ).annotate(
+        similarity=TrigramSimilarity('text_value', search_string)
+    ).filter(
+        similarity__gt=0.3
+    ).order_by('-similarity')[:10]
     
-    def get_predicate(self, str):
-        for entity_field_triple in Triple.objects.filter(subject_id=self.id):
-            if Resource.objects.get(id=entity_field_triple.predicate_id).name == str:
-                return Resource.objects.get(id=entity_field_triple.predicate_id)
-            
-    def get_object(self, str):
-        for entity_field_triple in Triple.objects.filter(subject_id=self.id):
-            if Resource.objects.get(id=entity_field_triple.predicate_id).name == str:
-                return Resource.objects.get(id=entity_field_triple.object_id)
-
+    return [Entity(triple) for triple in results]
+    
+        
 class DesignSearch:
-    def design_search_results(request):
 
+
+
+
+    def design_search_results(request):
+        prt = "<Nothing to Print>"
+        prt = {}
+        prt2 = "<Nothing to Print>"
+        prt3 = "<Nothing to Print>"
         query = request.GET.get('query', None)
 
        # triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
@@ -471,72 +515,77 @@ class DesignSearch:
 
         resource = Resource.objects.filter(name="Bevorzugter Titel").last()
         triples = Triple.objects.filter(predicate__id=resource.id)[:5]
-        projects = [Entity(triple) for triple in triples]
+       # projects = [Entity(triple) for triple in triples]
+        prt2 = f"{search_algo(query)}"
+        projects = search_algo(query)
+        temp = resource
         results_ret = []
 
         for project in projects:
-            # triple = f"{project.__dict__}"
             resource = Resource.objects.get(id=project.id)
-            source = resource.uri.split("/")[4]
-            resource = project.__dict__
+            source = Entity(project.resources["Einliefernde Hochschule"][0])
 
-            title = project.__dict__["Bevorzugter Titel"]
+            source_name = source.resources["Deutscher Name der Einliefernden Hochschule"][0].value
+
+            title = project.resources["Bevorzugter Titel"][0].value
             subtitle = ""
             try:
-                subtitle = project.__dict__["Bevorzugter Untertitel"]
+                subtitle = project.resources["Bevorzugter Untertitel"][0].value
             except: 
                 pass
             results_temp_1 = {
                     "year":"2024",
                     "image":"images/main/card_1.png",
-                    "institution":source,
+                    "institution":source_name,
                     "title":title,
                     "subtitle":subtitle
                     }
             results_temp_2 = {}
 
-
             try:
-                ereignis = project.__dict__["Ereignis"]
+                ereignis = Entity(project.resources["Ereignis"][0])
 
-                #these are needed as a work-around until foreign keys are fixed
-                pred_akteurin_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{source}/properties/akteurin-ereignis-id")
-                pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{source}/properties/im-ereignis")
-                pred_akteurin_id = Resource.objects.get(uri=f"http://arkumu.org/data/{source}/properties/akteurin-id")
-
-
-
-                obj = project.get_object("Ereignis")
+                #these are needed as a work-around until cross table traversal is fixed
+                pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
                 
-                triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=obj.id)
+                triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
 
-                entities_cross_table = [Entity(triple) for triple in triples_cross_table]
-                triples_akteure = [Triple.objects.get(predicate_id=pred_akteurin_id, object_id=entity.get_object("AkteurIn im Ereignis").id) for entity in entities_cross_table]
-                entities_akteure = [Entity(triple) for triple in triples_akteure]
-                rolls_strings = [entity.__dict__["Beruf und Tätigkeit"].split(",") for entity in entities_akteure]
-                rolls_uris = [[f"http://arkumu.org/data/{source}/entities/rolle/{roll}" for roll in akteur_rolls] for akteur_rolls in rolls_strings]
-                entities_rolls = [[Entity(roll) for roll in akteur_rolls] for akteur_rolls in rolls_uris]
-                rolls_name = [[roll.__dict__["Deutscher Name der Rolle (Breadcrumb)"].split(">")[-1].strip() for roll in akteur_rolls] for akteur_rolls in entities_rolls]
-                akteur_rolls_string = [", ".join(rolls) for rolls in rolls_name]
-                informationstreager = []
-                triple = f"{[entity_akteur.__dict__ for entity_akteur in entities_akteure]}"
-                for i, akteur in enumerate(entities_akteure):
-                    results_temp_2.update({f"contributor{i}_name" : akteur.__dict__["Deutscher Name"],
-                                            f"contributor{i}_role" : akteur_rolls_string[i]})
+                akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
+                akteure = [Entity(akteur_ereignis_cross_entry.resources["AkteurIn im Ereignis"][0]) for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
+                akteure_rollen = [[Entity(rolle) for rolle in akteur_ereignis_cross_entry.resources["Rollen der AkteurIn im Ereignis"]] for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
+                akteure_rollen_name = [[split_breadcrumb(akteur_rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value) if "Deutscher Name der Rolle (Breadcrumb)" in akteur_rolle.resources else "" for akteur_rolle in akteur_rollen] for akteur_rollen in akteure_rollen]
+                akteur_rollen_string = [", ".join(akteur_rollen_name) for akteur_rollen_name in akteure_rollen_name]
                 
-                # triple = f"{[roll.__dict__ for akteur_rolls in entities_rolls for roll in akteur_rolls]}"
-                # triple = f"{[akteur.__dict__ for akteur in entities_akteure]}"
+                for i, akteur in enumerate(akteure):
+                    results_temp_2.update({f"contributor{i + 1}_name" : akteur.resources["Deutscher Name"][0].value,
+                                            f"contributor{i + 1}_role" : akteur_rollen_string[i]})
             except:
                 pass
+            
+            
+            category_tags = []
+            results_temp_3 = {}
+            try:
+                project_categories = [Entity(proj_cat) for proj_cat in project.resources["Projektkategorie"]]
+                category_tags = [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
+                
+                if (len(category_tags) > 4):
+                    results_temp_3.update({
+                        'additional_categories': f"{len(category_tags)-4} weitere{'s' if len(category_tags)-4 == 1 else ''}"
+                    })
 
-            results_temp_3 =     {"category1":"Industrial Design",
-             "category2":"Transformation Design",
-             "button_text":"Projekt ansehen"
-            }
+                for i, category in enumerate(category_tags):
+                    results_temp_3.update({
+                        f"category{i+1}": category
+                    })
+            except:
+                pass
+            
         
             results_temp_1.update(results_temp_2)
             results_temp_1.update(results_temp_3)
             results_ret.append(results_temp_1)
+            prt.update({'res': results_ret})
         #     triple = f"{project.__dict__}"
         
 
@@ -587,7 +636,9 @@ class DesignSearch:
         #      "category2":"Transformation Design",
         #      "button_text":"Projekt ansehen"
         #     },]
-        context = {"triple": triple, 'resource': resource, 'query': query,
-            'results': results_ret}
-
+        context = {'query': query,
+            'results': results_ret, "print": prt, "print2": prt2, "print3": prt3}
+        
+        resource = temp
+        
         return render(request, 'catalog/design_search_results.html', context)
