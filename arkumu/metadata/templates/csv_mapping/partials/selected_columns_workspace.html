@@ -60,7 +60,7 @@
             {% for dataset_group in datasets_with_columns %}
                 <!-- Dataset Workspace Section -->
                 <div class="w-full">
-                    {% include 'csv_mapping/partials/dataset_workspace_section.html' with dataset_group=dataset_group organization_id=organization_id csrf_token=csrf_token %}
+                    {% include 'csv_mapping/partials/dataset_workspace_section.html' with dataset_group=dataset_group organization_id=organization_id csrf_token=csrf_token is_first=forloop.first %}
                 </div>
             {% endfor %}
         {% else %}

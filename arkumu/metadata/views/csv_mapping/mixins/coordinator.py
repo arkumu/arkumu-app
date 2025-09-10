@@ -83,11 +83,12 @@ class CSVMappingCoordinatorMixin(BaseCoordinatorMixin, CSVDataMixin, MappingWork
             }
         
         parts = column_id.split("::")
-        if len(parts) == 3:
+        if len(parts) >= 3:
+            # Handle column names that contain "::" by joining everything after the second "::"
             return {
                 'source': parts[0],
                 'dataset': parts[1], 
-                'column': parts[2]
+                'column': "::".join(parts[2:])  # Join remaining parts back together
             }
         elif len(parts) == 2:
             return {

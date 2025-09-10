@@ -258,54 +258,95 @@ class DeselectAllDatasetColumnsView(GeneralLoginRequiredMixin,
     def post(self, request):
         """Handle POST requests for deselecting all columns from a dataset."""
         try:
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Starting deselect request")
+            
             # Get current organization using BaseCoordinatorMixin
             current_org = self.get_current_organization(request)
             if not current_org:
+                logger.error(f"🗑️ DESELECT_ALL_DATASET: No organization selected")
                 return HttpResponse("No organization selected", status=400)
             organization_id = current_org['code']
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Organization ID: '{organization_id}'")
+            
             dataset_name = request.POST.get('dataset')
             source_name = request.POST.get('source')
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: POST params - dataset='{dataset_name}', source='{source_name}'")
             
             if not dataset_name or not source_name:
+                logger.error(f"🗑️ DESELECT_ALL_DATASET: Missing required parameters")
                 return HttpResponse(f'<div class="alert alert-error">Dataset and source parameters required</div>')
             
             # Get current workspace columns using coordinator
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Getting workspace columns...")
             workspace_columns = self.get_workspace_columns(request, organization_id)
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Found {len(workspace_columns)} total workspace columns")
             
             # Remove all columns belonging to this dataset using coordinator parsing
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Processing columns to remove...")
             columns_removed = 0
             updated_columns = []
-            for col_dict in workspace_columns:
+            
+            for i, col_dict in enumerate(workspace_columns):
                 # Extract the column ID string from the dictionary
                 col_id = col_dict.get('id') if isinstance(col_dict, dict) else col_dict
+                logger.info(f"🗑️ DESELECT_ALL_DATASET: Processing column {i+1}/{len(workspace_columns)}: '{col_id}'")
+                
                 if col_id:
                     parsed = self.parse_column_id(col_id)
-                    if parsed['dataset'] == dataset_name and parsed['source'] == source_name:
+                    logger.info(f"🗑️ DESELECT_ALL_DATASET: Parsed column '{col_id}' -> source='{parsed['source']}', dataset='{parsed['dataset']}', column='{parsed['column']}'")
+                    
+                    # Match dataset and source (source could be source_name OR organization_id)
+                    dataset_matches = parsed['dataset'] == dataset_name
+                    source_matches = (parsed['source'] == source_name or 
+                                    parsed['source'] == organization_id)
+                    
+                    logger.info(f"🗑️ DESELECT_ALL_DATASET: Column '{col_id}' matches - dataset: {dataset_matches} ('{parsed['dataset']}' == '{dataset_name}'), source: {source_matches} ('{parsed['source']}' in ['{source_name}', '{organization_id}'])")
+                    
+                    if dataset_matches and source_matches:
                         columns_removed += 1
+                        logger.info(f"✅🗑️ DESELECT_ALL_DATASET: REMOVING column '{col_id}' - matched target dataset and source")
                     else:
                         updated_columns.append(col_dict)
+                        logger.info(f"➡️🗑️ DESELECT_ALL_DATASET: KEEPING column '{col_id}' - no match")
                 else:
                     updated_columns.append(col_dict)
+                    logger.warning(f"⚠️🗑️ DESELECT_ALL_DATASET: Column has no ID, keeping it: {col_dict}")
+            
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Column processing complete - {columns_removed} columns to remove, {len(updated_columns)} columns to keep")
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Final result - {columns_removed} columns removed from dataset '{dataset_name}', {len(updated_columns)} remaining")
+            
+            # If no columns were removed, return a simple success message without full UI update
+            if columns_removed == 0:
+                logger.info(f"🗑️ DESELECT_ALL_DATASET: No columns to remove - returning simple success message")
+                return HttpResponse(f'<div class="alert alert-success">Dataset "{dataset_name}" has no columns to remove</div>')
             
             # Update workspace using coordinator
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Updating workspace with {len(updated_columns)} columns...")
             self.update_workspace_columns(request, organization_id, updated_columns)
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Workspace update completed")
             
-            # Get dataset preview to rebuild column badges using template helper
-            column_badges_html = self.render_column_badges_template(
-                request, organization_id, dataset_name, source_name
-            )
+            # Also remove the dataset from selected datasets list
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Removing dataset '{dataset_name}' from selected datasets list...")
+            success, final_list, was_present, error = self.remove_selected_dataset(request, organization_id, dataset_name)
+            if success and was_present:
+                logger.info(f"🗑️ DESELECT_ALL_DATASET: Successfully removed '{dataset_name}' from selected datasets")
+            elif success and not was_present:
+                logger.info(f"🗑️ DESELECT_ALL_DATASET: Dataset '{dataset_name}' was not in selected datasets list")
+            else:
+                logger.warning(f"🗑️ DESELECT_ALL_DATASET: Failed to remove dataset from selected list: {error}")
             
-            # WORKSPACE OPERATION: Update both column badges AND workspace
-            workspace_html = self.render_workspace_template(request, organization_id)
-            
-            # Build OOB response - this is a workspace operation so it should update workspace
-            oob_updates = {
-                'workspace-content': workspace_html
-            }
-            response_html = self.build_oob_response(column_badges_html, oob_updates)
+            # Use standard UI refresh to update all components (workspace, badges, counters)
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Building UI refresh response...")
+            response_html = self.build_standard_ui_refresh_response(request, organization_id)
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: UI refresh response built successfully")
             
             # Add trigger for JSON tab refresh
-            return self.add_workspace_update_trigger(response_html)
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Adding workspace update trigger...")
+            final_response = self.add_workspace_update_trigger(response_html)
+            logger.info(f"🗑️ DESELECT_ALL_DATASET: Final response prepared successfully")
+            
+            logger.info(f"✅🗑️ DESELECT_ALL_DATASET: Successfully completed deselect request")
+            return final_response
             
         except Exception as e:
             logger.error(f"DESELECT_ALL_DATASET_COLUMNS: Error deselecting all columns: {e}", exc_info=True)
