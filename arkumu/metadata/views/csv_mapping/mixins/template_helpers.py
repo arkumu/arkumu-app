@@ -57,6 +57,29 @@ class CSVMappingTemplateHelperMixin:
             request=request
         )
     
+    def render_dataset_counter_template(self, request, organization_id, dataset_name):
+        """
+        Render just the counter badge for a specific dataset.
+        
+        Used for targeted OOB updates when columns are added/removed.
+        """
+        workspace_columns = self.get_workspace_columns(request, organization_id)
+        
+        # Count columns for this specific dataset
+        dataset_column_count = 0
+        for col in workspace_columns:
+            if isinstance(col, dict):
+                col_dataset = col.get('dataset')
+                if col_dataset == dataset_name:
+                    dataset_column_count += 1
+            else:
+                # Handle string format: "dataset_source_column"
+                if col.startswith(f"{dataset_name}_"):
+                    dataset_column_count += 1
+        
+        # Return just the counter content (without the ID, since OOB will target by ID)
+        return f'{dataset_column_count} selected'
+    
     def render_dataset_badges_template(self, request, organization_id, csv_datasets=None, selected_datasets=None):
         """
         Render dataset badges template with standard context.

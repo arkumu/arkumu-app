@@ -145,19 +145,18 @@ class RemoveColumnFromWorkspaceView(GeneralLoginRequiredMixin,
                 request, organization_id, dataset_name, source_name
             )
             
-            # WORKSPACE OPERATION: Update both column badges AND workspace
-            workspace_html = self.render_workspace_template(request, organization_id)
+            # Use targeted OOB update - only update the counter, not entire workspace
+            counter_html = self.render_dataset_counter_template(request, organization_id, dataset_name)
             
-            # Build OOB response - this is a workspace operation so it should update workspace
+            # Build targeted OOB response - update counter only
             oob_updates = {
-                'workspace-content': workspace_html
+                f'counter-{dataset_name.lower().replace(" ", "-")}': counter_html
             }
+            response_html = self.build_oob_response(column_badges_html, oob_updates)
             
             # If we cleared a loaded mapping, silently continue
             if cleared_mapping:
                 logger.info(f"REMOVE_COLUMN: Cleared loaded mapping '{cleared_mapping.get('mapping_name')}' due to workspace modification")
-            
-            response_html = self.build_oob_response(column_badges_html, oob_updates)
             
             # Add trigger for JSON tab refresh
             return self.add_workspace_update_trigger(response_html)

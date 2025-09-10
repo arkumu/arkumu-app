@@ -65,7 +65,7 @@
             <button class="btn btn-xs btn-outline btn-error"
                     hx-post="{% url 'metadata:csv_remove_column_from_workspace' %}"
                     hx-include="#remove-data-form-{{ column.id|slugify }}"
-                    hx-target="#column-{{ column.id|slugify }}"
+                    hx-target="closest li"
                     hx-swap="delete"
                     title="Remove from Workspace">
                 ✕ Remove
