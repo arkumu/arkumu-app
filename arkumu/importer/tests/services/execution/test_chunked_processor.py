@@ -369,7 +369,7 @@ class TestChunkedProcessor:
         metrics = chunked_processor.process_large_csv_sources(
             execution_config=execution_config_simple,
             csv_sources=csv_sources,
-            strategy=ProcessingStrategy.ENTITY_CENTRIC  # Non-streaming strategy
+            strategy=ProcessingStrategy.MULTI_PHASE  # Non-streaming strategy
         )
         
         # Should fall back to streaming strategy
@@ -658,7 +658,7 @@ class TestChunkedProcessorEdgeCases:
         """Test chunk processing when errors occur"""
         csv_sources = {"test_dataset": [{"name": "Test"}]}
         
-        with patch.object(chunked_processor, '_process_chunk_with_entity_centric') as mock_process:
+        with patch.object(chunked_processor, '_process_chunk_with_streaming_entity_centric') as mock_process:
             mock_process.side_effect = Exception("Processing error")
             
             metrics = chunked_processor.process_large_csv_sources(

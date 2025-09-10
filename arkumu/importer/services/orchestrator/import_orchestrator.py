@@ -236,9 +236,9 @@ class ImportOrchestrator:
             
         except Exception as e:
             logger.error(f"Failed to choose processing strategy: {e}")
-            result.add_warning(f"Strategy selection failed, using entity_centric: {str(e)}")
-            result.strategy_used = "entity_centric"
-            return ProcessingStrategy.ENTITY_CENTRIC
+            result.add_warning(f"Strategy selection failed, using streaming_entity_centric: {str(e)}")
+            result.strategy_used = "streaming_entity_centric"
+            return ProcessingStrategy.STREAMING_ENTITY_CENTRIC
     
     def _execute_import_with_strategy(self,
                                     execution_config: ExecutionConfig,
@@ -258,9 +258,7 @@ class ImportOrchestrator:
                 )
             
             # Execute based on strategy
-            if strategy == ProcessingStrategy.ENTITY_CENTRIC:
-                self._execute_entity_centric(execution_config, csv_sources, result, **kwargs)
-            elif strategy == ProcessingStrategy.STREAMING_ENTITY_CENTRIC:
+            if strategy == ProcessingStrategy.STREAMING_ENTITY_CENTRIC:
                 self._execute_streaming_entity_centric(execution_config, csv_sources, result, **kwargs)
             elif strategy == ProcessingStrategy.MULTI_PHASE:
                 self._execute_multi_phase(execution_config, csv_sources, result, **kwargs)
@@ -277,73 +275,6 @@ class ImportOrchestrator:
             
             if self.progress_tracker:
                 self.progress_tracker.complete_import(success=False, error=str(e))
-    
-    def _execute_entity_centric(self,
-                              execution_config: ExecutionConfig,
-                              csv_sources: Dict[str, Any],
-                              result: ImportResult,
-                              **kwargs):
-        """Execute using entity-centric processing"""
-        
-        logger.info("Executing entity-centric processing")
-        
-        # Initialize execution engine
-        engine = MappingExecutionEngine(
-            institution=self.institution,
-            base_uri=self.base_uri
-        )
-        
-        # Process each dataset
-        for dataset_config in execution_config.datasets:
-            dataset_name = dataset_config.dataset_name
-            
-            if dataset_name not in csv_sources:
-                result.add_warning(f"No CSV data provided for dataset: {dataset_name}")
-                continue
-            
-            try:
-                logger.info(f"Processing dataset: {dataset_name}")
-                
-                # Update progress
-                if self.progress_tracker:
-                    self.progress_tracker.start_dataset(dataset_name)
-                
-                # Execute simple import for now (will be enhanced with mapping config)
-                stats = engine.execute_simple_import(
-                    csv_data=csv_sources[dataset_name],
-                    dataset_name=dataset_name,
-                    **kwargs
-                )
-                
-                # Aggregate results
-                result.total_resources_created += stats.resources_created
-                result.total_triples_created += stats.triples_created
-                result.total_rows_processed += stats.rows_processed
-                result.total_cells_processed += stats.cells_processed
-                result.datasets_processed += 1
-                
-                # Store dataset result
-                result.dataset_results[dataset_name] = {
-                    'resources_created': stats.resources_created,
-                    'triples_created': stats.triples_created,
-                    'rows_processed': stats.rows_processed,
-                    'cells_processed': stats.cells_processed,
-                    'execution_time': getattr(stats, 'execution_time', 0),
-                    'errors': getattr(stats, 'errors', 0)
-                }
-                
-                # Update progress
-                if self.progress_tracker:
-                    self.progress_tracker.complete_dataset(dataset_name, success=True)
-                
-                logger.info(f"Dataset {dataset_name} completed: {stats}")
-                
-            except Exception as e:
-                logger.error(f"Failed to process dataset {dataset_name}: {e}")
-                result.add_error(f"Dataset {dataset_name}: {str(e)}")
-                
-                if self.progress_tracker:
-                    self.progress_tracker.complete_dataset(dataset_name, success=False, error=str(e))
     
     def _execute_streaming_entity_centric(self,
                                         execution_config: ExecutionConfig,
@@ -424,23 +355,21 @@ class ImportOrchestrator:
                           f"{summary['average_memory_usage_mb']:.1f}MB avg memory")
                 
             else:
-                # Fall back to regular entity-centric for smaller datasets
-                logger.info("Datasets are small enough for in-memory processing, using standard entity-centric")
-                result.add_warning("Datasets small enough for in-memory processing, using standard entity-centric")
-                self._execute_entity_centric(execution_config, csv_sources, result, **kwargs)
+                # For smaller datasets, still use chunked processing but with smaller chunks
+                logger.info("Datasets are small enough for in-memory processing, using smaller chunks")
+                result.add_warning("Datasets small enough for in-memory processing, using smaller chunks")
+                # Continue with chunked processing using smaller chunk sizes
+                chunk_size = 1000
                 
         except ImportError as e:
             logger.error(f"Chunked processor not available: {e}")
             result.add_error(f"Streaming processing failed: chunked processor not available")
-            # Fall back to standard entity-centric
-            self._execute_entity_centric(execution_config, csv_sources, result, **kwargs)
+            raise ImportError("STREAMING_ENTITY_CENTRIC is the only supported strategy. Chunked processor is required.")
             
         except Exception as e:
             logger.error(f"Streaming entity-centric processing failed: {e}", exc_info=True)
             result.add_error(f"Streaming processing failed: {str(e)}")
-            # Fall back to standard entity-centric
-            logger.info("Falling back to standard entity-centric processing")
-            self._execute_entity_centric(execution_config, csv_sources, result, **kwargs)
+            raise Exception(f"STREAMING_ENTITY_CENTRIC processing failed: {str(e)}")
     
     def _execute_multi_phase(self,
                            execution_config: ExecutionConfig,

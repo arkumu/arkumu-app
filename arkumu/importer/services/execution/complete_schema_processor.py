@@ -34,6 +34,9 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
     
     def _create_complete_schema_blueprints(self, execution_config: ExecutionConfig):
         """Create TRULY complete schema blueprints including all relationship types."""
+        # Store execution config for access by helper methods
+        self._current_execution_config = execution_config
+        
         # Generate cache key based on mapping_id
         mapping_id = execution_config.mapping_id
         blueprint_cache_key = f"complete_schema_blueprints_mapping_{mapping_id}"
@@ -86,8 +89,7 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
         # Phase 5: Add anchor column information
         self._add_anchor_column_schemas(execution_config.datasets)
         
-        # Phase 6: Create additional schema metadata triples
-        self._create_extended_schema_metadata_triples()
+        # Phase 6: Schema metadata triples removed - mapping already contains this info
     
     def _add_column_metadata_to_blueprints(self, datasets: List[DatasetConfig]):
         """Add detailed column metadata to blueprints."""
@@ -137,49 +139,72 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
                     blueprint = self.dataset_blueprints[dataset_name]
                     
                     # Create junction schema
+                    # Get primary and secondary datasets dynamically for backwards compatibility
+                    primary_dataset = getattr(rel_context, 'primary_dataset', '') or self._get_target_dataset_from_fk(rel_context.primary_fk)
+                    secondary_dataset = getattr(rel_context, 'secondary_dataset', '') or self._get_target_dataset_from_fk(rel_context.secondary_fk)
+                    
                     junction_schema = {
                         'context_type': rel_context.context_type,
                         'primary_fk': rel_context.primary_fk,
                         'secondary_fk': rel_context.secondary_fk,
-                        'primary_dataset': rel_context.primary_dataset,
-                        'secondary_dataset': rel_context.secondary_dataset,
+                        'primary_dataset': primary_dataset,
+                        'secondary_dataset': secondary_dataset,
                         'context_columns': rel_context.context_columns,
                         'entity_type_resource': self._create_junction_entity_type_resource(rel_context),
                         'context_property_resources': {}
                     }
                     
-                    # Create property resources for context columns
-                    for context_col in rel_context.context_columns:
-                        prop_uri = self._generate_property_uri(f"junction_{context_col}")
-                        prop_resource, _ = Resource.objects.get_or_create(
-                            uri=prop_uri,
-                            defaults={
-                                "resource_type": ResourceType.PROPERTY,
-                                "name": f"junction_{context_col}",
-                                "is_placeholder": False,
-                                "organization": self.organization
-                            }
-                        )
-                        junction_schema['context_property_resources'][context_col] = prop_resource
+                    # Create property resources for context columns using bulk method
+                    if rel_context.context_columns:
+                        junction_property_uris = []
+                        for context_col in rel_context.context_columns:
+                            prop_uri = self._generate_property_uri(f"junction_{context_col}")
+                            junction_property_uris.append(prop_uri)
+                        
+                        # Use resource manager's bulk method to avoid duplicates
+                        junction_property_resources = self.resource_manager._create_property_resources_bulk(junction_property_uris)
+                        
+                        # Map back to context columns
+                        for context_col in rel_context.context_columns:
+                            prop_uri = self._generate_property_uri(f"junction_{context_col}")
+                            junction_schema['context_property_resources'][context_col] = junction_property_resources[prop_uri]
                     
                     blueprint['junction_schema'] = junction_schema
                     logger.info(f"     🔗 {dataset_name}: Added junction table schema")
     
     def _create_junction_entity_type_resource(self, rel_context) -> Resource:
         """Create entity type resource for junction table."""
+        # Get primary and secondary datasets dynamically for backwards compatibility
+        primary_dataset = getattr(rel_context, 'primary_dataset', '') or self._get_target_dataset_from_fk(rel_context.primary_fk)
+        secondary_dataset = getattr(rel_context, 'secondary_dataset', '') or self._get_target_dataset_from_fk(rel_context.secondary_fk)
+        
         # Generate entity type for junction
-        entity_type_name = f"{rel_context.primary_dataset}_{rel_context.secondary_dataset}_relationship"
+        entity_type_name = f"{primary_dataset}_{secondary_dataset}_relationship"
         entity_type_uri = self._generate_type_uri(entity_type_name)
         
-        entity_type_resource, _ = Resource.objects.get_or_create(
-            uri=entity_type_uri,
-            defaults={
-                "resource_type": ResourceType.CLASS,
-                "name": entity_type_name,
-                "is_placeholder": False,
-                "organization": self.organization
-            }
-        )
+        # Use bulk method to avoid duplicate key violations
+        existing_resources = self.resource_manager.get_existing_resources_bulk([entity_type_uri])
+        
+        if entity_type_uri in existing_resources:
+            entity_type_resource = existing_resources[entity_type_uri]
+        else:
+            # Create new resource with atomic transaction
+            from django.db import transaction
+            try:
+                with transaction.atomic():
+                    entity_type_resource, _ = Resource.objects.get_or_create(
+                        uri=entity_type_uri,
+                        defaults={
+                            "resource_type": ResourceType.CLASS,
+                            "name": entity_type_name,
+                            "is_placeholder": False,
+                            "organization": self.organization
+                        }
+                    )
+            except Exception as e:
+                # If creation fails due to duplicate, fetch existing
+                logger.debug(f"Junction type resource creation failed, fetching existing: {e}")
+                entity_type_resource = Resource.objects.get(uri=entity_type_uri)
         
         return entity_type_resource
     
@@ -251,43 +276,6 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
             if blueprint['anchor_columns']:
                 logger.info(f"     ⚓ {dataset_config.dataset_name}: {len(blueprint['anchor_columns'])} anchor columns")
     
-    def _create_extended_schema_metadata_triples(self):
-        """Create additional schema metadata triples for complete schema."""
-        logger.info("   📊 Creating extended schema metadata triples...")
-        
-        for blueprint in self.dataset_blueprints.values():
-            dataset_resource = blueprint['dataset_resource']
-            
-            # Create triples for multi-value schemas
-            if 'multi_value_schemas' in blueprint:
-                for mv_schema in blueprint['multi_value_schemas'].values():
-                    prop_uri = self._generate_property_uri("has_multi_value_property")
-                    self.resource_manager.create_relationship_triple(
-                        dataset_resource,
-                        prop_uri,
-                        mv_schema['property_resource']
-                    )
-            
-            # Create triples for external ontology schemas
-            if 'external_ontology_schemas' in blueprint:
-                for ext_schema in blueprint['external_ontology_schemas'].values():
-                    prop_uri = self._generate_property_uri("has_external_ontology_mapping")
-                    self.resource_manager.create_relationship_triple(
-                        dataset_resource,
-                        prop_uri,
-                        ext_schema['property_resource']
-                    )
-            
-            # Create triples for junction schemas
-            if 'junction_schema' in blueprint:
-                junction_schema = blueprint['junction_schema']
-                prop_uri = self._generate_property_uri("is_junction_table")
-                # Create a literal triple indicating this is a junction table
-                self.resource_manager.create_property_triple(
-                    dataset_resource,
-                    prop_uri,
-                    "true"
-                )
     
     def _log_complete_schema_statistics(self):
         """Log comprehensive statistics about the complete schema."""
@@ -388,7 +376,8 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
                         self.resource_manager.create_property_triple(
                             entity_resource,
                             property_resource.uri,
-                            single_value
+                            single_value,
+                            "http://www.w3.org/2001/XMLSchema#string"
                         )
             
             # Handle external ontology columns
@@ -409,7 +398,18 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
                     self.resource_manager.create_property_triple(
                         entity_resource,
                         property_resource.uri,
-                        str(value)
+                        str(value),
+                        "http://www.w3.org/2001/XMLSchema#string"
                     )
         
         return entity_resource
+    
+    def _get_target_dataset_from_fk(self, fk_column: str) -> str:
+        """Get target dataset for FK column from configuration"""
+        # Access the execution config from the current processing context
+        if hasattr(self, '_current_execution_config'):
+            for fk_rel in self._current_execution_config.fk_relationships:
+                if fk_rel.source_column == fk_column:
+                    return fk_rel.target_dataset
+        
+        return f"unknown_target_for_{fk_column}"

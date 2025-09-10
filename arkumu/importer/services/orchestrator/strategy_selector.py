@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessingStrategy(Enum):
-    """Processing strategy - simplified to single approach"""
+    """Processing strategy options for import execution"""
+    AUTO = "auto"
     STREAMING_ENTITY_CENTRIC = "streaming_entity_centric"
+    MULTI_PHASE = "multi_phase"
 
 
 @dataclass
@@ -155,10 +157,7 @@ class StrategySelector:
         has_complex_relationships = any(char.has_fk_relationships for char in characteristics)
         has_dependencies = len(execution_config.fk_relationships) > 0
         
-        if chosen_strategy == ProcessingStrategy.ENTITY_CENTRIC:
-            return (f"Entity-centric chosen for small dataset ({total_size_mb:.1f}MB, {total_rows} rows). "
-                   f"Provides complete entity creation in single pass.")
-        elif chosen_strategy == ProcessingStrategy.STREAMING_ENTITY_CENTRIC:
+        if chosen_strategy == ProcessingStrategy.STREAMING_ENTITY_CENTRIC:
             return (f"Streaming entity-centric chosen for medium dataset ({total_size_mb:.1f}MB). "
                    f"Balances memory efficiency with entity completeness.")
         elif chosen_strategy == ProcessingStrategy.MULTI_PHASE:
@@ -280,11 +279,7 @@ class StrategySelector:
         max_complexity = max((char.complexity_score for char in characteristics), default=0)
         has_dependencies = len(execution_config.fk_relationships) > 0
         
-        # Analyze Entity-Centric
-        entity_centric_analysis = self._analyze_entity_centric(
-            total_size_mb, total_rows, max_complexity, has_dependencies
-        )
-        analyses.append(entity_centric_analysis)
+        # Entity-Centric strategy has been removed (no FK resolution support)
         
         # Analyze Streaming Entity-Centric
         streaming_analysis = self._analyze_streaming_entity_centric(
@@ -300,57 +295,6 @@ class StrategySelector:
         
         return analyses
     
-    def _analyze_entity_centric(self,
-                              total_size_mb: float,
-                              total_rows: int,
-                              max_complexity: float,
-                              has_dependencies: bool) -> StrategyAnalysis:
-        """Analyze entity-centric strategy"""
-        
-        # Memory usage: ~3-4x CSV size
-        estimated_memory_mb = total_size_mb * 3.5
-        
-        # Execution time: fastest for small datasets
-        estimated_time_minutes = (total_rows / 10000) * 1.0  # 10K rows per minute
-        
-        # Feasibility score
-        feasibility = 1.0
-        
-        # Size penalties
-        if total_size_mb > self.medium_dataset_mb:
-            feasibility -= 0.4
-        elif total_size_mb > self.small_dataset_mb:
-            feasibility -= 0.2
-        
-        # Memory penalty
-        if estimated_memory_mb > 200:
-            feasibility -= 0.3
-        
-        # Complexity bonus (handles complex relationships well)
-        if max_complexity > 0.5:
-            feasibility += 0.1
-        
-        pros = [
-            "Complete entities created in single pass",
-            "Best debugging and error handling",
-            "Optimal for complex relationships",
-            "Fastest execution for small datasets"
-        ]
-        
-        cons = []
-        if total_size_mb > self.small_dataset_mb:
-            cons.append("High memory usage for large datasets")
-        if estimated_memory_mb > 200:
-            cons.append("May exceed available memory")
-        
-        return StrategyAnalysis(
-            strategy=ProcessingStrategy.ENTITY_CENTRIC,
-            feasibility_score=max(feasibility, 0.0),
-            estimated_memory_mb=estimated_memory_mb,
-            estimated_execution_time_minutes=estimated_time_minutes,
-            pros=pros,
-            cons=cons
-        )
     
     def _analyze_streaming_entity_centric(self,
                                         total_size_mb: float,

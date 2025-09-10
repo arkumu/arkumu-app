@@ -626,7 +626,7 @@ class TestEnums:
 
     def test_processing_strategy_enum(self):
         """Test ProcessingStrategy enum"""
-        assert ProcessingStrategy.ENTITY_CENTRIC.value == 'entity_centric'
+        # ENTITY_CENTRIC strategy has been removed
         assert ProcessingStrategy.STREAMING_ENTITY_CENTRIC.value == 'streaming_entity_centric'
         assert ProcessingStrategy.MULTI_PHASE.value == 'multi_phase'
         assert ProcessingStrategy.AUTO.value == 'auto'

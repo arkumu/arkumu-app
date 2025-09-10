@@ -154,8 +154,14 @@ class TestFullProductionIntegration:
         assert execution_config is not None, "No execution config loaded"
         
         # Initialize processor with test-specific URI to ensure test isolation
+        from arkumu.users.models import Organization
+        test_org, _ = Organization.objects.get_or_create(
+            code="TEST_FUK",
+            defaults={'name': 'Test FUK Organization'}
+        )
+        
         self.processor = MappingAwareProcessor(
-            institution="TEST_FUK",
+            organization=test_org,
             base_uri="http://test.arkumu.org/data",
             statistics=execution_statistics
         )

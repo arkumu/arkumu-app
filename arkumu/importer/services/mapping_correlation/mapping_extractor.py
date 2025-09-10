@@ -171,14 +171,26 @@ class MappingExtractor:
             if isinstance(fk_relationships, dict):
                 for fk_id, fk_config in fk_relationships.items():
                     if isinstance(fk_config, dict):
+                        # Try to get source info from fk_config first
                         source_dataset = fk_config.get('source_dataset')
                         source_column = fk_config.get('source_column')
+                        
+                        # If missing, parse from fk_id (format: "org::dataset::column" or "dataset::column")
+                        if not source_dataset or not source_column:
+                            fk_parts = fk_id.split('::')
+                            if len(fk_parts) >= 3:  # "org::dataset::column"
+                                source_dataset = fk_parts[1]
+                                source_column = fk_parts[2]
+                            elif len(fk_parts) == 2:  # "dataset::column"
+                                source_dataset = fk_parts[0]
+                                source_column = fk_parts[1]
+                        
                         target_dataset = fk_config.get('target_dataset')
                         target_column = fk_config.get('target_column')
                         
                         # Skip FK relationships with missing required fields
                         if not source_dataset or not source_column or not target_dataset or not target_column:
-                            logger.warning(f"Skipping FK relationship {fk_id}: missing required fields")
+                            logger.warning(f"Skipping FK relationship {fk_id}: missing required fields (source_dataset={source_dataset}, source_column={source_column}, target_dataset={target_dataset}, target_column={target_column})")
                             continue
                             
                         fk_rels.append({
@@ -190,27 +202,23 @@ class MappingExtractor:
                             'relationship_type': fk_config.get('relationship_type', 'references')
                         })
         
-        # Check workspace columns for FK flags
-        workspace_columns = mapping_config.get('workspace_columns', {})
-        for col_id, col_data in MappingValidator.iterate_workspace_columns(workspace_columns):
-            if col_data.get('is_fk'):
-                fk_config = col_data.get('fk_config', {})
-                source_dataset = col_data.get('dataset')
-                source_column = col_data.get('name')
-                
-                # Skip FK relationships with missing source dataset or column
-                if not source_dataset or not source_column:
-                    logger.warning(f"Skipping FK relationship for column {col_id}: missing source dataset or column")
-                    continue
-                    
+        # Use MappingUtils for consistent FK detection
+        from arkumu.importer.utils.mapping_utils import MappingUtils
+        
+        workspace_columns = MappingUtils.get_workspace_columns(mapping_config)
+        for col_name, col_config in workspace_columns.items():
+            # Use MappingUtils to detect FK columns consistently
+            characteristics = MappingUtils.get_column_characteristics(col_config)
+            if characteristics['is_fk']:
+                fk_config = col_config.get('fk_config', {})
                 if fk_config and fk_config.get('target_dataset') and fk_config.get('target_column'):
                     fk_rels.append({
-                        'id': f"workspace_fk_{col_id}",
-                        'source_dataset': source_dataset,
-                        'source_column': source_column,
+                        'id': f"workspace_fk_{col_name}",
+                        'source_dataset': col_config.get('dataset'),
+                        'source_column': col_config.get('name', col_config.get('column_name', col_name)),
                         'target_dataset': fk_config.get('target_dataset'),
                         'target_column': fk_config.get('target_column'),
-                        'relationship_type': 'references'
+                        'relationship_type': fk_config.get('relationship_type', 'references')
                     })
         
         logger.debug(f"Extracted {len(fk_rels)} FK relationships from mapping")

@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Import History - {{ current_org.name|default:"Import Results" }}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-base-200">
+    <!-- Header -->
+    <div class="navbar bg-base-100 border-b border-base-300">
+        <div class="navbar-start">
+            <h1 class="text-xl font-semibold">Import History</h1>
+        </div>
+        <div class="navbar-end">
+            {% if current_org %}
+            <div class="badge badge-primary">{{ current_org.code|upper }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="flex items-center justify-center h-96">
+        <div class="alert alert-error shadow-lg max-w-md">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div>
+                <h3 class="font-bold">Loading Error</h3>
+                <div class="text-xs">{{ error }}</div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    <div class="container mx-auto p-6 max-w-7xl">
+        <!-- Organization Stats -->
+        {% if organization_stats %}
+        <div class="stats shadow w-full mb-6">
+            <div class="stat">
+                <div class="stat-title">Total Imports</div>
+                <div class="stat-value text-primary">{{ total_mappings_with_data|default:0 }}</div>
+                <div class="stat-desc">completed sessions</div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Resources Created</div>
+                <div class="stat-value text-secondary">{{ organization_stats.total_resources|default:0 }}</div>
+                <div class="stat-desc">across all imports</div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Total Triples</div>
+                <div class="stat-value text-accent">{{ organization_stats.total_triples|default:0 }}</div>
+                <div class="stat-desc">facts stored</div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Relationships</div>
+                <div class="stat-value text-info">{{ organization_stats.total_relationships|default:0 }}</div>
+                <div class="stat-desc">connections made</div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Import Sessions -->
+        {% if import_analysis %}
+        <div class="grid gap-4">
+            {% for session_analysis in import_analysis %}
+            <div class="card bg-base-100 shadow hover:shadow-lg transition-shadow">
+                <div class="card-body">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <h3 class="card-title text-lg mb-2">
+                                {{ session_analysis.mapping_name|default:"Unknown Mapping" }}
+                                {% if session_analysis.import_results.total_resources > 0 %}
+                                    <div class="badge badge-success gap-1">
+                                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+                                        </svg>
+                                        SUCCESS
+                                    </div>
+                                {% else %}
+                                    <div class="badge badge-error gap-1">
+                                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
+                                        </svg>
+                                        NO DATA
+                                    </div>
+                                {% endif %}
+                            </h3>
+                            <div class="text-sm text-base-content/60 mb-4">
+                                Completed {{ session_analysis.completed_at|timesince }} ago
+                                {% if session_analysis.total_datasets %} • {{ session_analysis.total_datasets }} file{{ session_analysis.total_datasets|pluralize }}{% endif %}
+                            </div>
+
+                            <!-- Quick Metrics Grid -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div class="flex flex-col items-center bg-base-200 rounded-lg p-3">
+                                    <div class="text-primary font-bold text-lg">{{ session_analysis.import_results.total_resources|default:0 }}</div>
+                                    <div class="text-xs opacity-60">Resources</div>
+                                </div>
+                                <div class="flex flex-col items-center bg-base-200 rounded-lg p-3">
+                                    <div class="text-secondary font-bold text-lg">{{ session_analysis.import_results.fk_relationships_total|default:0 }}</div>
+                                    <div class="text-xs opacity-60">FK Relationships</div>
+                                </div>
+                                <div class="flex flex-col items-center bg-base-200 rounded-lg p-3">
+                                    <div class="text-accent font-bold text-lg">{{ session_analysis.import_results.total_triples|default:0 }}</div>
+                                    <div class="text-xs opacity-60">Triples</div>
+                                </div>
+                                <div class="flex flex-col items-center bg-base-200 rounded-lg p-3">
+                                    <div class="text-info font-bold text-lg">{{ session_analysis.column_analysis.foreign_key_columns|default:0 }}</div>
+                                    <div class="text-xs opacity-60">FK Columns</div>
+                                </div>
+                            </div>
+
+                            <!-- Column Type Summary -->
+                            {% if session_analysis.column_analysis %}
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                {% if session_analysis.column_analysis.anchor_columns > 0 %}
+                                    <div class="badge badge-primary badge-sm">{{ session_analysis.column_analysis.anchor_columns }} anchor{{ session_analysis.column_analysis.anchor_columns|pluralize }}</div>
+                                {% endif %}
+                                {% if session_analysis.column_analysis.foreign_key_columns > 0 %}
+                                    <div class="badge badge-error badge-sm">{{ session_analysis.column_analysis.foreign_key_columns }} FK{{ session_analysis.column_analysis.foreign_key_columns|pluralize }}</div>
+                                {% endif %}
+                                {% if session_analysis.column_analysis.multi_value_columns > 0 %}
+                                    <div class="badge badge-accent badge-sm">{{ session_analysis.column_analysis.multi_value_columns }} multi-value</div>
+                                {% endif %}
+                                {% if session_analysis.column_analysis.multi_value_fk_columns > 0 %}
+                                    <div class="badge badge-warning badge-sm">{{ session_analysis.column_analysis.multi_value_fk_columns }} multi-FK</div>
+                                {% endif %}
+                                {% if session_analysis.column_analysis.relationship_context_columns > 0 %}
+                                    <div class="badge badge-neutral badge-sm">{{ session_analysis.column_analysis.relationship_context_columns }} context{{ session_analysis.column_analysis.relationship_context_columns|pluralize }}</div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {% if session_analysis.top_datasets %}
+                            <div class="mt-4">
+                                <div class="text-sm font-semibold mb-2">Top Datasets by Entities</div>
+                                <div class="overflow-x-auto">
+                                    <table class="table table-xs">
+                                        <thead>
+                                            <tr><th>Dataset</th><th class="text-right">Entities</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for row in session_analysis.top_datasets %}
+                                            <tr>
+                                                <td>{{ row.dataset }}</td>
+                                                <td class="text-right">{{ row.entities }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex flex-col gap-2">
+                            <a href="{% url 'importer:import_results_detail' session_id=session_analysis.session_id %}" 
+                               class="btn btn-primary btn-sm gap-2">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+                                    <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>
+                                </svg>
+                                View Details
+                            </a>
+                            
+                            {% if session_analysis.mapping_id %}
+                            <a href="{% url 'metadata:mapping_visualizer_graphviz' session_analysis.mapping_id %}" 
+                               target="_blank"
+                               class="btn btn-outline btn-sm gap-2">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1V10a1 1 0 00-1-1h-2z"/>
+                                </svg>
+                                Graph
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% else %}
+        <!-- Empty State -->
+        <div class="flex items-center justify-center h-96">
+            <div class="text-center">
+                <svg class="w-24 h-24 mx-auto mb-4 text-base-content/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <h3 class="text-2xl font-semibold mb-2 text-base-content/70">No Import History</h3>
+                <p class="text-base-content/50 mb-6 max-w-md">
+                    No completed imports found for this organization. Start by importing some data with a mapping.
+                </p>
+                <a href="{% url 'importer:ingest_data' %}" class="btn btn-primary gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                    </svg>
+                    Start New Import
+                </a>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+    {% endif %}
+</div>
+{% endblock %}

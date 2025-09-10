@@ -38,6 +38,21 @@ class MetadataConfig(AppConfig):
     def _cleanup_orphaned_literals(self):
         """Clean up orphaned literals on startup"""
         try:
+            from django.db import connection
+            from asgiref.sync import sync_to_async
+            import asyncio
+            
+            # Check if we're in an async context (ASGI server like uvicorn)
+            try:
+                # Try to get the current event loop
+                asyncio.get_running_loop()
+                # We're in async context, skip cleanup to avoid the async context error
+                logger.debug("Startup cleanup: Skipped in async context (ASGI server)")
+                return
+            except RuntimeError:
+                # No running event loop, we're in sync context - proceed with cleanup
+                pass
+            
             from arkumu.metadata.models import Resource, ResourceType
             
             # Find orphaned literals
