@@ -116,37 +116,53 @@
                         {% endif %}
                     </h2>
                     
-                    <!-- Bucket Size Info - Updates automatically when organization changes -->
-                    <div id="bucket-size-container" class="flex-shrink-0">
-                        {% if selected_org_slug %}
-                            <div hx-get="{% url 'storage:bucket_size_info' selected_org_slug %}"
-                                 hx-trigger="load"
-                                 hx-swap="innerHTML"
-                                 class="min-h-[60px] flex items-center justify-center">
-                                <!-- Loading indicator -->
-                                <div class="flex items-center gap-2 text-base-content/50">
-                                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                                    <span class="text-sm">Calculating size...</span>
-                                </div>
-                            </div>
-                        {% else %}
-                            <div class="stats bg-base-200 shadow-inner opacity-50">
-                                <div class="stat">
-                                    <div class="stat-figure text-secondary">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V8z" />
-                                        </svg>
+                    <!-- Bucket Size Info and Export Button -->
+                    <div class="flex items-center gap-3">
+                        <!-- Bucket Size Info - Updates automatically when organization changes -->
+                        <div id="bucket-size-container" class="flex-shrink-0">
+                            {% if selected_org_slug %}
+                                <div hx-get="{% url 'storage:bucket_size_info' selected_org_slug %}"
+                                     hx-trigger="load"
+                                     hx-swap="innerHTML"
+                                     class="min-h-[60px] flex items-center justify-center">
+                                    <!-- Loading indicator -->
+                                    <div class="flex items-center gap-2 text-base-content/50">
+                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                                        <span class="text-sm">Calculating size...</span>
                                     </div>
-                                    <div class="stat-title text-xs">Bucket Size</div>
-                                    <div class="stat-value text-lg">---</div>
-                                    <div class="stat-desc">Select organization</div>
                                 </div>
+                            {% else %}
+                                <div class="stats bg-base-200 shadow-inner opacity-50">
+                                    <div class="stat">
+                                        <div class="stat-figure text-secondary">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V8z" />
+                                            </svg>
+                                        </div>
+                                        <div class="stat-title text-xs">Bucket Size</div>
+                                        <div class="stat-value text-lg">---</div>
+                                        <div class="stat-desc">Select organization</div>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Export Button -->
+                        {% if selected_org_slug %}
+                            <div class="tooltip" data-tip="Export file info with checksums">
+                                <a href="{% url 'storage:export_successful_imports_csv' selected_org_slug %}"
+                                   class="btn btn-outline btn-sm btn-square">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </a>
                             </div>
                         {% endif %}
                     </div>
                 </div>
             </div>
                 
+
                 <!-- File Browser Content -->
                 <div id="file-browser-content" class="min-h-[300px] max-h-[600px] overflow-y-auto">
                     {% if selected_org_slug %}

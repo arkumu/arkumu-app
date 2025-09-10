@@ -250,3 +250,42 @@ else:
             
         except Exception as e:
             logger.error(f"❌ CLEANUP: Error cleaning up sessions: {str(e)}")
+
+
+@db_task(retries=2, retry_delay=30)
+def export_successful_imports_task(organization_id: str, user_id: int) -> dict:
+    """
+    Background task to export successful imports CSV for an organization.
+    
+    Args:
+        organization_id: Organization ID (e.g., 'fuk', 'khm', 'det', etc.)
+        user_id: ID of the user requesting the export
+        
+    Returns:
+        dict: CSV export result with filename, content, and count
+    """
+    try:
+        from arkumu.storage.services.bucket_service import BucketService
+        from django.contrib.auth import get_user_model
+        
+        logger.info(f"📊 CSV EXPORT TASK: Starting export for organization '{organization_id}' (user: {user_id})")
+        
+        # Verify user exists
+        User = get_user_model()
+        user = User.objects.get(id=user_id)
+        
+        # Generate CSV using BucketService
+        bucket_service = BucketService()
+        result = bucket_service.export_successful_imports_csv(organization_id)
+        
+        if result.get("success"):
+            logger.info(f"✅ CSV EXPORT TASK: Export completed for '{organization_id}' - {result['count']} records")
+            return result
+        else:
+            error_msg = result.get("error", "Unknown error")
+            logger.error(f"❌ CSV EXPORT TASK: Export failed for '{organization_id}': {error_msg}")
+            raise Exception(f"Export failed: {error_msg}")
+            
+    except Exception as e:
+        logger.error(f"❌ CSV EXPORT TASK: Unexpected error for organization '{organization_id}': {str(e)}")
+        raise  # Re-raise to trigger Huey retries
