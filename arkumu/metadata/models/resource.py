@@ -95,7 +95,7 @@ class Resource(UUIDModel):
     public_access_level = models.CharField(
         max_length=20,
         choices=PublicAccessLevel.choices,
-        default=PublicAccessLevel.PRIVATE,
+        default=PublicAccessLevel.RESTRICTED,
         help_text="Level of public access for this resource"
     )
     
