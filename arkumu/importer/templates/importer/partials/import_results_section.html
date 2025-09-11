@@ -1,0 +1,40 @@
+{% load static %}
+{% comment %}
+Renders a section of columns with examples, loaded lazily via HTMX.
+Context:
+- section: 'regular' | 'anchor' | 'fk' | 'multivalue' | 'context' | 'external'
+- columns: list of { dataset, column_name, triple_count, predicate_uri, triples: [{subject_uri, predicate_uri, object_value, is_iri}] }
+{% endcomment %}
+
+{% if not columns %}
+<div class="text-sm opacity-70">No data found for this section.</div>
+{% else %}
+  <div class="pt-4 space-y-4">
+    {% for col in columns %}
+    <div class="card bg-base-100 shadow-sm border-l-4 {% if section == 'fk' %}border-primary{% elif section == 'multivalue' %}border-warning{% elif section == 'context' %}border-info{% elif section == 'anchor' %}border-accent{% elif section == 'external' %}border-secondary{% else %}border-neutral{% endif %}">
+      <div class="card-body p-4">
+        <div class="flex items-center justify-between">
+          <h4 class="font-semibold text-lg">{{ col.column_name|default:col.full_column_name }}</h4>
+          <div class="text-xs text-base-content/60">{{ col.dataset }} • {{ col.triple_count }} triples</div>
+        </div>
+        <div class="text-xs opacity-70 mb-2">{{ col.predicate_uri }}</div>
+        <div class="space-y-1">
+          {% for t in col.triples|slice:":10" %}
+          <div class="font-mono text-xs break-all">
+            <span class="text-primary">{{ t.subject_uri|slice:"-60:" }}</span>
+            <span class="opacity-70"> → </span>
+            <span class="badge badge-ghost badge-xs">{{ t.predicate_uri|slice:"-28:" }}</span>
+            {% if t.is_iri %}
+              <span class="text-secondary"> {{ t.object_value|slice:"-60:" }}</span>
+            {% else %}
+              <span class="text-accent">"{{ t.object_value|truncatechars:80 }}"</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
