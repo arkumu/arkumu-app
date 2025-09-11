@@ -5,7 +5,7 @@ Faceted search service for filtering resources by their property values.
 from typing import Dict, List, Optional, Set, Tuple
 from django.db.models import QuerySet, Q, Count, Exists, OuterRef
 from django.contrib.auth import get_user_model
-from arkumu.metadata.models import Resource, Triple, HarmonizationRule
+from arkumu.metadata.models import Resource, Triple
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
 from .catalog_navigation_service import CatalogNavigationService
 

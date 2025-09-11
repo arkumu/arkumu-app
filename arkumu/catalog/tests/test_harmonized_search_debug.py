@@ -4,7 +4,7 @@ Test to debug harmonized search issues.
 import pytest
 from django.test import TestCase, RequestFactory
 from django.contrib.auth import get_user_model
-from arkumu.metadata.models import Resource, Triple, HarmonizationRule
+from arkumu.metadata.models import Resource, Triple
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
 from arkumu.users.models import Organization
 from arkumu.catalog.services.faceted_search_service import FacetedSearchService

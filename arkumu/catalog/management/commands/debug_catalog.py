@@ -5,7 +5,7 @@ Django management command to debug catalog functionality with real data.
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 
-from arkumu.metadata.models import Resource, Triple, HarmonizationRule
+from arkumu.metadata.models import Resource, Triple
 from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
 from arkumu.users.models import Organization
 

@@ -5,7 +5,7 @@ Flexible catalog service that works with actual harmonized data.
 from typing import Dict, List, Optional, Set, Tuple
 from django.db.models import QuerySet, Prefetch, Q, Count
 from django.contrib.auth import get_user_model
-from arkumu.metadata.models import Resource, Triple, HarmonizationRule
+from arkumu.metadata.models import Resource, Triple
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
 
 User = get_user_model()
