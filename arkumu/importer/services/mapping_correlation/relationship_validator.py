@@ -9,6 +9,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 from arkumu.importer.services.mapping_correlation.data_models import FileAnalysis
+from arkumu.importer.utils.column_name_utils import ColumnNameNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,11 @@ class RelationshipValidator:
                 })
                 continue
                 
-            if fk['source_column'] not in source_file.columns:
+            # Check if FK column exists (handle structured column names with ::)
+            matched_source_column = ColumnNameNormalizer.find_column_match(
+                fk['source_column'], source_file.columns
+            )
+            if not matched_source_column:
                 issues.append({
                     'type': 'missing_fk_column',
                     'dataset': fk['source_dataset'],
@@ -75,14 +80,19 @@ class RelationshipValidator:
                     'referenced_by': f"{fk['source_dataset']}.{fk['source_column']}",
                     'relationship_id': fk.get('id')
                 })
-            elif fk['target_column'] not in target_file.columns:
-                issues.append({
-                    'type': 'missing_target_column',
-                    'dataset': fk['target_dataset'],
-                    'column': fk['target_column'],
-                    'referenced_by': f"{fk['source_dataset']}.{fk['source_column']}",
-                    'relationship_id': fk.get('id')
-                })
+            else:
+                # Check if target column exists (handle structured column names with ::)
+                matched_target_column = ColumnNameNormalizer.find_column_match(
+                    fk['target_column'], target_file.columns
+                )
+                if not matched_target_column:
+                    issues.append({
+                        'type': 'missing_target_column',
+                        'dataset': fk['target_dataset'],
+                        'column': fk['target_column'],
+                        'referenced_by': f"{fk['source_dataset']}.{fk['source_column']}",
+                        'relationship_id': fk.get('id')
+                    })
         
         return {
             'valid': len(issues) == 0,
@@ -112,11 +122,11 @@ class RelationshipValidator:
                 })
                 continue
             
-            # Check both FK columns exist
+            # Check both FK columns exist (handle structured column names with ::)
             missing_fks = []
-            if ctx['primary_fk'] not in junction_file.columns:
+            if not ColumnNameNormalizer.find_column_match(ctx['primary_fk'], junction_file.columns):
                 missing_fks.append(ctx['primary_fk'])
-            if ctx['secondary_fk'] not in junction_file.columns:
+            if not ColumnNameNormalizer.find_column_match(ctx['secondary_fk'], junction_file.columns):
                 missing_fks.append(ctx['secondary_fk'])
                 
             if missing_fks:
@@ -127,10 +137,10 @@ class RelationshipValidator:
                     'context_id': ctx['context_id']
                 })
             
-            # Check context columns
+            # Check context columns (handle structured column names with ::)
             missing_attrs = []
             for attr in ctx.get('context_columns', []):
-                if attr not in junction_file.columns:
+                if not ColumnNameNormalizer.find_column_match(attr, junction_file.columns):
                     missing_attrs.append(attr)
                     
             if missing_attrs:
@@ -173,7 +183,7 @@ class RelationshipValidator:
                         'relationship': rel.get('relationship_type'),
                         'relationship_desc': rel.get('description', '')
                     })
-                elif column not in file_analysis.columns:
+                elif not ColumnNameNormalizer.find_column_match(column, file_analysis.columns):
                     issues.append({
                         'type': 'missing_join_column',
                         'dataset': dataset,
@@ -194,7 +204,7 @@ class RelationshipValidator:
                         'relationship': rel.get('relationship_type'),
                         'relationship_desc': rel.get('description', '')
                     })
-                elif column not in file_analysis.columns:
+                elif not ColumnNameNormalizer.find_column_match(column, file_analysis.columns):
                     issues.append({
                         'type': 'missing_join_column',
                         'dataset': dataset,
