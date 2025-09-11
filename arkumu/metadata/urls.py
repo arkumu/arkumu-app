@@ -291,6 +291,7 @@ urlpatterns = [
     path('csv-mapping/analysis/<str:organization_id>/', mapping_analysis_views.mapping_analysis_dashboard, name='mapping_analysis_dashboard'),
     path('csv-mapping/analysis/<str:organization_id>/<uuid:mapping_id>/api/', mapping_analysis_views.mapping_analysis_api, name='mapping_analysis_api'),
     
+    
     # Model Graph Visualization URLs
     path('model-graph/', model_graph_views.model_graph_main, name='model_graph'),
     path('model-graph/mapping-details/', model_graph_views.model_graph_mapping_details, name='model_graph_mapping_details'),

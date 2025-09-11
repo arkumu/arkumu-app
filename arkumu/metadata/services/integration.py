@@ -4,11 +4,18 @@ Integration Layer Services
 Functions for creating derived triples that link entities across archives.
 These are system-generated triples that represent integration/federation
 relationships rather than original archival data.
+
+Includes canonical URI mapping services for harmonizing local resources
+with Arkumu canonical ontology.
 """
 
-from typing import Optional
+import csv
+from typing import Dict, List, Optional, Tuple
+from django.db import transaction
+from django.db.models import Q
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
+from arkumu.users.models import Organization
 from arkumu.metadata.utils.rdf_helpers import get_or_create_resource
 
 
@@ -146,3 +153,180 @@ def link_to_external_authority(local_entity: Resource,
     )
     
     return triple if created else None
+
+
+# Canonical URI Mapping Services
+class CanonicalUriMappingService:
+    """
+    Service for mapping canonical URIs to organizational resources.
+    
+    Processes CSV files that map resource names to canonical Arkumu URIs.
+    Finds resources by exact name match and updates their canonical_uri field.
+    """
+    
+    def __init__(self, organization_code: str):
+        """Initialize service for specific organization."""
+        try:
+            self.organization = Organization.objects.get(code=organization_code)
+        except Organization.DoesNotExist:
+            raise ValueError(f"Organization with code '{organization_code}' not found")
+    
+    def process_canonical_mappings(self, csv_file_path: str, dry_run: bool = False) -> Dict[str, int]:
+        """
+        Process canonical URI mappings from CSV file.
+        
+        CSV Format:
+        - Type: 'Class' or 'Property'
+        - Target: Canonical URI to assign
+        - Label: Human-readable label (informational only)
+        - Name: Comma-separated resource names to find and update
+        
+        Args:
+            csv_file_path: Path to mapping CSV file
+            dry_run: Preview changes without applying
+            
+        Returns:
+            Statistics dict with updated, not_found, skipped, errors counts
+        """
+        stats = {'updated': 0, 'not_found': [], 'skipped': 0, 'errors': 0}
+        
+        with open(csv_file_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            
+            with transaction.atomic():
+                for row_num, row in enumerate(reader, 1):
+                    try:
+                        self._process_mapping_row(row, row_num, dry_run, stats)
+                    except Exception as e:
+                        print(f"Row {row_num}: Error - {e}")
+                        stats['errors'] += 1
+                
+                if dry_run:
+                    # Rollback transaction for dry run
+                    transaction.set_rollback(True)
+        
+        return stats
+    
+    def _process_mapping_row(self, row: Dict[str, str], row_num: int, dry_run: bool, stats: Dict) -> None:
+        """Process single CSV row for canonical URI mapping."""
+        resource_type_str = row.get('Type', '').strip()
+        canonical_uri = row.get('Target', '').strip()
+        label = row.get('Label', '').strip()
+        names_str = row.get('Name', '').strip()
+        
+        # Validate required fields
+        if not resource_type_str or not canonical_uri:
+            print(f"Row {row_num}: Missing Type or Target - skipping")
+            stats['skipped'] += 1
+            return
+        
+        if not names_str:
+            # No names to process, skip silently
+            return
+        
+        # Parse resource type
+        resource_type = self._parse_resource_type(resource_type_str)
+        if not resource_type:
+            print(f"Row {row_num}: Invalid resource type '{resource_type_str}' - skipping")
+            stats['skipped'] += 1
+            return
+        
+        # Split names by comma and process each
+        names = [name.strip() for name in names_str.split(',') if name.strip()]
+        
+        for name in names:
+            # Find resource by exact name match
+            resources = Resource.objects.filter(
+                organization=self.organization,
+                resource_type=resource_type,
+                name=name,
+                is_placeholder=False
+            )
+            
+            if resources.exists():
+                for resource in resources:
+                    if dry_run:
+                        print(f"Row {row_num}: Would update {name} ({resource.uri}) → {canonical_uri}")
+                    else:
+                        old_canonical = resource.canonical_uri
+                        resource.canonical_uri = canonical_uri
+                        resource.save(update_fields=['canonical_uri'])
+                        
+                        if old_canonical and old_canonical != canonical_uri:
+                            print(f"Row {row_num}: Updated {name} (was: {old_canonical})")
+                        else:
+                            print(f"Row {row_num}: Updated {name} → {canonical_uri}")
+                    
+                    stats['updated'] += 1
+            else:
+                print(f"Row {row_num}: Resource not found - Type: {resource_type_str}, Name: '{name}'")
+                stats['not_found'].append(f"{resource_type_str}: {name}")
+    
+    def _parse_resource_type(self, type_str: str) -> Optional[ResourceType]:
+        """Parse resource type string."""
+        type_mapping = {
+            'class': ResourceType.CLASS,
+            'property': ResourceType.PROPERTY
+        }
+        return type_mapping.get(type_str.lower())
+    
+    def get_unmapped_resources(self, resource_type: Optional[ResourceType] = None) -> List[Resource]:
+        """Get resources without canonical URIs."""
+        query = Resource.objects.filter(
+            organization=self.organization,
+            canonical_uri__isnull=True,
+            is_placeholder=False
+        )
+        if resource_type:
+            query = query.filter(resource_type=resource_type)
+        return list(query)
+    
+    def validate_mapping_csv(self, csv_file_path: str) -> Tuple[bool, List[str]]:
+        """Validate CSV format for canonical URI mapping."""
+        errors = []
+        
+        try:
+            with open(csv_file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                headers = reader.fieldnames or []
+                
+                # Check required columns
+                required = ['Type', 'Target', 'Label', 'Name']
+                missing = [col for col in required if col not in headers]
+                if missing:
+                    errors.append(f"Missing required columns: {', '.join(missing)}")
+                
+                # Validate first few rows
+                for row_num, row in enumerate(reader, 1):
+                    if row_num > 5:  # Only check first 5 rows
+                        break
+                    
+                    resource_type = row.get('Type', '').strip().lower()
+                    if resource_type and resource_type not in ['class', 'property']:
+                        errors.append(f"Row {row_num}: Invalid Type '{resource_type}' (must be 'Class' or 'Property')")
+                    
+                    target = row.get('Target', '').strip()
+                    if target and not target.startswith('http'):
+                        errors.append(f"Row {row_num}: Target must be a valid HTTP URI")
+        
+        except Exception as e:
+            errors.append(f"Error reading CSV: {e}")
+        
+        return len(errors) == 0, errors
+
+
+def map_canonical_uris(organization_code: str, csv_file_path: str, 
+                      dry_run: bool = False) -> Dict[str, int]:
+    """
+    Convenience function to map canonical URIs for an organization.
+    
+    Args:
+        organization_code: Organization code (e.g., 'hfm', 'rsh')
+        csv_file_path: Path to CSV with canonical mappings
+        dry_run: Preview changes without applying
+        
+    Returns:
+        Statistics dict with processing results
+    """
+    service = CanonicalUriMappingService(organization_code)
+    return service.process_canonical_mappings(csv_file_path, dry_run)
