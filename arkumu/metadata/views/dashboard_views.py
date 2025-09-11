@@ -35,11 +35,27 @@ def metadata_dashboard(request):
         count=Count('id')
     ).order_by('-count')[:10]
     
+    # Get organizations with triple counts for selective deletion
+    from arkumu.users.models import Organization
+    organizations_with_data = []
+    for org in Organization.objects.filter(is_active=True).order_by('name'):
+        triple_count = Triple.objects.for_organization(org).count()
+        resource_count = Resource.objects.for_organization(org).count()
+        if triple_count > 0 or resource_count > 0:  # Only show orgs with data
+            organizations_with_data.append({
+                'id': org.id,
+                'name': org.name,
+                'code': org.code,
+                'triple_count': triple_count,
+                'resource_count': resource_count
+            })
+    
     return render(request, 'dashboard.html', {
         'stats': stats,
         'recent_uploads': recent_uploads,
         'recent_ingests': recent_ingests,
         'institutions': institutions,
+        'organizations_with_data': organizations_with_data,
     })
 
 

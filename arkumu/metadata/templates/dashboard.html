@@ -34,7 +34,47 @@
     <!-- Database Management -->
     <div class="mb-4">
         <h3 class="text-lg font-semibold mb-4">Database Management</h3>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <!-- Delete Organization Data -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Delete Organization Data</h4>
+                    <p class="text-xs text-base-content/70 mb-3">Delete triples from a specific organization only</p>
+                    {% if organizations_with_data %}
+                        <select id="org-select" name="organization_id" class="select select-bordered select-sm w-full mb-2">
+                            <option value="">Select Organization</option>
+                            {% for org in organizations_with_data %}
+                            <option value="{{ org.id }}">
+                                {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button id="delete-org-btn" 
+                                class="btn btn-warning btn-sm w-full"
+                                hx-post="{% url 'importer:delete_organization_triples' %}"
+                                hx-target="#delete-org-result"
+                                hx-swap="innerHTML"
+                                hx-indicator="#delete-org-spinner"
+                                hx-include="#org-select"
+                                onclick="if (!document.getElementById('org-select').value) { alert('Please select an organization first.'); return false; } return confirm('Are you sure you want to delete data from the selected organization? This cannot be undone!');"
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete Organization Data
+                            <span id="delete-org-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                        </button>
+                    {% else %}
+                        <p class="text-xs text-base-content/50">No organization data available for deletion</p>
+                        <button disabled class="btn btn-warning btn-sm w-full btn-disabled">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete Organization Data
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+            
             <!-- Reset Database -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
@@ -101,6 +141,7 @@
         
         <!-- Results containers -->
         <div class="mt-4 space-y-2">
+            <div id="delete-org-result"></div>
             <div id="reset-db-result"></div>
             <div id="clear-uploads-result"></div>
             <div id="clear-ingests-result"></div>
