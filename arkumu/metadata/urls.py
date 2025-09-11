@@ -1,13 +1,14 @@
 from django.urls import path
-from arkumu.metadata.views import dashboard_views, resource_views, triple_views, graph_views, bulk_editor_views, data_discovery_views, data_explorer_views, split_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, harmonization_views, simplified_resource_views
-from arkumu.metadata.views.bulk_arkumu_mapping_views import (
-    BulkArkumuMappingView,
-    BulkArkumuMappingPreviewView,
-    BulkArkumuMappingExecutionDetailView,
-    BulkArkumuMappingSortView,
-    BulkArkumuMappingRemoveView,
-    BulkArkumuMappingDeleteView
-)
+from arkumu.metadata.views import dashboard_views, resource_views, triple_views, graph_views, bulk_editor_views, data_discovery_views, data_explorer_views, split_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
+# Temporarily disabled bulk arkumu mapping views
+# from arkumu.metadata.views.bulk_arkumu_mapping_views import (
+#     BulkArkumuMappingView,
+#     BulkArkumuMappingPreviewView, 
+#     BulkArkumuMappingExecutionDetailView,
+#     BulkArkumuMappingSortView,
+#     BulkArkumuMappingRemoveView,
+#     BulkArkumuMappingDeleteView
+# )
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 
@@ -307,22 +308,22 @@ urlpatterns = [
     path('resource-management/triple/<uuid:triple_id>/delete/', simplified_resource_views.DeleteTripleView.as_view(), name='delete_triple'),
     path('ontology-linking-modal/', simplified_resource_views.OntologyLinkingModalView.as_view(), name='ontology_linking_modal'),
     
-    # Harmonization URLs (Legacy)
-    path('harmonization/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_list'),
-    path('harmonization/start/', harmonization_views.HarmonizationStartView.as_view(), name='harmonization_start'),
-    path('harmonization/executions/<uuid:pk>/', harmonization_views.HarmonizationExecutionDetailView.as_view(), name='harmonization_execution_detail'),
-    path('harmonization/rules/', harmonization_views.HarmonizationRuleListView.as_view(), name='harmonization_rules_list'),
-    path('harmonization/rules/create/', harmonization_views.HarmonizationRuleCreateView.as_view(), name='harmonization_rule_create'),
-    path('harmonization/rules/<uuid:pk>/edit/', harmonization_views.HarmonizationRuleUpdateView.as_view(), name='harmonization_rule_update'),
-    path('harmonization/conflicts/', harmonization_views.HarmonizationConflictListView.as_view(), name='harmonization_conflicts'),
-    path('harmonization/executions/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_executions_list'),
+    # Harmonization URLs (Temporarily disabled)
+    # path('harmonization/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_list'),
+    # path('harmonization/start/', harmonization_views.HarmonizationStartView.as_view(), name='harmonization_start'),
+    # path('harmonization/executions/<uuid:pk>/', harmonization_views.HarmonizationExecutionDetailView.as_view(), name='harmonization_execution_detail'),
+    # path('harmonization/rules/', harmonization_views.HarmonizationRuleListView.as_view(), name='harmonization_rules_list'),
+    # path('harmonization/rules/create/', harmonization_views.HarmonizationRuleCreateView.as_view(), name='harmonization_rule_create'),
+    # path('harmonization/rules/<uuid:pk>/edit/', harmonization_views.HarmonizationRuleUpdateView.as_view(), name='harmonization_rule_update'),
+    # path('harmonization/conflicts/', harmonization_views.HarmonizationConflictListView.as_view(), name='harmonization_conflicts'),
+    # path('harmonization/executions/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_executions_list'),
     
-    # Bulk Arkumu Mapping URLs
-    path('bulk-arkumu-mapping/', BulkArkumuMappingView.as_view(), name='bulk_arkumu_mapping'),
-    path('bulk-arkumu-mapping/preview/', BulkArkumuMappingPreviewView.as_view(), name='bulk_arkumu_mapping_preview'),
-    path('bulk-arkumu-mapping/execution/<uuid:pk>/', BulkArkumuMappingExecutionDetailView.as_view(), name='bulk_arkumu_mapping_execution'),
-    path('bulk-arkumu-mapping/sort/', BulkArkumuMappingSortView.as_view(), name='bulk_arkumu_mapping_sort'),
-    path('bulk-arkumu-mapping/remove/', BulkArkumuMappingRemoveView.as_view(), name='bulk_arkumu_mapping_remove'),
-    path('bulk-arkumu-mapping/delete/<uuid:pk>/', BulkArkumuMappingDeleteView.as_view(), name='bulk_arkumu_mapping_delete'),
+    # Bulk Arkumu Mapping URLs (Temporarily disabled)
+    # path('bulk-arkumu-mapping/', BulkArkumuMappingView.as_view(), name='bulk_arkumu_mapping'),
+    # path('bulk-arkumu-mapping/preview/', BulkArkumuMappingPreviewView.as_view(), name='bulk_arkumu_mapping_preview'),
+    # path('bulk-arkumu-mapping/execution/<uuid:pk>/', BulkArkumuMappingExecutionDetailView.as_view(), name='bulk_arkumu_mapping_execution'),
+    # path('bulk-arkumu-mapping/sort/', BulkArkumuMappingSortView.as_view(), name='bulk_arkumu_mapping_sort'),
+    # path('bulk-arkumu-mapping/remove/', BulkArkumuMappingRemoveView.as_view(), name='bulk_arkumu_mapping_remove'),
+    # path('bulk-arkumu-mapping/delete/<uuid:pk>/', BulkArkumuMappingDeleteView.as_view(), name='bulk_arkumu_mapping_delete'),
     
     ]

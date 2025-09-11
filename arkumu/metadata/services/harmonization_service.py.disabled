@@ -1,0 +1,300 @@
+from typing import Dict, List, Optional, Set
+from django.db import transaction, connection
+from django.db.models import Q, Prefetch, Count
+from arkumu.metadata.models import Resource, Triple, ResourceType
+from arkumu.metadata.models.harmonization import HarmonizationMapping, CatalogView
+
+
+class HarmonizationService:
+    """
+    Service for efficient harmonization of archive data.
+    Avoids extra query layers by working directly with existing Triple/Resource models.
+    """
+    
+    def __init__(self):
+        self._mapping_cache = {}
+        self._reverse_mapping_cache = {}
+    
+    def load_mappings_to_cache(self, archive_code: Optional[str] = None):
+        """Load harmonization mappings into memory for fast lookup."""
+        query = HarmonizationMapping.objects.all()
+        if archive_code:
+            query = query.filter(source_archive=archive_code)
+        
+        for mapping in query.select_related():
+            key = (mapping.source_uri, mapping.source_archive)
+            self._mapping_cache[key] = mapping
+            
+            # Build reverse mapping for unified → source lookups
+            if mapping.target_uri not in self._reverse_mapping_cache:
+                self._reverse_mapping_cache[mapping.target_uri] = []
+            self._reverse_mapping_cache[mapping.target_uri].append(mapping)
+    
+    def get_unified_uri(self, source_uri: str, archive_code: str) -> Optional[str]:
+        """Get unified URI for a source URI (cached)."""
+        key = (source_uri, archive_code)
+        if key in self._mapping_cache:
+            return self._mapping_cache[key].target_uri
+        return None
+    
+    def get_source_uris(self, unified_uri: str) -> List[Dict]:
+        """Get all source URIs that map to a unified URI."""
+        mappings = self._reverse_mapping_cache.get(unified_uri, [])
+        return [
+            {
+                'source_uri': m.source_uri,
+                'archive': m.source_archive,
+                'label': m.archive_labels.get(m.source_archive, m.label)
+            }
+            for m in mappings
+        ]
+    
+    @transaction.atomic
+    def create_harmonized_triples(self, archive_code: str, batch_size: int = 1000):
+        """
+        Create harmonized triples using existing Triple model with is_derived=True.
+        This avoids creating a new model layer.
+        """
+        self.load_mappings_to_cache(archive_code)
+        
+        # Get all source triples for the archive
+        source_triples = Triple.objects.filter(
+            source__code=archive_code,
+            is_derived=False
+        ).select_related('subject', 'predicate', 'object')
+        
+        harmonized_triples = []
+        processed_count = 0
+        
+        for triple in source_triples.iterator(chunk_size=batch_size):
+            # Check if predicate needs harmonization
+            unified_pred_uri = self.get_unified_uri(
+                triple.predicate.uri, 
+                archive_code
+            )
+            
+            if not unified_pred_uri:
+                continue  # Skip if no mapping exists
+            
+            # Get or create unified predicate resource
+            unified_predicate, _ = Resource.objects.get_or_create(
+                uri=unified_pred_uri,
+                defaults={'resource_type': ResourceType.PROPERTY}
+            )
+            
+            # Check if subject needs harmonization (for classes)
+            subject_resource = triple.subject
+            if triple.subject.resource_type == ResourceType.CLASS:
+                unified_subj_uri = self.get_unified_uri(
+                    triple.subject.uri,
+                    archive_code
+                )
+                if unified_subj_uri:
+                    subject_resource, _ = Resource.objects.get_or_create(
+                        uri=unified_subj_uri,
+                        defaults={'resource_type': ResourceType.CLASS}
+                    )
+            
+            # Create harmonized triple
+            harmonized_triples.append(Triple(
+                subject=subject_resource,
+                predicate=unified_predicate,
+                object=triple.object,  # Objects typically don't need harmonization
+                is_derived=True,
+                source=None  # Null source indicates harmonized
+            ))
+            
+            processed_count += 1
+            
+            # Bulk insert when batch is full
+            if len(harmonized_triples) >= batch_size:
+                Triple.objects.bulk_create(harmonized_triples, ignore_conflicts=True)
+                harmonized_triples = []
+        
+        # Insert remaining triples
+        if harmonized_triples:
+            Triple.objects.bulk_create(harmonized_triples, ignore_conflicts=True)
+        
+        return processed_count
+    
+    def query_harmonized_data(self, unified_uri: str, include_originals: bool = True):
+        """
+        Efficiently query harmonized data without extra layers.
+        Returns both harmonized and original triples in a single query.
+        """
+        # Get all source URIs that map to this unified URI
+        source_mappings = self.get_source_uris(unified_uri)
+        source_uris = [m['source_uri'] for m in source_mappings]
+        
+        # Build query for both harmonized and original data
+        q = Q(predicate__uri=unified_uri, is_derived=True)  # Harmonized
+        
+        if include_originals and source_uris:
+            q |= Q(predicate__uri__in=source_uris, is_derived=False)  # Originals
+        
+        # Single efficient query with prefetch
+        triples = Triple.objects.filter(q).select_related(
+            'subject', 'predicate', 'object', 'source'
+        ).prefetch_related(
+            Prefetch('subject__subject_triples', 
+                     queryset=Triple.objects.select_related('predicate', 'object'))
+        )
+        
+        return triples
+    
+    def create_catalog_view_sql(self) -> str:
+        """
+        Generate SQL for materialized view that combines harmonized data.
+        This view enables efficient catalog queries without JOIN overhead.
+        """
+        return """
+        CREATE MATERIALIZED VIEW IF NOT EXISTS catalog_view AS
+        WITH unified_resources AS (
+            -- Get all unified URIs with their mappings
+            SELECT DISTINCT 
+                hm.target_uri as unified_uri,
+                hm.label,
+                hm.catalog_priority,
+                hm.oai_pmh_element
+            FROM harmonization_mapping hm
+            WHERE hm.is_catalog_visible = true
+        ),
+        resource_data AS (
+            -- Aggregate data for each unified resource
+            SELECT 
+                ur.unified_uri,
+                ur.label as primary_label,
+                
+                -- Get title (from various possible predicates)
+                COALESCE(
+                    MAX(CASE WHEN t.predicate_id IN (
+                        SELECT id FROM metadata_resource 
+                        WHERE uri IN (
+                            'http://arkumu.org/properties/titel',
+                            'http://arkumu.org/properties/alternativer-titel',
+                            'http://purl.org/dc/terms/title'
+                        )
+                    ) THEN obj.value END),
+                    ur.label
+                ) as title,
+                
+                -- Collect alternative titles
+                ARRAY_AGG(DISTINCT 
+                    CASE WHEN t.predicate_id IN (
+                        SELECT id FROM metadata_resource 
+                        WHERE uri = 'http://arkumu.org/properties/alternativer-titel'
+                    ) THEN obj.value END
+                ) FILTER (WHERE obj.value IS NOT NULL) as alternative_titles,
+                
+                -- Collect creators/actors
+                ARRAY_AGG(DISTINCT 
+                    CASE WHEN t.predicate_id IN (
+                        SELECT id FROM metadata_resource 
+                        WHERE uri IN (
+                            'http://arkumu.org/properties/akteurin',
+                            'http://purl.org/dc/terms/creator'
+                        )
+                    ) THEN obj.value END
+                ) FILTER (WHERE obj.value IS NOT NULL) as creators,
+                
+                -- Collect source archives
+                ARRAY_AGG(DISTINCT t.source_id) 
+                FILTER (WHERE t.source_id IS NOT NULL) as source_archives,
+                
+                -- Count triples
+                COUNT(DISTINCT t.id) as triple_count
+                
+            FROM unified_resources ur
+            LEFT JOIN harmonization_mapping hm ON hm.target_uri = ur.unified_uri
+            LEFT JOIN metadata_triple t ON (
+                t.predicate_id IN (
+                    SELECT id FROM metadata_resource WHERE uri = ur.unified_uri
+                ) OR t.predicate_id IN (
+                    SELECT id FROM metadata_resource WHERE uri = hm.source_uri
+                )
+            )
+            LEFT JOIN metadata_resource obj ON obj.id = t.object_id
+            GROUP BY ur.unified_uri, ur.label, ur.catalog_priority
+        )
+        SELECT 
+            unified_uri,
+            title,
+            alternative_titles,
+            creators,
+            source_archives,
+            triple_count,
+            NOW() as last_updated,
+            -- Pre-compute OAI-PMH metadata
+            jsonb_build_object(
+                'dc:title', title,
+                'dc:creator', creators[1],
+                'dc:description', primary_label,
+                'dc:identifier', unified_uri
+            ) as oai_metadata
+        FROM resource_data
+        ORDER BY catalog_priority;
+        
+        -- Create indexes for fast querying
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_catalog_view_title 
+            ON catalog_view USING gin(to_tsvector('english', title));
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_catalog_view_creators 
+            ON catalog_view USING gin(creators);
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_catalog_view_updated 
+            ON catalog_view(last_updated DESC);
+        """
+    
+    def search_catalog(self, query: str, limit: int = 100) -> List[Dict]:
+        """
+        Fast catalog search using the materialized view.
+        No JOINs needed - single table query.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    unified_uri,
+                    title,
+                    alternative_titles,
+                    creators,
+                    source_archives,
+                    oai_metadata,
+                    triple_count
+                FROM catalog_view
+                WHERE 
+                    to_tsvector('english', title) @@ plainto_tsquery('english', %s)
+                    OR %s = ANY(creators)
+                    OR %s = ANY(alternative_titles)
+                ORDER BY 
+                    ts_rank(to_tsvector('english', title), plainto_tsquery('english', %s)) DESC,
+                    triple_count DESC
+                LIMIT %s
+            """, [query, query, query, query, limit])
+            
+            columns = [col[0] for col in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    
+    def get_oai_pmh_record(self, unified_uri: str) -> Dict:
+        """
+        Get pre-computed OAI-PMH metadata from catalog view.
+        Single query, no complex joins.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    unified_uri,
+                    title,
+                    oai_metadata,
+                    source_archives,
+                    last_updated
+                FROM catalog_view
+                WHERE unified_uri = %s
+            """, [unified_uri])
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'identifier': row[0],
+                    'datestamp': row[4],
+                    'metadata': row[2],  # Pre-computed OAI metadata
+                    'sets': row[3]  # Source archives as sets
+                }
+        return None

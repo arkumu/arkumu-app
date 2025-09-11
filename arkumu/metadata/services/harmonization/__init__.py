@@ -4,22 +4,20 @@ Harmonization Service Package
 This package implements a semantic alignment layer on top of archive-specific data,
 enabling unified queries across multiple archives with different schemas.
 
-The service generates catalog-level URIs and alignment triples (owl:sameAs, skos:exactMatch)
-to harmonize properties across archives while preserving original data integrity.
+DEPRECATED: Most harmonization functionality has been replaced by canonical URIs.
+Only the CatalogUriGenerator is still actively used.
 """
 
-from .harmonization_service import HarmonizationService
+# Only import the still-active components
 from .catalog_uri_generator import CatalogUriGenerator
-from .alignment_generator import AlignmentGenerator
-from .mapping_rules import RuleMatcher
-from .bulk_processor import HarmonizationBulkProcessor
-from .conflict_resolver import ConflictResolver
+
+# Other components are disabled pending migration to canonical URI system
+# from .harmonization_service import HarmonizationService  # DISABLED
+# from .alignment_generator import AlignmentGenerator        # DISABLED
+# from .mapping_rules import RuleMatcher                     # DISABLED
+# from .bulk_processor import HarmonizationBulkProcessor     # DISABLED
+# from .conflict_resolver import ConflictResolver            # DISABLED
 
 __all__ = [
-    'HarmonizationService',
-    'CatalogUriGenerator', 
-    'AlignmentGenerator',
-    'RuleMatcher',
-    'HarmonizationBulkProcessor',
-    'ConflictResolver'
+    'CatalogUriGenerator',
 ]
