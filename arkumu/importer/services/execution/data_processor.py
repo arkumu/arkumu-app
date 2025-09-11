@@ -4,7 +4,7 @@ Data processing utilities with Polars optimization.
 
 import logging
 import polars as pl
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Tuple
 import re
 
 logger = logging.getLogger(__name__)
@@ -85,9 +85,77 @@ class DataProcessor:
         """
         return df.with_row_index(name='row_id', offset=start_offset)
     
+    def detect_delimiter_in_column(self, df: pl.DataFrame, column_name: str, potential_delimiters: List[str] = None) -> Optional[Tuple[str, float]]:
+        """
+        Detect the most likely delimiter in a column using heuristics.
+        
+        Args:
+            df: Input DataFrame
+            column_name: Name of column to analyze
+            potential_delimiters: List of delimiters to test (defaults to common ones)
+        
+        Returns:
+            Tuple of (delimiter, confidence_score) or None if no delimiter detected
+        """
+        if potential_delimiters is None:
+            potential_delimiters = [',', '-', '|', ';', ':', '/', '\\']
+        
+        # Get non-null values from the column
+        try:
+            column_values = df.select(pl.col(column_name).drop_nulls()).to_series().to_list()
+            if not column_values:
+                return None
+            
+            # Sample up to 1000 values for performance
+            sample_size = min(1000, len(column_values))
+            sample_values = column_values[:sample_size]
+            
+            delimiter_scores = {}
+            
+            for delimiter in potential_delimiters:
+                delimiter_count = 0
+                total_occurrences = 0
+                
+                for value in sample_values:
+                    if isinstance(value, str) and delimiter in value:
+                        delimiter_count += 1
+                        total_occurrences += value.count(delimiter)
+                
+                if delimiter_count > 0:
+                    # Calculate confidence: percentage of rows with delimiter + average occurrences
+                    percentage = delimiter_count / len(sample_values)
+                    avg_occurrences = total_occurrences / delimiter_count if delimiter_count > 0 else 0
+                    
+                    # Confidence boost for systematic patterns (e.g., ranges like "1-5")
+                    pattern_boost = 0.0
+                    if delimiter == '-':
+                        # Look for number-number patterns
+                        import re
+                        number_pattern = re.compile(r'\d+\-\d+')
+                        pattern_matches = sum(1 for v in sample_values[:100] if isinstance(v, str) and number_pattern.search(v))
+                        if pattern_matches > len(sample_values[:100]) * 0.1:  # 10% threshold
+                            pattern_boost = 0.3
+                    
+                    confidence = percentage + (avg_occurrences * 0.1) + pattern_boost
+                    delimiter_scores[delimiter] = min(1.0, confidence)  # Cap at 1.0
+            
+            if not delimiter_scores:
+                return None
+                
+            # Return delimiter with highest confidence if above threshold
+            best_delimiter = max(delimiter_scores.items(), key=lambda x: x[1])
+            if best_delimiter[1] >= 0.15:  # 15% threshold
+                return best_delimiter
+                
+        except Exception as e:
+            logger.warning(f"Error detecting delimiter in column '{column_name}': {e}")
+        
+        return None
+    
     def detect_multi_value_columns(self, df: pl.DataFrame, mapping_config: Optional[Dict] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Detect multi-value columns based on mapping configuration or heuristics.
+        Detect multi-value columns based on mapping configuration with efficient heuristic detection.
+        Only runs heuristic detection on columns already marked as multi-value in the mapping.
         
         Args:
             df: Input DataFrame
@@ -100,16 +168,13 @@ class DataProcessor:
             logger.debug("Empty DataFrame provided for multi-value detection")
             return {}
         
-        logger.debug(f"Starting multi-value detection for {len(df.columns)} columns in DataFrame with {df.height} rows")
-        
         multi_value_analysis = {}
-        columns_processed = []
+        mapped_multi_value_columns = []
         
+        # First pass: identify columns marked as multi-value in mapping config
         for column_name in df.columns:
             if column_name == 'row_id':
                 continue
-                
-            columns_processed.append(column_name)
             
             # Check if mapping config specifies this as multi-value
             is_multi_value_from_config = False
@@ -144,13 +209,10 @@ class DataProcessor:
                     # Check for both 'separator' and 'multi_value_separator' fields
                     separator = column_config.get('separator') or column_config.get('multi_value_separator', ',')
                     if is_multi_value_from_config:
-                        logger.info(f"Found multi-value column '{column_name}' via {config_structure_used} with separator '{separator}'")
+                        logger.debug(f"Found multi-value column '{column_name}' via {config_structure_used} with separator '{separator}'")
+                        mapped_multi_value_columns.append(column_name)
                     else:
                         logger.debug(f"Column '{column_name}' found in {config_structure_used} but is_multi_value=False")
-                else:
-                    logger.debug(f"No mapping configuration found for column '{column_name}'")
-            else:
-                logger.debug("No mapping_config provided for multi-value detection")
             
             if is_multi_value_from_config:
                 # Use mapping configuration (separator already extracted above)
@@ -161,24 +223,48 @@ class DataProcessor:
                     "stats": {"confidence_score": 1.0}
                 }
             else:
-                # Use heuristic detection (currently disabled for safety)
+                # For non-mapped columns, mark as not multi-value (no heuristic detection)
                 multi_value_analysis[column_name] = {
                     "is_multi_value": False,
                     "separator": None,
-                    "source": "heuristic",
-                    "stats": {
-                        "percentage": 0.0,
-                        "confidence_score": 0.0,
-                        "total_rows": df.height
-                    }
+                    "source": "mapping_config",
+                    "stats": {"confidence_score": 0.0}
                 }
         
+        # Second pass: run heuristic detection ONLY on mapped multi-value columns
+        # This detects better delimiters for columns already marked as multi-value
+        if mapped_multi_value_columns:
+            logger.debug(f"Running delimiter detection on {len(mapped_multi_value_columns)} mapped multi-value columns")
+            
+            delimiter_updates = []
+            for column_name in mapped_multi_value_columns:
+                current_separator = multi_value_analysis[column_name]['separator']
+                
+                # Run heuristic detection to potentially find a better delimiter
+                delimiter_result = self.detect_delimiter_in_column(df, column_name)
+                
+                if delimiter_result and delimiter_result[1] >= 0.2:  # 20% confidence threshold
+                    detected_delimiter, confidence = delimiter_result
+                    
+                    # If we detected a different delimiter with high confidence, use it
+                    if detected_delimiter != current_separator and confidence >= 0.5:
+                        logger.info(f"🔍 Updated delimiter for '{column_name}': '{current_separator}' → '{detected_delimiter}' (confidence: {confidence:.2f})")
+                        multi_value_analysis[column_name]['separator'] = detected_delimiter
+                        multi_value_analysis[column_name]['source'] = "mapping_config_with_heuristic"
+                        multi_value_analysis[column_name]['stats'] = {
+                            "confidence_score": confidence,
+                            "total_rows": df.height,
+                            "original_separator": current_separator
+                        }
+                        delimiter_updates.append(f"{column_name}: {detected_delimiter}")
+                    else:
+                        logger.debug(f"Confirmed separator '{current_separator}' for '{column_name}'")
+        
         multi_value_count = sum(1 for col in multi_value_analysis.values() if col['is_multi_value'])
-        logger.info(f"Multi-value analysis completed: {multi_value_count} multi-value columns detected out of {len(columns_processed)} columns processed")
         
         if multi_value_count > 0:
             multi_value_columns = [col for col, config in multi_value_analysis.items() if config['is_multi_value']]
-            logger.info(f"Multi-value columns found: {multi_value_columns}")
+            logger.info(f"Multi-value columns ({multi_value_count}): {multi_value_columns}")
         
         return multi_value_analysis
     
