@@ -20,6 +20,8 @@ from arkumu.metadata.models.resource import ResourceType
 from arkumu.metadata.models import Resource
 from arkumu.metadata.models import Triple
 
+from time import perf_counter
+
 from functools import singledispatchmethod
 
 #from rapidfuzz import process
@@ -430,7 +432,6 @@ class LiveSearchFilterView(GeneralLoginRequiredMixin, CatalogSearchMixin, View):
         return HttpResponse(self.build_oob_response("", oob_updates))
 
 class Entity:
-
     @singledispatchmethod
     def __init__(self, arg):
         raise NotImplementedError("Not implemented for these arguments")
@@ -482,7 +483,7 @@ def search_algo(search_string):
     if not title_predicate:
         return []
     if search_string == "":
-        return  [Entity(triple) for triple in Triple.objects.filter(predicate=title_predicate).all()[:5]]
+        return  [Entity(triple) for triple in Triple.objects.filter(predicate=title_predicate).all()[:10]]
 
     results = Triple.objects.filter(predicate=title_predicate).annotate(
         text_value=F('object__value')  # Get the actual text value
@@ -493,6 +494,21 @@ def search_algo(search_string):
     ).order_by('-similarity')[:10]
     
     return [Entity(triple) for triple in results]
+
+class Im_ereignis_singleton:
+    _instance = None
+    
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.data = {}
+        return cls._instance
+
+    def get_pred_im_ereignis(self, str):
+        if str not in self.data:
+                self.data.update({str: Resource.objects.get(uri=f"http://arkumu.org/data/{str}/properties/im-ereignis")})
+        return self.data[str]
     
         
 class DesignSearch:
@@ -502,7 +518,6 @@ class DesignSearch:
 
     def design_search_results(request):
         prt = "<Nothing to Print>"
-        prt = {}
         prt2 = "<Nothing to Print>"
         prt3 = "<Nothing to Print>"
         query = request.GET.get('query', None)
@@ -513,14 +528,14 @@ class DesignSearch:
 
         #TODO Python fixen das es schneller wird
 
-        resource = Resource.objects.filter(name="Bevorzugter Titel").last()
-        triples = Triple.objects.filter(predicate__id=resource.id)[:5]
+     #  resource = Resource.objects.filter(name="Bevorzugter Titel").last()
+      #  triples = Triple.objects.filter(predicate__id=resource.id)[:5]
        # projects = [Entity(triple) for triple in triples]
-        prt2 = f"{search_algo(query)}"
+      #  prt2 = f"{search_algo(query)}"
         projects = search_algo(query)
-        temp = resource
+    #    temp = resource
         results_ret = []
-
+        prt3 = ""
         for project in projects:
             resource = Resource.objects.get(id=project.id)
             source = Entity(project.resources["Einliefernde Hochschule"][0])
@@ -542,26 +557,59 @@ class DesignSearch:
                     }
             results_temp_2 = {}
 
-            try:
-                ereignis = Entity(project.resources["Ereignis"][0])
-
-                #these are needed as a work-around until cross table traversal is fixed
-                pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
-                
-                triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
-
-                akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
-                akteure = [Entity(akteur_ereignis_cross_entry.resources["AkteurIn im Ereignis"][0]) for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
-                akteure_rollen = [[Entity(rolle) for rolle in akteur_ereignis_cross_entry.resources["Rollen der AkteurIn im Ereignis"]] for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
-                akteure_rollen_name = [[split_breadcrumb(akteur_rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value) if "Deutscher Name der Rolle (Breadcrumb)" in akteur_rolle.resources else "" for akteur_rolle in akteur_rollen] for akteur_rollen in akteure_rollen]
-                akteur_rollen_string = [", ".join(akteur_rollen_name) for akteur_rollen_name in akteure_rollen_name]
-                
-                for i, akteur in enumerate(akteure):
-                    results_temp_2.update({f"contributor{i + 1}_name" : akteur.resources["Deutscher Name"][0].value,
-                                            f"contributor{i + 1}_role" : akteur_rollen_string[i]})
-            except:
-                pass
             
+
+            #try:
+            ereignis = Entity(project.resources["Ereignis"][0])
+
+            #these are needed as a work-around until cross table traversal is fixed
+            #pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
+            pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(resource.uri.split("/")[4])
+            triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
+
+
+        #     akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
+    #        akteure = [Entity(akteur_ereignis_cross_entry.resources["AkteurIn im Ereignis"][0]) for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
+        #       akteure_rollen = [[Entity(rolle) for rolle in akteur_ereignis_cross_entry.resources["Rollen der AkteurIn im Ereignis"]] for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
+        #      akteure_rollen_name = [[split_breadcrumb(akteur_rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value) if "Deutscher Name der Rolle (Breadcrumb)" in akteur_rolle.resources else "" for akteur_rolle in akteur_rollen] for akteur_rollen in akteure_rollen]
+    #        akteur_rollen_string = [", ".join(akteur_rollen_name) for akteur_rollen_name in akteure_rollen_name]
+            akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
+            results_temp_2 = {}
+
+            for i, cross_entry in enumerate(akteur_ereignis_cross_entries, start=1):
+                # Extract Akteur entity
+                time1 = perf_counter()
+
+                akteur = Entity(cross_entry.resources["AkteurIn im Ereignis"][0])
+
+                prt3 += f"\n{perf_counter() - time1}"
+
+                # Process roles
+                rollen_entities = [
+                    Entity(rolle) for rolle in cross_entry.resources["Rollen der AkteurIn im Ereignis"]
+                ]
+
+                rollen_names = [
+                    split_breadcrumb(rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value)
+                    if "Deutscher Name der Rolle (Breadcrumb)" in rolle.resources
+                    else ""
+                    for rolle in rollen_entities
+                ]
+
+
+                time1 = perf_counter()
+                # Store results
+                results_temp_2.update({
+                    f"contributor{i}_name": akteur.resources["Deutscher Name"][0].value,
+                    f"contributor{i}_role": ", ".join(rollen_names)
+                })
+                
+            #    for i, akteur in enumerate(akteure):
+            #        results_temp_2.update({f"contributor{i + 1}_name" : akteur.resources["Deutscher Name"][0].value,
+                #                              f"contributor{i + 1}_role" : akteur_rollen_string[i]})
+            #except BaseException as err:
+            #    prt = err
+
             
             category_tags = []
             results_temp_3 = {}
@@ -585,7 +633,6 @@ class DesignSearch:
             results_temp_1.update(results_temp_2)
             results_temp_1.update(results_temp_3)
             results_ret.append(results_temp_1)
-            prt.update({'res': results_ret})
         #     triple = f"{project.__dict__}"
         
 
@@ -639,6 +686,5 @@ class DesignSearch:
         context = {'query': query,
             'results': results_ret, "print": prt, "print2": prt2, "print3": prt3}
         
-        resource = temp
         
         return render(request, 'catalog/design_search_results.html', context)
