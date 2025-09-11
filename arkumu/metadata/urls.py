@@ -288,7 +288,6 @@ urlpatterns = [
     
     # Mapping Analysis URLs
     path('csv-mapping/analysis/<str:organization_id>/', mapping_analysis_views.mapping_analysis_dashboard, name='mapping_analysis_dashboard'),
-    path('csv-mapping/analysis/<str:organization_id>/<uuid:mapping_id>/', mapping_analysis_views.mapping_analysis_detail, name='mapping_analysis_detail'),
     path('csv-mapping/analysis/<str:organization_id>/<uuid:mapping_id>/api/', mapping_analysis_views.mapping_analysis_api, name='mapping_analysis_api'),
     
     # Model Graph Visualization URLs

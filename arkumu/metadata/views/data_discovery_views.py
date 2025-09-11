@@ -81,16 +81,26 @@ class DataDiscoveryView(LoginRequiredMixin, BaseCoordinatorMixin, CSVMappingTemp
             all_keys = S3FileObject.objects.all().values_list('s3_key', flat=True)
             unique_prefixes = set()
             for key in all_keys:
+                # Guard against null s3_key values during logging
+                if not key:
+                    continue
                 if '/' in key:
                     prefix = key.split('/')[0]
                     unique_prefixes.add(prefix)
                 else:
                     unique_prefixes.add(key)
-            logger.info(f"Unique s3_key prefixes found: {sorted(list(unique_prefixes))}")
+            # Sort in a None-safe way for logging
+            try:
+                prefixes_sorted = sorted(unique_prefixes)
+            except TypeError:
+                prefixes_sorted = sorted((str(p) if p is not None else 'unknown' for p in unique_prefixes))
+            logger.info(f"Unique s3_key prefixes found: {prefixes_sorted}")
             
             # Show session buckets
             session_buckets = set(S3FileObject.objects.values_list('session__s3_bucket', flat=True).distinct())
-            logger.info(f"Session buckets found: {sorted(list(session_buckets))}")
+            # Sort with None-safe representation for logging only
+            session_buckets_sorted = sorted((str(b) if b is not None else 'unknown' for b in session_buckets))
+            logger.info(f"Session buckets found: {session_buckets_sorted}")
         
         # Filter by organization bucket (required)
         if organization:

@@ -1,269 +1,178 @@
 {% load metadata_tags %}
-<!-- Enhanced Column Item with DaisyUI Card -->
-<div class="card card-compact bg-base-100 border border-base-300 hover:border-primary/50 hover:shadow-md transition-all duration-200 w-full" 
+<!-- Redesigned Compact Column Item with DaisyUI -->
+<div class="card card-compact bg-base-100 border border-base-300 hover:border-primary/50 hover:shadow-sm transition-all duration-200" 
      data-column-id="{{ column.id }}"
      id="column-{{ column.id|slugify }}">
     
-    <div class="card-body p-3">
-        <div class="flex items-center justify-between gap-3">
-            
-            <!-- Column Info Section -->
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-1 mb-2">
-                    <!-- Status Badges -->
-                    {% if column.is_anchor %}
-                    <div class="badge badge-warning badge-sm gap-1" title="Anchor Column: Primary column for building relationships">
-                        ⚓ Anchor
-                    </div>
-                    {% endif %}
-                    {% if column.is_fk %}
-                    <div class="badge badge-primary badge-sm gap-1" 
-                         title="Foreign Key: Links to {{ column.fk_config.target_dataset|default:'target dataset' }}.{{ column.fk_config.target_column|default:'target column' }}">
-                        🔗 FK
-                    </div>
-                    {% endif %}
-                    {% if column.is_multi_value %}
-                    <div class="badge badge-accent badge-sm gap-1" title="Multi-value: Contains multiple values that will be split during processing">
-                        🔀 Multi
-                    </div>
-                    {% endif %}
-                    {% if column.is_relationship_context %}
-                    <div class="badge badge-info badge-sm gap-1" title="Relationship Context: {{ column.relationship_context.context_predicate|default:'context' }} between entities">
-                        🏷️ Context
-                    </div>
-                    {% endif %}
-                    {% if column.is_external_ontology %}
-                        {% if column.external_ontologies %}
-                            <!-- Multiple ontologies - show each as a separate badge -->
-                            {% for ontology in column.external_ontologies %}
-                            <div class="badge badge-outline badge-sm gap-1 mr-1" 
-                                 title="External Ontology: {{ ontology.ontology_type|capfirst }}{% if ontology.uri_template %} ({{ ontology.uri_template|truncatechars:50 }}){% endif %}">
-                                🌐 {{ ontology.ontology_type|upper }}
-                                <form style="display: inline;" class="ml-1">
-                                    <input type="hidden" name="column_id" value="{{ column.id }}">
-                                    <input type="hidden" name="ontology_type" value="{{ ontology.ontology_type }}">
-                                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                                    <button class="btn btn-xs btn-ghost btn-error p-0 w-4 h-4" 
-                                            hx-post="{% url 'metadata:csv_remove_individual_external_ontology' %}"
-                                            hx-include="closest form"
-                                            hx-target="#column-{{ column.id|slugify }}"
-                                            hx-swap="outerHTML"
-                                            title="Remove {{ ontology.ontology_type }} ontology">✕</button>
-                                </form>
-                            </div>
-                            {% endfor %}
-                        {% elif column.external_ontology %}
-                            <!-- Legacy single ontology -->
-                            <div class="badge badge-outline badge-sm gap-1" 
-                                 title="External Ontology: {{ column.external_ontology.ontology_type|capfirst }}{% if column.external_ontology.uri_template %} ({{ column.external_ontology.uri_template|truncatechars:50 }}){% endif %}">
-                                🌐 {{ column.external_ontology.ontology_type|upper }}
-                                <form style="display: inline;" class="ml-1">
-                                    <input type="hidden" name="column_id" value="{{ column.id }}">
-                                    <input type="hidden" name="ontology_type" value="{{ column.external_ontology.ontology_type }}">
-                                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                                    <button class="btn btn-xs btn-ghost btn-error p-0 w-4 h-4" 
-                                            hx-post="{% url 'metadata:csv_remove_individual_external_ontology' %}"
-                                            hx-include="closest form"
-                                            hx-target="#column-{{ column.id|slugify }}"
-                                            hx-swap="outerHTML"
-                                            title="Remove {{ column.external_ontology.ontology_type }} ontology">✕</button>
-                                </form>
-                            </div>
-                        {% endif %}
-                    {% endif %}
-                </div>
-                
-                <!-- Column Name and Dataset -->
-                <div class="mb-2">
-                    <h4 class="font-semibold text-sm mb-1">
-                        <span class="text-primary text-base">{{ column.name }}</span>
-                    </h4>
-                    <div class="text-xs text-base-content/60 flex items-center gap-1">
-                        <svg class="w-3 h-3 text-success" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
-                        </svg>
-                        <span class="font-medium">{{ column.dataset }}</span>
-                        {% if column.source and column.source != column.dataset %}
-                        <span class="text-base-content/40 mx-1">•</span>
-                        <span class="text-base-content/50">{{ column.source }}</span>
-                        {% endif %}
-                    </div>
-                </div>
-                
-                <!-- FK Relationship Info -->
-                {% if column.is_fk and column.fk_config %}
-                <div class="mb-2 p-2 bg-secondary/10 rounded border-l-2 border-secondary">
-                    <div class="text-xs font-medium text-secondary mb-1">🔗 Foreign Key Link:</div>
-                    <div class="text-xs text-base-content/80">
-                        <span class="font-mono bg-base-200 px-1 rounded">{{ column.name }}</span>
-                        <span class="mx-1">→</span>
-                        <span class="font-mono bg-base-200 px-1 rounded">{{ column.fk_config.target_dataset }}.{{ column.fk_config.target_column }}</span>
-                    </div>
-                    <div class="text-xs text-base-content/50 mt-1">
-                        Direction: {{ column.fk_config.direction|default:'outbound'|capfirst }}
-                    </div>
-                </div>
-                {% endif %}
-                
-                <!-- Relationship Context Info -->
-                {% if column.is_relationship_context and column.relationship_context %}
-                <div class="mb-2 p-2 bg-info/10 rounded border-l-2 border-info">
-                    <div class="text-xs font-medium text-info mb-1">🏷️ Relationship Context:</div>
-                    <div class="text-xs text-base-content/80">
-                        {% if column.relationship_context.context_predicate %}
-                        <div class="mb-1">
-                            <span class="font-semibold">Predicate:</span> 
-                            <span class="font-mono bg-base-200 px-1 rounded">{{ column.relationship_context.context_predicate }}</span>
-                        </div>
-                        {% endif %}
-                        {% if column.relationship_context.primary_fk_dataset and column.relationship_context.secondary_fk_dataset %}
-                        <div class="mb-1">
-                            <span class="font-semibold">Between:</span> {{ column.relationship_context.primary_fk_dataset }}.{{ column.relationship_context.primary_fk_column }} ↔ {{ column.relationship_context.secondary_fk_dataset }}.{{ column.relationship_context.secondary_fk_column }}
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endif %}
-                
-
-                
-                <!-- Sample Values -->
-                {% if column.sample_values %}
-                <div class="flex items-center gap-1 text-xs text-base-content/60">
-                    <span class="badge badge-neutral badge-xs">SAVE</span>
-                    <span class="truncate max-w-[150px]" title="Sample values: {{ column.sample_values|join:', ' }}">
-                        {{ column.sample_values.0|default:'' }}{% if column.sample_values|length > 1 %}, {{ column.sample_values.1|default:'' }}{% if column.sample_values|length > 2 %}...{% endif %}{% endif %}
-                    </span>
-                </div>
-                {% endif %}
-            </div>
-            
-            <!-- Action Buttons -->
-            <div class="flex items-center gap-1 flex-shrink-0">
-            
-                <!-- Hidden Forms -->
-                <form id="fk-data-form-{{ column.id|slugify }}" style="display: none;">
-                    <input type="hidden" name="column_id" value="{{ column.id }}">
-                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                </form>
-                
-                <form id="multi-value-data-form-{{ column.id|slugify }}" style="display: none;">
-                    <input type="hidden" name="column_id" value="{{ column.id }}">
-                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                </form>
-                
-                <form id="anchor-data-form-{{ column.id|slugify }}" style="display: none;">
-                    <input type="hidden" name="column_id" value="{{ column.id }}">
-                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                </form>
-                
-                <form id="remove-data-form-{{ column.id|slugify }}" style="display: none;">
-                    <input type="hidden" name="column_name" value="{{ column.name }}">
-                    <input type="hidden" name="dataset_name" value="{{ column.dataset }}">
-                    <input type="hidden" name="source_name" value="{{ column.source }}">
-                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                </form>
-                
-                <form id="relationship-context-data-form-{{ column.id|slugify }}" style="display: none;">
-                    <input type="hidden" name="column_id" value="{{ column.id }}">
-                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                </form>
-                
-                <form id="external-ontology-data-form-{{ column.id|slugify }}" style="display: none;">
-                    <input type="hidden" name="column_id" value="{{ column.id }}">
-                    <input type="hidden" name="organization" value="{{ organization_id }}">
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                </form>
-                
-                <!-- Action Button Group -->
-                <div class="btn-group">
-                    <!-- FK Configuration -->
-                    <div class="tooltip tooltip-left" data-tip="{% if column.is_fk %}Edit Foreign Key{% else %}Create Foreign Key{% endif %}">
-                        <button class="btn btn-sm {% if column.is_fk %}btn-secondary{% else %}btn-outline btn-secondary{% endif %} column-operation-btn" 
-                                hx-post="{% url 'metadata:csv_toggle_fk_form' %}"
-                                hx-include="#fk-data-form-{{ column.id|slugify }}"
-                                hx-target="#fk-form-{{ column.id|slugify }}"
-                                hx-swap="outerHTML"
-                                hx-on::before-request="console.log('🔥 HTMX: Before request to {{ column.id|slugify }}')"
-                                hx-on::after-request="console.log('🔥 HTMX: After request to {{ column.id|slugify }}')"
-                                hx-on::response-error="console.log('🔥 HTMX: Response error for {{ column.id|slugify }}', event.detail)"
-                                onclick="console.log('🔥 FK Button clicked for column: {{ column.id|slugify }}'); console.log('🔥 Target URL:', '{% url 'metadata:csv_toggle_fk_form' %}');">
-                            🔗
-                        </button>
-                    </div>
-                    
-                    <!-- Multi-value Toggle -->
-                    <div class="tooltip tooltip-left" data-tip="{% if column.is_multi_value %}Remove Multi-value{% else %}Mark as Multi-value{% endif %}">
-                        <button class="btn btn-sm {% if column.is_multi_value %}btn-accent{% else %}btn-outline btn-accent{% endif %} column-operation-btn" 
-                                hx-post="{% url 'metadata:csv_toggle_multi_value_column' %}"
-                                hx-include="#multi-value-data-form-{{ column.id|slugify }}"
-                                hx-target="#column-{{ column.id|slugify }}"
-                                hx-swap="outerHTML">
-                            🔀
-                        </button>
-                    </div>
-                    
-                    <!-- Relationship Context Button -->
-                    <div class="tooltip tooltip-left" data-tip="{% if column.is_relationship_context %}Edit Relationship Context{% else %}Configure as Relationship Context{% endif %}">
-                        <button class="btn btn-sm {% if column.is_relationship_context %}btn-info{% else %}btn-outline btn-info{% endif %} column-operation-btn" 
-                                hx-post="{% url 'metadata:csv_toggle_relationship_context_form' %}"
-                                hx-include="#relationship-context-data-form-{{ column.id|slugify }}"
-                                hx-target="#relationship-context-form-{{ column.id|slugify }}"
-                                hx-swap="outerHTML">
-                            🏷️
-                        </button>
-                    </div>
-                    
-                    <!-- External Ontology Button -->
-                    <div class="tooltip tooltip-left" data-tip="{% if column.is_external_ontology %}Edit External Ontology{% else %}Configure as External Ontology{% endif %}">
-                        <button class="btn btn-sm {% if column.is_external_ontology %}btn-outline{% else %}btn-outline btn-neutral{% endif %} column-operation-btn" 
-                                hx-post="{% url 'metadata:csv_toggle_external_ontology_form' %}"
-                                hx-include="#external-ontology-data-form-{{ column.id|slugify }}"
-                                hx-target="#external-ontology-form-{{ column.id|slugify }}"
-                                hx-swap="outerHTML">
-                            🌐
-                        </button>
-                    </div>
-                    
-                    <!-- Anchor Button -->
-                    <div class="tooltip tooltip-left" data-tip="{% if column.is_anchor %}Remove Anchor{% else %}Set as Anchor Column{% endif %}">
-                        <button class="btn btn-sm {% if column.is_anchor %}btn-warning{% else %}btn-outline btn-warning{% endif %} column-operation-btn" 
-                                hx-post="{% url 'metadata:csv_set_anchor_column' %}"
-                                hx-include="#anchor-data-form-{{ column.id|slugify }}"
-                                hx-target="#column-{{ column.id|slugify }}"
-                                hx-swap="outerHTML">
-                            ⚓
-                        </button>
-                    </div>
-                    
-                    <!-- Remove Button -->
-                    <div class="tooltip tooltip-left" data-tip="Remove column from workspace">
-                        <button class="btn btn-sm btn-outline btn-error column-operation-btn" 
-                                hx-post="{% url 'metadata:csv_remove_column_from_workspace' %}"
-                                hx-include="#remove-data-form-{{ column.id|slugify }}"
-                                hx-target="#column-{{ column.id|slugify }}"
-                                hx-swap="delete">
-                            ✕
-                        </button>
-                    </div>
-                </div>
+    <div class="card-body p-2">
+        <!-- Header with Column Name -->
+        <div class="mb-2">
+            <h4 class="font-semibold text-sm text-primary truncate" title="{{ column.name }}">
+                {{ column.name }}
+            </h4>
+            <div class="text-xs text-base-content/60 truncate">
+                {{ column.dataset }}{% if column.source and column.source != column.dataset %} • {{ column.source }}{% endif %}
             </div>
         </div>
         
-        <!-- FK Configuration Form Placeholder -->
-        <div id="fk-form-{{ column.id|slugify }}" class="mt-3"></div>
+        <!-- Action Buttons Row -->
+        <div class="flex flex-wrap gap-1 mb-2">
+            <button class="btn btn-xs {% if column.is_fk %}btn-secondary{% else %}btn-outline btn-secondary{% endif %}"
+                    hx-post="{% url 'metadata:csv_toggle_fk_form' %}"
+                    hx-include="#fk-data-form-{{ column.id|slugify }}"
+                    hx-target="#fk-form-{{ column.id|slugify }}"
+                    hx-swap="outerHTML"
+                    title="{% if column.is_fk %}Edit{% else %}Add{% endif %} Foreign Key">
+                🔗 FK
+            </button>
+            
+            <button class="btn btn-xs {% if column.is_multi_value %}btn-accent{% else %}btn-outline btn-accent{% endif %}"
+                    hx-post="{% url 'metadata:csv_toggle_multi_value_column' %}"
+                    hx-include="#multi-value-data-form-{{ column.id|slugify }}"
+                    hx-target="#column-{{ column.id|slugify }}"
+                    hx-swap="outerHTML"
+                    title="{% if column.is_multi_value %}Remove{% else %}Set{% endif %} Multi-value">
+                🔀 Multi
+            </button>
+            
+            <button class="btn btn-xs {% if column.is_anchor %}btn-warning{% else %}btn-outline btn-warning{% endif %}"
+                    hx-post="{% url 'metadata:csv_set_anchor_column' %}"
+                    hx-include="#anchor-data-form-{{ column.id|slugify }}"
+                    hx-target="#column-{{ column.id|slugify }}"
+                    hx-swap="outerHTML"
+                    title="{% if column.is_anchor %}Remove{% else %}Set as{% endif %} Anchor">
+                ⚓ Anchor
+            </button>
+            
+            <button class="btn btn-xs {% if column.is_relationship_context %}btn-info{% else %}btn-outline btn-info{% endif %}"
+                    hx-post="{% url 'metadata:csv_toggle_relationship_context_form' %}"
+                    hx-include="#relationship-context-data-form-{{ column.id|slugify }}"
+                    hx-target="#relationship-context-form-{{ column.id|slugify }}"
+                    hx-swap="outerHTML"
+                    title="{% if column.is_relationship_context %}Edit{% else %}Add{% endif %} Context">
+                🏷️ Context
+            </button>
+            
+            <button class="btn btn-xs btn-outline"
+                    hx-post="{% url 'metadata:csv_toggle_external_ontology_form' %}"
+                    hx-include="#external-ontology-data-form-{{ column.id|slugify }}"
+                    hx-target="#external-ontology-form-{{ column.id|slugify }}"
+                    hx-swap="outerHTML"
+                    title="{% if column.is_external_ontology %}Edit{% else %}Add{% endif %} Ontology">
+                🌐 Ontology
+            </button>
+            
+            <button class="btn btn-xs btn-outline btn-error"
+                    hx-post="{% url 'metadata:csv_remove_column_from_workspace' %}"
+                    hx-include="#remove-data-form-{{ column.id|slugify }}"
+                    hx-target="closest li"
+                    hx-swap="delete"
+                    title="Remove from Workspace">
+                ✕ Remove
+            </button>
+        </div>
         
-        <!-- Relationship Context Configuration Form Placeholder -->
-        <div id="relationship-context-form-{{ column.id|slugify }}" class="mt-3"></div>
+        <!-- Compact Status Badges -->
+        {% if column.is_anchor or column.is_fk or column.is_multi_value or column.is_relationship_context or column.is_external_ontology %}
+        <div class="flex flex-wrap gap-1 mt-2">
+            {% if column.is_anchor %}
+            <span class="badge badge-warning badge-xs">⚓ Anchor</span>
+            {% endif %}
+            {% if column.is_fk %}
+            <span class="badge badge-secondary badge-xs" title="{{ column.fk_config.target_dataset|default:'target' }}.{{ column.fk_config.target_column|default:'column' }}">
+                🔗 FK
+            </span>
+            {% endif %}
+            {% if column.is_multi_value %}
+            <span class="badge badge-accent badge-xs">🔀 Multi</span>
+            {% endif %}
+            {% if column.is_relationship_context %}
+            <span class="badge badge-info badge-xs">🏷️ Context</span>
+            {% endif %}
+            {% if column.is_external_ontology %}
+                {% if column.external_ontologies %}
+                    {% for ontology in column.external_ontologies %}
+                    <span class="badge badge-outline badge-xs">🌐 {{ ontology.ontology_type|upper }}</span>
+                    {% endfor %}
+                {% elif column.external_ontology %}
+                    <span class="badge badge-outline badge-xs">🌐 {{ column.external_ontology.ontology_type|upper }}</span>
+                {% endif %}
+            {% endif %}
+        </div>
+        {% endif %}
         
-        <!-- External Ontology Configuration Form Placeholder -->
-        <div id="external-ontology-form-{{ column.id|slugify }}" class="mt-3"></div>
+        <!-- Expandable Details (collapsed by default) -->
+        {% if column.is_fk or column.is_relationship_context %}
+        <details class="mt-2">
+            <summary class="text-xs text-base-content/60 cursor-pointer hover:text-base-content">
+                View configuration details
+            </summary>
+            <div class="mt-1 text-xs space-y-1">
+                {% if column.is_fk and column.fk_config %}
+                <div class="p-1 bg-secondary/10 rounded">
+                    <div class="font-semibold text-secondary">FK Link:</div>
+                    <div class="truncate">
+                        {{ column.name }} → {{ column.fk_config.target_dataset }}.{{ column.fk_config.target_column }}
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if column.is_relationship_context and column.relationship_context %}
+                <div class="p-1 bg-info/10 rounded">
+                    <div class="font-semibold text-info">Context:</div>
+                    {% if column.relationship_context.context_predicate %}
+                    <div class="truncate">{{ column.relationship_context.context_predicate }}</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+        
+        <!-- Hidden Forms -->
+        <div class="hidden">
+            <form id="fk-data-form-{{ column.id|slugify }}">
+                <input type="hidden" name="column_id" value="{{ column.id }}">
+                <input type="hidden" name="organization" value="{{ organization_id }}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </form>
+            
+            <form id="multi-value-data-form-{{ column.id|slugify }}">
+                <input type="hidden" name="column_id" value="{{ column.id }}">
+                <input type="hidden" name="organization" value="{{ organization_id }}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </form>
+            
+            <form id="anchor-data-form-{{ column.id|slugify }}">
+                <input type="hidden" name="column_id" value="{{ column.id }}">
+                <input type="hidden" name="organization" value="{{ organization_id }}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </form>
+            
+            <form id="remove-data-form-{{ column.id|slugify }}">
+                <input type="hidden" name="column_name" value="{{ column.name }}">
+                <input type="hidden" name="dataset_name" value="{{ column.dataset }}">
+                <input type="hidden" name="source_name" value="{{ column.source }}">
+                <input type="hidden" name="organization" value="{{ organization_id }}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </form>
+            
+            <form id="relationship-context-data-form-{{ column.id|slugify }}">
+                <input type="hidden" name="column_id" value="{{ column.id }}">
+                <input type="hidden" name="organization" value="{{ organization_id }}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </form>
+            
+            <form id="external-ontology-data-form-{{ column.id|slugify }}">
+                <input type="hidden" name="column_id" value="{{ column.id }}">
+                <input type="hidden" name="organization" value="{{ organization_id }}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </form>
+        </div>
+        
+        <!-- Form Placeholders for HTMX -->
+        <div id="fk-form-{{ column.id|slugify }}"></div>
+        <div id="relationship-context-form-{{ column.id|slugify }}"></div>
+        <div id="external-ontology-form-{{ column.id|slugify }}"></div>
     </div>
-</div> 
+</div>

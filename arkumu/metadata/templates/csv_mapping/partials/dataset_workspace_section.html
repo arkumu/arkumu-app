@@ -1,57 +1,73 @@
-<!-- Coordinator-Based Dataset Workspace Section -->
-<div id="dataset-workspace-{{ dataset_group.name|slugify }}" class="collapse collapse-arrow bg-base-100 border border-success/30 hover:border-success transition-all hover:-translate-y-0.5 hover:shadow-sm overflow-hidden">
-    <!-- Hidden checkbox for DaisyUI collapse (checked = expanded by default) -->
-    <input type="checkbox" class="peer" checked /> 
+<!-- Simple Dataset Workspace Section -->
+<div class="bg-base-100 border border-success/30 hover:border-success transition-all hover:-translate-y-0.5 hover:shadow-sm rounded-box" id="dataset-workspace-{{ dataset_group.name|slugify }}">
     
-    <!-- Collapse Title (Dataset Header) -->
-    <div class="collapse-title flex items-center justify-between p-3 min-h-0">
-        <div id="dataset-header-{{ dataset_group.name|slugify }}" class="flex items-center gap-2 flex-1">
-            <!-- Dataset Info -->
-            <div class="flex items-center gap-2">
-                <svg class="w-3 h-3 text-success" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
-                </svg>
-                <span class="text-sm font-medium text-success">{{ dataset_group.name }}</span>
-                <span class="badge badge-success font-medium">
-                    {{ dataset_group.selected_count }} selected
-                </span>
-            </div>
+    <!-- Header with collapse functionality -->
+    <div class="flex items-center justify-between p-3 cursor-pointer select-none" onclick="toggleCollapse('{{ dataset_group.name|slugify }}')">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+            <svg class="w-3 h-3 text-success" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
+            </svg>
+            <span class="text-sm font-medium text-success truncate">{{ dataset_group.name }}</span>
+            <span class="badge badge-success badge-sm font-medium whitespace-nowrap" id="counter-{{ dataset_group.name|slugify }}">{{ dataset_group.selected_count }} selected</span>
         </div>
         
-        <!-- Close Dataset Button (coordinator-based) -->
+        <!-- Close Dataset Button -->
         <form style="display: none;" id="close-dataset-form-{{ dataset_group.name|slugify }}">
-            <input type="hidden" name="dataset_name" value="{{ dataset_group.name }}">
-            <input type="hidden" name="source_name" value="{{ dataset_group.source }}">
+            <input type="hidden" name="dataset" value="{{ dataset_group.name }}">
+            <input type="hidden" name="source" value="{{ organization_id }}">
             <input type="hidden" name="organization" value="{{ organization_id }}">
             <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
         </form>
         
-        <button class="btn btn-xs btn-ghost text-error hover:bg-error/10" 
-                title="Remove {{ dataset_group.name }} from workspace (deselects dataset)"
-                hx-post="{% url 'metadata:toggle_dataset_card' %}"
+        <button class="btn btn-xs btn-ghost text-error hover:bg-error/10 ml-2" 
+                title="Remove all {{ dataset_group.name }} columns from workspace"
+                hx-post="{% url 'metadata:csv_deselect_all_dataset_columns' %}"
                 hx-include="#close-dataset-form-{{ dataset_group.name|slugify }}"
-                hx-target="#table-content"
-                hx-swap="innerHTML"
-                hx-confirm="Remove '{{ dataset_group.name }}' and all its columns from workspace?"
-                onclick="event.stopPropagation();">
+                hx-trigger="click consume">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
         </button>
+        
+        <!-- Simple arrow -->
+        <svg class="w-4 h-4 text-base-content/70 transition-transform duration-200 ml-2" 
+             id="arrow-{{ dataset_group.name|slugify }}" 
+             fill="none" stroke="currentColor" viewBox="0 0 24 24"
+             style="transform: rotate(0deg)">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
     </div>
 
-    <!-- Collapse Content (Selected Columns) -->
-    <div class="collapse-content bg-success/5 border-t border-success/20">
-        <!-- Columns from coordinator (already filtered by dataset) -->
-        {% for column in dataset_group.columns %}
-            <div class="p-2 border-b border-success/10 last:border-b-0">
-                {% include 'csv_mapping/partials/column_item.html' with column=column organization_id=organization_id csrf_token=csrf_token %}
-            </div>
-        {% empty %}
-            <div class="p-3 text-center text-success/60 text-xs">
-                No columns selected from this dataset
-                <br><span class="opacity-50">Click columns in the table above to add them</span>
-            </div>
-        {% endfor %}
+    <!-- Content -->
+    <div class="bg-success/5 border-t border-success/20 hidden" id="content-{{ dataset_group.name|slugify }}">
+        <div class="max-h-[32rem] overflow-y-auto">
+            <ul class="flex flex-col gap-2 p-2">
+                {% for column in dataset_group.columns %}
+                    <li>
+                        {% include 'csv_mapping/partials/column_item.html' with column=column organization_id=organization_id csrf_token=csrf_token %}
+                    </li>
+                {% empty %}
+                    <li class="p-3 text-center text-success/60 text-xs">
+                        No columns selected from this dataset
+                        <br><span class="opacity-50">Click columns in the table above to add them</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
     </div>
-</div> 
+</div>
+
+<script>
+function toggleCollapse(datasetSlug) {
+    const content = document.getElementById('content-' + datasetSlug);
+    const arrow = document.getElementById('arrow-' + datasetSlug);
+    
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        arrow.style.transform = 'rotate(90deg)';
+    } else {
+        content.classList.add('hidden');
+        arrow.style.transform = 'rotate(0deg)';
+    }
+}
+</script>

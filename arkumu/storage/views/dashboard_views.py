@@ -690,4 +690,40 @@ def bucket_size_info(request, organization):
 
 
 
+@require_http_methods(["GET"])
+@general_login_required
+def export_successful_imports_csv(request, organization: str):
+    """
+    Download a CSV of all files in the S3 bucket with checksums.
+    Uses Huey background task for non-blocking processing.
+    """
+    try:
+        from arkumu.storage.tasks import export_successful_imports_task
+        
+        logger.info(f"📊 CSV EXPORT: Starting background export for organization '{organization}' (user: {request.user.id})")
+        
+        # Start background task and wait for result
+        task_result = export_successful_imports_task(organization, request.user.id)
+        result = task_result(blocking=True)
+        
+        # Check if result is a dict (success) or string (error)
+        if isinstance(result, str):
+            # Task failed and returned error message
+            return HttpResponse(f"Export failed: {result}", status=500)
+        elif not result.get("success"):
+            return HttpResponse(f"Export failed: {result.get('error', 'Unknown error')}", status=500)
+
+        filename = result.get("filename", f"s3_export_{organization}.csv")
+        content = result.get("content", b"")
+        
+        response = HttpResponse(content, content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f"attachment; filename=\"{filename}\""
+        
+        logger.info(f"✅ CSV EXPORT: Generated export {filename} with {result.get('count', 0)} files for user {request.user.id}")
+        return response
+        
+    except Exception as e:
+        logger.exception(f"❌ EXPORT CSV: Unexpected error for {organization}: {str(e)}")
+        return HttpResponse(f"Unexpected error: {str(e)}", status=500)
+
  

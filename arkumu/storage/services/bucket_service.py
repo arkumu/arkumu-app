@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any, Dict, List
 import tempfile
 from pathlib import Path
+import csv
+import io
 
 from botocore.exceptions import ClientError
 from django.conf import settings
@@ -17,6 +19,8 @@ from .upload_service import UploadService
 # Import metadata models for direct access
 from arkumu.metadata.models.resource import Resource
 from arkumu.metadata.models.triples import Triple
+from arkumu.storage.models import S3FileObject
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
@@ -526,6 +530,207 @@ class BucketService:
     def delete_file(self, bucket_name: str, file_path: str) -> Dict[str, Any]:
         """Delete a single file."""
         return self.base_s3_service.delete_object(bucket_name, file_path, is_directory=False)
+
+    def export_successful_imports_csv(self, organization_id: str) -> Dict[str, Any]:
+        """
+        Build a CSV export using S3FileObject records with S3 existence verification.
+        This provides fast access to files with rich metadata and checksums.
+
+        Columns:
+        - file_name
+        - folder_name (derived from S3 key path)
+        - file_size_bytes
+        - file_size_human
+        - s3_key
+        - checksum_sha256 (from DB or calculated on-demand)
+        - upload_session
+        - created_at
+        - status
+
+        Returns a dict with:
+        - success: bool
+        - filename: suggested filename
+        - content: CSV bytes (utf-8)
+        - count: number of rows exported
+        - error: optional error message
+        """
+        try:
+            from arkumu.storage.models.s3_file_objects import S3FileObject
+            
+            bucket_name = self.get_organization_bucket(organization_id)
+
+            # Ensure bucket exists (check only)
+            ensure = self.ensure_organization_bucket_exists(organization_id, check_only=True)
+            if not ensure.get("success"):
+                return {"success": False, "error": ensure.get("error", "Bucket not accessible")}
+
+            logger.info(f"📊 DB EXPORT: Starting export for organization '{organization_id}' using S3FileObject records")
+
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow([
+                "file_name",
+                "folder_name", 
+                "file_size_bytes",
+                "file_size_human",
+                "s3_key",
+                "checksum_sha256",
+                "upload_session",
+                "created_at",
+                "status"
+            ])
+
+            count = 0
+            total_size = 0
+            verified_count = 0
+            missing_count = 0
+            
+            # Query S3FileObject records for this organization
+            # We need to find files that match the organization bucket
+            logger.info(f"📋 DB QUERY: Getting S3FileObject records for organization '{organization_id}'")
+            
+            # Query files that are completed and have the organization bucket
+            file_objects = S3FileObject.objects.filter(
+                status__in=['completed', 'verified']
+            ).select_related('session').order_by('created_at')
+            
+            # Filter by organization - we need to match against the session or infer from s3_key
+            org_file_objects = []
+            for file_obj in file_objects:
+                # Check if file belongs to this organization
+                if (hasattr(file_obj.session, 'organization') and 
+                    file_obj.session.organization == organization_id):
+                    org_file_objects.append(file_obj)
+                elif file_obj.s3_key.startswith(f"{organization_id}/") or bucket_name in file_obj.s3_key:
+                    org_file_objects.append(file_obj)
+            
+            logger.info(f"📋 FOUND: {len(org_file_objects)} S3FileObject records for organization '{organization_id}'")
+            
+            for file_obj in org_file_objects:
+                # Verify file exists in S3
+                exists = file_obj.exists_in_s3(self.base_s3_service)
+                if not exists:
+                    missing_count += 1
+                    logger.warning(f"⚠️ File missing from S3: {file_obj.s3_key}")
+                    continue
+                    
+                verified_count += 1
+                
+                # Extract file name and folder from S3 key
+                file_name = file_obj.file_name or os.path.basename(file_obj.s3_key)
+                folder_parts = file_obj.s3_key.split('/')
+                folder_name = '/'.join(folder_parts[:-1]) if len(folder_parts) > 1 else ""
+                
+                # Use stored checksum or calculate on-demand
+                checksum_sha256 = file_obj.sha256_checksum
+                if not checksum_sha256:
+                    logger.info(f"📊 CHECKSUM: Calculating SHA256 for {file_name} ({self.base_s3_service._format_size(file_obj.file_size_bytes)})...")
+                    checksum_sha256 = file_obj.calculate_checksum(self.base_s3_service)
+                    if checksum_sha256:
+                        logger.info(f"✅ CHECKSUM: SHA256 for {file_name}: {checksum_sha256[:16]}...")
+                
+                try:
+                    # Write CSV row with database information
+                    writer.writerow([
+                        file_name,
+                        folder_name,
+                        file_obj.file_size_bytes,
+                        self.base_s3_service._format_size(file_obj.file_size_bytes),
+                        file_obj.s3_key,
+                        checksum_sha256 or "",
+                        str(file_obj.session.id) if file_obj.session else "",
+                        file_obj.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        file_obj.status
+                    ])
+                    count += 1
+                    total_size += file_obj.file_size_bytes
+                    
+                    # Log progress every 10 files for better visibility
+                    if count % 10 == 0:
+                        logger.info(f"📊 PROGRESS: Processed {count}/{len(org_file_objects)} files, total size: {self.base_s3_service._format_size(total_size)}")
+
+                except Exception as e:
+                    logger.error(f"❌ Error processing file {file_obj.s3_key}: {e}")
+                    continue
+
+            csv_bytes = output.getvalue().encode("utf-8")
+            output.close()
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"s3_export_{organization_id}_{timestamp}.csv"
+
+            logger.info(f"✅ DB EXPORT: Export completed - {count} verified files out of {len(org_file_objects)} DB records")
+            if missing_count > 0:
+                logger.warning(f"⚠️ {missing_count} files found in DB but missing from S3")
+
+            return {
+                "success": True,
+                "filename": filename,
+                "content": csv_bytes,
+                "count": count,
+                "total_size": total_size,
+            }
+
+        except Exception as e:
+            logger.exception("Failed to export S3 bucket scan CSV")
+            return {"success": False, "error": str(e)}
+
+    def _calculate_file_checksum(self, bucket_name: str, s3_key: str, max_file_size: int = 50 * 1024 * 1024) -> str:
+        """
+        Calculate SHA256 checksum for a file in S3 by downloading and hashing it.
+        
+        Args:
+            bucket_name: Name of the S3 bucket
+            s3_key: S3 key of the file
+            max_file_size: Maximum file size to process (default 50MB)
+            
+        Returns:
+            str: SHA256 checksum in hexadecimal format, or empty string if calculation fails
+        """
+        try:
+            import hashlib
+            import tempfile
+            
+            # Check file size first to avoid downloading huge files
+            try:
+                head_response = self.base_s3_service.s3_client.head_object(
+                    Bucket=bucket_name,
+                    Key=s3_key
+                )
+                file_size = head_response.get('ContentLength', 0)
+                
+                if file_size > max_file_size:
+                    logger.warning(f"🚫 CHECKSUM: File {s3_key} too large ({self.base_s3_service._format_size(file_size)}), skipping checksum calculation")
+                    return ""
+                    
+            except Exception as size_error:
+                logger.debug(f"Could not determine file size for {s3_key}: {size_error}")
+                return ""
+            
+            # Download file and calculate checksum
+            sha256_hash = hashlib.sha256()
+            
+            # Stream the file to avoid loading large files into memory
+            try:
+                response = self.base_s3_service.s3_client.get_object(
+                    Bucket=bucket_name,
+                    Key=s3_key
+                )
+                
+                # Read in chunks to manage memory usage
+                chunk_size = 8192  # 8KB chunks
+                for chunk in iter(lambda: response['Body'].read(chunk_size), b''):
+                    sha256_hash.update(chunk)
+                
+                return sha256_hash.hexdigest()
+                
+            except Exception as download_error:
+                logger.debug(f"Failed to download file {s3_key} for checksum calculation: {download_error}")
+                return ""
+                
+        except Exception as e:
+            logger.debug(f"Failed to calculate checksum for {s3_key}: {e}")
+            return ""
 
     def stream_file_with_range(self, bucket_name: str, file_path: str, range_header: str = None) -> Dict[str, Any]:
         """
