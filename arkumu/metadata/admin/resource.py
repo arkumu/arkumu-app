@@ -105,6 +105,31 @@ class HasTriplesFilter(SimpleListFilter):
         return queryset
 
 
+class CanonicalUriFilter(SimpleListFilter):
+    """Filter resources by canonical URI status."""
+    title = _('canonical URI status')
+    parameter_name = 'canonical_status'
+    
+    def lookups(self, request, model_admin):
+        return (
+            ('has_canonical', _('Has Canonical URI')),
+            ('no_canonical', _('No Canonical URI')),
+            ('arkumu_compliant', _('Arkumu Compliant (rsh, det, fuk)')),
+        )
+    
+    def queryset(self, request, queryset):
+        if self.value() == 'has_canonical':
+            return queryset.filter(canonical_uri__isnull=False)
+        if self.value() == 'no_canonical':
+            return queryset.filter(canonical_uri__isnull=True)
+        if self.value() == 'arkumu_compliant':
+            # Filter for Arkumu-compliant institutions
+            return queryset.filter(
+                organization__code__iexact__in=['rsh', 'det', 'fuk']
+            )
+        return queryset
+
+
 
 
 @admin.register(Resource)
@@ -113,6 +138,7 @@ class ResourceAdmin(admin.ModelAdmin):
         'id_short',
         'resource_type_badge',
         'display_uri',
+        'display_canonical_uri',
         'display_name',
         'display_value_truncated',
         'organization_link',
@@ -128,6 +154,7 @@ class ResourceAdmin(admin.ModelAdmin):
         ResourceTypeFilter,
         'public_access_level',  # Has composite index with is_public_approved
         PublicAccessFilter,
+        CanonicalUriFilter,  # New canonical URI filter
         'is_placeholder',
         'is_public',
         'is_externally_linked',
@@ -142,6 +169,7 @@ class ResourceAdmin(admin.ModelAdmin):
     # Simple search fields using Django's default search
     search_fields = [
         'uri',
+        'canonical_uri',  # Add canonical URI to search
         'name', 
         'value',
         'organization__name',
@@ -172,11 +200,12 @@ class ResourceAdmin(admin.ModelAdmin):
         (_('Resource Content'), {
             'fields': (
                 'uri',
+                'canonical_uri',
                 'name', 
                 'value',
                 'value_hash',
             ),
-            'description': 'The actual content of the resource - URI for identified resources, value for literals.'
+            'description': 'The actual content of the resource - URI for identified resources, canonical URI for unified catalog, value for literals.'
         }),
         (_('Literal-Specific Properties'), {
             'fields': (
@@ -798,6 +827,29 @@ class ResourceAdmin(admin.ModelAdmin):
         return format_html('<span style="color: #dc3545;">⚠️ No URI</span>')
     display_uri.short_description = _('URI')
     display_uri.admin_order_field = 'uri'
+    
+    def display_canonical_uri(self, obj):
+        """Display canonical URI with special styling."""
+        if obj.canonical_uri:
+            display_uri = obj.canonical_uri
+            if len(display_uri) > 35:
+                display_uri = display_uri[:32] + '...'
+            return format_html(
+                '<a href="{}" target="_blank" title="{}" '
+                'style="text-decoration: none; color: #28a745; font-weight: bold;">{}</a> '
+                '<span style="background: #28a745; color: white; padding: 1px 3px; '
+                'border-radius: 3px; font-size: 9px;">UNIFIED</span>',
+                obj.canonical_uri,
+                obj.canonical_uri,
+                display_uri
+            )
+        elif obj.organization and obj.organization.code.lower() in ['rsh', 'det', 'fuk']:
+            return format_html(
+                '<span style="color: #ffc107; font-style: italic;">⚠️ Missing canonical URI</span>'
+            )
+        return format_html('<span style="color: #6c757d;">—</span>')
+    display_canonical_uri.short_description = _('Canonical URI')
+    display_canonical_uri.admin_order_field = 'canonical_uri'
     
     def display_name(self, obj):
         """Display the name field."""

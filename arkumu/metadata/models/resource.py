@@ -159,6 +159,15 @@ class Resource(UUIDModel):
         default=False,
         help_text="Indicates if this is a placeholder resource created during cross-reference that hasn't been fully imported yet"
     )
+    
+    # Harmonization field for unified catalog
+    canonical_uri = models.URLField(
+        max_length=512,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Unified catalog URI this resource maps to for cross-archive harmonization"
+    )
 
     datatype = models.CharField(
         max_length=255, blank=True, null=True,
