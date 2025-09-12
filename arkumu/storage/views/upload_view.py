@@ -5,7 +5,7 @@ from django.urls import reverse
 
 # Import views from their respective modules
 
-from arkumu.storage.views.streaming_upload_views import streaming_upload_form
+from arkumu.storage.views.upload_views import upload_form as presigned_upload_form
 from arkumu.users.mixins import general_login_required
 
 logger = logging.getLogger(__name__)
@@ -15,13 +15,10 @@ logger = logging.getLogger(__name__)
 @general_login_required
 def upload_form(request):
     """
-    Use the streaming upload form directly.
-    
-    The old upload form using presigned URLs is now deprecated.
-    This view directly calls the streaming upload form view.
+    Use the presigned upload form directly (single PUT and multipart).
     """
-    logger.info(f"User {request.user.username} accessing upload form, using streaming upload")
-    return streaming_upload_form(request)
+    logger.info(f"User {request.user.username} accessing upload form, using presigned upload")
+    return presigned_upload_form(request)
 
 
 

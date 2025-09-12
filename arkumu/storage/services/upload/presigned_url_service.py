@@ -449,14 +449,28 @@ class PresignedURLService:
     def calculate_multipart_parts(
         self,
         file_size: int,
-        chunk_size: int = 10 * 1024 * 1024
+        chunk_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Calculate optimal multipart upload parameters for browser uploads.
+        Calculate optimal multipart upload parameters using dynamic sizing.
+        
+        AWS Best Practices (2024):
+        - Use multipart for files > 100MB
+        - Minimum part size: 5MB (except last part)
+        - Maximum parts: 10,000
+        - Optimal chunk sizes: 16-128MB for most use cases
+        - Larger chunks = fewer HTTP requests = better performance
+        
+        Dynamic Algorithm:
+        - 100-500MB: Use 25MB chunks (4-20 parts)
+        - 500MB-1GB: Use 50MB chunks (10-20 parts)  
+        - 1GB-5GB: Use 100MB chunks (10-50 parts)
+        - 5GB-50GB: Use 250MB chunks (20-200 parts)
+        - >50GB: Calculate to keep parts around 500-1000
         
         Args:
             file_size: Size of the file in bytes
-            chunk_size: Desired chunk size in bytes (default: 10MB)
+            chunk_size: Desired chunk size in bytes (optional, overrides dynamic sizing)
             
         Returns:
             Dict with multipart calculation results
@@ -465,27 +479,84 @@ class PresignedURLService:
         min_part_size = 5 * 1024 * 1024  # 5MB minimum
         max_parts = 10000  # Maximum number of parts
         
-        # Adjust chunk size if needed
+        # If chunk_size not provided, use intelligent dynamic sizing
+        if chunk_size is None:
+            mb = 1024 * 1024
+            gb = 1024 * mb
+            
+            # Log file size for debugging
+            size_mb = file_size / mb
+            size_gb = file_size / gb
+            if size_gb >= 1:
+                logger.debug(f"📊 Calculating multipart chunks for {size_gb:.2f}GB file")
+            else:
+                logger.debug(f"📊 Calculating multipart chunks for {size_mb:.1f}MB file")
+            
+            # Optimized chunk sizes to minimize parts while maintaining performance
+            # Goal: Keep part count low (fewer HTTP requests) but not too large (for retry efficiency)
+            if file_size <= 500 * mb:
+                # 100-500MB: Use 25MB chunks (results in 4-20 parts)
+                chunk_size = 25 * mb
+                logger.debug(f"📦 Using 25MB chunks for small file ({size_mb:.1f}MB)")
+            elif file_size <= 1 * gb:
+                # 500MB-1GB: Use 50MB chunks (results in 10-20 parts)
+                chunk_size = 50 * mb
+                logger.debug(f"📦 Using 50MB chunks for medium file ({size_mb:.1f}MB)")
+            elif file_size <= 5 * gb:
+                # 1GB-5GB: Use 100MB chunks (results in 10-50 parts)
+                chunk_size = 100 * mb
+                logger.debug(f"📦 Using 100MB chunks for large file ({size_gb:.2f}GB)")
+            elif file_size <= 50 * gb:
+                # 5GB-50GB: Use 250MB chunks (results in 20-200 parts)
+                chunk_size = 250 * mb
+                logger.debug(f"📦 Using 250MB chunks for very large file ({size_gb:.2f}GB)")
+            else:
+                # >50GB: Calculate to keep parts around 500-1000
+                # This provides a good balance between part count and chunk size
+                target_parts = 750  # Aim for middle of range
+                chunk_size = (file_size + target_parts - 1) // target_parts
+                # Round up to nearest 50MB for consistency
+                chunk_size = ((chunk_size + (50 * mb) - 1) // (50 * mb)) * (50 * mb)
+                logger.debug(f"📦 Using dynamic {chunk_size/mb:.0f}MB chunks for huge file ({size_gb:.2f}GB)")
+        else:
+            # If chunk_size was explicitly provided, respect it but pull from settings if needed
+            try:
+                from django.conf import settings
+                default_chunk = int(settings.MULTIPART_UPLOAD_SETTINGS.get('chunk_size', 16 * 1024 * 1024))
+                chunk_size = chunk_size or default_chunk
+            except Exception:
+                chunk_size = chunk_size or (16 * 1024 * 1024)
+
+        # Enforce S3 minimum part size
         if chunk_size < min_part_size:
             chunk_size = min_part_size
-        
+
         # Calculate number of parts
         part_count = (file_size + chunk_size - 1) // chunk_size
-        
-        # If too many parts, increase chunk size
+
+        # If too many parts, increase chunk size to stay well under 10,000 limit
         if part_count > max_parts:
-            chunk_size = (file_size + max_parts - 1) // max_parts
-            # Round up to nearest MB for efficiency
-            chunk_size = ((chunk_size + 1024 * 1024 - 1) // (1024 * 1024)) * 1024 * 1024
+            logger.warning(f"⚠️ Part count {part_count} exceeds S3 limit, adjusting chunk size")
+            # Leave some headroom (use 9,500 as practical limit)
+            practical_max = 9500
+            chunk_size = (file_size + practical_max - 1) // practical_max
+            # Round up to nearest 10MB for efficiency
+            mb = 1024 * 1024
+            chunk_size = ((chunk_size + (10 * mb) - 1) // (10 * mb)) * (10 * mb)
             part_count = (file_size + chunk_size - 1) // chunk_size
+            logger.info(f"📐 Adjusted to {chunk_size/mb:.0f}MB chunks to stay under part limit")
+
+        # Log final calculation (debug level for normal operations)
+        mb = 1024 * 1024
+        logger.debug(f"✅ Multipart calculation complete: {part_count} parts × {chunk_size/mb:.1f}MB chunks = {file_size/mb:.1f}MB total")
         
         return {
             'should_use_multipart': file_size > 100 * 1024 * 1024,  # 100MB threshold
-            'part_count': part_count,
-            'chunk_size': chunk_size,
-            'last_part_size': file_size % chunk_size if file_size % chunk_size > 0 else chunk_size,
-            'total_size': file_size,
-            'part_numbers': list(range(1, part_count + 1))
+            'part_count': int(part_count),
+            'chunk_size': int(chunk_size),
+            'last_part_size': int(file_size % chunk_size if file_size % chunk_size > 0 else chunk_size),
+            'total_size': int(file_size),
+            'part_numbers': list(range(1, int(part_count) + 1))
         }
     
     def validate_file_upload(
