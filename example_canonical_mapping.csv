@@ -1,0 +1,7 @@
+Type,Target,Label,Name
+Class,https://arkumu.io/ontology/class/Actor,Actor,"04_hfm_Akteurin"
+Class,https://arkumu.io/ontology/class/Project,Project,"00_hfm_Projekte"
+Class,https://arkumu.io/ontology/class/Event,Event,"02_hfm_Ereignis"
+Class,https://arkumu.io/ontology/class/Organization,Organization,"06_hfm_Koerperschaften"
+Class,https://arkumu.io/ontology/class/DigitalObject,Digital Object,"08_hfm_Digitales_Objekt"
+Property,https://arkumu.io/ontology/property/hasID,has ID,"253,279,927,957,111,603,31,626,707,126"

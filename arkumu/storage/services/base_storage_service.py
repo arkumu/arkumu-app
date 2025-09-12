@@ -310,12 +310,18 @@ class BaseStorageService:
 
     def _get_production_bucket_name(self) -> str:
         bucket_name = getattr(settings, 'AWS_PRODUCTION_BUCKET_NAME', None)
-        if bucket_name: return bucket_name
+        if bucket_name: 
+            logger.info(f"Using AWS_PRODUCTION_BUCKET_NAME from settings: {bucket_name}")
+            return bucket_name
         bucket_name_env = os.environ.get('AWS_PRODUCTION_BUCKET_NAME', '')
-        if bucket_name_env: return bucket_name_env
-        if self._is_minio_environment(): return 'arkumu-production'
-        logger.warning("No AWS_PRODUCTION_BUCKET_NAME found")
-        return 'arkumu-production' # Default
+        if bucket_name_env: 
+            logger.info(f"Using AWS_PRODUCTION_BUCKET_NAME from env: {bucket_name_env}")
+            return bucket_name_env
+        if self._is_minio_environment(): 
+            logger.error("FALLBACK: No AWS_PRODUCTION_BUCKET_NAME found, using arkumu-production - THIS IS WRONG")
+            return 'arkumu-production'
+        logger.error("FALLBACK: No AWS_PRODUCTION_BUCKET_NAME found - THIS IS WRONG")
+        return 'arkumu-production' # This should never be reached
 
     def _is_running_in_container(self):
         if os.environ.get('RUNNING_IN_CONTAINER'): return True

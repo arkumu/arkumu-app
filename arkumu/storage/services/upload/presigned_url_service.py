@@ -305,7 +305,13 @@ class PresignedURLService:
                         'error': f'Failed to access organization bucket: {bucket_result.get("error", "Unknown error")}'
                     }
             
-            bucket_name = bucket_name or self.base_service.production_bucket
+            # NEVER fall back to production bucket - multipart uploads must have explicit bucket
+            if not bucket_name:
+                logger.error(f"❌ No bucket specified for multipart upload. Organization: {organization}, bucket_name: {bucket_name}")
+                return {
+                    'success': False,
+                    'error': 'No bucket specified for multipart upload. Organization bucket lookup may have failed.'
+                }
             
             # Prepare create multipart upload parameters
             params = {

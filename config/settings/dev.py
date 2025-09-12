@@ -86,15 +86,19 @@ LOGGING = {
 # Email backend for development
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
-# Add dev CSRF trusted origin
-CSRF_TRUSTED_ORIGINS = ["https://dev.arkumu.uni-koeln.de"]
+# Add dev CSRF trusted origins
+CSRF_TRUSTED_ORIGINS = [
+    "https://dev.arkumu.uni-koeln.de",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
 
 # Use the X-Forwarded-Host header from nginx
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Enable SSL redirect for dev server (exposed to internet)
-SECURE_SSL_REDIRECT = True
+# Disable SSL redirect for localhost development
+SECURE_SSL_REDIRECT = False
 
 # Keep S3 but without the deprecated buckets
 USE_MINIO = False
@@ -117,7 +121,7 @@ MEDIA_URL = "/media/"
 STATIC_URL = "/static/"
 
 # Option 2: Keep S3 but override bucket name (if you have a dev bucket)
-# DJANGO_AWS_STORAGE_BUCKET_NAME = env("DJANGO_AWS_STORAGE_BUCKET_NAME", default="arkumu-dev")
+# AWS_STORAGE_BUCKET_NAME = env("DJANGO_AWS_STORAGE_BUCKET_NAME", default="arkumu-dev")
 
 # S3 settings are inherited from production
 # Current bucket: my_pony (needs to exist on your S3 server)
