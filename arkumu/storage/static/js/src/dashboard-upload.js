@@ -2128,7 +2128,8 @@ async function handleMultipartUpload(uploadInfo, file) {
             body: JSON.stringify({
                 upload_id: uploadInfo.upload_id,
                 s3_key: uploadInfo.s3_key,
-                filesize: file.size
+                filesize: file.size,
+                organization: organization
             })
         });
         if (!partResp.ok) {
@@ -2140,8 +2141,10 @@ async function handleMultipartUpload(uploadInfo, file) {
         }
 
         const urls = partData.presigned_urls;
-        const chunkSize = (partData.part_info && partData.part_info.chunk_size) || (window.UPLOAD_CONFIG && window.UPLOAD_CONFIG.chunkSize) || (8 * 1024 * 1024);
-        const maxConcurrent = Math.min(Math.max((window.UPLOAD_CONFIG && window.UPLOAD_CONFIG.maxConcurrent) || 4, 4), 6);
+        // Use server-calculated chunk size for optimal performance
+        const chunkSize = (partData.part_info && partData.part_info.chunk_size) || (window.UPLOAD_CONFIG && window.UPLOAD_CONFIG.chunkSize) || (100 * 1024 * 1024);
+        // Increase concurrency for better performance with fewer, larger parts
+        const maxConcurrent = Math.min(Math.max((window.UPLOAD_CONFIG && window.UPLOAD_CONFIG.part_upload_concurrency) || 8, 6), 12);
 
         // Upload with a worker pool
         let uploadedCount = 0;
@@ -2169,14 +2172,56 @@ async function handleMultipartUpload(uploadInfo, file) {
             const start = (part_number - 1) * chunkSize;
             const end = Math.min(start + chunkSize, file.size);
             const blob = file.slice(start, end);
-            const resp = await fetch(presigned_url, { method: 'PUT', body: blob });
-            if (!resp.ok) {
-                throw new Error(`Part ${part_number} failed: ${resp.status}`);
+            
+            // Retry logic for failed uploads
+            const maxRetries = 3;
+            let attempt = 0;
+            
+            while (attempt <= maxRetries) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout per part
+                    
+                    const resp = await fetch(presigned_url, { 
+                        method: 'PUT', 
+                        body: blob,
+                        signal: controller.signal,
+                        headers: {
+                            'Content-Type': 'application/octet-stream',
+                            'Cache-Control': 'no-cache'
+                        },
+                        // Performance optimizations for large uploads
+                        keepalive: false, // Don't use keepalive for large requests  
+                        cache: 'no-store' // Disable caching for upload requests
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!resp.ok) {
+                        throw new Error(`Part ${part_number} failed: ${resp.status} ${resp.statusText}`);
+                    }
+                    
+                    const etag = resp.headers.get('ETag');
+                    if (!etag) {
+                        throw new Error(`Part ${part_number} missing ETag in response`);
+                    }
+                    
+                    parts[i] = { ETag: etag, PartNumber: part_number };
+                    uploadedCount++;
+                    updateProgressUI();
+                    return; // Success, exit retry loop
+                    
+                } catch (error) {
+                    attempt++;
+                    if (attempt > maxRetries) {
+                        throw new Error(`Part ${part_number} failed after ${maxRetries} attempts: ${error.message}`);
+                    }
+                    // Exponential backoff delay
+                    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+                    debugLog(`🔄 Retrying part ${part_number} in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
-            const etag = resp.headers.get('ETag');
-            parts[i] = { ETag: etag, PartNumber: part_number };
-            uploadedCount++;
-            updateProgressUI();
         }
 
         let nextIndex = 0;

@@ -330,7 +330,8 @@ def get_presigned_url(request):
         's3_key': result['key'],
         'filesize': filesize,
         'filetype': filetype,
-        'max_file_size': result.get('max_file_size')
+        'max_file_size': result.get('max_file_size'),
+        'method': result.get('method', 'POST')
     })
 
 
@@ -436,6 +437,7 @@ def presigned_multipart_part_urls(request):
     upload_id = data.get('upload_id') or data.get('uploadId')
     s3_key = data.get('s3_key') or data.get('s3Key')
     part_numbers = data.get('part_numbers') or data.get('parts')
+    organization = data.get('organization', '')
     
     if not upload_id or not s3_key:
         return JsonResponse({'success': False, 'error': 'upload_id and s3_key are required'}, status=400)
@@ -460,9 +462,20 @@ def presigned_multipart_part_urls(request):
     except Exception:
         return JsonResponse({'success': False, 'error': 'invalid part_numbers'}, status=400)
 
+    # Get bucket for organization
+    bucket_name = None
+    if organization:
+        from arkumu.storage.services.bucket_service import BucketService
+        bucket_service = BucketService()
+        bucket_name = bucket_service.get_organization_bucket(organization)
+        logger.debug(f"🪣 MULTIPART_PARTS: organization='{organization}' -> bucket='{bucket_name}'")
+    else:
+        logger.debug(f"🪣 MULTIPART_PARTS: no organization provided, will use fallback bucket")
+
     from arkumu.storage.services.upload.presigned_url_service import PresignedURLService
     svc = PresignedURLService()
-    urls_result = svc.generate_multipart_urls(key=s3_key, upload_id=upload_id, parts=part_numbers)
+    logger.debug(f"🔗 MULTIPART_PARTS: Generating URLs for key='{s3_key}', upload_id='{upload_id}', bucket='{bucket_name}'")
+    urls_result = svc.generate_multipart_urls(key=s3_key, upload_id=upload_id, parts=part_numbers, bucket_name=bucket_name)
     if not urls_result.get('success'):
         return JsonResponse({'success': False, 'error': urls_result.get('error', 'url generation failed')}, status=400)
 
@@ -592,6 +605,33 @@ def mark_file_uploaded(request, file_id):
             from arkumu.storage.tasks import verify_and_process_upload
             for upload_file_obj in session.files.filter(status='uploaded'):
                 verify_and_process_upload(str(upload_file_obj.id))
+        
+        # Get organization for OOB refresh
+        organization = upload_file.session.organization
+        
+        # If this is an HTMX request, return OOB refresh instead of JSON
+        if request.headers.get('HX-Request'):
+            try:
+                # Import template helpers for OOB refresh
+                from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+                
+                # Create fresh file browser content
+                template_helper = CSVMappingTemplateHelperMixin()
+                file_browser_html = template_helper.render_file_browser_template(request, organization)
+                
+                # Build OOB response to refresh file browser
+                oob_updates = {
+                    'file-browser-content': file_browser_html
+                }
+                
+                response_html = template_helper.build_oob_response('', oob_updates)
+                
+                from django.http import HttpResponse
+                return HttpResponse(response_html)
+                
+            except Exception as e:
+                logger.error(f"❌ OOB refresh failed in mark_file_uploaded: {e}")
+                # Fall back to JSON response
         
         return JsonResponse({'success': True})
     except AsyncUploadFile.DoesNotExist:

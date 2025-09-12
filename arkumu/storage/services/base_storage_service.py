@@ -165,20 +165,22 @@ class BaseStorageService:
                 client_kwargs['use_ssl'] = False
                 logger.info(f"===> Using plaintext HTTP for endpoint: {self.endpoint_url}")
             
-            # Dell EMC ECS compatible configuration with checksum validation disabled
+            # Dell EMC ECS optimized configuration for large file uploads
             custom_s3_config = Config(
                 s3={'addressing_style': 'path'},
                 signature_version='s3v4',  # Force AWS4 signature for Dell EMC compatibility
-                retries={'max_attempts': 1, 'mode': 'standard'},
-                connect_timeout=30,  # Reduced from 60 to fail faster
-                read_timeout=30,     # Reduced from 120 to fail faster  
-                max_pool_connections=max_pool_connections,  # Use environment variable
+                retries={'max_attempts': 1, 'mode': 'standard'},  # Minimal retries for fast failure
+                connect_timeout=10,  # Faster connection establishment
+                read_timeout=300,    # Longer read timeout for large parts (5 minutes)
+                max_pool_connections=20,  # Increased pool for concurrent multipart uploads
                 # Disable strict checksum validation for Dell EMC ViPR compatibility
                 request_checksum_calculation='when_required',
-                response_checksum_validation='when_required'
+                response_checksum_validation='when_required',
+                # Performance optimizations for large uploads
+                tcp_keepalive=True,  # Keep connections alive
             )
             client_kwargs['config'] = custom_s3_config
-            logger.info(f"===> Using custom S3 config: connect_timeout=30s, read_timeout=30s, signature=s3v4")
+            logger.info(f"===> Using custom S3 config: connect_timeout=10s, read_timeout=300s, max_pool=20, signature=s3v4")
             
             if self.is_minio:
                 

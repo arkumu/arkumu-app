@@ -225,10 +225,17 @@ class UploadService:
         warnings = []
         
         # File size validation
-        max_single_size = 100 * 1024 * 1024  # 100MB - AWS recommends multipart for files > 100MB
+        # Use configured multipart threshold so single-part applies up to this size
+        try:
+            from django.conf import settings
+            cfg = getattr(settings, 'MULTIPART_UPLOAD_SETTINGS', {}) or {}
+            max_single_size = int(cfg.get('multipart_threshold', 100 * 1024 * 1024))
+        except Exception:
+            max_single_size = 100 * 1024 * 1024
         if file_size > max_single_size:
-            # Large files should use multipart upload
-            warnings.append(f"File size {self.base_s3_service._format_size(file_size)} exceeds single upload limit. Use multipart upload.")
+            warnings.append(
+                f"File size {self.base_s3_service._format_size(file_size)} exceeds single-part threshold; using multipart."
+            )
         
         if file_size <= 0:
             errors.append("File size must be greater than 0")

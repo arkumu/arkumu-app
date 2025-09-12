@@ -107,6 +107,19 @@ class PresignedURLService:
                 'error': str(e)
             }
     
+    def _get_multipart_threshold(self) -> int:
+        """
+        Resolve the multipart threshold from settings, defaulting to 100MB.
+        A higher value means more uploads will use single-part.
+        """
+        try:
+            from django.conf import settings
+            cfg = getattr(settings, 'MULTIPART_UPLOAD_SETTINGS', {}) or {}
+            # Default to 100MB if not configured
+            return int(cfg.get('multipart_threshold', 100 * 1024 * 1024))
+        except Exception:
+            return 100 * 1024 * 1024
+    
     def generate_multipart_urls(
         self,
         key: str,
@@ -485,7 +498,18 @@ class PresignedURLService:
         min_part_size = 5 * 1024 * 1024  # 5MB minimum
         max_parts = 10000  # Maximum number of parts
         
-        # If chunk_size not provided, use intelligent dynamic sizing
+        # If chunk_size not provided, try to get it from settings first, then fall back to intelligent dynamic sizing
+        if chunk_size is None:
+            try:
+                from django.conf import settings
+                configured_chunk = int(settings.MULTIPART_UPLOAD_SETTINGS.get('chunk_size', 0))
+                if configured_chunk > 0:
+                    chunk_size = configured_chunk
+                    logger.debug(f"📦 Using configured chunk size: {chunk_size/(1024*1024):.0f}MB")
+            except Exception:
+                pass
+        
+        # If still no chunk_size, use intelligent dynamic sizing
         if chunk_size is None:
             mb = 1024 * 1024
             gb = 1024 * mb
@@ -556,8 +580,11 @@ class PresignedURLService:
         mb = 1024 * 1024
         logger.debug(f"✅ Multipart calculation complete: {part_count} parts × {chunk_size/mb:.1f}MB chunks = {file_size/mb:.1f}MB total")
         
+        # Decide whether to use multipart based on configured threshold
+        threshold = self._get_multipart_threshold()
+
         return {
-            'should_use_multipart': file_size > 100 * 1024 * 1024,  # 100MB threshold
+            'should_use_multipart': file_size > threshold,
             'part_count': int(part_count),
             'chunk_size': int(chunk_size),
             'last_part_size': int(file_size % chunk_size if file_size % chunk_size > 0 else chunk_size),
@@ -607,13 +634,15 @@ class PresignedURLService:
             errors.append(f"Content type '{content_type}' not allowed. Allowed types: {', '.join(allowed_types)}")
         
         # Large file recommendation
-        single_upload_limit = 5 * 1024 * 1024 * 1024  # 5GB
+        single_upload_limit = 5 * 1024 * 1024 * 1024  # 5GB (S3 single PUT limit)
         if file_size > single_upload_limit:
-            warnings.append(f"File size {file_size} exceeds single upload limit. Consider using multipart upload.")
+            warnings.append("File exceeds single-upload limit; multipart is required.")
         
+        threshold = self._get_multipart_threshold()
+
         return {
             'valid': len(errors) == 0,
             'errors': errors,
             'warnings': warnings,
-            'should_use_multipart': file_size > 100 * 1024 * 1024  # 100MB threshold
+            'should_use_multipart': file_size > threshold
         }

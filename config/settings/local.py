@@ -75,6 +75,17 @@ INSTALLED_APPS += ["django_extensions"]
 # Your stuff...
 # ------------------------------------------------------------------------------
 
+# Storage configuration for local development
+# Use filesystem storage for both static and media files
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
 # File upload settings for development
 # Support large video files and batch uploads
 DATA_UPLOAD_MAX_NUMBER_FILES = 10000  # Allow up to 10000 files

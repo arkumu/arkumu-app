@@ -375,25 +375,26 @@ HUEY = {
 
 # Multipart Upload Configuration
 MULTIPART_UPLOAD_SETTINGS = {
-    # File size thresholds (standardized)
-    # Use multipart for files > 100MB (AWS guidance); single PUT otherwise
-    'multipart_threshold': 100 * 1024 * 1024,  # 100MB
-    'resumable_threshold': 100 * 1024 * 1024,  # Keep consistent with multipart
+    # File size thresholds (DISABLED multipart - testing single uploads only)
+    # Set extremely high threshold to force single uploads for all files
+    'multipart_threshold': 5 * 1024 * 1024 * 1024,  # 5GB (S3 single upload limit - forces single upload)
+    'resumable_threshold': 5 * 1024 * 1024 * 1024,  # Keep consistent
 
-    # Chunk configuration (optimized based on AWS best practices)
-    # Dynamic sizing: smaller files use larger chunks to reduce parts
-    # This is the fallback; the algorithm will optimize based on file size
-    'chunk_size': 16 * 1024 * 1024,  # 16MB default (AWS CLI uses 8MB, but 16MB is more efficient)
-    'resumable_chunk_size': 16 * 1024 * 1024,  # 16MB for resumable uploads
+    # Chunk configuration (optimized for performance)
+    # Larger chunks = fewer HTTP requests = better performance
+    # For 300MB files: 100MB chunks = 3 parts vs 16MB chunks = 19 parts
+    'chunk_size': 100 * 1024 * 1024,  # 100MB for optimal performance (fewer parts)
+    'resumable_chunk_size': 100 * 1024 * 1024,  # 100MB for resumable uploads
 
-    # Concurrency settings
-    'max_workers': 8,  # Reduced to prevent overwhelming
-    'max_concurrency': 6,  # Concurrent uploads
+    # Concurrency settings (optimized for multipart performance)
+    'max_workers': 12,  # Increased for better parallel processing
+    'max_concurrency': 8,  # More concurrent uploads
+    'part_upload_concurrency': 6,  # New: parallel part uploads per file
 
     # Retry configuration
-    'max_retries': 5,
-    'retry_delay_base': 1.0,  # Base delay in seconds
-    'retry_max_delay': 60.0,  # Max delay in seconds
+    'max_retries': 3,  # Reduced retries for faster failure detection
+    'retry_delay_base': 0.5,  # Faster retry timing
+    'retry_max_delay': 30.0,  # Reduced max delay
 
     # Timeout settings
     'chunk_timeout': 300,  # 5 minutes per chunk
