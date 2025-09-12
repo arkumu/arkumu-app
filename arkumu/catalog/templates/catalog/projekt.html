@@ -107,15 +107,15 @@
                       text-arkumu-dark
                       theme-dark:text-arkumu-light
                       theme-blue:text-arkumu-blue">
-              {{project.type}}
+              {{project.projektart}}
             </p>
           </div>
           
           <!-- Project Categories con botones pequeños -->
-          {% if project.project_categories %}
+          {% if project.categories %}
           <div class="mb-12 flex flex-wrap gap-2">
             {% for category in project.categories %}
-              {% include 'components/buttons/small_secondary_button.html' with button_text="{category}" %}
+              {% include 'components/buttons/small_secondary_button.html' with button_text=category %}
             {% endfor %}
           </div>
           {%endif%}
@@ -156,7 +156,7 @@
         <!-- Right Column - Additional Information (1/3) -->
         <div class="lg:w-1/3">
           <!-- Franja decorativa rosa -->
-          {% if project.collection_title or project.catchphrase%}
+          {% if project.collection_title or project.catchphrases %}
           <div class="w-full h-full p-6">
             {% if project.collection_title %}
             <div class="mb-10">

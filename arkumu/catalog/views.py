@@ -527,8 +527,19 @@ class Projekt:
     
     @property
     def alternative_title_set(self):
-        return self.proj.resources["Bevorzugter Titel"][0].value
-        
+        if "Alternativer Titel-Set" in self.proj.resources:
+            return [Entity(alt_title_resource).resources["Alternativer Titel"][0].value for alt_title_resource in self.proj.resources["Alternativer Titel-Set"]]
+        else:
+            return ""                
+
+    @property
+    def projektart(self):
+        if "Projektart" in self.proj.resources:
+            return [Entity(alt_title_resource).resources["Deutscher Name der Projektart"][0].value for alt_title_resource in self.proj.resources["Projektart"]]
+        else:
+            return "" 
+
+
     @property
     def subtitle(self):
         if "Bevorzugter Untertitel" in self.proj.resources:
@@ -600,10 +611,20 @@ class Projekt:
     def categories(self):
         project_categories = [Entity(proj_cat) for proj_cat in self.proj.resources["Projektkategorie"]]
         return [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
+    
+    @property
+    def descriptions(self):
+        if "Beschreibung" in self.proj.resources:
+            return [Entity(alt_title_resource).resources["Beschreibung"][0].value for alt_title_resource in self.proj.resources["Beschreibung"]]
+        else:
+            return "" 
 
     @property
-    def alternative_title(self):
-        return self.proj.resources["Alternativer Titel-Set"]
+    def catchphrases(self):
+        if "Schlagwort" in self.proj.resources:
+            return [Entity(alt_title_resource).resources["Deutsches Wikidata-Label"][0].value for alt_title_resource in self.proj.resources["Schlagwort"]]
+        else:
+            return "" 
         
 
 class Im_ereignis_singleton:
@@ -683,13 +704,18 @@ class ProjektShow:
             "institution": proj_entity.institution,
             "title": proj_entity.title,
             "subtitle": proj_entity.subtitle,
-            "alternative_title": proj.entity.alternative_title
+            "alternative_title": "; ".join(proj_entity.alternative_title_set),
+            "projektart": "; ".join(proj_entity.projektart),
+            "categories": proj_entity.categories,
+            "descriptions": proj_entity.descriptions,
+            "catchphrases": proj_entity.catchphrases,
         }
 
 
         #TODO Python fixen das es schneller wird
         
-
+        prt = project_ret
+        prt2 = proj_entity.alternative_title_set
         context = {'project': project_ret, "print": prt, "print2": prt2, "print3": prt3}
         
         
