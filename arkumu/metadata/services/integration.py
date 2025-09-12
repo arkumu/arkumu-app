@@ -235,7 +235,7 @@ class CanonicalUriMappingService:
         names = [name.strip() for name in names_str.split(',') if name.strip()]
         
         for name in names:
-            # Find resource by exact name match
+            # Find resource by exact name match (no slugification)
             resources = Resource.objects.filter(
                 organization=self.organization,
                 resource_type=resource_type,
@@ -264,9 +264,13 @@ class CanonicalUriMappingService:
     
     def _parse_resource_type(self, type_str: str) -> Optional[ResourceType]:
         """Parse resource type string."""
+        if not type_str:
+            return None
+            
         type_mapping = {
             'class': ResourceType.CLASS,
-            'property': ResourceType.PROPERTY
+            'property': ResourceType.PROPERTY,
+            'column': ResourceType.IRI  # Support for imported column resources
         }
         return type_mapping.get(type_str.lower())
     
