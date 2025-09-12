@@ -570,55 +570,68 @@ class DesignSearch:
 
             
 
-            for ereignis_resource in project.resources["Ereignis"]:
-                
-                ereignis = Entity(ereignis_resource)
+            pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(resource.uri.split("/")[4])
+            akteur_role_dict = {}
+            if "Ereignis" in project.resources:
+                for ereignis_resource in project.resources["Ereignis"]:
+                    
+                    ereignis = Entity(ereignis_resource)
 
-                #these are needed as a work-around until cross table traversal is fixed
-                #pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
-                pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(resource.uri.split("/")[4])
-                triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
-
-
-        #     akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
-        #        akteure = [Entity(akteur_ereignis_cross_entry.resources["AkteurIn im Ereignis"][0]) for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
-        #       akteure_rollen = [[Entity(rolle) for rolle in akteur_ereignis_cross_entry.resources["Rollen der AkteurIn im Ereignis"]] for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
-        #      akteure_rollen_name = [[split_breadcrumb(akteur_rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value) if "Deutscher Name der Rolle (Breadcrumb)" in akteur_rolle.resources else "" for akteur_rolle in akteur_rollen] for akteur_rollen in akteure_rollen]
-        #        akteur_rollen_string = [", ".join(akteur_rollen_name) for akteur_rollen_name in akteure_rollen_name]
-                akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
-                results_temp_2 = {}
-
-                for i, cross_entry in enumerate(akteur_ereignis_cross_entries, start=1):
-                    # Extract Akteur entity
-                    time1 = perf_counter()
-
-                    akteur = Entity(cross_entry.resources["AkteurIn im Ereignis"][0])
-
-                    prt3 += f"\n{perf_counter() - time1}"
-
-                    # Process roles
-                    rollen_entities = [
-                        Entity(rolle) for rolle in cross_entry.resources["Rollen der AkteurIn im Ereignis"]
-                    ]
-
-                    rollen_names = [
-                        split_breadcrumb(rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value)
-                        if "Deutscher Name der Rolle (Breadcrumb)" in rolle.resources
-                        else ""
-                        for rolle in rollen_entities
-                    ]
+                    #these are needed as a work-around until cross table traversal is fixed
+                    #pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
+                    triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
 
 
-                    time1 = perf_counter()
+            #     akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
+            #        akteure = [Entity(akteur_ereignis_cross_entry.resources["AkteurIn im Ereignis"][0]) for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
+            #       akteure_rollen = [[Entity(rolle) for rolle in akteur_ereignis_cross_entry.resources["Rollen der AkteurIn im Ereignis"]] for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
+            #      akteure_rollen_name = [[split_breadcrumb(akteur_rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value) if "Deutscher Name der Rolle (Breadcrumb)" in akteur_rolle.resources else "" for akteur_rolle in akteur_rollen] for akteur_rollen in akteure_rollen]
+            #        akteur_rollen_string = [", ".join(akteur_rollen_name) for akteur_rollen_name in akteure_rollen_name]
+                    akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
+
+                    for cross_entry in akteur_ereignis_cross_entries:
+                        # Extract Akteur entity
+
+                        akteur = Entity(cross_entry.resources["AkteurIn im Ereignis"][0])
+
+
+                        # Process roles
+                        rollen_entities = [
+                            Entity(rolle) for rolle in cross_entry.resources["Rollen der AkteurIn im Ereignis"]
+                        ]
+
+                        rollen_names = []
+                        for rolle in rollen_entities:
+                            if "Deutscher Name der Rolle (Breadcrumb)" in rolle.resources:
+                                rollen_names.append(split_breadcrumb(rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value))
+
+                        prt3 += "\n"
+                        if title == "Void":
+                            for role_name in rollen_names:
+                                prt3 += role_name
+
+                        if akteur.resources["Deutscher Name"][0].value not in akteur_role_dict:
+                            akteur_role_dict[akteur.resources["Deutscher Name"][0].value] = set(rollen_names)
+                        else:
+                            akteur_role_dict[akteur.resources["Deutscher Name"][0].value] |= set(rollen_names)
+
                     # Store results
-                    results_temp_2.update({
-                        f"contributor{i}_name": akteur.resources["Deutscher Name"][0].value,
-                        f"contributor{i}_role": ", ".join(rollen_names)
-                    })
-                
-            #    for i, akteur in enumerate(akteure):
-            #        results_temp_2.update({f"contributor{i + 1}_name" : akteur.resources["Deutscher Name"][0].value,
-                #                              f"contributor{i + 1}_role" : akteur_rollen_string[i]})
+                    # results_temp_2.update({
+                    #     f"contributor{i}_name": name,
+                    #     f"contributor{i}_role": ", ".join(rollen_names)
+                        
+                    # })
+                    for i, (name, value) in enumerate(akteur_role_dict.items()):
+                        results_temp_2[f"contributor{i+1}_name"] = name
+                        results_temp_2[f"contributor{i+1}_role"] = ", ".join(value)
+                        prt += f"{i+1}: {name}, {value}\n"
+                    
+                    if (len(akteur_role_dict) > 4):
+                        results_temp_2["additional_contributors"] = f"{len(akteur_role_dict)-4} weitere{'s' if len(akteur_role_dict)-4 == 1 else ''}"
+
+                #    for i, akteur in enumerate(akteure):
+                #        results_temp_2.update({f"contributor{i + 1}_name" : akteur.resources["Deutscher Name"][0].value,
+                    #                              f"contributor{i + 1}_role" : akteur_rollen_string[i]})
 
             
             category_tags = []
