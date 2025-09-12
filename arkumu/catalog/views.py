@@ -511,8 +511,8 @@ def search_algo(search_string, search_fields = ["Bevorzugter Titel", "Bevorzugte
 
 
 
-# Hier wäre hier möglicher weise besonder gut
-class Projekt_Entity:
+# Hier wäre django.core.cache besonders gut
+class Projekt:
     
     def __init__(self, proj: Entity):
         self.proj = proj
@@ -550,8 +550,6 @@ class Projekt_Entity:
                 if "Ereignisende" in ereignis.resources:
                     self.max_date = max(self.max_date, int(ereignis.resources["Ereignisende"][0].value.split('-')[0]))
 
-                #these are needed as a work-around until cross table traversal is fixed
-                #pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
                 triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
 
 
@@ -589,14 +587,14 @@ class Projekt_Entity:
             return f"{self.min_date if self.min_date != 99999999999999 else "?"} bis {self.max_date if self.max_date != -99999999999999 else "?"}" if self.min_date != self.max_date else f"{self.min_date}"
         
     @property
-    def authors(self):
+    def actors(self):
         if "akteur_role_dict" not in self.__dict__:
             self.__calcActor()
         return self.akteur_role_dict
 
     @property
     def categories(self):
-        project_categories = [Entity(proj_cat) for proj_cat in project.resources["Projektkategorie"]]
+        project_categories = [Entity(proj_cat) for proj_cat in self.proj.resources["Projektkategorie"]]
         return [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
         
 
@@ -618,146 +616,43 @@ class Im_ereignis_singleton:
         
 class DesignSearch:
 
-
-
-
     def design_search_results(request):
         query = request.GET.get('query', None)
 
-       # triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
-       # resource = [ob.__dict__ for ob in Resource.objects.all()[:5]]
-
-
         #TODO Python fixen das es schneller wird
 
-     #  resource = Resource.objects.filter(name="Bevorzugter Titel").last()
-      #  triples = Triple.objects.filter(predicate__id=resource.id)[:5]
-       # projects = [Entity(triple) for triple in triples]
-      #  prt2 = f"{search_algo(query)}"
         projects = search_algo(query)
-    #    temp = resource
-        results_ret = []
-        for project in projects:
-            resource = Resource.objects.get(id=project.id)
-            source = Entity(project.resources["Einliefernde Hochschule"][0])
+        project_ret = []
 
-            source_name = source.resources["Deutscher Name der Einliefernden Hochschule"][0].value
-            uri = "../projekt?projekt=" + resource.uri
-            title = project.resources["Bevorzugter Titel"][0].value
-            subtitle = ""
-            try:
-                subtitle = project.resources["Bevorzugter Untertitel"][0].value
-            except: 
-                pass
-            results_temp_1 = {
-                    "image":"images/main/card_1.png",
-                    "institution":source_name,
-                    "title":title,
-                    "subtitle":subtitle,
-                    "uri": uri
-                    }
-            results_temp_2 = {}
+        for j, project in enumerate(projects):
+            proj_entity = Projekt(project)
 
+            project_ret.append({
+                "year": proj_entity.date_range,
+                "image":"images/main/card_1.png",
+                "institution": proj_entity.institution,
+                "title": proj_entity.title,
+                "subtitle": proj_entity.subtitle,
+                "button_text":"Projekt ansehen",
+                "uri": proj_entity.uri
+            })
+
+            for i, (name, value) in enumerate(proj_entity.actors.items()):
+                project_ret[j][f"contributor{i+1}_name"] = name
+                project_ret[j][f"contributor{i+1}_role"] = ", ".join(value)
+            
+            for i, category in enumerate(proj_entity.categories):
+                project_ret[j][f"category{i+1}"] = category
+
+            if (len(proj_entity.actors) > 4):
+                project_ret[j]["additional_contributors"] = f"{len(proj_entity.actors)-4} weitere{'s' if len(proj_entity.actors)-4 == 1 else ''}"
+
+            if (len(proj_entity.categories) > 4):
+                project_ret[j]["additional_categories"] = f"{len(proj_entity.categories)-4} weitere{'s' if len(proj_entity.categories)-4 == 1 else ''}"
             
 
-            pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(resource.uri.split("/")[4])
-            akteur_role_dict = {}
-            min_date = 99999999999999
-            max_date = -99999999999999
-            if "Ereignis" in project.resources:
-                for ereignis_resource in project.resources["Ereignis"]:
-                    
-                    ereignis = Entity(ereignis_resource)
-                    if "Ereignisbeginn" in ereignis.resources:
-                        min_date = min(min_date,int(ereignis.resources["Ereignisbeginn"][0].value.split('-')[0]))
-                    if "Ereignisende" in ereignis.resources:
-                        max_date = max(max_date, int(ereignis.resources["Ereignisende"][0].value.split('-')[0]))
-
-                    #these are needed as a work-around until cross table traversal is fixed
-                    #pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
-                    triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
-
-
-                    akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
-
-                    for cross_entry in akteur_ereignis_cross_entries:
-                        # Extract Akteur entity
-
-                        akteur = Entity(cross_entry.resources["AkteurIn im Ereignis"][0])
-
-
-                        # Process roles
-                        rollen_entities = [
-                            Entity(rolle) for rolle in cross_entry.resources["Rollen der AkteurIn im Ereignis"]
-                        ]
-
-                        rollen_names = []
-                        for rolle in rollen_entities:
-                            if "Deutscher Name der Rolle (Breadcrumb)" in rolle.resources:
-                                rollen_names.append(split_breadcrumb(rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value))
-
-                        if akteur.resources["Deutscher Name"][0].value not in akteur_role_dict:
-                            akteur_role_dict[akteur.resources["Deutscher Name"][0].value] = set(rollen_names)
-                        else:
-                            akteur_role_dict[akteur.resources["Deutscher Name"][0].value] |= set(rollen_names)
-
-                for i, (name, value) in enumerate(akteur_role_dict.items()):
-                    results_temp_2[f"contributor{i+1}_name"] = name
-                    results_temp_2[f"contributor{i+1}_role"] = ", ".join(value)
-                
-                if (len(akteur_role_dict) > 4):
-                    results_temp_2["additional_contributors"] = f"{len(akteur_role_dict)-4} weitere{'s' if len(akteur_role_dict)-4 == 1 else ''}"
-            
-            if min_date == 99999999999999 and max_date == -99999999999999:
-                results_temp_2["year"] = "?"
-            else: 
-                results_temp_2["year"] = f"{min_date if min_date != 99999999999999 else "?"} bis {max_date if max_date != -99999999999999 else "?"}" if min_date != max_date else f"{min_date}"
-
-            
-            category_tags = []
-            results_temp_3 = {}
-            try:
-                project_categories = [Entity(proj_cat) for proj_cat in project.resources["Projektkategorie"]]
-                category_tags = [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
-                
-                if (len(category_tags) > 4):
-                    results_temp_3.update({
-                        'additional_categories': f"{len(category_tags)-4} weitere{'r' if len(category_tags)-4 == 1 else ''}"
-                    })
-
-                for i, category in enumerate(category_tags):
-                    results_temp_3.update({
-                        f"category{i+1}": category
-                    })
-            except:
-                pass
-            
-        
-            results_temp_1.update(results_temp_2)
-            results_temp_1.update(results_temp_3)
-            results_ret.append(results_temp_1)
-        
-
-
-        # results_ret = [
-        #     {"year":"2024",
-        #      "image":"images/main/card_1.png",
-        #      "institution":"Folkwang Universität der Kunst",
-        #      "title":"Handmade in Ethiopia",
-        #      "subtitle":"Projekt",
-        #      "contributor1_name":"Johanna Schwer",
-        #      "contributor1_role":"Betreuerin",
-        #      "contributor2_name":"Judith Schanz",
-        #      "contributor2_role":"Betreuerin",
-        #      "contributor3_name":"Martina Allerbech",
-        #      "contributor3_role":"Designerin, Beraterin",
-        #      "category1":"Industrial Design",
-        #      "category2":"Transformation Design",
-        #      "button_text":"Projekt ansehen"
-        #     },]
         context = {'query': query,
-            'results': results_ret}
-        
+            'results': project_ret}
         
         return render(request, 'catalog/design_search_results.html', context)
     
@@ -770,95 +665,25 @@ class ProjektShow:
         projekt_uri = request.GET.get('projekt', None)
         project_resource = Resource.objects.get(uri=projekt_uri)
         project = Entity(project_resource)
+        
+        
+        proj_entity = Projekt(project)
+
+        project_ret = {
+            "year_range": proj_entity.date_range,
+            "image":"images/main/card_1.png",
+            "institution": proj_entity.institution,
+            "title": proj_entity.title,
+            "subtitle": proj_entity.subtitle,
+            "button_text":"Projekt ansehen",
+            "uri": proj_entity.uri
+        }
+
+
         #TODO Python fixen das es schneller wird
         
-        prt3 = ""
-        source = Entity(project.resources["Einliefernde Hochschule"][0])
 
-        source_name = source.resources["Deutscher Name der Einliefernden Hochschule"][0].value
-
-        title = project.resources["Bevorzugter Titel"][0].value
-        subtitle = ""
-        try:
-            subtitle = project.resources["Bevorzugter Untertitel"][0].value
-        except: 
-            pass
-        results_temp_1 = {
-                "year":"2024",
-                "image":"images/main/card_1.png",
-                "institution":source_name,
-                "title":title,
-                "subtitle":subtitle
-                }
-        results_temp_2 = {}
-
-        
-
-        try:
-            ereignis = Entity(project.resources["Ereignis"][0])
-            pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(projekt_uri.split("/")[4])
-            triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
-
-
-            akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
-            results_temp_2 = {}
-
-            for i, cross_entry in enumerate(akteur_ereignis_cross_entries, start=1):
-                # Extract Akteur entity
-                time1 = perf_counter()
-
-                akteur = Entity(cross_entry.resources["AkteurIn im Ereignis"][0])
-
-                prt3 += f"\n{perf_counter() - time1}"
-
-                # Process roles
-                rollen_entities = [
-                    Entity(rolle) for rolle in cross_entry.resources["Rollen der AkteurIn im Ereignis"]
-                ]
-
-                rollen_names = [
-                    split_breadcrumb(rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value)
-                    if "Deutscher Name der Rolle (Breadcrumb)" in rolle.resources
-                    else ""
-                    for rolle in rollen_entities
-                ]
-
-
-                time1 = perf_counter()
-                # Store results
-                results_temp_2.update({
-                    f"contributor{i}_name": akteur.resources["Deutscher Name"][0].value,
-                    f"contributor{i}_role": ", ".join(rollen_names)
-                })
-        except BaseException as err:
-            prt = err
-
-        
-        category_tags = []
-        results_temp_3 = {}
-        try:
-            project_categories = [Entity(proj_cat) for proj_cat in project.resources["Projektkategorie"]]
-            category_tags = [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
-            
-            if (len(category_tags) > 4):
-                results_temp_3.update({
-                    'additional_categories': f"{len(category_tags)-4} weitere{'s' if len(category_tags)-4 == 1 else ''}"
-                })
-
-            for i, category in enumerate(category_tags):
-                results_temp_3.update({
-                    f"category{i+1}": category
-                })
-        except:
-            pass
-        
-    
-        results_temp_1.update(results_temp_2)
-        results_temp_1.update(results_temp_3)
-        results_ret = results_temp_1
-
-        context = {'projekt': projekt_uri,
-            'results': results_ret, "print": prt, "print2": prt2, "print3": prt3}
+        context = {'project': project_ret, "print": prt, "print2": prt2, "print3": prt3}
         
         
         return render(request, 'catalog/projekt.html', context)
