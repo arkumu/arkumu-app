@@ -524,6 +524,10 @@ class Projekt:
     @property
     def title(self):
         return self.proj.resources["Bevorzugter Titel"][0].value
+    
+    @property
+    def alternative_title_set(self):
+        return self.proj.resources["Bevorzugter Titel"][0].value
         
     @property
     def subtitle(self):
@@ -596,6 +600,10 @@ class Projekt:
     def categories(self):
         project_categories = [Entity(proj_cat) for proj_cat in self.proj.resources["Projektkategorie"]]
         return [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
+
+    @property
+    def alternative_title(self):
+        return self.proj.resources["Alternativer Titel-Set"]
         
 
 class Im_ereignis_singleton:
@@ -675,8 +683,7 @@ class ProjektShow:
             "institution": proj_entity.institution,
             "title": proj_entity.title,
             "subtitle": proj_entity.subtitle,
-            "button_text":"Projekt ansehen",
-            "uri": proj_entity.uri
+            "alternative_title": proj.entity.alternative_title
         }
 
 
