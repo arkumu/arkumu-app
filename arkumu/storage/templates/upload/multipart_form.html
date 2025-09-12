@@ -102,37 +102,51 @@ async function startMultipartUpload(uploadId, s3Key, filename) {
         const parts = [];
         let uploadedParts = 0;
         
-        // Upload parts in parallel (limit concurrency)
-        const uploadPromises = uploadData.partUrls.map(async (partData) => {
+        // Cap concurrency to 4–6 (from server config if available)
+        const cfg = (typeof window !== 'undefined' && window.UPLOAD_CONFIG) ? window.UPLOAD_CONFIG : {};
+        const maxConcurrent = Math.min(Math.max(parseInt(cfg.maxConcurrent || 4, 10), 4), 6);
+
+        // Worker pool to upload parts with limited concurrency
+        const totalParts = uploadData.partUrls.length;
+        let nextIndex = 0;
+        const completedPartsArr = new Array(totalParts);
+
+        async function uploadOne(index) {
+            const partData = uploadData.partUrls[index];
             const partNumber = partData.part_number;
             const start = (partNumber - 1) * chunkSize;
             const end = Math.min(start + chunkSize, file.size);
             const chunk = file.slice(start, end);
-            
+
             const response = await fetch(partData.presigned_url, {
                 method: 'PUT',
                 body: chunk
             });
-            
+
             if (!response.ok) {
-                throw new Error(`Part ${partNumber} upload failed: ${response.statusText}`);
+                throw new Error(`Part ${partNumber} upload failed: ${response.status} ${response.statusText}`);
             }
-            
+
             const etag = response.headers.get('ETag');
             uploadedParts++;
-            
-            // Update progress
             progressBar.value = uploadedParts;
             progressText.textContent = `${uploadedParts} / ${uploadData.partInfo.part_count} parts`;
-            
-            return {
-                ETag: etag,
-                PartNumber: partNumber
-            };
-        });
-        
-        // Wait for all parts to complete
-        const completedParts = await Promise.all(uploadPromises);
+
+            completedPartsArr[index] = { ETag: etag, PartNumber: partNumber };
+        }
+
+        async function worker() {
+            while (true) {
+                const i = nextIndex++;
+                if (i >= totalParts) break;
+                await uploadOne(i);
+            }
+        }
+
+        const workers = Array.from({ length: maxConcurrent }, () => worker());
+        await Promise.all(workers);
+
+        const completedParts = completedPartsArr.filter(Boolean);
         
         // Complete multipart upload
         htmx.ajax('POST', '/storage/upload/presigned/multipart/complete/', {

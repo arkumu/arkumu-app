@@ -115,6 +115,7 @@ LOCAL_APPS = [
     "arkumu.storage",
     "arkumu.catalog",
     "arkumu.rest",
+    "arkumu.oaipmh",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -221,6 +222,7 @@ TEMPLATES = [
                 "django.template.context_processors.tz",
                 "django.contrib.messages.context_processors.messages",
                 "arkumu.users.context_processors.allauth_settings",
+                "arkumu.storage.context_processors.upload_client_config",
             ],
         },
     },
@@ -373,27 +375,30 @@ HUEY = {
 
 # Multipart Upload Configuration
 MULTIPART_UPLOAD_SETTINGS = {
-    # File size thresholds
-    'multipart_threshold': 5 * 1024 * 1024,  # 5MB - start multipart earlier
-    'resumable_threshold': 50 * 1024 * 1024,  # 50MB - use resumable upload
-    
-    # Chunk configuration
-    'chunk_size': 8 * 1024 * 1024,  # 8MB chunks for better throughput
-    'resumable_chunk_size': 8 * 1024 * 1024,  # 8MB for resumable uploads
-    
+    # File size thresholds (standardized)
+    # Use multipart for files > 100MB (AWS guidance); single PUT otherwise
+    'multipart_threshold': 100 * 1024 * 1024,  # 100MB
+    'resumable_threshold': 100 * 1024 * 1024,  # Keep consistent with multipart
+
+    # Chunk configuration (optimized based on AWS best practices)
+    # Dynamic sizing: smaller files use larger chunks to reduce parts
+    # This is the fallback; the algorithm will optimize based on file size
+    'chunk_size': 16 * 1024 * 1024,  # 16MB default (AWS CLI uses 8MB, but 16MB is more efficient)
+    'resumable_chunk_size': 16 * 1024 * 1024,  # 16MB for resumable uploads
+
     # Concurrency settings
     'max_workers': 8,  # Reduced to prevent overwhelming
     'max_concurrency': 6,  # Concurrent uploads
-    
+
     # Retry configuration
     'max_retries': 5,
     'retry_delay_base': 1.0,  # Base delay in seconds
     'retry_max_delay': 60.0,  # Max delay in seconds
-    
+
     # Timeout settings
     'chunk_timeout': 300,  # 5 minutes per chunk
     'total_timeout': 3600,  # 1 hour total
-    
+
     # Performance tuning
     'enable_resume': True,
     'cleanup_failed_uploads': True,

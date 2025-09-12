@@ -204,8 +204,32 @@
 </dialog>
 
 
+<!-- Upload client configuration bridge (from settings to JS) -->
+<script>
+    window.UPLOAD_CONFIG = Object.assign({
+        // Safe defaults
+        chunkSize: 8 * 1024 * 1024,
+        maxConcurrent: 6,
+        multipartThreshold: 100 * 1024 * 1024
+    }, {
+        chunkSize: {{ UPLOAD_CLIENT_CONFIG.chunk_size|default:8388608 }},
+        maxConcurrent: {{ UPLOAD_CLIENT_CONFIG.max_concurrency|default:6 }},
+        multipartThreshold: {{ UPLOAD_CLIENT_CONFIG.multipart_threshold|default:104857600 }}
+    });
+    // Cap allowed concurrency for presigned multipart UI to 6
+    window.UPLOAD_CONFIG.maxConcurrent = Math.min(window.UPLOAD_CONFIG.maxConcurrent || 6, 6);
+    // Ensure sensible minimum
+    window.UPLOAD_CONFIG.maxConcurrent = Math.max(window.UPLOAD_CONFIG.maxConcurrent, 4);
+    // Also expose as kebab-case fallbacks if needed by old code
+    window.UploadConfig = window.UPLOAD_CONFIG;
+    window.uploadConfig = window.UPLOAD_CONFIG;
+    window.S3_UPLOAD_MAX_CONCURRENT = window.UPLOAD_CONFIG.maxConcurrent;
+    window.S3_UPLOAD_CHUNK_SIZE = window.UPLOAD_CONFIG.chunkSize;
+    window.S3_MULTIPART_THRESHOLD = window.UPLOAD_CONFIG.multipartThreshold;
+    
+</script>
+
 <!-- File Viewer JavaScript -->
-<script src="{% static 'js/src/s3/s3-multipart-upload.js' %}"></script>
 <script src="{% static 'js/src/dashboard-upload.js' %}"></script>
 
 {% endblock %}
