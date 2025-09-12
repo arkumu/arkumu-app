@@ -438,14 +438,17 @@ class Entity:
 
     @__init__.register
     def _(self, arg: Resource):
+        self.uri = arg.uri
         self.init_helper(arg.id)
 
     @__init__.register
     def _(self, arg: Triple):
+        self.uri = Resource.objects.get(id = arg.subject_id).uri
         self.init_helper(arg.subject_id)
 
     @__init__.register
     def _(self, arg: str):
+        self.uri = arg
         subject = Resource.objects.get(uri=arg)
         self.init_helper(subject.id)
 
@@ -506,6 +509,97 @@ def search_algo(search_string, search_fields = ["Bevorzugter Titel", "Bevorzugte
     
     return [Entity(triple) for triple in results]
 
+
+
+# Hier wäre hier möglicher weise besonder gut
+class Projekt_Entity:
+    
+    def __init__(self, proj: Entity):
+        self.proj = proj
+
+    @property
+    def institution(self):
+        return Entity(self.proj.resources["Einliefernde Hochschule"][0]).resources["Deutscher Name der Einliefernden Hochschule"][0].value
+
+    @property
+    def title(self):
+        return self.proj.resources["Bevorzugter Titel"][0].value
+        
+    @property
+    def subtitle(self):
+        if "Bevorzugter Untertitel" in self.proj.resources:
+            return self.proj.resources["Bevorzugter Untertitel"][0].value
+        else:
+            return ""
+
+    @property
+    def uri(self):
+        return self.proj.uri
+    
+    def __calcActor(self):
+        pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(self.uri.split("/")[4])
+        self.akteur_role_dict = {}
+        self.min_date = 99999999999999
+        self.max_date = -99999999999999
+        if "Ereignis" in self.proj.resources:
+            for ereignis_resource in self.proj.resources["Ereignis"]:
+                
+                ereignis = Entity(ereignis_resource)
+                if "Ereignisbeginn" in ereignis.resources:
+                    self.min_date = min(self.min_date, int(ereignis.resources["Ereignisbeginn"][0].value.split('-')[0]))
+                if "Ereignisende" in ereignis.resources:
+                    self.max_date = max(self.max_date, int(ereignis.resources["Ereignisende"][0].value.split('-')[0]))
+
+                #these are needed as a work-around until cross table traversal is fixed
+                #pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
+                triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
+
+
+                akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
+
+                for cross_entry in akteur_ereignis_cross_entries:
+                    # Extract Akteur entity
+
+                    akteur = Entity(cross_entry.resources["AkteurIn im Ereignis"][0])
+
+
+                    # Process roles
+                    rollen_entities = [
+                        Entity(rolle) for rolle in cross_entry.resources["Rollen der AkteurIn im Ereignis"]
+                    ]
+
+                    rollen_names = []
+                    for rolle in rollen_entities:
+                        if "Deutscher Name der Rolle (Breadcrumb)" in rolle.resources:
+                            rollen_names.append(split_breadcrumb(rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value))
+
+                    if akteur.resources["Deutscher Name"][0].value not in self.akteur_role_dict:
+                        self.akteur_role_dict[akteur.resources["Deutscher Name"][0].value] = set(rollen_names)
+                    else:
+                        self.akteur_role_dict[akteur.resources["Deutscher Name"][0].value] |= set(rollen_names)
+
+    @property
+    def date_range(self):
+        if "min_date" not in self.__dict__ or "max_date" not in self.__dict__:
+            self.__calcActor()
+
+        if self.min_date == 99999999999999 and self.max_date == -99999999999999:
+            return  "?"
+        else: 
+            return f"{self.min_date if self.min_date != 99999999999999 else "?"} bis {self.max_date if self.max_date != -99999999999999 else "?"}" if self.min_date != self.max_date else f"{self.min_date}"
+        
+    @property
+    def authors(self):
+        if "akteur_role_dict" not in self.__dict__:
+            self.__calcActor()
+        return self.akteur_role_dict
+
+    @property
+    def categories(self):
+        project_categories = [Entity(proj_cat) for proj_cat in project.resources["Projektkategorie"]]
+        return [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
+        
+
 class Im_ereignis_singleton:
     _instance = None
     
@@ -528,9 +622,6 @@ class DesignSearch:
 
 
     def design_search_results(request):
-        prt = "<Nothing to Print>"
-        prt2 = "<Nothing to Print>"
-        prt3 = "<Nothing to Print>"
         query = request.GET.get('query', None)
 
        # triple = [ob.__dict__ for ob in Triple.objects.all()[:5]]
@@ -546,13 +637,12 @@ class DesignSearch:
         projects = search_algo(query)
     #    temp = resource
         results_ret = []
-        prt3 = ""
         for project in projects:
             resource = Resource.objects.get(id=project.id)
             source = Entity(project.resources["Einliefernde Hochschule"][0])
 
             source_name = source.resources["Deutscher Name der Einliefernden Hochschule"][0].value
-
+            uri = "../projekt?projekt=" + resource.uri
             title = project.resources["Bevorzugter Titel"][0].value
             subtitle = ""
             try:
@@ -560,11 +650,11 @@ class DesignSearch:
             except: 
                 pass
             results_temp_1 = {
-                    "year":"2024",
                     "image":"images/main/card_1.png",
                     "institution":source_name,
                     "title":title,
-                    "subtitle":subtitle
+                    "subtitle":subtitle,
+                    "uri": uri
                     }
             results_temp_2 = {}
 
@@ -572,21 +662,22 @@ class DesignSearch:
 
             pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(resource.uri.split("/")[4])
             akteur_role_dict = {}
+            min_date = 99999999999999
+            max_date = -99999999999999
             if "Ereignis" in project.resources:
                 for ereignis_resource in project.resources["Ereignis"]:
                     
                     ereignis = Entity(ereignis_resource)
+                    if "Ereignisbeginn" in ereignis.resources:
+                        min_date = min(min_date,int(ereignis.resources["Ereignisbeginn"][0].value.split('-')[0]))
+                    if "Ereignisende" in ereignis.resources:
+                        max_date = max(max_date, int(ereignis.resources["Ereignisende"][0].value.split('-')[0]))
 
                     #these are needed as a work-around until cross table traversal is fixed
                     #pred_im_ereignis = Resource.objects.get(uri=f"http://arkumu.org/data/{resource.uri.split("/")[4]}/properties/im-ereignis")
                     triples_cross_table = Triple.objects.filter(predicate_id=pred_im_ereignis.id, object_id=ereignis.id)
 
 
-            #     akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
-            #        akteure = [Entity(akteur_ereignis_cross_entry.resources["AkteurIn im Ereignis"][0]) for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
-            #       akteure_rollen = [[Entity(rolle) for rolle in akteur_ereignis_cross_entry.resources["Rollen der AkteurIn im Ereignis"]] for akteur_ereignis_cross_entry in akteur_ereignis_cross_entries]
-            #      akteure_rollen_name = [[split_breadcrumb(akteur_rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value) if "Deutscher Name der Rolle (Breadcrumb)" in akteur_rolle.resources else "" for akteur_rolle in akteur_rollen] for akteur_rollen in akteure_rollen]
-            #        akteur_rollen_string = [", ".join(akteur_rollen_name) for akteur_rollen_name in akteure_rollen_name]
                     akteur_ereignis_cross_entries = [Entity(triple) for triple in triples_cross_table]
 
                     for cross_entry in akteur_ereignis_cross_entries:
@@ -605,33 +696,22 @@ class DesignSearch:
                             if "Deutscher Name der Rolle (Breadcrumb)" in rolle.resources:
                                 rollen_names.append(split_breadcrumb(rolle.resources["Deutscher Name der Rolle (Breadcrumb)"][0].value))
 
-                        prt3 += "\n"
-                        if title == "Void":
-                            for role_name in rollen_names:
-                                prt3 += role_name
-
                         if akteur.resources["Deutscher Name"][0].value not in akteur_role_dict:
                             akteur_role_dict[akteur.resources["Deutscher Name"][0].value] = set(rollen_names)
                         else:
                             akteur_role_dict[akteur.resources["Deutscher Name"][0].value] |= set(rollen_names)
 
-                    # Store results
-                    # results_temp_2.update({
-                    #     f"contributor{i}_name": name,
-                    #     f"contributor{i}_role": ", ".join(rollen_names)
-                        
-                    # })
-                    for i, (name, value) in enumerate(akteur_role_dict.items()):
-                        results_temp_2[f"contributor{i+1}_name"] = name
-                        results_temp_2[f"contributor{i+1}_role"] = ", ".join(value)
-                        prt += f"{i+1}: {name}, {value}\n"
-                    
-                    if (len(akteur_role_dict) > 4):
-                        results_temp_2["additional_contributors"] = f"{len(akteur_role_dict)-4} weitere{'s' if len(akteur_role_dict)-4 == 1 else ''}"
-
-                #    for i, akteur in enumerate(akteure):
-                #        results_temp_2.update({f"contributor{i + 1}_name" : akteur.resources["Deutscher Name"][0].value,
-                    #                              f"contributor{i + 1}_role" : akteur_rollen_string[i]})
+                for i, (name, value) in enumerate(akteur_role_dict.items()):
+                    results_temp_2[f"contributor{i+1}_name"] = name
+                    results_temp_2[f"contributor{i+1}_role"] = ", ".join(value)
+                
+                if (len(akteur_role_dict) > 4):
+                    results_temp_2["additional_contributors"] = f"{len(akteur_role_dict)-4} weitere{'s' if len(akteur_role_dict)-4 == 1 else ''}"
+            
+            if min_date == 99999999999999 and max_date == -99999999999999:
+                results_temp_2["year"] = "?"
+            else: 
+                results_temp_2["year"] = f"{min_date if min_date != 99999999999999 else "?"} bis {max_date if max_date != -99999999999999 else "?"}" if min_date != max_date else f"{min_date}"
 
             
             category_tags = []
@@ -642,7 +722,7 @@ class DesignSearch:
                 
                 if (len(category_tags) > 4):
                     results_temp_3.update({
-                        'additional_categories': f"{len(category_tags)-4} weitere{'s' if len(category_tags)-4 == 1 else ''}"
+                        'additional_categories': f"{len(category_tags)-4} weitere{'r' if len(category_tags)-4 == 1 else ''}"
                     })
 
                 for i, category in enumerate(category_tags):
@@ -656,41 +736,10 @@ class DesignSearch:
             results_temp_1.update(results_temp_2)
             results_temp_1.update(results_temp_3)
             results_ret.append(results_temp_1)
-        #     triple = f"{project.__dict__}"
         
 
 
         # results_ret = [
-        #     # {"year":"2024",
-        #     #  "image":"images/main/card_1.png",
-        #     #  "institution":"Folkwang Universität der Kunst",
-        #     #  "title":"Handmade in Ethiopia",
-        #     #  "subtitle":"Projekt",
-        #     #  "contributor1_name":"Johanna Schwer",
-        #     #  "contributor1_role":akteur_rolls_string[0],
-        #     #  "contributor2_name":"Judith Schanz",
-        #     #  "contributor2_role":akteur_rolls_string[1],
-        #     #  "contributor3_name":"Martina Allerbech",
-        #     #  "contributor3_role":"Designerin, Beraterin",
-        #     #  "category1":"Industrial Design",
-        #     #  "category2":"Transformation Design",
-        #     #  "button_text":"Projekt ansehen"
-        #     # },
-        #     {"year":"2024",
-        #      "image":"images/main/card_1.png",
-        #      "institution":"Folkwang Universität der Kunst",
-        #      "title":"Handmade in Ethiopia",
-        #      "subtitle":"Projekt",
-        #      "contributor1_name":"Johanna Schwer",
-        #      "contributor1_role":"Betreuerin",
-        #      "contributor2_name":"Judith Schanz",
-        #      "contributor2_role":"Betreuerin",
-        #      "contributor3_name":"Martina Allerbech",
-        #      "contributor3_role":"Designerin, Beraterin",
-        #      "category1":"Industrial Design",
-        #      "category2":"Transformation Design",
-        #      "button_text":"Projekt ansehen"
-        #     },
         #     {"year":"2024",
         #      "image":"images/main/card_1.png",
         #      "institution":"Folkwang Universität der Kunst",
@@ -707,7 +756,7 @@ class DesignSearch:
         #      "button_text":"Projekt ansehen"
         #     },]
         context = {'query': query,
-            'results': results_ret, "print": prt, "print2": prt2, "print3": prt3}
+            'results': results_ret}
         
         
         return render(request, 'catalog/design_search_results.html', context)
