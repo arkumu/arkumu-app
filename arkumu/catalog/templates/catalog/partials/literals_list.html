@@ -38,17 +38,25 @@
             <!-- Sample entities using this value -->
             {% if item.sample_entities %}
             <div class="mt-2">
-                <span class="text-gray-700 text-sm font-medium">Found in:</span>
-                <div class="flex flex-wrap gap-2 mt-1">
+                <span class="text-gray-700 text-sm font-medium">Found in entities:</span>
+                <div class="space-y-1 mt-1">
                     {% for entity in item.sample_entities|slice:":3" %}
-                    <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
-                       class="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm hover:bg-blue-200 transition-colors"
-                       title="{{ entity.uri }}">
-                        {{ entity.uri|uri_tail }}
-                    </a>
+                    <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+                        <span class="text-sm font-mono text-gray-800">{{ entity.uri|uri_tail }}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">{{ entity.class }}</span>
+                            <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
+                               class="text-xs text-blue-600 hover:text-blue-800"
+                               title="View full details">
+                                View →
+                            </a>
+                        </div>
+                    </div>
                     {% endfor %}
                     {% if item.sample_entities|length > 3 %}
-                    <span class="text-sm text-gray-500">+{{ item.sample_entities|length|add:"-3" }} more</span>
+                    <div class="text-sm text-gray-500 text-center py-1">
+                        +{{ item.sample_entities|length|add:"-3" }} more entities with this value
+                    </div>
                     {% endif %}
                 </div>
             </div>
