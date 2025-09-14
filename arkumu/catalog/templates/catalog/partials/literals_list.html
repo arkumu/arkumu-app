@@ -1,13 +1,13 @@
 {% load catalog_tags %}
 {% if literals_data %}
-<div class="border rounded bg-white p-3">
-    <div class="flex justify-between items-center mb-2">
-        <h3 class="font-bold text-sm">{{ literals_data.property_name|title }} Values</h3>
-        <span class="text-xs text-gray-500">{{ literals_data.total_values }} total, {{ literals_data.unique_values }} unique</span>
+<div class="space-y-4">
+    <div class="flex justify-between items-center">
+        <h2 class="text-xl font-semibold">{{ literals_data.property_name|title }} Values</h2>
+        <span class="text-sm text-gray-600">{{ literals_data.total_values }} total, {{ literals_data.unique_values }} unique</span>
     </div>
 
     <!-- Search box for filtering values -->
-    <div class="mb-3">
+    <div class="mb-4">
         <input type="text"
                name="search"
                placeholder="Search within values..."
@@ -16,39 +16,39 @@
                hx-trigger="input changed delay:300ms"
                hx-include="[name='class']:checked"
                hx-vals='{"property": "{{ property_uri }}"}'
-               hx-target="#literals-section"
-               class="w-full px-2 py-1 text-xs border rounded">
+               hx-target="#results-container"
+               class="w-full px-3 py-2 border rounded-lg">
     </div>
 
-    <!-- Literal values list -->
-    <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+    <!-- Literal values grid -->
+    <div class="grid gap-3 max-h-96 overflow-y-auto">
         {% for item in literals_data.values %}
-        <div class="border-l-2 border-blue-200 pl-2 py-1 hover:bg-gray-50">
-            <div class="flex justify-between items-start">
-                <span class="flex-1 font-medium text-gray-800">
+        <div class="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+            <div class="flex justify-between items-start mb-2">
+                <span class="flex-1 font-medium text-gray-900 text-sm">
                     {% if item.value|length > 80 %}
                         {{ item.value|truncatechars:80 }}
                     {% else %}
                         {{ item.value }}
                     {% endif %}
                 </span>
-                <span class="text-gray-500 ml-2">({{ item.count }})</span>
+                <span class="text-blue-600 font-semibold ml-2">×{{ item.count }}</span>
             </div>
 
             <!-- Sample entities using this value -->
             {% if item.sample_entities %}
-            <div class="mt-1 pl-2">
-                <span class="text-gray-600 text-xs">Found in:</span>
-                <div class="flex flex-wrap gap-1 mt-1">
-                    {% for entity in item.sample_entities|slice:":2" %}
+            <div class="mt-2">
+                <span class="text-gray-700 text-sm font-medium">Found in:</span>
+                <div class="flex flex-wrap gap-2 mt-1">
+                    {% for entity in item.sample_entities|slice:":3" %}
                     <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
-                       class="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
+                       class="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm hover:bg-blue-200 transition-colors"
                        title="{{ entity.uri }}">
                         {{ entity.class }}
                     </a>
                     {% endfor %}
-                    {% if item.sample_entities|length > 2 %}
-                    <span class="text-xs text-gray-500">+{{ item.sample_entities|length|add:"-2" }} more</span>
+                    {% if item.sample_entities|length > 3 %}
+                    <span class="text-sm text-gray-500">+{{ item.sample_entities|length|add:"-3" }} more</span>
                     {% endif %}
                 </div>
             </div>
@@ -58,9 +58,15 @@
     </div>
 
     {% if literals_data.values|length == 50 %}
-    <div class="mt-2 text-xs text-gray-500 text-center">
-        Showing top 50 values. Use search to filter.
+    <div class="mt-4 text-sm text-gray-500 text-center p-4 bg-gray-50 rounded-lg">
+        Showing top 50 values. Use search to filter for specific content.
     </div>
     {% endif %}
+</div>
+
+{% elif property_uri %}
+<div class="text-center py-12 text-gray-500">
+    <p class="text-lg">No literal values found</p>
+    <p class="text-sm mt-2">This property may not have any content for the selected filters.</p>
 </div>
 {% endif %}
