@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% load static catalog_tags %}
+
+{% block title %}Graph Explorer{% endblock %}
+
+{% block content %}
+<div class="container-fluid mx-auto px-4 py-6">
+    <h1 class="text-2xl font-bold mb-4">Graph Explorer</h1>
+
+    <!-- Search Form -->
+    <form method="get" id="searchForm">
+        <!-- Search Bar -->
+        <div class="flex gap-4 mb-4">
+            <input type="text" name="q" value="{{ query }}"
+                   placeholder="Search entities in knowledge graph..."
+                   class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button type="submit" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                Search
+            </button>
+        </div>
+
+        <!-- Main Layout: Sidebar + Results -->
+        <div class="flex gap-4">
+
+            <!-- LEFT SIDEBAR: Filters -->
+            <aside class="w-64 flex-shrink-0">
+                <div class="sticky top-2 space-y-3 max-h-screen overflow-y-auto pb-4">
+
+                    <!-- Classes -->
+                    <div class="border rounded bg-white p-3">
+                        <h3 class="font-bold text-sm mb-2">Entity Classes</h3>
+                        <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+                            {% for class_uri, class_info in available_classes.items %}
+                            <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                <input type="radio" name="class" value="{{ class_uri }}"
+                                       {% if selected_class == class_uri %}checked{% endif %}
+                                       onchange="this.form.submit()" class="mr-2">
+                                <span class="flex-1 truncate">{{ class_info.name }}</span>
+                                <span class="text-gray-500">({{ class_info.entity_count }})</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Properties (if class selected) -->
+                    {% if selected_class and available_properties %}
+                    <div class="border rounded bg-white p-3">
+                        <h3 class="font-bold text-sm mb-2">Search in Property</h3>
+                        <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+                            {% for prop_uri, prop_info in available_properties.items %}
+                            <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                <input type="radio" name="property" value="{{ prop_uri }}"
+                                       {% if selected_property == prop_uri %}checked{% endif %}
+                                       onchange="this.form.submit()" class="mr-2">
+                                <span class="flex-1 truncate">{{ prop_info.name }}</span>
+                                <span class="text-gray-500">({{ prop_info.usage_count }})</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Active Filters -->
+                    {% if query or selected_class or selected_property %}
+                    <div class="border rounded bg-yellow-50 p-3">
+                        <h3 class="font-bold text-sm mb-2">Active Filters</h3>
+                        <div class="space-y-1 text-xs">
+                            {% if query %}
+                            <div class="flex items-center justify-between">
+                                <span class="truncate">Query: "{{ query|truncatechars:15 }}"</span>
+                                <button type="button" onclick="clearQuery()"
+                                        class="text-red-500 hover:text-red-700">×</button>
+                            </div>
+                            {% endif %}
+                            {% if selected_class %}
+                            <div class="flex items-center justify-between">
+                                <span class="truncate">Class: {{ selected_class|uri_tail }}</span>
+                                <button type="button" onclick="clearClass()"
+                                        class="text-red-500 hover:text-red-700">×</button>
+                            </div>
+                            {% endif %}
+                            {% if selected_property %}
+                            <div class="flex items-center justify-between">
+                                <span class="truncate">Property: {{ selected_property|uri_tail }}</span>
+                                <button type="button" onclick="clearProperty()"
+                                        class="text-red-500 hover:text-red-700">×</button>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </aside>
+
+            <!-- MAIN CONTENT: Results -->
+            <main class="flex-1">
+                {% if results %}
+                <div class="mb-4 flex justify-between items-center">
+                    <h2 class="text-lg font-semibold">
+                        Graph Entities ({{ total_count }} found)
+                    </h2>
+                </div>
+
+                <!-- Results Grid -->
+                <div class="grid gap-4">
+                    {% for entity in results %}
+                    <div class="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <h3 class="font-semibold text-blue-600">
+                                    {{ entity.title|truncatechars:100 }}
+                                </h3>
+                                <p class="text-sm text-gray-600 mt-1">
+                                    <span class="font-medium">URI:</span> {{ entity.entity_uri|truncatechars:80 }}
+                                </p>
+                                <p class="text-xs text-gray-500 mt-1">
+                                    Type: {{ entity.entity_type|uri_tail }}
+                                </p>
+
+                                <!-- Entity Properties -->
+                                {% if entity.properties %}
+                                <div class="mt-3">
+                                    <h4 class="text-xs font-medium text-gray-700 mb-1">Properties:</h4>
+                                    <div class="text-xs text-gray-600 space-y-1">
+                                        {% for key, value in entity.properties.items %}
+                                        {% if value and key != 'name' and key != 'deutsches_wikidata_label' %}
+                                        <div class="flex">
+                                            <span class="font-medium mr-2">{{ key|uri_tail }}:</span>
+                                            <span class="truncate">{{ value|truncatechars:50 }}</span>
+                                        </div>
+                                        {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+
+                                <!-- Graph Connections -->
+                                <div class="flex gap-4 mt-3 text-xs">
+                                    {% if entity.connected_count %}
+                                    <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                                        {{ entity.connected_count }} connections
+                                    </span>
+                                    {% endif %}
+                                    {% if entity.outgoing_relations %}
+                                    <span class="px-2 py-1 bg-green-100 text-green-800 rounded">
+                                        {{ entity.outgoing_relations|length }} outgoing
+                                    </span>
+                                    {% endif %}
+                                    {% if entity.incoming_relations %}
+                                    <span class="px-2 py-1 bg-purple-100 text-purple-800 rounded">
+                                        {{ entity.incoming_relations|length }} incoming
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- Action Button -->
+                            <div class="ml-4 flex flex-col gap-2">
+                                <button onclick="exploreEntity('{{ entity.entity_uri }}')"
+                                        class="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600">
+                                    Explore Graph
+                                </button>
+                                <a href="/metadata/resource/?uri={{ entity.entity_uri|urlencode }}"
+                                   class="px-3 py-1 text-xs text-blue-500 border border-blue-500 rounded hover:bg-blue-50 text-center">
+                                    View Details
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Relations Preview (collapsible) -->
+                        {% if entity.outgoing_relations or entity.incoming_relations %}
+                        <div class="mt-3 pt-3 border-t">
+                            <button onclick="toggleRelations('{{ forloop.counter }}')"
+                                    class="text-xs text-gray-500 hover:text-gray-700">
+                                ▼ Show Relations
+                            </button>
+                            <div id="relations-{{ forloop.counter }}" class="hidden mt-2 text-xs">
+                                {% if entity.outgoing_relations %}
+                                <div class="mb-2">
+                                    <span class="font-medium text-green-700">Outgoing:</span>
+                                    <ul class="ml-2 mt-1 space-y-1">
+                                        {% for rel in entity.outgoing_relations|slice:":3" %}
+                                        <li class="text-gray-600">
+                                            → {{ rel.property|uri_tail }}: {{ rel.target|uri_tail|truncatechars:30 }}
+                                        </li>
+                                        {% endfor %}
+                                        {% if entity.outgoing_relations|length > 3 %}
+                                        <li class="text-gray-500">... and {{ entity.outgoing_relations|length|add:"-3" }} more</li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                                {% endif %}
+
+                                {% if entity.incoming_relations %}
+                                <div>
+                                    <span class="font-medium text-purple-700">Incoming:</span>
+                                    <ul class="ml-2 mt-1 space-y-1">
+                                        {% for rel in entity.incoming_relations|slice:":3" %}
+                                        <li class="text-gray-600">
+                                            ← {{ rel.property|uri_tail }}: {{ rel.source|uri_tail|truncatechars:30 }}
+                                        </li>
+                                        {% endfor %}
+                                        {% if entity.incoming_relations|length > 3 %}
+                                        <li class="text-gray-500">... and {{ entity.incoming_relations|length|add:"-3" }} more</li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% elif query or selected_class %}
+                <div class="text-center py-12 text-gray-500">
+                    <p class="text-lg">No entities found</p>
+                    <p class="text-sm mt-2">Try adjusting your search query or filters</p>
+                </div>
+                {% else %}
+                <div class="text-center py-12 text-gray-500">
+                    <p class="text-lg">Explore the Knowledge Graph</p>
+                    <p class="text-sm mt-2">Select an entity class and search to begin exploring connections</p>
+                </div>
+                {% endif %}
+            </main>
+        </div>
+    </form>
+</div>
+
+<script>
+// Toggle relations visibility
+function toggleRelations(entityId) {
+    const element = document.getElementById(`relations-${entityId}`);
+    const button = element.previousElementSibling;
+
+    if (element.classList.contains('hidden')) {
+        element.classList.remove('hidden');
+        button.innerHTML = '▲ Hide Relations';
+    } else {
+        element.classList.add('hidden');
+        button.innerHTML = '▼ Show Relations';
+    }
+}
+
+// Explore entity in graph view (placeholder for future implementation)
+function exploreEntity(entityUri) {
+    // TODO: Open graph visualization focused on this entity
+    alert(`Graph exploration for ${entityUri} - Coming soon!`);
+}
+
+// Filter clearing functions
+function clearQuery() {
+    document.querySelector('input[name="q"]').value = '';
+    document.getElementById('searchForm').submit();
+}
+
+function clearClass() {
+    const classInputs = document.querySelectorAll('input[name="class"]');
+    classInputs.forEach(input => input.checked = false);
+    document.getElementById('searchForm').submit();
+}
+
+function clearProperty() {
+    const propInputs = document.querySelectorAll('input[name="property"]');
+    propInputs.forEach(input => input.checked = false);
+    document.getElementById('searchForm').submit();
+}
+</script>
+{% endblock %}

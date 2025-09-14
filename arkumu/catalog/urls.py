@@ -9,6 +9,10 @@ from .views import (
     HarmonizedSearchView,
     LiveSearchFilterView
 )
+from .views_explorer import (
+    CatalogExplorerView,
+    CatalogExplorerAPIView
+)
 
 app_name = 'catalog'
 
@@ -35,4 +39,8 @@ urlpatterns = [
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
     path('projekt/', login_required(TemplateView.as_view(template_name="catalog/projekt.html")), name='projekt'),
+
+    # Development/Explorer views for testing faceted search
+    path('explorer/', CatalogExplorerView.as_view(), name='explorer'),
+    path('explorer/api/', CatalogExplorerAPIView.as_view(), name='explorer_api'),
 ]
