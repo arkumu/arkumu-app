@@ -150,7 +150,7 @@ class CatalogExplorerLiteralsView(LoginRequiredMixin, TemplateView):
             else:
                 # Search/pagination - return results section with OOB header update
                 results_html = self._render_literals_results(context, request)
-                header_html = f'<h2 class="text-xl font-semibold">{literals_data["property_name"].title()} Values</h2><span class="text-sm text-base-content/70">{literals_data["total_values"]} total usages</span>'
+                header_html = f'<h2 class="text-xl font-semibold">{literals_data["property_name"].title()} Values</h2><span class="badge badge-primary badge-lg font-mono">{literals_data["total_values"]} entities</span>'
 
                 # OOB update for header counts
                 oob_html = f'<div id="literals-header" hx-swap-oob="innerHTML"><div class="flex justify-between items-center mb-4">{header_html}</div></div>'
