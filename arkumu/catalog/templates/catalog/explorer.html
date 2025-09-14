@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% load static catalog_tags %}
+
+{% block title %}Catalog Explorer - Development{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6">
+        <p class="font-bold">Development Mode</p>
+        <p>This is a development interface for testing catalog queries and faceted search.</p>
+    </div>
+
+    <h1 class="text-3xl font-bold mb-4">Catalog Explorer</h1>
+
+    <details class="mb-6 bg-base-200 rounded border p-4">
+      <summary class="cursor-pointer font-semibold">What am I looking at?</summary>
+      <div class="mt-3 text-sm leading-relaxed">
+        <p>
+          Think in terms of tables: a <strong>Class (Dataset)</strong> is your table, each <strong>Property</strong> is a column,
+          and each <strong>Resource</strong> corresponds to a cell from the original table. Cell values are stored as
+          <em>literals</em> (strings, numbers, dates), while some columns point to other rows (linked resources) — like a foreign key.
+        </p>
+        <ul class="list-disc ml-6 mt-2">
+          <li>Select a <strong>Class (Dataset)</strong> to choose which rows to explore.</li>
+          <li>Use <strong>Facets</strong> to filter rows by column values.</li>
+          <li>The <strong>Columns Overview</strong> shows which columns have the most data (coverage) and how many distinct values they contain.</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- Search Form -->
+    <form method="get">
+        <!-- Search Bar at Top -->
+        <div class="flex gap-4 mb-6">
+            <input type="text" name="q" value="{{ query }}"
+                   placeholder="Search catalog..."
+                   class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button type="submit" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                Search
+            </button>
+        </div>
+
+        <!-- Main Layout: Sidebar + Content -->
+        <div class="flex gap-6">
+            <!-- LEFT SIDEBAR: Facets (Fixed width, scrollable) -->
+            <div class="w-80 flex-shrink-0">
+                <div class="sticky top-4 max-h-screen overflow-y-auto space-y-4">
+
+                    <!-- Step 1: Classes (Datasets/Tables) -->
+                    <div class="border rounded-lg p-3 bg-white">
+                <h3 class="font-semibold mb-3 text-gray-700">📊 1. Select Class (Dataset)</h3>
+                {% if available_classes %}
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                        {% for class_uri, class_info in available_classes.items %}
+                        <label class="flex items-center text-sm hover:bg-gray-50 p-2 rounded">
+                            <input type="radio" name="class" value="{{ class_uri }}"
+                                   {% if selected_class == class_uri %}checked{% endif %}
+                                   onchange="this.form.submit()" class="mr-3">
+                            <div class="flex-1">
+                                <div class="font-medium">{{ class_info.name }}</div>
+                                <div class="text-xs text-gray-500">{{ class_info.entity_count }} entities</div>
+                            </div>
+                        </label>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-sm text-gray-500 text-center py-4">
+                        No classes available with current permissions
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Step 2: Properties (Columns) -->
+            <div class="border rounded-lg p-4">
+                <h3 class="font-semibold mb-3 text-gray-700">🏷️ 2. Select Properties (Columns)</h3>
+                {% if selected_class and available_properties %}
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                        {% for prop_uri, prop_info in available_properties.items %}
+                        <label class="flex items-center text-sm hover:bg-gray-50 p-2 rounded">
+                            <input type="checkbox" name="property" value="{{ prop_uri }}"
+                                   {% if prop_uri in selected_properties %}checked{% endif %}
+                                   onchange="this.form.submit()" class="mr-3">
+                            <div class="flex-1">
+                                <div class="font-medium">{{ prop_info.name }}</div>
+                                <div class="text-xs text-gray-500">{{ prop_info.usage_count }} entities • {{ prop_info.value_count }} values</div>
+                            </div>
+                        </label>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-sm text-gray-500 text-center py-4">
+                        {% if selected_class %}
+                            No properties found for this class
+                        {% else %}
+                            Select a class first
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Step 3: Values (Filter by specific values) -->
+            <div class="border rounded-lg p-4">
+                <h3 class="font-semibold mb-3 text-gray-700">🔍 3. Filter by Values</h3>
+                {% if selected_properties and available_values %}
+                    <!-- Add text search for values -->
+                    <div class="mb-3">
+                        <input type="text" id="valueFilter" placeholder="Filter values..."
+                               class="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                               oninput="filterValues(this.value)">
+                    </div>
+                    <div class="space-y-4 max-h-64 overflow-y-auto" id="valuesContainer">
+                        {% for prop_uri, values in available_values.items %}
+                        <div class="value-group">
+                            <div class="text-xs font-medium text-gray-600 mb-2 sticky top-0 bg-white border-b pb-1">
+                                {{ available_properties|get_item:prop_uri.name|default:prop_uri|title }}
+                                <span class="text-gray-400">({{ values|length }} values)</span>
+                            </div>
+                            <div class="space-y-1 ml-2">
+                                {% for value in values %}
+                                <label class="flex items-center text-xs hover:bg-gray-50 p-1 rounded value-item"
+                                       data-label="{{ value.label|lower }}">
+                                    <input type="checkbox" name="facet_{{ prop_uri }}" value="{{ value.value }}"
+                                           {% if value.value in selected_facets|get_item:prop_uri %}checked{% endif %}
+                                           onchange="this.form.submit()" class="mr-2">
+                                    <span class="flex-1">
+                                        <span class="font-medium">{{ value.label|truncatechars:40 }}</span>
+                                        <span class="text-gray-500 ml-1">({{ value.count }})</span>
+                                    </span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-sm text-gray-500 text-center py-4">
+                        {% if selected_properties %}
+                            <div class="animate-pulse">Loading values...</div>
+                        {% elif selected_class %}
+                            Select properties first
+                        {% else %}
+                            Select class and properties first
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if not available_classes %}
+        <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
+          <strong>No data available:</strong> No classes found for your accessible data. This could be due to permissions or missing data imports.
+        </div>
+        {% endif %}
+
+        <!-- Facets Section -->
+        {% if facets %}
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+            {% for facet_name, facet_values in facets.items %}
+            <div class="border rounded-lg p-4">
+                <h3 class="font-semibold mb-2">{{ facet_name|uri_tail }}</h3>
+                <div class="space-y-1 max-h-48 overflow-y-auto">
+                    {% for value in facet_values|slice:":10" %}
+                    <label class="flex items-center text-sm">
+                        <input type="checkbox" name="facet_{{ facet_name }}" value="{{ value.value }}"
+                               {% if value.value in selected_facets|get_item:facet_name %}checked{% endif %}
+                               class="mr-2">
+                        <span>{{ value.label|truncatechars:30 }} ({{ value.count }})</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Selected Filters -->
+        {% if selected_facets %}
+        <div class="mb-6">
+          <div class="text-sm font-medium mb-1">Selected Filters:</div>
+          <div class="flex flex-wrap gap-2">
+            {% for k, vals in selected_facets.items %}
+              {% for v in vals %}
+                <span class="badge badge-outline">{{ k|uri_tail }} = {{ v|truncatechars:32 }}</span>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+    </form>
+
+    <!-- Columns Overview -->
+    {% if facets or results %}
+    {% if debug_info and debug_info.property_stats %}
+    <div class="mb-8">
+      <h3 class="text-lg font-semibold mb-2">Columns Overview</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {% for col in debug_info.property_stats|slice:":9" %}
+        <div class="border rounded p-3 text-sm">
+          <div class="font-medium">{{ col.label }}</div>
+          <div class="text-xs text-base-content/60">Rows with values: {{ col.row_count }} • Distinct values: {{ col.value_count }}</div>
+          {% if facets and facets|get_item:col.key %}
+          <div class="mt-2 text-xs text-base-content/60">Sample values: 
+            {% for val in facets|get_item:col.key|slice:":3" %}
+              {{ val.label|truncatechars:24 }}{% if not forloop.last %}, {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- Query Explanation Section -->
+    {% if query_explanation %}
+    <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-400 rounded-lg">
+        <h3 class="text-lg font-semibold mb-2 text-blue-800">
+            🔍 Query Explanation - What's Happening Behind the Scenes
+        </h3>
+        <p class="text-sm text-blue-700 mb-3">
+            <strong>Service Method:</strong> <code>{{ query_explanation.service_method }}</code>
+        </p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- Steps -->
+            <div class="bg-white p-3 rounded border">
+                <h4 class="font-semibold text-sm mb-2">Query Steps:</h4>
+                <ol class="text-xs space-y-1">
+                    {% for step in query_explanation.steps %}
+                    <li class="flex items-start">
+                        <span class="text-blue-600 font-mono mr-2">{{forloop.counter}}.</span>
+                        <span>{{ step }}</span>
+                    </li>
+                    {% endfor %}
+                </ol>
+            </div>
+
+            <!-- ORM Patterns -->
+            <div class="bg-white p-3 rounded border">
+                <h4 class="font-semibold text-sm mb-2">Django ORM:</h4>
+                <div class="space-y-1">
+                    {% for pattern in query_explanation.orm_patterns %}
+                    <div class="text-xs font-mono bg-gray-100 p-1 rounded text-green-700">
+                        {{ pattern }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- SQL Patterns -->
+            <div class="bg-white p-3 rounded border">
+                <h4 class="font-semibold text-sm mb-2">SQL Equivalent:</h4>
+                <div class="space-y-1">
+                    {% for pattern in query_explanation.sql_patterns %}
+                    <div class="text-xs font-mono bg-gray-100 p-1 rounded text-purple-700">
+                        {{ pattern }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Results Section -->
+    {% if results %}
+    <div class="mb-6">
+        <h2 class="text-2xl font-semibold mb-4">
+            Results ({{ total_count }} found)
+        </h2>
+
+        <div class="space-y-4">
+            {% for resource in results %}
+            <div class="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-blue-600">
+                            {{ resource.name|default:resource.uri }}
+                        </h3>
+                        <p class="text-sm text-gray-600 mt-1">
+                            <span class="font-medium">URI:</span> {{ resource.uri }}
+                        </p>
+                        {% if resource.value %}
+                        <p class="text-sm mt-2">{{ resource.value|truncatechars:200 }}</p>
+                        {% endif %}
+                        <div class="flex gap-4 mt-2 text-xs text-gray-500">
+                            <span>Type: {{ resource.resource_type }}</span>
+                            {% if resource.organization %}
+                            <span>Org: {{ resource.organization.code }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <a href="/metadata/resource/{{ resource.id }}/"
+                           class="text-blue-500 hover:text-blue-700 text-sm">
+                            View Details →
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if results.has_other_pages %}
+        <div class="flex justify-center mt-6 space-x-2">
+            {% if results.has_previous %}
+            <a href="?q={{ query }}&page={{ results.previous_page_number }}"
+               class="px-3 py-1 border rounded hover:bg-gray-100">
+                Previous
+            </a>
+            {% endif %}
+
+            <span class="px-3 py-1">
+                Page {{ results.number }} of {{ results.paginator.num_pages }}
+            </span>
+
+            {% if results.has_next %}
+            <a href="?q={{ query }}&page={{ results.next_page_number }}"
+               class="px-3 py-1 border rounded hover:bg-gray-100">
+                Next
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Debug Info (Development Only) -->
+    {% if debug_info %}
+    <div class="mt-8 p-4 bg-gray-100 rounded-lg">
+        <h3 class="font-semibold mb-2">Debug Information</h3>
+        <dl class="grid grid-cols-2 gap-2 text-sm">
+            <dt class="font-medium">Query Time:</dt>
+            <dd>{{ debug_info.query_time }}</dd>
+            <dt class="font-medium">Total Results:</dt>
+            <dd>{{ debug_info.total_results }}</dd>
+            {% if debug_info.accessible_count %}
+            <dt class="font-medium">Accessible (pre-filter):</dt>
+            <dd>{{ debug_info.accessible_count }}</dd>
+            {% endif %}
+            {% if debug_info.after_type %}
+            <dt class="font-medium">After Type Filter:</dt>
+            <dd>{{ debug_info.after_type }}</dd>
+            {% endif %}
+            {% if debug_info.after_query %}
+            <dt class="font-medium">After Query Filter:</dt>
+            <dd>{{ debug_info.after_query }}</dd>
+            {% endif %}
+            {% if debug_info.after_facets %}
+            <dt class="font-medium">After Facets:</dt>
+            <dd>{{ debug_info.after_facets }}</dd>
+            {% endif %}
+            {% if debug_info.facet_properties %}
+            <dt class="font-medium">Facet Properties:</dt>
+            <dd>{{ debug_info.facet_properties }}</dd>
+            {% endif %}
+            <dt class="font-medium">Total SQL Queries:</dt>
+            <dd>{{ debug_info.total_queries|default:"0" }}</dd>
+            <dt class="font-medium">Facet Counts:</dt>
+            <dd>
+                {% for name, count in debug_info.facet_counts.items %}
+                {{ name }}: {{ count }}{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+            </dd>
+        </dl>
+
+        {% if debug_info.sql_queries %}
+        <details class="mt-4">
+            <summary class="cursor-pointer font-semibold">SQL Queries ({{ debug_info.sql_queries|length }} shown)</summary>
+            <div class="mt-2 space-y-2 max-h-96 overflow-y-auto">
+                {% for query in debug_info.sql_queries %}
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-xs text-gray-500">Time: {{ query.time }}s</div>
+                    <pre class="text-xs mt-1 whitespace-pre-wrap">{{ query.sql }}</pre>
+                </div>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Initial State (No Query) -->
+    {% if not query and initial_facets %}
+    <div class="mt-8">
+        <h2 class="text-2xl font-semibold mb-4">Available Facets</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for facet_name, facet_info in initial_facets.items %}
+            <div class="border rounded-lg p-4">
+                <h3 class="font-semibold">{{ facet_name|title }}</h3>
+                <p class="text-sm text-gray-600">{{ facet_info.count }} unique values</p>
+                <div class="mt-2 text-xs text-gray-500">
+                    Top values:
+                    {% for value in facet_info.top_values|slice:":5" %}
+                    {{ value }}{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// Auto-submit form when facets change
+document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        this.form.submit();
+    });
+});
+
+// Toggle dropdown explanation
+function toggleDropdownExplanation() {
+    const explanation = document.getElementById('dropdown-explanation');
+    explanation.classList.toggle('hidden');
+}
+
+// Filter values by text
+function filterValues(searchText) {
+    const container = document.getElementById('valuesContainer');
+    if (!container) return;
+
+    const valueItems = container.querySelectorAll('.value-item');
+    const valueGroups = container.querySelectorAll('.value-group');
+
+    searchText = searchText.toLowerCase();
+
+    valueGroups.forEach(group => {
+        let hasVisibleItems = false;
+        const items = group.querySelectorAll('.value-item');
+
+        items.forEach(item => {
+            const label = item.getAttribute('data-label');
+            if (!searchText || label.includes(searchText)) {
+                item.style.display = '';
+                hasVisibleItems = true;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+
+        // Hide entire group if no items match
+        group.style.display = hasVisibleItems ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}
