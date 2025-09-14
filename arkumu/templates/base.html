@@ -53,7 +53,7 @@
           {% if request.user.is_authenticated %}
             <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2">
               <i class="fas fa-search"></i>
-              Graph Explorer
+              Catalog Explorer
             </a></li>
             <li><a href="{% url 'storage:archivist_dashboard' %}">Archivist Dashboard</a></li>
             <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
@@ -79,7 +79,7 @@
           <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
           <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2">
             <i class="fas fa-search"></i>
-            <span>Graph Explorer</span>
+            <span>Catalog Explorer</span>
           </a></li>
 
         {% endif %}
