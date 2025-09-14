@@ -8,11 +8,15 @@
     <h1 class="text-2xl font-bold mb-4">Graph Explorer</h1>
 
     <!-- Search Form -->
-    <form method="get" id="searchForm">
+    <form method="get">
         <!-- Search Bar -->
         <div class="flex gap-4 mb-4">
             <input type="text" name="q" value="{{ query }}"
                    placeholder="Search entities in knowledge graph..."
+                   hx-get="{% url 'catalog:explorer' %}"
+                   hx-trigger="keyup changed delay:500ms"
+                   hx-include="[name='class']:checked, [name='property']:checked"
+                   hx-target="#results-container"
                    class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
             <button type="submit" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
                 Search
@@ -34,7 +38,11 @@
                             <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
                                 <input type="radio" name="class" value="{{ class_uri }}"
                                        {% if selected_class == class_uri %}checked{% endif %}
-                                       onchange="this.form.submit()" class="mr-2">
+                                       hx-get="{% url 'catalog:explorer' %}"
+                                       hx-trigger="change"
+                                       hx-include="[name='q'], [name='property']:checked"
+                                       hx-target="#results-container"
+                                       class="mr-2">
                                 <span class="flex-1 truncate">{{ class_info.name }}</span>
                                 <span class="text-gray-500">({{ class_info.entity_count }})</span>
                             </label>
@@ -51,7 +59,11 @@
                             <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
                                 <input type="radio" name="property" value="{{ prop_uri }}"
                                        {% if selected_property == prop_uri %}checked{% endif %}
-                                       onchange="this.form.submit()" class="mr-2">
+                                       hx-get="{% url 'catalog:explorer' %}"
+                                       hx-trigger="change"
+                                       hx-include="[name='q'], [name='class']:checked"
+                                       hx-target="#results-container"
+                                       class="mr-2">
                                 <span class="flex-1 truncate">{{ prop_info.name }}</span>
                                 <span class="text-gray-500">({{ prop_info.usage_count }})</span>
                             </label>
@@ -68,21 +80,30 @@
                             {% if query %}
                             <div class="flex items-center justify-between">
                                 <span class="truncate">Query: "{{ query|truncatechars:15 }}"</span>
-                                <button type="button" onclick="clearQuery()"
+                                <button type="button"
+                                        hx-get="{% url 'catalog:explorer' %}"
+                                        hx-target="#results-container"
+                                        hx-include="[name='class']:checked, [name='property']:checked"
                                         class="text-red-500 hover:text-red-700">×</button>
                             </div>
                             {% endif %}
                             {% if selected_class %}
                             <div class="flex items-center justify-between">
                                 <span class="truncate">Class: {{ selected_class|uri_tail }}</span>
-                                <button type="button" onclick="clearClass()"
+                                <button type="button"
+                                        hx-get="{% url 'catalog:explorer' %}"
+                                        hx-target="#results-container"
+                                        hx-include="[name='q'], [name='property']:checked"
                                         class="text-red-500 hover:text-red-700">×</button>
                             </div>
                             {% endif %}
                             {% if selected_property %}
                             <div class="flex items-center justify-between">
                                 <span class="truncate">Property: {{ selected_property|uri_tail }}</span>
-                                <button type="button" onclick="clearProperty()"
+                                <button type="button"
+                                        hx-get="{% url 'catalog:explorer' %}"
+                                        hx-target="#results-container"
+                                        hx-include="[name='q'], [name='class']:checked"
                                         class="text-red-500 hover:text-red-700">×</button>
                             </div>
                             {% endif %}
@@ -93,7 +114,7 @@
             </aside>
 
             <!-- MAIN CONTENT: Results -->
-            <main class="flex-1">
+            <main class="flex-1" id="results-container">
                 {% if results %}
                 <div class="mb-4 flex justify-between items-center">
                     <h2 class="text-lg font-semibold">
@@ -250,22 +271,6 @@ function exploreEntity(entityUri) {
     alert(`Graph exploration for ${entityUri} - Coming soon!`);
 }
 
-// Filter clearing functions
-function clearQuery() {
-    document.querySelector('input[name="q"]').value = '';
-    document.getElementById('searchForm').submit();
-}
-
-function clearClass() {
-    const classInputs = document.querySelectorAll('input[name="class"]');
-    classInputs.forEach(input => input.checked = false);
-    document.getElementById('searchForm').submit();
-}
-
-function clearProperty() {
-    const propInputs = document.querySelectorAll('input[name="property"]');
-    propInputs.forEach(input => input.checked = false);
-    document.getElementById('searchForm').submit();
-}
+// Keep only the toggle relations function
 </script>
 {% endblock %}

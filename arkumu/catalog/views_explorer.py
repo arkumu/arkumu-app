@@ -9,7 +9,8 @@ from typing import Dict, Any, Optional, List
 import logging
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
+from django.template.loader import render_to_string
 from django.core.paginator import Paginator
 
 from arkumu.catalog.services.graph_search_service import GraphSearchService
@@ -102,66 +103,11 @@ class CatalogExplorerView(LoginRequiredMixin, TemplateView):
                 'show_initial_message': True
             })
 
+        # For HTMX requests, return just the results section
+        if self.request.headers.get('HX-Request'):
+            results_html = render_to_string('catalog/partials/explorer_results.html', context, request=self.request)
+            return HttpResponse(results_html)
+
         return context
 
 
-class CatalogExplorerAPIView(LoginRequiredMixin, TemplateView):
-    """API endpoint for catalog explorer AJAX requests."""
-
-    def get(self, request, *args, **kwargs):
-        """Return JSON response for graph search."""
-        logger = logging.getLogger(__name__)
-
-        # Use graph search service for API
-        graph_service = GraphSearchService(user=request.user)
-
-        # Get query parameters
-        query = request.GET.get('q', '')
-        property_name = request.GET.get('property', 'title')
-        selected_class = request.GET.get('class', '')
-
-        if not query.strip():
-            return JsonResponse({'error': 'Query parameter required'}, status=400)
-
-        try:
-            # Perform graph search
-            search_results = graph_service.search_by_property_with_graph(
-                query=query,
-                property_name=property_name,
-                resource_type=selected_class if selected_class else None,
-                limit=20
-            )
-
-            # Format results for JSON
-            results_data = []
-            for result in search_results:
-                # Extract display title from properties
-                title = (result['properties'].get('title') or
-                        result['properties'].get('name') or
-                        result['properties'].get('deutsches_wikidata_label') or
-                        'Untitled')
-
-                results_data.append({
-                    'entity_uri': result['entity_uri'],
-                    'entity_type': result['entity_type'],
-                    'title': title,
-                    'properties': result['properties'],
-                    'outgoing_relations': result['outgoing_relations'],
-                    'incoming_relations': result['incoming_relations'],
-                    'connected_count': len(result['connected_entities'])
-                })
-
-            payload = {
-                'query': query,
-                'property': property_name,
-                'class': selected_class,
-                'results': results_data,
-                'total_count': len(search_results)
-            }
-
-            logger.info(f"API graph search: '{query}' in '{property_name}' found {len(search_results)} results")
-            return JsonResponse(payload)
-
-        except Exception as e:
-            logger.error(f"API graph search failed: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
