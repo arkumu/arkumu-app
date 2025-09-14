@@ -49,6 +49,19 @@ function exploreEntity(entityUri) {
     alert(`Graph exploration for ${entityUri} - Coming soon!`);
 }
 
-// Keep only the toggle relations function
+// Browse literal values for a property
+function browsePropertyValues(propertyUri) {
+    const classInput = document.querySelector('input[name="class"]:checked');
+    const classUri = classInput ? classInput.value : '';
+
+    // Use HTMX to load literals
+    htmx.ajax('GET', '/catalog/explorer/literals/', {
+        target: '#literals-section',
+        values: {
+            'property': propertyUri,
+            'class': classUri
+        }
+    });
+}
 </script>
 {% endblock %}

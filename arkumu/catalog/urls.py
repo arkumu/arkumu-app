@@ -10,7 +10,9 @@ from .views import (
     LiveSearchFilterView
 )
 from .views_explorer import (
-    CatalogExplorerView
+    CatalogExplorerView,
+    CatalogExplorerPropertiesView,
+    CatalogExplorerLiteralsView
 )
 
 app_name = 'catalog'
@@ -41,4 +43,6 @@ urlpatterns = [
 
     # Development/Explorer views for testing faceted search
     path('explorer/', CatalogExplorerView.as_view(), name='explorer'),
+    path('explorer/properties/', CatalogExplorerPropertiesView.as_view(), name='explorer_properties'),
+    path('explorer/literals/', CatalogExplorerLiteralsView.as_view(), name='explorer_literals'),
 ]

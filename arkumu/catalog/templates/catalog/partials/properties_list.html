@@ -1,0 +1,29 @@
+{% load catalog_tags %}
+{% if available_properties %}
+<div class="border rounded bg-white p-3">
+    <h3 class="font-bold text-sm mb-2">Search in Property</h3>
+    <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+        {% for prop_uri, prop_info in available_properties.items %}
+        <div class="flex items-center hover:bg-gray-50 p-1 rounded">
+            <label class="flex items-center cursor-pointer flex-1">
+                <input type="radio" name="property" value="{{ prop_uri }}"
+                       {% if selected_property == prop_uri %}checked{% endif %}
+                       hx-get="{% url 'catalog:explorer' %}"
+                       hx-trigger="change"
+                       hx-include="[name='q'], [name='class']:checked"
+                       hx-target="#results-container"
+                       class="mr-2">
+                <span class="flex-1 truncate">{{ prop_info.name }}</span>
+                <span class="text-gray-500">({{ prop_info.usage_count }})</span>
+            </label>
+            <button type="button"
+                    onclick="browsePropertyValues('{{ prop_uri }}')"
+                    class="ml-2 px-1 py-0.5 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200"
+                    title="Browse literal values">
+                📊
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

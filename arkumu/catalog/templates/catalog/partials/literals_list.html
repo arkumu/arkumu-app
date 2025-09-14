@@ -1,0 +1,65 @@
+{% load catalog_tags %}
+{% if literals_data %}
+<div class="border rounded bg-white p-3">
+    <div class="flex justify-between items-center mb-2">
+        <h3 class="font-bold text-sm">{{ literals_data.property_name|title }} Values</h3>
+        <span class="text-xs text-gray-500">{{ literals_data.total_values }} total, {{ literals_data.unique_values }} unique</span>
+    </div>
+
+    <!-- Search box for filtering values -->
+    <div class="mb-3">
+        <input type="text"
+               placeholder="Search within values..."
+               value="{{ search_term }}"
+               hx-get="{% url 'catalog:explorer_literals' %}"
+               hx-trigger="input changed delay:300ms"
+               hx-include="[name='class']:checked, [name='property']:checked"
+               hx-vals='{"property": "{{ property_uri }}"}'
+               hx-target="#literals-section"
+               class="w-full px-2 py-1 text-xs border rounded">
+    </div>
+
+    <!-- Literal values list -->
+    <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+        {% for item in literals_data.values %}
+        <div class="border-l-2 border-blue-200 pl-2 py-1 hover:bg-gray-50">
+            <div class="flex justify-between items-start">
+                <span class="flex-1 font-medium text-gray-800">
+                    {% if item.value|length > 80 %}
+                        {{ item.value|truncatechars:80 }}
+                    {% else %}
+                        {{ item.value }}
+                    {% endif %}
+                </span>
+                <span class="text-gray-500 ml-2">({{ item.count }})</span>
+            </div>
+
+            <!-- Sample entities using this value -->
+            {% if item.sample_entities %}
+            <div class="mt-1 pl-2">
+                <span class="text-gray-600 text-xs">Found in:</span>
+                <div class="flex flex-wrap gap-1 mt-1">
+                    {% for entity in item.sample_entities|slice:":2" %}
+                    <a href="#" onclick="exploreEntity('{{ entity.uri }}')"
+                       class="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
+                       title="{{ entity.uri }}">
+                        {{ entity.class }}
+                    </a>
+                    {% endfor %}
+                    {% if item.sample_entities|length > 2 %}
+                    <span class="text-xs text-gray-500">+{{ item.sample_entities|length|add:"-2" }} more</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if literals_data.values|length == 50 %}
+    <div class="mt-2 text-xs text-gray-500 text-center">
+        Showing top 50 values. Use search to filter.
+    </div>
+    {% endif %}
+</div>
+{% endif %}

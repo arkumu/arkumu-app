@@ -13,10 +13,10 @@
                     <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
                         <input type="radio" name="class" value="{{ class_uri }}"
                                {% if selected_class == class_uri %}checked{% endif %}
-                               hx-get="{% url 'catalog:explorer' %}"
+                               hx-get="{% url 'catalog:explorer_properties' %}"
                                hx-trigger="change"
-                               hx-include="[name='q'], [name='property']:checked"
-                               hx-target="#explorer-content"
+                               hx-vals='{"class": "{{ class_uri }}"}'
+                               hx-target="#properties-section"
                                class="mr-2">
                         <span class="flex-1 truncate">{{ class_info.name }}</span>
                         <span class="text-gray-500">({{ class_info.entity_count }})</span>
@@ -25,27 +25,17 @@
                 </div>
             </div>
 
-            <!-- Properties (if class selected) -->
-            {% if selected_class and available_properties %}
-            <div class="border rounded bg-white p-3">
-                <h3 class="font-bold text-sm mb-2">Search in Property</h3>
-                <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
-                    {% for prop_uri, prop_info in available_properties.items %}
-                    <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
-                        <input type="radio" name="property" value="{{ prop_uri }}"
-                               {% if selected_property == prop_uri %}checked{% endif %}
-                               hx-get="{% url 'catalog:explorer' %}"
-                               hx-trigger="change"
-                               hx-include="[name='q'], [name='class']:checked"
-                               hx-target="#explorer-content"
-                               class="mr-2">
-                        <span class="flex-1 truncate">{{ prop_info.name }}</span>
-                        <span class="text-gray-500">({{ prop_info.usage_count }})</span>
-                    </label>
-                    {% endfor %}
-                </div>
+            <!-- Properties Section (loaded on demand) -->
+            <div id="properties-section">
+                {% if selected_class %}
+                    {% include 'catalog/partials/properties_list.html' %}
+                {% endif %}
             </div>
-            {% endif %}
+
+            <!-- Literals Section (for browsing values) -->
+            <div id="literals-section">
+                <!-- Literals will be loaded here when property browse button is clicked -->
+            </div>
 
             <!-- Active Filters -->
             <div id="active-filters">

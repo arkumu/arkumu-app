@@ -417,6 +417,132 @@ class GraphSearchService:
 
         return graph_results
 
+    def get_literals_for_property(self, property_uri: str, class_uri: Optional[str] = None, limit: int = 100) -> List[Dict]:
+        """
+        Get sample literal values for a specific property.
+
+        Args:
+            property_uri: URI of the property
+            class_uri: Optional class filter
+            limit: Maximum number of literals to return
+
+        Returns:
+            List of literal values with their entities
+        """
+        # Build base query for this property's literals
+        base_query = Triple.objects.filter(
+            predicate__uri=property_uri,
+            object__resource_type=ResourceType.LITERAL
+        )
+
+        # Apply class filter if specified
+        if class_uri:
+            entity_subquery = Triple.objects.filter(
+                predicate__uri=self.rdf_type_uri,
+                object__uri=class_uri
+            ).values('subject_id')
+            base_query = base_query.filter(subject_id__in=entity_subquery)
+
+        # Get literal values with their entities
+        literals = base_query.select_related(
+            'subject', 'object'
+        ).order_by('object__value')[:limit]
+
+        results = []
+        for triple in literals:
+            # Get entity class for context
+            entity_class = Triple.objects.filter(
+                subject=triple.subject,
+                predicate__uri=self.rdf_type_uri
+            ).select_related('object').first()
+
+            results.append({
+                'value': triple.object.value,
+                'entity_uri': triple.subject.uri,
+                'entity_class': entity_class.object.uri.split('/')[-1] if entity_class else 'Unknown'
+            })
+
+        return results
+
+    def browse_property_values(self, property_uri: str, class_uri: Optional[str] = None,
+                              search_term: Optional[str] = None, limit: int = 50) -> Dict:
+        """
+        Browse literal values for a property with optional search filtering.
+
+        Args:
+            property_uri: URI of the property to browse
+            class_uri: Optional class filter
+            search_term: Optional search term to filter values
+            limit: Maximum results
+
+        Returns:
+            Dictionary with literals, statistics, and sample values
+        """
+        # Build base query
+        base_query = Triple.objects.filter(
+            predicate__uri=property_uri,
+            object__resource_type=ResourceType.LITERAL
+        )
+
+        # Apply class filter
+        if class_uri:
+            entity_subquery = Triple.objects.filter(
+                predicate__uri=self.rdf_type_uri,
+                object__uri=class_uri
+            ).values('subject_id')
+            base_query = base_query.filter(subject_id__in=entity_subquery)
+
+        # Apply search filter
+        if search_term:
+            base_query = base_query.filter(object__value__icontains=search_term)
+
+        # Get statistics
+        total_values = base_query.count()
+        unique_values = base_query.values('object__value').distinct().count()
+
+        # Get sample values with frequency
+        value_counts = base_query.values('object__value').annotate(
+            count=Count('id')
+        ).order_by('-count')[:limit]
+
+        # Get sample entities for top values
+        results = []
+        for value_data in value_counts[:20]:  # Limit entities lookup
+            value = value_data['object__value']
+            count = value_data['count']
+
+            # Get a few sample entities with this value
+            sample_entities = base_query.filter(
+                object__value=value
+            ).select_related('subject')[:3]
+
+            entity_samples = []
+            for triple in sample_entities:
+                # Get entity class
+                entity_class = Triple.objects.filter(
+                    subject=triple.subject,
+                    predicate__uri=self.rdf_type_uri
+                ).select_related('object').first()
+
+                entity_samples.append({
+                    'uri': triple.subject.uri,
+                    'class': entity_class.object.uri.split('/')[-1] if entity_class else 'Unknown'
+                })
+
+            results.append({
+                'value': value,
+                'count': count,
+                'sample_entities': entity_samples
+            })
+
+        return {
+            'property_uri': property_uri,
+            'property_name': property_uri.split('/')[-1],
+            'total_values': total_values,
+            'unique_values': unique_values,
+            'values': results[:limit]
+        }
+
     def get_statistics(self) -> Dict:
         """Get overall catalog statistics."""
 
