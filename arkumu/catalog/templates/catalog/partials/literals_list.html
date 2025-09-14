@@ -9,11 +9,12 @@
     <!-- Search box for filtering values -->
     <div class="mb-3">
         <input type="text"
+               name="search"
                placeholder="Search within values..."
                value="{{ search_term }}"
                hx-get="{% url 'catalog:explorer_literals' %}"
                hx-trigger="input changed delay:300ms"
-               hx-include="[name='class']:checked, [name='property']:checked"
+               hx-include="[name='class']:checked"
                hx-vals='{"property": "{{ property_uri }}"}'
                hx-target="#literals-section"
                class="w-full px-2 py-1 text-xs border rounded">
@@ -40,7 +41,7 @@
                 <span class="text-gray-600 text-xs">Found in:</span>
                 <div class="flex flex-wrap gap-1 mt-1">
                     {% for entity in item.sample_entities|slice:":2" %}
-                    <a href="#" onclick="exploreEntity('{{ entity.uri }}')"
+                    <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
                        class="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
                        title="{{ entity.uri }}">
                         {{ entity.class }}
