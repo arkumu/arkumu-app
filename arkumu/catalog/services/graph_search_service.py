@@ -86,15 +86,15 @@ class GraphSearchService:
         if cached:
             return cached
 
-        # Get sample entities of this class (for efficiency)
-        sample_entity_ids = Triple.objects.filter(
+        # Get ALL entities of this class for accurate counts
+        all_entity_ids = Triple.objects.filter(
             predicate__uri=self.rdf_type_uri,
             object__uri=class_uri
-        ).values_list('subject_id', flat=True)[:100]
+        ).values_list('subject_id', flat=True)
 
-        # Get properties used by these entities with counts
+        # Get properties used by these entities with ACTUAL counts
         property_stats = Triple.objects.filter(
-            subject_id__in=sample_entity_ids,
+            subject_id__in=all_entity_ids,
             object__resource_type=ResourceType.LITERAL
         ).values(
             'predicate__uri',
@@ -110,7 +110,7 @@ class GraphSearchService:
 
             # Get a few sample values for this property
             sample_values = Triple.objects.filter(
-                subject_id__in=sample_entity_ids,
+                subject_id__in=all_entity_ids,
                 predicate__uri=prop['predicate__uri'],
                 object__resource_type=ResourceType.LITERAL
             ).values_list('object__value', flat=True).distinct()[:5]
