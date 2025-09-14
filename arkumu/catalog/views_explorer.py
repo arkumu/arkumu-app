@@ -48,60 +48,11 @@ class CatalogExplorerView(LoginRequiredMixin, TemplateView):
             'selected_property': property_name,
         })
 
-        # Perform graph search if query exists
-        if query.strip():
-            try:
-                search_results = graph_service.search_by_property_with_graph(
-                    query=query,
-                    property_name=property_name,
-                    resource_type=selected_class if selected_class else None,
-                    limit=20
-                )
-
-                # Format results for template (same as API)
-                formatted_results = []
-                for result in search_results:
-                    # Extract display title from properties
-                    title = (result['properties'].get('title') or
-                            result['properties'].get('name') or
-                            result['properties'].get('deutsches_wikidata_label') or
-                            'Untitled')
-
-                    formatted_results.append({
-                        'entity_uri': result['entity_uri'],
-                        'entity_type': result['entity_type'],
-                        'title': title,
-                        'properties': result['properties'],
-                        'outgoing_relations': result['outgoing_relations'],
-                        'incoming_relations': result['incoming_relations'],
-                        'connected_count': len(result['connected_entities'])
-                    })
-
-                # Paginate results
-                paginator = Paginator(formatted_results, 10)
-                page_obj = paginator.get_page(page)
-
-                context.update({
-                    'query': query,
-                    'results': page_obj,
-                    'total_count': len(formatted_results),
-                    'has_results': len(formatted_results) > 0
-                })
-
-                self.logger.info(f"Graph search: '{query}' in '{property_name}' found {len(formatted_results)} results")
-
-            except Exception as e:
-                self.logger.error(f"Graph search failed: {e}")
-                context.update({
-                    'query': query,
-                    'search_error': f"Search failed: {str(e)}",
-                    'has_results': False
-                })
-        else:
-            context.update({
-                'has_results': False,
-                'show_initial_message': True
-            })
+        # Show initial message - this is for browsing literal values by class/property
+        context.update({
+            'has_results': False,
+            'show_initial_message': True
+        })
 
         # For HTMX requests, return just the explorer content section
         if self.request.headers.get('HX-Request'):
@@ -167,7 +118,12 @@ class CatalogExplorerLiteralsView(LoginRequiredMixin, TemplateView):
                 'search_term': search_term,
             }
 
-            html = render_to_string('catalog/partials/literals_list.html', context, request=request)
+            # If this is a search request (has search_term), return just the grid
+            if search_term:
+                html = render_to_string('catalog/partials/literal_values_grid.html', context, request=request)
+            else:
+                html = render_to_string('catalog/partials/literals_list.html', context, request=request)
+
             return HttpResponse(html)
 
         except Exception as e:

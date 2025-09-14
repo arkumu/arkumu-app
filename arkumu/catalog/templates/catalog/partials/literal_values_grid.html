@@ -1,0 +1,47 @@
+{% load catalog_tags %}
+<div id="literal-values-grid" class="grid gap-3 max-h-96 overflow-y-auto">
+    {% for item in literals_data.values %}
+    <div class="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+        <!-- Main value - prominently displayed -->
+        <div class="mb-3 p-3 bg-blue-50 rounded-lg">
+            <div class="flex justify-between items-center">
+                <span class="text-lg font-semibold text-gray-900 break-all">
+                    {{ item.value }}
+                </span>
+                <span class="text-blue-600 font-bold text-lg ml-4">×{{ item.count }}</span>
+            </div>
+        </div>
+
+        <!-- Sample entities - smaller, clearly labeled as samples -->
+        {% if item.sample_entities %}
+        <details class="mt-2">
+            <summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-800">
+                📋 Sample entities ({{ item.sample_entities|length }} of {{ item.count }} shown)
+            </summary>
+            <div class="mt-2 space-y-1 text-xs">
+                {% for entity in item.sample_entities|slice:":3" %}
+                <div class="pl-2 py-1 bg-gray-50 rounded">
+                    <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
+                       class="font-mono text-blue-600 hover:text-blue-800 break-all"
+                       title="Click to view details">
+                        {{ entity.uri }}
+                    </a>
+                </div>
+                {% endfor %}
+                {% if item.count > 3 %}
+                <div class="text-xs text-gray-500 italic pl-2 py-1">
+                    ... and {{ item.count|add:"-3" }} more entities contain this value
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{% if literals_data.values|length == 50 %}
+<div class="mt-4 text-sm text-gray-500 text-center p-4 bg-gray-50 rounded-lg">
+    Showing top 50 values. Use search to filter for specific content.
+</div>
+{% endif %}

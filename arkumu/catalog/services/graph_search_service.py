@@ -42,8 +42,10 @@ class GraphSearchService:
             return cached
 
         # Get classes with entity counts using efficient aggregation
+        # Only show classes that have canonical URIs (harmonized catalog data)
         classes = Resource.objects.filter(
-            resource_type=ResourceType.CLASS
+            resource_type=ResourceType.CLASS,
+            canonical_uri__isnull=False
         ).annotate(
             entity_count=Count(
                 'object_triples__subject',
@@ -57,12 +59,10 @@ class GraphSearchService:
 
         results = []
         for cls in classes:
-            # Extract clean name from URI
-            class_name = cls.uri.split('/')[-1].replace('-', ' ').title()
-
+            # Use canonical_uri and name from the resource
             results.append({
-                'uri': cls.uri,
-                'name': cls.name or class_name,
+                'uri': cls.canonical_uri,
+                'name': cls.name,
                 'entity_count': cls.entity_count,
                 'description': f"{cls.entity_count} entities"
             })
@@ -87,18 +87,28 @@ class GraphSearchService:
             return cached
 
         # Get ALL entities of this class for accurate counts
+        # Note: triples still use the raw URI, not canonical URI
+        try:
+            class_resource = Resource.objects.get(canonical_uri=class_uri)
+            class_raw_uri = class_resource.uri
+        except Resource.DoesNotExist:
+            class_raw_uri = class_uri
+
         all_entity_ids = Triple.objects.filter(
             predicate__uri=self.rdf_type_uri,
-            object__uri=class_uri
+            object__uri=class_raw_uri
         ).values_list('subject_id', flat=True)
 
         # Get properties used by these entities with ACTUAL counts
+        # Only show properties that have canonical URIs (harmonized catalog data)
         property_stats = Triple.objects.filter(
             subject_id__in=all_entity_ids,
-            object__resource_type=ResourceType.LITERAL
+            object__resource_type=ResourceType.LITERAL,
+            predicate__canonical_uri__isnull=False
         ).values(
             'predicate__uri',
-            'predicate__name'
+            'predicate__name',
+            'predicate__canonical_uri'
         ).annotate(
             usage_count=Count('id'),
             sample_value_count=Count('object__value', distinct=True)
@@ -106,7 +116,7 @@ class GraphSearchService:
 
         results = []
         for prop in property_stats:
-            prop_name = prop['predicate__uri'].split('/')[-1].replace('-', '_')
+            # Use canonical_uri and name directly from the resource
 
             # Get a few sample values for this property
             sample_values = Triple.objects.filter(
@@ -116,9 +126,9 @@ class GraphSearchService:
             ).values_list('object__value', flat=True).distinct()[:5]
 
             results.append({
-                'uri': prop['predicate__uri'],
-                'name': prop['predicate__name'] or prop_name,
-                'display_name': prop_name.replace('_', ' ').title(),
+                'uri': prop['predicate__canonical_uri'],
+                'name': prop['predicate__name'],
+                'display_name': prop['predicate__name'],
                 'usage_count': prop['usage_count'],
                 'unique_values': prop['sample_value_count'],
                 'sample_values': list(sample_values)
@@ -478,9 +488,9 @@ class GraphSearchService:
         Returns:
             Dictionary with literals, statistics, and sample values
         """
-        # Build base query
+        # Build base query - filter by canonical URIs directly
         base_query = Triple.objects.filter(
-            predicate__uri=property_uri,
+            predicate__canonical_uri=property_uri,
             object__resource_type=ResourceType.LITERAL
         )
 
@@ -488,12 +498,13 @@ class GraphSearchService:
         if class_uri:
             entity_subquery = Triple.objects.filter(
                 predicate__uri=self.rdf_type_uri,
-                object__uri=class_uri
+                object__canonical_uri=class_uri
             ).values('subject_id')
             base_query = base_query.filter(subject_id__in=entity_subquery)
 
-        # Apply search filter
+        # Apply search filter using trigram index for efficient text search
         if search_term:
+            # Use trigram search for better performance with the GIN index
             base_query = base_query.filter(object__value__icontains=search_term)
 
         # Get statistics
@@ -511,9 +522,11 @@ class GraphSearchService:
             value = value_data['object__value']
             count = value_data['count']
 
-            # Get a few sample entities with this value
+            # Get a few sample entities with this value using value_hash for efficiency
+            from arkumu.common.hash_utils import generate_value_hash
+            value_hash = generate_value_hash(value)
             sample_entities = base_query.filter(
-                object__value=value
+                object__value_hash=value_hash
             ).select_related('subject')[:3]
 
             entity_samples = []
@@ -569,3 +582,101 @@ class GraphSearchService:
 
         cache.set(cache_key, stats, 600)  # Cache for 10 minutes
         return stats
+
+    def browse_entities_by_class(self, class_uri: str, limit: int = 20) -> List[Dict]:
+        """
+        Browse entities of a specific class with their properties and relationships.
+
+        Args:
+            class_uri: URI of the class to browse
+            limit: Maximum number of entities to return
+
+        Returns:
+            List of entities with their properties and relationships
+        """
+        if not class_uri:
+            return []
+
+        try:
+            # Get entities of this class
+            class_resource = Resource.objects.get(uri=class_uri, resource_type=ResourceType.CLASS)
+
+            # Find entities that have this class as their rdf:type
+            entity_triples = Triple.objects.filter(
+                predicate__uri=self.rdf_type_uri,
+                object=class_resource
+            ).select_related('subject')[:limit]
+
+            entities = []
+            for triple in entity_triples:
+                entity = triple.subject
+
+                # Get entity properties (literals only)
+                properties = {}
+                literal_triples = Triple.objects.filter(
+                    subject=entity,
+                    object__resource_type=ResourceType.LITERAL
+                ).select_related('predicate', 'object')[:20]
+
+                for prop_triple in literal_triples:
+                    prop_name = prop_triple.predicate.uri.split('/')[-1].replace('-', '_')
+                    properties[prop_name] = prop_triple.object.value
+
+                # Get title for display
+                title = (properties.get('title') or
+                        properties.get('name') or
+                        properties.get('deutsches_wikidata_label') or
+                        'Untitled')
+
+                # Get outgoing relationships (to other entities)
+                outgoing_relations = []
+                outgoing_triples = Triple.objects.filter(
+                    subject=entity,
+                    object__resource_type=ResourceType.ENTITY
+                ).exclude(
+                    predicate__uri=self.rdf_type_uri
+                ).select_related('predicate', 'object')[:5]
+
+                for rel_triple in outgoing_triples:
+                    outgoing_relations.append({
+                        'property': rel_triple.predicate.uri,
+                        'target': rel_triple.object.uri
+                    })
+
+                # Get incoming relationships (from other entities)
+                incoming_relations = []
+                incoming_triples = Triple.objects.filter(
+                    object=entity,
+                    subject__resource_type=ResourceType.ENTITY
+                ).select_related('predicate', 'subject')[:5]
+
+                for rel_triple in incoming_triples:
+                    incoming_relations.append({
+                        'property': rel_triple.predicate.uri,
+                        'source': rel_triple.subject.uri
+                    })
+
+                # Count total connections
+                connected_count = (
+                    Triple.objects.filter(subject=entity, object__resource_type=ResourceType.ENTITY).count() +
+                    Triple.objects.filter(object=entity, subject__resource_type=ResourceType.ENTITY).count()
+                )
+
+                entities.append({
+                    'entity_uri': entity.uri,
+                    'entity_type': class_uri,
+                    'title': title,
+                    'properties': properties,
+                    'outgoing_relations': outgoing_relations,
+                    'incoming_relations': incoming_relations,
+                    'connected_count': connected_count
+                })
+
+            return entities
+
+        except Resource.DoesNotExist:
+            logger.warning(f"Class not found: {class_uri}")
+            return []
+        except Exception as e:
+            logger.error(f"Error browsing entities for class {class_uri}: {e}")
+            return []

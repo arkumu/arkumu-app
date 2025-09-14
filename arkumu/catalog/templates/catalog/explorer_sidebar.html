@@ -1,29 +1,13 @@
 {% extends "base.html" %}
 {% load static catalog_tags %}
 
-{% block title %}Graph Explorer{% endblock %}
+{% block title %}Catalog Explorer{% endblock %}
 
 {% block content %}
 <div class="container-fluid mx-auto px-4 py-6">
-    <h1 class="text-2xl font-bold mb-4">Graph Explorer</h1>
+    <h1 class="text-2xl font-bold mb-4">Catalog Explorer</h1>
 
-    <!-- Search Form -->
     <form method="get">
-        <!-- Search Bar -->
-        <div class="flex gap-4 mb-4">
-            <input type="text" name="q" value="{{ query }}"
-                   placeholder="Search entities in knowledge graph..."
-                   hx-get="{% url 'catalog:explorer' %}"
-                   hx-trigger="keyup changed delay:500ms"
-                   hx-include="[name='class']:checked, [name='property']:checked"
-                   hx-target="#explorer-content"
-                   hx-swap="outerHTML"
-                   class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <button type="submit" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                Search
-            </button>
-        </div>
-
         {% include 'catalog/partials/explorer_content.html' %}
     </form>
 </div>
