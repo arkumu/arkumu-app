@@ -44,7 +44,7 @@
                     <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
                        class="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm hover:bg-blue-200 transition-colors"
                        title="{{ entity.uri }}">
-                        {{ entity.class }}
+                        {{ entity.uri|uri_tail }}
                     </a>
                     {% endfor %}
                     {% if item.sample_entities|length > 3 %}
