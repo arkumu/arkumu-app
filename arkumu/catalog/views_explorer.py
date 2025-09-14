@@ -103,10 +103,10 @@ class CatalogExplorerView(LoginRequiredMixin, TemplateView):
                 'show_initial_message': True
             })
 
-        # For HTMX requests, return just the results section
+        # For HTMX requests, return just the explorer content section
         if self.request.headers.get('HX-Request'):
-            results_html = render_to_string('catalog/partials/explorer_results.html', context, request=self.request)
-            return HttpResponse(results_html)
+            content_html = render_to_string('catalog/partials/explorer_content.html', context, request=self.request)
+            return HttpResponse(content_html)
 
         return context
 

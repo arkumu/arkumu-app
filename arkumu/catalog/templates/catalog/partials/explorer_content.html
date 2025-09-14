@@ -1,0 +1,61 @@
+{% load catalog_tags %}
+<div class="flex gap-4" id="explorer-content">
+
+    <!-- LEFT SIDEBAR: Filters -->
+    <aside class="w-64 flex-shrink-0">
+        <div class="sticky top-2 space-y-3 max-h-screen overflow-y-auto pb-4">
+
+            <!-- Classes -->
+            <div class="border rounded bg-white p-3">
+                <h3 class="font-bold text-sm mb-2">Entity Classes</h3>
+                <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+                    {% for class_uri, class_info in available_classes.items %}
+                    <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+                        <input type="radio" name="class" value="{{ class_uri }}"
+                               {% if selected_class == class_uri %}checked{% endif %}
+                               hx-get="{% url 'catalog:explorer' %}"
+                               hx-trigger="change"
+                               hx-include="[name='q'], [name='property']:checked"
+                               hx-target="#explorer-content"
+                               class="mr-2">
+                        <span class="flex-1 truncate">{{ class_info.name }}</span>
+                        <span class="text-gray-500">({{ class_info.entity_count }})</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Properties (if class selected) -->
+            {% if selected_class and available_properties %}
+            <div class="border rounded bg-white p-3">
+                <h3 class="font-bold text-sm mb-2">Search in Property</h3>
+                <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+                    {% for prop_uri, prop_info in available_properties.items %}
+                    <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+                        <input type="radio" name="property" value="{{ prop_uri }}"
+                               {% if selected_property == prop_uri %}checked{% endif %}
+                               hx-get="{% url 'catalog:explorer' %}"
+                               hx-trigger="change"
+                               hx-include="[name='q'], [name='class']:checked"
+                               hx-target="#explorer-content"
+                               class="mr-2">
+                        <span class="flex-1 truncate">{{ prop_info.name }}</span>
+                        <span class="text-gray-500">({{ prop_info.usage_count }})</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Active Filters -->
+            <div id="active-filters">
+                {% include 'catalog/partials/active_filters.html' %}
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT: Results -->
+    <main class="flex-1" id="results-container">
+        {% include 'catalog/partials/explorer_results.html' %}
+    </main>
+</div>

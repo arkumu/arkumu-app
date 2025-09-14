@@ -1,0 +1,32 @@
+{% load catalog_tags %}
+{% if query or selected_class or selected_property %}
+<div class="border rounded bg-yellow-50 p-3">
+    <h3 class="font-bold text-sm mb-2">Active Filters</h3>
+    <div class="space-y-1 text-xs">
+        {% if query %}
+        <div class="flex items-center justify-between">
+            <span class="truncate">Query: "{{ query|truncatechars:15 }}"</span>
+            <button type="button"
+                    _="on click set the value of <input[name='q']/> to '' then trigger keyup on <input[name='q']/>"
+                    class="text-red-500 hover:text-red-700">×</button>
+        </div>
+        {% endif %}
+        {% if selected_class %}
+        <div class="flex items-center justify-between">
+            <span class="truncate">Class: {{ selected_class|uri_tail }}</span>
+            <button type="button"
+                    _="on click set the checked of <input[name='class']:checked/> to false then trigger change on <input[name='class']:checked/>"
+                    class="text-red-500 hover:text-red-700">×</button>
+        </div>
+        {% endif %}
+        {% if selected_property %}
+        <div class="flex items-center justify-between">
+            <span class="truncate">Property: {{ selected_property|uri_tail }}</span>
+            <button type="button"
+                    _="on click set the checked of <input[name='property']:checked/> to false then trigger change on <input[name='property']:checked/>"
+                    class="text-red-500 hover:text-red-700">×</button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
