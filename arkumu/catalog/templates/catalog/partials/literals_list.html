@@ -1,30 +1,12 @@
 {% load catalog_tags %}
 {% if literals_data %}
 <div class="space-y-4">
-    <div class="flex justify-between items-center">
-        <h2 class="text-xl font-semibold">{{ literals_data.property_name|title }} Values</h2>
-        <span class="text-sm text-gray-600">{{ literals_data.total_values }} usages, {{ literals_data.unique_values }} distinct values</span>
-    </div>
+    {% include 'catalog/partials/literal_values_search.html' %}
 
-    <!-- Search box for filtering values -->
-    <div class="mb-4">
-        <input id="literal-search-input"
-               type="text"
-               name="search"
-               placeholder="Search within values..."
-               value="{{ search_term }}"
-               hx-get="{% url 'catalog:explorer_literals' %}"
-               hx-trigger="input changed delay:300ms"
-               hx-include="[name='class']:checked"
-               hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}"}'
-               hx-target="#literal-values-grid"
-               hx-swap="outerHTML focus-scroll:false"
-               autocomplete="off"
-               class="w-full px-3 py-2 border rounded-lg">
+    <!-- Literals content wrapper for HTMX updates -->
+    <div id="literals-content">
+        {% include 'catalog/partials/literals_content.html' %}
     </div>
-
-    <!-- Literal values grid -->
-    {% include 'catalog/partials/literal_values_grid.html' %}
 </div>
 
 {% elif property_uri %}

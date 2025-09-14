@@ -1,47 +1,87 @@
 {% load catalog_tags %}
-<div id="literal-values-grid" class="grid gap-3 max-h-96 overflow-y-auto">
+<div id="literal-values-grid" class="space-y-2">
+    <!-- Values List -->
     {% for item in literals_data.values %}
-    <div class="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-        <!-- Main value - prominently displayed -->
-        <div class="mb-3 p-3 bg-blue-50 rounded-lg">
-            <div class="flex justify-between items-center">
-                <span class="text-lg font-semibold text-gray-900 break-all">
-                    {{ item.value }}
-                </span>
-                <span class="text-blue-600 font-bold text-lg ml-4">×{{ item.count }}</span>
+    <div class="card bg-base-100 border border-base-200 hover:bg-base-50 transition-colors">
+        <div class="card-body p-4">
+            <div class="flex justify-between items-start gap-4 mb-3">
+                <!-- Value Text -->
+                <div class="flex-1 min-w-0">
+                    <div class="text-lg font-semibold text-base-content break-words">
+                        {{ item.value }}
+                    </div>
+                </div>
+                <!-- Count Info -->
+                <div class="text-right text-sm text-base-content/70">
+                    <div class="badge badge-primary badge-lg font-mono mb-1">
+                        ×{{ item.count }}
+                    </div>
+                    <div class="text-xs">
+                        {{ item.count }} entities
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <!-- Sample entities - smaller, clearly labeled as samples -->
-        {% if item.sample_entities %}
-        <details class="mt-2">
-            <summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-800">
-                📋 Sample entities ({{ item.sample_entities|length }} of {{ item.count }} shown)
-            </summary>
-            <div class="mt-2 space-y-1 text-xs">
+            <!-- Sample Entities -->
+            {% if item.sample_entities|length > 0 %}
+            <div class="divider divider-start text-xs my-2">Sample Entities</div>
+            <div class="space-y-2">
                 {% for entity in item.sample_entities|slice:":3" %}
-                <div class="pl-2 py-1 bg-gray-50 rounded">
-                    <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
-                       class="font-mono text-blue-600 hover:text-blue-800 break-all"
-                       title="Click to view details">
-                        {{ entity.uri }}
-                    </a>
+                <div class="alert alert-info py-2">
+                    <div class="flex items-center justify-between w-full">
+                        <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
+                           class="link link-hover font-mono text-sm break-all flex-1 mr-2"
+                           title="{{ entity.uri }}">
+                            {{ entity.uri|truncatechars:60 }}
+                        </a>
+                        {% if entity.class %}
+                        <div class="badge badge-outline badge-sm">{{ entity.class }}</div>
+                        {% endif %}
+                    </div>
                 </div>
                 {% endfor %}
-                {% if item.count > 3 %}
-                <div class="text-xs text-gray-500 italic pl-2 py-1">
-                    ... and {{ item.count|add:"-3" }} more entities contain this value
+
+                {% if item.sample_entities|length > 3 %}
+                <div class="collapse collapse-arrow bg-base-200">
+                    <input type="checkbox" />
+                    <div class="collapse-title text-sm font-medium py-2">
+                        👁️ View all {{ item.sample_entities|length }} entities
+                    </div>
+                    <div class="collapse-content">
+                        <div class="space-y-1">
+                            {% for entity in item.sample_entities|slice:"3:" %}
+                            <div class="alert alert-info py-2">
+                                <div class="flex items-center justify-between w-full">
+                                    <a href="/metadata/resource/?uri={{ entity.uri|urlencode }}"
+                                       class="link link-hover font-mono text-sm break-all flex-1 mr-2"
+                                       title="{{ entity.uri }}">
+                                        {{ entity.uri|truncatechars:60 }}
+                                    </a>
+                                    {% if entity.class %}
+                                    <div class="badge badge-outline badge-sm">{{ entity.class }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
                 {% endif %}
             </div>
-        </details>
-        {% endif %}
+            {% endif %}
+        </div>
     </div>
     {% endfor %}
 </div>
 
-{% if literals_data.values|length == 50 %}
-<div class="mt-4 text-sm text-gray-500 text-center p-4 bg-gray-50 rounded-lg">
-    Showing top 50 values. Use search to filter for specific content.
+{% if not literals_data.values %}
+<div class="hero min-h-32">
+    <div class="hero-content text-center">
+        <div>
+            <div class="text-6xl mb-4">🔍</div>
+            <h2 class="text-2xl font-bold">No values found</h2>
+            <p class="text-base-content/70 mt-2">Try adjusting your search terms or filters</p>
+        </div>
+    </div>
 </div>
 {% endif %}

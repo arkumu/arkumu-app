@@ -475,7 +475,7 @@ class GraphSearchService:
         return results
 
     def browse_property_values(self, property_uri: str, class_uri: Optional[str] = None,
-                              search_term: Optional[str] = None, limit: int = 50) -> Dict:
+                              search_term: Optional[str] = None, offset: int = 0, limit: int = 50) -> Dict:
         """
         Browse literal values for a property with optional search filtering.
 
@@ -511,14 +511,14 @@ class GraphSearchService:
         total_values = base_query.count()
         unique_values = base_query.values('object__value').distinct().count()
 
-        # Get sample values with frequency
+        # Get paginated values with frequency using database-level pagination
         value_counts = base_query.values('object__value').annotate(
             count=Count('id')
-        ).order_by('-count')[:limit]
+        ).order_by('-count')[offset:offset + limit]
 
-        # Get sample entities for top values
+        # Get sample entities for each value in this page
         results = []
-        for value_data in value_counts[:20]:  # Limit entities lookup
+        for value_data in value_counts:  # Process ALL values in the page, not just 20
             value = value_data['object__value']
             count = value_data['count']
 
@@ -553,7 +553,8 @@ class GraphSearchService:
             'property_name': property_uri.split('/')[-1],
             'total_values': total_values,
             'unique_values': unique_values,
-            'values': results[:limit]
+            'values': results,
+            'has_more': len(results) == limit  # Indicate if there might be more pages
         }
 
     def get_statistics(self) -> Dict:

@@ -1,0 +1,32 @@
+<!-- Search box for filtering values -->
+<div class="mb-4">
+    <div class="join w-full">
+        <div class="join-item flex items-center px-3 bg-base-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        </div>
+        <input id="literal-search-input"
+               type="text"
+               name="search"
+               placeholder="Search within values..."
+               value="{{ search_term }}"
+               hx-get="{% url 'catalog:explorer_literals' %}"
+               hx-trigger="input changed delay:300ms, keyup changed delay:300ms"
+               hx-include="[name='class']:checked"
+               hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}"}'
+               hx-target="#literals-results"
+               hx-swap="innerHTML focus-scroll:false"
+               autocomplete="off"
+               class="input input-bordered join-item flex-1"
+               hx-indicator="#search-loading">
+        <div id="search-loading" class="htmx-indicator join-item flex items-center px-3 bg-base-200">
+            <span class="loading loading-spinner loading-sm"></span>
+        </div>
+    </div>
+    {% if search_term %}
+    <div class="text-xs text-base-content/60 mt-1 pl-2">
+        🔍 Filtering for: <span class="font-medium">"{{ search_term }}"</span>
+    </div>
+    {% endif %}
+</div>
