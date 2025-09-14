@@ -8,6 +8,7 @@ from arkumu.common.hash_utils import generate_value_hash
 
 class ResourceType(models.TextChoices):
         IRI = 'IRI', _('IRI Identified Resource')
+        ENTITY = 'ENTITY', _('Entity')
         CLASS = 'CLASS', _('Class')
         PROPERTY = 'PROPERTY', _('Property')
         LITERAL = 'LITERAL', _('Literal')

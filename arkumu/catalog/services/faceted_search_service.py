@@ -15,61 +15,54 @@ User = get_user_model()
 class FacetedSearchService(CatalogNavigationService):
     """Service for faceted search with property-based filtering."""
     
-    def _get_harmonized_base_queryset(self) -> QuerySet:
-        """Get base queryset filtered to only organizations with explicit harmonization rules."""
+    def _get_base_queryset(self) -> QuerySet:
+        """Get base queryset with access control (no more harmonization dependency)."""
         from django.db.models import Q
-        
-        # ONLY include resources from organizations with explicit harmonization rules
-        harmonized_org_ids = HarmonizationRule.objects.filter(
-            is_active=True
-        ).values_list('source_organization_id', flat=True).distinct()
-        
-        harmonization_filter = Q(organization_id__in=harmonized_org_ids)
-        
-        # For harmonized resources, require authentication
+
+        # Apply access control based on user authentication and role
         if not self.user.is_authenticated:
-            # Anonymous users cannot access any resources
-            return Resource.objects.none()
-        elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
-            base_access_filter = Q()  # No restrictions
-        else:
-            # Authenticated users can access all harmonized resources (including private)
-            # since harmonization implies cross-organizational searchability
-            base_access_filter = Q()  # Allow all harmonized resources
-        
-        return Resource.objects.filter(base_access_filter & harmonization_filter)
-    
-    def search_resources(self, query: str, resource_types=None, limit=50) -> QuerySet:
-        """Override parent method to only search harmonized resources."""
-        from django.db.models import Q
-        
-        if not query.strip():
-            return Resource.objects.none()
-        
-        # Get harmonized resources first
-        harmonized_resources = self._get_harmonized_base_queryset()
-        
-        # Use same access control as harmonized base queryset for consistency
-        if not self.user.is_authenticated:
+            # Anonymous users can only access public resources
             base_access_filter = Q(
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True
             )
         elif hasattr(self.user, 'role') and self.user.role == 'system_admin':
-            base_access_filter = Q()
+            base_access_filter = Q()  # No restrictions for system admins
         else:
-            # For harmonized search, allow all harmonized resources (including private)
-            # since harmonization implies cross-organizational searchability
-            base_access_filter = Q()  # Allow all harmonized resources
-        
-        # Search in literal values connected to harmonized resources
-        harmonized_resource_ids = list(harmonized_resources.values_list('id', flat=True))
-        if not harmonized_resource_ids:
+            # Authenticated users can access public resources + their organization's resources
+            user_org = getattr(self.user, 'organization', None)
+            if user_org:
+                base_access_filter = Q(
+                    Q(public_access_level=PublicAccessLevel.PUBLIC, is_public_approved=True) |
+                    Q(organization=user_org)
+                )
+            else:
+                # User without organization - only public resources
+                base_access_filter = Q(
+                    public_access_level=PublicAccessLevel.PUBLIC,
+                    is_public_approved=True
+                )
+
+        return Resource.objects.filter(base_access_filter)
+    
+    def search_resources(self, query: str, resource_types=None, limit=50) -> QuerySet:
+        """Search resources with access control."""
+        from django.db.models import Q
+
+        if not query.strip():
             return Resource.objects.none()
-        
-        # Use raw Triple query for literal searches since we already filtered to harmonized resources
+
+        # Get accessible resources first
+        accessible_resources = self._get_base_queryset()
+
+        # Search in literal values connected to accessible resources
+        accessible_resource_ids = list(accessible_resources.values_list('id', flat=True))
+        if not accessible_resource_ids:
+            return Resource.objects.none()
+
+        # Use Triple query for literal searches
         matching_literal_triples = Triple.objects.filter(
-            subject_id__in=harmonized_resource_ids,
+            subject_id__in=accessible_resource_ids,
             object__resource_type=ResourceType.LITERAL,
             object__value__icontains=query
         ).select_related('subject')
@@ -139,8 +132,8 @@ class FacetedSearchService(CatalogNavigationService):
         if not rdf_type_resource:
             return {}
         
-        # Only include harmonized resources
-        harmonized_resources = self._get_harmonized_base_queryset()
+        # Get base accessible resources
+        harmonized_resources = self._get_base_queryset()
         
         # Use raw Triple query for type lookups - types should be universally accessible
         resource_triples = Triple.objects.filter(
@@ -279,8 +272,8 @@ class FacetedSearchService(CatalogNavigationService):
         if not rdf_type_resource:
             return []
         
-        # Only include harmonized resources
-        harmonized_resources = self._get_harmonized_base_queryset()
+        # Get base accessible resources
+        harmonized_resources = self._get_base_queryset()
         
         # Use raw Triple query for type lookups - types should be universally accessible
         resource_triples = Triple.objects.filter(
@@ -370,8 +363,8 @@ class FacetedSearchService(CatalogNavigationService):
                 )
                 resource_ids = list(matching_resources.values_list('id', flat=True))
         else:
-            # No query - get all harmonized resources of the specified type
-            harmonized_resources = self._get_harmonized_base_queryset()
+            # No query - get all accessible resources of the specified type
+            harmonized_resources = self._get_base_queryset()
             
             if resource_type == 'projects':
                 # Get harmonized projects
@@ -478,8 +471,8 @@ class FacetedSearchService(CatalogNavigationService):
         if not rdf_type_resource:
             return []
         
-        # Only include harmonized resources
-        harmonized_resources = self._get_harmonized_base_queryset()
+        # Get base accessible resources
+        harmonized_resources = self._get_base_queryset()
         
         # Use raw Triple query for type lookups - types should be universally accessible
         resource_triples = Triple.objects.filter(

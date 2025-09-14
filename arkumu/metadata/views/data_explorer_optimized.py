@@ -261,6 +261,7 @@ class OptimizedDataExplorerView(ListView):
             filter_options = {
                 'resource_types': [
                     {'value': ResourceType.IRI, 'label': 'IRI'},
+                    {'value': ResourceType.ENTITY, 'label': 'Entity'},
                     {'value': ResourceType.CLASS, 'label': 'Class'},
                     {'value': ResourceType.PROPERTY, 'label': 'Property'},
                     {'value': ResourceType.LITERAL, 'label': 'Literal'},
