@@ -4,7 +4,7 @@ Catalog views using harmonization rules for unified resource browsing.
 
 from django.views.generic import ListView, DetailView, TemplateView, View
 from django.shortcuts import get_object_or_404
-from django.db.models import Q, F
+from django.db.models import Q, F, Count
 from django.core.cache import cache
 from django.http import Http404, HttpResponse
 from django.template.loader import render_to_string
@@ -12,6 +12,7 @@ from django.middleware.csrf import get_token
 from django.shortcuts import render
 from django.db.models import Prefetch
 from django.contrib.postgres.search import TrigramSimilarity
+
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.catalog.services.catalog_navigation_service import CatalogNavigationService
@@ -21,6 +22,7 @@ from arkumu.metadata.models import Resource
 from arkumu.metadata.models import Triple
 
 from time import perf_counter
+from collections import defaultdict
 
 from functools import singledispatchmethod
 
@@ -714,9 +716,16 @@ class ProjektShow:
 
         #TODO Python fixen das es schneller wird
         
-        prt = project_ret
+        prt = keyword_cloud(10) # project_ret
         prt2 = proj_entity.alternative_title_set
         context = {'project': project_ret, "print": prt, "print2": prt2, "print3": prt3}
         
         
         return render(request, 'catalog/projekt.html', context)
+
+# TMP for REST-API
+def keyword_cloud(limit: int):
+    project_category = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/projektkategorie")
+    
+    most_used_projects = Triple.objects.filter(predicate=project_category).annotate(num_proj=Count("subject"))
+    return most_used_projects
