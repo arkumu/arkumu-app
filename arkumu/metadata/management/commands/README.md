@@ -6,7 +6,7 @@ Map organization-specific resource names to canonical URIs using the CanonicalUr
 
 ### Purpose
 
-This command uses the proper service layer to map resource names within an organization to standardized canonical URIs, enabling data harmonization across different archives and collections. It uses the `CanonicalUriMappingService` for organization-scoped mapping with comprehensive validation.
+This command harmonizes resource names within an organization by mapping different names for the same concept to standardized canonical URIs, enabling consistent data across the organization's collections. It uses the `CanonicalUriMappingService` for organization-scoped mapping with comprehensive validation.
 
 ### CSV Format
 
@@ -16,8 +16,8 @@ The CSV file must contain these columns:
 |--------|-------------|---------|
 | Type | Resource type (`Class` or `Property`) | `Class` |
 | Target | Canonical URI to assign | `http://arkumu.org/types/akteurin` |
-| Label | Human-readable label (informational) | `John Smith` |
-| Name | Comma-separated resource names to map to the same canonical URI | `Person, Actor, Individual` |
+| Label | Human-readable label (informational) | `Akteurin` |
+| Name | Comma-separated resource names from organization to harmonize | `Person, Actor, Individual` |
 
 ### Usage
 
