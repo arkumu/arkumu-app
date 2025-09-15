@@ -70,8 +70,8 @@ class METSSerializer:
         # Add technical metadata section
         self._add_technical_metadata(mets, graph, include_complete_graph)
 
-        # Add file section with graph data
-        self._add_file_section(mets, graph)
+        # Add file section with graph data and content locations
+        self._add_file_section(mets, graph, resource_uri)
 
         # Add structural map
         self._add_structural_map(mets, resource_uri)
@@ -173,8 +173,8 @@ class METSSerializer:
         tech_elem = ET.SubElement(xml_data, "technical_metadata")
         tech_elem.text = json.dumps(tech_info, indent=2)
 
-    def _add_file_section(self, mets: ET.Element, graph: Dict[str, Any]) -> None:
-        """Add file section containing the complete graph data."""
+    def _add_file_section(self, mets: ET.Element, graph: Dict[str, Any], resource_uri: str) -> None:
+        """Add file section containing the complete graph data and content file locations."""
         file_sec = ET.SubElement(mets, f"{{{METS_NS}}}fileSec")
         file_grp = ET.SubElement(file_sec, f"{{{METS_NS}}}fileGrp", {"USE": "GRAPH_DATA"})
 
@@ -190,6 +190,71 @@ class METSSerializer:
         xml_data = ET.SubElement(f_content, f"{{{METS_NS}}}xmlData")
         graph_elem = ET.SubElement(xml_data, "graph_data")
         graph_elem.text = json.dumps(graph, indent=2)
+
+        # Add content files (if any) with presigned URLs suitable for Rosetta
+        try:
+            # Lazy imports to avoid hard dependency when storage is not configured
+            from arkumu.metadata.models.resource import Resource
+            from arkumu.storage.models.s3_file_objects import S3FileObject
+            from arkumu.storage.services.rosetta_export_service import RosettaExportService
+
+            resource = Resource.objects.filter(uri=resource_uri).first()
+            if resource is None:
+                return
+
+            files_qs = (
+                S3FileObject.objects.filter(related_resource=resource)
+                .order_by("created_at")[:20]
+            )
+            if not files_qs:
+                return
+
+            content_grp = ET.SubElement(file_sec, f"{{{METS_NS}}}fileGrp", {"USE": "CONTENT"})
+            export_svc = RosettaExportService()
+
+            counter = 1
+            for f in files_qs:
+                attrs = {
+                    "ID": f"FILE_{counter:04d}",
+                    "MIMETYPE": getattr(f, "content_type", None) or "application/octet-stream",
+                }
+                if getattr(f, "file_size_bytes", None):
+                    try:
+                        attrs["SIZE"] = str(int(f.file_size_bytes))
+                    except Exception:
+                        pass
+                if getattr(f, "sha256_checksum", None):
+                    if f.sha256_checksum:
+                        attrs["CHECKSUM"] = f.sha256_checksum
+                        attrs["CHECKSUMTYPE"] = "SHA-256"
+
+                file_elem = ET.SubElement(content_grp, f"{{{METS_NS}}}file", attrs)
+
+                # Determine best access URL
+                url: Optional[str] = None
+                try:
+                    access = export_svc.prepare_file_for_harvest(f)
+                    url = access.get("url")
+                except Exception:
+                    url = None
+
+                if not url and getattr(f, "s3_url", None):
+                    url = f.s3_url
+
+                if url:
+                    ET.SubElement(
+                        file_elem,
+                        f"{{{METS_NS}}}FLocat",
+                        {
+                            "LOCTYPE": "URL",
+                            f"{{{XLINK_NS}}}href": url,
+                        },
+                    )
+
+                counter += 1
+        except Exception:
+            # If storage is not configured or any error occurs, skip content files gracefully
+            pass
 
     def _add_structural_map(self, mets: ET.Element, resource_uri: str) -> None:
         """Add logical structure map."""

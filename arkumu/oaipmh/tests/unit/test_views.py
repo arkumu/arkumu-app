@@ -79,19 +79,61 @@ class TestOAIViewFunctions:
         """Test _identify creates proper Identify response."""
         request = self.factory.get('/oai/')
         oai = views._oai_envelope(request)
-        result_oai = views._identify(oai)
+        result_oai = views._identify(oai, request)
 
         identify = result_oai.find("Identify")
         assert identify is not None
 
         # Check required elements
         assert identify.find("repositoryName").text == "Arkumu Repository"
-        assert identify.find("baseURL").text == "/oai/"
+        # baseURL should be absolute
+        assert identify.find("baseURL").text == "http://testserver/oai/"
         assert identify.find("protocolVersion").text == "2.0"
         assert identify.find("adminEmail").text == "admin@example.org"
         assert identify.find("earliestDatestamp").text == "1970-01-01T00:00:00Z"
         assert identify.find("deletedRecord").text == "no"
         assert identify.find("granularity").text == "YYYY-MM-DDThh:mm:ssZ"
+
+    @pytest.mark.django_db
+    @patch('arkumu.storage.services.rosetta_export_service.RosettaExportService')
+    def test_dc_includes_file_relations_when_present(self, mock_export_svc, sample_resources):
+        """_build_metadata_element for oai_dc should include dc:relation URLs when files exist."""
+        # Arrange resource with related files
+        resource = sample_resources[0]
+        from arkumu.storage.models.s3_file_objects import S3FileObject
+
+        file1 = S3FileObject.objects.create(
+            file_name="test1.txt",
+            s3_key="org/test1.txt",
+            file_size_bytes=123,
+            content_type="text/plain",
+            related_resource=resource,
+            s3_url="https://s3.example/org/test1.txt",
+            status='completed'
+        )
+
+        # Mock presigned URL generation
+        mock_instance = Mock()
+        mock_export_svc.return_value = mock_instance
+        mock_instance.prepare_file_for_harvest.return_value = {
+            'access_method': 'presigned_url',
+            'url': 'https://download.example/test1.txt',
+            'expires_at': datetime.now(timezone.utc)
+        }
+
+        # Also mock canonical graph to keep DC building simple
+        with patch('arkumu.oaipmh.views.CanonicalGraphService') as mock_canon:
+            mock_canon.return_value.get_entity_graph.return_value = {
+                'root_id': resource.uri,
+                'edges': []
+            }
+            metadata = views._build_metadata_element(resource, "oai_dc")
+
+        # Act: parse XML and assert dc:relation present
+        dc_root = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
+        assert dc_root is not None
+        relations = dc_root.findall("{http://purl.org/dc/elements/1.1/}relation")
+        assert any(e.text == 'https://download.example/test1.txt' for e in relations)
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS

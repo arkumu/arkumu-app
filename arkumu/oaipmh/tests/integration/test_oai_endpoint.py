@@ -34,7 +34,8 @@ class TestOAIEndpoint:
         content = response.content.decode()
         assert "<Identify>" in content
         assert "<repositoryName>Arkumu Repository</repositoryName>" in content
-        assert "<baseURL>/oai/</baseURL>" in content
+        # baseURL should be absolute
+        assert "<baseURL>http://testserver/oai/</baseURL>" in content
         assert "<protocolVersion>2.0</protocolVersion>" in content
         assert "<adminEmail>admin@example.org</adminEmail>" in content
         assert "<earliestDatestamp>1970-01-01T00:00:00Z</earliestDatestamp>" in content
@@ -428,6 +429,87 @@ class TestOAIEndpoint:
         assert response.status_code == 200
         code, message = xml_validator.extract_error(response.content.decode())
         assert code == "idDoesNotExist"
+
+    @pytest.mark.django_db
+    def test_get_record_dc_includes_file_relations(self, oai_client, sample_resources, mock_canonical_graph_service):
+        """GetRecord oai_dc should include dc:relation URLs when files exist."""
+        from arkumu.storage.models.s3_file_objects import S3FileObject
+        from unittest.mock import patch, Mock
+        resource = sample_resources[0]
+        # Create related file
+        S3FileObject.objects.create(
+            file_name="test1.txt",
+            s3_key="org/test1.txt",
+            file_size_bytes=123,
+            content_type="text/plain",
+            related_resource=resource,
+            s3_url="https://s3.example/org/test1.txt",
+            status='completed'
+        )
+
+        # Patch export service used in views
+        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls:
+            mock_export = Mock()
+            mock_export.prepare_file_for_harvest.return_value = {
+                'access_method': 'presigned_url',
+                'url': 'https://download.example/test1.txt'
+            }
+            mock_export_cls.return_value = mock_export
+
+            identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
+            response = oai_client.get(
+                "/oai/",
+                {"verb": "GetRecord", "identifier": identifier, "metadataPrefix": "oai_dc"},
+            )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Expect relation URL present
+        assert 'https://download.example/test1.txt' in content
+
+    @pytest.mark.django_db
+    def test_get_record_mets_includes_flocat_urls(self, oai_client, sample_resources):
+        """GetRecord mets should include FLocat xlink:href for content files when present."""
+        from arkumu.storage.models.s3_file_objects import S3FileObject
+        from unittest.mock import patch, Mock
+        import xml.etree.ElementTree as ET
+
+        resource = sample_resources[0]
+        # Create related file
+        S3FileObject.objects.create(
+            file_name="test1.txt",
+            s3_key="org/test1.txt",
+            file_size_bytes=1024,
+            content_type="text/plain",
+            related_resource=resource,
+            s3_url="https://s3.example/org/test1.txt",
+            status='completed'
+        )
+
+        # Patch export service used in METSSerializer
+        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls:
+            mock_export = Mock()
+            mock_export.prepare_file_for_harvest.return_value = {
+                'access_method': 'presigned_url',
+                'url': 'https://download.example/test1.txt'
+            }
+            mock_export_cls.return_value = mock_export
+
+            identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
+            response = oai_client.get(
+                "/oai/",
+                {"verb": "GetRecord", "identifier": identifier, "metadataPrefix": "mets"},
+            )
+
+        assert response.status_code == 200
+        # Parse and check for FLocat xlink:href
+        root = ET.fromstring(response.content)
+        # Find FLocat
+        flocats = root.findall('.//{http://www.loc.gov/METS/}FLocat')
+        assert any(
+            f.get('{http://www.w3.org/1999/xlink}href') == 'https://download.example/test1.txt'
+            for f in flocats
+        )
 
     # ============================================================================
     # GENERAL ERROR TESTS

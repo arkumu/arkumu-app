@@ -25,6 +25,7 @@ REPO_PROTOCOL_VERSION = "2.0"
 REPO_EARLIEST_DATASTAMP = "1970-01-01T00:00:00Z"
 REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
+REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
 # Initialize resumption token service
 resumption_service = ResumptionTokenService(page_size=100)
@@ -41,6 +42,8 @@ def _oai_envelope(request: HttpRequest) -> ET.Element:
             "xmlns": "http://www.openarchives.org/OAI/2.0/",
             "xmlns:oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
             "xmlns:dc": "http://purl.org/dc/elements/1.1/",
+            "xmlns:mets": "http://www.loc.gov/METS/",
+            "xmlns:xlink": "http://www.w3.org/1999/xlink",
             "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
             "xsi:schemaLocation": " ".join(
                 [
@@ -95,15 +98,80 @@ def _xml_response(elem: ET.Element) -> HttpResponse:
     return HttpResponse(xml_str.encode("utf-8"), content_type="text/xml")
 
 
-def _identify(oai: ET.Element) -> ET.Element:
+def _identify(oai: ET.Element, request: HttpRequest) -> ET.Element:
     identify = ET.SubElement(oai, "Identify")
     ET.SubElement(identify, "repositoryName").text = REPO_NAME
-    ET.SubElement(identify, "baseURL").text = REPO_BASEURL
+    # Absolute baseURL per spec
+    absolute_base = request.build_absolute_uri(REPO_BASEURL)
+    ET.SubElement(identify, "baseURL").text = absolute_base
     ET.SubElement(identify, "protocolVersion").text = REPO_PROTOCOL_VERSION
     ET.SubElement(identify, "adminEmail").text = REPO_ADMIN_EMAIL
-    ET.SubElement(identify, "earliestDatestamp").text = REPO_EARLIEST_DATASTAMP
+
+    # Compute earliestDatestamp from harvestable resources; fallback to configured default
+    try:
+        earliest = (
+            Resource.objects.filter(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+            )
+            .order_by("updated_at")
+            .values_list("updated_at", flat=True)
+            .first()
+        )
+        if earliest is not None:
+            # Ensure timezone-aware UTC before formatting
+            if earliest.tzinfo is None:
+                earliest = earliest.replace(tzinfo=timezone.utc)
+            ET.SubElement(identify, "earliestDatestamp").text = _format_datestamp(earliest)
+        else:
+            ET.SubElement(identify, "earliestDatestamp").text = REPO_EARLIEST_DATASTAMP
+    except Exception:
+        ET.SubElement(identify, "earliestDatestamp").text = REPO_EARLIEST_DATASTAMP
+
     ET.SubElement(identify, "deletedRecord").text = REPO_DELETED_RECORD
     ET.SubElement(identify, "granularity").text = REPO_GRANULARITY
+
+    # Add <description> with oai-identifier declaration
+    try:
+        desc = ET.SubElement(identify, "description")
+        oai_ident = ET.SubElement(
+            desc,
+            "{http://www.openarchives.org/OAI/2.0/oai-identifier}oai-identifier",
+            {
+                "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation": (
+                    "http://www.openarchives.org/OAI/2.0/oai-identifier "
+                    "http://www.openarchives.org/OAI/2.0/oai-identifier.xsd"
+                )
+            },
+        )
+        ET.SubElement(oai_ident, "{http://www.openarchives.org/OAI/2.0/oai-identifier}scheme").text = "oai"
+        ET.SubElement(
+            oai_ident,
+            "{http://www.openarchives.org/OAI/2.0/oai-identifier}repositoryIdentifier",
+        ).text = REPO_REPOSITORY_IDENTIFIER
+        ET.SubElement(
+            oai_ident, "{http://www.openarchives.org/OAI/2.0/oai-identifier}delimiter"
+        ).text = ":"
+
+        # Build a sample identifier; prefer a real resource if available
+        sample_uri: Optional[str] = (
+            Resource.objects.filter(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+            )
+            .order_by("id")
+            .values_list("uri", flat=True)
+            .first()
+        )
+        if not sample_uri:
+            sample_uri = "https://example.org/entities/sample"
+        ET.SubElement(
+            oai_ident, "{http://www.openarchives.org/OAI/2.0/oai-identifier}sampleIdentifier"
+        ).text = _build_identifier(sample_uri)
+    except Exception:
+        # Non-fatal if description cannot be built
+        pass
+
     return oai
 
 
@@ -401,6 +469,42 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         if identifiers:
             dc["dc:identifier"] = identifiers
 
+        # Integrate file access URLs for Rosetta (dc:relation)
+        try:
+            # Defer heavy imports and handle absence gracefully
+            from arkumu.storage.models.s3_file_objects import S3FileObject
+            from arkumu.storage.services.rosetta_export_service import RosettaExportService
+
+            # Limit number of relations to avoid oversized records
+            file_qs = S3FileObject.objects.filter(related_resource=resource).order_by("created_at")[:10]
+            if file_qs:
+                export_svc = RosettaExportService()
+                relation_urls: List[str] = []
+                for f in file_qs:
+                    try:
+                        access = export_svc.prepare_file_for_harvest(f)
+                        url = access.get("url")
+                        if url:
+                            relation_urls.append(url)
+                        elif f.s3_url:
+                            relation_urls.append(f.s3_url)
+                    except Exception:
+                        # On any error generating presigned URL, fall back to stored S3 URL if present
+                        if getattr(f, "s3_url", None):
+                            relation_urls.append(f.s3_url)
+                if relation_urls:
+                    dc_rel = list(dc.get("dc:relation", []))
+                    # De-duplicate while preserving order
+                    seen = set(dc_rel)
+                    for u in relation_urls:
+                        if u not in seen:
+                            dc_rel.append(u)
+                            seen.add(u)
+                    dc["dc:relation"] = dc_rel
+        except Exception:
+            # If storage integration is not available, skip silently
+            pass
+
         # oai_dc container
         dc_root = ET.SubElement(
             metadata,
@@ -663,7 +767,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             return _xml_response(_error(oai, "badArgument", f"Illegal argument(s): {', '.join(illegal_args)}"))
 
         if verb == "Identify":
-            return _xml_response(_identify(oai))
+            return _xml_response(_identify(oai, request))
 
         if verb == "ListMetadataFormats":
             identifier = request.GET.get("identifier")

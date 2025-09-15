@@ -11,6 +11,8 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Any
 
 from arkumu.oaipmh.formats.mets import METSSerializer, METS_NS, XLINK_NS
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+
 
 @pytest.mark.django_db
 class TestMETSSerializer:
@@ -345,6 +347,74 @@ class TestMETSSerializer:
         assert root_div is not None
         assert root_div.get("TYPE") == "project"
         assert "Project:" in root_div.get("LABEL", "")
+
+    def test_mets_includes_content_flocats(self):
+        """METS should include FLocat entries for content files when present."""
+        from arkumu.storage.models.s3_file_objects import S3FileObject
+        # Create a harvestable resource matching the graph root
+        resource_uri = "https://test.example.com/resource/1"
+        resource = Resource.objects.create(
+            uri=resource_uri,
+            organization=self.organization,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+        )
+
+        # Create a related S3 file
+        S3FileObject.objects.create(
+            file_name="test1.txt",
+            s3_key="test_org/test1.txt",
+            file_size_bytes=1024,
+            content_type="text/plain",
+            related_resource=resource,
+            s3_url="https://s3.example/test_org/test1.txt",
+            status='completed'
+        )
+
+        # Mock graph and export service
+        mock_service = Mock()
+        mock_service.get_entity_graph.return_value = {
+            "root_id": resource_uri,
+            "nodes": {},
+            "edges": []
+        }
+
+        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls:
+            mock_export = Mock()
+            mock_export.prepare_file_for_harvest.return_value = {
+                'access_method': 'presigned_url',
+                'url': 'https://download.example/test1.txt'
+            }
+            mock_export_cls.return_value = mock_export
+
+            serializer = METSSerializer(org_code=self.org_code, graph_service=mock_service)
+            result = serializer.serialize_resource(resource_uri)
+
+        # Parse and validate CONTENT fileGrp and FLocat
+        root = ET.fromstring(result)
+        ns = {
+            'mets': METS_NS,
+            'xlink': XLINK_NS,
+        }
+        # Find CONTENT group
+        content_grp = None
+        for grp in root.findall('.//{http://www.loc.gov/METS/}fileGrp'):
+            if grp.get('USE') == 'CONTENT':
+                content_grp = grp
+                break
+        assert content_grp is not None, "CONTENT fileGrp not found in METS"
+
+        # Find first file and FLocat
+        file_elem = content_grp.find('{http://www.loc.gov/METS/}file')
+        assert file_elem is not None
+        flocat = file_elem.find('{http://www.loc.gov/METS/}FLocat')
+        assert flocat is not None
+        href = flocat.get('{http://www.w3.org/1999/xlink}href')
+        assert href == 'https://download.example/test1.txt'
+
+        # Should contain structMap for structure
+        struct_map = root.find(f'.//{{{METS_NS}}}structMap')
+        assert struct_map is not None
 
         # Should contain div elements for structure
         all_divs = struct_map.findall(".//div")
