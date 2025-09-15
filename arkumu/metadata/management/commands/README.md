@@ -15,9 +15,9 @@ The CSV file must contain these columns:
 | Column | Description | Example |
 |--------|-------------|---------|
 | Type | Resource type (`Class` or `Property`) | `Class` |
-| Target | Canonical URI to assign | `http://arkumu.org/canonical/person/john-smith` |
+| Target | Canonical URI to assign | `http://arkumu.org/types/akteurin` |
 | Label | Human-readable label (informational) | `John Smith` |
-| Name | Comma-separated resource names to find | `John Smith, J. Smith, Smith John` |
+| Name | Comma-separated resource names to map to the same canonical URI | `Person, Actor, Individual` |
 
 ### Usage
 
@@ -43,10 +43,10 @@ docker compose -f docker-compose.local.yml run --rm django \
 
 ```csv
 Type,Target,Label,Name
-Class,http://arkumu.org/canonical/person/john-smith,John Smith,"John Smith, J. Smith, Smith John"
-Class,http://arkumu.org/canonical/org/state-university,State University,"State University, University"
-Property,http://arkumu.org/canonical/prop/birth-date,Birth Date,"birth date, birthDate, date of birth"
-Class,http://arkumu.org/canonical/doc/correspondence-1850,Letter Collection,"Letters, Correspondence, Personal Letters"
+Class,http://arkumu.org/types/akteurin,Akteurin,"Person, Actor, Individual"
+Class,http://arkumu.org/types/organisationseinheit,Organisationseinheit,"Organization, Institution, Agency"
+Property,http://arkumu.org/properties/alternativer-titel,Alternativer Titel,"alternative_title, alt_title, alternative_name"
+Class,http://arkumu.org/types/sammlung,Sammlung,"Collection, Archive, Series"
 ```
 
 ### Output
@@ -54,14 +54,14 @@ Class,http://arkumu.org/canonical/doc/correspondence-1850,Letter Collection,"Let
 The command provides detailed feedback:
 
 ```
-Row 1: Updated John Smith → http://arkumu.org/canonical/person/john-smith
-Row 1: Updated J. Smith → http://arkumu.org/canonical/person/john-smith
-Row 2: Resource not found - Type: Class, Name: 'Missing Person'
-Row 3: Would update State University → http://arkumu.org/canonical/org/state-university (DRY RUN)
+Row 1: Updated Person → http://arkumu.org/types/akteurin
+Row 1: Updated Actor → http://arkumu.org/types/akteurin
+Row 2: Resource not found - Type: Class, Name: 'Missing Class'
+Row 3: Would update Organization → http://arkumu.org/types/organisationseinheit (DRY RUN)
 
 Processing complete:
 Updated: 2 resources
-Not found: ['Class: Missing Person']
+Not found: ['Class: Missing Class']
 Skipped: 0 rows
 Errors: 0
 ```
@@ -81,7 +81,7 @@ This command uses the **CanonicalUriMappingService** from `arkumu.metadata.servi
 
 - **Organization-scoped**: Resources are found within specific organization
 - **Name-based matching**: Finds resources by exact name match (not URI)
-- **Multiple names**: Supports comma-separated names for the same canonical URI
+- **Multiple names**: Each row can map multiple comma-separated resource names to the same canonical URI
 - **Type validation**: Validates resource types (Class/Property)
 - **Transaction safety**: All changes in single atomic transaction
 
@@ -92,7 +92,7 @@ This command uses the **CanonicalUriMappingService** from `arkumu.metadata.servi
 - **Run validation first** to check CSV format
 - **Check unmapped resources** before processing to understand scope
 - **Always run dry run** to preview changes
-- **Use multiple name variants** for flexible matching (e.g., "John Smith, J. Smith")
+- **Use multiple name variants** in a single row for flexible matching - all variants will get the same canonical URI (e.g., "John Smith, J. Smith, Smith John")
 
 ### Error Handling
 
