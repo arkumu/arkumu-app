@@ -55,6 +55,7 @@ urlpatterns = [
     
     # Database management endpoints (development utilities)
     path("reset-database/", import_views.reset_database, name="reset_database"),
+    path("delete-organization-triples/", import_views.delete_organization_triples, name="delete_organization_triples"),
     path("clear-upload-sessions/", import_views.clear_upload_sessions, name="clear_upload_sessions"),
     path("clear-ingest-sessions/", import_views.clear_ingest_sessions, name="clear_ingest_sessions"),
 ] 

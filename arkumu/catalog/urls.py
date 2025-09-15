@@ -11,6 +11,11 @@ from .views import (
     DesignSearch,
     ProjektShow
 )
+from .views_explorer import (
+    CatalogExplorerView,
+    CatalogExplorerPropertiesView,
+    CatalogExplorerLiteralsView
+)
 
 app_name = 'catalog'
 
@@ -38,5 +43,10 @@ urlpatterns = [
     path('design/', login_required(TemplateView.as_view(template_name="catalog/design.html")), name='design'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
- #   path('projekt/', login_required(TemplateView.as_view(template_name="catalog/projekt.html")), name='projekt'),
+    #path('projekt/', login_required(TemplateView.as_view(template_name="catalog/projekt.html")), name='projekt'),
+    
+    # Development/Explorer views for testing faceted search
+    path('explorer/', CatalogExplorerView.as_view(), name='explorer'),
+    path('explorer/properties/', CatalogExplorerPropertiesView.as_view(), name='explorer_properties'),
+    path('explorer/literals/', CatalogExplorerLiteralsView.as_view(), name='explorer_literals'),
 ]

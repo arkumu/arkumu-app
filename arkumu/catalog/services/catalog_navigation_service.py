@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Set, Tuple
 from django.db.models import QuerySet, Prefetch, Q, Count
 from django.contrib.auth import get_user_model
-from arkumu.metadata.models import Resource, Triple, HarmonizationRule
+from arkumu.metadata.models import Resource, Triple
 from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
 
 User = get_user_model()
@@ -32,21 +32,26 @@ class CatalogNavigationService:
         self.user = user
         
     def _get_harmonized_types(self, arkumu_type: str) -> List[str]:
-        """Get all organization-specific URIs that map to an Arkumu type."""
-        # Find all HarmonizationRules that map to this Arkumu type
-        rules = HarmonizationRule.objects.filter(
-            catalog_property_uri=arkumu_type,
-            is_active=True
-        )
+        """Get all organization-specific URIs that map to an Arkumu type via canonical URIs."""
+        # Find all resources that have this arkumu_type as their canonical URI
+        resources_with_canonical = Resource.objects.filter(
+            canonical_uri=arkumu_type,
+            resource_type__in=[ResourceType.CLASS, ResourceType.PROPERTY]
+        ).values_list('uri', flat=True)
         
-        # Collect all original URIs that map to this type
-        mapped_uris = [arkumu_type]  # Include the generic type
-        mapped_uris.extend([rule.source_property_pattern for rule in rules])
+        # Collect all URIs that map to this canonical type
+        mapped_uris = [arkumu_type]  # Include the canonical type
+        mapped_uris.extend(list(resources_with_canonical))
         
-        # Only use explicit harmonization rules - no pattern matching fallback
-        # This ensures complete control over which organizations are harmonized
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_uris = []
+        for uri in mapped_uris:
+            if uri and uri not in seen:
+                seen.add(uri)
+                unique_uris.append(uri)
         
-        return mapped_uris
+        return unique_uris
     
     def get_all_projects(self, 
                         include_events: bool = True, 

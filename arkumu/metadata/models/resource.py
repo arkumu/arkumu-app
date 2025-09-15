@@ -8,6 +8,7 @@ from arkumu.common.hash_utils import generate_value_hash
 
 class ResourceType(models.TextChoices):
         IRI = 'IRI', _('IRI Identified Resource')
+        ENTITY = 'ENTITY', _('Entity')
         CLASS = 'CLASS', _('Class')
         PROPERTY = 'PROPERTY', _('Property')
         LITERAL = 'LITERAL', _('Literal')
@@ -158,6 +159,15 @@ class Resource(UUIDModel):
     is_placeholder = models.BooleanField(
         default=False,
         help_text="Indicates if this is a placeholder resource created during cross-reference that hasn't been fully imported yet"
+    )
+    
+    # Harmonization field for unified catalog
+    canonical_uri = models.URLField(
+        max_length=512,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Unified catalog URI this resource maps to for cross-archive harmonization"
     )
 
     datatype = models.CharField(

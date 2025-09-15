@@ -77,6 +77,12 @@ document.getElementById('file-picker').addEventListener('change', function(e) {
             params.append('folder', folderName);
         }
         
+        // Include organization if available
+        const organization = '{{ organization|default:"" }}';
+        if (organization) {
+            params.append('organization', organization);
+        }
+        
         // Use HTMX to get presigned URL and form
         htmx.ajax('GET', `/storage/upload/presigned/url/?${params}`, {
             target: uploadContainer,

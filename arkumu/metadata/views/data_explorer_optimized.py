@@ -39,7 +39,7 @@ class OptimizedDataExplorerView(ListView):
             .exclude(is_placeholder=True)
             .select_related('organization')  # Avoid N+1 for organization
             .only(  # Only fetch needed fields
-                'id', 'uri', 'name', 'value', 'resource_type', 
+                'id', 'uri', 'canonical_uri', 'name', 'value', 'resource_type', 
                 'created_at', 'updated_at', 'is_placeholder',
                 'public_access_level', 'is_public_approved',
                 'organization__id', 'organization__name', 'organization__code'
@@ -134,7 +134,7 @@ class OptimizedDataExplorerView(ListView):
                 .filter(is_placeholder=True)
                 .select_related('organization')
                 .only(
-                    'id', 'uri', 'name', 'value', 'resource_type',
+                    'id', 'uri', 'canonical_uri', 'name', 'value', 'resource_type',
                     'created_at', 'updated_at', 'is_placeholder',
                     'organization__id', 'organization__name'
                 )
@@ -151,6 +151,7 @@ class OptimizedDataExplorerView(ListView):
             # Consider adding PostgreSQL full-text search here
             queryset = queryset.filter(
                 Q(uri__icontains=search) |
+                Q(canonical_uri__icontains=search) |
                 Q(name__icontains=search) |
                 Q(value__icontains=search)
             )
@@ -164,6 +165,18 @@ class OptimizedDataExplorerView(ListView):
         organizations = self.request.GET.getlist('organization')
         if organizations:
             queryset = queryset.filter(organization__name__in=organizations)
+        
+        # Canonical URI status filter
+        canonical_status = self.request.GET.get('canonical_status')
+        if canonical_status == 'has_canonical':
+            queryset = queryset.filter(canonical_uri__isnull=False)
+        elif canonical_status == 'no_canonical':
+            queryset = queryset.filter(canonical_uri__isnull=True)
+        elif canonical_status == 'arkumu_compliant':
+            # Filter for Arkumu-compliant institutions (rsh, det, fuk)
+            queryset = queryset.filter(
+                organization__code__iexact__in=['rsh', 'det', 'fuk']
+            )
         
         # Triple usage filter (expensive - do last)
         triple_usage = self.request.GET.get('triple_usage')
@@ -248,6 +261,7 @@ class OptimizedDataExplorerView(ListView):
             filter_options = {
                 'resource_types': [
                     {'value': ResourceType.IRI, 'label': 'IRI'},
+                    {'value': ResourceType.ENTITY, 'label': 'Entity'},
                     {'value': ResourceType.CLASS, 'label': 'Class'},
                     {'value': ResourceType.PROPERTY, 'label': 'Property'},
                     {'value': ResourceType.LITERAL, 'label': 'Literal'},
@@ -277,6 +291,7 @@ class OptimizedDataExplorerView(ListView):
             'organization': self.request.GET.getlist('organization'),
             'triple_usage': self.request.GET.get('triple_usage'),
             'externally_linked': self.request.GET.get('externally_linked'),
+            'canonical_status': self.request.GET.get('canonical_status'),
         }
         
         context['current_sort'] = {

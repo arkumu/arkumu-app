@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load static catalog_tags %}
+
+{% block title %}Catalog Explorer{% endblock %}
+
+{% block content %}
+<div class="container-fluid mx-auto px-4 py-6">
+    <h1 class="text-2xl font-bold mb-4">Catalog Explorer</h1>
+
+    <form method="get">
+        {% include 'catalog/partials/explorer_content.html' %}
+    </form>
+</div>
+
+<script>
+// Toggle relations visibility
+function toggleRelations(entityId) {
+    const element = document.getElementById(`relations-${entityId}`);
+    const button = element.previousElementSibling;
+
+    if (element.classList.contains('hidden')) {
+        element.classList.remove('hidden');
+        button.innerHTML = '▲ Hide Relations';
+    } else {
+        element.classList.add('hidden');
+        button.innerHTML = '▼ Show Relations';
+    }
+}
+
+
+</script>
+{% endblock %}

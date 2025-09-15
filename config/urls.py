@@ -48,6 +48,8 @@ urlpatterns = [
     path('storage/', include('arkumu.storage.urls', namespace='storage')),
     path('importer/', include('arkumu.importer.urls', namespace='importer')),
     path('catalog/', include('arkumu.catalog.urls', namespace='catalog')),
+    # OAI-PMH provider (minimal)
+    path('oai/', include('arkumu.oaipmh.urls', namespace='oai')),
     # SSE URLs removed - migrated to HTMX polling
     
     # ============================================================================

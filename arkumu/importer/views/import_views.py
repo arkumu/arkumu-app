@@ -204,6 +204,107 @@ def reset_database(request):
         }, status=500)
 
 
+@general_login_required
+def delete_organization_triples(request):
+    """
+    Delete all triples associated with a specific organization.
+    This allows selective cleanup of organization-specific data.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    organization_id = request.POST.get('organization_id')
+    if not organization_id:
+        return JsonResponse({'error': 'Organization ID is required'}, status=400)
+    
+    try:
+        from arkumu.metadata.models.resource import Resource
+        from arkumu.metadata.models.triples import Triple
+        from arkumu.users.models import Organization
+        from django.db import transaction
+        
+        # Get the organization
+        try:
+            organization = Organization.objects.get(id=organization_id)
+        except Organization.DoesNotExist:
+            return JsonResponse({'error': 'Organization not found'}, status=404)
+        
+        with transaction.atomic():
+            # Count records before deletion
+            org_triples = Triple.objects.for_organization(organization)
+            org_resources = Resource.objects.for_organization(organization)
+            
+            triple_count = org_triples.count()
+            resource_count = org_resources.count()
+            
+            # Strategy: Identify resources that will become orphaned BEFORE deleting triples
+            
+            # Get all resource IDs that are used in organization triples
+            org_triple_resource_ids = set()
+            for triple in org_triples.values('subject_id', 'predicate_id', 'object_id'):
+                org_triple_resource_ids.update([
+                    triple['subject_id'], 
+                    triple['predicate_id'], 
+                    triple['object_id']
+                ])
+            
+            # Get all resource IDs currently used in NON-organization triples (triples from other orgs)
+            non_org_triple_resource_ids = set()
+            non_org_triples = Triple.objects.exclude(source=organization)
+            for triple in non_org_triples.values('subject_id', 'predicate_id', 'object_id'):
+                non_org_triple_resource_ids.update([
+                    triple['subject_id'], 
+                    triple['predicate_id'], 
+                    triple['object_id']
+                ])
+            
+            # Resources that will become orphaned: 
+            # - Used in org triples BUT
+            # - NOT used in any other organization's triples AND  
+            # - Belong to this organization
+            potentially_orphaned = org_triple_resource_ids - non_org_triple_resource_ids
+            resources_to_delete = org_resources.filter(id__in=potentially_orphaned)
+            
+            # Delete organization-specific triples first
+            deleted_triples = org_triples.delete()[0]
+            
+            # Delete the identified orphaned resources
+            deleted_resources = resources_to_delete.delete()[0]
+            
+        logger.info(f"Organization '{organization.name}' data deletion completed: "
+                   f"deleted {deleted_triples} triples and {deleted_resources} orphaned resources")
+        
+        # Return HTMX-friendly response
+        if request.headers.get('HX-Request') == 'true':
+            success_html = f"""
+            <div class="alert alert-success">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                    <h3 class="font-bold">Organization Data Deletion Successful!</h3>
+                    <div class="text-xs">Deleted {deleted_triples} triples and {deleted_resources} orphaned resources from '{organization.name}'</div>
+                </div>
+            </div>
+            """
+            return HttpResponse(success_html)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f"Organization data deletion successful! Deleted {deleted_triples} triples and {deleted_resources} orphaned resources from '{organization.name}'.",
+            'organization': organization.name,
+            'triples_deleted': deleted_triples,
+            'resources_deleted': deleted_resources
+        })
+        
+    except Exception as e:
+        error_message = f'Failed to delete organization data: {str(e)}'
+        logger.error(f"Organization data deletion error: {e}", exc_info=True)
+        
+        return JsonResponse({
+            'error': error_message
+        }, status=500)
+
 
 @general_login_required
 def task_status_view(request, task_id):

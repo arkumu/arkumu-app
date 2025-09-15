@@ -24,6 +24,9 @@ from arkumu.metadata.services.mapping import FKConfig as BulkFKRelationship
 from arkumu.importer.utils.progress import publish_progress
 from arkumu.importer.utils.mapping_utils import MappingUtils
 
+# Arkumu-compliant institutions that should have canonical URIs auto-populated
+ARKUMU_COMPLIANT_INSTITUTIONS = {'rsh', 'det', 'fuk'}
+
 logger = logging.getLogger(__name__)
 
 
@@ -1364,6 +1367,37 @@ class MappingAwareProcessor:
         from arkumu.common.uri_utils import mint_uri, slugify_uri_part
         safe_arkumu_type = slugify_uri_part(arkumu_type)
         return mint_uri(self.base_uri, self.institution, "properties", safe_arkumu_type)
+    
+    def _is_arkumu_compliant(self) -> bool:
+        """Check if current organization is Arkumu-compliant and should get canonical URIs."""
+        org_code = getattr(self.organization, 'code', '').lower()
+        return org_code in ARKUMU_COMPLIANT_INSTITUTIONS
+    
+    def _generate_canonical_property_uri(self, arkumu_type: str) -> Optional[str]:
+        """Generate canonical property URI by removing institution from path."""
+        if not self._is_arkumu_compliant():
+            return None
+        
+        # Generate the standard property URI first
+        property_uri = self._generate_property_uri(arkumu_type)
+        
+        # Convert to canonical form: remove /{institution}/ part
+        # http://arkumu.org/rsh/properties/title → http://arkumu.org/properties/title
+        canonical_uri = property_uri.replace(f'/{self.institution}/', '/')
+        return canonical_uri
+    
+    def _generate_canonical_type_uri(self, type_name: str) -> Optional[str]:
+        """Generate canonical type/class URI by removing institution from path."""
+        if not self._is_arkumu_compliant():
+            return None
+        
+        # Generate the standard type URI first
+        type_uri = self._generate_type_uri(type_name)
+        
+        # Convert to canonical form: remove /{institution}/ part
+        # http://arkumu.org/rsh/types/artwork → http://arkumu.org/types/artwork
+        canonical_uri = type_uri.replace(f'/{self.institution}/', '/')
+        return canonical_uri
 
     def _create_rdf_type_relationship(self, entity_resource, dataset_name: str):
         """Create rdf:type relationship linking entity to its type from blueprint."""
@@ -2224,6 +2258,9 @@ class MappingAwareProcessor:
             # Remove entity-type- prefix if present (same as URI generation)
             clean_name = entity_type_name.replace('entity-type-', '').replace('entity_type_', '')
         
+        # Generate canonical URI for Arkumu-compliant institutions
+        canonical_uri = self._generate_canonical_type_uri(entity_type_name)
+        
         # Create or get entity type resource
         entity_type_resource, created = Resource.objects.get_or_create(
             uri=entity_type_uri,
@@ -2231,7 +2268,8 @@ class MappingAwareProcessor:
                 "resource_type": ResourceType.CLASS,
                 "name": clean_name,
                 "is_placeholder": False,
-                "organization": self.organization
+                "organization": self.organization,
+                "canonical_uri": canonical_uri
             }
         )
         
@@ -2255,6 +2293,9 @@ class MappingAwareProcessor:
         # Generate property URI based on arkumu_type
         property_uri = self._generate_property_uri(column.arkumu_type)
         
+        # Generate canonical URI for Arkumu-compliant institutions
+        canonical_uri = self._generate_canonical_property_uri(column.arkumu_type)
+        
         # All columns define properties in the schema (rows will be created later as ResourceType.IRI)
         resource_type = ResourceType.PROPERTY
         
@@ -2265,7 +2306,8 @@ class MappingAwareProcessor:
                 "resource_type": resource_type,
                 "name": column.arkumu_type,
                 "is_placeholder": False,
-                "organization": self.organization
+                "organization": self.organization,
+                "canonical_uri": canonical_uri
             }
         )
         

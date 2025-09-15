@@ -562,7 +562,7 @@ class ResourceManager:
                 entity_resource, created = Resource.objects.get_or_create(
                     uri=entity_uri,
                     defaults={
-                        "resource_type": ResourceType.IRI,
+                        "resource_type": ResourceType.ENTITY,
                         "name": entity_id[:100] if len(entity_id) > 100 else entity_id,
                         "is_placeholder": is_stub,
                         "organization": self.organization
@@ -764,7 +764,7 @@ class ResourceManager:
                 
             entity_resource = Resource(
                 uri=entity_uri,
-                resource_type=ResourceType.IRI,
+                resource_type=ResourceType.ENTITY,
                 name=entity_id[:100] if len(entity_id) > 100 else entity_id,  # Truncate name to fit DB constraint
                 is_placeholder=False,
                 organization=self.organization

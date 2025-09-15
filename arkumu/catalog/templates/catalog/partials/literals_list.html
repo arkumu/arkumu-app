@@ -1,0 +1,17 @@
+{% load catalog_tags %}
+{% if literals_data %}
+<div class="space-y-4">
+    {% include 'catalog/partials/literal_values_search.html' %}
+
+    <!-- Literals content wrapper for HTMX updates -->
+    <div id="literals-content">
+        {% include 'catalog/partials/literals_content.html' %}
+    </div>
+</div>
+
+{% elif property_uri %}
+<div class="text-center py-12 text-gray-500">
+    <p class="text-lg">No literal values found</p>
+    <p class="text-sm mt-2">This property may not have any content for the selected filters.</p>
+</div>
+{% endif %}

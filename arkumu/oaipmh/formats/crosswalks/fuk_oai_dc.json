@@ -1,0 +1,105 @@
+{
+  "metadataPrefix": "oai_dc",
+  "namespace": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+  "schema": "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+  "source": {
+    "organization": "fuk",
+    "mapping_id": "34c4d798-4918-4c1c-aad2-3315328351f5",
+    "version": "1.2"
+  },
+  "mappings": {
+    "dc:title": [
+      {"selector": "column_key", "value": "fuk::Projekt::Bevorzugter Titel", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Projekt::Bevorzugter Untertitel", "priority": 2},
+      {"selector": "column_key", "value": "fuk::Alternativer_Titel::Alternativer Titel", "priority": 3},
+      {"selector": "column_key", "value": "fuk::Informationsträger::Kompilationstitel", "priority": 4},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Dateiname", "priority": 10, "notes": "fallback"}
+    ],
+    "dc:creator": [
+      {
+        "selector": "graph_rule",
+        "value": "AkteurIn_Ereignis_Kreuztabelle",
+        "priority": 1,
+        "notes": "Select AkteurIn where 'ist UrheberIn' true; emit AkteurIn::Deutscher Name/Englischer Name"
+      }
+    ],
+    "dc:contributor": [
+      {
+        "selector": "graph_rule",
+        "value": "AkteurIn_Ereignis_Kreuztabelle",
+        "priority": 1,
+        "notes": "AkteurIn in roles other than creator"
+      }
+    ],
+    "dc:subject": [
+      {"selector": "column_key", "value": "fuk::Schlagwort::Deutsches Wikidata-Label", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Materialschlagwort::Deutsches Wikidata-Label", "priority": 2}
+    ],
+    "dc:description": [
+      {"selector": "column_key", "value": "fuk::Projekt::Beschreibung", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Beschreibung::Beschreibung", "priority": 2},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Deutsche inhaltliche Beschreibung", "priority": 3},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Englische inhaltliche Beschreibung", "priority": 4},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Bildbeschreibung (deutsch)", "priority": 5},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Bildbeschreibung (englisch)", "priority": 6}
+    ],
+    "dc:publisher": [
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Einlieferer", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Projekt::Einliefernde Hochschule", "priority": 2}
+    ],
+    "dc:date": [
+      {"selector": "column_key", "value": "fuk::Ereignis::Ereignisbeginn", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Ereignis::Ereignisende", "priority": 2},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Entstehung", "priority": 3}
+    ],
+    "dc:type": [
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Medientyp", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Projekt::Projektart", "priority": 3, "notes": "FK to Projektart"},
+      {"selector": "column_key", "value": "fuk::Informationsträgertyp::Deutscher Name des Informationsträgertyps (Breadcrumb)", "priority": 4}
+    ],
+    "dc:format": [
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Tonformat", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Medientyp", "priority": 2}
+    ],
+    "dc:identifier": [
+      {
+        "selector": "composite",
+        "value": "ProduktID",
+        "priority": 1,
+        "type_field": "fuk::ProduktID_Kreuztabelle::Produkt ID-Typ",
+        "value_field": "fuk::ProduktID_Kreuztabelle::Produkt ID-Wert",
+        "type_priority": ["URN", "urn:nbn:de:hbz", "DOI", "Handle", "URL"],
+        "notes": "Prefer HBZ URN, then DOI, Handle, URL"
+      },
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Datensatz-ID beim Einlieferer", "priority": 99}
+    ],
+    "dc:language": [
+      {"selector": "column_key", "value": "fuk::Sprache::ISO-639-1-Code", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Sprache::ISO-639-2(B)-Code", "priority": 2},
+      {"selector": "column_key", "value": "fuk::Sprache::ISO-639-2(T)-Code", "priority": 3},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Originalsprache", "priority": 10},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Untertitelsprache", "priority": 11}
+    ],
+    "dc:relation": [
+      {
+        "selector": "graph_rule",
+        "value": "Projekt_Projekt_Kreuztabelle",
+        "priority": 1,
+        "notes": "Use Verknüpftes Projekt and Beziehung to emit related identifiers/titles"
+      }
+    ],
+    "dc:coverage": [
+      {"selector": "column_key", "value": "fuk::Ort::Deutscher Name des Ortes", "priority": 1, "notes": "spatial"},
+      {"selector": "column_key", "value": "fuk::Ereignis::Ereignisbeginn", "priority": 2, "notes": "temporal"},
+      {"selector": "column_key", "value": "fuk::Ereignis::Ereignisende", "priority": 3, "notes": "temporal"}
+    ],
+    "dc:rights": [
+      {"selector": "column_key", "value": "fuk::Digitales-Objekt-Lizenz::Deutscher Anzeigetext", "priority": 1},
+      {"selector": "column_key", "value": "fuk::Digitales-Objekt-Lizenz::Englischer Anzeigetext", "priority": 2},
+      {"selector": "column_key", "value": "fuk::Digitales-Objekt-Lizenz::URI", "priority": 3},
+      {"selector": "column_key", "value": "fuk::Digitales-Objekt-Lizenz::Zugehöriges Rechtestatement", "priority": 4},
+      {"selector": "column_key", "value": "fuk::Digitales_Objekt::Lizenzstatus", "priority": 5}
+    ]
+  }
+}
+

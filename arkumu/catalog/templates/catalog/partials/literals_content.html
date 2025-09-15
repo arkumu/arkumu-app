@@ -1,0 +1,80 @@
+{% load catalog_tags %}
+<!-- Header with counts -->
+<div id="literals-header" class="flex justify-between items-center mb-4">
+    <h2 class="text-xl font-semibold">{{ literals_data.property_name|title }} Values</h2>
+    <span class="badge badge-primary badge-lg font-mono ml-8">{{ literals_data.total_values }} usages</span>
+</div>
+
+<!-- Results and pagination wrapper -->
+<div id="literals-results">
+    {% include 'catalog/partials/literal_values_grid.html' %}
+
+    <!-- Pagination -->
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="mt-8 flex flex-col sm:flex-row justify-center items-center gap-4">
+        <!-- Page Info -->
+        <div class="text-sm text-base-content/70 order-2 sm:order-1">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+            <span class="hidden sm:inline">({{ literals_data.total_values }} total values, {{ literals_data.unique_values }} unique)</span>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="join order-1 sm:order-2">
+            <!-- First Page -->
+            {% if page_obj.number > 2 %}
+            <button hx-get="{% url 'catalog:explorer_literals' %}"
+                    hx-include="[name='class']:checked, #literal-search-input"
+                    hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "1"}'
+                    hx-target="#literals-results"
+                    hx-swap="innerHTML focus-scroll:false"
+                    class="join-item btn btn-sm"
+                    title="First page">
+                ««
+            </button>
+            {% endif %}
+
+            <!-- Previous Page -->
+            <button hx-get="{% url 'catalog:explorer_literals' %}"
+                    hx-include="[name='class']:checked, #literal-search-input"
+                    hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "{{ page_obj.previous_page_number|default:1 }}"}'
+                    hx-target="#literals-results"
+                    hx-swap="innerHTML focus-scroll:false"
+                    class="join-item btn btn-sm {% if not page_obj.has_previous %}btn-disabled{% endif %}"
+                    {% if not page_obj.has_previous %}disabled{% endif %}
+                    title="Previous page">
+                « Prev
+            </button>
+
+            <!-- Current Page -->
+            <button class="join-item btn btn-sm btn-active">
+                {{ page_obj.number }}
+            </button>
+
+            <!-- Next Page -->
+            <button hx-get="{% url 'catalog:explorer_literals' %}"
+                    hx-include="[name='class']:checked, #literal-search-input"
+                    hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "{{ page_obj.next_page_number|default:page_obj.paginator.num_pages }}"}'
+                    hx-target="#literals-results"
+                    hx-swap="innerHTML focus-scroll:false"
+                    class="join-item btn btn-sm {% if not page_obj.has_next %}btn-disabled{% endif %}"
+                    {% if not page_obj.has_next %}disabled{% endif %}
+                    title="Next page">
+                Next »
+            </button>
+
+            <!-- Last Page -->
+            {% if page_obj.number < page_obj.paginator.num_pages|add:"-1" %}
+            <button hx-get="{% url 'catalog:explorer_literals' %}"
+                    hx-include="[name='class']:checked, #literal-search-input"
+                    hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "{{ page_obj.paginator.num_pages }}"}'
+                    hx-target="#literals-results"
+                    hx-swap="innerHTML focus-scroll:false"
+                    class="join-item btn btn-sm"
+                    title="Last page">
+                »»
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>

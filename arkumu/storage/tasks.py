@@ -147,6 +147,31 @@ def verify_and_process_upload(file_id: str):
         upload_file.mark_completed(s3_file_object)
         logger.info(f"✅ VERIFY: File {upload_file.filename} verified and processed")
         
+        # Check session completion synchronously (not as a separate task)
+        session = upload_file.session
+        total_files = session.files.count()
+        completed_files = session.files.filter(status='completed').count()
+        failed_files = session.files.filter(status='failed').count()
+        
+        logger.debug(f"📊 SESSION: {completed_files}/{total_files} files completed, {failed_files} failed")
+        
+        # Update session counts
+        session.completed_files = completed_files
+        session.failed_files = failed_files
+        session.save()
+        
+        # If all files are processed, mark session complete
+        if completed_files + failed_files == total_files:
+            if failed_files == 0:
+                session.mark_completed()
+                logger.info(f"🎉 SESSION: Upload session {session.id} completed successfully - all {total_files} files verified")
+            else:
+                session.mark_failed(f"{failed_files} files failed to process")
+                logger.warning(f"⚠️ SESSION: Upload session {session.id} completed with {failed_files} failures")
+            
+            # Note: UI refresh happens client-side via JavaScript polling or manual refresh
+            logger.debug(f"💡 SESSION: Client should refresh file browser for organization: {session.organization}")
+        
     except Exception as e:
         logger.error(f"❌ VERIFY: Error processing file {file_id}: {str(e)}")
         try:

@@ -128,6 +128,18 @@ def batch_presigned_urls(request):
                     )
                     
                     if init_result['success']:
+                        # Create AsyncUploadFile record so we can mark completed later
+                        upload_file = AsyncUploadFile.objects.create(
+                            session=session,
+                            filename=filename,
+                            s3_key=init_result['s3_key'],
+                            file_size=filesize,
+                            content_type=filetype,
+                            status='pending'
+                        )
+                        upload_files_created.append(upload_file)
+                        logger.info(f"📄 Created multipart upload file record {upload_file.id} for {filename}")
+
                         results.append({
                             'filename': filename,
                             'type': 'multipart',
@@ -137,7 +149,8 @@ def batch_presigned_urls(request):
                             'filetype': filetype,
                             'folder': file_dir,  # Add folder path for JavaScript
                             'organization': organization,  # Add organization info
-                            'base_folder': folder  # Add base folder info
+                            'base_folder': folder,  # Add base folder info
+                            'upload_file_id': str(upload_file.id)
                         })
                     else:
                         error_msg = init_result.get('error', 'Multipart upload initialization failed')
@@ -317,7 +330,8 @@ def get_presigned_url(request):
         's3_key': result['key'],
         'filesize': filesize,
         'filetype': filetype,
-        'max_file_size': result.get('max_file_size')
+        'max_file_size': result.get('max_file_size'),
+        'method': result.get('method', 'POST')
     })
 
 
@@ -366,6 +380,112 @@ def get_multipart_upload(request, filename, filetype, filesize, folder_name):
         'filesize': filesize,
         'filetype': filetype
     })
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def presigned_multipart_init(request):
+    """API: Initialize multipart upload and return part plan (JSON)."""
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        data = request.POST
+
+    filename = data.get('filename') or data.get('name')
+    filetype = data.get('filetype') or data.get('type') or 'application/octet-stream'
+    try:
+        filesize = int(data.get('filesize') or data.get('size') or 0)
+    except Exception:
+        filesize = 0
+    folder = data.get('folder') or data.get('path_prefix') or None
+    organization = data.get('organization') or ''
+
+    if not filename or not filesize:
+        return JsonResponse({'success': False, 'error': 'filename and filesize are required'}, status=400)
+
+    upload_service = UploadService()
+    init_result = upload_service.initiate_multipart_upload(
+        file_name=filename,
+        content_type=filetype,
+        path_prefix=folder,
+        organization=organization
+    )
+
+    if not init_result.get('success'):
+        return JsonResponse({'success': False, 'error': init_result.get('error', 'init failed')}, status=400)
+
+    parts_info = upload_service.presigned_url_service.calculate_multipart_parts(filesize)
+
+    return JsonResponse({
+        'success': True,
+        'upload_id': init_result['upload_id'],
+        's3_key': init_result['s3_key'],
+        'bucket': init_result.get('bucket'),
+        'part_info': parts_info
+    })
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def presigned_multipart_part_urls(request):
+    """API: Generate presigned URLs for specific multipart part numbers (JSON)."""
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        data = request.POST
+
+    upload_id = data.get('upload_id') or data.get('uploadId')
+    s3_key = data.get('s3_key') or data.get('s3Key')
+    part_numbers = data.get('part_numbers') or data.get('parts')
+    organization = data.get('organization', '')
+    
+    if not upload_id or not s3_key:
+        return JsonResponse({'success': False, 'error': 'upload_id and s3_key are required'}, status=400)
+
+    plan = None
+    # If client didn't pass part_numbers, compute a default plan from file_size
+    if not part_numbers:
+        try:
+            filesize = int(data.get('filesize') or 0)
+        except Exception:
+            filesize = 0
+        if not filesize:
+            return JsonResponse({'success': False, 'error': 'part_numbers or filesize required'}, status=400)
+        from arkumu.storage.services.upload.presigned_url_service import PresignedURLService
+        svc = PresignedURLService()
+        plan = svc.calculate_multipart_parts(filesize)
+        part_numbers = plan['part_numbers']
+
+    # Normalize to list of ints
+    try:
+        part_numbers = [int(p) for p in part_numbers]
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'invalid part_numbers'}, status=400)
+
+    # Get bucket for organization
+    bucket_name = None
+    if organization:
+        from arkumu.storage.services.bucket_service import BucketService
+        bucket_service = BucketService()
+        bucket_name = bucket_service.get_organization_bucket(organization)
+        logger.debug(f"🪣 MULTIPART_PARTS: organization='{organization}' -> bucket='{bucket_name}'")
+    else:
+        logger.debug(f"🪣 MULTIPART_PARTS: no organization provided, will use fallback bucket")
+
+    from arkumu.storage.services.upload.presigned_url_service import PresignedURLService
+    svc = PresignedURLService()
+    logger.debug(f"🔗 MULTIPART_PARTS: Generating URLs for key='{s3_key}', upload_id='{upload_id}', bucket='{bucket_name}'")
+    urls_result = svc.generate_multipart_urls(key=s3_key, upload_id=upload_id, parts=part_numbers, bucket_name=bucket_name)
+    if not urls_result.get('success'):
+        return JsonResponse({'success': False, 'error': urls_result.get('error', 'url generation failed')}, status=400)
+
+    resp = {
+        'success': True,
+        'presigned_urls': urls_result['presigned_urls']
+    }
+    if plan:
+        resp['part_info'] = plan
+    return JsonResponse(resp)
 
 
 @general_login_required
@@ -485,6 +605,33 @@ def mark_file_uploaded(request, file_id):
             from arkumu.storage.tasks import verify_and_process_upload
             for upload_file_obj in session.files.filter(status='uploaded'):
                 verify_and_process_upload(str(upload_file_obj.id))
+        
+        # Get organization for OOB refresh
+        organization = upload_file.session.organization
+        
+        # If this is an HTMX request, return OOB refresh instead of JSON
+        if request.headers.get('HX-Request'):
+            try:
+                # Import template helpers for OOB refresh
+                from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+                
+                # Create fresh file browser content
+                template_helper = CSVMappingTemplateHelperMixin()
+                file_browser_html = template_helper.render_file_browser_template(request, organization)
+                
+                # Build OOB response to refresh file browser
+                oob_updates = {
+                    'file-browser-content': file_browser_html
+                }
+                
+                response_html = template_helper.build_oob_response('', oob_updates)
+                
+                from django.http import HttpResponse
+                return HttpResponse(response_html)
+                
+            except Exception as e:
+                logger.error(f"❌ OOB refresh failed in mark_file_uploaded: {e}")
+                # Fall back to JSON response
         
         return JsonResponse({'success': True})
     except AsyncUploadFile.DoesNotExist:

@@ -115,6 +115,7 @@ LOCAL_APPS = [
     "arkumu.storage",
     "arkumu.catalog",
     "arkumu.rest",
+    "arkumu.oaipmh",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -221,6 +222,7 @@ TEMPLATES = [
                 "django.template.context_processors.tz",
                 "django.contrib.messages.context_processors.messages",
                 "arkumu.users.context_processors.allauth_settings",
+                "arkumu.storage.context_processors.upload_client_config",
             ],
         },
     },
@@ -373,27 +375,31 @@ HUEY = {
 
 # Multipart Upload Configuration
 MULTIPART_UPLOAD_SETTINGS = {
-    # File size thresholds
-    'multipart_threshold': 5 * 1024 * 1024,  # 5MB - start multipart earlier
-    'resumable_threshold': 50 * 1024 * 1024,  # 50MB - use resumable upload
-    
-    # Chunk configuration
-    'chunk_size': 8 * 1024 * 1024,  # 8MB chunks for better throughput
-    'resumable_chunk_size': 8 * 1024 * 1024,  # 8MB for resumable uploads
-    
-    # Concurrency settings
-    'max_workers': 8,  # Reduced to prevent overwhelming
-    'max_concurrency': 6,  # Concurrent uploads
-    
+    # File size thresholds (DISABLED multipart - testing single uploads only)
+    # Set extremely high threshold to force single uploads for all files
+    'multipart_threshold': 5 * 1024 * 1024 * 1024,  # 5GB (S3 single upload limit - forces single upload)
+    'resumable_threshold': 5 * 1024 * 1024 * 1024,  # Keep consistent
+
+    # Chunk configuration (optimized for performance)
+    # Larger chunks = fewer HTTP requests = better performance
+    # For 300MB files: 100MB chunks = 3 parts vs 16MB chunks = 19 parts
+    'chunk_size': 100 * 1024 * 1024,  # 100MB for optimal performance (fewer parts)
+    'resumable_chunk_size': 100 * 1024 * 1024,  # 100MB for resumable uploads
+
+    # Concurrency settings (optimized for multipart performance)
+    'max_workers': 12,  # Increased for better parallel processing
+    'max_concurrency': 8,  # More concurrent uploads
+    'part_upload_concurrency': 6,  # New: parallel part uploads per file
+
     # Retry configuration
-    'max_retries': 5,
-    'retry_delay_base': 1.0,  # Base delay in seconds
-    'retry_max_delay': 60.0,  # Max delay in seconds
-    
+    'max_retries': 3,  # Reduced retries for faster failure detection
+    'retry_delay_base': 0.5,  # Faster retry timing
+    'retry_max_delay': 30.0,  # Reduced max delay
+
     # Timeout settings
     'chunk_timeout': 300,  # 5 minutes per chunk
     'total_timeout': 3600,  # 1 hour total
-    
+
     # Performance tuning
     'enable_resume': True,
     'cleanup_failed_uploads': True,

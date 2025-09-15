@@ -92,31 +92,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const uploadButton = form.querySelector('button[type="submit"]');
     const progressDiv = form.querySelector('.upload-progress');
     const filename = form.dataset.filename;
+    const uploadMethod = '{{ method|default:"POST" }}';
     
     console.log('🔗 S3 Form initialized for:', filename);
-    
-    // Find the original file from the dashboard file input
-    const dashboardFileInput = document.getElementById('dashboard-file-picker');
-    if (dashboardFileInput && dashboardFileInput.files.length > 0) {
-        // Find matching file by name
-        const files = Array.from(dashboardFileInput.files);
-        const matchingFile = files.find(file => file.name === filename);
-        
-        if (matchingFile) {
-            console.log('✅ Found matching file:', matchingFile.name, matchingFile.size + ' bytes');
-            
-            // Create a new DataTransfer to set the file input
-            const dt = new DataTransfer();
-            dt.items.add(matchingFile);
-            fileInput.files = dt.files;
-            
-            console.log('📁 File populated in S3 form input');
-        } else {
-            console.error('❌ Could not find matching file for:', filename);
-        }
-    } else {
-        console.error('❌ No files found in dashboard file input');
-    }
     
     // Handle form submission with XMLHttpRequest for proper S3 upload
     form.addEventListener('submit', function(e) {
@@ -144,19 +122,15 @@ document.addEventListener('DOMContentLoaded', function() {
             <span class="loading loading-spinner loading-sm mr-2"></span>
             Uploading...
         `;
-        
-        // Create FormData from the form
-        const formData = new FormData(form);
-        
+
         // Create XMLHttpRequest for S3 upload
         const xhr = new XMLHttpRequest();
-        
+
         // Handle upload progress
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
                 console.log(`📊 Upload progress: ${percentComplete.toFixed(1)}%`);
-                
                 // Update progress bar if available
                 const progressBar = progressDiv?.querySelector('progress');
                 if (progressBar) {
@@ -164,13 +138,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         });
-        
+
         // Handle upload completion
         xhr.addEventListener('load', function() {
             console.log('🎉 S3 upload completed!', xhr.status);
-            
             if (xhr.status >= 200 && xhr.status < 300) {
-                // Success - replace form with success message
                 form.outerHTML = `
                     <div class="alert alert-success">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -179,27 +151,34 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span>✅ ${filename} uploaded successfully!</span>
                     </div>
                 `;
-                
-                // Update upload controls
                 if (typeof updateUploadControls === 'function') {
                     updateUploadControls();
                 }
             } else {
-                // Error
                 console.error('❌ S3 upload failed:', xhr.status, xhr.statusText);
                 showUploadError('Upload failed: ' + xhr.statusText);
             }
         });
-        
+
         // Handle upload error
         xhr.addEventListener('error', function() {
             console.error('❌ S3 upload error');
             showUploadError('Upload failed: Network error');
         });
-        
-        // Send the form data to S3
-        xhr.open('POST', form.action);
-        xhr.send(formData);
+
+        if (uploadMethod === 'PUT') {
+            // Send the raw file via PUT with Content-Type header
+            xhr.open('PUT', form.action);
+            const contentType = file.type || 'application/octet-stream';
+            try { xhr.setRequestHeader('Content-Type', contentType); } catch (e) {}
+            xhr.send(file);
+        } else {
+            // Create FormData from the form (presigned POST)
+            const formData = new FormData(form);
+            formData.append('file', file);
+            xhr.open('POST', form.action);
+            xhr.send(formData);
+        }
     });
     
     // Helper function to show upload error

@@ -144,6 +144,35 @@
                         </div>
                     </div>
                     
+                    <!-- Canonical URI Status -->
+                    <div class="form-control mb-4">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">
+                                🎯 Unified Catalog
+                                <div class="tooltip tooltip-right" data-tip="Resources with canonical URIs can be queried across all archives">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                            </span>
+                            {% if current_filters.canonical_status %}
+                            <span class="badge badge-accent badge-xs">Active</span>
+                            {% endif %}
+                        </label>
+                        <select name="canonical_status" class="select select-bordered select-xs w-full">
+                            <option value="">All Resources</option>
+                            <option value="has_canonical" {% if current_filters.canonical_status == 'has_canonical' %}selected{% endif %}>
+                                ✅ Has Canonical URI
+                            </option>
+                            <option value="no_canonical" {% if current_filters.canonical_status == 'no_canonical' %}selected{% endif %}>
+                                ❌ No Canonical URI
+                            </option>
+                            <option value="arkumu_compliant" {% if current_filters.canonical_status == 'arkumu_compliant' %}selected{% endif %}>
+                                🏛️ Arkumu Compliant (RSH, DET, FUK)
+                            </option>
+                        </select>
+                    </div>
+                    
                     <!-- Clear Filters -->
                     <div class="mt-4">
                         <a href="{% url 'metadata:data_explorer' %}" class="btn btn-ghost btn-xs w-full">
