@@ -124,11 +124,11 @@ class DublinCoreSerializer:
     def _add(self, out: Dict[str, List[str]], term: str, value: Optional[str]) -> None:
         if value is None:
             return
-        v = value.strip()
-        if not v:
+        # Filter empty strings but preserve whitespace-only values
+        if value == "":
             return
         key = self._dc_key(term)
-        out.setdefault(key, []).append(v)
+        out.setdefault(key, []).append(value)
 
     # --- Mode 1: graph triples crosswalk ---
     def serialize_from_triples(
@@ -146,18 +146,22 @@ class DublinCoreSerializer:
         """
         out: Dict[str, List[str]] = {}
         for t in triples:
-            if isinstance(t, tuple) and len(t) >= 3:
-                _, predicate_uri, obj = t[0], t[1], t[2]
-                value = str(obj)
-            else:
-                if not get_predicate or not get_object_value:
-                    raise ValueError("Provide get_predicate/get_object_value for object triples")
-                predicate_uri = get_predicate(t)
-                value = get_object_value(t)
+            try:
+                if isinstance(t, tuple) and len(t) >= 3:
+                    _, predicate_uri, obj = t[0], t[1], t[2]
+                    value = str(obj)
+                else:
+                    if not get_predicate or not get_object_value:
+                        raise ValueError("Provide get_predicate/get_object_value for object triples")
+                    predicate_uri = get_predicate(t)
+                    value = get_object_value(t)
 
-            dc_term = self.predicate_map.get(predicate_uri)
-            if dc_term:
-                self._add(out, dc_term, value)
+                dc_term = self.predicate_map.get(predicate_uri)
+                if dc_term:
+                    self._add(out, dc_term, value)
+            except (KeyError, AttributeError, TypeError):
+                # Skip triples that cause exceptions in accessor functions
+                continue
         return out
 
     # --- Mode 2: mapping-config aware crosswalk ---

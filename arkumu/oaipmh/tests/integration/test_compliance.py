@@ -19,6 +19,14 @@ class TestOAIProtocolCompliance:
     def setup_method(self):
         """Set up test method."""
         self.oai_url = "/oai/"
+        self.oai_ns = "http://www.openarchives.org/OAI/2.0/"
+
+    def _find_element(self, parent, tag_name):
+        """Find element handling both namespaced and non-namespaced cases."""
+        elem = parent.find(f"{{{self.oai_ns}}}{tag_name}")
+        if elem is None:
+            elem = parent.find(tag_name)
+        return elem
 
     # ============================================================================
     # XML SCHEMA AND STRUCTURE COMPLIANCE
@@ -50,9 +58,15 @@ class TestOAIProtocolCompliance:
         # Root element must be OAI-PMH
         assert root.tag == "OAI-PMH" or root.tag.endswith("}OAI-PMH")
 
-        # Must have correct namespace
-        oai_ns = root.get("xmlns")
-        assert oai_ns == "http://www.openarchives.org/OAI/2.0/"
+        # Must have correct namespace (ElementTree puts namespace in tag)
+        if "}" in root.tag:
+            # Namespace is in Clark notation
+            oai_ns = root.tag.split("}")[0][1:]
+            assert oai_ns == "http://www.openarchives.org/OAI/2.0/"
+        else:
+            # Or check xmlns attribute
+            oai_ns = root.get("xmlns")
+            assert oai_ns == "http://www.openarchives.org/OAI/2.0/"
 
         # Must have schema location
         schema_location = root.get("{http://www.w3.org/2001/XMLSchema-instance}schemaLocation")
@@ -68,6 +82,8 @@ class TestOAIProtocolCompliance:
             {"verb": "ListSets"},
         ]
 
+        OAI_NS = "http://www.openarchives.org/OAI/2.0/"
+
         for params in verbs_to_test:
             response = oai_client.get(self.oai_url, params)
             assert response.status_code == 200
@@ -75,12 +91,12 @@ class TestOAIProtocolCompliance:
             root = ET.fromstring(response.content)
 
             # Must have responseDate
-            response_date = root.find("responseDate")
+            response_date = self._find_element(root, "responseDate")
             assert response_date is not None
             assert response_date.text is not None
 
             # Must have request
-            request_elem = root.find("request")
+            request_elem = self._find_element(root, "request")
             assert request_elem is not None
 
     def test_response_date_format_compliance(self, oai_client):
@@ -90,7 +106,7 @@ class TestOAIProtocolCompliance:
         assert response.status_code == 200
         root = ET.fromstring(response.content)
 
-        response_date = root.find("responseDate")
+        response_date = self._find_element(root, "responseDate")
         assert response_date is not None
 
         date_text = response_date.text
@@ -121,8 +137,8 @@ class TestOAIProtocolCompliance:
             assert response.status_code == 200
 
             root = ET.fromstring(response.content)
-            request_elem = root.find("request")
-
+            request_elem = self._find_element(root, "request")
+            assert request_elem is not None
             # Must contain base URL
             assert "/oai/" in request_elem.text
 
@@ -141,7 +157,7 @@ class TestOAIProtocolCompliance:
         assert response.status_code == 200
         root = ET.fromstring(response.content)
 
-        identify = root.find("Identify")
+        identify = self._find_element(root, "Identify")
         assert identify is not None
 
         # Required elements per OAI-PMH spec
@@ -156,28 +172,28 @@ class TestOAIProtocolCompliance:
         ]
 
         for elem_name in required_elements:
-            elem = identify.find(elem_name)
+            elem = self._find_element(identify, elem_name)
             assert elem is not None, f"Required Identify element missing: {elem_name}"
             assert elem.text is not None and elem.text.strip() != "", f"Required Identify element empty: {elem_name}"
 
         # Protocol version must be 2.0
-        protocol_version = identify.find("protocolVersion")
+        protocol_version = self._find_element(identify, "protocolVersion")
         assert protocol_version.text == "2.0"
 
         # deletedRecord must be valid value
-        deleted_record = identify.find("deletedRecord")
+        deleted_record = self._find_element(identify, "deletedRecord")
         assert deleted_record.text in ["no", "transient", "persistent"]
 
         # granularity must be valid
-        granularity = identify.find("granularity")
+        granularity = self._find_element(identify, "granularity")
         assert granularity.text in ["YYYY-MM-DD", "YYYY-MM-DDThh:mm:ssZ"]
 
         # earliestDatestamp must be valid format
-        earliest = identify.find("earliestDatestamp")
+        earliest = self._find_element(identify, "earliestDatestamp")
         self._validate_datestamp_format(earliest.text)
 
         # adminEmail must be valid format (basic check)
-        admin_email = identify.find("adminEmail")
+        admin_email = self._find_element(identify, "adminEmail")
         assert "@" in admin_email.text
 
     def test_list_metadata_formats_compliance(self, oai_client):
@@ -187,19 +203,21 @@ class TestOAIProtocolCompliance:
         assert response.status_code == 200
         root = ET.fromstring(response.content)
 
-        list_formats = root.find("ListMetadataFormats")
+        list_formats = self._find_element(root, "ListMetadataFormats")
         assert list_formats is not None
 
         # Must have at least one metadataFormat
-        formats = list_formats.findall("metadataFormat")
+        formats = list_formats.findall(f"{{{self.oai_ns}}}metadataFormat")
+        if not formats:
+            formats = list_formats.findall("metadataFormat")
         assert len(formats) > 0
 
         # Each metadataFormat must have required elements
         for fmt in formats:
             # Required elements
-            metadata_prefix = fmt.find("metadataPrefix")
-            schema = fmt.find("schema")
-            metadata_namespace = fmt.find("metadataNamespace")
+            metadata_prefix = self._find_element(fmt, "metadataPrefix")
+            schema = self._find_element(fmt, "schema")
+            metadata_namespace = self._find_element(fmt, "metadataNamespace")
 
             assert metadata_prefix is not None and metadata_prefix.text
             assert schema is not None and schema.text
@@ -214,13 +232,13 @@ class TestOAIProtocolCompliance:
         # Must support oai_dc (mandatory format)
         oai_dc_found = False
         for fmt in formats:
-            prefix = fmt.find("metadataPrefix")
+            prefix = self._find_element(fmt, "metadataPrefix")
             if prefix is not None and prefix.text == "oai_dc":
                 oai_dc_found = True
 
                 # Verify oai_dc specific requirements
-                schema = fmt.find("schema")
-                namespace = fmt.find("metadataNamespace")
+                schema = self._find_element(fmt, "schema")
+                namespace = self._find_element(fmt, "metadataNamespace")
 
                 assert "oai_dc.xsd" in schema.text
                 assert "oai_dc" in namespace.text
@@ -235,15 +253,17 @@ class TestOAIProtocolCompliance:
         assert response.status_code == 200
         root = ET.fromstring(response.content)
 
-        list_sets = root.find("ListSets")
+        list_sets = self._find_element(root, "ListSets")
         assert list_sets is not None
 
         # Each set must have required elements
-        sets = list_sets.findall("set")
+        sets = list_sets.findall(f"{{{self.oai_ns}}}set")
+        if not sets:
+            sets = list_sets.findall("set")
         for set_elem in sets:
             # Required elements
-            set_spec = set_elem.find("setSpec")
-            set_name = set_elem.find("setName")
+            set_spec = self._find_element(set_elem, "setSpec")
+            set_name = self._find_element(set_elem, "setName")
 
             assert set_spec is not None and set_spec.text
             assert set_name is not None and set_name.text
@@ -264,15 +284,17 @@ class TestOAIProtocolCompliance:
         assert response.status_code == 200
         root = ET.fromstring(response.content)
 
-        list_identifiers = root.find("ListIdentifiers")
+        list_identifiers = self._find_element(root, "ListIdentifiers")
         if list_identifiers is not None:  # Might be noRecordsMatch error
             # Each header must have required elements
-            headers = list_identifiers.findall("header")
+            headers = list_identifiers.findall(f"{{{self.oai_ns}}}header")
+            if not headers:
+                headers = list_identifiers.findall("header")
 
             for header in headers:
                 # Required elements
-                identifier = header.find("identifier")
-                datestamp = header.find("datestamp")
+                identifier = self._find_element(header, "identifier")
+                datestamp = self._find_element(header, "datestamp")
 
                 assert identifier is not None and identifier.text
                 assert datestamp is not None and datestamp.text
@@ -284,7 +306,7 @@ class TestOAIProtocolCompliance:
                 self._validate_datestamp_format(datestamp.text)
 
                 # setSpec is optional but must be valid if present
-                set_spec = header.find("setSpec")
+                set_spec = self._find_element(header, "setSpec")
                 if set_spec is not None and set_spec.text:
                     self._validate_set_spec_format(set_spec.text)
 
@@ -298,19 +320,21 @@ class TestOAIProtocolCompliance:
         assert response.status_code == 200
         root = ET.fromstring(response.content)
 
-        list_records = root.find("ListRecords")
+        list_records = self._find_element(root, "ListRecords")
         if list_records is not None:  # Might be noRecordsMatch error
             # Each record must have header and metadata
-            records = list_records.findall("record")
+            records = list_records.findall(f"{{{self.oai_ns}}}record")
+            if not records:
+                records = list_records.findall("record")
 
             for record in records:
                 # Must have header
-                header = record.find("header")
+                header = self._find_element(record, "header")
                 assert header is not None
 
                 # Header compliance (same as ListIdentifiers)
-                identifier = header.find("identifier")
-                datestamp = header.find("datestamp")
+                identifier = self._find_element(header, "identifier")
+                datestamp = self._find_element(header, "datestamp")
                 assert identifier is not None and identifier.text
                 assert datestamp is not None and datestamp.text
                 self._validate_oai_identifier_format(identifier.text)
@@ -319,7 +343,7 @@ class TestOAIProtocolCompliance:
                 # Must have metadata (unless deleted record)
                 status = header.get("status")
                 if status != "deleted":
-                    metadata = record.find("metadata")
+                    metadata = self._find_element(record, "metadata")
                     assert metadata is not None
 
                     # Metadata must contain format-specific elements
@@ -381,7 +405,7 @@ class TestOAIProtocolCompliance:
             root = ET.fromstring(response.content)
 
             # Must have error element
-            error = root.find("error")
+            error = self._find_element(root, "error")
             assert error is not None
 
             # Must have correct code
@@ -409,7 +433,9 @@ class TestOAIProtocolCompliance:
         root = ET.fromstring(response.content)
 
         # Should have exactly one error element
-        errors = root.findall("error")
+        errors = root.findall(f"{{{self.oai_ns}}}error")
+        if not errors:
+            errors = root.findall("error")
         assert len(errors) == 1
 
     # ============================================================================
@@ -485,8 +511,8 @@ class TestOAIProtocolCompliance:
         # Get granularity from Identify
         identify_response = oai_client.get(self.oai_url, {"verb": "Identify"})
         identify_root = ET.fromstring(identify_response.content)
-        identify = identify_root.find("Identify")
-        granularity_elem = identify.find("granularity")
+        identify = self._find_element(identify_root, "Identify")
+        granularity_elem = self._find_element(identify, "granularity")
         granularity = granularity_elem.text
 
         # Test that all datestamps follow this granularity

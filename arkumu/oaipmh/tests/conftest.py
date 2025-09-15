@@ -211,6 +211,7 @@ def xml_validator():
             """Validate XML against basic OAI-PMH structure."""
             try:
                 root = ET.fromstring(xml_content)
+
                 # Check root element - need to handle namespace
                 if not (root.tag == "OAI-PMH" or root.tag.endswith("}OAI-PMH")):
                     return False

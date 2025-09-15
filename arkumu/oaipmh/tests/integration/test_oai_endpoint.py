@@ -480,7 +480,8 @@ class TestOAIEndpoint:
         assert response["Content-Type"] == "text/xml"
 
         content = response.content.decode()
-        assert content.startswith('<?xml version="1.0" encoding="utf-8"?>')
+        # ElementTree uses single quotes in XML declaration
+        assert content.startswith("<?xml version='1.0' encoding='utf-8'?>")
 
     def test_oai_pmh_namespace(self, oai_client):
         """Test that OAI-PMH namespace is correctly declared."""

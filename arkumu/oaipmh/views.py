@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
@@ -14,6 +14,7 @@ from arkumu.users.models import Organization
 from .formats.dublin_core import DublinCoreSerializer, DEFAULT_PREDICATE_MAP, DCTERMS_NS, OAI_DC_NS, DC_NS
 from .formats.mets import METSSerializer
 from .resumption import ResumptionTokenService
+from arkumu.common.uri_utils import slugify_uri_part
 
 
 # Minimal repository config (can be moved to settings)
@@ -30,12 +31,16 @@ resumption_service = ResumptionTokenService(page_size=100)
 
 
 def _oai_envelope(request: HttpRequest) -> ET.Element:
+    # Register namespaces to control prefixes consistently
+    ET.register_namespace("", "http://www.openarchives.org/OAI/2.0/")
+    ET.register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
+
     oai = ET.Element(
         "OAI-PMH",
         {
             "xmlns": "http://www.openarchives.org/OAI/2.0/",
-            "xmlns:oai_dc": OAI_DC_NS,
-            "xmlns:dc": DC_NS,
+            "xmlns:oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+            "xmlns:dc": "http://purl.org/dc/elements/1.1/",
             "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
             "xsi:schemaLocation": " ".join(
                 [
@@ -61,7 +66,33 @@ def _error(oai: ET.Element, code: str, message: str) -> ET.Element:
 
 def _xml_response(elem: ET.Element) -> HttpResponse:
     data = ET.tostring(elem, encoding="utf-8", xml_declaration=True)
-    return HttpResponse(data, content_type="text/xml")
+
+    # Clean up duplicate namespace declarations in XML string
+    # This is needed because ElementTree can create duplicates when embedding
+    # elements with conflicting namespace declarations
+    xml_str = data.decode("utf-8")
+
+    # Remove duplicate xmlns:xsi declarations
+    import re
+    # Find all xmlns:xsi declarations and keep only the first one
+    xsi_pattern = r'xmlns:xsi="[^"]*"'
+    matches = list(re.finditer(xsi_pattern, xml_str))
+    if len(matches) > 1:
+        # Remove all but the first occurrence
+        for match in reversed(matches[1:]):  # Reverse to avoid index issues
+            xml_str = xml_str[:match.start()] + xml_str[match.end():]
+
+    # Do the same for other commonly duplicated namespaces
+    for ns_prefix in ['xmlns:dc', 'xmlns:mets', 'xmlns:xlink']:
+        pattern = rf'{re.escape(ns_prefix)}="[^"]*"'
+        matches = list(re.finditer(pattern, xml_str))
+        if len(matches) > 1:
+            for match in reversed(matches[1:]):
+                xml_str = xml_str[:match.start()] + xml_str[match.end():]
+
+# ElementTree naturally uses single quotes, keep them
+
+    return HttpResponse(xml_str.encode("utf-8"), content_type="text/xml")
 
 
 def _identify(oai: ET.Element) -> ET.Element:
@@ -76,7 +107,19 @@ def _identify(oai: ET.Element) -> ET.Element:
     return oai
 
 
-def _list_metadata_formats(oai: ET.Element) -> ET.Element:
+def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) -> ET.Element:
+    # If identifier is provided, validate it exists
+    if identifier:
+        resource_uri = _parse_identifier(identifier)
+        resource = Resource.objects.filter(
+            uri=resource_uri,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True
+        ).first()
+
+        if not resource:
+            return _error(oai, "idDoesNotExist", "Identifier not found")
+
     list_metadata_formats = ET.SubElement(oai, "ListMetadataFormats")
 
     # Dublin Core format (mandatory)
@@ -112,7 +155,6 @@ def _list_sets(oai: ET.Element) -> ET.Element:
                 {
                     "xmlns:oai_dc": OAI_DC_NS,
                     "xmlns:dc": DC_NS,
-                    "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
                     "xsi:schemaLocation": f"{OAI_DC_NS} http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
                 },
             )
@@ -128,13 +170,14 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
     from_date = request.GET.get("from")
     until_date = request.GET.get("until")
     resumption_token = request.GET.get("resumptionToken")
+    has_resumption_param = "resumptionToken" in request.GET
 
     # Validate metadata format
-    if not resumption_token and (not metadata_prefix or metadata_prefix not in ["oai_dc", "mets"]):
+    if not has_resumption_param and (not metadata_prefix or metadata_prefix not in ["oai_dc", "mets"]):
         return _error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported")
 
     # Validate date parameters
-    if not resumption_token:
+    if not has_resumption_param:
         if from_date:
             error_msg = _validate_datestamp(from_date)
             if error_msg:
@@ -157,7 +200,7 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
     # Handle resumption token
     offset = 0
-    if resumption_token:
+    if has_resumption_param:
         if not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
 
@@ -213,14 +256,24 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
 def _parse_identifier(identifier: str) -> str:
     """Parse OAI identifier to extract resource URI."""
-    if identifier.startswith("oai:arkumu:resource:"):
+    if identifier == "oai:arkumu:resource:":
+        # Special case: empty resource part
+        return ""
+    elif identifier.startswith("oai:arkumu:resource:"):
         # New format: oai:arkumu:resource:{url_encoded_uri}
-        return unquote(identifier[len("oai:arkumu:resource:"):])
+        resource_part = identifier[len("oai:arkumu:resource:"):]
+        return unquote(resource_part)
     elif identifier.startswith("oai:"):
         # Legacy format: oai:*:* where last ':' part is the URI (URL-escaped)
         parts = identifier.split(":")
         if len(parts) >= 3:
-            return unquote(parts[-1])
+            last_part = parts[-1]
+            if last_part:  # Non-empty last part
+                return unquote(last_part)
+            else:  # Empty last part, return as-is (e.g., "oai:arkumu:")
+                return identifier
+        # For incomplete identifiers like "oai:", return as-is
+        return identifier
     return identifier
 
 
@@ -271,14 +324,30 @@ def _format_datestamp(dt: datetime) -> str:
 
 def _validate_datestamp(date_str: str) -> Optional[str]:
     """Validate OAI-PMH datestamp format. Returns error message if invalid."""
-    if not date_str:
+    if date_str is None or date_str == "":
         return None
 
+    # Handle whitespace-only strings
+    if date_str.strip() != date_str or not date_str.strip():
+        return "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ"
+
     try:
-        # Support both YYYY-MM-DD and YYYY-MM-DDThh:mm:ssZ formats
         if 'T' in date_str:
-            datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            # Strict validation for datetime format: YYYY-MM-DDThh:mm:ssZ
+            if not date_str.endswith('Z'):
+                return "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ"
+            # Parse without Z and check strict format
+            dt_part = date_str[:-1]  # Remove Z
+            import re
+            if not re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$', dt_part):
+                raise ValueError("Invalid format")
+            datetime.strptime(dt_part, '%Y-%m-%dT%H:%M:%S')
         else:
+            # Strict validation for date format: YYYY-MM-DD
+            # Check that format is exactly YYYY-MM-DD with zero padding
+            import re
+            if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+                raise ValueError("Invalid format")
             datetime.strptime(date_str, '%Y-%m-%d')
         return None  # Valid
     except ValueError:
@@ -315,6 +384,23 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         graph = svc.get_entity_graph(resource.uri, include_incoming=True, expand_neighbors=False)
         dc = _build_dc_metadata_from_entity_graph(graph)
 
+        # Ensure dc:identifier contains at least a resolvable URI and an Arkumu PID
+        # 1) The resolvable URI (resource.uri)
+        # 2) The internal Arkumu PID (arkumu-{org}-{project_local_id}) when derivable
+        identifiers = list(dc.get("dc:identifier", []))
+
+        # Always include the resource URI as an identifier
+        if resource.uri and resource.uri not in identifiers:
+            identifiers.append(resource.uri)
+
+        # Try to mint Arkumu PID and include it
+        pid = _mint_arkumu_pid(resource)
+        if pid and pid not in identifiers:
+            identifiers.append(pid)
+
+        if identifiers:
+            dc["dc:identifier"] = identifiers
+
         # oai_dc container
         dc_root = ET.SubElement(
             metadata,
@@ -346,11 +432,81 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         # Parse the METS XML and embed it
         try:
             mets_tree = ET.fromstring(mets_xml)
+            # Recursively clean up namespace declarations from all elements
+            # to prevent conflicts with OAI envelope
+            def clean_namespaces(element):
+                attrs_to_remove = []
+                for attr_name in list(element.attrib.keys()):
+                    if (attr_name.startswith('xmlns:') or attr_name == 'xmlns' or
+                        attr_name.startswith('xsi:') or attr_name == 'xsi'):
+                        attrs_to_remove.append(attr_name)
+                for attr_name in attrs_to_remove:
+                    del element.attrib[attr_name]
+                # Clean children recursively
+                for child in element:
+                    clean_namespaces(child)
+
+            clean_namespaces(mets_tree)
             metadata.append(mets_tree)
         except ET.ParseError:
             pass  # If METS parsing fails, return empty metadata
 
     return metadata
+
+
+def _mint_arkumu_pid(resource: Resource) -> Optional[str]:
+    """Mint an Arkumu local persistent identifier for a resource.
+
+    Format: "arkumu-{org}-{local_id}"
+    where local_id is derived from the typical entity URI pattern:
+    .../entities/{project_id}/{item_id}
+
+    Returns None when required parts are missing.
+    """
+    try:
+        org_code = (resource.organization.code if resource.organization else None)
+        uri = getattr(resource, "uri", None)
+        if not org_code or not uri:
+            return None
+
+        # Parse URI path and attempt to extract project and item id
+        path = urlparse(uri).path or ""
+        parts = [p for p in path.strip("/").split("/") if p]
+
+        # Look for the common pattern: .../entities/{project_id}/{item_id}
+        project_id = None
+        item_id = None
+        try:
+            ent_idx = parts.index("entities")
+            # Expect at least two parts after 'entities'
+            if len(parts) > ent_idx + 2:
+                project_id = parts[ent_idx + 1]
+                item_id = parts[ent_idx + 2]
+            elif len(parts) > ent_idx + 1:
+                # Fallback: if only one part, use it as project and try last as item
+                project_id = parts[ent_idx + 1]
+                item_id = parts[-1] if len(parts) - 1 > ent_idx + 1 else None
+        except ValueError:
+            # 'entities' not present; fallback to last two segments if available
+            if len(parts) >= 2:
+                project_id = parts[-2]
+                item_id = parts[-1]
+
+        if not project_id or not item_id:
+            return None
+
+        # Normalize components
+        project_slug = slugify_uri_part(project_id)
+        item_slug = slugify_uri_part(item_id)
+        org_slug = slugify_uri_part(org_code)
+
+        if not project_slug or not item_slug or not org_slug:
+            return None
+
+        local_id = f"{project_slug}-{item_slug}"
+        return f"arkumu-{org_slug}-{local_id}"
+    except Exception:
+        return None
 
 
 def _build_dc_metadata_from_entity_graph(graph: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -382,13 +538,14 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
     from_date = request.GET.get("from")
     until_date = request.GET.get("until")
     resumption_token = request.GET.get("resumptionToken")
+    has_resumption_param = "resumptionToken" in request.GET
 
     # Validate metadata format
-    if not resumption_token and (not metadata_prefix or metadata_prefix not in ["oai_dc", "mets"]):
+    if not has_resumption_param and (not metadata_prefix or metadata_prefix not in ["oai_dc", "mets"]):
         return _error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported")
 
     # Validate date parameters
-    if not resumption_token:
+    if not has_resumption_param:
         if from_date:
             error_msg = _validate_datestamp(from_date)
             if error_msg:
@@ -411,7 +568,7 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
     # Handle resumption token
     offset = 0
-    if resumption_token:
+    if has_resumption_param:
         if not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
 
@@ -509,31 +666,32 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             return _xml_response(_identify(oai))
 
         if verb == "ListMetadataFormats":
-            return _xml_response(_list_metadata_formats(oai))
+            identifier = request.GET.get("identifier")
+            return _xml_response(_list_metadata_formats(oai, identifier))
 
         if verb == "ListSets":
             return _xml_response(_list_sets(oai))
 
         if verb == "ListIdentifiers":
             # Exclusive argument checking
-            resumption_token = request.GET.get("resumptionToken")
-            if resumption_token and len([k for k in request.GET.keys() if k != "verb" and k != "resumptionToken"]) > 0:
+            has_resumption_param = "resumptionToken" in request.GET
+            if has_resumption_param and len([k for k in request.GET.keys() if k != "verb" and k != "resumptionToken"]) > 0:
                 return _xml_response(_error(oai, "badArgument", "resumptionToken cannot be combined with other arguments"))
 
             # Required argument checking
-            if not resumption_token and not request.GET.get("metadataPrefix"):
+            if not has_resumption_param and not request.GET.get("metadataPrefix"):
                 return _xml_response(_error(oai, "badArgument", "metadataPrefix is required"))
 
             return _xml_response(_list_identifiers(oai, request))
 
         if verb == "ListRecords":
             # Exclusive argument checking
-            resumption_token = request.GET.get("resumptionToken")
-            if resumption_token and len([k for k in request.GET.keys() if k != "verb" and k != "resumptionToken"]) > 0:
+            has_resumption_param = "resumptionToken" in request.GET
+            if has_resumption_param and len([k for k in request.GET.keys() if k != "verb" and k != "resumptionToken"]) > 0:
                 return _xml_response(_error(oai, "badArgument", "resumptionToken cannot be combined with other arguments"))
 
             # Required argument checking
-            if not resumption_token and not request.GET.get("metadataPrefix"):
+            if not has_resumption_param and not request.GET.get("metadataPrefix"):
                 return _xml_response(_error(oai, "badArgument", "metadataPrefix is required"))
 
             return _xml_response(_list_records(oai, request))
@@ -581,4 +739,3 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
         # Global exception handler for any unexpected errors
         oai = _oai_envelope(request)
         return _xml_response(_error(oai, "internalError", f"Internal server error: {str(e)}"))
-

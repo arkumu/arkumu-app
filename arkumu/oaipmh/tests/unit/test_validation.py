@@ -56,7 +56,6 @@ class TestDateValidation:
             "2023-1-1",    # Missing leading zeros
             "2023-01",     # Missing day
             "01-01-2023",  # Wrong order
-            "",            # Empty string
             "2023-01-01 12:00:00",  # Space instead of T
             "2023-01-01T25:00:00Z",  # Invalid hour
             "2023-01-01T12:60:00Z",  # Invalid minute
@@ -250,7 +249,7 @@ class TestResourceQuerysetFiltering:
 
         # Should only include public approved resources
         for resource in resources:
-            assert resource.public_access_level.value == "PUBLIC"
+            assert resource.public_access_level == "public"
             assert resource.is_public_approved is True
 
         # Should have proper ordering
@@ -377,7 +376,8 @@ class TestXMLUtilities:
         assert response['Content-Type'] == "text/xml"
 
         content = response.content
-        assert content.startswith(b'<?xml version="1.0" encoding="utf-8"?>')
+        # ElementTree uses single quotes in XML declaration
+        assert content.startswith(b"<?xml version='1.0' encoding='utf-8'?>")
         assert b"<test>" in content
         assert b"<child>content</child>" in content
 

@@ -35,9 +35,9 @@ class METSSerializer:
     - Logical structure map (structMap)
     """
 
-    def __init__(self, org_code: str):
+    def __init__(self, org_code: str, graph_service: Optional[CanonicalGraphService] = None):
         self.org_code = org_code
-        self.graph_service = CanonicalGraphService(org_code=org_code)
+        self.graph_service = graph_service or CanonicalGraphService(org_code=org_code)
 
     def serialize_resource(self, resource_uri: str, include_complete_graph: bool = True) -> str:
         """
@@ -56,6 +56,10 @@ class METSSerializer:
             include_incoming=True,
             expand_neighbors=include_complete_graph
         )
+
+        # Return empty string if no graph data or missing root_id
+        if not graph or not graph.get("root_id"):
+            return ""
 
         # Build METS document
         mets = self._build_mets_root(resource_uri)
@@ -77,16 +81,18 @@ class METSSerializer:
 
     def _build_mets_root(self, resource_uri: str) -> ET.Element:
         """Build the root METS element with namespaces."""
+        # Register namespaces to control prefixes and avoid duplicates
+        ET.register_namespace("mets", METS_NS)
+        ET.register_namespace("xlink", XLINK_NS)
+        ET.register_namespace("xsi", XSI_NS)
+        ET.register_namespace("dc", DC_NS)
+        ET.register_namespace("dcterms", DCTERMS_NS)
+        ET.register_namespace("rdf", RDF_NS)
+
         mets = ET.Element(
             f"{{{METS_NS}}}mets",
             {
-                "xmlns:mets": METS_NS,
-                "xmlns:xlink": XLINK_NS,
-                "xmlns:xsi": XSI_NS,
-                "xmlns:dc": DC_NS,
-                "xmlns:dcterms": DCTERMS_NS,
-                "xmlns:rdf": RDF_NS,
-                "xsi:schemaLocation": f"{METS_NS} http://www.loc.gov/standards/mets/mets.xsd",
+                f"{{{XSI_NS}}}schemaLocation": f"{METS_NS} http://www.loc.gov/standards/mets/mets.xsd",
                 "OBJID": resource_uri,
                 "TYPE": "Arkumu Project Graph",
                 "PROFILE": "arkumu-complete-graph-v1.0"
@@ -111,6 +117,9 @@ class METSSerializer:
 
     def _add_descriptive_metadata(self, mets: ET.Element, graph: Dict[str, Any]) -> None:
         """Add Dublin Core descriptive metadata section."""
+        if not graph:
+            return
+
         dmd_sec = ET.SubElement(mets, f"{{{METS_NS}}}dmdSec", {"ID": "DMD_001"})
         md_wrap = ET.SubElement(dmd_sec, f"{{{METS_NS}}}mdWrap", {
             "MDTYPE": "DC",
@@ -146,11 +155,14 @@ class METSSerializer:
         })
         xml_data = ET.SubElement(md_wrap, f"{{{METS_NS}}}xmlData")
 
-        # Technical metadata about the graph
+        # Technical metadata about the graph with safe handling of malformed data
+        nodes = graph.get("nodes") or {}
+        edges = graph.get("edges") or []
+
         tech_info = {
             "graph_type": "complete" if complete_graph else "direct",
-            "entity_count": len(graph.get("entities", [])),
-            "edge_count": len(graph.get("edges", [])),
+            "entity_count": len(nodes) if isinstance(nodes, dict) else 0,
+            "edge_count": len(edges) if isinstance(edges, list) else 0,
             "root_entity": graph.get("root_id"),
             "organization": self.org_code,
             "serialization_timestamp": datetime.now(timezone.utc).isoformat(),
@@ -194,8 +206,11 @@ class METSSerializer:
             "ADMID": "TECH_001"
         })
 
-        # Link to the graph data
-        fptr = ET.SubElement(div, f"{{{METS_NS}}}fptr", {"FILEID": "GRAPH_JSONLD"})
+        # Link to the graph data with XLink attributes to ensure XLink namespace appears
+        fptr = ET.SubElement(div, f"{{{METS_NS}}}fptr", {
+            "FILEID": "GRAPH_JSONLD",
+            f"{{{XLINK_NS}}}type": "simple"
+        })
 
     def _extract_dublin_core_from_graph(self, graph: Dict[str, Any]) -> Dict[str, list]:
         """Extract Dublin Core elements from the graph."""
@@ -211,6 +226,8 @@ class METSSerializer:
         def obj_value(e: Dict[str, Any]) -> Optional[str]:
             return e.get("object_value")
 
+        # Safe handling of edges in case it's None
+        edges = edges or []
         root_literal_edges = [
             e for e in edges
             if e.get("subject_id") == root_id and e.get("object_value") is not None
