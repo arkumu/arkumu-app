@@ -10,7 +10,7 @@ from typing import Dict, Optional, List, Any
 from huey.contrib.djhuey import db_task
 from django.core.cache import cache
 from django.utils import timezone
-from .cache_service import OAIPMHCacheService
+from arkumu.cache.services import OAICacheService
 
 try:
     from huey.contrib.djhuey import db_periodic_task, crontab
@@ -59,8 +59,8 @@ def warm_resource_cache(resource_uri: str, organization_code: str):
         timestamp = int(resource.updated_at.timestamp())
 
         # Warm cache for both metadata formats using centralized service
-        for metadata_prefix in ['oai_dc', 'mets']:
-            OAIPMHCacheService.warm_record(resource, metadata_prefix)
+        oai_cache = OAICacheService()
+        oai_cache.warm_resource_with_graph_integration(resource)
 
         logger.info(f"✅ CACHE WARM: Completed for resource {resource_uri}")
 
@@ -111,17 +111,18 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
             logger.debug(f"⚠️ No resources found for page at offset {offset}")
             return
 
-        # Build page response
+        # Build page response using centralized cache service
+        oai_cache = OAICacheService()
         records_data = []
         for resource in resources:
             # Use centralized cache service to get/warm record
-            cached_record = OAIPMHCacheService.get_cached_record(resource, metadata_prefix)
+            cached_record = oai_cache.get_cached_record(resource, metadata_prefix)
             if cached_record:
                 records_data.append(cached_record)
             else:
                 # Warm cache using centralized service and get result
-                OAIPMHCacheService.warm_record(resource, metadata_prefix)
-                cached_record = OAIPMHCacheService.get_cached_record(resource, metadata_prefix)
+                oai_cache.warm_record(resource, metadata_prefix)
+                cached_record = oai_cache.get_cached_record(resource, metadata_prefix)
                 if cached_record:
                     records_data.append(cached_record)
 

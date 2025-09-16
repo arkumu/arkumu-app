@@ -18,7 +18,7 @@ from .formats.dublin_core import DublinCoreSerializer, DEFAULT_PREDICATE_MAP, DC
 from .formats.mets import METSSerializer
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
-from .cache_service import OAIPMHCacheService
+from arkumu.cache.services import OAICacheService
 
 
 # Minimal repository config (can be moved to settings)
@@ -31,8 +31,9 @@ REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
-# Initialize resumption token service
+# Initialize services
 resumption_service = ResumptionTokenService(page_size=100)
+oai_cache = OAICacheService()
 
 
 # Cache utilities
@@ -49,34 +50,12 @@ def _get_cache_key(cache_type: str, **kwargs) -> str:
 
 def _get_cached_record(resource: Resource, metadata_prefix: str) -> Optional[Dict[str, Any]]:
     """Get cached OAI-PMH record if available."""
-    timestamp = int(resource.updated_at.timestamp())
-    cache_key = _get_cache_key(
-        "record",
-        uri=resource.uri,
-        metadata_prefix=metadata_prefix,
-        timestamp=timestamp
-    )
-    return cache.get(cache_key)
+    return oai_cache.get_cached_record(resource, metadata_prefix)
 
 
 def _cache_record(resource: Resource, metadata_prefix: str, header_xml: str, metadata_xml: str):
     """Cache OAI-PMH record data."""
-    timestamp = int(resource.updated_at.timestamp())
-    cache_key = _get_cache_key(
-        "record",
-        uri=resource.uri,
-        metadata_prefix=metadata_prefix,
-        timestamp=timestamp
-    )
-
-    cached_record = {
-        'header': header_xml,
-        'metadata': metadata_xml,
-        'timestamp': timestamp
-    }
-
-    # Cache for 4 hours
-    cache.set(cache_key, cached_record, 4 * 3600)
+    oai_cache.cache_record(resource, metadata_prefix, header_xml, metadata_xml)
 
 
 def _oai_envelope(request: HttpRequest) -> ET.Element:

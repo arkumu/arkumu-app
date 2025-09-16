@@ -21,7 +21,7 @@ from arkumu.storage.services.bucket_service import BucketService
 from arkumu.storage.services.s3_sync_service import S3SyncService
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
-from arkumu.oaipmh.cache_service import OAIPMHCacheService
+from arkumu.cache.services import OAICacheService
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +260,8 @@ def link_file_to_resource(request):
                 logger.debug(f"🔥 SINGLE CACHE DEBUG: Warming cache for {final_resource.uri} (org: {final_resource.organization.code})")
 
                 # Warm cache for both metadata formats using centralized service
-                for metadata_prefix in ['oai_dc', 'mets']:
-                    OAIPMHCacheService.warm_record(final_resource, metadata_prefix)
+                oai_cache = OAICacheService()
+                oai_cache.warm_resource_with_graph_integration(final_resource)
 
                 logger.info(f"Warmed OAI-PMH cache for resource {final_resource.uri}")
             else:
@@ -578,9 +578,9 @@ def batch_unlink_files(request):
 
                     try:
                         resource = Resource.objects.get(uri=uri, organization__code=org_code)
-                        # Warm cache for both metadata formats
-                        for metadata_prefix in ['oai_dc', 'mets']:
-                            OAIPMHCacheService.warm_record(resource, metadata_prefix)
+                        # Warm cache for both metadata formats using centralized service
+                        oai_cache = OAICacheService()
+                        oai_cache.warm_resource_with_graph_integration(resource)
                     except Resource.DoesNotExist:
                         logger.warning(f"Resource not found for cache warming: {uri}")
                     except Exception as resource_error:
