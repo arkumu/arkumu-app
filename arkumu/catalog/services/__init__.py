@@ -1,21 +1,12 @@
 """
-Catalog services for business logic abstraction and code reuse.
+Catalog services for graph-based exploration.
 
-This module contains service classes that handle the business logic 
-for catalog operations, decoupling it from views and enabling reuse
-between the catalog app and REST API.
+This module contains the GraphSearchService for navigating
+and exploring the RDF graph structure in the catalog.
 """
 
-from .base import BaseService
-from .search_service import SearchService
-from .catalog_navigation_service import CatalogNavigationService
-from .faceted_search_service import FacetedSearchService
-from .flexible_catalog_service import FlexibleCatalogService
+from .graph_search_service import GraphSearchService
 
 __all__ = [
-    'BaseService',
-    'SearchService',
-    'CatalogNavigationService', 
-    'FacetedSearchService',
-    'FlexibleCatalogService',
+    'GraphSearchService',
 ]
