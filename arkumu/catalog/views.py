@@ -645,9 +645,9 @@ class Im_ereignis_singleton:
         return self.data[str]
     
         
-class DesignSearch:
+class Card:
 
-    def design_search_results(request):
+    def search_cards(request):
         query = request.GET.get('query', None)
 
         #TODO Python fixen das es schneller wird
@@ -685,7 +685,7 @@ class DesignSearch:
         context = {'query': query,
             'results': project_ret}
         
-        return render(request, 'catalog/design_search_results.html', context)
+        return render(request, 'catalog/card_grid_template.html', context)
     
 class ProjektShow:
     
@@ -727,5 +727,5 @@ class ProjektShow:
 def keyword_cloud(limit: int):
     project_category = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/projektkategorie")
     
-    most_used_projects = Triple.objects.filter(predicate=project_category).annotate(num_proj=Count("subject"))
+    most_used_projects = Triple.objects.filter(predicate=project_category).value('object').annotate(num_proj=Count("object"))
     return most_used_projects
