@@ -1,7 +1,6 @@
 import { modalManager } from '../../modal.js';
 
 export function renderVideoPlayer(fileData) {
-/* 
     const html = `
         <video id="${fileData.bucket_type}/${fileData.path}" controls style="max-width: 100%; max-height: 800px;">
             <source src="/archivist/stream/${fileData.bucket_type}/${fileData.path}" type="${fileData.type}">
@@ -12,24 +11,8 @@ export function renderVideoPlayer(fileData) {
             <p>Last Modified: ${fileData.last_modified}</p>
             <p>Size: ${fileData.size} bytes</p>
         </div>
-        <script>
-        const video = document.getElementById("${fileData.bucket_type}/${fileData.path}");
-
-        // Intersection Observer erstellen
-        const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                video.play();   // im sichtbaren Bereich → abspielen
-            } else {
-                video.pause();  // außerhalb → pausieren
-            }
-        });
-        }, { threshold: 0.5 }); // mindestens 50% sichtbar
-
-        observer.observe(video);
-        </script>
     `;
+    console.log("TEST")
     
     modalManager.setContent(html);
-    */
 }

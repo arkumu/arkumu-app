@@ -727,5 +727,6 @@ class ProjektShow:
 def keyword_cloud(limit: int):
     project_category = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/projektkategorie")
     
-    most_used_projects = Triple.objects.filter(predicate=project_category).value('object').annotate(num_proj=Count("object"))
-    return most_used_projects
+    most_used_category = Triple.objects.filter(predicate=project_category).values('object').annotate(count=Count("object")).order_by('-count')[:limit]
+    result = [keyword['object'] for keyword in most_used_category]
+    return result
