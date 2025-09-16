@@ -21,6 +21,7 @@ from arkumu.storage.services.bucket_service import BucketService
 from arkumu.storage.services.s3_sync_service import S3SyncService
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+from arkumu.oaipmh.cache_service import OAIPMHCacheService
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,6 @@ def link_file_to_resource(request):
             if final_resource and final_resource.organization:
                 logger.debug(f"🔥 SINGLE CACHE DEBUG: Warming cache for {final_resource.uri} (org: {final_resource.organization.code})")
 
-                from arkumu.oaipmh.cache_service import OAIPMHCacheService
                 # Warm cache for both metadata formats using centralized service
                 for metadata_prefix in ['oai_dc', 'mets']:
                     OAIPMHCacheService.warm_record(final_resource, metadata_prefix)
@@ -266,8 +266,6 @@ def link_file_to_resource(request):
                 logger.info(f"Warmed OAI-PMH cache for resource {final_resource.uri}")
             else:
                 logger.debug(f"🔥 SINGLE CACHE DEBUG: Skipping cache warming - resource has no organization")
-        except ImportError:
-            logger.warning("Could not import OAI-PMH cache service")
         except Exception as e:
             logger.error(f"Error warming OAI-PMH cache: {str(e)}")
 
@@ -462,9 +460,6 @@ def batch_link_files(request):
             logger.debug(f"🔥 CACHE WARM DEBUG: Starting cache warming for {len(affected_resources)} affected resources")
 
             try:
-                from arkumu.oaipmh.cache_service import OAIPMHCacheService
-                from arkumu.metadata.models.resource import Resource
-
                 # Warm cache for each affected resource directly using centralized service
                 for i, (uri, org_code) in enumerate(affected_resources):
                     logger.debug(f"🔥 CACHE WARM DEBUG: Warming resource {i+1}: {uri} (org: {org_code})")
@@ -481,8 +476,6 @@ def batch_link_files(request):
 
                 logger.info(f"Warmed OAI-PMH cache for {len(affected_resources)} resources after linking {linked} files")
 
-            except ImportError:
-                logger.warning("Could not import OAI-PMH cache service")
             except Exception as e:
                 logger.error(f"Error warming OAI-PMH cache: {str(e)}")
         else:
@@ -667,9 +660,6 @@ def batch_unlink_files(request):
             logger.debug(f"🔥 CACHE WARM DEBUG: Starting cache warming for {len(unlinked_resources)} unlinked resources")
 
             try:
-                from arkumu.oaipmh.cache_service import OAIPMHCacheService
-                from arkumu.metadata.models.resource import Resource
-
                 # Warm cache for each unlinked resource directly using centralized service
                 for i, (uri, org_code) in enumerate(unlinked_resources):
                     logger.debug(f"🔥 CACHE WARM DEBUG: Warming unlinked resource {i+1}: {uri} (org: {org_code})")
@@ -686,8 +676,6 @@ def batch_unlink_files(request):
 
                 logger.info(f"Warmed OAI-PMH cache for {len(unlinked_resources)} resources after unlinking {unlinked} files")
 
-            except ImportError:
-                logger.warning("Could not import OAI-PMH cache service")
             except Exception as e:
                 logger.error(f"Error warming OAI-PMH cache: {str(e)}")
         else:
