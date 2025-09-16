@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
 from django.core.cache import cache
+from django.utils import timezone
 import xml.etree.ElementTree as ET
 
 from arkumu.metadata.models.resource import Resource
@@ -99,7 +100,7 @@ def _oai_envelope(request: HttpRequest) -> ET.Element:
         },
     )
     responseDate = ET.SubElement(oai, "responseDate")
-    responseDate.text = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    responseDate.text = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     req = ET.SubElement(oai, "request")
     req.text = request.build_absolute_uri(REPO_BASEURL)
@@ -661,7 +662,7 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
 
         # Add METS header
         mets_header = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}metsHdr")
-        mets_header.set("CREATEDATE", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        mets_header.set("CREATEDATE", timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         # Add descriptive metadata section with RDF/XML
         dmd_sec = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}dmdSec")
