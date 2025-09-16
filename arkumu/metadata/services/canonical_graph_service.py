@@ -275,12 +275,12 @@ class CanonicalGraphService:
                     triple_id=str(t.id),
                     subject_id=str(t.subject_id),
                     predicate_uri=t.predicate.uri,
-                    predicate_canonical=getattr(t.predicate, "canonical_uri", None),
+                    predicate_canonical=t.predicate.canonical_uri if hasattr(t.predicate, "canonical_uri") else None,
                     object_id=str(t.object.id),
-                    object_uri=getattr(t.object, "uri", None),
+                    object_uri=t.object.uri if hasattr(t.object, "uri") else None,
                     object_type=t.object.resource_type,
-                    object_value=getattr(t.object, "value", None),
-                    object_canonical=getattr(t.object, "canonical_uri", None),
+                    object_value=t.object.value if hasattr(t.object, "value") else None,
+                    object_canonical=t.object.canonical_uri if hasattr(t.object, "canonical_uri") else None,
                 )
             )
         return edges
@@ -351,12 +351,12 @@ class CanonicalGraphService:
                     triple_id=str(t.id),
                     subject_id=str(t.subject_id),
                     predicate_uri=t.predicate.uri,
-                    predicate_canonical=getattr(t.predicate, "canonical_uri", None),
+                    predicate_canonical=t.predicate.canonical_uri if hasattr(t.predicate, "canonical_uri") else None,
                     object_id=str(t.object.id),
-                    object_uri=getattr(t.object, "uri", None),
+                    object_uri=t.object.uri if hasattr(t.object, "uri") else None,
                     object_type=t.object.resource_type,
-                    object_value=getattr(t.object, "value", None),
-                    object_canonical=getattr(t.object, "canonical_uri", None),
+                    object_value=t.object.value if hasattr(t.object, "value") else None,
+                    object_canonical=t.object.canonical_uri if hasattr(t.object, "canonical_uri") else None,
                 )
             )
         return edges

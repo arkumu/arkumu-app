@@ -44,6 +44,72 @@ DEFAULT_PREDICATE_MAP: Dict[str, str] = {
     f"{DCTERMS_NS}relation": "relation",
     f"{DCTERMS_NS}coverage": "coverage",
     f"{DCTERMS_NS}rights": "rights",
+
+    # Arkumu canonical predicates (from database canonical_uri mappings)
+    # Title mappings
+    "http://arkumu.org/data/properties/bevorzugter-titel": "title",
+    "http://arkumu.org/data/properties/alternativer-titel": "title",
+    "http://arkumu.org/data/properties/kompilationstitel": "title",
+    "http://arkumu.org/data/properties/bevorzugter-untertitel": "title",
+    "http://arkumu.org/data/properties/alternativer-untertitel": "title",
+
+    # Description mappings
+    "http://arkumu.org/data/properties/beschreibung": "description",
+    "http://arkumu.org/data/properties/deutsche-beschreibung": "description",
+    "http://arkumu.org/data/properties/englische-beschreibung": "description",
+    "http://arkumu.org/data/properties/kurzbeschreibung-deutsch": "description",
+    "http://arkumu.org/data/properties/kurzbeschreibung-englisch": "description",
+    "http://arkumu.org/data/properties/deutsche-inhaltliche-beschreibung": "description",
+    "http://arkumu.org/data/properties/englische-inhaltliche-beschreibung": "description",
+    "http://arkumu.org/data/properties/bildbeschreibung-deutsch": "description",
+    "http://arkumu.org/data/properties/bildbeschreibung-englisch": "description",
+    "http://arkumu.org/data/properties/ereignisbeschreibung": "description",
+    "http://arkumu.org/data/properties/deutscher-kommentar": "description",
+    "http://arkumu.org/data/properties/englischer-kommentar": "description",
+
+    # Identifier mappings
+    "http://arkumu.org/data/properties/datensatz-id-beim-einlieferer": "identifier",
+    "http://arkumu.org/data/properties/andere-normdaten": "identifier",
+
+    # File/relation mappings
+    "http://arkumu.org/data/properties/dateiname": "relation",
+    "http://arkumu.org/data/properties/dateipfad": "relation",
+    "http://arkumu.org/data/properties/dateipaket": "relation",
+    "http://arkumu.org/data/properties/ausgangsprojekt": "relation",
+    "http://arkumu.org/data/properties/externe-projektwebseite": "relation",
+
+    # Subject mappings
+    "http://arkumu.org/data/properties/schlagwort": "subject",
+    "http://arkumu.org/data/properties/klassifizierendes-schlagwort": "subject",
+    "http://arkumu.org/data/properties/materialschlagwort": "subject",
+
+    # Rights mappings
+    "http://arkumu.org/data/properties/rechtsstatus": "rights",
+    "http://arkumu.org/data/properties/bestehender-lizenzvertrag": "rights",
+
+    # Language mappings
+    "http://arkumu.org/data/properties/originalsprache": "language",
+    "http://arkumu.org/data/properties/sprache": "language",
+    "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels": "language",
+    "http://arkumu.org/data/properties/sprache-des-bevorzugten-untertitels": "language",
+    "http://arkumu.org/data/properties/sprache-des-alternativen-titels": "language",
+    "http://arkumu.org/data/properties/sprache-des-alternativen-untertitels": "language",
+
+    # Coverage/location mappings
+    "http://arkumu.org/data/properties/ereignisort": "coverage",
+    "http://arkumu.org/data/properties/aufbewahrungsort": "coverage",
+
+    # Date mappings
+    "http://arkumu.org/data/properties/datensatzerstellung-beim-einlieferer": "date",
+    "http://arkumu.org/data/properties/letzte-datensatzmodifikation-beim-einlieferer": "date",
+
+    # Type mappings
+    "http://arkumu.org/data/properties/projektkategorie": "type",
+    "http://arkumu.org/data/properties/projektart": "type",
+    "http://arkumu.org/data/properties/objekttyp": "type",
+
+    # Format mappings
+    "http://arkumu.org/data/properties/informationstraeger": "format",
 }
 
 
