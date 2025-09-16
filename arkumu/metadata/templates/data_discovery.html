@@ -95,8 +95,8 @@
                                     <button class="btn btn-sm btn-primary {% if not select_all_checked %}btn-disabled{% endif %}"
                                             {% if select_all_checked %}
                                             hx-post="{% url 'metadata:batch_link_files' %}"
-                                            hx-include="[name='selected_files']:checked"
-                                            hx-confirm="Link ALL files using automatic matching?"
+                                            hx-include="[name='org_filter'], [name='status_filter']"
+                                            hx-confirm="Link ALL filtered files using automatic matching?"
                                             hx-target="#files-container"
                                             hx-swap="innerHTML"
                                             hx-trigger="click"
@@ -115,8 +115,8 @@
                                     <button class="btn btn-sm btn-error {% if not select_all_checked %}btn-disabled{% endif %}"
                                             {% if select_all_checked %}
                                             hx-post="{% url 'metadata:batch_unlink_files' %}"
-                                            hx-include="[name='selected_files']:checked"
-                                            hx-confirm="Unlink ALL selected files from their resources?"
+                                            hx-include="[name='org_filter'], [name='status_filter']"
+                                            hx-confirm="Unlink ALL filtered files from their resources?"
                                             hx-target="#files-container"
                                             hx-swap="innerHTML"
                                             hx-trigger="click"

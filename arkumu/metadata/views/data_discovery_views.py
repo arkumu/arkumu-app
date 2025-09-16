@@ -291,24 +291,65 @@ def batch_link_files(request):
                 })
             return HttpResponse(message, status=400)
         
-        # Get selected file IDs from form data
-        file_ids = request.POST.getlist('selected_files')
-        
-        logger.info(f"Batch link request received. Selected file IDs: {file_ids}")
-        logger.info(f"Select all enabled: {select_all_enabled}, Organization: {organization}")
+        # When Select All is enabled, process ALL filtered files instead of just selected ones
+        if select_all_enabled:
+            # Recreate the same filter logic as the main view
+            selected_files = S3FileObject.objects.select_related(
+                'related_resource', 'session', 'session__user'
+            )
 
-        if not file_ids:
-            message = 'No files selected - this should not happen when Select All is enabled'
-            logger.warning(f"Batch link failed: {message}")
-            if request.headers.get('HX-Request'):
-                return render(request, 'partials/toast.html', {
-                    'message': message,
-                    'type': 'warning'
-                })
-            return HttpResponse(message, status=400)
+            # Filter by organization bucket if one is selected
+            if organization:
+                selected_files = selected_files.filter(session__s3_bucket=organization)
 
-        # Get the queryset of selected files
-        selected_files = S3FileObject.objects.filter(id__in=file_ids)
+            # Filter by data folder within bucket
+            selected_files = selected_files.filter(s3_key__startswith='data/')
+
+            # Apply any status filters from the request
+            status_filter = request.POST.get('status_filter', '') or request.GET.get('status_filter', '')
+            if status_filter == 'linked':
+                selected_files = selected_files.filter(related_resource__isnull=False)
+            elif status_filter == 'unlinked':
+                selected_files = selected_files.filter(related_resource__isnull=True)
+
+            # Apply date filters if they exist (for future extensibility)
+            from_date = request.POST.get('from_date', '') or request.GET.get('from_date', '')
+            until_date = request.POST.get('until_date', '') or request.GET.get('until_date', '')
+            if from_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    from_date_parsed = parse_date(from_date)
+                    if from_date_parsed:
+                        selected_files = selected_files.filter(created_at__gte=from_date_parsed)
+                except:
+                    pass
+            if until_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    until_date_parsed = parse_date(until_date)
+                    if until_date_parsed:
+                        selected_files = selected_files.filter(created_at__lte=until_date_parsed)
+                except:
+                    pass
+
+            logger.info(f"Batch link request: Select All enabled, processing {selected_files.count()} files for org {organization}")
+        else:
+            # Fallback to individual file selection (current page only)
+            file_ids = request.POST.getlist('selected_files')
+            logger.info(f"Batch link request received. Selected file IDs: {file_ids}")
+
+            if not file_ids:
+                message = 'No files selected'
+                logger.warning(f"Batch link failed: {message}")
+                if request.headers.get('HX-Request'):
+                    return render(request, 'partials/toast.html', {
+                        'message': message,
+                        'type': 'warning'
+                    })
+                return HttpResponse(message, status=400)
+
+            # Get the queryset of selected files
+            selected_files = S3FileObject.objects.filter(id__in=file_ids)
         
         # Use the same partial matching logic as manual search
         processed = 0
@@ -449,24 +490,65 @@ def batch_unlink_files(request):
                 })
             return HttpResponse(message, status=400)
         
-        # Get selected file IDs from form data
-        file_ids = request.POST.getlist('selected_files')
-        
-        logger.info(f"Batch unlink request received. Selected file IDs: {file_ids}")
-        logger.info(f"Select all enabled: {select_all_enabled}, Organization: {organization}")
+        # When Select All is enabled, process ALL filtered files instead of just selected ones
+        if select_all_enabled:
+            # Recreate the same filter logic as the main view
+            selected_files = S3FileObject.objects.select_related(
+                'related_resource', 'session', 'session__user'
+            )
 
-        if not file_ids:
-            message = 'No files selected - this should not happen when Select All is enabled'
-            logger.warning(f"Batch unlink failed: {message}")
-            if request.headers.get('HX-Request'):
-                return render(request, 'partials/toast.html', {
-                    'message': message,
-                    'type': 'warning'
-                })
-            return HttpResponse(message, status=400)
+            # Filter by organization bucket if one is selected
+            if organization:
+                selected_files = selected_files.filter(session__s3_bucket=organization)
 
-        # Get the queryset of selected files
-        selected_files = S3FileObject.objects.filter(id__in=file_ids)
+            # Filter by data folder within bucket
+            selected_files = selected_files.filter(s3_key__startswith='data/')
+
+            # Apply any status filters from the request
+            status_filter = request.POST.get('status_filter', '') or request.GET.get('status_filter', '')
+            if status_filter == 'linked':
+                selected_files = selected_files.filter(related_resource__isnull=False)
+            elif status_filter == 'unlinked':
+                selected_files = selected_files.filter(related_resource__isnull=True)
+
+            # Apply date filters if they exist (for future extensibility)
+            from_date = request.POST.get('from_date', '') or request.GET.get('from_date', '')
+            until_date = request.POST.get('until_date', '') or request.GET.get('until_date', '')
+            if from_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    from_date_parsed = parse_date(from_date)
+                    if from_date_parsed:
+                        selected_files = selected_files.filter(created_at__gte=from_date_parsed)
+                except:
+                    pass
+            if until_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    until_date_parsed = parse_date(until_date)
+                    if until_date_parsed:
+                        selected_files = selected_files.filter(created_at__lte=until_date_parsed)
+                except:
+                    pass
+
+            logger.info(f"Batch unlink request: Select All enabled, processing {selected_files.count()} files for org {organization}")
+        else:
+            # Fallback to individual file selection (current page only)
+            file_ids = request.POST.getlist('selected_files')
+            logger.info(f"Batch unlink request received. Selected file IDs: {file_ids}")
+
+            if not file_ids:
+                message = 'No files selected'
+                logger.warning(f"Batch unlink failed: {message}")
+                if request.headers.get('HX-Request'):
+                    return render(request, 'partials/toast.html', {
+                        'message': message,
+                        'type': 'warning'
+                    })
+                return HttpResponse(message, status=400)
+
+            # Get the queryset of selected files
+            selected_files = S3FileObject.objects.filter(id__in=file_ids)
         
         # Process files for unlinking
         processed = 0
