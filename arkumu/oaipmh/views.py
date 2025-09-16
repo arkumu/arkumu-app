@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlparse
 
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
+from django.core.cache import cache
 import xml.etree.ElementTree as ET
 
 from arkumu.metadata.models.resource import Resource
@@ -29,6 +30,50 @@ REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
 # Initialize resumption token service
 resumption_service = ResumptionTokenService(page_size=100)
+
+
+# Cache utilities
+def _get_cache_key(cache_type: str, **kwargs) -> str:
+    """Generate consistent cache keys for OAI-PMH responses."""
+    if cache_type == "record":
+        return f"oai:record:{kwargs['uri']}:{kwargs['metadata_prefix']}:{kwargs['timestamp']}"
+    elif cache_type == "graph":
+        return f"oai:graph:{kwargs['uri']}:{kwargs['timestamp']}"
+    elif cache_type == "page":
+        return f"oai:page:{kwargs['verb']}:{kwargs['metadata_prefix']}:{kwargs.get('set_spec', '')}:{kwargs.get('from_date', '')}:{kwargs.get('until_date', '')}:{kwargs['offset']}"
+    return f"oai:{cache_type}:{':'.join(str(v) for v in kwargs.values())}"
+
+
+def _get_cached_record(resource: Resource, metadata_prefix: str) -> Optional[Dict[str, Any]]:
+    """Get cached OAI-PMH record if available."""
+    timestamp = int(resource.updated_at.timestamp())
+    cache_key = _get_cache_key(
+        "record",
+        uri=resource.uri,
+        metadata_prefix=metadata_prefix,
+        timestamp=timestamp
+    )
+    return cache.get(cache_key)
+
+
+def _cache_record(resource: Resource, metadata_prefix: str, header_xml: str, metadata_xml: str):
+    """Cache OAI-PMH record data."""
+    timestamp = int(resource.updated_at.timestamp())
+    cache_key = _get_cache_key(
+        "record",
+        uri=resource.uri,
+        metadata_prefix=metadata_prefix,
+        timestamp=timestamp
+    )
+
+    cached_record = {
+        'header': header_xml,
+        'metadata': metadata_xml,
+        'timestamp': timestamp
+    }
+
+    # Cache for 4 hours
+    cache.set(cache_key, cached_record, 4 * 3600)
 
 
 def _oai_envelope(request: HttpRequest) -> ET.Element:
@@ -290,17 +335,50 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
     if offset == 0 and not resources:
         return _error(oai, "noRecordsMatch", "No records found matching the criteria")
 
-    # Build response
+    # Check for cached page response first
+    list_cache_key = _get_cache_key(
+        "page",
+        verb="ListIdentifiers",
+        metadata_prefix=metadata_prefix,
+        set_spec=set_spec,
+        from_date=from_date,
+        until_date=until_date,
+        offset=offset
+    )
+
+    cached_page = cache.get(list_cache_key)
+    if cached_page:
+        # Rebuild from cached data
+        list_identifiers = ET.SubElement(oai, "ListIdentifiers")
+
+        for record_data in cached_page['headers']:
+            header = ET.fromstring(record_data)
+            list_identifiers.append(header)
+
+        # Add cached resumption token if present
+        if cached_page.get('resumption_token'):
+            resumption_elem = ET.SubElement(list_identifiers, "resumptionToken")
+            resumption_elem.text = cached_page['resumption_token']
+
+        return oai
+
+    # Build response (cache miss)
     list_identifiers = ET.SubElement(oai, "ListIdentifiers")
+    headers_data = []  # For caching
 
     for resource in resources:
         header = _build_record_header(resource)
         list_identifiers.append(header)
 
+        # Cache header data
+        header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
+        headers_data.append(header_xml)
+
     # Add resumption token if needed
+    resumption_token = None
     if has_more:
         next_offset = offset + page_size
-        new_token = resumption_service.create_token(
+        resumption_token = resumption_service.create_token(
             offset=next_offset,
             verb="ListIdentifiers",
             metadata_prefix=metadata_prefix,
@@ -309,7 +387,18 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
             until_date=until_date
         )
         resumption_elem = ET.SubElement(list_identifiers, "resumptionToken")
-        resumption_elem.text = new_token
+        resumption_elem.text = resumption_token
+
+    # Cache the complete page for future requests
+    list_page_data = {
+        'headers': headers_data,
+        'resumption_token': resumption_token,
+        'count': len(headers_data),
+        'cached_at': timezone.now().isoformat()
+    }
+
+    # Cache for 2 hours
+    cache.set(list_cache_key, list_page_data, 2 * 3600)
 
     return oai
 
@@ -1056,24 +1145,77 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
     if offset == 0 and not resources:
         return _error(oai, "noRecordsMatch", "No records found matching the criteria")
 
-    # Build response
+    # Check for cached page response first
+    page_cache_key = _get_cache_key(
+        "page",
+        verb="ListRecords",
+        metadata_prefix=metadata_prefix,
+        set_spec=set_spec,
+        from_date=from_date,
+        until_date=until_date,
+        offset=offset
+    )
+
+    cached_page = cache.get(page_cache_key)
+    if cached_page:
+        # Rebuild from cached data
+        list_records = ET.SubElement(oai, "ListRecords")
+
+        for record_data in cached_page['records']:
+            record = ET.SubElement(list_records, "record")
+            # Parse cached XML strings back to elements
+            header = ET.fromstring(record_data['header'])
+            metadata = ET.fromstring(record_data['metadata'])
+            record.append(header)
+            record.append(metadata)
+
+        # Add cached resumption token if present
+        if cached_page.get('resumption_token'):
+            resumption_elem = ET.SubElement(list_records, "resumptionToken")
+            resumption_elem.text = cached_page['resumption_token']
+
+        return oai
+
+    # Build response (cache miss)
     list_records = ET.SubElement(oai, "ListRecords")
+    records_data = []  # For caching
 
     for resource in resources:
         record = ET.SubElement(list_records, "record")
 
-        # Add header
-        header = _build_record_header(resource)
-        record.append(header)
+        # Try to get cached record first
+        cached_record = _get_cached_record(resource, metadata_prefix)
 
-        # Add metadata
-        metadata = _build_metadata_element(resource, metadata_prefix)
-        record.append(metadata)
+        if cached_record:
+            # Use cached record
+            header = ET.fromstring(cached_record['header'])
+            metadata = ET.fromstring(cached_record['metadata'])
+            record.append(header)
+            record.append(metadata)
+            records_data.append(cached_record)
+        else:
+            # Build record and cache it
+            header = _build_record_header(resource)
+            metadata = _build_metadata_element(resource, metadata_prefix)
+            record.append(header)
+            record.append(metadata)
+
+            # Cache individual record
+            header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
+            metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
+            _cache_record(resource, metadata_prefix, header_xml, metadata_xml)
+
+            records_data.append({
+                'header': header_xml,
+                'metadata': metadata_xml,
+                'timestamp': int(resource.updated_at.timestamp())
+            })
 
     # Add resumption token if needed
+    resumption_token = None
     if has_more:
         next_offset = offset + page_size
-        new_token = resumption_service.create_token(
+        resumption_token = resumption_service.create_token(
             offset=next_offset,
             verb="ListRecords",
             metadata_prefix=metadata_prefix,
@@ -1082,7 +1224,18 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
             until_date=until_date
         )
         resumption_elem = ET.SubElement(list_records, "resumptionToken")
-        resumption_elem.text = new_token
+        resumption_elem.text = resumption_token
+
+    # Cache the complete page for future requests
+    page_data = {
+        'records': records_data,
+        'resumption_token': resumption_token,
+        'count': len(records_data),
+        'cached_at': timezone.now().isoformat()
+    }
+
+    # Cache for 2 hours (shorter than individual records for freshness)
+    cache.set(page_cache_key, page_data, 2 * 3600)
 
     return oai
 
