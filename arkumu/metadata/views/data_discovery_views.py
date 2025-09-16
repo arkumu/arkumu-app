@@ -256,12 +256,16 @@ def link_file_to_resource(request):
             # Get the final linked resource (project entity or fallback resource)
             final_resource = s3_file.related_resource
             if final_resource and final_resource.organization:
+                logger.debug(f"🔥 SINGLE CACHE DEBUG: Warming cache for {final_resource.uri} (org: {final_resource.organization.code})")
+
                 from arkumu.oaipmh.tasks import warm_resource_cache
                 warm_resource_cache.schedule(
                     args=(final_resource.uri, final_resource.organization.code),
                     delay=10
                 )
                 logger.info(f"Scheduled OAI-PMH cache warming for resource {final_resource.uri}")
+            else:
+                logger.debug(f"🔥 SINGLE CACHE DEBUG: Skipping cache warming - resource has no organization")
         except ImportError:
             logger.warning("Could not import OAI-PMH cache warming task")
         except Exception as e:
@@ -372,43 +376,61 @@ def batch_link_files(request):
         linked = 0
         ambiguous = 0
         errors = 0
+        affected_resources = set()  # Track resources that were linked for cache warming
+
+        logger.debug(f"🔍 BATCH LINK DEBUG: Starting batch linking for {selected_files.count()} files")
         
         for s3_file in selected_files:
             processed += 1
             try:
                 # Use full filename including extension for search query
                 query = s3_file.file_name
-                
+
+                logger.debug(f"🔍 BATCH LINK DEBUG: Processing file {s3_file.file_name} (ID: {s3_file.id})")
+                logger.debug(f"🔍 BATCH LINK DEBUG: Search query: '{query}'")
+
                 # Use more precise endswith matching for batch operations
                 matching_resources = Resource.objects.filter(
                     Q(value__iendswith=query) | Q(uri__iendswith=query)
                 ).distinct()
+
+                logger.debug(f"🔍 BATCH LINK DEBUG: Found {matching_resources.count()} matching resources")
                 
                 if matching_resources.count() == 1:
                     # Single match - find project entity
                     resource = matching_resources.first()
+                    logger.debug(f"🔍 BATCH LINK DEBUG: Single match - {resource.resource_type}: {resource.value[:50]}...")
+
                     traversal_service = ResourceTraversalService()
                     project_entity = traversal_service.get_project_entity_for_resource(resource)
 
                     if project_entity:
+                        logger.debug(f"🔍 BATCH LINK DEBUG: Found project entity: {project_entity.uri} (org: {project_entity.organization.code})")
                         s3_file.related_resource = project_entity
                         s3_file.save()
                         linked += 1
+                        affected_resources.add((project_entity.uri, project_entity.organization.code))
                         logger.info(f"Linked {s3_file.file_name} to project entity {project_entity.uri} via resource {resource.value}")
                     else:
+                        logger.debug(f"🔍 BATCH LINK DEBUG: No project entity found for resource {resource.value[:50]}...")
                         logger.info(f"No project entity found for {s3_file.file_name} resource {resource.value}, skipping link")
 
                 elif matching_resources.count() > 1:
+                    logger.debug(f"🔍 BATCH LINK DEBUG: Multiple matches ({matching_resources.count()}) - attempting deduplication")
+
                     # Multiple matches - try to find project entities and deduplicate
                     traversal_service = ResourceTraversalService()
                     project_entities = []
-                    for matched_resource in matching_resources:
+                    for i, matched_resource in enumerate(matching_resources):
+                        logger.debug(f"🔍 BATCH LINK DEBUG: Match {i+1}: {matched_resource.resource_type} - {matched_resource.value[:50]}...")
                         project_entity = traversal_service.get_project_entity_for_resource(matched_resource)
                         if project_entity:
                             project_entities.append(project_entity)
+                            logger.debug(f"🔍 BATCH LINK DEBUG: → Points to project: {project_entity.uri}")
 
                     # Deduplicate project entities
                     unique_projects = list({p.id: p for p in project_entities}.values())
+                    logger.debug(f"🔍 BATCH LINK DEBUG: Unique projects found: {len(unique_projects)}")
 
                     if len(unique_projects) == 1:
                         # All resources point to same project - link it
@@ -416,13 +438,17 @@ def batch_link_files(request):
                         s3_file.related_resource = project_entity
                         s3_file.save()
                         linked += 1
+                        affected_resources.add((project_entity.uri, project_entity.organization.code))
+                        logger.debug(f"🔍 BATCH LINK DEBUG: Successfully resolved to single project: {project_entity.uri}")
                         logger.info(f"Resolved ambiguous match for {s3_file.file_name}: {matching_resources.count()} resources but same project {project_entity.uri}")
                     else:
                         # Still ambiguous at project level
                         ambiguous += 1
+                        logger.debug(f"🔍 BATCH LINK DEBUG: Still ambiguous - {len(unique_projects)} different projects")
                         logger.info(f"Ambiguous match for {s3_file.file_name}: {matching_resources.count()} resources leading to {len(unique_projects)} different projects, no link made")
                 else:
                     # No matches found
+                    logger.debug(f"🔍 BATCH LINK DEBUG: No matches found for file {s3_file.file_name}")
                     logger.info(f"No matching resources found for {s3_file.file_name} with query '{query}'")
                     
             except Exception as e:
@@ -433,14 +459,26 @@ def batch_link_files(request):
 
         # Trigger OAI-PMH cache warming for affected resources if any files were linked
         if linked > 0:
+            logger.debug(f"🔥 CACHE WARM DEBUG: Starting cache warming for {len(affected_resources)} affected resources")
+
             try:
                 from arkumu.oaipmh.tasks import warm_popular_records
-                warm_popular_records.schedule(delay=30)  # Small delay to let DB commit
+
+                # Schedule popular records warming which includes recently updated resources
+                warm_popular_records.schedule(delay=30)
                 logger.info(f"Scheduled OAI-PMH cache warming after linking {linked} files")
+                logger.debug(f"🔥 CACHE WARM DEBUG: Scheduled warm_popular_records task")
+
+                # Debug log the affected resources
+                for i, (uri, org_code) in enumerate(affected_resources):
+                    logger.debug(f"🔥 CACHE WARM DEBUG: Affected resource {i+1}: {uri} (org: {org_code})")
+
             except ImportError:
                 logger.warning("Could not import OAI-PMH cache warming task")
             except Exception as e:
                 logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+        else:
+            logger.debug(f"🔥 CACHE WARM DEBUG: No files linked, skipping cache warming")
 
         if request.headers.get('HX-Request'):
             # Clear select all state after batch operation
@@ -581,13 +619,25 @@ def batch_unlink_files(request):
         processed = 0
         unlinked = 0
         errors = 0
+        unlinked_resources = set()  # Track resources that were unlinked for cache warming
+
+        logger.debug(f"🔍 BATCH UNLINK DEBUG: Starting batch unlinking for {selected_files.count()} files")
         
         for s3_file in selected_files:
             processed += 1
             try:
+                logger.debug(f"🔍 BATCH UNLINK DEBUG: Processing file {s3_file.file_name} (ID: {s3_file.id})")
+
                 if s3_file.related_resource:
-                    # Store resource info for logging
-                    old_resource = s3_file.related_resource.value
+                    # Store original resource info before unlinking
+                    resource = s3_file.related_resource
+                    old_resource = resource.value
+                    logger.debug(f"🔍 BATCH UNLINK DEBUG: Unlinking from {resource.resource_type}: {resource.uri} (org: {resource.organization.code if resource.organization else 'None'})")
+
+                    # Track the resource for cache warming
+                    if resource.organization:
+                        unlinked_resources.add((resource.uri, resource.organization.code))
+
                     # Unlink the file
                     s3_file.related_resource = None
                     s3_file.save()
@@ -595,6 +645,7 @@ def batch_unlink_files(request):
                     logger.info(f"Unlinked {s3_file.file_name} from resource {old_resource}")
                 else:
                     # File was already unlinked
+                    logger.debug(f"🔍 BATCH UNLINK DEBUG: File was already unlinked, skipping")
                     logger.info(f"File {s3_file.file_name} was already unlinked")
                     
             except Exception as e:
@@ -605,14 +656,24 @@ def batch_unlink_files(request):
 
         # Trigger OAI-PMH cache warming for affected resources if any files were unlinked
         if unlinked > 0:
+            logger.debug(f"🔥 CACHE WARM DEBUG: Starting cache warming for {len(unlinked_resources)} unlinked resources")
+
             try:
                 from arkumu.oaipmh.tasks import warm_popular_records
                 warm_popular_records.schedule(delay=30)  # Small delay to let DB commit
                 logger.info(f"Scheduled OAI-PMH cache warming after unlinking {unlinked} files")
+                logger.debug(f"🔥 CACHE WARM DEBUG: Scheduled warm_popular_records task")
+
+                # Debug log the unlinked resources
+                for i, (uri, org_code) in enumerate(unlinked_resources):
+                    logger.debug(f"🔥 CACHE WARM DEBUG: Unlinked resource {i+1}: {uri} (org: {org_code})")
+
             except ImportError:
                 logger.warning("Could not import OAI-PMH cache warming task")
             except Exception as e:
                 logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+        else:
+            logger.debug(f"🔥 CACHE WARM DEBUG: No files unlinked, skipping cache warming")
 
         if request.headers.get('HX-Request'):
             # Clear select all state after batch operation
