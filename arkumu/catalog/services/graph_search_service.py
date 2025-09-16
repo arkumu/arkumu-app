@@ -780,29 +780,6 @@ class GraphSearchService:
 
         return formatted
 
-    def get_available_types(self) -> List[Dict]:
-        """
-        Get available types with caching support.
-
-        This method checks if types data is already available in cache
-        before performing expensive database queries.
-        """
-        # Try to leverage any cached type information
-        cache_key = f"catalog_types_{self.user_org}"
-        cached_types = cache.get(cache_key)
-
-        if cached_types:
-            logger.debug("Using cached available types")
-            return cached_types
-
-        # Fallback to original method
-        logger.debug("Cache miss - fetching available types from database")
-        types = self.get_classes_with_counts()
-
-        # Cache for future use
-        cache.set(cache_key, types, 12 * 3600)  # 12 hours
-
-        return types
 
     def get_available_properties(self, selected_class: str = '') -> List[Dict]:
         """
