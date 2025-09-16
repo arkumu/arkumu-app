@@ -92,23 +92,23 @@ class GraphSearchService:
         # Get ALL entities of this class for accurate counts
         # Note: triples still use the raw URI, not canonical URI
         try:
-            # Scope to user's organization to handle duplicate canonical URIs
-            query_filter = {'canonical_uri': class_uri}
-            if self.user and hasattr(self.user, 'organization') and self.user.organization:
-                query_filter['organization'] = self.user.organization
+            # Handle multiple resources with same canonical URI across organizations
+            # We want to search across ALL organizations, so get all matching resources
+            class_resources = Resource.objects.filter(canonical_uri=class_uri)
 
-            class_resource = Resource.objects.filter(**query_filter).first()
-            if class_resource:
-                class_raw_uri = class_resource.uri
+            if class_resources.exists():
+                # Get all raw URIs for this canonical URI across organizations
+                class_raw_uris = list(class_resources.values_list('uri', flat=True))
+                logger.debug(f"Found {len(class_raw_uris)} resources for canonical URI {class_uri}")
             else:
-                class_raw_uri = class_uri
+                class_raw_uris = [class_uri]
         except Exception as e:
-            logger.warning(f"Error getting class resource for {class_uri}: {e}")
-            class_raw_uri = class_uri
+            logger.warning(f"Error getting class resources for {class_uri}: {e}")
+            class_raw_uris = [class_uri]
 
         all_entity_ids = Triple.objects.filter(
             predicate__uri=self.rdf_type_uri,
-            object__uri=class_raw_uri
+            object__uri__in=class_raw_uris
         ).values_list('subject_id', flat=True)
 
         # Get properties used by these entities with ACTUAL counts
