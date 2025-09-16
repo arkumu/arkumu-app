@@ -14,6 +14,7 @@ from django.template.loader import render_to_string
 from django.core.paginator import Paginator
 
 from arkumu.catalog.services.graph_search_service import GraphSearchService
+from arkumu.cache.services import CatalogCacheService
 
 
 class CatalogExplorerView(LoginRequiredMixin, TemplateView):
@@ -26,8 +27,9 @@ class CatalogExplorerView(LoginRequiredMixin, TemplateView):
         """Get context with graph search results."""
         context = super().get_context_data(**kwargs)
 
-        # Initialize graph search service
+        # Initialize services
         graph_service = GraphSearchService(user=self.request.user)
+        catalog_cache = CatalogCacheService()
 
         # Get query parameters
         query = self.request.GET.get('q', '')
@@ -35,9 +37,23 @@ class CatalogExplorerView(LoginRequiredMixin, TemplateView):
         selected_class = self.request.GET.get('class', '')
         page = self.request.GET.get('page', 1)
 
-        # Get available types and properties for the UI
-        available_types = graph_service.get_available_types()
-        available_properties = graph_service.get_available_properties(selected_class)
+        # Get user organization for cache scoping
+        user_org = self.request.user.organization.code if hasattr(self.request.user, 'organization') and self.request.user.organization else None
+
+        # Try to get available types and properties from cache first
+        cached_types_props = catalog_cache.get_cached_types_and_properties(user_org)
+        if cached_types_props:
+            self.logger.debug("Using cached types and properties")
+            available_types = cached_types_props['types']
+            available_properties = cached_types_props['properties']
+        else:
+            # Cache miss - get from graph service and cache
+            self.logger.debug("Cache miss - fetching types and properties")
+            available_types = graph_service.get_available_types()
+            available_properties = graph_service.get_available_properties(selected_class)
+
+            # Cache the results
+            catalog_cache.cache_types_and_properties(available_types, available_properties, user_org)
 
         context.update({
             'available_classes': {item['uri']: {'name': item['display_name'], 'entity_count': item['count']}
@@ -104,18 +120,46 @@ class CatalogExplorerLiteralsView(LoginRequiredMixin, TemplateView):
 
         # Get literal values for this property
         graph_service = GraphSearchService(user=request.user)
+        catalog_cache = CatalogCacheService()
+
+        # Get user organization for cache scoping
+        user_org = request.user.organization.code if hasattr(request.user, 'organization') and request.user.organization else None
 
         try:
             # Calculate offset for database-level pagination
             offset = (page - 1) * per_page
 
-            literals_data = graph_service.browse_property_values(
-                property_uri=property_uri,
-                class_uri=class_uri if class_uri else None,
-                search_term=search_term if search_term else None,
-                offset=offset,
-                limit=per_page
+            # Try to get cached search results first
+            cache_key_params = f"{property_uri}_{class_uri}_{search_term}_{offset}_{per_page}"
+            cached_results = catalog_cache.get_cached_search_results(
+                query=cache_key_params,
+                property_name=property_uri,
+                selected_class=class_uri or '',
+                user_org=user_org
             )
+
+            if cached_results:
+                logger.debug(f"Using cached search results for {property_uri}")
+                literals_data = cached_results['results']
+            else:
+                # Cache miss - get from graph service
+                logger.debug(f"Cache miss - fetching search results for {property_uri}")
+                literals_data = graph_service.browse_property_values(
+                    property_uri=property_uri,
+                    class_uri=class_uri if class_uri else None,
+                    search_term=search_term if search_term else None,
+                    offset=offset,
+                    limit=per_page
+                )
+
+                # Cache the results
+                catalog_cache.cache_search_results(
+                    query=cache_key_params,
+                    property_name=property_uri,
+                    results=literals_data,
+                    selected_class=class_uri or '',
+                    user_org=user_org
+                )
 
             # Calculate total pages from unique values count
             total_pages = (literals_data['unique_values'] + per_page - 1) // per_page

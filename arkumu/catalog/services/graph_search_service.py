@@ -9,6 +9,7 @@ import logging
 from django.db.models import Q, Count, Prefetch
 from django.core.cache import cache
 from arkumu.metadata.models import Resource, Triple, ResourceType
+from arkumu.cache.services import GraphCacheService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ class GraphSearchService:
     def __init__(self, user=None):
         self.user = user
         self.rdf_type_uri = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+        self.graph_cache = GraphCacheService()
+        self.user_org = user.organization.code if user and hasattr(user, 'organization') and user.organization else None
 
     def get_classes_with_counts(self, limit: int = 50) -> List[Dict]:
         """
@@ -681,3 +684,123 @@ class GraphSearchService:
         except Exception as e:
             logger.error(f"Error browsing entities for class {class_uri}: {e}")
             return []
+
+    def get_entity_relationships_from_cache(self, entity_uri: str) -> Optional[Dict]:
+        """
+        Get entity relationships leveraging cached graph data from OAI operations.
+
+        This method tries to reuse expensive graph traversals that were cached
+        during OAI-PMH metadata generation, avoiding duplicate work.
+        """
+        try:
+            # Try to get relationships from graph cache (possibly from OAI operations)
+            cached_relationships = self.graph_cache.get_entity_relationships_from_graph_cache(
+                entity_uri, self.user_org
+            )
+
+            if cached_relationships:
+                logger.debug(f"Reusing cached graph data for catalog view: {entity_uri}")
+                return self._format_relationships_for_catalog(cached_relationships)
+
+            # If no cached data, we could trigger fresh graph generation
+            # but for now, fall back to regular methods
+            logger.debug(f"No cached graph data available for {entity_uri}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting cached relationships for {entity_uri}: {e}")
+            return None
+
+    def _format_relationships_for_catalog(self, graph_relationships: Dict) -> Dict:
+        """
+        Format cached graph relationships for catalog display.
+
+        Transforms the graph data structure into the format expected by catalog views.
+        """
+        if not graph_relationships:
+            return {}
+
+        # Transform the cached graph data into catalog-friendly format
+        formatted = {
+            'incoming_relationships': [],
+            'outgoing_relationships': [],
+            'properties': {},
+            'connected_entities_count': 0
+        }
+
+        # Extract incoming relationships
+        for rel in graph_relationships.get('incoming', []):
+            formatted['incoming_relationships'].append({
+                'property': rel.get('property', ''),
+                'entity_uri': rel.get('source_uri', ''),
+                'entity_title': rel.get('source_title', 'Unknown')
+            })
+
+        # Extract outgoing relationships
+        for rel in graph_relationships.get('outgoing', []):
+            formatted['outgoing_relationships'].append({
+                'property': rel.get('property', ''),
+                'entity_uri': rel.get('target_uri', ''),
+                'entity_title': rel.get('target_title', 'Unknown')
+            })
+
+        # Extract literal properties
+        for prop_uri, values in graph_relationships.get('literals', {}).items():
+            prop_name = prop_uri.split('/')[-1].replace('-', '_')
+            formatted['properties'][prop_name] = values
+
+        # Count connected entities
+        formatted['connected_entities_count'] = (
+            len(formatted['incoming_relationships']) +
+            len(formatted['outgoing_relationships'])
+        )
+
+        return formatted
+
+    def get_available_types(self) -> List[Dict]:
+        """
+        Get available types with caching support.
+
+        This method checks if types data is already available in cache
+        before performing expensive database queries.
+        """
+        # Try to leverage any cached type information
+        cache_key = f"catalog_types_{self.user_org}"
+        cached_types = cache.get(cache_key)
+
+        if cached_types:
+            logger.debug("Using cached available types")
+            return cached_types
+
+        # Fallback to original method
+        logger.debug("Cache miss - fetching available types from database")
+        types = self.get_classes_with_counts()
+
+        # Cache for future use
+        cache.set(cache_key, types, 12 * 3600)  # 12 hours
+
+        return types
+
+    def get_available_properties(self, selected_class: str = '') -> List[Dict]:
+        """
+        Get available properties with caching support.
+
+        This method checks if properties data is already available in cache
+        before performing expensive database queries.
+        """
+        # Try to leverage any cached property information
+        cache_key = f"catalog_properties_{selected_class}_{self.user_org}"
+        cached_properties = cache.get(cache_key)
+
+        if cached_properties:
+            logger.debug(f"Using cached available properties for class: {selected_class}")
+            return cached_properties
+
+        # Fallback to original method
+        logger.debug(f"Cache miss - fetching available properties for class: {selected_class}")
+        properties = self.get_properties_for_class(selected_class) if selected_class else []
+
+        # Cache for future use
+        cache.set(cache_key, properties, 6 * 3600)  # 6 hours
+
+        return properties
