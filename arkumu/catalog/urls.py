@@ -38,7 +38,7 @@ urlpatterns = [
     path('org/<str:org_code>/', HarmonizedResourceListView.as_view(), name='org_resources'),
     
     # Design showcase pages with local catalog templates - login required
-    path('search_cards', login_required(DesignSearch.search_cards), name='search_cards'),
+    path('search_cards', login_required(Card.search_cards), name='search_cards'),
     path('projekt', login_required(ProjektShow.projekt), name='projekt'),
     path('design/', login_required(TemplateView.as_view(template_name="catalog/design.html")), name='design'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
