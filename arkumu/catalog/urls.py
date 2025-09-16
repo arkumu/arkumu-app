@@ -8,7 +8,7 @@ from .views import (
     HarmonizedResourceDetailView,
     HarmonizedSearchView,
     LiveSearchFilterView,
-    DesignSearch,
+    Card,
     ProjektShow
 )
 from .views_explorer import (
