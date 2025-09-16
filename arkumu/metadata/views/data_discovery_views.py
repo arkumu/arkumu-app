@@ -251,6 +251,22 @@ def link_file_to_resource(request):
             s3_file.save()
             logger.warning(f"No project entity found for resource {resource.value}, linked directly to resource")
 
+        # Trigger OAI-PMH cache warming for the affected resource
+        try:
+            # Get the final linked resource (project entity or fallback resource)
+            final_resource = s3_file.related_resource
+            if final_resource and final_resource.organization:
+                from arkumu.oaipmh.tasks import warm_resource_cache
+                warm_resource_cache.schedule(
+                    args=(final_resource.uri, final_resource.organization.code),
+                    delay=10
+                )
+                logger.info(f"Scheduled OAI-PMH cache warming for resource {final_resource.uri}")
+        except ImportError:
+            logger.warning("Could not import OAI-PMH cache warming task")
+        except Exception as e:
+            logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+
         # Return updated files list for HTMX or redirect for regular requests
         if request.headers.get('HX-Request'):
             return _get_files_list_response(request)
@@ -414,7 +430,18 @@ def batch_link_files(request):
                 logger.error(f"Error processing {s3_file.file_name}: {str(e)}")
 
         message = f'Batch processing complete. Processed: {processed}, Linked: {linked}, Ambiguous: {ambiguous}, Errors: {errors}'
-        
+
+        # Trigger OAI-PMH cache warming for affected resources if any files were linked
+        if linked > 0:
+            try:
+                from arkumu.oaipmh.tasks import warm_popular_records
+                warm_popular_records.schedule(delay=30)  # Small delay to let DB commit
+                logger.info(f"Scheduled OAI-PMH cache warming after linking {linked} files")
+            except ImportError:
+                logger.warning("Could not import OAI-PMH cache warming task")
+            except Exception as e:
+                logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+
         if request.headers.get('HX-Request'):
             # Clear select all state after batch operation
             from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
@@ -575,7 +602,18 @@ def batch_unlink_files(request):
                 logger.error(f"Error processing {s3_file.file_name}: {str(e)}")
 
         message = f'Batch unlinking complete. Processed: {processed}, Unlinked: {unlinked}, Errors: {errors}'
-        
+
+        # Trigger OAI-PMH cache warming for affected resources if any files were unlinked
+        if unlinked > 0:
+            try:
+                from arkumu.oaipmh.tasks import warm_popular_records
+                warm_popular_records.schedule(delay=30)  # Small delay to let DB commit
+                logger.info(f"Scheduled OAI-PMH cache warming after unlinking {unlinked} files")
+            except ImportError:
+                logger.warning("Could not import OAI-PMH cache warming task")
+            except Exception as e:
+                logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+
         if request.headers.get('HX-Request'):
             # Clear select all state after batch operation
             from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
