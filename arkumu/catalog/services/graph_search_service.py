@@ -335,7 +335,7 @@ class GraphSearchService:
                 'name': cls['name'],
                 'display_name': cls['name'],
                 'uri': cls['uri'],
-                'count': cls['entity_count']
+                'entity_count': cls['entity_count']  # Keep consistent field name
             })
 
         return results
