@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlparse
 
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
+from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.utils import timezone
 import xml.etree.ElementTree as ET
@@ -1311,6 +1312,7 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
 
 @require_GET
+@login_required
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
     try:
         verb = request.GET.get("verb", "").strip()
