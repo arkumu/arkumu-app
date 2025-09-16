@@ -5,24 +5,39 @@
     <aside class="w-64 flex-shrink-0">
         <div class="sticky top-2 space-y-3 max-h-screen overflow-y-auto pb-4">
 
-            <!-- Classes -->
+            <!-- Organizations -->
             <div class="border rounded bg-white p-3">
-                <h3 class="font-bold text-sm mb-2">Classes</h3>
-                <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
-                    {% for class_uri, class_info in available_classes.items %}
+                <h3 class="font-bold text-sm mb-2">Organizations</h3>
+                <div class="space-y-1 max-h-48 overflow-y-auto text-xs">
                     <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
-                        <input type="radio" name="class" value="{{ class_uri }}"
-                               {% if selected_class == class_uri %}checked{% endif %}
-                               hx-get="{% url 'catalog:explorer_properties' %}"
+                        <input type="radio" name="organization" value=""
+                               {% if not selected_organization %}checked{% endif %}
+                               hx-get="{% url 'catalog:explorer' %}"
                                hx-trigger="change"
-                               hx-vals='{"class": "{{ class_uri }}"}'
-                               hx-target="#properties-section"
+                               hx-vals='{"organization": ""}'
+                               hx-target="#classes-section"
                                class="mr-2">
-                        <span class="flex-1 truncate">{{ class_info.name }}</span>
-                        <span class="text-gray-500">({{ class_info.entity_count }})</span>
+                        <span class="flex-1 truncate text-gray-600">All Organizations</span>
+                    </label>
+                    {% for org_code, org_info in available_organizations.items %}
+                    <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+                        <input type="radio" name="organization" value="{{ org_code }}"
+                               {% if selected_organization == org_code %}checked{% endif %}
+                               hx-get="{% url 'catalog:explorer' %}"
+                               hx-trigger="change"
+                               hx-vals='{"organization": "{{ org_code }}"}'
+                               hx-target="#classes-section"
+                               class="mr-2">
+                        <span class="flex-1 truncate">{{ org_info.name }}</span>
+                        <span class="text-gray-500">({{ org_info.resource_count }})</span>
                     </label>
                     {% endfor %}
                 </div>
+            </div>
+
+            <!-- Classes Section (loaded on demand) -->
+            <div id="classes-section">
+                {% include 'catalog/partials/classes_list.html' %}
             </div>
 
             <!-- Properties Section (loaded on demand) -->

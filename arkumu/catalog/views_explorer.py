@@ -35,33 +35,47 @@ class CatalogExplorerView(LoginRequiredMixin, TemplateView):
         query = self.request.GET.get('q', '')
         property_name = self.request.GET.get('property', 'title')  # Default to title search
         selected_class = self.request.GET.get('class', '')
+        selected_organization = self.request.GET.get('organization', '')
         page = self.request.GET.get('page', 1)
 
         # Get user organization for cache scoping
         user_org = self.request.user.organization.code if hasattr(self.request.user, 'organization') and self.request.user.organization else None
 
-        # Try to get available types and properties from cache first
-        cached_types_props = catalog_cache.get_cached_types_and_properties(user_org)
-        if cached_types_props:
-            self.logger.debug("Using cached types and properties")
-            available_types = cached_types_props['types']
-            available_properties = cached_types_props['properties']
-        else:
-            # Cache miss - get from graph service and cache
-            self.logger.debug("Cache miss - fetching types and properties")
-            available_types = graph_service.get_available_types()
+        # For organization-specific requests, always fetch fresh data
+        # The individual methods have their own organization-aware caching
+        if selected_organization:
+            self.logger.debug("Organization selected - fetching organization-specific types and properties")
+            available_types = graph_service.get_available_types(organization_code=selected_organization)
             available_properties = graph_service.get_available_properties(selected_class)
+        else:
+            # Try to get available types, properties from cache first (all organizations)
+            cached_types_props = catalog_cache.get_cached_types_and_properties(user_org)
+            if cached_types_props:
+                self.logger.debug("Using cached types and properties")
+                available_types = cached_types_props['types']
+                available_properties = cached_types_props['properties']
+            else:
+                # Cache miss - get from graph service and cache
+                self.logger.debug("Cache miss - fetching types and properties")
+                available_types = graph_service.get_available_types(organization_code=None)
+                available_properties = graph_service.get_available_properties(selected_class)
 
-            # Cache the results
-            catalog_cache.cache_types_and_properties(available_types, available_properties, user_org)
+                # Cache the results
+                catalog_cache.cache_types_and_properties(available_types, available_properties, user_org)
+
+        # Get available organizations (cached separately as it's organization-independent)
+        available_organizations = graph_service.get_available_organizations()
 
         context.update({
-            'available_classes': {item['uri']: {'name': item['display_name'], 'entity_count': item['count']}
+            'available_classes': {item['uri']: {'name': item['name'], 'entity_count': item['entity_count']}
                                  for item in available_types},
-            'available_properties': {item['uri']: {'name': item['display_name'], 'usage_count': item['usage_count']}
+            'available_properties': {item['uri']: {'name': item.get('display_name', item.get('name', item['uri'])), 'usage_count': item.get('usage_count', 0)}
                                    for item in available_properties},
+            'available_organizations': {item['code']: {'name': item['display_name'], 'resource_count': item['resource_count']}
+                                      for item in available_organizations},
             'selected_class': selected_class,
             'selected_property': property_name,
+            'selected_organization': selected_organization,
         })
 
         # Show initial message - this is for browsing literal values by class/property
@@ -70,12 +84,19 @@ class CatalogExplorerView(LoginRequiredMixin, TemplateView):
             'show_initial_message': True
         })
 
-        # For HTMX requests, return just the explorer content section
+        # For HTMX requests, check if only classes section should be returned
         if self.request.headers.get('HX-Request'):
-            content_html = render_to_string('catalog/partials/explorer_content.html', context, request=self.request)
-            return HttpResponse(content_html)
+            if self.request.headers.get('HX-Target') == 'classes-section':
+                # Return only classes list when organization changes
+                classes_html = render_to_string('catalog/partials/classes_list.html', context, request=self.request)
+                return HttpResponse(classes_html)
+            else:
+                # Return full explorer content for other HTMX requests
+                content_html = render_to_string('catalog/partials/explorer_content.html', context, request=self.request)
+                return HttpResponse(content_html)
 
         return context
+
 
 
 class CatalogExplorerPropertiesView(LoginRequiredMixin, TemplateView):
@@ -111,6 +132,7 @@ class CatalogExplorerLiteralsView(LoginRequiredMixin, TemplateView):
         """Return literal values HTML for the selected property."""
         property_uri = request.GET.get('property', '')
         class_uri = request.GET.get('class', '')
+        organization_code = request.GET.get('organization', '')
         search_term = request.GET.get('search', '')
         page = int(request.GET.get('page', 1))
         per_page = 20  # Show 20 items per page with proper pagination
@@ -130,7 +152,7 @@ class CatalogExplorerLiteralsView(LoginRequiredMixin, TemplateView):
             offset = (page - 1) * per_page
 
             # Try to get cached search results first
-            cache_key_params = f"{property_uri}_{class_uri}_{search_term}_{offset}_{per_page}"
+            cache_key_params = f"{property_uri}_{class_uri}_{organization_code}_{search_term}_{offset}_{per_page}"
             cached_results = catalog_cache.get_cached_search_results(
                 query=cache_key_params,
                 property_name=property_uri,
@@ -139,14 +161,15 @@ class CatalogExplorerLiteralsView(LoginRequiredMixin, TemplateView):
             )
 
             if cached_results:
-                logger.debug(f"Using cached search results for {property_uri}")
+                self.logger.debug(f"Using cached search results for {property_uri}")
                 literals_data = cached_results['results']
             else:
                 # Cache miss - get from graph service
-                logger.debug(f"Cache miss - fetching search results for {property_uri}")
+                self.logger.debug(f"Cache miss - fetching search results for {property_uri}")
                 literals_data = graph_service.browse_property_values(
                     property_uri=property_uri,
                     class_uri=class_uri if class_uri else None,
+                    organization_code=organization_code if organization_code else None,
                     search_term=search_term if search_term else None,
                     offset=offset,
                     limit=per_page

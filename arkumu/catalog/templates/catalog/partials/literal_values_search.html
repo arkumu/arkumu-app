@@ -13,7 +13,7 @@
                value="{{ search_term }}"
                hx-get="{% url 'catalog:explorer_literals' %}"
                hx-trigger="input changed delay:300ms, keyup changed delay:300ms"
-               hx-include="[name='class']:checked"
+               hx-include="[name='class']:checked, [name='organization']:checked"
                hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}"}'
                hx-target="#literals-results"
                hx-swap="innerHTML focus-scroll:false"

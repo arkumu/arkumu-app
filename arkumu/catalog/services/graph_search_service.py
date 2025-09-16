@@ -32,30 +32,37 @@ class GraphSearchService:
         self.graph_cache = GraphCacheService()
         self.user_org = user.organization.code if user and hasattr(user, 'organization') and user.organization else None
 
-    def get_classes_with_counts(self, limit: int = 50) -> List[Dict]:
+    def get_classes_with_counts(self, organization_code: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """
         Get all classes with entity counts and sample properties.
 
         Returns:
             List of classes with their entity counts and top properties
         """
-        cache_key = 'catalog:classes:overview'
+        cache_key = f'catalog:classes:overview:{organization_code or "all"}'
         cached = cache.get(cache_key)
         if cached:
             return cached
 
         # Get classes with entity counts using efficient aggregation
         # Only show classes that have canonical URIs (harmonized catalog data)
+        entity_filter = Q(
+            object_triples__predicate__uri=self.rdf_type_uri,
+            object_triples__subject__resource_type=ResourceType.ENTITY,
+            object_triples__object__canonical_uri__isnull=False  # Ensure the class has canonical URI
+        )
+
+        # Add organization filter if specified
+        if organization_code:
+            entity_filter &= Q(object_triples__subject__organization__code=organization_code)
+
         classes = Resource.objects.filter(
             resource_type=ResourceType.CLASS,
             canonical_uri__isnull=False
         ).annotate(
             entity_count=Count(
                 'object_triples__subject',
-                filter=Q(
-                    object_triples__predicate__uri=self.rdf_type_uri,
-                    object_triples__subject__resource_type=ResourceType.ENTITY
-                ),
+                filter=entity_filter,
                 distinct=True
             )
         ).filter(entity_count__gt=0).order_by('-entity_count')[:limit]
@@ -73,7 +80,7 @@ class GraphSearchService:
         cache.set(cache_key, results, 300)  # Cache for 5 minutes
         return results
 
-    def get_properties_for_class(self, class_uri: str, limit: int = 30) -> List[Dict]:
+    def get_properties_for_class(self, class_uri: str, limit: int = 30, organization_code: str = None) -> List[Dict]:
         """
         Get all properties used by entities of a specific class.
 
@@ -313,13 +320,13 @@ class GraphSearchService:
             'relationships': relationships
         }
 
-    def get_available_types(self, limit: int = 50) -> List[Dict]:
+    def get_available_types(self, organization_code: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """
         Get available entity types (classes) with counts.
 
         Alias for get_classes_with_counts for backward compatibility.
         """
-        classes = self.get_classes_with_counts(limit=limit)
+        classes = self.get_classes_with_counts(organization_code=organization_code, limit=limit)
 
         # Transform to expected format
         results = []
@@ -487,14 +494,17 @@ class GraphSearchService:
         return results
 
     def browse_property_values(self, property_uri: str, class_uri: Optional[str] = None,
-                              search_term: Optional[str] = None, offset: int = 0, limit: int = 50) -> Dict:
+                              organization_code: Optional[str] = None, search_term: Optional[str] = None,
+                              offset: int = 0, limit: int = 50) -> Dict:
         """
         Browse literal values for a property with optional search filtering.
 
         Args:
             property_uri: URI of the property to browse
             class_uri: Optional class filter
+            organization_code: Optional organization filter
             search_term: Optional search term to filter values
+            offset: Database-level pagination offset
             limit: Maximum results
 
         Returns:
@@ -513,6 +523,10 @@ class GraphSearchService:
                 object__canonical_uri=class_uri
             ).values('subject_id')
             base_query = base_query.filter(subject_id__in=entity_subquery)
+
+        # Apply organization filter
+        if organization_code:
+            base_query = base_query.filter(subject__organization__code=organization_code)
 
         # Apply search filter using trigram index for efficient text search
         if search_term:
@@ -813,3 +827,57 @@ class GraphSearchService:
         cache.set(cache_key, properties, 6 * 3600)  # 6 hours
 
         return properties
+
+    def get_available_organizations(self) -> List[Dict]:
+        """
+        Get available organizations with resource counts, cached.
+        """
+        cache_key = "catalog_organizations_all"
+        cached_orgs = cache.get(cache_key)
+
+        if cached_orgs:
+            logger.debug("Using cached available organizations")
+            return cached_orgs
+
+        logger.debug("Cache miss - fetching available organizations")
+
+        try:
+            from arkumu.users.models import Organization
+
+            # Debug: Check HMT specifically
+            hmt_org = Organization.objects.filter(code='hmt').first()
+            if hmt_org:
+                hmt_total_resources = hmt_org.resource_set.count()
+                hmt_canonical_resources = hmt_org.resource_set.filter(canonical_uri__isnull=False).count()
+                logger.debug(f"HMT has {hmt_total_resources} total resources, {hmt_canonical_resources} with canonical URIs")
+
+            # Get organizations that have resources with canonical URIs (harmonized data)
+            logger.debug("Fetching organizations with canonical URIs only")
+            orgs_with_counts = Organization.objects.filter(
+                resource__isnull=False,
+                resource__canonical_uri__isnull=False
+            ).annotate(
+                resource_count=Count('resource', filter=Q(resource__canonical_uri__isnull=False), distinct=True)
+            ).filter(resource_count__gt=0).order_by('-resource_count', 'name')
+
+            logger.debug(f"Found {orgs_with_counts.count()} organizations with canonical URIs")
+
+            organizations = []
+            for org in orgs_with_counts:
+                logger.debug(f"Organization: {org.code} ({org.name}) - {org.resource_count} canonical resources")
+                organizations.append({
+                    'code': org.code,
+                    'name': org.name,
+                    'display_name': f"{org.name} ({org.code})",
+                    'resource_count': org.resource_count
+                })
+
+            # Cache for 6 hours
+            cache.set(cache_key, organizations, 6 * 3600)
+            logger.debug(f"Cached {len(organizations)} organizations")
+
+            return organizations
+
+        except Exception as e:
+            logger.error(f"Error getting available organizations: {e}")
+            return []

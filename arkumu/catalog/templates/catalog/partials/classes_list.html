@@ -1,0 +1,22 @@
+{% load catalog_tags %}
+{% if available_classes %}
+<div class="border rounded bg-white p-3">
+    <h3 class="font-bold text-sm mb-2">Classes</h3>
+    <div class="space-y-1 max-h-64 overflow-y-auto text-xs">
+        {% for class_uri, class_info in available_classes.items %}
+        <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+            <input type="radio" name="class" value="{{ class_uri }}"
+                   {% if selected_class == class_uri %}checked{% endif %}
+                   hx-get="{% url 'catalog:explorer_properties' %}"
+                   hx-trigger="change"
+                   hx-include="[name='organization']:checked"
+                   hx-vals='{"class": "{{ class_uri }}"}'
+                   hx-target="#properties-section"
+                   class="mr-2">
+            <span class="flex-1 truncate">{{ class_info.name }}</span>
+            <span class="text-gray-500">({{ class_info.entity_count }})</span>
+        </label>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
