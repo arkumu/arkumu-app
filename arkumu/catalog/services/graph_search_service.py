@@ -92,9 +92,18 @@ class GraphSearchService:
         # Get ALL entities of this class for accurate counts
         # Note: triples still use the raw URI, not canonical URI
         try:
-            class_resource = Resource.objects.get(canonical_uri=class_uri)
-            class_raw_uri = class_resource.uri
-        except Resource.DoesNotExist:
+            # Scope to user's organization to handle duplicate canonical URIs
+            query_filter = {'canonical_uri': class_uri}
+            if self.user and hasattr(self.user, 'organization') and self.user.organization:
+                query_filter['organization'] = self.user.organization
+
+            class_resource = Resource.objects.filter(**query_filter).first()
+            if class_resource:
+                class_raw_uri = class_resource.uri
+            else:
+                class_raw_uri = class_uri
+        except Exception as e:
+            logger.warning(f"Error getting class resource for {class_uri}: {e}")
             class_raw_uri = class_uri
 
         all_entity_ids = Triple.objects.filter(
