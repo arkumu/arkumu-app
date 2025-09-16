@@ -289,3 +289,102 @@ def clear_expired_cache():
 
     except Exception as e:
         logger.error(f"❌ CLEANUP: Error during cache cleanup: {str(e)}")
+
+
+@db_task(retries=2, retry_delay=30)
+def batch_link_files_task(file_ids, organization_code, user_id):
+    """
+    Background task for batch linking files to resources.
+    """
+    try:
+        from arkumu.storage.models import S3FileObject
+        from arkumu.metadata.models.resource import Resource
+        from arkumu.metadata.services.resource_traversal_service import ResourceTraversalService
+        from django.db.models import Q
+
+        logger.info(f"🔗 BATCH LINK TASK: Starting for {len(file_ids)} files (org: {organization_code})")
+
+        # Get the files
+        selected_files = S3FileObject.objects.filter(id__in=file_ids)
+
+        processed = 0
+        linked = 0
+        ambiguous = 0
+        errors = 0
+        affected_resources = set()
+
+        for s3_file in selected_files:
+            processed += 1
+            try:
+                query = s3_file.file_name
+                logger.debug(f"🔗 Processing file {s3_file.file_name}")
+
+                # Use precise endswith matching
+                matching_resources = Resource.objects.filter(
+                    Q(value__iendswith=query) | Q(uri__iendswith=query)
+                ).distinct()
+
+                if matching_resources.count() == 1:
+                    # Single match - find project entity
+                    resource = matching_resources.first()
+                    traversal_service = ResourceTraversalService()
+                    project_entity = traversal_service.get_project_entity_for_resource(resource)
+
+                    if project_entity:
+                        s3_file.related_resource = project_entity
+                        s3_file.save()
+                        linked += 1
+                        affected_resources.add((project_entity.uri, project_entity.organization.code))
+                        logger.info(f"Linked {s3_file.file_name} to {project_entity.uri}")
+
+                elif matching_resources.count() > 1:
+                    # Multiple matches - try deduplication
+                    traversal_service = ResourceTraversalService()
+                    project_entities = []
+                    for matched_resource in matching_resources:
+                        project_entity = traversal_service.get_project_entity_for_resource(matched_resource)
+                        if project_entity:
+                            project_entities.append(project_entity)
+
+                    # Deduplicate project entities
+                    unique_projects = list({p.id: p for p in project_entities}.values())
+
+                    if len(unique_projects) == 1:
+                        project_entity = unique_projects[0]
+                        s3_file.related_resource = project_entity
+                        s3_file.save()
+                        linked += 1
+                        affected_resources.add((project_entity.uri, project_entity.organization.code))
+                        logger.info(f"Resolved {s3_file.file_name} to {project_entity.uri}")
+                    else:
+                        ambiguous += 1
+                        logger.info(f"Ambiguous match for {s3_file.file_name}: {len(unique_projects)} projects")
+
+            except Exception as e:
+                errors += 1
+                logger.error(f"Error processing {s3_file.file_name}: {str(e)}")
+
+        # Warm cache for affected resources
+        if linked > 0:
+            logger.info(f"🔥 Warming cache for {len(affected_resources)} resources")
+            for uri, org_code in affected_resources:
+                try:
+                    resource = Resource.objects.get(uri=uri, organization__code=org_code)
+                    for metadata_prefix in ['oai_dc', 'mets']:
+                        OAIPMHCacheService.warm_record(resource, metadata_prefix)
+                except Exception as e:
+                    logger.error(f"Cache warming error for {uri}: {str(e)}")
+
+        logger.info(f"✅ BATCH LINK TASK: Complete. Processed: {processed}, Linked: {linked}, Ambiguous: {ambiguous}, Errors: {errors}")
+
+        return {
+            'processed': processed,
+            'linked': linked,
+            'ambiguous': ambiguous,
+            'errors': errors,
+            'resources_warmed': len(affected_resources)
+        }
+
+    except Exception as e:
+        logger.error(f"❌ BATCH LINK TASK: Failed - {str(e)}")
+        raise
