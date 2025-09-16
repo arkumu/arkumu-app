@@ -752,6 +752,74 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
                     "http://arkumu.org/data/types/projekt"
                 )
 
+        # Add fileSec and structMap sections for file integration
+        try:
+            from arkumu.storage.models.s3_file_objects import S3FileObject
+
+            # Get files linked to this project resource
+            project_files = S3FileObject.objects.filter(related_resource=resource).order_by("s3_key")[:50]  # Limit to 50 files
+
+            if project_files:
+                # Add fileSec section
+                file_sec = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}fileSec")
+                file_grp = ET.SubElement(file_sec, "{http://www.loc.gov/METS/}fileGrp")
+                file_grp.set("USE", "DEFAULT")
+
+                # Add structMap section
+                struct_map = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}structMap")
+                struct_map.set("TYPE", "LOGICAL")
+
+                # Main project div
+                main_div = ET.SubElement(struct_map, "{http://www.loc.gov/METS/}div")
+                main_div.set("TYPE", "project")
+
+                # Set project label from graph metadata if available
+                project_title = None
+                for edge in edges:
+                    if edge.get("subject_id") == root_id:
+                        predicate_canonical = edge.get("predicate_canonical") or edge.get("predicate_uri")
+                        if predicate_canonical == "http://arkumu.org/data/properties/bevorzugter-titel":
+                            if edge.get("object_value"):
+                                project_title = str(edge.get("object_value"))
+                                break
+
+                if project_title:
+                    main_div.set("LABEL", project_title)
+                else:
+                    main_div.set("LABEL", f"Project {resource.uri.split('/')[-1] if resource.uri else 'Unknown'}")
+
+                # Add files to both fileSec and structMap
+                file_counter = 1
+                for s3_file in project_files:
+                    # Add to fileSec
+                    file_elem = ET.SubElement(file_grp, "{http://www.loc.gov/METS/}file")
+                    file_id = f"FILE_{file_counter:03d}"
+                    file_elem.set("ID", file_id)
+                    file_elem.set("MIMETYPE", s3_file.content_type or "application/octet-stream")
+                    file_elem.set("SIZE", str(s3_file.file_size_bytes))
+
+                    # Add FLocat pointing to the S3 key path (for Rosetta NFS access)
+                    flocat = ET.SubElement(file_elem, "{http://www.loc.gov/METS/}FLocat")
+                    flocat.set("LOCTYPE", "OTHER")
+                    flocat.set("OTHERLOCTYPE", "FILESYSTEM")  # Indicates NFS/filesystem access
+                    flocat.set("{http://www.w3.org/1999/xlink}href", s3_file.s3_key)  # Relative path for both S3 and NFS
+                    flocat.set("{http://www.w3.org/1999/xlink}type", "simple")
+
+                    # Add to structMap
+                    file_div = ET.SubElement(main_div, "{http://www.loc.gov/METS/}div")
+                    file_div.set("TYPE", "file")
+                    file_div.set("LABEL", s3_file.file_name)
+
+                    # Link to file via fptr
+                    fptr = ET.SubElement(file_div, "{http://www.loc.gov/METS/}fptr")
+                    fptr.set("FILEID", file_id)
+
+                    file_counter += 1
+
+        except Exception as e:
+            # If file integration fails, don't break the entire METS response
+            pass
+
     return metadata
 
 

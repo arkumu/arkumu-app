@@ -16,6 +16,7 @@ from arkumu.users.mixins import general_login_required
 from arkumu.storage.models import S3FileObject, UploadSession
 from arkumu.metadata.models import Resource
 from arkumu.metadata.services.metatdata_s3_mapping.map_resources_to_files import FileResourceMatcherService
+from arkumu.metadata.services.resource_traversal_service import ResourceTraversalService
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.storage.services.s3_sync_service import S3SyncService
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
@@ -235,9 +236,20 @@ def link_file_to_resource(request):
         s3_file = get_object_or_404(S3FileObject, id=file_id)
         resource = get_object_or_404(Resource, id=resource_id)
 
-        # Link them
-        s3_file.related_resource = resource
-        s3_file.save()
+        # Find the project entity associated with this resource
+        traversal_service = ResourceTraversalService()
+        project_entity = traversal_service.get_project_entity_for_resource(resource)
+
+        if project_entity:
+            # Link to the project entity instead of the literal/intermediate resource
+            s3_file.related_resource = project_entity
+            s3_file.save()
+            logger.info(f"Linked S3FileObject {s3_file.id} to project entity {project_entity.uri} via resource {resource.value}")
+        else:
+            # No project entity found, fallback to original resource (for backward compatibility)
+            s3_file.related_resource = resource
+            s3_file.save()
+            logger.warning(f"No project entity found for resource {resource.value}, linked directly to resource")
 
         # Return updated files list for HTMX or redirect for regular requests
         if request.headers.get('HX-Request'):
@@ -316,19 +328,42 @@ def batch_link_files(request):
                 ).distinct()
                 
                 if matching_resources.count() == 1:
-                    # Single match - link it
+                    # Single match - find project entity
                     resource = matching_resources.first()
-                    s3_file.related_resource = resource
-                    s3_file.save()
-                    linked += 1
-                    logger.info(f"Linked {s3_file.file_name} to resource {resource.value}")
+                    traversal_service = ResourceTraversalService()
+                    project_entity = traversal_service.get_project_entity_for_resource(resource)
+
+                    if project_entity:
+                        s3_file.related_resource = project_entity
+                        s3_file.save()
+                        linked += 1
+                        logger.info(f"Linked {s3_file.file_name} to project entity {project_entity.uri} via resource {resource.value}")
+                    else:
+                        logger.info(f"No project entity found for {s3_file.file_name} resource {resource.value}, skipping link")
+
                 elif matching_resources.count() > 1:
-                    # Multiple matches - count as ambiguous but link to first one
-                    resource = matching_resources.first()
-                    s3_file.related_resource = resource
-                    s3_file.save()
-                    ambiguous += 1
-                    logger.info(f"Ambiguous match for {s3_file.file_name}: {matching_resources.count()} resources found, linked to {resource.value}")
+                    # Multiple matches - try to find project entities and deduplicate
+                    traversal_service = ResourceTraversalService()
+                    project_entities = []
+                    for matched_resource in matching_resources:
+                        project_entity = traversal_service.get_project_entity_for_resource(matched_resource)
+                        if project_entity:
+                            project_entities.append(project_entity)
+
+                    # Deduplicate project entities
+                    unique_projects = list({p.id: p for p in project_entities}.values())
+
+                    if len(unique_projects) == 1:
+                        # All resources point to same project - link it
+                        project_entity = unique_projects[0]
+                        s3_file.related_resource = project_entity
+                        s3_file.save()
+                        linked += 1
+                        logger.info(f"Resolved ambiguous match for {s3_file.file_name}: {matching_resources.count()} resources but same project {project_entity.uri}")
+                    else:
+                        # Still ambiguous at project level
+                        ambiguous += 1
+                        logger.info(f"Ambiguous match for {s3_file.file_name}: {matching_resources.count()} resources leading to {len(unique_projects)} different projects, no link made")
                 else:
                     # No matches found
                     logger.info(f"No matching resources found for {s3_file.file_name} with query '{query}'")
