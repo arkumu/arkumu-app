@@ -10,6 +10,7 @@ from typing import Dict, Optional, List, Any
 from huey.contrib.djhuey import db_task
 from django.core.cache import cache
 from django.utils import timezone
+from .cache_service import OAIPMHCacheService
 
 try:
     from huey.contrib.djhuey import db_periodic_task, crontab
@@ -41,8 +42,6 @@ def warm_resource_cache(resource_uri: str, organization_code: str):
     """
     try:
         from arkumu.metadata.models.resource import Resource
-        from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
-        from arkumu.oaipmh.views import _build_metadata_element, _build_record_header
 
         logger.info(f"🔥 CACHE WARM: Starting for resource {resource_uri}")
 
@@ -59,73 +58,9 @@ def warm_resource_cache(resource_uri: str, organization_code: str):
 
         timestamp = int(resource.updated_at.timestamp())
 
-        # 1. Warm graph data cache
-        graph_cache_key = _get_cache_key("graph", uri=resource_uri, timestamp=timestamp)
-
-        if not cache.get(graph_cache_key):
-            logger.debug(f"🔥 Building graph cache for {resource_uri}")
-            svc = CanonicalGraphService(org_code=organization_code)
-
-            graph = svc.get_entity_graph(
-                resource_uri,
-                include_incoming=True,
-                expand_neighbors=True,
-                depth=2,
-                predicate_canon_whitelist=[
-                    # Core Dublin Core mappings
-                    "http://arkumu.org/data/properties/bevorzugter-titel",
-                    "http://arkumu.org/data/properties/alternativer-titel",
-                    "http://arkumu.org/data/properties/beschreibung",
-                    "http://arkumu.org/data/properties/kuenstler",
-                    "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels",
-                    "http://arkumu.org/data/properties/schlagwort",
-                    "http://arkumu.org/data/properties/projektkategorie",
-                    "http://arkumu.org/data/properties/projektart",
-                    "http://arkumu.org/data/properties/datensatz-id-beim-einlieferer",
-                    "http://arkumu.org/data/properties/rechtsstatus",
-                    "http://arkumu.org/data/properties/ereignisort",
-                    "http://arkumu.org/data/properties/datensatzerstellung-beim-einlieferer",
-                    "http://arkumu.org/data/properties/akteurin",
-                    "http://arkumu.org/data/properties/urheber",
-                    "http://arkumu.org/data/properties/ausgangsprojekt",
-                    "http://arkumu.org/data/properties/dateiname",
-                    "http://arkumu.org/data/properties/dateipfad",
-                ]
-            )
-            # Cache for 6 hours
-            cache.set(graph_cache_key, graph, 6 * 3600)
-            logger.debug(f"✅ Graph cached for {resource_uri}")
-
-        # 2. Warm OAI-PMH record metadata cache for both formats
+        # Warm cache for both metadata formats using centralized service
         for metadata_prefix in ['oai_dc', 'mets']:
-            record_cache_key = _get_cache_key(
-                "record",
-                uri=resource_uri,
-                metadata_prefix=metadata_prefix,
-                timestamp=timestamp
-            )
-
-            if not cache.get(record_cache_key):
-                logger.debug(f"🔥 Building {metadata_prefix} record cache for {resource_uri}")
-
-                # Build complete record (header + metadata)
-                header_element = _build_record_header(resource)
-                metadata_element = _build_metadata_element(resource, metadata_prefix)
-
-                # Convert to string for caching
-                import xml.etree.ElementTree as ET
-                header_xml = ET.tostring(header_element, encoding='utf-8').decode('utf-8')
-                metadata_xml = ET.tostring(metadata_element, encoding='utf-8').decode('utf-8')
-
-                cached_record = {
-                    'header': header_xml,
-                    'metadata': metadata_xml,
-                    'timestamp': timestamp
-                }
-
-                # Cache for 4 hours
-                cache.set(record_cache_key, cached_record, 4 * 3600)
-                logger.debug(f"✅ {metadata_prefix} record cached for {resource_uri}")
+            OAIPMHCacheService.warm_record(resource, metadata_prefix)
 
         logger.info(f"✅ CACHE WARM: Completed for resource {resource_uri}")
 
@@ -143,9 +78,8 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
     """
     try:
         from arkumu.metadata.models.resource import Resource
-        from arkumu.oaipmh.views import _get_resources_queryset, _build_record_header, _build_metadata_element
+        from arkumu.oaipmh.views import _get_resources_queryset
         from arkumu.oaipmh.resumption import ResumptionTokenService
-        import xml.etree.ElementTree as ET
 
         logger.info(f"🔥 PAGE CACHE: Warming page {offset//100 + 1} for {metadata_prefix}")
 
@@ -180,35 +114,16 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
         # Build page response
         records_data = []
         for resource in resources:
-            # Check individual record cache first
-            timestamp = int(resource.updated_at.timestamp())
-            record_cache_key = _get_cache_key(
-                "record",
-                uri=resource.uri,
-                metadata_prefix=metadata_prefix,
-                timestamp=timestamp
-            )
-
-            cached_record = cache.get(record_cache_key)
+            # Use centralized cache service to get/warm record
+            cached_record = OAIPMHCacheService.get_cached_record(resource, metadata_prefix)
             if cached_record:
                 records_data.append(cached_record)
             else:
-                # Build record if not cached
-                header_element = _build_record_header(resource)
-                metadata_element = _build_metadata_element(resource, metadata_prefix)
-
-                header_xml = ET.tostring(header_element, encoding='utf-8').decode('utf-8')
-                metadata_xml = ET.tostring(metadata_element, encoding='utf-8').decode('utf-8')
-
-                record_data = {
-                    'header': header_xml,
-                    'metadata': metadata_xml,
-                    'timestamp': timestamp
-                }
-                records_data.append(record_data)
-
-                # Cache individual record for future use
-                cache.set(record_cache_key, record_data, 4 * 3600)
+                # Warm cache using centralized service and get result
+                OAIPMHCacheService.warm_record(resource, metadata_prefix)
+                cached_record = OAIPMHCacheService.get_cached_record(resource, metadata_prefix)
+                if cached_record:
+                    records_data.append(cached_record)
 
         # Build resumption token if needed
         resumption_token = None

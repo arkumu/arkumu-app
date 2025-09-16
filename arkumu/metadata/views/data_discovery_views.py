@@ -258,18 +258,18 @@ def link_file_to_resource(request):
             if final_resource and final_resource.organization:
                 logger.debug(f"🔥 SINGLE CACHE DEBUG: Warming cache for {final_resource.uri} (org: {final_resource.organization.code})")
 
-                from arkumu.oaipmh.tasks import warm_resource_cache
-                warm_resource_cache.schedule(
-                    args=(final_resource.uri, final_resource.organization.code),
-                    delay=10
-                )
-                logger.info(f"Scheduled OAI-PMH cache warming for resource {final_resource.uri}")
+                from arkumu.oaipmh.cache_service import OAIPMHCacheService
+                # Warm cache for both metadata formats using centralized service
+                for metadata_prefix in ['oai_dc', 'mets']:
+                    OAIPMHCacheService.warm_record(final_resource, metadata_prefix)
+
+                logger.info(f"Warmed OAI-PMH cache for resource {final_resource.uri}")
             else:
                 logger.debug(f"🔥 SINGLE CACHE DEBUG: Skipping cache warming - resource has no organization")
         except ImportError:
-            logger.warning("Could not import OAI-PMH cache warming task")
+            logger.warning("Could not import OAI-PMH cache service")
         except Exception as e:
-            logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+            logger.error(f"Error warming OAI-PMH cache: {str(e)}")
 
         # Return updated files list for HTMX or redirect for regular requests
         if request.headers.get('HX-Request'):
@@ -462,21 +462,29 @@ def batch_link_files(request):
             logger.debug(f"🔥 CACHE WARM DEBUG: Starting cache warming for {len(affected_resources)} affected resources")
 
             try:
-                from arkumu.oaipmh.tasks import warm_popular_records
+                from arkumu.oaipmh.cache_service import OAIPMHCacheService
+                from arkumu.metadata.models.resource import Resource
 
-                # Schedule popular records warming which includes recently updated resources
-                warm_popular_records.schedule(delay=30)
-                logger.info(f"Scheduled OAI-PMH cache warming after linking {linked} files")
-                logger.debug(f"🔥 CACHE WARM DEBUG: Scheduled warm_popular_records task")
-
-                # Debug log the affected resources
+                # Warm cache for each affected resource directly using centralized service
                 for i, (uri, org_code) in enumerate(affected_resources):
-                    logger.debug(f"🔥 CACHE WARM DEBUG: Affected resource {i+1}: {uri} (org: {org_code})")
+                    logger.debug(f"🔥 CACHE WARM DEBUG: Warming resource {i+1}: {uri} (org: {org_code})")
+
+                    try:
+                        resource = Resource.objects.get(uri=uri, organization__code=org_code)
+                        # Warm cache for both metadata formats
+                        for metadata_prefix in ['oai_dc', 'mets']:
+                            OAIPMHCacheService.warm_record(resource, metadata_prefix)
+                    except Resource.DoesNotExist:
+                        logger.warning(f"Resource not found for cache warming: {uri}")
+                    except Exception as resource_error:
+                        logger.error(f"Error warming cache for resource {uri}: {str(resource_error)}")
+
+                logger.info(f"Warmed OAI-PMH cache for {len(affected_resources)} resources after linking {linked} files")
 
             except ImportError:
-                logger.warning("Could not import OAI-PMH cache warming task")
+                logger.warning("Could not import OAI-PMH cache service")
             except Exception as e:
-                logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+                logger.error(f"Error warming OAI-PMH cache: {str(e)}")
         else:
             logger.debug(f"🔥 CACHE WARM DEBUG: No files linked, skipping cache warming")
 
@@ -659,19 +667,29 @@ def batch_unlink_files(request):
             logger.debug(f"🔥 CACHE WARM DEBUG: Starting cache warming for {len(unlinked_resources)} unlinked resources")
 
             try:
-                from arkumu.oaipmh.tasks import warm_popular_records
-                warm_popular_records.schedule(delay=30)  # Small delay to let DB commit
-                logger.info(f"Scheduled OAI-PMH cache warming after unlinking {unlinked} files")
-                logger.debug(f"🔥 CACHE WARM DEBUG: Scheduled warm_popular_records task")
+                from arkumu.oaipmh.cache_service import OAIPMHCacheService
+                from arkumu.metadata.models.resource import Resource
 
-                # Debug log the unlinked resources
+                # Warm cache for each unlinked resource directly using centralized service
                 for i, (uri, org_code) in enumerate(unlinked_resources):
-                    logger.debug(f"🔥 CACHE WARM DEBUG: Unlinked resource {i+1}: {uri} (org: {org_code})")
+                    logger.debug(f"🔥 CACHE WARM DEBUG: Warming unlinked resource {i+1}: {uri} (org: {org_code})")
+
+                    try:
+                        resource = Resource.objects.get(uri=uri, organization__code=org_code)
+                        # Warm cache for both metadata formats
+                        for metadata_prefix in ['oai_dc', 'mets']:
+                            OAIPMHCacheService.warm_record(resource, metadata_prefix)
+                    except Resource.DoesNotExist:
+                        logger.warning(f"Resource not found for cache warming: {uri}")
+                    except Exception as resource_error:
+                        logger.error(f"Error warming cache for resource {uri}: {str(resource_error)}")
+
+                logger.info(f"Warmed OAI-PMH cache for {len(unlinked_resources)} resources after unlinking {unlinked} files")
 
             except ImportError:
-                logger.warning("Could not import OAI-PMH cache warming task")
+                logger.warning("Could not import OAI-PMH cache service")
             except Exception as e:
-                logger.error(f"Error scheduling OAI-PMH cache warming: {str(e)}")
+                logger.error(f"Error warming OAI-PMH cache: {str(e)}")
         else:
             logger.debug(f"🔥 CACHE WARM DEBUG: No files unlinked, skipping cache warming")
 

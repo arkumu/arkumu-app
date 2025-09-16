@@ -17,6 +17,7 @@ from .formats.dublin_core import DublinCoreSerializer, DEFAULT_PREDICATE_MAP, DC
 from .formats.mets import METSSerializer
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
+from .cache_service import OAIPMHCacheService
 
 
 # Minimal repository config (can be moved to settings)
@@ -1399,7 +1400,22 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             if not resource.organization:
                 return _xml_response(_error(oai, "idDoesNotExist", "Resource has no organization"))
 
-            # Build OAI response
+            # Check cache first
+            cached_record = _get_cached_record(resource, metadata_prefix)
+            if cached_record:
+                # Build OAI response from cache
+                get_record = ET.SubElement(oai, "GetRecord")
+                record = ET.SubElement(get_record, "record")
+
+                # Parse cached XML strings back to elements
+                header_elem = ET.fromstring(cached_record['header'])
+                metadata_elem = ET.fromstring(cached_record['metadata'])
+
+                record.append(header_elem)
+                record.append(metadata_elem)
+                return _xml_response(oai)
+
+            # Build OAI response (not cached)
             get_record = ET.SubElement(oai, "GetRecord")
             record = ET.SubElement(get_record, "record")
 
@@ -1410,6 +1426,14 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             # Add metadata
             metadata = _build_metadata_element(resource, metadata_prefix)
             record.append(metadata)
+
+            # Cache the record for future requests
+            _cache_record(
+                resource,
+                metadata_prefix,
+                ET.tostring(header, encoding="unicode"),
+                ET.tostring(metadata, encoding="unicode")
+            )
 
             return _xml_response(oai)
 
