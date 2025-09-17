@@ -40,6 +40,7 @@ export function handleFileViewRequest(event) {
  * @param {string} fileName - The name of the file
  */
 function initializeViewers(fileName) {
+
     const extension = fileName.split('.').pop().toLowerCase();
     
     // Initialize audio player if needed

@@ -12,7 +12,6 @@ export function renderVideoPlayer(fileData) {
             <p>Size: ${fileData.size} bytes</p>
         </div>
     `;
-    console.log("TEST")
     
     modalManager.setContent(html);
 }
