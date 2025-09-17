@@ -1,5 +1,9 @@
 from django.urls import path
 
+from django.views.generic import TemplateView
+
+from django.contrib.auth.decorators import login_required
+
 from .views import file_operations_views, dashboard_views, upload_status_view, file_browser_oob_views, upload_views
 
 app_name = "storage"
@@ -64,4 +68,7 @@ urlpatterns = [
     
     # Simple test endpoint for debugging OOB updates
     path("test/oob-refresh/<str:organization>/", file_browser_oob_views.test_oob_refresh, name="test_oob_refresh"),
+
+    path('create/project/', login_required(TemplateView.as_view(template_name="create/project.html")), name='create/project'),
+
 ] 
