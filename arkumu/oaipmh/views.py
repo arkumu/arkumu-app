@@ -6,7 +6,6 @@ from urllib.parse import unquote, urlparse
 
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
-from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.utils import timezone
 import xml.etree.ElementTree as ET
@@ -19,6 +18,7 @@ from .formats.mets import METSSerializer
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
+from .authentication import oai_authentication_required
 
 
 # Minimal repository config (can be moved to settings)
@@ -227,7 +227,7 @@ def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) ->
 def _list_sets(oai: ET.Element) -> ET.Element:
     list_sets = ET.SubElement(oai, "ListSets")
 
-    # Use organizations as sets
+    # Use organizations as sets - show all organizations
     organizations = Organization.objects.filter(is_active=True).order_by('code')
 
     for org in organizations:
@@ -1291,7 +1291,7 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
 
 @require_GET
-@login_required
+@oai_authentication_required
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
     try:
         verb = request.GET.get("verb", "").strip()
