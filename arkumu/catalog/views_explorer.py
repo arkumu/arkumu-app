@@ -14,88 +14,108 @@ from django.template.loader import render_to_string
 from django.core.paginator import Paginator
 
 from arkumu.catalog.services.graph_search_service import GraphSearchService
-from arkumu.cache.services import CatalogCacheService
+from arkumu.cache.services import CatalogCacheService, SchemaMapCacheService
+from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 
 
-class CatalogExplorerView(LoginRequiredMixin, TemplateView):
+class CatalogExplorerView(LoginRequiredMixin, TemplateView, CSVMappingTemplateHelperMixin):
     """Graph-based data exploration view."""
 
     template_name = 'catalog/explorer_sidebar.html'
     logger = logging.getLogger(__name__)
 
-    def get_context_data(self, **kwargs) -> Dict[str, Any]:
-        """Get context with graph search results."""
-        context = super().get_context_data(**kwargs)
+    def get(self, request, *args, **kwargs):
+        """Handle GET requests, including HTMX requests."""
+        # For HTMX requests, handle them directly
+        if request.headers.get('HX-Request'):
+            return self._handle_htmx_request(request)
 
+        # For normal requests, use the standard template rendering
+        return super().get(request, *args, **kwargs)
+
+    def _handle_htmx_request(self, request):
+        """Handle HTMX requests for dynamic content updates using OOB."""
+        hx_target = request.headers.get('HX-Target', '')
+        selected_organization = request.GET.get('organization', '')
+
+        self.logger.info(f"HTMX Request - Target: '{hx_target}', Organization: '{selected_organization}'")
+
+        # Get context data
+        context = self._get_context_data()
+
+        # For organization changes, use OOB to update multiple sections
+        if hx_target in ['classes-section', '#classes-section']:
+            self.logger.info(f"Returning OOB updates for organization: {selected_organization}")
+
+            # Render the main classes content
+            classes_html = render_to_string('catalog/partials/classes_list.html', context, request=request)
+
+            # Also clear the properties section since organization changed
+            properties_html = ""  # Empty content to clear properties
+
+            # Build manual OOB response using outerHTML to replace entire sections
+            oob_classes = f'<div id="classes-section" hx-swap-oob="outerHTML">{classes_html}</div>'
+            oob_properties = f'<div id="properties-section" hx-swap-oob="outerHTML">{properties_html}</div>'
+
+            response_html = f"{oob_classes}{oob_properties}"
+            self.logger.info(f"Manual OOB response length: {len(response_html)}")
+
+            return HttpResponse(response_html)
+        else:
+            # Return full explorer content for other HTMX requests
+            self.logger.info(f"Returning full explorer content for target: {hx_target}")
+            content_html = render_to_string('catalog/partials/explorer_content.html', context, request=request)
+            return HttpResponse(content_html)
+
+    def _get_context_data(self) -> Dict[str, Any]:
+        """Get context data for both normal and HTMX requests."""
         # Initialize services
-        graph_service = GraphSearchService(user=self.request.user)
-        catalog_cache = CatalogCacheService()
+        schema_cache = SchemaMapCacheService()
 
         # Get query parameters
         query = self.request.GET.get('q', '')
-        property_name = self.request.GET.get('property', 'title')  # Default to title search
+        property_name = self.request.GET.get('property', 'title')
         selected_class = self.request.GET.get('class', '')
         selected_organization = self.request.GET.get('organization', '')
         page = self.request.GET.get('page', 1)
 
-        # Get user organization for cache scoping
-        user_org = self.request.user.organization.code if hasattr(self.request.user, 'organization') and self.request.user.organization else None
+        # Get comprehensive schema map (cached for 10 minutes)
+        schema_map = schema_cache.get_complete_schema_map(selected_organization)
 
-        # For organization-specific requests, always fetch fresh data
-        # The individual methods have their own organization-aware caching
-        if selected_organization:
-            self.logger.debug("Organization selected - fetching organization-specific types and properties")
-            available_types = graph_service.get_available_types(organization_code=selected_organization)
-            available_properties = graph_service.get_available_properties(selected_class)
-        else:
-            # Try to get available types, properties from cache first (all organizations)
-            cached_types_props = catalog_cache.get_cached_types_and_properties(user_org)
-            if cached_types_props:
-                self.logger.debug("Using cached types and properties")
-                available_types = cached_types_props['types']
-                available_properties = cached_types_props['properties']
-            else:
-                # Cache miss - get from graph service and cache
-                self.logger.debug("Cache miss - fetching types and properties")
-                available_types = graph_service.get_available_types(organization_code=None)
-                available_properties = graph_service.get_available_properties(selected_class)
+        # Extract data from schema map for faster access
+        available_organizations = schema_map.get('organizations', {})
+        available_types = list(schema_map.get('classes', {}).values())
 
-                # Cache the results
-                catalog_cache.cache_types_and_properties(available_types, available_properties, user_org)
+        # Get properties for selected class from cache
+        available_properties = []
+        if selected_class and selected_class in schema_map.get('classes', {}):
+            class_info = schema_map['classes'][selected_class]
+            available_properties = list(class_info.get('properties', {}).values())
 
-        # Get available organizations (cached separately as it's organization-independent)
-        available_organizations = graph_service.get_available_organizations()
+        # Log cache performance
+        self.logger.debug(f"Schema map cache: {len(available_types)} classes, "
+                         f"{len(available_properties)} properties for class {selected_class}")
 
-        context.update({
+        return {
             'available_classes': {item['uri']: {'name': item['name'], 'entity_count': item['entity_count']}
                                  for item in available_types},
-            'available_properties': {item['uri']: {'name': item.get('display_name', item.get('name', item['uri'])), 'usage_count': item.get('usage_count', 0)}
+            'available_properties': {item['uri']: {'name': item.get('name', item['uri']), 'usage_count': item.get('usage_count', 0)}
                                    for item in available_properties},
-            'available_organizations': {item['code']: {'name': item['display_name'], 'resource_count': item['resource_count']}
-                                      for item in available_organizations},
+            'available_organizations': available_organizations,
             'selected_class': selected_class,
             'selected_property': property_name,
             'selected_organization': selected_organization,
-        })
-
-        # Show initial message - this is for browsing literal values by class/property
-        context.update({
+            'schema_meta': schema_map.get('meta', {}),
             'has_results': False,
             'show_initial_message': True
-        })
+        }
 
-        # For HTMX requests, check if only classes section should be returned
-        if self.request.headers.get('HX-Request'):
-            if self.request.headers.get('HX-Target') == 'classes-section':
-                # Return only classes list when organization changes
-                classes_html = render_to_string('catalog/partials/classes_list.html', context, request=self.request)
-                return HttpResponse(classes_html)
-            else:
-                # Return full explorer content for other HTMX requests
-                content_html = render_to_string('catalog/partials/explorer_content.html', context, request=self.request)
-                return HttpResponse(content_html)
-
+    def get_context_data(self, **kwargs) -> Dict[str, Any]:
+        """Get context with graph search results using comprehensive schema map."""
+        context = super().get_context_data(**kwargs)
+        context.update(self._get_context_data())
         return context
+
 
 
 
@@ -103,18 +123,32 @@ class CatalogExplorerPropertiesView(LoginRequiredMixin, TemplateView):
     """HTMX endpoint for loading properties of a selected class."""
 
     def get(self, request, *args, **kwargs):
-        """Return properties HTML for the selected class."""
+        """Return properties HTML for the selected class using cached schema map."""
         selected_class = request.GET.get('class', '')
+        selected_organization = request.GET.get('organization', '')
 
         if not selected_class:
             return HttpResponse("")
 
-        # Get properties for this class
-        graph_service = GraphSearchService(user=request.user)
-        available_properties = graph_service.get_available_properties(selected_class)
+        # Get properties from cached schema map or load them on demand
+        schema_cache = SchemaMapCacheService()
+        schema_map = schema_cache.get_complete_schema_map(selected_organization)
+
+        available_properties = []
+        if selected_class in schema_map.get('classes', {}):
+            class_info = schema_map['classes'][selected_class]
+            cached_properties = class_info.get('properties', {})
+
+            if cached_properties:
+                # Properties are cached, use them
+                available_properties = list(cached_properties.values())
+            else:
+                # Properties not cached, load them on demand
+                properties_map = schema_cache._get_properties_for_class_with_orgs(selected_class)
+                available_properties = list(properties_map.values())
 
         context = {
-            'available_properties': {item['uri']: {'name': item['display_name'], 'usage_count': item['usage_count']}
+            'available_properties': {item['uri']: {'name': item.get('name', item['uri']), 'usage_count': item.get('usage_count', 0)}
                                    for item in available_properties},
             'selected_class': selected_class,
             'selected_property': request.GET.get('property', ''),

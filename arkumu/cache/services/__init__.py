@@ -8,12 +8,14 @@ from .base_cache_service import BaseCacheService, CACHE_TTL, CACHE_PREFIXES
 from .graph_cache_service import GraphCacheService
 from .oai_cache_service import OAICacheService
 from .catalog_cache_service import CatalogCacheService
+from .schema_map_cache_service import SchemaMapCacheService
 
 __all__ = [
     'BaseCacheService',
     'GraphCacheService',
     'OAICacheService',
     'CatalogCacheService',
+    'SchemaMapCacheService',
     'CACHE_TTL',
     'CACHE_PREFIXES',
     'CacheManager'
@@ -35,13 +37,15 @@ class CacheManager:
         self.graph = GraphCacheService()
         self.oai = OAICacheService()
         self.catalog = CatalogCacheService()
+        self.schema_map = SchemaMapCacheService()
 
     def get_all_statistics(self):
         """Get statistics from all cache services."""
         return {
             'graph': self.graph.get_cache_statistics(),
             'oai': self.oai.get_cache_statistics(),
-            'catalog': self.catalog.get_cache_statistics()
+            'catalog': self.catalog.get_cache_statistics(),
+            'schema_map': self.schema_map.get_cache_statistics()
         }
 
     def invalidate_resource_globally(self, resource_uri: str):
