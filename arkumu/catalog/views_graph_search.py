@@ -38,12 +38,13 @@ class GraphSearchView(LoginRequiredMixin, View):
             # Initialize cache and graph services
             cache_service = GraphCacheService()
 
-            # Create cache key for this search
-            cache_params_hash = f"projects_{org_code}_50"
+            # Create cache key for cross-institutional search (same as design view)
+            cache_resource_uri = "arkumu:cross_institutional:all_projects"
+            cache_params_hash = "cross_institutional_projects_canonical"
 
             # Try to get cached project graph
             cached_result = cache_service.get_traversal_result(
-                resource_uri=f"search:{org_code}:projects",
+                resource_uri=cache_resource_uri,
                 traversal_type="catalog_search",
                 params_hash=cache_params_hash
             )
@@ -114,9 +115,9 @@ class GraphSearchView(LoginRequiredMixin, View):
 
                 logger.info(f"Built whole graph: {graph['counts']['subjects']} projects, {graph['counts']['edges']} edges")
 
-                # Cache the result for next time
+                # Cache the result for next time (same key as design view)
                 cache_service.cache_traversal_result(
-                    resource_uri=f"search:{org_code}:projects",
+                    resource_uri=cache_resource_uri,
                     traversal_type="catalog_search",
                     params_hash=cache_params_hash,
                     result_data=graph
