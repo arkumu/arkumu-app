@@ -46,6 +46,8 @@ services:
     env_file:
       - ./.envs/.local/.postgres
     # No ports exposed - only accessible internally
+    ports:
+      - "127.0.0.1:8432:5432"
     networks:
       - arkumu_network
 

@@ -77,7 +77,7 @@
     <div class="w-full max-w-7xl mx-auto">
       
       <!-- Year and Institution Header (Componente más grande) -->
-      {% include 'components/text/projekt_title.html' with year_range="Year first Ereignis to latest Ereignis" institution="Hochschule" %}
+      {% include 'components/text/projekt_title.html' with year_range=project.year_range institution=project.institution %}
       
       <!-- Project Content - Two Column Layout on larger screens -->
       <div class="flex flex-col lg:flex-row gap-10 lg:gap-20 mb-16">
@@ -89,40 +89,42 @@
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
                        theme-blue:text-arkumu-blue">
-              Projekttitel
+              {{project.title}}
             </h1>
             <h2 class="text-2xl font-normal mb-2 transition-colors
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
                        theme-blue:text-arkumu-blue">
-              Alternativer Titel
+              {{project.alternative_title}}
             </h2>
             <h3 class="text-xl font-light mb-4 transition-colors
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
                        theme-blue:text-arkumu-blue">
-              Projektuntertitel
+              {{project.subtitle}}
             </h3>
             <p class="text-base font-mono transition-colors
                       text-arkumu-dark
                       theme-dark:text-arkumu-light
                       theme-blue:text-arkumu-blue">
-              Projektart
+              {{project.projektart}}
             </p>
           </div>
           
           <!-- Project Categories con botones pequeños -->
+          {% if project.categories %}
           <div class="mb-12 flex flex-wrap gap-2">
-            {% include 'components/buttons/small_secondary_button.html' with button_text="Projektkategorie" %}
-            {% include 'components/buttons/small_secondary_button.html' with button_text="Projektkategorie" %}
-            {% include 'components/buttons/small_secondary_button.html' with button_text="Projektkategorie" %}
-            {% include 'components/buttons/small_secondary_button.html' with button_text="Projektkategorie" %}
+            {% for category in project.categories %}
+              {% include 'components/buttons/small_secondary_button.html' with button_text=category %}
+            {% endfor %}
           </div>
+          {%endif%}
           
           <!-- Franja separadora con margen -->
           <div class="w-full h-10 mb-12"></div>
           
           <!-- Project Description -->
+          {% if project.descriptions %}
           <div class="mb-12">
             <h2 class="text-3xl font-medium mb-6 transition-colors
                        text-arkumu-dark
@@ -131,42 +133,32 @@
               Projektbeschreibung
             </h2>
             
-            <div class="mb-8">
-              <p class="mb-3 transition-colors
-                        text-arkumu-dark
-                        theme-dark:text-arkumu-light
-                        theme-blue:text-arkumu-blue">
-                Projektbeschreibung 1
-              </p>
-              <a href="#" class="text-sm underline transition-colors
-                               text-arkumu-dark hover:opacity-70
-                               theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                               theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
-                weiterlesen
-              </a>
-            </div>
-            
-            <div class="mb-8">
-              <p class="mb-3 transition-colors
-                        text-arkumu-dark
-                        theme-dark:text-arkumu-light
-                        theme-blue:text-arkumu-blue">
-                Projektbeschreibung 2
-              </p>
-              <a href="#" class="text-sm underline transition-colors
-                               text-arkumu-dark hover:opacity-70
-                               theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                               theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
-                weiterlesen
-              </a>
-            </div>
+            {% for description in project.descriptions %}
+              <div class="mb-8">
+                <p class="mb-3 transition-colors
+                          text-arkumu-dark
+                          theme-dark:text-arkumu-light
+                          theme-blue:text-arkumu-blue">
+                  {{description}}
+                </p>
+                <a href="#" class="text-sm underline transition-colors
+                                text-arkumu-dark hover:opacity-70
+                                theme-dark:text-arkumu-light theme-dark:hover:opacity-70
+                                theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                  weiterlesen
+                </a>
+              </div>
+            {% endfor %}
           </div>
+          {% endif %}
         </div>
         
         <!-- Right Column - Additional Information (1/3) -->
         <div class="lg:w-1/3">
           <!-- Franja decorativa rosa -->
+          {% if project.collection_title or project.catchphrases %}
           <div class="w-full h-full p-6">
+            {% if project.collection_title %}
             <div class="mb-10">
               <p class="mb-2 transition-colors font-medium
                         text-arkumu-dark
@@ -178,10 +170,12 @@
                                text-arkumu-dark hover:opacity-70
                                theme-dark:text-arkumu-light theme-dark:hover:opacity-70
                                theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
-                Sammlungstitel
+                {{project.collection_title}}
               </a>
             </div>
+            {% endif %}
             
+            {% if project.catchphrases %}
             <div class="mb-6">
               <p class="mb-3 font-medium transition-colors
                         text-arkumu-dark
@@ -190,33 +184,19 @@
                 Schlagworte
               </p>
               <div class="flex flex-wrap gap-2">
+                {% for catchphrase in project.catchphrases %}
                 <span class="transition-colors
                            text-arkumu-dark
                            theme-dark:text-arkumu-light
                            theme-blue:text-arkumu-blue">
-                  Schlagwort
+                  {{catchphrase}}
                 </span>
-                <span class="transition-colors
-                           text-arkumu-dark
-                           theme-dark:text-arkumu-light
-                           theme-blue:text-arkumu-blue">
-                  Schlagwort
-                </span>
-                <span class="transition-colors
-                           text-arkumu-dark
-                           theme-dark:text-arkumu-light
-                           theme-blue:text-arkumu-blue">
-                  Schlagwort
-                </span>
-                <span class="transition-colors
-                           text-arkumu-dark
-                           theme-dark:text-arkumu-light
-                           theme-blue:text-arkumu-blue">
-                  Schlagwort
-                </span>
+                {% endfor %}
               </div>
             </div>
+            {% endif %}
           </div>
+          {% endif %}
         </div>
       </div>
       
@@ -256,7 +236,9 @@
       <div class="mt-20">
         {% include 'components/text/text_dotted_line.html' with text="Projekte in Relation" %}
       </div>
-      
+      {{print}}
+      {{print2}}
+      {{print3}}
     </div>
   </main>
 </div>

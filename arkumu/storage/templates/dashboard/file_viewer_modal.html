@@ -4,7 +4,7 @@ Generic file viewer modal content for different file types
 
 <div class="flex items-center justify-between mb-4">
     <h3 class="font-bold text-lg">{{ filename }}</h3>
-    <button class="btn btn-sm btn-circle btn-ghost" onclick="document.getElementById('file-viewer-modal').close()">✕</button>
+    <button id="viewer-modal-above" class="btn btn-sm btn-circle btn-ghost" onclick="document.getElementById('file-viewer-modal').close()">✕</button>
 </div>
 
 <div class="divider my-2"></div>
@@ -37,7 +37,7 @@ Generic file viewer modal content for different file types
     {% elif viewer_type == "video" %}
         <!-- Video Viewer -->
         <div class="flex flex-col items-center">
-            <video controls 
+            <video id="{{ stream_url }}" controls 
                    class="max-w-full max-h-[600px] rounded-lg shadow-lg"
                    preload="metadata">
                 <source src="{{ stream_url }}" type="{{ mime_type }}">
@@ -47,6 +47,22 @@ Generic file viewer modal content for different file types
                 <p>Type: {{ mime_type }}</p>
             </div>
         </div>
+        <script>
+
+        const dialog = document.getElementById("file-viewer-modal")
+            
+        videoString = "{{ stream_url }}";
+
+        dialog.addEventListener("close", () => {
+            const video = document.getElementById("{{ stream_url }}");
+            video.pause();
+
+        });
+
+
+
+        </script>
+
 
     {% elif viewer_type == "audio" %}
         <!-- Audio Viewer -->
@@ -110,7 +126,7 @@ Generic file viewer modal content for different file types
 </div>
 
 <!-- Action buttons -->
-<div class="modal-action">
+<div id="viewer-modal-below" class="modal-action">
     <button class="btn btn-sm btn-secondary" onclick="document.getElementById('file-viewer-modal').close()">
         Close
     </button>

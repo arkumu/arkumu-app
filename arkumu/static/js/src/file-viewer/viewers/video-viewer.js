@@ -2,7 +2,7 @@ import { modalManager } from '../../modal.js';
 
 export function renderVideoPlayer(fileData) {
     const html = `
-        <video controls style="max-width: 100%; max-height: 800px;">
+        <video id="${fileData.bucket_type}/${fileData.path}" controls style="max-width: 100%; max-height: 800px;">
             <source src="/archivist/stream/${fileData.bucket_type}/${fileData.path}" type="${fileData.type}">
             Your browser does not support the video tag.
         </video>
