@@ -21,9 +21,21 @@ User = get_user_model()
 
 
 @pytest.fixture
-def oai_client():
-    """HTTP client for OAI-PMH endpoint testing."""
-    return Client()
+def oai_client(db):
+    """HTTP client for OAI-PMH endpoint testing with authentication."""
+    client = Client()
+
+    # Create a test user for authentication
+    user = User.objects.create_user(
+        username='oai_test_user',
+        password='test_password',
+        email='oai@test.com'
+    )
+
+    # Login the client for authenticated requests
+    client.login(username='oai_test_user', password='test_password')
+
+    return client
 
 
 @pytest.fixture

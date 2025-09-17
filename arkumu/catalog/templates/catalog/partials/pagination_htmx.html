@@ -1,0 +1,117 @@
+<!-- Pagination Component with HTMX and Dynamic State -->
+<div class="pagination-component w-full mb-8">
+
+  <!-- Results Info -->
+  <div class="flex items-center justify-center mb-4">
+    <div id="results-count" class="font-mono text-sm transition-colors
+                text-arkumu-dark
+                theme-dark:text-arkumu-light
+                theme-blue:text-arkumu-blue">
+      Ergebnisse {{ start_result }}-{{ end_result }} von {{ total_results }}
+    </div>
+  </div>
+
+  <!-- Pagination Buttons -->
+  <div class="flex items-center justify-between w-full">
+
+    <!-- Zurück Button -->
+    {% if has_previous %}
+    <button hx-get="{% url 'catalog:design' %}?page={{ previous_page }}{% if query %}&query={{ query }}{% endif %}"
+            hx-target="#search-results-container"
+            hx-push-url="true"
+            hx-indicator="#loading-indicator"
+            class="flex items-center space-x-2 font-mono text-sm transition-colors
+                  text-arkumu-dark
+                  theme-dark:text-arkumu-light
+                  theme-blue:text-arkumu-blue
+                  hover:opacity-70 cursor-pointer">
+      <span class="text-3xl">‹</span>
+      <span>zurück</span>
+    </button>
+    {% else %}
+    <button disabled
+            class="flex items-center space-x-2 font-mono text-sm transition-colors
+                  text-arkumu-dark/30
+                  theme-dark:text-arkumu-light/30
+                  theme-blue:text-arkumu-blue/30
+                  cursor-not-allowed">
+      <span class="text-3xl">‹</span>
+      <span>zurück</span>
+    </button>
+    {% endif %}
+
+    <!-- Page Numbers -->
+    <div class="flex items-center space-x-1">
+
+      {% for page_num in page_range %}
+        {% if page_num == "..." %}
+          <!-- Ellipsis -->
+          <span class="w-8 h-8 font-mono text-sm flex items-center justify-center
+                      text-arkumu-dark
+                      theme-dark:text-arkumu-light
+                      theme-blue:text-arkumu-blue">
+            ...
+          </span>
+        {% else %}
+          <!-- Page Number Button -->
+          <button hx-get="{% url 'catalog:design' %}?page={{ page_num }}{% if query %}&query={{ query }}{% endif %}"
+                  hx-target="#search-results-container"
+                  hx-push-url="true"
+                  hx-indicator="#loading-indicator"
+                  class="w-8 h-8 font-mono text-sm transition-colors flex items-center justify-center
+                        {% if page_num == current_page %}
+                          bg-arkumu-dark text-arkumu-light
+                          theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
+                          theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light
+                        {% else %}
+                          border border-arkumu-dark text-arkumu-dark bg-arkumu-light
+                          theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                          theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light
+                          hover:bg-opacity-10 cursor-pointer
+                        {% endif %}">
+            {{ page_num }}
+          </button>
+        {% endif %}
+      {% endfor %}
+
+    </div>
+
+    <!-- Weiter Button -->
+    {% if has_next %}
+    <button hx-get="{% url 'catalog:design' %}?page={{ next_page }}{% if query %}&query={{ query }}{% endif %}"
+            hx-target="#search-results-container"
+            hx-push-url="true"
+            hx-indicator="#loading-indicator"
+            class="flex items-center space-x-2 font-mono text-sm transition-colors
+                  text-arkumu-dark
+                  theme-dark:text-arkumu-light
+                  theme-blue:text-arkumu-blue
+                  hover:opacity-70 cursor-pointer">
+      <span>weiter</span>
+      <span class="text-3xl">›</span>
+    </button>
+    {% else %}
+    <button disabled
+            class="flex items-center space-x-2 font-mono text-sm transition-colors
+                  text-arkumu-dark/30
+                  theme-dark:text-arkumu-light/30
+                  theme-blue:text-arkumu-blue/30
+                  cursor-not-allowed">
+      <span>weiter</span>
+      <span class="text-3xl">›</span>
+    </button>
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- Loading Indicator -->
+<div id="loading-indicator" class="htmx-indicator flex items-center justify-center py-4">
+  <div class="inline-flex items-center px-4 py-2 text-sm font-medium text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
+    <svg class="animate-spin -ml-1 mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+    Loading...
+  </div>
+</div>

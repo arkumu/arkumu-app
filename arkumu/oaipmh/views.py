@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
@@ -145,7 +145,7 @@ def _identify(oai: ET.Element, request: HttpRequest) -> ET.Element:
         if earliest is not None:
             # Ensure timezone-aware UTC before formatting
             if earliest.tzinfo is None:
-                earliest = earliest.replace(tzinfo=timezone.utc)
+                earliest = earliest.replace(tzinfo=dt_dt_timezone.utc)
             ET.SubElement(identify, "earliestDatestamp").text = _format_datestamp(earliest)
         else:
             ET.SubElement(identify, "earliestDatestamp").text = REPO_EARLIEST_DATASTAMP
@@ -278,8 +278,8 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
         # Validate date range
         if from_date and until_date:
             try:
-                from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')) if 'T' in from_date else datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00')) if 'T' in until_date else datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')) if 'T' in from_date else datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
+                until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00')) if 'T' in until_date else datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
                 if from_dt > until_dt:
                     return _error(oai, "badArgument", "'from' date must be earlier than 'until' date")
             except ValueError:
@@ -427,7 +427,7 @@ def _get_resources_queryset(set_spec: Optional[str] = None, from_date: Optional[
             if 'T' in from_date:
                 from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
             else:
-                from_dt = datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                from_dt = datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
             queryset = queryset.filter(updated_at__gte=from_dt)
         except ValueError:
             pass  # Invalid date format, ignore
@@ -438,7 +438,7 @@ def _get_resources_queryset(set_spec: Optional[str] = None, from_date: Optional[
             if 'T' in until_date:
                 until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00'))
             else:
-                until_dt = datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                until_dt = datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
                 # For date-only format, include the entire day
                 until_dt = until_dt.replace(hour=23, minute=59, second=59)
             queryset = queryset.filter(updated_at__lte=until_dt)
@@ -1156,8 +1156,8 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
         # Validate date range
         if from_date and until_date:
             try:
-                from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')) if 'T' in from_date else datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00')) if 'T' in until_date else datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')) if 'T' in from_date else datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
+                until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00')) if 'T' in until_date else datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
                 if from_dt > until_dt:
                     return _error(oai, "badArgument", "'from' date must be earlier than 'until' date")
             except ValueError:

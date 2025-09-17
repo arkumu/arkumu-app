@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 
 from .views import Card, ProjektShow
 from .views_graph_search import GraphSearchView
+from .views_design import CatalogDesignView, ProjectDetailView
 from .views_explorer import (
     CatalogExplorerView,
     CatalogExplorerPropertiesView,
@@ -21,8 +22,8 @@ urlpatterns = [
 
     # Search functionality using CanonicalGraphService with canonical URIs
     path('search_cards/', login_required(GraphSearchView.as_view()), name='search_cards'),
-    path('projekt/', login_required(ProjektShow.projekt), name='projekt'),
-    path('design/', login_required(TemplateView.as_view(template_name="catalog/design.html")), name='design'),
+    path('projekt/', login_required(ProjectDetailView.as_view()), name='projekt'),
+    path('design/', login_required(CatalogDesignView.as_view()), name='design'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
 ]

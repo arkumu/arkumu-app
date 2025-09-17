@@ -54,27 +54,34 @@ class GraphSearchView(LoginRequiredMixin, View):
             else:
                 logger.info(f"Fetching whole graph for cross-institutional search")
 
-                # Get WHOLE project graph (all institutions) using FUK service but without org restriction
-                service = CanonicalGraphService(org_code="fuk")  # Use any org with canonical URIs
+                # Don't specify org_code for cross-institutional search
+                service = CanonicalGraphService()  # No org = search all institutions
 
-                # Get all project types with canonical URIs
-                project_type_uris = [
-                    "http://arkumu.org/data/fuk/types/projekt",  # FUK
-                    "http://arkumu.org/data/rsh/types/projekt",  # RSH
-                ]
+                # Use CANONICAL URI to get all projects across institutions
+                canonical_project_uri = "http://arkumu.org/data/types/projekt"
 
-                # Use internal method to bypass organization restriction
-                all_subject_ids = []
-                for project_type_uri in project_type_uris:
-                    logger.info(f"Getting subjects for {project_type_uri}")
-                    # Bypass org restriction by calling internal method with restrict_to_org=False
-                    subject_ids = service._find_subject_ids_by_class(
-                        project_type_uri,
-                        restrict_to_org=False,  # This is the key!
-                        limit=50
-                    )
-                    all_subject_ids.extend(subject_ids)
-                    logger.info(f"Found {len(subject_ids)} subjects")
+                # First try canonical URI
+                # Service has no org, so it searches all institutions by default
+                all_subject_ids = service._find_subject_ids_by_class(
+                    canonical_project_uri
+                )
+                logger.info(f"Found {len(all_subject_ids)} projects using canonical URI")
+
+                # Fallback to institution-specific URIs if needed
+                if not all_subject_ids:
+                    logger.info("No projects via canonical URI, falling back to institution-specific")
+                    institution_uris = [
+                        "http://arkumu.org/data/fuk/types/projekt",
+                        "http://arkumu.org/data/rsh/types/projekt",
+                        "http://arkumu.org/data/det/types/projekt",
+                        "http://arkumu.org/data/khm/types/projekt",
+                        "http://arkumu.org/data/uk/types/projekt",
+                        "http://arkumu.org/data/hfmt/types/projekt",
+                    ]
+                    for uri in institution_uris:
+                        subject_ids = service._find_subject_ids_by_class(uri)
+                        all_subject_ids.extend(subject_ids)
+                        logger.info(f"Found {len(subject_ids)} subjects for {uri}")
 
                 logger.info(f"Total subjects across all institutions: {len(all_subject_ids)}")
 
