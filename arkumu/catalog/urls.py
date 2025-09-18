@@ -23,7 +23,7 @@ urlpatterns = [
     # Search functionality using CanonicalGraphService with canonical URIs
     path('search_cards/', login_required(GraphSearchView.as_view()), name='search_cards'),
     path('projekt/', login_required(ProjectView.as_view()), name='projekt'),
-    path('design/', login_required(CatalogView.as_view()), name='design'),
+    path('browse/', login_required(CatalogView.as_view()), name='browse'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
 ]
