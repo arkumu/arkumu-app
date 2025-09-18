@@ -69,6 +69,7 @@ urlpatterns = [
     # Simple test endpoint for debugging OOB updates
     path("test/oob-refresh/<str:organization>/", file_browser_oob_views.test_oob_refresh, name="test_oob_refresh"),
 
-    path('create/project/', login_required(create.create_project) , name='create/project'),
-
+    # Entity creation endpoints
+    path('create/project/', login_required(create.create_project), name='create_project'),
+    path('create/event/', login_required(create.create_event), name='create_event'),
 ] 
