@@ -69,24 +69,13 @@
           {% include 'components/text/arkumu_text.html' %}
         </div>
 
-        <!-- Search Bar with HTMX -->
+        <!-- Search Bar with HTMX - Independent Component -->
         <div>
           <form hx-get="{% url 'catalog:design' %}"
-                hx-target="#search-results-container"
+                hx-target="#results-container"
                 hx-indicator="#search-loading">
             {% include 'components/inputs/navbar.html' with placeholder_text="Suchbegriff" query=query %}
           </form>
-        </div>
-
-        <!-- Search Status Container -->
-        <div id="search-status" class="mt-4">
-          {% if query %}
-            {% if results %}
-              <div class="text-center py-4 text-arkumu-dark theme-dark:text-arkumu-light">Suche nach "{{ query }}" - {{ pagination.total_results }} Projekte gefunden</div>
-            {% else %}
-              <div class="text-center py-8 text-arkumu-dark theme-dark:text-arkumu-light">Keine Projekte gefunden für "{{ query }}"</div>
-            {% endif %}
-          {% endif %}
         </div>
       </div>
 
@@ -113,7 +102,7 @@
         </div>
       </div>
 
-      <!-- Search Loading Indicator -->
+      <!-- Search Loading Indicator (Global) -->
       <div id="search-loading" class="htmx-indicator w-full flex justify-center py-8">
         <div class="inline-flex items-center px-4 py-2 text-lg font-medium text-arkumu-dark theme-dark:text-arkumu-light">
           <svg class="animate-spin -ml-1 mr-3 h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -124,22 +113,18 @@
         </div>
       </div>
 
-      <!-- Results Count -->
-      <div id="results-count" class="w-full text-center mb-4 text-arkumu-dark theme-dark:text-arkumu-light">
-        {% if query and results %}
-          Ergebnisse {{ pagination.start_result }}-{{ pagination.end_result }} von {{ pagination.total_results }}
-        {% endif %}
-      </div>
-
-      <!-- Project Cards Grid -->
-      <div class="w-full mt-10 mb-24" id="search-results-container">
-        {% include 'catalog/partials/card_grid.html' with results=results %}
-      </div>
-
-      <!-- Pagination Component (Below Results) -->
-      <div id="pagination-container" class="w-full">
-        {% if pagination.total_pages > 1 %}
-          {% include 'catalog/partials/pagination.html' with current_page=pagination.current_page total_results=pagination.total_results start_result=pagination.start_result end_result=pagination.end_result total_pages=pagination.total_pages has_previous=pagination.has_previous has_next=pagination.has_next previous_page=pagination.previous_page next_page=pagination.next_page page_range=pagination.page_range %}
+      <!-- Unified Results Container - All results-related components in one place -->
+      <div id="results-container" class="w-full mt-10 mb-24">
+        {% if results or query %}
+          <!-- Include with all context variables -->
+          {% include 'catalog/partials/results_container.html' %}
+        {% else %}
+          <!-- Initial empty state -->
+          <div class="text-center py-12">
+            <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
+              Verwenden Sie die Suchleiste oben, um Projekte zu finden
+            </p>
+          </div>
         {% endif %}
       </div>
     </div>

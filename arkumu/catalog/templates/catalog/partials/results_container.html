@@ -1,0 +1,123 @@
+<!-- Unified Results Container - Single update target for HTMX -->
+<div class="w-full">
+
+  <!-- 1. Search Status Bar -->
+  {% if query %}
+  <div id="search-status" class="text-center py-4 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
+    {% if total_results > 0 %}
+      Suche nach "{{ query }}" - {{ total_results }} Projekte gefunden
+    {% else %}
+      Keine Projekte gefunden für "{{ query }}"
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- 2. Results Counter -->
+  {% if total_results > 0 %}
+  <div id="results-count" class="text-center mb-4 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
+    Ergebnisse {{ start_result }}-{{ end_result }} von {{ total_results }}
+  </div>
+  {% endif %}
+
+  <!-- 3. Results Grid -->
+  <div id="card-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-6 rounded-lg">
+    {% for result in results %}
+    <div class="card-container">
+      {% include 'components/cards/card.html' with year=result.year_range image=result.image institution=result.institution title=result.title subtitle=result.subtitle category1=result.categories.0 category2=result.categories.1 category3=result.categories.2 button_text="Projekt ansehen" uri=result.uri %}
+    </div>
+    {% empty %}
+    {% if not query %}
+    <!-- Empty state when no search has been performed -->
+    <div class="col-span-full text-center py-12">
+      <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
+        Verwenden Sie die Suchleiste oben, um Projekte zu finden
+      </p>
+    </div>
+    {% else %}
+    <!-- No results found for search -->
+    <div class="col-span-full text-center py-12">
+      <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
+        Keine Projekte gefunden für "{{ query }}"
+      </p>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  <!-- 4. Pagination Controls -->
+  {% if total_pages > 1 %}
+  <div id="pagination" class="flex items-center justify-center space-x-2 py-8">
+    <!-- Previous Button -->
+    {% if has_previous %}
+    <button hx-get="{% url 'catalog:design' %}?query={{ query }}&page={{ previous_page }}"
+            hx-target="#results-container"
+            hx-swap="innerHTML"
+            hx-indicator="#search-loading"
+            class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
+                   border border-arkumu-dark text-arkumu-dark
+                   theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                   theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+      « Zurück
+    </button>
+    {% else %}
+    <button disabled
+            class="px-3 py-1 text-sm opacity-50 cursor-not-allowed
+                   border border-gray-400 text-gray-400
+                   theme-dark:border-gray-600 theme-dark:text-gray-600
+                   theme-blue:border-gray-500 theme-blue:text-gray-500">
+      « Zurück
+    </button>
+    {% endif %}
+
+    <!-- Page Numbers -->
+    <div class="flex items-center space-x-1">
+      {% for page_num in page_range %}
+        {% if page_num == current_page %}
+        <!-- Current Page (Active) -->
+        <span class="px-3 py-1 text-sm font-bold
+                     bg-arkumu-dark text-arkumu-light
+                     theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
+                     theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
+          {{ page_num }}
+        </span>
+        {% else %}
+        <!-- Other Page Numbers -->
+        <button hx-get="{% url 'catalog:design' %}?query={{ query }}&page={{ page_num }}"
+                hx-target="#results-container"
+                hx-swap="innerHTML"
+                hx-indicator="#search-loading"
+                class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
+                       border border-arkumu-dark text-arkumu-dark
+                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+          {{ page_num }}
+        </button>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <!-- Next Button -->
+    {% if has_next %}
+    <button hx-get="{% url 'catalog:design' %}?query={{ query }}&page={{ next_page }}"
+            hx-target="#results-container"
+            hx-swap="innerHTML"
+            hx-indicator="#search-loading"
+            class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
+                   border border-arkumu-dark text-arkumu-dark
+                   theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                   theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+      Weiter »
+    </button>
+    {% else %}
+    <button disabled
+            class="px-3 py-1 text-sm opacity-50 cursor-not-allowed
+                   border border-gray-400 text-gray-400
+                   theme-dark:border-gray-600 theme-dark:text-gray-600
+                   theme-blue:border-gray-500 theme-blue:text-gray-500">
+      Weiter »
+    </button>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
