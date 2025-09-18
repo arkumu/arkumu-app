@@ -8,10 +8,17 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.middleware.csrf import get_token
 import logging
-from typing import Dict, List, Any
+import copy
+from typing import Dict, List, Any, Optional
 
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.cache.services import CacheManager
+from arkumu.catalog.services.schema_manifest_service import (
+    SchemaManifestService,
+    CARD_SCHEMA_TEMPLATE,
+    CardSchema,
+    CardProperty,
+)
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 
 logger = logging.getLogger(__name__)
@@ -24,6 +31,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
     ITEMS_PER_PAGE = 10
     CACHE_TIMEOUT = 3600
+    schema_manifest_service = SchemaManifestService()
 
     def get(self, request, *args, **kwargs):
         """Handle catalog page with fast HTMX search and OOB updates."""
@@ -46,6 +54,8 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
             return self._render_error(request, "User has no organization")
 
         try:
+            card_schema = self.schema_manifest_service.get_card_schema(org_code)
+
             # For HTMX requests without query, return empty results immediately
             if is_htmx and not query:
                 logger.info("🚀 FAST_PATH: Empty HTMX request, returning empty results")
@@ -53,7 +63,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
             # Only load projects when there's a search query
             if query:
-                projects = self._get_all_projects(org_code, query)
+                projects = self._get_all_projects(org_code, query, card_schema)
                 logger.info(f"📊 SEARCH_RESULTS: Found {len(projects)} projects for '{query}'")
             else:
                 # Empty results when no query - lazy loading
@@ -130,7 +140,12 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 return self.build_empty_search_response(request, query)
             return self._render_error(request, f"Error loading catalog: {str(e)}")
 
-    def _get_all_projects(self, org_code: str, query: str = "") -> List[Dict[str, Any]]:
+    def _get_all_projects(
+        self,
+        org_code: str,
+        query: str = "",
+        card_schema: Optional[CardSchema] = None
+    ) -> List[Dict[str, Any]]:
         """Get projects using proper cache architecture: catalog cache first, then graph cache."""
         cache_manager = CacheManager()
 
@@ -164,7 +179,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         else:
             # Final fallback - fetch fresh data
             logger.info(f"🔄 FRESH_FETCH: Getting fresh cross-institutional project data")
-            all_projects = self._fetch_projects_from_graph(org_code)
+            all_projects = self._fetch_projects_from_graph(org_code, card_schema)
 
             # Cache in graph cache for reuse by other services
             cache_manager.graph.cache_traversal_result(
@@ -194,12 +209,16 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
         return all_projects
 
-    def _fetch_projects_from_graph(self, org_code: str) -> List[Dict[str, Any]]:
+    def _fetch_projects_from_graph(
+        self,
+        org_code: str,
+        card_schema: Optional[CardSchema] = None
+    ) -> List[Dict[str, Any]]:
         """Fetch projects from graph service."""
         graph = self._fetch_fresh_graph(org_code)
 
         if graph:
-            return self._graph_to_cards(graph)
+            return self._graph_to_cards(graph, card_schema)
 
         return []
 
@@ -245,11 +264,17 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
             },
         }
 
-    def _graph_to_cards(self, graph: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _graph_to_cards(
+        self,
+        graph: Dict[str, Any],
+        card_schema: Optional[CardSchema] = None
+    ) -> List[Dict[str, Any]]:
         """Convert graph data to card format."""
         cards = []
         nodes = graph.get('nodes', {})
         edges = graph.get('edges', [])
+
+        schema = card_schema or copy.deepcopy(CARD_SCHEMA_TEMPLATE)
 
         # Group edges by subject for easier lookup
         edges_by_subject = {}
@@ -290,7 +315,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
                         sample_uris.add(canonical_uri)
                     logger.info(f"DEBUG: Sample canonical URIs for first subject: {list(sample_uris)[:10]}")
 
-                card_data = self._extract_card_from_graph(subject_id, subject_edges, edges)
+                card_data = self._extract_card_from_graph(subject_id, subject_edges, edges, schema)
                 if card_data:
                     cards.append(card_data)
                 elif i == 0:  # Log why first card failed
@@ -299,112 +324,235 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         logger.info(f"Converted graph to {len(cards)} cards")
         return cards
 
-    def _extract_card_from_graph(self, subject_id: str, subject_edges: List[Dict], all_edges: List[Dict]) -> Dict[str, Any]:
+    def _extract_card_from_graph(
+        self,
+        subject_id: str,
+        subject_edges: List[Dict],
+        all_edges: List[Dict],
+        card_schema: CardSchema
+    ) -> Optional[Dict[str, Any]]:
         """Extract card data from graph edges for a specific subject."""
-        # Canonical URIs for card data extraction
-        TITLE_URI = "http://arkumu.org/data/properties/bevorzugter-titel"
-        SUBTITLE_URI = "http://arkumu.org/data/properties/bevorzugter-untertitel"
-        IMAGE_URI = "http://arkumu.org/data/properties/vorschaubild"
-        INSTITUTION_URI = "http://arkumu.org/data/properties/einliefernde-hochschule"
-        CATEGORY_URI = "http://arkumu.org/data/properties/projektkategorie"
-        EVENT_URI = "http://arkumu.org/data/properties/ereignis"
 
-        # Institution and category German name URIs
-        INSTITUTION_GERMAN_NAME = "http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule"
-        CATEGORY_GERMAN_NAME = "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb"
+        def _property(section: str, prop: str) -> Optional[CardProperty]:
+            section_obj = card_schema.sections.get(section)
+            if not section_obj:
+                return None
+            return section_obj.properties.get(prop)
 
-        # Event date URIs
-        EVENT_START_URI = "http://arkumu.org/data/properties/ereignisbeginn"
-        EVENT_END_URI = "http://arkumu.org/data/properties/ereignisende"
+        title_prop = _property('project', 'title')
+        subtitle_prop = _property('project', 'subtitle')
+        image_prop = _property('project', 'image')
+        event_prop = _property('project', 'event')
+        institution_prop = _property('project', 'institution')
+        category_prop = _property('project', 'category')
 
-        # Initialize card data
+        event_start_prop = _property('event', 'start')
+        event_end_prop = _property('event', 'end')
+
+        actor_link_prop = _property('actor_event', 'actor_link')
+        role_link_prop = _property('actor_event', 'role_link')
+        actor_name_prop = _property('actor', 'name')
+        role_name_prop = _property('role', 'name')
+
+        institution_name_prop = _property('institution', 'german_name')
+        category_name_prop = _property('project_category', 'german_name')
+
+        handled_canonical_uris = {
+            prop.canonical_uri
+            for section in card_schema.sections.values()
+            for prop in section.properties.values()
+            if prop.canonical_uri
+        }
+
+        matched_predicates: List[str] = []
+        event_subject_ids: List[str] = []
+
         card = {
             'uri': subject_id,
             'title': '',
             'subtitle': '',
-            'image': 'images/main/card_1.png',  # default image
+            'image': 'images/main/card_1.png',
             'institution': '',
             'categories': [],
             'year_range': ''
         }
 
-
-        # Extract basic properties
         for edge in subject_edges:
-            canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
-
-            if canonical_uri == TITLE_URI and edge.get('object_value'):
+            canonical_uri = edge.get('predicate_canonical') or edge.get('predicate_uri')
+            if title_prop and canonical_uri == title_prop.canonical_uri and edge.get('object_value'):
                 card['title'] = edge['object_value']
-                logger.debug(f"Found title for {subject_id}: {edge['object_value']}")
-            elif canonical_uri == SUBTITLE_URI and edge.get('object_value'):
+                matched_predicates.append(title_prop.canonical_uri)
+                logger.debug("Found title for %s: %s", subject_id, edge['object_value'])
+            elif subtitle_prop and canonical_uri == subtitle_prop.canonical_uri and edge.get('object_value'):
                 card['subtitle'] = edge['object_value']
-            elif canonical_uri == IMAGE_URI and edge.get('object_value'):
+                matched_predicates.append(subtitle_prop.canonical_uri)
+            elif image_prop and canonical_uri == image_prop.canonical_uri and edge.get('object_value'):
                 card['image'] = edge['object_value']
+                matched_predicates.append(image_prop.canonical_uri)
+            elif event_prop and canonical_uri == event_prop.canonical_uri and edge.get('object_id'):
+                event_subject_ids.append(edge['object_id'])
 
-        # Extract institution name
-        for edge in subject_edges:
-            canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
-            if canonical_uri == INSTITUTION_URI and edge.get('object_id'):
-                institution_id = edge['object_id']
-                # Find the German name for this institution
-                institution_edges = [e for e in all_edges if e.get('subject_id') == institution_id]
-                for inst_edge in institution_edges:
-                    inst_canonical = inst_edge.get('predicate_canonical') or inst_edge['predicate_uri']
-                    if inst_canonical == INSTITUTION_GERMAN_NAME and inst_edge.get('object_value'):
-                        card['institution'] = inst_edge['object_value']
-                        break
+        if institution_prop and institution_name_prop:
+            for edge in subject_edges:
+                canonical_uri = edge.get('predicate_canonical') or edge.get('predicate_uri')
+                if canonical_uri == institution_prop.canonical_uri and edge.get('object_id'):
+                    institution_edges = [
+                        e for e in all_edges if e.get('subject_id') == edge['object_id']
+                    ]
+                    for inst_edge in institution_edges:
+                        inst_canonical = inst_edge.get('predicate_canonical') or inst_edge.get('predicate_uri')
+                        if inst_canonical == institution_name_prop.canonical_uri and inst_edge.get('object_value'):
+                            card['institution'] = inst_edge['object_value']
+                            matched_predicates.append(institution_prop.canonical_uri)
+                            break
 
-        # Extract categories
-        for edge in subject_edges:
-            canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
-            if canonical_uri == CATEGORY_URI and edge.get('object_id'):
-                category_id = edge['object_id']
-                # Find the German name for this category
-                category_edges = [e for e in all_edges if e.get('subject_id') == category_id]
-                for cat_edge in category_edges:
-                    cat_canonical = cat_edge.get('predicate_canonical') or cat_edge['predicate_uri']
-                    if cat_canonical == CATEGORY_GERMAN_NAME and cat_edge.get('object_value'):
-                        category_name = cat_edge['object_value']
-                        # Extract final part after '>' if breadcrumb format
-                        if '>' in category_name:
-                            category_name = category_name.split('>')[-1].strip()
-                        card['categories'].append(category_name)
-                        break
+        if category_prop and category_name_prop:
+            category_names: List[str] = []
+            for edge in subject_edges:
+                canonical_uri = edge.get('predicate_canonical') or edge.get('predicate_uri')
+                if canonical_uri == category_prop.canonical_uri and edge.get('object_id'):
+                    category_edges = [
+                        e for e in all_edges if e.get('subject_id') == edge['object_id']
+                    ]
+                    for cat_edge in category_edges:
+                        cat_canonical = cat_edge.get('predicate_canonical') or cat_edge.get('predicate_uri')
+                        if cat_canonical == category_name_prop.canonical_uri and cat_edge.get('object_value'):
+                            category_name = cat_edge.get('object_value')
+                            if '>' in category_name:
+                                category_name = category_name.split('>')[-1].strip()
+                            if category_name not in category_names:
+                                category_names.append(category_name)
+                            matched_predicates.append(category_prop.canonical_uri)
+                            break
+            card['categories'] = category_names
 
-        # Extract event and date information
-        for edge in subject_edges:
-            canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
-            if canonical_uri == EVENT_URI and edge.get('object_id'):
-                event_id = edge['object_id']
-                # Find start and end dates for this event
+        if event_subject_ids and (event_start_prop or event_end_prop):
+            for event_id in event_subject_ids:
                 event_edges = [e for e in all_edges if e.get('subject_id') == event_id]
                 event_start = None
                 event_end = None
-
                 for event_edge in event_edges:
-                    event_canonical = event_edge.get('predicate_canonical') or event_edge['predicate_uri']
-                    if event_canonical == EVENT_START_URI and event_edge.get('object_value'):
+                    event_canonical = event_edge.get('predicate_canonical') or event_edge.get('predicate_uri')
+                    if event_start_prop and event_canonical == event_start_prop.canonical_uri and event_edge.get('object_value'):
                         event_start = event_edge['object_value']
-                    elif event_canonical == EVENT_END_URI and event_edge.get('object_value'):
+                    elif event_end_prop and event_canonical == event_end_prop.canonical_uri and event_edge.get('object_value'):
                         event_end = event_edge['object_value']
 
-                # Format year range
                 if event_start and event_end:
                     start_year = event_start.split('-')[0] if '-' in event_start else event_start
                     end_year = event_end.split('-')[0] if '-' in event_end else event_end
-                    if start_year == end_year:
-                        card['year_range'] = start_year
-                    else:
-                        card['year_range'] = f"{start_year} bis {end_year}"
+                    card['year_range'] = start_year if start_year == end_year else f"{start_year} bis {end_year}"
                 elif event_start:
                     card['year_range'] = event_start.split('-')[0] if '-' in event_start else event_start
-                break
+                elif event_end:
+                    card['year_range'] = event_end.split('-')[0] if '-' in event_end else event_end
 
-        # Only return card if it has a title
-        if card['title']:
-            return card
+                if event_prop and (event_start or event_end):
+                    matched_predicates.append(event_prop.canonical_uri)
+                if card['year_range']:
+                    break
 
-        return None
+        actors_by_name: Dict[str, set] = {}
+        if event_subject_ids and actor_link_prop and role_link_prop and actor_name_prop:
+            candidate_crosstable_ids = {
+                edge.get('subject_id')
+                for edge in all_edges
+                if (edge.get('predicate_canonical') or edge.get('predicate_uri')) == actor_link_prop.canonical_uri
+                and edge.get('subject_id')
+            }
+
+            crosstable_ids: List[str] = []
+            for candidate in candidate_crosstable_ids:
+                if not candidate:
+                    continue
+                has_event_link = any(
+                    (edge.get('subject_id') == candidate)
+                    and edge.get('object_id') in event_subject_ids
+                    for edge in all_edges
+                )
+                if has_event_link:
+                    crosstable_ids.append(candidate)
+
+            for crosstable_id in crosstable_ids:
+                actor_id: Optional[str] = None
+                role_ids: List[str] = []
+
+                for edge in all_edges:
+                    if edge.get('subject_id') != crosstable_id:
+                        continue
+                    canonical_uri = edge.get('predicate_canonical') or edge.get('predicate_uri')
+                    if canonical_uri == actor_link_prop.canonical_uri and edge.get('object_id'):
+                        actor_id = edge['object_id']
+                        matched_predicates.append(actor_link_prop.canonical_uri)
+                    elif canonical_uri == role_link_prop.canonical_uri and edge.get('object_id'):
+                        role_ids.append(edge['object_id'])
+                        matched_predicates.append(role_link_prop.canonical_uri)
+
+                actor_name: Optional[str] = None
+                if actor_id:
+                    for edge in all_edges:
+                        if edge.get('subject_id') != actor_id:
+                            continue
+                        canonical_uri = edge.get('predicate_canonical') or edge.get('predicate_uri')
+                        if canonical_uri == actor_name_prop.canonical_uri and edge.get('object_value'):
+                            actor_name = edge['object_value']
+                            break
+
+                role_names: List[str] = []
+                if role_name_prop:
+                    for role_id in role_ids:
+                        for edge in all_edges:
+                            if edge.get('subject_id') != role_id:
+                                continue
+                            canonical_uri = edge.get('predicate_canonical') or edge.get('predicate_uri')
+                            if canonical_uri == role_name_prop.canonical_uri and edge.get('object_value'):
+                                role_name = edge.get('object_value')
+                                if '>' in role_name:
+                                    role_name = role_name.split('>')[-1].strip()
+                                role_names.append(role_name)
+                                break
+
+                if actor_name:
+                    actors_by_name.setdefault(actor_name, set()).update(role_names)
+
+        if actors_by_name:
+            sorted_actors = sorted(actors_by_name.items(), key=lambda item: item[0])
+            for index, (actor_name, roles) in enumerate(sorted_actors[:4]):
+                card[f'contributor{index + 1}_name'] = actor_name
+                if roles:
+                    card[f'contributor{index + 1}_role'] = ', '.join(sorted(roles))
+            if len(sorted_actors) > 4:
+                card['additional_contributors'] = f"{len(sorted_actors) - 4} weitere"
+
+        if matched_predicates:
+            logger.debug(
+                "Subject %s matched card predicates: %s",
+                subject_id,
+                sorted(set(matched_predicates))
+            )
+
+        person_like_edges = []
+        for edge in subject_edges:
+            canonical_uri = edge.get('predicate_canonical') or edge.get('predicate_uri')
+            if not canonical_uri:
+                continue
+            if canonical_uri not in handled_canonical_uris:
+                normalized = canonical_uri.lower()
+                if any(keyword in normalized for keyword in ("person", "akteur", "actor", "creator", "autor", "künstler")):
+                    person_like_edges.append({
+                        'predicate': canonical_uri,
+                        'object_id': edge.get('object_id'),
+                        'object_value': edge.get('object_value')
+                    })
+
+        if person_like_edges:
+            logger.info(
+                "Subject %s has unhandled actor/creator predicates: %s",
+                subject_id,
+                person_like_edges[:5]
+            )
+
+        return card if card['title'] else None
 
     def _filter_projects_by_query(self, projects: List[Dict], query: str) -> List[Dict]:
         """Filter projects by search query."""

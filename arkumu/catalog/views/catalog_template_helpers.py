@@ -72,7 +72,7 @@ class CatalogTemplateHelperMixin:
             Rendered HTML string for pagination
         """
         return render_to_string(
-            'catalog/partials/pagination_htmx.html',
+            'catalog/partials/pagination.html',
             pagination_context,
             request=request
         )

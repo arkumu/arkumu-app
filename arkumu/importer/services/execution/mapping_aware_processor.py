@@ -18,6 +18,7 @@ from arkumu.importer.services.mapping_consumer import ExecutionConfig, ColumnCon
 from .data_processor import DataProcessor
 from .resource_manager import ResourceManager
 from arkumu.metadata.models.resource import ResourceType, Resource
+from arkumu.metadata.models.mappings import Mapping
 from .statistics import ExecutionStatistics, ExecutionMetrics
 from arkumu.common.enums import UpdateStrategy
 from arkumu.metadata.services.mapping import FKConfig as BulkFKRelationship
@@ -2176,13 +2177,14 @@ class MappingAwareProcessor:
         if cached_blueprints:
             logger.info(f"🚀 CACHE HIT: Loading existing schema blueprints for mapping {mapping_id}")
             self.dataset_blueprints = cached_blueprints
-            
+
             # Log cache statistics
             total_properties = sum(len(bp.get('property_resources', {})) for bp in self.dataset_blueprints.values())
             total_fk_relationships = sum(len(bp.get('fk_relationships', [])) for bp in self.dataset_blueprints.values())
             logger.info(f"   ✅ Loaded {len(self.dataset_blueprints)} cached schema blueprints")
             logger.info(f"   📊 Total properties: {total_properties}")
             logger.info(f"   🔗 Total FK relationships: {total_fk_relationships}")
+            self._persist_schema_manifest(mapping_id)
             return
         
         # Cache miss - create blueprints from scratch
@@ -2212,6 +2214,7 @@ class MappingAwareProcessor:
         total_fk_relationships = sum(len(bp['fk_relationships']) for bp in self.dataset_blueprints.values())
         logger.info(f"   📊 Total properties: {total_properties}")
         logger.info(f"   🔗 Total FK relationships: {total_fk_relationships}")
+        self._persist_schema_manifest(mapping_id)
     
     def _create_all_dataset_resources(self, datasets):
         """Create dataset and entity type resources for all datasets."""
@@ -2352,7 +2355,7 @@ class MappingAwareProcessor:
     def _create_all_schema_metadata_triples(self):
         """Create schema metadata triples linking datasets to entity types and properties."""
         logger.info("   📊 Creating schema metadata triples...")
-        
+
         for blueprint in self.dataset_blueprints.values():
             # Link dataset to entity type
             schema_property_uri = self._generate_property_uri("defines_entity_type")
@@ -2372,3 +2375,83 @@ class MappingAwareProcessor:
                 )
             
             logger.info(f"     📊 {blueprint['dataset_name']}: schema metadata triples created")
+
+    def _persist_schema_manifest(self, mapping_id):
+        """Persist a lightweight schema manifest derived from dataset blueprints."""
+        if not mapping_id:
+            logger.info("   📝 Schema manifest skipped – no mapping_id available")
+            return
+
+        try:
+            manifest = self._build_schema_manifest()
+            mapping = Mapping.objects.filter(id=mapping_id).first()
+            if not mapping:
+                logger.warning(f"   📝 Schema manifest skipped – mapping {mapping_id} not found")
+                return
+
+            config = mapping.mapping_config or {}
+            if config.get('schema_manifest') == manifest:
+                logger.info("   📝 Schema manifest unchanged – skipping update")
+                return
+
+            config['schema_manifest'] = manifest
+            mapping.mapping_config = config
+            mapping.save(update_fields=['mapping_config'])
+            logger.info(f"   📝 Schema manifest stored for mapping {mapping_id}")
+        except Exception as exc:
+            logger.warning(f"   ⚠️  Failed to persist schema manifest for mapping {mapping_id}: {exc}")
+
+    def _build_schema_manifest(self) -> Dict[str, Any]:
+        """Create a JSON-serializable snapshot of the dataset blueprints."""
+        manifest: Dict[str, Any] = {}
+
+        for dataset_name, blueprint in self.dataset_blueprints.items():
+            entity_snapshot = self._serialize_resource_snapshot(blueprint.get('entity_type_resource'))
+            property_snapshots: Dict[str, Dict[str, Any]] = {}
+
+            for column_name, property_resource in blueprint.get('property_resources', {}).items():
+                property_snapshots[column_name] = self._serialize_resource_snapshot(property_resource)
+
+            fk_entries = []
+            for fk_rel in blueprint.get('fk_relationships', []):
+                fk_entries.append({
+                    'source_dataset': fk_rel.get('source_dataset'),
+                    'source_column': fk_rel.get('source_column'),
+                    'source_property': fk_rel.get('source_property'),
+                    'target_dataset': fk_rel.get('target_dataset'),
+                    'target_column': fk_rel.get('target_column'),
+                    'relationship_type': fk_rel.get('relationship_type'),
+                    'is_multi_value': fk_rel.get('is_multi_value')
+                })
+
+            manifest[dataset_name] = {
+                'entity_type': entity_snapshot,
+                'properties': property_snapshots,
+                'fk_relationships': fk_entries
+            }
+
+        return manifest
+
+    def _serialize_resource_snapshot(self, resource: Any) -> Dict[str, Optional[str]]:
+        """Extract URI information from a Resource or cached dict representation."""
+        if not resource:
+            return {'uri': None, 'canonical_uri': None, 'name': None}
+
+        if hasattr(resource, 'uri'):
+            uri = resource.uri
+            canonical_uri = getattr(resource, 'canonical_uri', None) or uri
+            name = getattr(resource, 'name', None)
+        elif isinstance(resource, dict):
+            uri = resource.get('uri')
+            canonical_uri = resource.get('canonical_uri') or uri
+            name = resource.get('name')
+        else:
+            uri = str(resource)
+            canonical_uri = uri
+            name = None
+
+        return {
+            'uri': uri,
+            'canonical_uri': canonical_uri,
+            'name': name
+        }

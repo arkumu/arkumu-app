@@ -1,98 +1,80 @@
-<!-- Pagination Component with HTMX and Dynamic State -->
-<div class="pagination-component w-full mb-8">
+<!-- HTMX-optimized Pagination Component -->
+{% if total_pages > 1 %}
+<div class="flex items-center justify-center space-x-2 py-8">
+  <!-- Previous Button -->
+  {% if has_previous %}
+  <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ previous_page }}"
+          hx-target="#search-results-container"
+          hx-indicator="#search-loading"
+          class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
+                 border border-arkumu-dark text-arkumu-dark
+                 theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                 theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+    « Zurück
+  </button>
+  {% else %}
+  <button disabled
+          class="px-3 py-1 text-sm opacity-50 cursor-not-allowed
+                 border border-gray-400 text-gray-400
+                 theme-dark:border-gray-600 theme-dark:text-gray-600
+                 theme-blue:border-gray-500 theme-blue:text-gray-500">
+    « Zurück
+  </button>
+  {% endif %}
 
-
-  <!-- Pagination Buttons -->
-  <div class="flex items-center justify-between w-full">
-
-    <!-- Zurück Button -->
-    {% if has_previous %}
-    <button hx-get="{% url 'catalog:browse' %}?page={{ previous_page }}{% if query %}&query={{ query }}{% endif %}"
-            hx-target="#search-results-container"
-            hx-push-url="true"
-            hx-indicator="#search-loading"
-            class="flex items-center space-x-2 font-mono text-sm transition-colors
-                  text-arkumu-dark
-                  theme-dark:text-arkumu-light
-                  theme-blue:text-arkumu-blue
-                  hover:opacity-70 cursor-pointer">
-      <span class="text-3xl">‹</span>
-      <span>zurück</span>
-    </button>
-    {% else %}
-    <button disabled
-            class="flex items-center space-x-2 font-mono text-sm transition-colors
-                  text-arkumu-dark/30
-                  theme-dark:text-arkumu-light/30
-                  theme-blue:text-arkumu-blue/30
-                  cursor-not-allowed">
-      <span class="text-3xl">‹</span>
-      <span>zurück</span>
-    </button>
-    {% endif %}
-
-    <!-- Page Numbers -->
-    <div class="flex items-center space-x-1">
-
-      {% for page_num in page_range %}
-        {% if page_num == "..." %}
-          <!-- Ellipsis -->
-          <span class="w-8 h-8 font-mono text-sm flex items-center justify-center
-                      text-arkumu-dark
-                      theme-dark:text-arkumu-light
-                      theme-blue:text-arkumu-blue">
-            ...
-          </span>
-        {% else %}
-          <!-- Page Number Button -->
-          <button hx-get="{% url 'catalog:browse' %}?page={{ page_num }}{% if query %}&query={{ query }}{% endif %}"
-                  hx-target="#search-results-container"
-                  hx-push-url="true"
-                  hx-indicator="#search-loading"
-                  class="w-8 h-8 font-mono text-sm transition-colors flex items-center justify-center
-                        {% if page_num == current_page %}
-                          bg-arkumu-dark text-arkumu-light
-                          theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
-                          theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light
-                        {% else %}
-                          border border-arkumu-dark text-arkumu-dark bg-arkumu-light
-                          theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                          theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light
-                          hover:bg-opacity-10 cursor-pointer
-                        {% endif %}">
-            {{ page_num }}
-          </button>
-        {% endif %}
-      {% endfor %}
-
-    </div>
-
-    <!-- Weiter Button -->
-    {% if has_next %}
-    <button hx-get="{% url 'catalog:browse' %}?page={{ next_page }}{% if query %}&query={{ query }}{% endif %}"
-            hx-target="#search-results-container"
-            hx-push-url="true"
-            hx-indicator="#search-loading"
-            class="flex items-center space-x-2 font-mono text-sm transition-colors
-                  text-arkumu-dark
-                  theme-dark:text-arkumu-light
-                  theme-blue:text-arkumu-blue
-                  hover:opacity-70 cursor-pointer">
-      <span>weiter</span>
-      <span class="text-3xl">›</span>
-    </button>
-    {% else %}
-    <button disabled
-            class="flex items-center space-x-2 font-mono text-sm transition-colors
-                  text-arkumu-dark/30
-                  theme-dark:text-arkumu-light/30
-                  theme-blue:text-arkumu-blue/30
-                  cursor-not-allowed">
-      <span>weiter</span>
-      <span class="text-3xl">›</span>
-    </button>
-    {% endif %}
-
+  <!-- Page Numbers -->
+  <div class="flex items-center space-x-1">
+    {% for page_num in page_range %}
+      {% if page_num == current_page %}
+      <!-- Current Page (Active) -->
+      <span class="px-3 py-1 text-sm font-bold
+                   bg-arkumu-dark text-arkumu-light
+                   theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
+                   theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
+        {{ page_num }}
+      </span>
+      {% elif page_num == '...' %}
+      <!-- Ellipsis -->
+      <span class="px-2 text-sm
+                   text-arkumu-dark
+                   theme-dark:text-arkumu-light
+                   theme-blue:text-arkumu-blue">
+        ...
+      </span>
+      {% else %}
+      <!-- Other Page Numbers -->
+      <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ page_num }}"
+              hx-target="#search-results-container"
+              hx-indicator="#search-loading"
+              class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
+                     border border-arkumu-dark text-arkumu-dark
+                     theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                     theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+        {{ page_num }}
+      </button>
+      {% endif %}
+    {% endfor %}
   </div>
-</div>
 
+  <!-- Next Button -->
+  {% if has_next %}
+  <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ next_page }}"
+          hx-target="#search-results-container"
+          hx-indicator="#search-loading"
+          class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
+                 border border-arkumu-dark text-arkumu-dark
+                 theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                 theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+    Weiter »
+  </button>
+  {% else %}
+  <button disabled
+          class="px-3 py-1 text-sm opacity-50 cursor-not-allowed
+                 border border-gray-400 text-gray-400
+                 theme-dark:border-gray-600 theme-dark:text-gray-600
+                 theme-blue:border-gray-500 theme-blue:text-gray-500">
+    Weiter »
+  </button>
+  {% endif %}
+</div>
+{% endif %}
