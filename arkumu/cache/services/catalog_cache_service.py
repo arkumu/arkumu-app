@@ -10,6 +10,7 @@ import hashlib
 from django.utils import timezone
 from .base_cache_service import BaseCacheService
 from .graph_cache_service import GraphCacheService
+from .schema_map_cache_service import SchemaMapCacheService
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,75 @@ class CatalogCacheService(BaseCacheService):
     def __init__(self):
         super().__init__('catalog')
         self.graph_cache = GraphCacheService()
+        self.schema_cache = SchemaMapCacheService()
+
+    def get_explorer_sidebar_context(self, selected_class: str = '',
+                                      organization_code: Optional[str] = None) -> Dict[str, Any]:
+        """Return cached explorer sidebar data (classes, properties, organizations)."""
+        cache_params = {
+            'org': organization_code or 'global',
+            'class': selected_class or 'ALL'
+        }
+
+        cached = self.get_cached('explorer_sidebar', **cache_params)
+        if cached:
+            return cached
+
+        schema_map = self.schema_cache.get_complete_schema_map(organization_code)
+        available_classes = {
+            item['uri']: {
+                'name': item['name'],
+                'entity_count': item.get('entity_count', 0)
+            }
+            for item in schema_map.get('classes', {}).values()
+        }
+
+        properties_map: Dict[str, Dict[str, Any]] = {}
+        if selected_class:
+            class_entry = schema_map.get('classes', {}).get(selected_class)
+            if class_entry:
+                properties_map = class_entry.get('properties', {}) or {}
+
+            if not properties_map:
+                properties_map = self.schema_cache.get_class_properties(
+                    selected_class,
+                    organization_code
+                )
+
+        available_properties = {
+            uri: {
+                'name': info.get('name', uri),
+                'usage_count': info.get('usage_count', 0)
+            }
+            for uri, info in properties_map.items()
+        }
+
+        sidebar = {
+            'available_classes': available_classes,
+            'available_properties': available_properties,
+            'available_organizations': schema_map.get('organizations', {}),
+            'schema_meta': schema_map.get('meta', {})
+        }
+
+        self.set_cached('explorer_sidebar', sidebar, 'catalog_sidebar', **cache_params)
+        return sidebar
+
+    def get_class_properties_map(self, class_uri: str,
+                                 organization_code: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        """Return cached property map for a class, optionally filtered by organization."""
+        cache_params = {
+            'class': class_uri,
+            'org': organization_code or 'global'
+        }
+
+        cached = self.get_cached('class_properties', **cache_params)
+        if cached:
+            return cached
+
+        properties_map = self.schema_cache.get_class_properties(class_uri, organization_code)
+
+        self.set_cached('class_properties', properties_map, 'catalog_property_list', **cache_params)
+        return properties_map
 
     def get_cached_search_results(self, query: str, property_name: str,
                                 selected_class: str = '', user_org: str = None) -> Optional[Dict]:
@@ -207,7 +277,8 @@ class CatalogCacheService(BaseCacheService):
                 'all_properties_overview',
                 'catalog_statistics',
                 'available_properties',
-                'catalog_organizations'
+                'catalog_organizations',
+                'explorer_sidebar'
             ],
             'graph_integration': True,
             'supported_operations': [

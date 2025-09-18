@@ -29,6 +29,7 @@ CACHE_TTL = {
     'catalog_statistics': 10 * 60,  # 10 minutes - aggregated stats
     'catalog_property_list': 6 * 3600,  # 6 hours - available properties list
     'catalog_organizations': 6 * 3600,  # 6 hours - organizations overview
+    'catalog_sidebar': 5 * 60,  # 5 minutes - explorer sidebar context
 
     # Metadata caching
     'metadata_export': 1 * 3600, # 1 hour - export formats (was 2h)
