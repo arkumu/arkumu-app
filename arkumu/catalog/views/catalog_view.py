@@ -43,16 +43,12 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         page = request.GET.get('page', 1)
         is_htmx = request.headers.get('HX-Request') is not None
 
-        # Get user's organization
+        # Get user's organization (optional for cross-institutional queries)
         org_code = None
         if hasattr(request.user, 'organization') and request.user.organization:
             org_code = request.user.organization.code
 
         logger.info(f"🔍 CATALOG_SEARCH: Query: '{query}', Page: {page}, Org: {org_code}, HTMX: {is_htmx}")
-
-        if not org_code:
-            logger.error(f"User {request.user.username} has no organization")
-            return self._render_error(request, "User has no organization")
 
         try:
             # IMPORTANT: Always use FUK organization for schema manifest
