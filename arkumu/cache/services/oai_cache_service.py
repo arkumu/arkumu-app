@@ -134,6 +134,18 @@ class OAICacheService(BaseCacheService):
         # This could be shared between multiple metadata formats
         org_code = resource.organization.code if resource.organization else None
 
+        try:
+            self.graph_cache.get_entity_graph(
+                resource_uri=resource.uri,
+                depth=3,
+                organization_code=org_code,
+                include_incoming=True,
+                expand_neighbors=True,
+                restrict_to_org=bool(org_code)
+            )
+        except Exception as exc:
+            logger.warning(f"Graph warm-up skipped for {resource.uri}: {exc}")
+
         # Warm cache for each requested format
         for metadata_prefix in metadata_prefixes:
             try:

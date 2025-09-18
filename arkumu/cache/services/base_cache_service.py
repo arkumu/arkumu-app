@@ -24,6 +24,11 @@ CACHE_TTL = {
     # Catalog caching
     'catalog_search': 30 * 60,   # 30 minutes - search results (was 1h)
     'catalog_types': 6 * 3600,   # 6 hours - available types/properties (was 12h)
+    'catalog_classes': 5 * 60,   # 5 minutes - overview of classes
+    'catalog_property_snapshot': 5 * 60,  # 5 minutes - property usage snapshots
+    'catalog_statistics': 10 * 60,  # 10 minutes - aggregated stats
+    'catalog_property_list': 6 * 3600,  # 6 hours - available properties list
+    'catalog_organizations': 6 * 3600,  # 6 hours - organizations overview
 
     # Metadata caching
     'metadata_export': 1 * 3600, # 1 hour - export formats (was 2h)
@@ -62,7 +67,13 @@ class BaseCacheService:
     def get_cached(self, cache_type: str, **kwargs) -> Optional[Any]:
         """Get cached data by type and parameters."""
         cache_key = self._get_cache_key(cache_type, **kwargs)
-        return cache.get(cache_key)
+        try:
+            return cache.get(cache_key)
+        except Exception as exc:
+            self.logger.warning(
+                "Cache fetch failed for %s: %s", cache_key, exc, exc_info=True
+            )
+            return None
 
     def set_cached(self, cache_type: str, data: Any, ttl_key: str, **kwargs):
         """Cache data with configured TTL and memory checks."""
@@ -74,8 +85,13 @@ class BaseCacheService:
             self.logger.warning(f"Skipping cache for {cache_key} - memory pressure")
             return
 
-        cache.set(cache_key, data, ttl)
-        self.logger.debug(f"Cached {cache_type} for {ttl}s: {cache_key}")
+        try:
+            cache.set(cache_key, data, ttl)
+            self.logger.debug(f"Cached {cache_type} for {ttl}s: {cache_key}")
+        except Exception as exc:
+            self.logger.warning(
+                "Cache store failed for %s: %s", cache_key, exc, exc_info=True
+            )
 
     def _should_skip_cache(self, data: Any) -> bool:
         """Check if we should skip caching due to memory pressure."""
@@ -104,8 +120,13 @@ class BaseCacheService:
     def invalidate(self, cache_type: str, **kwargs):
         """Invalidate specific cache entry."""
         cache_key = self._get_cache_key(cache_type, **kwargs)
-        cache.delete(cache_key)
-        self.logger.info(f"Invalidated cache: {cache_key}")
+        try:
+            cache.delete(cache_key)
+            self.logger.info(f"Invalidated cache: {cache_key}")
+        except Exception as exc:
+            self.logger.warning(
+                "Cache delete failed for %s: %s", cache_key, exc, exc_info=True
+            )
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics for monitoring."""

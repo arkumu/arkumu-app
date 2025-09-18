@@ -6,18 +6,16 @@ from urllib.parse import unquote, urlparse
 
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
-from django.core.cache import cache
 from django.utils import timezone
 import xml.etree.ElementTree as ET
 
 from arkumu.metadata.models.resource import Resource
-from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.users.models import Organization
 from .formats.dublin_core import DublinCoreSerializer, DEFAULT_PREDICATE_MAP, DCTERMS_NS, OAI_DC_NS, DC_NS
 from .formats.mets import METSSerializer
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
-from arkumu.cache.services import OAICacheService
+from arkumu.cache.services import OAICacheService, GraphCacheService
 from .authentication import oai_authentication_required
 
 
@@ -34,18 +32,7 @@ REPO_REPOSITORY_IDENTIFIER = "arkumu"
 # Initialize services
 resumption_service = ResumptionTokenService(page_size=100)
 oai_cache = OAICacheService()
-
-
-# Cache utilities
-def _get_cache_key(cache_type: str, **kwargs) -> str:
-    """Generate consistent cache keys for OAI-PMH responses."""
-    if cache_type == "record":
-        return f"oai:record:{kwargs['uri']}:{kwargs['metadata_prefix']}:{kwargs['timestamp']}"
-    elif cache_type == "graph":
-        return f"oai:graph:{kwargs['uri']}:{kwargs['timestamp']}"
-    elif cache_type == "page":
-        return f"oai:page:{kwargs['verb']}:{kwargs['metadata_prefix']}:{kwargs.get('set_spec', '')}:{kwargs.get('from_date', '')}:{kwargs.get('until_date', '')}:{kwargs['offset']}"
-    return f"oai:{cache_type}:{':'.join(str(v) for v in kwargs.values())}"
+graph_cache = GraphCacheService()
 
 
 def _get_cached_record(resource: Resource, metadata_prefix: str) -> Optional[Dict[str, Any]]:
@@ -317,18 +304,14 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
     if offset == 0 and not resources:
         return _error(oai, "noRecordsMatch", "No records found matching the criteria")
 
-    # Check for cached page response first
-    list_cache_key = _get_cache_key(
-        "page",
-        verb="ListIdentifiers",
+    cached_page = oai_cache.get_cached_page(
+        verb='ListIdentifiers',
         metadata_prefix=metadata_prefix,
-        set_spec=set_spec,
-        from_date=from_date,
-        until_date=until_date,
+        set_spec=set_spec or '',
+        from_date=from_date or '',
+        until_date=until_date or '',
         offset=offset
     )
-
-    cached_page = cache.get(list_cache_key)
     if cached_page:
         # Rebuild from cached data
         list_identifiers = ET.SubElement(oai, "ListIdentifiers")
@@ -379,8 +362,15 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
         'cached_at': timezone.now().isoformat()
     }
 
-    # Cache for 2 hours
-    cache.set(list_cache_key, list_page_data, 2 * 3600)
+    oai_cache.cache_page(
+        verb='ListIdentifiers',
+        metadata_prefix=metadata_prefix,
+        page_data=list_page_data,
+        set_spec=set_spec or '',
+        from_date=from_date or '',
+        until_date=until_date or '',
+        offset=offset
+    )
 
     return oai
 
@@ -511,37 +501,43 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         if not org_code:
             return metadata  # Empty metadata if no organization
 
-        # Get rich graph with canonical URI support and deep traversal
-        svc = CanonicalGraphService(org_code=org_code)
-        graph = svc.get_entity_graph(
+        predicate_whitelist = [
+            "http://arkumu.org/data/properties/bevorzugter-titel",
+            "http://arkumu.org/data/properties/alternativer-titel",
+            "http://arkumu.org/data/properties/beschreibung",
+            "http://arkumu.org/data/properties/kuenstler",
+            "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels",
+            "http://arkumu.org/data/properties/schlagwort",
+            "http://arkumu.org/data/properties/projektkategorie",
+            "http://arkumu.org/data/properties/projektart",
+            "http://arkumu.org/data/properties/datensatz-id-beim-einlieferer",
+            "http://arkumu.org/data/properties/rechtsstatus",
+            "http://arkumu.org/data/properties/ereignisort",
+            "http://arkumu.org/data/properties/datensatzerstellung-beim-einlieferer",
+            # Actor relationships
+            "http://arkumu.org/data/properties/akteurin",
+            "http://arkumu.org/data/properties/urheber",
+            # Related project relationships
+            "http://arkumu.org/data/properties/ausgangsprojekt",
+            # File relationships
+            "http://arkumu.org/data/properties/dateiname",
+            "http://arkumu.org/data/properties/dateipfad",
+        ]
+
+        graph_payload = graph_cache.get_entity_graph(
             resource.uri,
+            depth=2,
+            organization_code=org_code,
+            predicate_whitelist=predicate_whitelist,
             include_incoming=True,
-            expand_neighbors=True,  # Enable deep traversal
-            depth=2,  # Traverse 2 hops for richer metadata
-            predicate_canon_whitelist=[
-                # Core Dublin Core mappings (canonical predicates)
-                "http://arkumu.org/data/properties/bevorzugter-titel",
-                "http://arkumu.org/data/properties/alternativer-titel",
-                "http://arkumu.org/data/properties/beschreibung",
-                "http://arkumu.org/data/properties/kuenstler",
-                "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels",
-                "http://arkumu.org/data/properties/schlagwort",
-                "http://arkumu.org/data/properties/projektkategorie",
-                "http://arkumu.org/data/properties/projektart",
-                "http://arkumu.org/data/properties/datensatz-id-beim-einlieferer",
-                "http://arkumu.org/data/properties/rechtsstatus",
-                "http://arkumu.org/data/properties/ereignisort",
-                "http://arkumu.org/data/properties/datensatzerstellung-beim-einlieferer",
-                # Actor relationships
-                "http://arkumu.org/data/properties/akteurin",
-                "http://arkumu.org/data/properties/urheber",
-                # Related project relationships
-                "http://arkumu.org/data/properties/ausgangsprojekt",
-                # File relationships
-                "http://arkumu.org/data/properties/dateiname",
-                "http://arkumu.org/data/properties/dateipfad",
-            ]
+            expand_neighbors=True,
+            restrict_to_org=True
         )
+
+        if not graph_payload:
+            return metadata
+
+        graph = graph_payload.get('graph', {})
         dc = _build_dc_metadata_from_entity_graph(graph, resource)
 
         # Include both canonical URI (if available) and original URI as identifiers
@@ -619,15 +615,19 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         if not org_code:
             return metadata  # Empty metadata if no organization
 
-        # Get complete graph for the project with canonical URI support
-        svc = CanonicalGraphService(org_code=org_code)
-        graph = svc.get_entity_graph(
+        graph_payload = graph_cache.get_entity_graph(
             resource.uri,
+            depth=3,
+            organization_code=org_code,
             include_incoming=True,
             expand_neighbors=True,
-            depth=3,  # Deeper traversal for complete METS representation
-            restrict_to_org=True  # Keep it organization-scoped for security
+            restrict_to_org=True
         )
+
+        if not graph_payload:
+            return metadata
+
+        graph = graph_payload.get('graph', {})
 
         # Build METS container
         mets_root = ET.SubElement(
@@ -1195,18 +1195,14 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
     if offset == 0 and not resources:
         return _error(oai, "noRecordsMatch", "No records found matching the criteria")
 
-    # Check for cached page response first
-    page_cache_key = _get_cache_key(
-        "page",
-        verb="ListRecords",
+    cached_page = oai_cache.get_cached_page(
+        verb='ListRecords',
         metadata_prefix=metadata_prefix,
-        set_spec=set_spec,
-        from_date=from_date,
-        until_date=until_date,
+        set_spec=set_spec or '',
+        from_date=from_date or '',
+        until_date=until_date or '',
         offset=offset
     )
-
-    cached_page = cache.get(page_cache_key)
     if cached_page:
         # Rebuild from cached data
         list_records = ET.SubElement(oai, "ListRecords")
@@ -1284,8 +1280,15 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
         'cached_at': timezone.now().isoformat()
     }
 
-    # Cache for 2 hours (shorter than individual records for freshness)
-    cache.set(page_cache_key, page_data, 2 * 3600)
+    oai_cache.cache_page(
+        verb='ListRecords',
+        metadata_prefix=metadata_prefix,
+        page_data=page_data,
+        set_spec=set_spec or '',
+        from_date=from_date or '',
+        until_date=until_date or '',
+        offset=offset
+    )
 
     return oai
 

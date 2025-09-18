@@ -6,9 +6,7 @@ to improve harvesting performance for external services.
 """
 
 import logging
-from typing import Dict, Optional, List, Any
 from huey.contrib.djhuey import db_task
-from django.core.cache import cache
 from django.utils import timezone
 from arkumu.cache.services import OAICacheService
 
@@ -19,19 +17,6 @@ except ImportError:
     HUEY_PERIODIC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
-
-
-def _get_cache_key(cache_type: str, **kwargs) -> str:
-    """Generate consistent cache keys for OAI-PMH responses."""
-    if cache_type == "record":
-        return f"oai:record:{kwargs['uri']}:{kwargs['metadata_prefix']}:{kwargs['timestamp']}"
-    elif cache_type == "graph":
-        return f"oai:graph:{kwargs['uri']}:{kwargs['timestamp']}"
-    elif cache_type == "page":
-        return f"oai:page:{kwargs['verb']}:{kwargs['metadata_prefix']}:{kwargs.get('set_spec', '')}:{kwargs.get('from_date', '')}:{kwargs.get('until_date', '')}:{kwargs['offset']}"
-    elif cache_type == "list":
-        return f"oai:list:{kwargs['verb']}:{kwargs['metadata_prefix']}:{kwargs.get('set_spec', '')}:{kwargs.get('from_date', '')}:{kwargs.get('until_date', '')}:{kwargs['offset']}"
-    return f"oai:{cache_type}:{':'.join(str(v) for v in kwargs.values())}"
 
 
 @db_task(retries=2, retry_delay=60)
@@ -83,18 +68,16 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
 
         logger.info(f"🔥 PAGE CACHE: Warming page {offset//100 + 1} for {metadata_prefix}")
 
-        # Build cache key
-        page_cache_key = _get_cache_key(
-            "page",
-            verb="ListRecords",
-            metadata_prefix=metadata_prefix,
-            set_spec=set_spec,
-            from_date=from_date,
-            until_date=until_date,
-            offset=offset
-        )
+        oai_cache = OAICacheService()
 
-        if cache.get(page_cache_key):
+        if oai_cache.get_cached_page(
+            verb='ListRecords',
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec or '',
+            from_date=from_date or '',
+            until_date=until_date or '',
+            offset=offset
+        ):
             logger.debug(f"⚡ Page cache already exists for offset {offset}")
             return
 
@@ -112,7 +95,6 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
             return
 
         # Build page response using centralized cache service
-        oai_cache = OAICacheService()
         records_data = []
         for resource in resources:
             # Use centralized cache service to get/warm record
@@ -148,8 +130,15 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
             'cached_at': timezone.now().isoformat()
         }
 
-        # Cache for 2 hours (shorter than individual records)
-        cache.set(page_cache_key, page_data, 2 * 3600)
+        oai_cache.cache_page(
+            verb='ListRecords',
+            metadata_prefix=metadata_prefix,
+            page_data=page_data,
+            set_spec=set_spec or '',
+            from_date=from_date or '',
+            until_date=until_date or '',
+            offset=offset
+        )
 
         logger.info(f"✅ PAGE CACHE: Cached page with {len(records_data)} records at offset {offset}")
 
@@ -368,11 +357,12 @@ def batch_link_files_task(file_ids, organization_code, user_id):
         # Warm cache for affected resources
         if linked > 0:
             logger.info(f"🔥 Warming cache for {len(affected_resources)} resources")
+            oai_cache = OAICacheService()
             for uri, org_code in affected_resources:
                 try:
                     resource = Resource.objects.get(uri=uri, organization__code=org_code)
                     for metadata_prefix in ['oai_dc', 'mets']:
-                        OAIPMHCacheService.warm_record(resource, metadata_prefix)
+                        oai_cache.warm_record(resource, metadata_prefix)
                 except Exception as e:
                     logger.error(f"Cache warming error for {uri}: {str(e)}")
 

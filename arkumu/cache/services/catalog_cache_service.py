@@ -84,6 +84,11 @@ class CatalogCacheService(BaseCacheService):
         self.set_cached('metadata', enriched_data, 'catalog_types', **cache_params)
         logger.debug(f"Cached {len(types_data)} types and {len(properties_data)} properties")
 
+    @staticmethod
+    def _relationship_params_hash(user_org: Optional[str] = None) -> str:
+        scope = user_org or 'global'
+        return hashlib.md5(f"catalog_relationships_{scope}".encode()).hexdigest()[:8]
+
     def get_entity_relationships_from_graph_cache(self, resource_uri: str,
                                                  user_org: str = None) -> Optional[Dict]:
         """
@@ -93,37 +98,40 @@ class CatalogCacheService(BaseCacheService):
         by OAI-PMH operations, avoiding duplicate expensive traversals.
         """
         org_code = user_org or 'global'
+        params_hash = self._relationship_params_hash(user_org)
 
-        # Try to get cached graph data from different sources
-        # 1. Check if we have OAI-generated graph cache
-        oai_graph = self.graph_cache.get_entity_graph(
-            resource_uri,
-            depth=2,
-            organization_code=org_code
+        cached_relationships = self.graph_cache.get_traversal_result(
+            resource_uri=resource_uri,
+            traversal_type='catalog_relationships',
+            params_hash=params_hash
         )
 
-        if oai_graph:
-            logger.debug(f"Reusing OAI graph cache for catalog: {resource_uri}")
-            return self._extract_catalog_relationships(oai_graph['graph'])
+        if cached_relationships:
+            logger.debug(f"Using cached catalog relationships for {resource_uri}")
+            return cached_relationships.get('result')
 
-        # 2. Check for catalog-specific graph cache
-        catalog_graph = self.graph_cache.get_entity_graph(
-            resource_uri,
-            depth=3,  # Catalog might need deeper traversal
-            organization_code=org_code
-        )
+        # Fallback to existing entity graph cache (OAI or catalog).
+        for depth in (2, 3):
+            cached_graph = self.graph_cache.get_entity_graph(
+                resource_uri,
+                depth=depth,
+                organization_code=org_code
+            )
 
-        if catalog_graph:
-            logger.debug(f"Using catalog graph cache: {resource_uri}")
-            return self._extract_catalog_relationships(catalog_graph['graph'])
+            if cached_graph:
+                logger.debug(f"Deriving catalog relationships from cached depth={depth} graph: {resource_uri}")
+                relationships = self._extract_catalog_relationships(cached_graph.get('graph', {}))
+
+                if relationships:
+                    self.cache_entity_relationships(resource_uri, relationships, user_org=user_org)
+                return relationships
 
         return None
 
     def cache_entity_relationships(self, resource_uri: str, relationship_data: Dict,
                                  user_org: str = None):
         """Cache entity relationship data for catalog display."""
-        # Hash the relationship parameters for cache key
-        params_hash = hashlib.md5(f"catalog_relationships_{user_org}".encode()).hexdigest()[:8]
+        params_hash = self._relationship_params_hash(user_org)
 
         self.graph_cache.cache_traversal_result(
             resource_uri=resource_uri,
@@ -190,7 +198,17 @@ class CatalogCacheService(BaseCacheService):
 
         base_stats.update({
             'service_type': 'catalog_cache',
-            'cache_types': ['search', 'metadata', 'relationships'],
+            'cache_types': [
+                'search',
+                'metadata',
+                'relationships',
+                'classes_overview',
+                'class_properties',
+                'all_properties_overview',
+                'catalog_statistics',
+                'available_properties',
+                'catalog_organizations'
+            ],
             'graph_integration': True,
             'supported_operations': [
                 'search_result_caching',

@@ -7,9 +7,9 @@ Efficient navigation: Class → Entity → Property → Literal
 from typing import Dict, List, Optional, Any
 import logging
 from django.db.models import Q, Count, Prefetch
-from django.core.cache import cache
+from django.utils import timezone
 from arkumu.metadata.models import Resource, Triple, ResourceType
-from arkumu.cache.services import GraphCacheService
+from arkumu.cache.services import GraphCacheService, CatalogCacheService
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,21 @@ class GraphSearchService:
         self.user = user
         self.rdf_type_uri = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
         self.graph_cache = GraphCacheService()
+        self.catalog_cache = CatalogCacheService()
         self.user_org = user.organization.code if user and hasattr(user, 'organization') and user.organization else None
+
+    def _get_cached_catalog_data(self, cache_type: str, **kwargs) -> Optional[Any]:
+        cached = self.catalog_cache.get_cached(cache_type, **kwargs)
+        if cached:
+            return cached.get('data')
+        return None
+
+    def _set_cached_catalog_data(self, cache_type: str, ttl_key: str, data: Any, **kwargs):
+        payload = {
+            'data': data,
+            'cached_at': timezone.now().isoformat()
+        }
+        self.catalog_cache.set_cached(cache_type, payload, ttl_key, **kwargs)
 
     def get_classes_with_counts(self, organization_code: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """
@@ -39,8 +53,11 @@ class GraphSearchService:
         Returns:
             List of classes with their entity counts and top properties
         """
-        cache_key = f'catalog:classes:overview:{organization_code or "all"}'
-        cached = cache.get(cache_key)
+        cache_scope = organization_code or 'all'
+        cached = self._get_cached_catalog_data(
+            'classes_overview',
+            org=cache_scope
+        )
         if cached:
             return cached
 
@@ -77,7 +94,12 @@ class GraphSearchService:
                 'description': f"{cls.entity_count} entities"
             })
 
-        cache.set(cache_key, results, 300)  # Cache for 5 minutes
+        self._set_cached_catalog_data(
+            'classes_overview',
+            'catalog_classes',
+            results,
+            org=cache_scope
+        )
         return results
 
     def get_properties_for_class(self, class_uri: str, limit: int = 30, organization_code: str = None) -> List[Dict]:
@@ -91,8 +113,11 @@ class GraphSearchService:
         Returns:
             List of properties with usage counts and sample values
         """
-        cache_key = f'catalog:properties:{class_uri}'
-        cached = cache.get(cache_key)
+        cache_params = {
+            'class_uri': class_uri,
+            'org': organization_code or 'global'
+        }
+        cached = self._get_cached_catalog_data('class_properties', **cache_params)
         if cached:
             return cached
 
@@ -153,7 +178,12 @@ class GraphSearchService:
                 'sample_values': list(sample_values)
             })
 
-        cache.set(cache_key, results, 300)
+        self._set_cached_catalog_data(
+            'class_properties',
+            'catalog_property_snapshot',
+            results,
+            **cache_params
+        )
         return results
 
     def search_literals(self,
@@ -353,8 +383,7 @@ class GraphSearchService:
             return self.get_properties_for_class(resource_type, limit=limit)
 
         # Get all properties across all classes
-        cache_key = 'catalog:properties:all'
-        cached = cache.get(cache_key)
+        cached = self._get_cached_catalog_data('all_properties_overview', scope='all')
         if cached:
             return cached
 
@@ -383,7 +412,12 @@ class GraphSearchService:
                 'usage_count': prop['usage_count']
             })
 
-        cache.set(cache_key, results, 300)
+        self._set_cached_catalog_data(
+            'all_properties_overview',
+            'catalog_property_snapshot',
+            results,
+            scope='all'
+        )
         return results
 
     def search_by_property_with_graph(self,
@@ -586,8 +620,7 @@ class GraphSearchService:
     def get_statistics(self) -> Dict:
         """Get overall catalog statistics."""
 
-        cache_key = 'catalog:statistics'
-        cached = cache.get(cache_key)
+        cached = self._get_cached_catalog_data('catalog_statistics', scope='global')
         if cached:
             return cached
 
@@ -607,7 +640,12 @@ class GraphSearchService:
             'total_triples': Triple.objects.count()
         }
 
-        cache.set(cache_key, stats, 600)  # Cache for 10 minutes
+        self._set_cached_catalog_data(
+            'catalog_statistics',
+            'catalog_statistics',
+            stats,
+            scope='global'
+        )
         return stats
 
     def browse_entities_by_class(self, class_uri: str, limit: int = 20) -> List[Dict]:
@@ -716,9 +754,9 @@ class GraphSearchService:
         during OAI-PMH metadata generation, avoiding duplicate work.
         """
         try:
-            # Try to get relationships from graph cache (possibly from OAI operations)
-            cached_relationships = self.graph_cache.get_entity_relationships_from_graph_cache(
-                entity_uri, self.user_org
+            cached_relationships = self.catalog_cache.get_entity_relationships_from_graph_cache(
+                entity_uri,
+                self.user_org
             )
 
             if cached_relationships:
@@ -790,10 +828,16 @@ class GraphSearchService:
         """
         # Try to leverage any cached property information
         # Shared cache key - same class properties for all users in same org
-        cache_key = f"catalog_properties:{selected_class}:{self.user_org}"
-        cached_properties = cache.get(cache_key)
+        cache_params = {
+            'class_uri': selected_class or 'ALL',
+            'org': self.user_org or 'global'
+        }
+        cached_properties = self._get_cached_catalog_data(
+            'available_properties',
+            **cache_params
+        )
 
-        if cached_properties:
+        if cached_properties is not None:
             logger.debug(f"Using cached available properties for class: {selected_class}")
             return cached_properties
 
@@ -802,7 +846,12 @@ class GraphSearchService:
         properties = self.get_properties_for_class(selected_class) if selected_class else []
 
         # Cache for future use
-        cache.set(cache_key, properties, 6 * 3600)  # 6 hours
+        self._set_cached_catalog_data(
+            'available_properties',
+            'catalog_property_list',
+            properties,
+            **cache_params
+        )
 
         return properties
 
@@ -810,10 +859,9 @@ class GraphSearchService:
         """
         Get available organizations with resource counts, cached.
         """
-        cache_key = "catalog_organizations_all"
-        cached_orgs = cache.get(cache_key)
+        cached_orgs = self._get_cached_catalog_data('catalog_organizations', scope='all')
 
-        if cached_orgs:
+        if cached_orgs is not None:
             logger.debug("Using cached available organizations")
             return cached_orgs
 
@@ -850,8 +898,12 @@ class GraphSearchService:
                     'resource_count': org.resource_count
                 })
 
-            # Cache for 6 hours
-            cache.set(cache_key, organizations, 6 * 3600)
+            self._set_cached_catalog_data(
+                'catalog_organizations',
+                'catalog_organizations',
+                organizations,
+                scope='all'
+            )
             logger.debug(f"Cached {len(organizations)} organizations")
 
             return organizations
