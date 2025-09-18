@@ -32,7 +32,7 @@ CACHE_TTL = {
 # Cache size limits to prevent memory leaks
 CACHE_LIMITS = {
     'max_entries_per_service': 1000,  # Max cache entries per service
-    'memory_threshold_mb': 256,       # Clear cache if process uses > 256MB
+    'memory_threshold_mb': 1024,      # Clear cache if process uses > 1GB (was 256MB - too low!)
 }
 
 # Cache key prefixes for different services
