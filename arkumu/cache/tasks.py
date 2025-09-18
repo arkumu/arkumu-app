@@ -50,8 +50,8 @@ def warm_cross_institutional_projects_cache():
         graph_cache = GraphCacheService()
         result = graph_cache.refresh_cross_institutional_projects_cache()
 
-        if result and 'result' in result:
-            project_count = result['result']['counts']['subjects']
+        if result and 'result' in result and 'projects' in result['result']:
+            project_count = len(result['result']['projects'])
             logger.info(f"Cross-institutional projects cache warmed: {project_count} projects")
             return f"Success: {project_count} projects cached"
         else:
@@ -93,12 +93,10 @@ if HUEY_PERIODIC_AVAILABLE:
             graph_cache = GraphCacheService()
             result = graph_cache.refresh_cross_institutional_projects_cache()
 
-            if result and 'result' in result:
-                project_count = result['result']['counts']['subjects']
-                edge_count = result['result']['counts']['edges']
+            if result and 'result' in result and 'projects' in result['result']:
+                project_count = len(result['result']['projects'])
                 logger.info(
-                    f"Periodic projects cache refresh completed: {project_count} projects, "
-                    f"{edge_count} edges"
+                    f"Periodic projects cache refresh completed: {project_count} projects"
                 )
             else:
                 logger.warning("Periodic projects cache refresh returned no data")

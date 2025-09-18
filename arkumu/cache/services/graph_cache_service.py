@@ -553,23 +553,34 @@ class GraphCacheService(BaseCacheService):
                 },
             }
 
-            # Cache it using the same method as cards.py
+            # Use the existing CatalogView to convert graph to cards format
+            from arkumu.catalog.views.catalog_view import CatalogView
+            from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
+
+            catalog_view = CatalogView()
+            schema_service = SchemaManifestService()
+            card_schema = schema_service.get_card_schema('fuk')  # Use FUK for consistent schema
+
+            # Convert graph to project cards using the existing method
+            all_projects = catalog_view._graph_to_cards(graph, card_schema)
+
+            # Cache in the format that ProjectView and CatalogView expect: {'projects': [...]}
             self.cache_traversal_result(
                 resource_uri=cache_resource_uri,
-                traversal_type="catalog_search",
+                traversal_type="catalog_projects",  # Match what ProjectView and CatalogView expect
                 params_hash=cache_params_hash,
-                result_data=graph
+                result_data={'projects': all_projects}
             )
 
-            logger.info(f"Cached {graph['counts']['subjects']} projects, {graph['counts']['edges']} edges")
+            logger.info(f"Cached {len(all_projects)} project cards from {graph['counts']['subjects']} graph subjects")
 
             logger.info("Cross-institutional projects cache refreshed via existing view logic")
 
-            # Return the actual graph data so the task can log counts
+            # Return the project data so the task can log counts
             return {
-                "result": graph,
+                "result": {'projects': all_projects},
                 "cached_at": timezone.now().isoformat(),
-                "traversal_type": "catalog_search"
+                "traversal_type": "catalog_projects"
             }
 
         except Exception as e:
