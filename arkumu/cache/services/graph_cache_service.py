@@ -8,7 +8,7 @@ import logging
 from typing import Dict, Optional, Any, List
 from django.utils import timezone
 from .base_cache_service import BaseCacheService
-from .memory_efficient_cache import graph_cache
+# Removed custom cache wrapper - using original cache logic
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,6 @@ class GraphCacheService(BaseCacheService):
 
     def __init__(self):
         super().__init__('graph')
-        self.graph_cache_wrapper = graph_cache
 
     def get_entity_graph(self, resource_uri: str, depth: int = 2,
                         organization_code: str = None,
@@ -53,44 +52,11 @@ class GraphCacheService(BaseCacheService):
         }
 
         if predicate_whitelist:
-            # Create hash of whitelist for cache key
             import hashlib
             whitelist_hash = hashlib.md5(str(sorted(predicate_whitelist)).encode()).hexdigest()[:8]
             cache_params['predicates'] = whitelist_hash
 
-        try:
-            # Extract organization from URI if not provided
-            if not organization_code:
-                organization_code = self._extract_org_from_uri(resource_uri)
-
-            # Use shared manager instead of per-request caching
-            filters = {
-                'resource_uri': resource_uri,
-                'depth': depth,
-                'predicates': predicate_whitelist
-            }
-
-            # Get filtered results from shared graph
-            result = self.shared_manager.get_filtered_projects(
-                organization_code=organization_code,
-                filters=filters,
-                limit=100,  # Reasonable limit for memory
-                offset=0
-            )
-
-            if result and 'projects' in result:
-                logger.debug(f"Retrieved {len(result['projects'])} entities via shared manager")
-                return {
-                    'result': result,
-                    'cached_at': result.get('cached_at'),
-                    'source': 'shared_manager'
-                }
-
-            return None
-
-        except Exception as e:
-            logger.error(f"Error getting entity graph for {resource_uri}: {e}")
-            return None
+        return self.get_cached('entity', **cache_params)
 
     def _extract_org_from_uri(self, resource_uri: str) -> str:
         """Extract organization code from resource URI."""

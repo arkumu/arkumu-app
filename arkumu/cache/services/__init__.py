@@ -18,7 +18,8 @@ __all__ = [
     'SchemaMapCacheService',
     'CACHE_TTL',
     'CACHE_PREFIXES',
-    'CacheManager'
+    'CacheManager',
+    'cache_manager'
 ]
 
 
@@ -53,3 +54,7 @@ class CacheManager:
         self.oai.invalidate_resource(resource_uri)
         self.graph.invalidate_resource(resource_uri)
         self.catalog.invalidate_catalog_data(resource_uri)
+
+
+# Global cache manager instance
+cache_manager = CacheManager()
