@@ -41,9 +41,10 @@ class ProjectView(LoginRequiredMixin, View):
             logger.info(f"📊 Getting project from cached graph: {projekt_uri}")
 
             cache_manager = CacheManager()
+            graph_cache = cache_manager.graph
 
             # Get from the graph cache that already contains 840 projects
-            cached_graph = cache_manager.graph.get_traversal_result(
+            cached_graph = graph_cache.get_traversal_result(
                 resource_uri="arkumu:cross_institutional:all_projects",
                 traversal_type="catalog_projects",
                 params_hash="cross_institutional_projects_canonical"
@@ -58,8 +59,28 @@ class ProjectView(LoginRequiredMixin, View):
                 for project in projects:
                     if project.get('uri') == projekt_uri:
                         logger.info(f"✅ Found project in cached graph!")
-                        # Enrich the project with relationship data
-                        enriched_project = self._enrich_project_with_relationships(project)
+                        # Try cached project detail first to avoid reprocessing relationships
+                        detail_cache = graph_cache.get_traversal_result(
+                            resource_uri=projekt_uri,
+                            traversal_type="catalog_project_detail",
+                            params_hash="canonical"
+                        )
+
+                        if detail_cache and detail_cache.get('result'):
+                            logger.info("📦 Using cached project detail payload")
+                            enriched_project = detail_cache['result']
+                        else:
+                            logger.info("♻️ Detail cache miss – enriching project relationships")
+                            enriched_project = self._enrich_project_with_relationships(project)
+
+                            if enriched_project:
+                                graph_cache.cache_traversal_result(
+                                    resource_uri=projekt_uri,
+                                    traversal_type="catalog_project_detail",
+                                    params_hash="canonical",
+                                    result_data=enriched_project
+                                )
+
                         project_data = self._convert_cached_project_to_project_data(enriched_project)
                         break
 
@@ -564,4 +585,3 @@ class ProjectView(LoginRequiredMixin, View):
         except Exception as e:
             logger.error(f"❌ Error enriching project with relationships: {e}")
             return project_dict
-

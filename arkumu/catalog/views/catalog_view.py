@@ -652,6 +652,10 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         if not cards:
             return cards
 
+        if all(card.get('_enriched') for card in cards):
+            logger.debug("Cards already enriched; skipping relationship lookups")
+            return cards
+
         schema = card_schema or copy.deepcopy(CARD_SCHEMA_TEMPLATE)
         triple_service = TripleRelationshipService(relationship_org_code)
 
@@ -679,6 +683,8 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         logger.info(f"🔗 ENRICHING: Processing all relationships for {len(cards)} cards")
 
         for card in cards:
+            if card.get('_enriched'):
+                continue
             subject_id = card.get('uri')
             if not subject_id:
                 continue
@@ -769,7 +775,13 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 if card['digital_objects'] and card.get('image') == 'images/main/card_1.png':
                     card['image'] = card['digital_objects'][0]
 
-        logger.info(f"🔗 ENRICHED: Added all relationship data to {len(cards)} cards")
+            card['_enriched'] = True
+
+        logger.info(
+            "🔗 ENRICHED: Added relationship data to %s cards (total processed %s)",
+            sum(1 for card in cards if card.get('_enriched')),
+            len(cards)
+        )
         return cards
 
     @staticmethod

@@ -205,19 +205,13 @@ class SchemaManifestService:
             class_binding = canonical_schema.get(section.canonical_class_uri)
 
             if class_binding:
-                logger.info(
-                    "SchemaManifestService.get_card_schema: Found binding for section '%s' (class: %s) with %d properties, %d FK relationships",
+                logger.debug(
+                    "SchemaManifestService.get_card_schema: Section '%s' (class: %s) has %d properties, %d FK relationships",
                     section.label,
                     section.canonical_class_uri,
                     len(class_binding.properties),
                     len(class_binding.fk_relationships),
                 )
-
-                # Log FK relationships for debugging
-                if class_binding.fk_relationships:
-                    logger.info(f"  FK relationships for {section.label}:")
-                    for fk in class_binding.fk_relationships[:3]:  # Show first 3
-                        logger.info(f"    - {fk.get('source_property')} -> {fk.get('target_dataset')}.{fk.get('target_property')}")
 
                 # Share FK relationships reference (read-only metadata)
                 section.fk_relationships = class_binding.fk_relationships

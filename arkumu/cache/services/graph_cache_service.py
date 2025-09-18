@@ -519,7 +519,10 @@ class GraphCacheService(BaseCacheService):
             all_subject_ids = service._find_subject_ids_by_class(canonical_project_uri)
             logger.info(f"Found {len(all_subject_ids)} projects using canonical URI")
 
-            if not all_subject_ids:
+            # Normalize subject IDs to strings for downstream consumers
+            normalized_subject_ids = [str(subject_id) for subject_id in all_subject_ids]
+
+            if not normalized_subject_ids:
                 institution_uris = [
                     "http://arkumu.org/data/fuk/types/projekt",
                     "http://arkumu.org/data/rsh/types/projekt",
@@ -530,9 +533,10 @@ class GraphCacheService(BaseCacheService):
                 ]
                 for uri in institution_uris:
                     subject_ids = service._find_subject_ids_by_class(uri)
-                    all_subject_ids.extend(subject_ids)
+                    normalized_subject_ids.extend(str(subject_id) for subject_id in subject_ids)
+                    logger.info(f"Found {len(subject_ids)} subjects for {uri}")
 
-            edges = service._fetch_triples_for_subjects(all_subject_ids)
+            edges = service._fetch_triples_for_subjects(normalized_subject_ids)
             if edges:
                 neighbor_ids = [e.object_id for e in edges if e.object_type != 'LITERAL'][:100]
                 if neighbor_ids:
@@ -543,11 +547,11 @@ class GraphCacheService(BaseCacheService):
             graph = {
                 "organization": "cross-institutional",
                 "dataset": "Projekt",
-                "subjects": all_subject_ids,
+                "subjects": normalized_subject_ids,
                 "nodes": nodes,
                 "edges": [e.__dict__ for e in edges],
                 "counts": {
-                    "subjects": len(all_subject_ids),
+                    "subjects": len(normalized_subject_ids),
                     "nodes": len(nodes),
                     "edges": len(edges),
                 },
@@ -564,23 +568,38 @@ class GraphCacheService(BaseCacheService):
             # Convert graph to project cards using the existing method
             all_projects = catalog_view._graph_to_cards(graph, card_schema)
 
-            # Cache in the format that ProjectView and CatalogView expect: {'projects': [...]}
+            # Cache the raw graph for search views under catalog_search
             self.cache_traversal_result(
                 resource_uri=cache_resource_uri,
-                traversal_type="catalog_projects",  # Match what ProjectView and CatalogView expect
+                traversal_type="catalog_search",
                 params_hash=cache_params_hash,
-                result_data={'projects': all_projects}
+                result_data=graph
             )
 
-            logger.info(f"Cached {len(all_projects)} project cards from {graph['counts']['subjects']} graph subjects")
+            # Cache the derived cards for project/detail views under catalog_projects
+            projects_payload = {'projects': all_projects}
+            self.cache_traversal_result(
+                resource_uri=cache_resource_uri,
+                traversal_type="catalog_projects",
+                params_hash=cache_params_hash,
+                result_data=projects_payload
+            )
+
+            logger.info(
+                "Cached %s project cards and raw graph (%s subjects, %s edges)",
+                len(all_projects),
+                graph['counts']['subjects'],
+                graph['counts']['edges']
+            )
 
             logger.info("Cross-institutional projects cache refreshed via existing view logic")
 
-            # Return the project data so the task can log counts
+            # Return unified payload for callers (tasks/tests)
             return {
-                "result": {'projects': all_projects},
-                "cached_at": timezone.now().isoformat(),
-                "traversal_type": "catalog_projects"
+                "projects": all_projects,
+                "graph": graph,
+                "counts": graph['counts'],
+                "cached_at": timezone.now().isoformat()
             }
 
         except Exception as e:

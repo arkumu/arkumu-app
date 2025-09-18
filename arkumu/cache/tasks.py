@@ -50,13 +50,13 @@ def warm_cross_institutional_projects_cache():
         graph_cache = GraphCacheService()
         result = graph_cache.refresh_cross_institutional_projects_cache()
 
-        if result and 'result' in result and 'projects' in result['result']:
-            project_count = len(result['result']['projects'])
+        if result and result.get('projects'):
+            project_count = len(result['projects'])
             logger.info(f"Cross-institutional projects cache warmed: {project_count} projects")
             return f"Success: {project_count} projects cached"
-        else:
-            logger.error("Failed to warm projects cache - no result returned")
-            return "Failed: No data returned"
+
+        logger.error("Failed to warm projects cache - no project data returned")
+        return "Failed: No data returned"
 
     except Exception as e:
         logger.error(f"Failed to warm cross-institutional projects cache: {e}")
@@ -93,13 +93,19 @@ if HUEY_PERIODIC_AVAILABLE:
             graph_cache = GraphCacheService()
             result = graph_cache.refresh_cross_institutional_projects_cache()
 
-            if result and 'result' in result and 'projects' in result['result']:
-                project_count = len(result['result']['projects'])
+            if result and result.get('projects'):
+                project_count = len(result['projects'])
+                edge_count = (
+                    result.get('counts', {}).get('edges')
+                    if isinstance(result.get('counts'), dict)
+                    else 'unknown'
+                )
                 logger.info(
-                    f"Periodic projects cache refresh completed: {project_count} projects"
+                    f"Periodic projects cache refresh completed: {project_count} projects, "
+                    f"{edge_count} edges"
                 )
             else:
-                logger.warning("Periodic projects cache refresh returned no data")
+                logger.warning("Periodic projects cache refresh returned no project data")
 
         except Exception as e:
             logger.error(f"Periodic projects cache refresh failed: {e}")
