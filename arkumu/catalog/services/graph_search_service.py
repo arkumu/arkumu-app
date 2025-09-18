@@ -789,7 +789,8 @@ class GraphSearchService:
         before performing expensive database queries.
         """
         # Try to leverage any cached property information
-        cache_key = f"catalog_properties_{selected_class}_{self.user_org}"
+        # Shared cache key - same class properties for all users in same org
+        cache_key = f"catalog_properties:{selected_class}:{self.user_org}"
         cached_properties = cache.get(cache_key)
 
         if cached_properties:

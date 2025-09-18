@@ -1,20 +1,27 @@
 """
 Graph Cache Service
 
-Centralized caching for entity graph traversals, shared between OAI-PMH and catalog explorer.
+Memory-efficient caching using shared graph manager to prevent memory multiplication.
 """
 
 import logging
 from typing import Dict, Optional, Any, List
 from django.utils import timezone
 from .base_cache_service import BaseCacheService
+from .memory_efficient_cache import graph_cache
 
 logger = logging.getLogger(__name__)
 
 
 class GraphCacheService(BaseCacheService):
     """
-    Centralized service for caching expensive graph traversal operations.
+    Memory-optimized service for graph operations using shared graph manager.
+
+    Key improvements:
+    - Uses shared graph instance instead of per-request loading
+    - Memory-bounded caching with LRU eviction
+    - Streaming results for large datasets
+    - Organization-level filtering instead of separate graphs
 
     Used by:
     - OAI-PMH views for Dublin Core and METS metadata generation
@@ -24,6 +31,7 @@ class GraphCacheService(BaseCacheService):
 
     def __init__(self):
         super().__init__('graph')
+        self.project_cache = project_cache
 
     def get_entity_graph(self, resource_uri: str, depth: int = 2,
                         organization_code: str = None,
@@ -50,7 +58,52 @@ class GraphCacheService(BaseCacheService):
             whitelist_hash = hashlib.md5(str(sorted(predicate_whitelist)).encode()).hexdigest()[:8]
             cache_params['predicates'] = whitelist_hash
 
-        return self.get_cached('entity', **cache_params)
+        try:
+            # Extract organization from URI if not provided
+            if not organization_code:
+                organization_code = self._extract_org_from_uri(resource_uri)
+
+            # Use shared manager instead of per-request caching
+            filters = {
+                'resource_uri': resource_uri,
+                'depth': depth,
+                'predicates': predicate_whitelist
+            }
+
+            # Get filtered results from shared graph
+            result = self.shared_manager.get_filtered_projects(
+                organization_code=organization_code,
+                filters=filters,
+                limit=100,  # Reasonable limit for memory
+                offset=0
+            )
+
+            if result and 'projects' in result:
+                logger.debug(f"Retrieved {len(result['projects'])} entities via shared manager")
+                return {
+                    'result': result,
+                    'cached_at': result.get('cached_at'),
+                    'source': 'shared_manager'
+                }
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting entity graph for {resource_uri}: {e}")
+            return None
+
+    def _extract_org_from_uri(self, resource_uri: str) -> str:
+        """Extract organization code from resource URI."""
+        try:
+            # Assuming URI format contains org code
+            # e.g., http://arkumu.org/data/fuk/projekt/123 -> fuk
+            parts = resource_uri.split('/')
+            for i, part in enumerate(parts):
+                if part == 'data' and i + 1 < len(parts):
+                    return parts[i + 1]
+            return 'unknown'
+        except:
+            return 'unknown'
 
     def cache_entity_graph(self, resource_uri: str, graph_data: Dict,
                           depth: int = 2, organization_code: str = None,
