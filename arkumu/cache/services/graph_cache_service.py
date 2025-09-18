@@ -31,7 +31,7 @@ class GraphCacheService(BaseCacheService):
 
     def __init__(self):
         super().__init__('graph')
-        self.project_cache = project_cache
+        self.graph_cache_wrapper = graph_cache
 
     def get_entity_graph(self, resource_uri: str, depth: int = 2,
                         organization_code: str = None,
