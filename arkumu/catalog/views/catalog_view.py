@@ -11,7 +11,7 @@ import logging
 from typing import Dict, List, Any
 
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
-from arkumu.cache.services.graph_cache_service import GraphCacheService
+from arkumu.cache.services import CacheManager
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 
 logger = logging.getLogger(__name__)
@@ -90,13 +90,12 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
             processing_time = time.time() - start_time
 
-            # For HTMX requests, return search results with fast OOB updates
+            # For HTMX requests, return unified results container
             if is_htmx:
-                logger.info(f"⚡ HTMX_RESPONSE: Returning search results with OOB updates in {processing_time:.3f}s")
-                main_html = self.render_search_results_template(request, page_obj.object_list, query)
-                response = self.build_search_oob_response(
+                logger.info(f"⚡ HTMX_RESPONSE: Returning unified results container in {processing_time:.3f}s")
+                response = self.build_search_response(
                     request=request,
-                    main_html=main_html,
+                    results=page_obj.object_list,
                     pagination_context=pagination_context,
                     query=query,
                     total_results=total_results
@@ -108,6 +107,17 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 'query': query,
                 'results': page_obj.object_list,
                 'pagination': pagination_context,
+                # Also include individual pagination values for template
+                'total_results': total_results,
+                'start_result': pagination_context['start_result'],
+                'end_result': pagination_context['end_result'],
+                'current_page': pagination_context['current_page'],
+                'total_pages': pagination_context['total_pages'],
+                'has_previous': pagination_context['has_previous'],
+                'has_next': pagination_context['has_next'],
+                'previous_page': pagination_context['previous_page'],
+                'next_page': pagination_context['next_page'],
+                'page_range': pagination_context['page_range'],
                 'csrf_token': get_token(request)
             }
 
@@ -121,54 +131,68 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
             return self._render_error(request, f"Error loading catalog: {str(e)}")
 
     def _get_all_projects(self, org_code: str, query: str = "") -> List[Dict[str, Any]]:
-        """Get all projects using shared graph cache."""
-        cache_service = GraphCacheService()
+        """Get projects using proper cache architecture: catalog cache first, then graph cache."""
+        cache_manager = CacheManager()
 
-        # Create shared cache key for cross-institutional projects
+        # For searches, check catalog cache first
+        if query:
+            cached_search = cache_manager.catalog.get_cached_search_results(
+                query=query,
+                property_name="cross_institutional_search",
+                selected_class="projekt",
+                user_org="global"
+            )
+
+            if cached_search and cached_search.get('results'):
+                logger.info(f"✅ CATALOG_CACHE_HIT: Using cached search results for '{query}'")
+                return cached_search['results'].get('entities', [])
+
+        # Cache miss - need to get data from graph cache or fetch fresh
         cache_resource_uri = "arkumu:cross_institutional:all_projects"
         cache_params_hash = "cross_institutional_projects_canonical"
 
-        # Try to get data from cache
-        cached_result = cache_service.get_traversal_result(
+        # Try graph cache first (shared with OAI-PMH)
+        cached_graph = cache_manager.graph.get_traversal_result(
             resource_uri=cache_resource_uri,
             traversal_type="catalog_projects",
             params_hash=cache_params_hash
         )
 
-        # Check if we have cached data - if not, this is the FIRST load only
-        if cached_result and cached_result.get('result') and cached_result['result'].get('projects'):
-            logger.info(f"✅ CACHE_HIT: Using cached {len(cached_result['result']['projects'])} projects")
-            projects = cached_result['result']['projects']
+        if cached_graph and cached_graph.get('result') and cached_graph['result'].get('projects'):
+            logger.info(f"✅ GRAPH_CACHE_HIT: Using cached {len(cached_graph['result']['projects'])} projects")
+            all_projects = cached_graph['result']['projects']
         else:
-            # Only fetch from database on FIRST load - after that, cache should always be populated
-            logger.info(f"🔄 FIRST_LOAD: Fetching fresh cross-institutional project data")
-            projects = self._fetch_projects_from_graph(org_code)
+            # Final fallback - fetch fresh data
+            logger.info(f"🔄 FRESH_FETCH: Getting fresh cross-institutional project data")
+            all_projects = self._fetch_projects_from_graph(org_code)
 
-            # Cache the results immediately to avoid future database hits
-            if projects:
-                cache_service.cache_traversal_result(
-                    resource_uri=cache_resource_uri,
-                    traversal_type="catalog_projects",
-                    params_hash=cache_params_hash,
-                    result_data={'projects': projects}
-                )
-                logger.info(f"💾 CACHED: Stored {len(projects)} projects - future requests will use cache only")
-            else:
-                # Even if no projects found, cache empty result to avoid repeated DB hits
-                cache_service.cache_traversal_result(
-                    resource_uri=cache_resource_uri,
-                    traversal_type="catalog_projects",
-                    params_hash=cache_params_hash,
-                    result_data={'projects': []}
-                )
-                logger.info(f"💾 CACHED: Stored empty result - future requests will use cache only")
+            # Cache in graph cache for reuse by other services
+            cache_manager.graph.cache_traversal_result(
+                resource_uri=cache_resource_uri,
+                traversal_type="catalog_projects",
+                params_hash=cache_params_hash,
+                result_data={'projects': all_projects}
+            )
+            logger.info(f"💾 GRAPH_CACHED: Stored {len(all_projects)} projects for reuse")
 
-        # Filter by query if provided - this is done in memory, no DB hit
+        # Filter by query
         if query:
-            projects = self._filter_projects_by_query(projects, query)
-            logger.info(f"🔍 FILTERED: {len(projects)} projects match '{query}' (memory search)")
+            filtered_projects = self._filter_projects_by_query(all_projects, query)
+            logger.info(f"🔍 FILTERED: {len(filtered_projects)} projects match '{query}'")
 
-        return projects
+            # Cache the search results in catalog cache
+            cache_manager.catalog.cache_search_results(
+                query=query,
+                property_name="cross_institutional_search",
+                results={'entities': filtered_projects},
+                selected_class="projekt",
+                user_org="global"
+            )
+            logger.info(f"💾 CATALOG_CACHED: Stored search results for '{query}'")
+
+            return filtered_projects
+
+        return all_projects
 
     def _fetch_projects_from_graph(self, org_code: str) -> List[Dict[str, Any]]:
         """Fetch projects from graph service."""
@@ -180,13 +204,13 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         return []
 
     def _fetch_fresh_graph(self, org_code: str) -> Dict[str, Any]:
-        """Fetch fresh graph data from service."""
+        """Fetch fresh graph data from service with consistent string subject IDs."""
         logger.info(f"Fetching fresh graph for cross-institutional canonical search")
 
-        service = CanonicalGraphService()
+        service = CanonicalGraphService()  # No org_code = all institutions
         canonical_project_uri = "http://arkumu.org/data/types/projekt"
 
-        # Get ALL projects with canonical URI mapping
+        # Get ALL projects with canonical URI mapping (using private method for now)
         all_subject_ids = service._find_subject_ids_by_class(canonical_project_uri)
         logger.info(f"Found {len(all_subject_ids)} projects with canonical URI mapping")
 
@@ -248,12 +272,29 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         subjects = graph.get('subjects', [])
         logger.info(f"Processing {len(subjects)} subjects for card extraction")
 
-        for subject_id in subjects:
+        # Debug: check mismatch between subjects and edge subjects
+        edge_subject_sample = list(edges_by_subject.keys())[:3]
+        graph_subject_sample = subjects[:3]
+        logger.info(f"DEBUG: Edge subjects sample: {edge_subject_sample}")
+        logger.info(f"DEBUG: Graph subjects sample: {graph_subject_sample}")
+        logger.info(f"DEBUG: First graph subject in edge subjects? {graph_subject_sample[0] in edges_by_subject if graph_subject_sample else 'No subjects'}")
+
+        for i, subject_id in enumerate(subjects):
             subject_edges = edges_by_subject.get(subject_id, [])
             if subject_edges:
+                # Debug first subject
+                if i == 0:
+                    sample_uris = set()
+                    for edge in subject_edges:
+                        canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
+                        sample_uris.add(canonical_uri)
+                    logger.info(f"DEBUG: Sample canonical URIs for first subject: {list(sample_uris)[:10]}")
+
                 card_data = self._extract_card_from_graph(subject_id, subject_edges, edges)
                 if card_data:
                     cards.append(card_data)
+                elif i == 0:  # Log why first card failed
+                    logger.info(f"DEBUG: First card failed extraction for subject {subject_id}")
 
         logger.info(f"Converted graph to {len(cards)} cards")
         return cards
@@ -287,12 +328,14 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
             'year_range': ''
         }
 
+
         # Extract basic properties
         for edge in subject_edges:
             canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
 
             if canonical_uri == TITLE_URI and edge.get('object_value'):
                 card['title'] = edge['object_value']
+                logger.debug(f"Found title for {subject_id}: {edge['object_value']}")
             elif canonical_uri == SUBTITLE_URI and edge.get('object_value'):
                 card['subtitle'] = edge['object_value']
             elif canonical_uri == IMAGE_URI and edge.get('object_value'):

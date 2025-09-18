@@ -38,6 +38,26 @@ def warm_schema_cache():
         raise
 
 
+@db_task()
+def warm_cross_institutional_projects_cache():
+    """Warm the cross-institutional projects cache for fast catalog searches."""
+    from arkumu.catalog.views.catalog_view import CatalogView
+
+    try:
+        logger.info("Starting cross-institutional projects cache warming...")
+
+        # Use the existing catalog view method to populate cache
+        catalog_view = CatalogView()
+        projects = catalog_view._get_all_projects(org_code=None, query="")
+
+        logger.info(f"Cross-institutional projects cache warmed: {len(projects)} projects")
+        return f"Success: {len(projects)} projects cached"
+
+    except Exception as e:
+        logger.error(f"Failed to warm cross-institutional projects cache: {e}")
+        raise
+
+
 if HUEY_PERIODIC_AVAILABLE:
     @db_periodic_task(crontab(minute='*/30'))  # Run every 30 minutes
     def refresh_schema_cache_periodic():

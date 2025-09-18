@@ -30,7 +30,7 @@
            name="query"
            value="{{query|default:''}}"
            hx-get="{% url 'catalog:design' %}"
-           hx-target="#search-results-container"
+           hx-target="#results-container"
            hx-swap="innerHTML"
            hx-trigger="input changed delay:50ms, keyup[keyCode==13]"
            hx-indicator="#search-loading"
@@ -43,7 +43,7 @@
                    theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-dark:hover:bg-arkumu-light-hover
                    theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light theme-blue:hover:bg-arkumu-blue-hover"
             hx-get="{% url 'catalog:design' %}"
-            hx-target="#search-results-container"
+            hx-target="#results-container"
             hx-swap="innerHTML"
             hx-include="#searchbar"
             hx-indicator="#search-loading"

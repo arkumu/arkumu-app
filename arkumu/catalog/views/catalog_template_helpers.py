@@ -23,26 +23,39 @@ class CatalogTemplateHelperMixin:
     without full page reloads.
     """
 
-    def render_search_results_template(self, request, results: List[Dict], query: str = "") -> str:
+    def render_results_container(self, request, results: List[Dict], pagination_context: Dict,
+                                query: str = "", total_results: int = 0) -> str:
         """
-        Render search results card grid template.
+        Render unified results container with all sub-components.
 
         Args:
             request: Django request object
             results: List of project cards
+            pagination_context: Pagination data dict
             query: Search query string
+            total_results: Total number of results
 
         Returns:
-            Rendered HTML string for card grid
+            Rendered HTML string for entire results container
         """
         context = {
             'results': results,
             'query': query,
+            'total_results': total_results,
+            'start_result': pagination_context.get('start_result', 0),
+            'end_result': pagination_context.get('end_result', 0),
+            'current_page': pagination_context.get('current_page', 1),
+            'total_pages': pagination_context.get('total_pages', 0),
+            'has_previous': pagination_context.get('has_previous', False),
+            'has_next': pagination_context.get('has_next', False),
+            'previous_page': pagination_context.get('previous_page'),
+            'next_page': pagination_context.get('next_page'),
+            'page_range': pagination_context.get('page_range', []),
             'csrf_token': get_token(request)
         }
 
         return render_to_string(
-            'catalog/partials/card_grid.html',
+            'catalog/partials/results_container.html',
             context,
             request=request
         )
@@ -100,65 +113,38 @@ class CatalogTemplateHelperMixin:
 
         return f'<div class="text-center py-4 text-arkumu-dark theme-dark:text-arkumu-light">Suche nach "{query}" - {total_results} Projekte gefunden</div>'
 
-    def build_search_oob_response(self, request, main_html: str, pagination_context: Dict,
-                                query: str = "", total_results: int = 0) -> HttpResponse:
+    def build_search_response(self, request, results: List[Dict], pagination_context: Dict,
+                            query: str = "", total_results: int = 0) -> HttpResponse:
         """
-        Build complete search response with OOB updates using proven CSV mapping pattern.
+        Build simple search response with unified results container.
 
-        Updates multiple page elements simultaneously:
-        - Main search results
-        - Pagination controls
-        - Results counter
-        - Search status
+        No OOB updates needed - just returns the complete results container.
 
         Args:
             request: Django request object
-            main_html: Main search results HTML
+            results: List of project cards
             pagination_context: Pagination data
             query: Search query string
             total_results: Total number of results
 
         Returns:
-            HttpResponse with OOB updates
+            HttpResponse with results container HTML
         """
-        # Render pagination
-        pagination_html = self.render_pagination_template(request, pagination_context)
+        # Render the unified results container
+        html = self.render_results_container(
+            request=request,
+            results=results,
+            pagination_context=pagination_context,
+            query=query,
+            total_results=total_results
+        )
 
-        # Render results count
-        start = pagination_context.get('start_result', 0)
-        end = pagination_context.get('end_result', 0)
-        results_count_html = self.render_results_count_template(start, end, total_results)
+        logger.info(f"🚀 CATALOG_RESPONSE: Built unified results container for query '{query}' with {total_results} results")
 
-        # Render search status
-        search_status_html = self.render_search_status_template(query, total_results)
+        # Create HttpResponse
+        response = HttpResponse(html)
 
-        # Build OOB updates using proven CSV mapping pattern
-        oob_updates = {}
-
-        # Only add OOB updates with actual content
-        if pagination_html.strip():
-            oob_updates['pagination-container'] = pagination_html
-
-        if results_count_html.strip():
-            oob_updates['results-count'] = results_count_html
-
-        if search_status_html.strip():
-            oob_updates['search-status'] = search_status_html
-
-        logger.info(f"🔍 OOB_CONTENT DEBUG: pagination_html length: {len(pagination_html)}")
-        logger.info(f"🔍 OOB_CONTENT DEBUG: results_count_html length: {len(results_count_html)}")
-        logger.info(f"🔍 OOB_CONTENT DEBUG: search_status_html length: {len(search_status_html)}")
-        logger.info(f"🔍 OOB_CONTENT DEBUG: Final oob_updates keys: {list(oob_updates.keys())}")
-
-        # Use the proven build_oob_response method from CSV mapping
-        response_html = self.build_oob_response(main_html, oob_updates)
-
-        logger.info(f"🚀 CATALOG_OOB: Built response with {len(oob_updates)} OOB updates for query '{query}'")
-
-        # Create HttpResponse with URL push for search queries
-        response = HttpResponse(response_html)
-
-        # Add URL push using HX-Push header (more reliable than OOB)
+        # Add URL push for browser history
         if query:
             response['HX-Push-Url'] = f"/catalog/design/?query={query}"
         else:
@@ -206,11 +192,8 @@ class CatalogTemplateHelperMixin:
             query: Search query string
 
         Returns:
-            HttpResponse with empty results and OOB updates
+            HttpResponse with empty results container
         """
-        # Empty results template
-        main_html = self.render_search_results_template(request, [], query)
-
         # Empty pagination context
         pagination_context = {
             'current_page': 1,
@@ -225,9 +208,9 @@ class CatalogTemplateHelperMixin:
             'page_range': []
         }
 
-        return self.build_search_oob_response(
+        return self.build_search_response(
             request=request,
-            main_html=main_html,
+            results=[],
             pagination_context=pagination_context,
             query=query,
             total_results=0

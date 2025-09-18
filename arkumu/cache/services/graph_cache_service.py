@@ -169,7 +169,14 @@ class GraphCacheService(BaseCacheService):
         """
         Get resource timestamp for cache versioning.
         Returns current timestamp if resource not found.
+        For synthetic URIs (arkumu:*), returns a fixed timestamp to enable caching.
         """
+        # Handle synthetic/virtual resource URIs that don't exist in the database
+        if resource_uri.startswith('arkumu:'):
+            # Use a fixed timestamp for synthetic keys to enable proper caching
+            # Change this value when you want to invalidate synthetic caches
+            return 1726632000  # Fixed timestamp: 2024-09-18 00:00:00 UTC
+
         try:
             from arkumu.metadata.models.resource import Resource
             resource = Resource.objects.filter(uri=resource_uri).first()

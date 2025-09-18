@@ -17,6 +17,7 @@ class CacheConfig(AppConfig):
             try:
                 # Import here to avoid circular imports during app loading
                 from arkumu.cache.services import SchemaMapCacheService
+                from arkumu.cache.tasks import warm_cross_institutional_projects_cache
 
                 logger.info("Warming schema map cache on startup...")
                 schema_cache = SchemaMapCacheService()
@@ -27,6 +28,10 @@ class CacheConfig(AppConfig):
                     f"Schema cache warmed: {schema_map['meta']['total_classes']} classes, "
                     f"{schema_map['meta']['total_properties']} properties"
                 )
+
+                # Schedule cross-institutional projects cache warming
+                logger.info("Scheduling cross-institutional projects cache warming...")
+                warm_cross_institutional_projects_cache()
 
             except Exception as e:
                 # Don't fail startup if cache warming fails
