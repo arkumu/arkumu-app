@@ -355,14 +355,6 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         for i, subject_id in enumerate(subjects):
             subject_edges = edges_by_subject.get(subject_id, [])
             if subject_edges:
-                # Debug first subject
-                if i == 0:
-                    sample_uris = set()
-                    for edge in subject_edges:
-                        canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
-                        sample_uris.add(canonical_uri)
-                    logger.info(f"DEBUG: Sample canonical URIs for first subject: {list(sample_uris)[:10]}")
-
                 card_data = self._extract_card_from_graph(
                     subject_id,
                     subject_edges,
@@ -406,22 +398,6 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         skip_relationships: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """Extract card data from graph edges for a specific subject."""
-
-        if not hasattr(self, '_logged_first_subject'):
-            self._logged_first_subject = True
-            logger.info(f"🔍 CARD_EXTRACTION: Processing first subject {subject_id} with {len(subject_edges)} edges")
-            logger.info(f"🔍 CARD_SCHEMA: Available sections: {list(card_schema.sections.keys())}")
-
-            for section_name, section in card_schema.sections.items():
-                if section.available:
-                    logger.info(f"  ✅ Section '{section_name}' is available with properties:")
-                    for prop_name, prop in section.properties.items():
-                        binding = prop.bindings[0] if prop.bindings else None
-                        if binding and binding.dataset and binding.column:
-                            binding_info = f"{binding.dataset}.{binding.column}"
-                        else:
-                            binding_info = "NO BINDINGS"
-                        logger.info(f"    - {prop_name}: {prop.canonical_uri} -> {binding_info}")
 
         def _property(section: str, prop: str) -> Optional[CardProperty]:
             section_obj = card_schema.sections.get(section)
