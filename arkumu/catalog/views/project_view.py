@@ -5,6 +5,7 @@ Project detail view using canonical URIs.
 from django.views.generic import View
 from django.shortcuts import render
 from django.contrib.auth.mixins import LoginRequiredMixin
+from typing import Optional
 import logging
 
 from arkumu.catalog.services.project_views import ProjectData
@@ -34,70 +35,34 @@ class ProjectView(LoginRequiredMixin, View):
         logger.info(f"✅ ProjectView - Project URI: {projekt_uri}")
 
         try:
-            # Get project data from cache - try multiple sources
-            logger.info(f"📊 Getting project from cache: {projekt_uri}")
-            logger.info(f"🔍 Looking for project URI: '{projekt_uri}' (length: {len(projekt_uri)})")
+            # Get project data from the same graph cache that already contains all projects
+            logger.info(f"📊 Getting project from cached graph: {projekt_uri}")
 
             cache_manager = CacheManager()
-            project_data = None
 
-            # Strategy 1: Try catalog cache with empty query (same as catalog view for empty searches)
-            logger.info(f"🔍 Strategy 1: Checking catalog cache with empty query...")
-            cached_search = cache_manager.catalog.get_cached_search_results(
-                query="",
-                property_name="cross_institutional_search",
-                selected_class="projekt",
-                user_org="global"
+            # Get from the graph cache that already contains 840 projects
+            cached_graph = cache_manager.graph.get_traversal_result(
+                resource_uri="arkumu:cross_institutional:all_projects",
+                traversal_type="catalog_projects",
+                params_hash="cross_institutional_projects_canonical"
             )
 
-            if cached_search and cached_search.get('results'):
-                projects = cached_search['results'].get('entities', [])
-                logger.info(f"📊 Found {len(projects)} projects in catalog cache (empty query)")
-                project_data = self._find_project_in_list(projects, projekt_uri, "catalog cache (empty)")
+            project_data = None
+            if cached_graph and cached_graph.get('result') and 'projects' in cached_graph['result']:
+                projects = cached_graph['result']['projects']
+                logger.info(f"📊 Found {len(projects)} projects in cached graph")
+
+                # Find the specific project by URI
+                for project in projects:
+                    if project.get('uri') == projekt_uri:
+                        logger.info(f"✅ Found project in cached graph!")
+                        project_data = self._convert_cached_project_to_project_data(project)
+                        break
+
+                if not project_data:
+                    logger.error(f"❌ Project {projekt_uri} not found in {len(projects)} cached projects")
             else:
-                logger.info(f"📊 No catalog cache results for empty query")
-
-            # Strategy 2: Try graph cache directly (like catalog view does)
-            if not project_data:
-                logger.info(f"🔍 Strategy 2: Checking graph cache directly...")
-                cache_resource_uri = "arkumu:cross_institutional:all_projects"
-                cache_params_hash = "cross_institutional_projects_canonical"
-
-                cached_graph = cache_manager.graph.get_traversal_result(
-                    resource_uri=cache_resource_uri,
-                    traversal_type="catalog_projects",
-                    params_hash=cache_params_hash
-                )
-
-                if cached_graph and cached_graph.get('result'):
-                    projects = cached_graph['result']
-                    logger.info(f"📊 Found {len(projects)} projects in graph cache")
-                    project_data = self._find_project_in_list(projects, projekt_uri, "graph cache")
-                else:
-                    logger.info(f"📊 No graph cache results found")
-
-            # Strategy 3: Try recent search cache (maybe user just searched)
-            if not project_data:
-                logger.info(f"🔍 Strategy 3: Checking recent search caches...")
-                # Try a few common recent searches
-                for test_query in ["a", "e", "i", "o", "u"]:
-                    cached_search = cache_manager.catalog.get_cached_search_results(
-                        query=test_query,
-                        property_name="cross_institutional_search",
-                        selected_class="projekt",
-                        user_org="global"
-                    )
-                    if cached_search and cached_search.get('results'):
-                        projects = cached_search['results'].get('entities', [])
-                        logger.info(f"📊 Found {len(projects)} projects in search cache for '{test_query}'")
-                        project_data = self._find_project_in_list(projects, projekt_uri, f"search cache ({test_query})")
-                        if project_data:
-                            break
-
-            if not project_data:
-                logger.error(f"❌ COMPLETE FAILURE: Project not found in any cache source")
-                logger.error(f"❌ Target URI: '{projekt_uri}'")
-                logger.error(f"❌ Checked: catalog cache (empty), graph cache, recent search caches")
+                logger.error(f"❌ No cached graph found")
 
             if not project_data:
                 logger.error(f"❌ Project not found: {projekt_uri}")
@@ -144,6 +109,58 @@ class ProjectView(LoginRequiredMixin, View):
             return render(request, 'catalog/design_error.html', {
                 'error': f'Error loading project: {str(e)}'
             })
+
+    def _convert_entity_graph_to_project_data(self, project_graph: dict, projekt_uri: str) -> Optional[ProjectData]:
+        """Convert entity graph from CanonicalGraphService to ProjectData."""
+        try:
+            # The entity graph contains nodes and edges for this specific project
+            nodes = project_graph.get('nodes', {})
+            edges = project_graph.get('edges', [])
+            root_id = project_graph.get('root_id')
+
+            if not root_id:
+                logger.error(f"No root_id in entity graph for {projekt_uri}")
+                return None
+
+            # Extract project properties from edges
+            project_props = {}
+            for edge in edges:
+                if edge['subject_id'] == root_id:
+                    canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
+                    project_props[canonical_uri] = edge
+
+            # Extract basic properties using canonical URIs
+            title = self._get_edge_value(project_props, "http://arkumu.org/data/properties/bevorzugter-titel")
+            subtitle = self._get_edge_value(project_props, "http://arkumu.org/data/properties/bevorzugter-untertitel")
+            description = self._get_edge_value(project_props, "http://arkumu.org/data/properties/beschreibung")
+            institution = self._get_edge_value(project_props, "http://arkumu.org/data/properties/institution")
+
+            # Extract event dates
+            event_start = self._get_edge_value(project_props, "http://arkumu.org/data/properties/ereignisbeginn")
+            event_end = self._get_edge_value(project_props, "http://arkumu.org/data/properties/ereignisende")
+
+            logger.info(f"✅ Converted entity graph to ProjectData: title='{title}', subtitle='{subtitle}'")
+
+            return ProjectData(
+                uri=projekt_uri,
+                title=title or 'Untitled Project',
+                subtitle=subtitle or '',
+                image=None,  # TODO: Extract from graph if available
+                institution=institution or '',
+                event_start=event_start,
+                event_end=event_end,
+                categories=[],  # TODO: Extract from graph if available
+                actors=[],  # TODO: Extract from graph if available
+                alternative_titles=[],  # TODO: Extract from graph if available
+                description=description or '',
+                catchphrases=[],  # TODO: Extract from graph if available
+                project_type='',  # TODO: Extract from graph if available
+                digital_objects=[]  # TODO: Extract from graph if available
+            )
+
+        except Exception as e:
+            logger.error(f"Error converting entity graph to ProjectData for {projekt_uri}: {e}")
+            return None
 
     def _find_project_in_list(self, projects, target_uri, source_name):
         """

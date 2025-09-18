@@ -31,12 +31,22 @@ class GraphCacheService(BaseCacheService):
 
     def __init__(self):
         super().__init__('graph')
+        # Lazy import to avoid circular dependencies
+        self._canonical_service = None
+
+    @property
+    def canonical_service(self):
+        """Lazy-loaded canonical graph service."""
+        if self._canonical_service is None:
+            from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+            self._canonical_service = CanonicalGraphService(org_code=None)  # Cross-institutional
+        return self._canonical_service
 
     def get_entity_graph(self, resource_uri: str, depth: int = 2,
                         organization_code: str = None,
                         predicate_whitelist: List[str] = None) -> Optional[Dict]:
         """
-        Get cached entity graph or return None if not cached.
+        Get entity graph with caching - same interface as CanonicalGraphService.
 
         Args:
             resource_uri: URI of the resource to get graph for
@@ -44,6 +54,7 @@ class GraphCacheService(BaseCacheService):
             organization_code: Organization scope for security
             predicate_whitelist: Optional list of allowed predicates
         """
+        # Create cache key
         cache_params = {
             'uri': resource_uri,
             'depth': depth,
@@ -56,7 +67,32 @@ class GraphCacheService(BaseCacheService):
             whitelist_hash = hashlib.md5(str(sorted(predicate_whitelist)).encode()).hexdigest()[:8]
             cache_params['predicates'] = whitelist_hash
 
-        return self.get_cached('entity', **cache_params)
+        # Try cache first
+        cached_result = self.get_cached('entity', **cache_params)
+        if cached_result:
+            logger.debug(f"Cache hit for entity graph: {resource_uri}")
+            return cached_result
+
+        # Cache miss - delegate to canonical service
+        logger.info(f"Cache miss for entity graph: {resource_uri}, fetching from canonical service")
+        try:
+            result = self.canonical_service.get_entity_graph(
+                resource_uri=resource_uri,
+                depth=depth,
+                restrict_to_org=False,  # Always cross-institutional for cached access
+                predicate_canon_whitelist=predicate_whitelist
+            )
+
+            # Cache the result
+            if result:
+                self.set_cached('entity', result, 'graph_entity', **cache_params)
+                logger.info(f"Cached entity graph for: {resource_uri}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting entity graph from canonical service for {resource_uri}: {e}")
+            return None
 
     def _extract_org_from_uri(self, resource_uri: str) -> str:
         """Extract organization code from resource URI."""
