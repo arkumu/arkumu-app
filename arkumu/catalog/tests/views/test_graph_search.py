@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from arkumu.catalog.views_explorer import CatalogExplorerView
+from arkumu.catalog.views.explorer import CatalogExplorerView
 
 User = get_user_model()
 
@@ -34,7 +34,7 @@ class TestGraphSearchView(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Graph Explorer')
 
-    @patch('arkumu.catalog.views_explorer.GraphSearchService')
+    @patch('arkumu.catalog.views.explorer.GraphSearchService')
     def test_search_with_query_parameter(self, mock_service_class):
         """Test search with query parameter."""
         # Mock the service
@@ -72,7 +72,7 @@ class TestGraphSearchView(TestCase):
         self.assertContains(response, 'Test Project')
         mock_service.search_by_property_with_graph.assert_called_once()
 
-    @patch('arkumu.catalog.views_explorer.GraphSearchService')
+    @patch('arkumu.catalog.views.explorer.GraphSearchService')
     def test_api_endpoint(self, mock_service_class):
         """Test the JSON API endpoint."""
         # Mock the service
@@ -111,7 +111,7 @@ class TestGraphSearchView(TestCase):
         response = self.client.get(reverse('catalog:explorer_api'))
         self.assertEqual(response.status_code, 302)
 
-    @patch('arkumu.catalog.views_explorer.GraphSearchService')
+    @patch('arkumu.catalog.views.explorer.GraphSearchService')
     def test_api_error_handling(self, mock_service_class):
         """Test API error handling."""
         # Mock the service to raise an exception

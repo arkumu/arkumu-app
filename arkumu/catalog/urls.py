@@ -2,10 +2,10 @@ from django.urls import path
 from django.views.generic import TemplateView
 from django.contrib.auth.decorators import login_required
 
-from .views_graph_search import GraphSearchView
+from .views.cards import GraphSearchView
 from .views.catalog_view import CatalogView
 from .views.project_view import ProjectView
-from .views_explorer import (
+from .views.explorer import (
     CatalogExplorerView,
     CatalogExplorerPropertiesView,
     CatalogExplorerLiteralsView

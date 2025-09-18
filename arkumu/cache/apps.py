@@ -1,4 +1,5 @@
 import logging
+import sys
 from django.apps import AppConfig
 from django.conf import settings
 
@@ -13,28 +14,35 @@ class CacheConfig(AppConfig):
     def ready(self):
         """Warm critical caches on application startup."""
         # Only warm cache in production or when explicitly enabled
-        if getattr(settings, 'WARM_CACHE_ON_STARTUP', False) or not settings.DEBUG:
+        warm_schema = getattr(settings, 'WARM_CACHE_ON_STARTUP', False) or not settings.DEBUG
+        warm_projects = getattr(settings, 'WARM_CROSS_INSTITUTIONAL_CACHE_ON_STARTUP', False)
+
+        if warm_schema:
             try:
                 # Import here to avoid circular imports during app loading
                 from arkumu.cache.services import SchemaMapCacheService
-                from arkumu.cache.tasks import warm_cross_institutional_projects_cache
 
                 logger.info("Warming schema map cache on startup...")
                 schema_cache = SchemaMapCacheService()
 
                 # Warm only the global cache for fast startup
-                schema_map = schema_cache.get_complete_schema_map()
+                schema_map = schema_cache.get_complete_schema_map(include_properties=True)
                 logger.info(
                     f"Schema cache warmed: {schema_map['meta']['total_classes']} classes, "
                     f"{schema_map['meta']['total_properties']} properties"
                 )
-
-                # Schedule cross-institutional projects cache warming
-                logger.info("Scheduling cross-institutional projects cache warming...")
-                warm_cross_institutional_projects_cache()
 
             except Exception as e:
                 # Don't fail startup if cache warming fails
                 logger.warning(f"Failed to warm schema cache on startup: {e}")
         else:
             logger.debug("Cache warming disabled in DEBUG mode")
+
+        if warm_projects and 'run_huey' not in sys.argv:
+            try:
+                from arkumu.cache.tasks import warm_cross_institutional_projects_cache
+
+                logger.info("Scheduling cross-institutional projects cache warming...")
+                warm_cross_institutional_projects_cache.schedule()
+            except Exception as e:
+                logger.warning(f"Failed to schedule projects cache warm-up: {e}")

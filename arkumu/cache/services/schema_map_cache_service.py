@@ -32,7 +32,19 @@ class SchemaMapCacheService(BaseCacheService):
         super().__init__('schema_map')
         self.rdf_type_uri = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
 
-    def get_complete_schema_map(self, organization_code: Optional[str] = None) -> Dict[str, Any]:
+    def get_class_properties(self, class_uri: str, organization_code: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        """Public helper to get properties for a class with optional org filter."""
+        return self._get_properties_for_class(class_uri, organization_code)
+
+    def get_class_properties_with_orgs(self, class_uri: str) -> Dict[str, Dict[str, Any]]:
+        """Public helper returning property stats broken down by organization."""
+        return self._get_properties_for_class_with_orgs(class_uri)
+
+    def get_complete_schema_map(
+        self,
+        organization_code: Optional[str] = None,
+        include_properties: bool = True,
+    ) -> Dict[str, Any]:
         """
         Get complete schema map for catalog explorer.
 
@@ -57,6 +69,11 @@ class SchemaMapCacheService(BaseCacheService):
 
         # Build comprehensive map with ALL data
         classes_data = self._get_classes_with_properties_and_orgs_map()
+
+        if include_properties:
+            for class_uri, class_info in classes_data.items():
+                if not class_info.get('properties'):
+                    class_info['properties'] = self._get_properties_for_class(class_uri)
         schema_map = {
             'organizations': self._get_organizations_map(classes_data),
             'classes': classes_data,
@@ -442,5 +459,5 @@ class SchemaMapCacheService(BaseCacheService):
     def warm_cache(self, organization_codes: Optional[List[str]] = None):
         """Pre-warm the schema cache for better performance."""
         # Just warm the global cache
-        self.get_complete_schema_map()
+        self.get_complete_schema_map(include_properties=True)
         logger.info("Schema cache warmed successfully")
