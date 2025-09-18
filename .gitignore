@@ -324,6 +324,7 @@ md_notes/
 #.md instructions
 CLAUDE.md
 cursor.md
+AGENTS.md
 
 # Cursor IDE
 .cursor/.claude/

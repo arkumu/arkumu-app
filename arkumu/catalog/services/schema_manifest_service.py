@@ -59,6 +59,7 @@ class CardSection:
     label: str
     canonical_class_uri: str
     properties: Dict[str, CardProperty]
+    fk_relationships: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def available(self) -> bool:
@@ -154,32 +155,139 @@ class SchemaManifestService:
 
     def get_card_schema(self, organization_code: str) -> CardSchema:
         """Return a card-specific view of the schema manifest for an organization."""
+        logger.info(
+            "SchemaManifestService.get_card_schema: Starting for org '%s'",
+            organization_code,
+        )
+
         canonical_schema = self._get_canonical_schema(organization_code)
-        schema = copy.deepcopy(CARD_SCHEMA_TEMPLATE)
+
+        # Create new schema with fresh binding lists (only copy structure, not data)
+        schema = CardSchema(
+            sections={
+                name: CardSection(
+                    label=section.label,
+                    canonical_class_uri=section.canonical_class_uri,
+                    properties={
+                        prop_name: CardProperty(
+                            name=prop.name,
+                            canonical_uri=prop.canonical_uri,
+                            bindings=[]  # Fresh empty bindings list
+                        )
+                        for prop_name, prop in section.properties.items()
+                    },
+                    fk_relationships=[]  # Will be set from canonical_schema
+                )
+                for name, section in CARD_SCHEMA_TEMPLATE.sections.items()
+            }
+        )
 
         if canonical_schema is None:
+            logger.warning(
+                "SchemaManifestService.get_card_schema: No canonical schema found for org '%s'",
+                organization_code,
+            )
             return schema
+
+        logger.info(
+            "SchemaManifestService.get_card_schema: Found canonical schema with %d classes for org '%s'",
+            len(canonical_schema),
+            organization_code,
+        )
+
+        # Log available canonical classes
+        logger.debug(
+            "SchemaManifestService.get_card_schema: Found %d canonical classes",
+            len(canonical_schema.keys()),
+        )
 
         for section in schema.sections.values():
             class_binding = canonical_schema.get(section.canonical_class_uri)
+
+            if class_binding:
+                logger.info(
+                    "SchemaManifestService.get_card_schema: Found binding for section '%s' (class: %s) with %d properties, %d FK relationships",
+                    section.label,
+                    section.canonical_class_uri,
+                    len(class_binding.properties),
+                    len(class_binding.fk_relationships),
+                )
+
+                # Log FK relationships for debugging
+                if class_binding.fk_relationships:
+                    logger.info(f"  FK relationships for {section.label}:")
+                    for fk in class_binding.fk_relationships[:3]:  # Show first 3
+                        logger.info(f"    - {fk.get('source_property')} -> {fk.get('target_dataset')}.{fk.get('target_property')}")
+
+                # Share FK relationships reference (read-only metadata)
+                section.fk_relationships = class_binding.fk_relationships
+            else:
+                logger.warning(
+                    "SchemaManifestService.get_card_schema: No binding found for section '%s' (class: %s)",
+                    section.label,
+                    section.canonical_class_uri,
+                )
+
             for prop in section.properties.values():
                 if class_binding:
                     bindings = class_binding.properties.get(prop.canonical_uri, [])
+                    if bindings:
+                        logger.debug(
+                            "SchemaManifestService.get_card_schema: Property '%s' (%s) has %d bindings",
+                            prop.name,
+                            prop.canonical_uri,
+                            len(bindings),
+                        )
+                        for binding in bindings:
+                            logger.debug(
+                                "  - Dataset: %s, Column: %s",
+                                binding.dataset,
+                                binding.column,
+                            )
+                    else:
+                        logger.debug(
+                            "SchemaManifestService.get_card_schema: Property '%s' (%s) has NO bindings",
+                            prop.name,
+                            prop.canonical_uri,
+                        )
                 else:
                     bindings = []
-                # Replace bindings with copies to avoid accidental mutation of cached objects
-                prop.bindings = [
-                    CanonicalPropertyBinding(
-                        canonical_uri=binding.canonical_uri,
-                        dataset=binding.dataset,
-                        column=binding.column,
-                        local_uri=binding.local_uri,
-                        name=binding.name,
-                    )
-                    for binding in bindings
-                ]
+
+                # Set bindings directly (they're immutable dataclass instances)
+                prop.bindings = bindings
+
+        # Log summary of available sections
+        available_sections = [s.label for s in schema.sections.values() if s.available]
+        logger.info(
+            "SchemaManifestService.get_card_schema: Returning schema with %d available sections: %s",
+            len(available_sections),
+            available_sections,
+        )
 
         return schema
+
+    def get_relationship_hints(self, organization_code: str) -> Dict[str, List[Dict[str, Any]]]:
+        """Return FK relationship metadata keyed by card section."""
+
+        schema = self.get_card_schema(organization_code)
+        hints: Dict[str, List[Dict[str, Any]]] = {}
+
+        for section_name, section in schema.sections.items():
+            if not section.fk_relationships:
+                continue
+            hints[section_name] = [
+                {
+                    'source_property': fk.get('source_property'),
+                    'target_property': fk.get('target_property'),
+                    'target_dataset': fk.get('target_dataset'),
+                    'target_column': fk.get('target_column'),
+                    'is_multi_value': fk.get('is_multi_value', False),
+                }
+                for fk in section.fk_relationships
+                if fk.get('source_property') or fk.get('target_property')
+            ]
+
+        return hints
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -188,12 +296,23 @@ class SchemaManifestService:
     def _get_canonical_schema(self, organization_code: str) -> Optional[Dict[str, CanonicalClassBinding]]:
         """Load and canonicalise the schema manifest for an organization."""
         if not organization_code:
+            logger.warning("SchemaManifestService._get_canonical_schema: No organization code provided")
             return None
 
         cache_key = f"canonical_schema_manifest:{organization_code}"
         cached = cache.get(cache_key)
         if cached is not None:
+            logger.info(
+                "SchemaManifestService._get_canonical_schema: Cache HIT for org '%s' - returning %d classes",
+                organization_code,
+                len(cached) if cached else 0,
+            )
             return cached
+
+        logger.info(
+            "SchemaManifestService._get_canonical_schema: Cache MISS for org '%s' - loading from database",
+            organization_code,
+        )
 
         mapping = (
             Mapping.objects.filter(
@@ -222,12 +341,31 @@ class SchemaManifestService:
             cache.set(cache_key, None, self.CACHE_TIMEOUT)
             return None
 
+        logger.info(
+            "SchemaManifestService._get_canonical_schema: Found manifest for org '%s' in mapping %s with %d datasets",
+            organization_code,
+            mapping.id,
+            len(manifest),
+        )
+
         canonical_schema = self._build_canonical_schema(manifest)
+
+        logger.info(
+            "SchemaManifestService._get_canonical_schema: Caching canonical schema for org '%s' (timeout: %ds)",
+            organization_code,
+            self.CACHE_TIMEOUT,
+        )
+
         cache.set(cache_key, canonical_schema, self.CACHE_TIMEOUT)
         return canonical_schema
 
     def _build_canonical_schema(self, manifest: Dict[str, Any]) -> Dict[str, CanonicalClassBinding]:
         """Canonicalise manifest by grouping by canonical URIs."""
+        logger.info(
+            "SchemaManifestService._build_canonical_schema: Processing manifest with %d datasets",
+            len(manifest),
+        )
+
         class_accumulator: Dict[str, Dict[str, Any]] = {}
         dataset_property_bindings: Dict[str, Dict[str, CanonicalPropertyBinding]] = {}
 
@@ -241,6 +379,12 @@ class SchemaManifestService:
                 )
                 continue
 
+            logger.debug(
+                "SchemaManifestService._build_canonical_schema: Dataset '%s' maps to class '%s'",
+                dataset_name,
+                canonical_class_uri,
+            )
+
             class_entry = class_accumulator.setdefault(
                 canonical_class_uri,
                 {
@@ -253,9 +397,21 @@ class SchemaManifestService:
 
             properties = dataset_manifest.get('properties') or {}
             dataset_property_bindings[dataset_name] = {}
+
+            logger.debug(
+                "SchemaManifestService._build_canonical_schema: Dataset '%s' has %d properties",
+                dataset_name,
+                len(properties),
+            )
+
             for column_name, property_snapshot in properties.items():
                 canonical_prop_uri = property_snapshot.get('canonical_uri') or property_snapshot.get('uri')
                 if not canonical_prop_uri:
+                    logger.debug(
+                        "SchemaManifestService._build_canonical_schema: Column '%s' in dataset '%s' has no canonical URI",
+                        column_name,
+                        dataset_name,
+                    )
                     continue
 
                 binding = CanonicalPropertyBinding(
@@ -267,6 +423,13 @@ class SchemaManifestService:
                 )
                 class_entry['properties'].setdefault(canonical_prop_uri, []).append(binding)
                 dataset_property_bindings[dataset_name][column_name] = binding
+
+                logger.debug(
+                    "SchemaManifestService._build_canonical_schema: Added binding - Dataset: %s, Column: %s -> Property: %s",
+                    dataset_name,
+                    column_name,
+                    canonical_prop_uri,
+                )
 
         # Second pass for FK relationships now that dataset properties are known
         for dataset_name, dataset_manifest in manifest.items():
@@ -310,6 +473,20 @@ class SchemaManifestService:
                 datasets=sorted(entry['datasets']),
                 properties=entry['properties'],
                 fk_relationships=entry['fk_relationships'],
+            )
+
+        logger.info(
+            "SchemaManifestService._build_canonical_schema: Built canonical schema with %d classes",
+            len(canonical_bindings),
+        )
+
+        for class_uri, binding in canonical_bindings.items():
+            logger.debug(
+                "SchemaManifestService._build_canonical_schema: Class '%s' has %d datasets, %d properties, %d FK relationships",
+                class_uri,
+                len(binding.datasets),
+                len(binding.properties),
+                len(binding.fk_relationships),
             )
 
         return canonical_bindings

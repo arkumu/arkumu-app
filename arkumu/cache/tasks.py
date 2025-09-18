@@ -46,9 +46,13 @@ def warm_cross_institutional_projects_cache():
     try:
         logger.info("Starting cross-institutional projects cache warming...")
 
-        # Use the existing catalog view method to populate cache
+        # Use the existing catalog view method to populate cache with proper schema
         catalog_view = CatalogView()
-        projects = catalog_view._get_all_projects(org_code=None, query="")
+
+        # Get the schema with FK relationships (use 'fuk' org like the main view)
+        card_schema = catalog_view.schema_manifest_service.get_card_schema('fuk')
+
+        projects = catalog_view._get_all_projects(org_code=None, query="", card_schema=card_schema)
 
         logger.info(f"Cross-institutional projects cache warmed: {len(projects)} projects")
         return f"Success: {len(projects)} projects cached"

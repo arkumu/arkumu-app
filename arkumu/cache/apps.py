@@ -12,10 +12,26 @@ class CacheConfig(AppConfig):
     verbose_name = 'Centralized Cache Service'
 
     def ready(self):
-        """Warm critical caches on application startup."""
+        """Clear all caches and warm critical caches on application startup."""
+        # Clear caches only in development for fresh FK logic
+        if settings.DEBUG and getattr(settings, 'CLEAR_CACHE_ON_STARTUP', False):
+            try:
+                from arkumu.cache.services import CacheManager
+                logger.info("Clearing all caches on startup (development mode)...")
+                cache_manager = CacheManager()
+
+                # Clear all cache services
+                cache_manager.graph.clear_cache()
+                cache_manager.catalog.clear_cache()
+                cache_manager.oai.clear_cache()
+
+                logger.info("All caches cleared successfully on startup")
+            except Exception as e:
+                logger.warning(f"Failed to clear caches on startup: {e}")
+
         # Only warm cache in production or when explicitly enabled
         warm_schema = getattr(settings, 'WARM_CACHE_ON_STARTUP', False) or not settings.DEBUG
-        warm_projects = getattr(settings, 'WARM_CROSS_INSTITUTIONAL_CACHE_ON_STARTUP', False)
+        warm_projects = getattr(settings, 'WARM_CROSS_INSTITUTIONAL_CACHE_ON_STARTUP', True)  # Enable by default
 
         if warm_schema:
             try:

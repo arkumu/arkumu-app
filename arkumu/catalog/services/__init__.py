@@ -14,6 +14,7 @@ from .schema_manifest_service import (
     CanonicalClassBinding,
     CanonicalPropertyBinding,
 )
+from .triple_relationship_service import TripleRelationshipService
 
 __all__ = [
     'GraphSearchService',
@@ -23,4 +24,5 @@ __all__ = [
     'CardProperty',
     'CanonicalClassBinding',
     'CanonicalPropertyBinding',
+    'TripleRelationshipService',
 ]

@@ -146,9 +146,9 @@ class CatalogTemplateHelperMixin:
 
         # Add URL push for browser history
         if query:
-            response['HX-Push-Url'] = f"/catalog/design/?query={query}"
+            response['HX-Push-Url'] = f"/catalog/browse/?query={query}"
         else:
-            response['HX-Push-Url'] = "/catalog/design/"
+            response['HX-Push-Url'] = "/catalog/browse/"
 
         return response
 
