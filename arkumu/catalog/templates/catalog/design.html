@@ -71,7 +71,7 @@
 
         <!-- Search Bar with HTMX - Independent Component -->
         <div>
-          <form hx-get="{% url 'catalog:design' %}"
+          <form hx-get="{% url 'catalog:browse' %}"
                 hx-target="#results-container"
                 hx-indicator="#search-loading">
             {% include 'components/inputs/navbar.html' with placeholder_text="Suchbegriff" query=query %}

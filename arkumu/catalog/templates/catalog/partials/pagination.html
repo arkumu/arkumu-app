@@ -7,7 +7,7 @@
 
     <!-- Zurück Button -->
     {% if has_previous %}
-    <button hx-get="{% url 'catalog:design' %}?page={{ previous_page }}{% if query %}&query={{ query }}{% endif %}"
+    <button hx-get="{% url 'catalog:browse' %}?page={{ previous_page }}{% if query %}&query={{ query }}{% endif %}"
             hx-target="#search-results-container"
             hx-push-url="true"
             hx-indicator="#search-loading"
@@ -45,7 +45,7 @@
           </span>
         {% else %}
           <!-- Page Number Button -->
-          <button hx-get="{% url 'catalog:design' %}?page={{ page_num }}{% if query %}&query={{ query }}{% endif %}"
+          <button hx-get="{% url 'catalog:browse' %}?page={{ page_num }}{% if query %}&query={{ query }}{% endif %}"
                   hx-target="#search-results-container"
                   hx-push-url="true"
                   hx-indicator="#search-loading"
@@ -69,7 +69,7 @@
 
     <!-- Weiter Button -->
     {% if has_next %}
-    <button hx-get="{% url 'catalog:design' %}?page={{ next_page }}{% if query %}&query={{ query }}{% endif %}"
+    <button hx-get="{% url 'catalog:browse' %}?page={{ next_page }}{% if query %}&query={{ query }}{% endif %}"
             hx-target="#search-results-container"
             hx-push-url="true"
             hx-indicator="#search-loading"
