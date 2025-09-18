@@ -7,8 +7,8 @@ from django.shortcuts import render
 from django.contrib.auth.mixins import LoginRequiredMixin
 import logging
 
-from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.catalog.services.project_views import ProjectData
+from arkumu.cache.services import cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -77,17 +77,17 @@ class ProjectView(LoginRequiredMixin, View):
             })
 
     def _get_project_from_graph(self, projekt_uri: str):
-        """Get single project data using canonical graph service."""
-        service = CanonicalGraphService()
-
+        """Get single project data using cached graph service."""
         try:
-            # Get project graph for this specific project
-            project_graph = service.get_entity_graph(
+            # Extract org code from URI for proper caching
+            org_code = self._extract_org_from_uri(projekt_uri)
+
+            # Use cached graph service like the cards do
+            project_graph = cache_manager.graph.get_entity_graph(
                 resource_uri=projekt_uri,
-                predicate_canon_whitelist=None,
-                include_incoming=False,
-                expand_neighbors=True,
-                depth=2
+                organization_code=org_code,
+                depth=2,
+                predicate_whitelist=None
             )
 
             if not project_graph:
@@ -96,8 +96,14 @@ class ProjectView(LoginRequiredMixin, View):
 
             logger.info(f"Loaded single project graph: {projekt_uri}")
 
+            # Handle cached result format
+            if 'result' in project_graph:
+                graph_data = project_graph['result']
+            else:
+                graph_data = project_graph
+
             # Extract project data from the entity graph
-            return self._extract_project_from_entity_graph(projekt_uri, project_graph)
+            return self._extract_project_from_entity_graph(projekt_uri, graph_data)
 
         except Exception as e:
             logger.error(f"Error loading project graph for {projekt_uri}: {e}")
@@ -144,3 +150,15 @@ class ProjectView(LoginRequiredMixin, View):
         if edge and edge.get('object_value'):
             return edge['object_value']
         return None
+
+    def _extract_org_from_uri(self, resource_uri: str) -> str:
+        """Extract organization code from resource URI."""
+        try:
+            # e.g., http://arkumu.org/data/fuk/projekt/123 -> fuk
+            parts = resource_uri.split('/')
+            for i, part in enumerate(parts):
+                if part == 'data' and i + 1 < len(parts):
+                    return parts[i + 1]
+            return 'global'
+        except:
+            return 'global'
