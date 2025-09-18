@@ -6,9 +6,10 @@ Memory-efficient caching using shared graph manager to prevent memory multiplica
 
 import logging
 from typing import Dict, Optional, Any, List
+from uuid import uuid4
 from django.core.cache import cache
 from django.utils import timezone
-from .base_cache_service import BaseCacheService
+from .base_cache_service import BaseCacheService, CACHE_TTL
 # Removed custom cache wrapper - using original cache logic
 
 logger = logging.getLogger(__name__)
@@ -307,8 +308,23 @@ class GraphCacheService(BaseCacheService):
             'traversal_type': traversal_type
         }
 
-        self.set_cached('traversal', enriched_data, 'graph_traversal', **cache_params)
-        logger.info(f"Cached {traversal_type} traversal for {resource_uri}")
+        if self._should_skip_cache(enriched_data):
+            self.logger.warning(
+                "Skipping traversal cache for %s due to memory limits", resource_uri
+            )
+            return
+
+        cache_key = self._get_cache_key('traversal', **cache_params)
+        ttl = CACHE_TTL.get('graph_traversal', 3600)
+
+        temp_cache_key = f"{cache_key}:staging:{uuid4().hex}"
+        cache.set(temp_cache_key, enriched_data, ttl)
+        cache.set(cache_key, enriched_data, ttl)
+        cache.delete(temp_cache_key)
+
+        logger.info(
+            "Cached %s traversal for %s via atomic swap", traversal_type, resource_uri
+        )
 
     def invalidate_resource(self, resource_uri: str):
         """
@@ -397,3 +413,165 @@ class GraphCacheService(BaseCacheService):
         })
 
         return base_stats
+
+    def _build_cross_institutional_projects_graph(self) -> Dict[str, Any]:
+        """
+        Build cross-institutional projects graph by reusing existing view logic.
+        """
+        logger.info("Building cross-institutional projects graph using existing view logic...")
+
+        # Import here to avoid circular imports
+        from arkumu.catalog.views.cards import GraphSearchView
+
+        # Create a mock request-like object for the view
+        class MockRequest:
+            def __init__(self):
+                self.GET = {'query': ''}
+                self.headers = {}
+
+        class MockUser:
+            def __init__(self):
+                self.organization = None
+                self.username = 'system'
+
+        # Use the existing GraphSearchView logic but bypass the request handling
+        view = GraphSearchView()
+
+        # Get the graph from cards.py logic (lines 56-116)
+        from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+
+        service = CanonicalGraphService()  # No org = search all institutions
+
+        # Use CANONICAL URI to get all projects across institutions
+        canonical_project_uri = "http://arkumu.org/data/types/projekt"
+        all_subject_ids = service._find_subject_ids_by_class(canonical_project_uri)
+        logger.info(f"Found {len(all_subject_ids)} projects using canonical URI")
+
+        # Fallback to institution-specific URIs if needed
+        if not all_subject_ids:
+            logger.info("No projects via canonical URI, falling back to institution-specific")
+            institution_uris = [
+                "http://arkumu.org/data/fuk/types/projekt",
+                "http://arkumu.org/data/rsh/types/projekt",
+                "http://arkumu.org/data/det/types/projekt",
+                "http://arkumu.org/data/khm/types/projekt",
+                "http://arkumu.org/data/uk/types/projekt",
+                "http://arkumu.org/data/hfmt/types/projekt",
+            ]
+            for uri in institution_uris:
+                subject_ids = service._find_subject_ids_by_class(uri)
+                all_subject_ids.extend(subject_ids)
+                logger.info(f"Found {len(subject_ids)} subjects for {uri}")
+
+        # Get the whole graph for all these subjects
+        edges = service._fetch_triples_for_subjects(all_subject_ids)
+
+        if edges:
+            # Get neighbor expansion if needed
+            neighbor_ids = [e.object_id for e in edges if e.object_type != 'LITERAL'][:100]
+            if neighbor_ids:
+                neighbor_edges = service._fetch_triples_for_subjects(neighbor_ids)
+                edges.extend(neighbor_edges)
+
+        # Collect all nodes
+        nodes = service._collect_nodes_from_edges(edges)
+
+        # Build complete graph (same format as cards.py)
+        graph_data = {
+            "organization": "cross-institutional",
+            "dataset": "Projekt",
+            "subjects": all_subject_ids,
+            "nodes": nodes,
+            "edges": [e.__dict__ for e in edges],
+            "counts": {
+                "subjects": len(all_subject_ids),
+                "nodes": len(nodes),
+                "edges": len(edges),
+            },
+        }
+
+        logger.info(f"Built cross-institutional graph: {graph_data['counts']['subjects']} projects, {graph_data['counts']['edges']} edges")
+        return graph_data
+
+    def refresh_cross_institutional_projects_cache(self) -> Optional[Dict]:
+        """
+        Refresh cross-institutional projects cache by calling the existing view logic.
+        """
+        try:
+            logger.info("Refreshing cross-institutional projects cache using existing view logic...")
+
+            # Just call the existing cards view logic that builds and caches the data
+            from arkumu.catalog.views.cards import GraphSearchView
+
+            # Skip the view completely - just call the cache logic directly from cards.py
+            # Check if cache exists first
+            cache_service = GraphCacheService()
+            cache_resource_uri = "arkumu:cross_institutional:all_projects"
+            cache_params_hash = "cross_institutional_projects_canonical"
+
+            logger.info("Calling CanonicalGraphService directly to rebuild cache...")
+
+            # Call the same logic that cards.py uses (lines 56-120 from cards.py)
+            from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+            service = CanonicalGraphService()  # No org = search all institutions
+
+            canonical_project_uri = "http://arkumu.org/data/types/projekt"
+            all_subject_ids = service._find_subject_ids_by_class(canonical_project_uri)
+            logger.info(f"Found {len(all_subject_ids)} projects using canonical URI")
+
+            if not all_subject_ids:
+                institution_uris = [
+                    "http://arkumu.org/data/fuk/types/projekt",
+                    "http://arkumu.org/data/rsh/types/projekt",
+                    "http://arkumu.org/data/det/types/projekt",
+                    "http://arkumu.org/data/khm/types/projekt",
+                    "http://arkumu.org/data/uk/types/projekt",
+                    "http://arkumu.org/data/hfmt/types/projekt",
+                ]
+                for uri in institution_uris:
+                    subject_ids = service._find_subject_ids_by_class(uri)
+                    all_subject_ids.extend(subject_ids)
+
+            edges = service._fetch_triples_for_subjects(all_subject_ids)
+            if edges:
+                neighbor_ids = [e.object_id for e in edges if e.object_type != 'LITERAL'][:100]
+                if neighbor_ids:
+                    neighbor_edges = service._fetch_triples_for_subjects(neighbor_ids)
+                    edges.extend(neighbor_edges)
+
+            nodes = service._collect_nodes_from_edges(edges)
+            graph = {
+                "organization": "cross-institutional",
+                "dataset": "Projekt",
+                "subjects": all_subject_ids,
+                "nodes": nodes,
+                "edges": [e.__dict__ for e in edges],
+                "counts": {
+                    "subjects": len(all_subject_ids),
+                    "nodes": len(nodes),
+                    "edges": len(edges),
+                },
+            }
+
+            # Cache it using the same method as cards.py
+            self.cache_traversal_result(
+                resource_uri=cache_resource_uri,
+                traversal_type="catalog_search",
+                params_hash=cache_params_hash,
+                result_data=graph
+            )
+
+            logger.info(f"Cached {graph['counts']['subjects']} projects, {graph['counts']['edges']} edges")
+
+            logger.info("Cross-institutional projects cache refreshed via existing view logic")
+
+            # Return the actual graph data so the task can log counts
+            return {
+                "result": graph,
+                "cached_at": timezone.now().isoformat(),
+                "traversal_type": "catalog_search"
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to refresh cross-institutional projects cache: {e}")
+            return None

@@ -7,6 +7,7 @@ for fast catalog explorer navigation.
 
 import logging
 from typing import Dict, List, Optional, Any
+from uuid import uuid4
 from django.core.cache import cache
 from django.db.models import Q, Count, Prefetch
 from django.utils import timezone
@@ -40,6 +41,9 @@ class SchemaMapCacheService(BaseCacheService):
         """Public helper returning property stats broken down by organization."""
         return self._get_properties_for_class_with_orgs(class_uri)
 
+    CACHE_KEY = 'complete_schema_map:global'
+    CACHE_TIMEOUT_SECONDS = 600
+
     def get_complete_schema_map(
         self,
         organization_code: Optional[str] = None,
@@ -55,25 +59,57 @@ class SchemaMapCacheService(BaseCacheService):
                 'meta': {total_classes, total_properties, cache_time}
             }
         """
-        cache_key = 'complete_schema_map:global'
-        cached = cache.get(cache_key)
+        cached = cache.get(self.CACHE_KEY)
 
         if cached:
-            logger.info(f"Schema map cache HIT: {cache_key} - {len(cached.get('classes', {}))} classes")
-            # Filter by organization if specified
+            logger.info(
+                f"Schema map cache HIT: {self.CACHE_KEY} - {len(cached.get('classes', {}))} classes"
+            )
             if organization_code:
                 return self._filter_schema_map_by_organization(cached, organization_code)
             return cached
 
+        # Build and store a fresh snapshot when nothing is cached yet
+        schema_map = self._build_complete_schema_map(include_properties=include_properties)
+        cache.set(self.CACHE_KEY, schema_map, self.CACHE_TIMEOUT_SECONDS)
+        logger.info(
+            f"Cached schema map: {schema_map['meta']['total_classes']} classes, "
+            f"{schema_map['meta']['total_properties']} properties"
+        )
+
+        if organization_code:
+            return self._filter_schema_map_by_organization(schema_map, organization_code)
+
+        return schema_map
+
+    def refresh_cache(self) -> Dict[str, Any]:
+        """Build a fresh schema map snapshot and atomically swap it into place."""
+        schema_map = self._build_complete_schema_map(include_properties=True)
+
+        temp_cache_key = f"{self.CACHE_KEY}:staging:{uuid4().hex}"
+        cache.set(temp_cache_key, schema_map, self.CACHE_TIMEOUT_SECONDS)
+
+        cache.set(self.CACHE_KEY, schema_map, self.CACHE_TIMEOUT_SECONDS)
+        cache.delete(temp_cache_key)
+
+        logger.info(
+            "Schema map cache refreshed: %s classes, %s properties",
+            schema_map['meta']['total_classes'],
+            schema_map['meta']['total_properties'],
+        )
+
+        return schema_map
+
+    def _build_complete_schema_map(self, include_properties: bool = True) -> Dict[str, Any]:
         logger.info("Building complete schema map with all organizations")
 
-        # Build comprehensive map with ALL data
         classes_data = self._get_classes_with_properties_and_orgs_map()
 
         if include_properties:
             for class_uri, class_info in classes_data.items():
                 if not class_info.get('properties'):
                     class_info['properties'] = self._get_properties_for_class(class_uri)
+
         schema_map = {
             'organizations': self._get_organizations_map(classes_data),
             'classes': classes_data,
@@ -83,21 +119,11 @@ class SchemaMapCacheService(BaseCacheService):
             }
         }
 
-        # Add summary statistics
         schema_map['meta']['total_classes'] = len(schema_map['classes'])
         schema_map['meta']['total_properties'] = sum(
             len(class_info.get('properties', {}))
             for class_info in schema_map['classes'].values()
         )
-
-        # Cache for 10 minutes - this is expensive to build
-        cache.set(cache_key, schema_map, 600)
-        logger.info(f"Cached schema map: {schema_map['meta']['total_classes']} classes, "
-                   f"{schema_map['meta']['total_properties']} properties")
-
-        # Filter by organization if specified
-        if organization_code:
-            return self._filter_schema_map_by_organization(schema_map, organization_code)
 
         return schema_map
 
@@ -453,11 +479,11 @@ class SchemaMapCacheService(BaseCacheService):
     def invalidate_schema_cache(self, organization_code: Optional[str] = None):
         """Invalidate schema cache when data changes."""
         # Only need to clear the global cache since we're not caching per organization anymore
-        cache.delete('complete_schema_map:global')
+        cache.delete(self.CACHE_KEY)
         logger.info("Invalidated global schema cache")
 
     def warm_cache(self, organization_codes: Optional[List[str]] = None):
         """Pre-warm the schema cache for better performance."""
-        # Just warm the global cache
-        self.get_complete_schema_map(include_properties=True)
+        # Build a fresh snapshot and swap it in
+        self.refresh_cache()
         logger.info("Schema cache warmed successfully")

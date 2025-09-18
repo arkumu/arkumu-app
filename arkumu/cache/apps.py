@@ -59,6 +59,7 @@ class CacheConfig(AppConfig):
                 from arkumu.cache.tasks import warm_cross_institutional_projects_cache
 
                 logger.info("Scheduling cross-institutional projects cache warming...")
-                warm_cross_institutional_projects_cache.schedule()
+                # Schedule with 5 second delay to ensure app is fully ready
+                warm_cross_institutional_projects_cache.schedule(delay=5)
             except Exception as e:
                 logger.warning(f"Failed to schedule projects cache warm-up: {e}")

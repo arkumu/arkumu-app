@@ -41,21 +41,22 @@ def warm_schema_cache():
 @db_task()
 def warm_cross_institutional_projects_cache():
     """Warm the cross-institutional projects cache for fast catalog searches."""
-    from arkumu.catalog.views.catalog_view import CatalogView
+    from arkumu.cache.services.graph_cache_service import GraphCacheService
 
     try:
         logger.info("Starting cross-institutional projects cache warming...")
 
-        # Use the existing catalog view method to populate cache with proper schema
-        catalog_view = CatalogView()
+        # Use the new atomic refresh method
+        graph_cache = GraphCacheService()
+        result = graph_cache.refresh_cross_institutional_projects_cache()
 
-        # Get the schema with FK relationships (use 'fuk' org like the main view)
-        card_schema = catalog_view.schema_manifest_service.get_card_schema('fuk')
-
-        projects = catalog_view._get_all_projects(org_code=None, query="", card_schema=card_schema)
-
-        logger.info(f"Cross-institutional projects cache warmed: {len(projects)} projects")
-        return f"Success: {len(projects)} projects cached"
+        if result and 'result' in result:
+            project_count = result['result']['counts']['subjects']
+            logger.info(f"Cross-institutional projects cache warmed: {project_count} projects")
+            return f"Success: {project_count} projects cached"
+        else:
+            logger.error("Failed to warm projects cache - no result returned")
+            return "Failed: No data returned"
 
     except Exception as e:
         logger.error(f"Failed to warm cross-institutional projects cache: {e}")
@@ -72,11 +73,7 @@ if HUEY_PERIODIC_AVAILABLE:
 
             schema_cache = SchemaMapCacheService()
 
-            # Invalidate existing cache to force fresh build
-            schema_cache.invalidate_schema_cache()
-
-            # Rebuild cache
-            schema_map = schema_cache.get_complete_schema_map()
+            schema_map = schema_cache.refresh_cache()
             logger.info(
                 f"Periodic cache refresh completed: {schema_map['meta']['total_classes']} classes, "
                 f"{schema_map['meta']['total_properties']} properties"
@@ -84,4 +81,28 @@ if HUEY_PERIODIC_AVAILABLE:
 
         except Exception as e:
             logger.error(f"Periodic schema cache refresh failed: {e}")
+            # Don't re-raise to avoid task retry loops
+
+    @db_periodic_task(crontab(minute='*/60'))  # Run every 60 minutes
+    def refresh_projects_cache_periodic():
+        """Periodically refresh the cross-institutional projects cache."""
+        try:
+            logger.info("Running periodic projects cache refresh...")
+            from arkumu.cache.services.graph_cache_service import GraphCacheService
+
+            graph_cache = GraphCacheService()
+            result = graph_cache.refresh_cross_institutional_projects_cache()
+
+            if result and 'result' in result:
+                project_count = result['result']['counts']['subjects']
+                edge_count = result['result']['counts']['edges']
+                logger.info(
+                    f"Periodic projects cache refresh completed: {project_count} projects, "
+                    f"{edge_count} edges"
+                )
+            else:
+                logger.warning("Periodic projects cache refresh returned no data")
+
+        except Exception as e:
+            logger.error(f"Periodic projects cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
