@@ -10,6 +10,8 @@ import logging
 
 from arkumu.catalog.services.project_views import ProjectData
 from arkumu.cache.services import CacheManager
+from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
+from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,9 @@ class ProjectView(LoginRequiredMixin, View):
                 for project in projects:
                     if project.get('uri') == projekt_uri:
                         logger.info(f"✅ Found project in cached graph!")
-                        project_data = self._convert_cached_project_to_project_data(project)
+                        # Enrich the project with relationship data
+                        enriched_project = self._enrich_project_with_relationships(project)
+                        project_data = self._convert_cached_project_to_project_data(enriched_project)
                         break
 
                 if not project_data:
@@ -98,6 +102,7 @@ class ProjectView(LoginRequiredMixin, View):
                     'actors': project_data.actors or [],
                     'catchphrases': project_data.catchphrases or [],
                     'digital_objects': project_data.digital_objects or [],
+                    'events': project_data.events or [],  # Add events data
                 }
             }
 
@@ -339,7 +344,8 @@ class ProjectView(LoginRequiredMixin, View):
             description=project_dict.get('description', ''),
             catchphrases=project_dict.get('catchphrases', []),
             project_type=project_dict.get('project_type', ''),
-            digital_objects=project_dict.get('digital_objects', [])
+            digital_objects=project_dict.get('digital_objects', []),
+            events=project_dict.get('events', [])  # Add events data
         )
 
     def _extract_project_from_entity_graph(self, projekt_uri: str, project_graph):
@@ -383,4 +389,179 @@ class ProjectView(LoginRequiredMixin, View):
         if edge and edge.get('object_value'):
             return edge['object_value']
         return None
+
+    def _enrich_project_with_relationships(self, project_dict):
+        """Enrich project data with relationships (same logic as catalog view)."""
+        try:
+            logger.info(f"🔗 ENRICHING project {project_dict.get('uri')} with relationship data")
+
+            # Get schema
+            schema_service = SchemaManifestService()
+            schema = schema_service.get_card_schema('fuk')
+
+            # Initialize triple service with no org filtering (cross-institutional)
+            triple_service = TripleRelationshipService(None)
+
+            # Helper function to get property
+            def _property(section: str, prop: str):
+                section_obj = schema.sections.get(section)
+                if not section_obj:
+                    return None
+                return section_obj.properties.get(prop)
+
+            # Get property definitions
+            institution_prop = _property('project', 'institution')
+            institution_name_prop = _property('institution', 'german_name')
+            category_prop = _property('project', 'category')
+            category_name_prop = _property('project_category', 'german_name')
+            event_prop = _property('project', 'event')
+            event_start_prop = _property('event', 'start')
+            event_end_prop = _property('event', 'end')
+            actor_link_prop = _property('actor_event', 'actor_link')
+            role_link_prop = _property('actor_event', 'role_link')
+            actor_name_prop = _property('actor', 'name')
+            role_name_prop = _property('role', 'name')
+            digital_object_path_prop = _property('digital_object', 'path')
+
+            # Additional project properties for detailed view
+            title_prop = _property('project', 'title')
+            subtitle_prop = _property('project', 'subtitle')
+            image_prop = _property('project', 'image')
+
+            subject_id = project_dict.get('uri')
+            if not subject_id:
+                return project_dict
+
+            # Make a copy to avoid modifying the original
+            enriched_project = project_dict.copy()
+
+            # Get project description
+            description = triple_service.get_project_description(
+                subject_id,
+                description_predicate='http://arkumu.org/data/properties/beschreibung',
+                organization_code=None,
+            )
+            if description:
+                enriched_project['description'] = description
+
+            # Get project type
+            project_type = triple_service.get_project_type(
+                subject_id,
+                project_type_predicate='http://arkumu.org/data/properties/projektart',
+                organization_code=None,
+            )
+            if project_type:
+                enriched_project['project_type'] = project_type
+
+            # Get alternative titles
+            alternative_titles = triple_service.get_alternative_titles(
+                subject_id,
+                alternative_title_set_predicate='http://arkumu.org/data/fuk/properties/alternativer-titel-set',
+                alternative_title_predicate='http://arkumu.org/data/properties/alternativer-titel',
+                organization_code=None,
+            )
+            if alternative_titles:
+                enriched_project['alternative_titles'] = alternative_titles
+
+            # Get catchphrases
+            catchphrases = triple_service.get_catchphrases(
+                subject_id,
+                catchphrase_predicate='http://arkumu.org/data/properties/schlagwort',
+                catchphrase_label_predicate='http://arkumu.org/data/properties/deutsches-wikidata-label',
+                organization_code=None,
+            )
+            if catchphrases:
+                enriched_project['catchphrases'] = catchphrases
+
+            # Get institution data
+            institution_label = triple_service.get_institution_data(
+                subject_id,
+                institution_predicate=institution_prop.canonical_uri if institution_prop else None,
+                institution_label_predicate=institution_name_prop.canonical_uri if institution_name_prop else None,
+                organization_code=None,
+            )
+            if institution_label:
+                enriched_project['institution'] = institution_label
+
+            # Get category data
+            category_labels = triple_service.get_category_data(
+                subject_id,
+                category_predicate=category_prop.canonical_uri if category_prop else None,
+                category_label_predicate=category_name_prop.canonical_uri if category_name_prop else None,
+                organization_code=None,
+            )
+            if category_labels:
+                enriched_project['categories'] = category_labels
+
+            # Get detailed event data
+            detailed_events = triple_service.get_detailed_event_data(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
+                event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
+                event_name_predicate='http://arkumu.org/data/properties/ereignisname',
+                event_description_predicate='http://arkumu.org/data/properties/ereignisbeschreibung',
+                event_location_predicate='http://arkumu.org/data/properties/ereignisort',
+                event_type_predicate='http://arkumu.org/data/properties/ereignistyp',
+                organization_code=None,
+            )
+
+            if detailed_events:
+                # Store detailed events
+                enriched_project['events'] = detailed_events
+
+                # Extract dates from first event for compatibility
+                first_event = detailed_events[0]
+                if first_event.get('start'):
+                    enriched_project['event_start'] = first_event['start']
+                if first_event.get('end'):
+                    enriched_project['event_end'] = first_event['end']
+
+                # Use event IDs for actor lookup
+                event_ids = [event['id'] for event in detailed_events]
+            else:
+                event_ids = []
+
+            # Get actor data
+            actors = triple_service.get_actor_relationships(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                actor_link_predicate=actor_link_prop.canonical_uri if actor_link_prop else None,
+                role_link_predicate=role_link_prop.canonical_uri if role_link_prop else None,
+                actor_name_predicate=actor_name_prop.canonical_uri if actor_name_prop else None,
+                role_name_predicate=role_name_prop.canonical_uri if role_name_prop else None,
+                event_ids=event_ids,
+                organization_code=None,
+            )
+            if actors:
+                # Convert to the format expected by ProjectData
+                actor_list = []
+                for actor in actors:
+                    actor_entry = {
+                        'name': actor['name'],
+                        'roles': actor['roles']
+                    }
+                    actor_list.append(actor_entry)
+                enriched_project['actors'] = actor_list
+
+            # Get digital object paths
+            digital_object_paths = triple_service.get_digital_object_paths(
+                subject_id,
+                link_predicate='http://arkumu.org/data/properties/digitales-objekt',
+                path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+                organization_code=None,
+            )
+            if digital_object_paths:
+                enriched_project['digital_objects'] = digital_object_paths
+                # Set first digital object as image if no image is set
+                if not enriched_project.get('image') or enriched_project.get('image') == 'images/main/card_1.png':
+                    enriched_project['image'] = digital_object_paths[0]
+
+            logger.info(f"🔗 ENRICHED project with institution='{enriched_project.get('institution')}', categories={len(enriched_project.get('categories', []))}, actors={len(enriched_project.get('actors', []))}")
+
+            return enriched_project
+
+        except Exception as e:
+            logger.error(f"❌ Error enriching project with relationships: {e}")
+            return project_dict
 

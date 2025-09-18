@@ -10,6 +10,7 @@ from django.db.models import Q
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.resource import ResourceType
 from arkumu.users.models import Organization
+from arkumu.catalog.services.wikidata_service import WikidataService
 
 
 class TripleRelationshipService:
@@ -19,6 +20,7 @@ class TripleRelationshipService:
         self.organization_code = organization_code
         self._organization: Optional[Organization] = None
         self._org_cache: Dict[str, Optional[Organization]] = {}
+        self.wikidata_service = WikidataService()
         if organization_code:
             self._organization = self._get_org_by_code(organization_code)
 
@@ -167,6 +169,228 @@ class TripleRelationshipService:
             'event_ids': event_ids,
             'event_details': event_details,
         }
+
+    def get_detailed_event_data(
+        self,
+        project_id: str,
+        *,
+        event_predicate: Optional[str],
+        event_start_predicate: Optional[str],
+        event_end_predicate: Optional[str],
+        event_name_predicate: Optional[str] = None,
+        event_description_predicate: Optional[str] = None,
+        event_location_predicate: Optional[str] = None,
+        event_type_predicate: Optional[str] = None,
+        organization_code: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return detailed event information including names, descriptions, locations."""
+
+        # First get basic event data
+        basic_event_data = self.get_event_data(
+            project_id,
+            event_predicate=event_predicate,
+            event_start_predicate=event_start_predicate,
+            event_end_predicate=event_end_predicate,
+            organization_code=organization_code,
+        )
+
+        event_ids = basic_event_data.get('event_ids', [])
+        event_details = basic_event_data.get('event_details', {})
+
+        if not event_ids:
+            return []
+
+        # Collect all event property predicates
+        event_property_predicates = []
+        if event_name_predicate:
+            event_property_predicates.append(event_name_predicate)
+        if event_description_predicate:
+            event_property_predicates.append(event_description_predicate)
+        if event_location_predicate:
+            event_property_predicates.append(event_location_predicate)
+        if event_type_predicate:
+            event_property_predicates.append(event_type_predicate)
+
+        # Get additional event properties
+        event_properties = {}
+        if event_property_predicates:
+            property_triples = self._fetch_triples(
+                subject_ids=event_ids,
+                predicate_uris=event_property_predicates,
+                organization_code=organization_code,
+            )
+
+            for triple in property_triples:
+                event_id = str(triple.subject_id)
+                predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
+
+                if event_id not in event_properties:
+                    event_properties[event_id] = {}
+
+                # Store the property value
+                if triple.object.resource_type == ResourceType.LITERAL:
+                    event_properties[event_id][predicate_canonical] = triple.object.value
+                else:
+                    # For entities, store the name or ID
+                    event_properties[event_id][predicate_canonical] = triple.object.name or str(triple.object_id)
+
+        # Build detailed event list
+        detailed_events = []
+        for event_id in event_ids:
+            event_info = {
+                'id': event_id,
+                'start': event_details.get(event_id, {}).get('start'),
+                'end': event_details.get(event_id, {}).get('end'),
+            }
+
+            # Add additional properties
+            properties = event_properties.get(event_id, {})
+            if event_name_predicate and event_name_predicate in properties:
+                event_info['name'] = properties[event_name_predicate]
+            if event_description_predicate and event_description_predicate in properties:
+                event_info['description'] = properties[event_description_predicate]
+            if event_location_predicate and event_location_predicate in properties:
+                location_id = properties[event_location_predicate]
+                event_info['location_id'] = location_id
+
+                # Resolve Wikidata location to name and coordinates
+                if location_id and location_id.startswith('Q'):
+                    location_data = self.wikidata_service.get_location_info(location_id)
+                    event_info['location'] = location_data.get('name', location_id)
+                    event_info['location_description'] = location_data.get('description')
+                    if 'coordinates' in location_data:
+                        event_info['coordinates'] = location_data['coordinates']
+                        event_info['latitude'] = location_data.get('latitude')
+                        event_info['longitude'] = location_data.get('longitude')
+                    if 'country' in location_data:
+                        event_info['country'] = location_data['country']
+                else:
+                    event_info['location'] = location_id
+
+            if event_type_predicate and event_type_predicate in properties:
+                event_info['type'] = properties[event_type_predicate]
+
+            detailed_events.append(event_info)
+
+        return detailed_events
+
+    def get_alternative_titles(
+        self,
+        project_id: str,
+        *,
+        alternative_title_set_predicate: Optional[str],
+        alternative_title_predicate: Optional[str],
+        organization_code: Optional[str] = None,
+    ) -> List[str]:
+        """Return alternative titles for the project."""
+
+        if not alternative_title_set_predicate or not alternative_title_predicate:
+            return []
+
+        # Get alternative title entities
+        alt_title_entities = self.get_related_entities(
+            project_id,
+            alternative_title_set_predicate,
+            organization_code=organization_code,
+        )
+
+        alt_title_ids = [entry['id'] for entry in alt_title_entities if self._is_entity(entry)]
+        if not alt_title_ids:
+            return []
+
+        # Get actual alternative title values
+        title_map = self._collect_literal_values(
+            subject_ids=alt_title_ids,
+            predicate_uri=alternative_title_predicate,
+            organization_code=organization_code,
+        )
+
+        results = []
+        for alt_id in alt_title_ids:
+            title = title_map.get(alt_id)
+            if title and title.strip() and title.strip() not in results:
+                results.append(title.strip())
+
+        return results
+
+    def get_project_description(
+        self,
+        project_id: str,
+        *,
+        description_predicate: Optional[str],
+        organization_code: Optional[str] = None,
+    ) -> Optional[str]:
+        """Return project description."""
+
+        if not description_predicate:
+            return None
+
+        descriptions = self._collect_literal_values(
+            subject_ids=[project_id],
+            predicate_uri=description_predicate,
+            organization_code=organization_code,
+        )
+
+        return descriptions.get(project_id)
+
+    def get_project_type(
+        self,
+        project_id: str,
+        *,
+        project_type_predicate: Optional[str],
+        organization_code: Optional[str] = None,
+    ) -> Optional[str]:
+        """Return project type."""
+
+        if not project_type_predicate:
+            return None
+
+        project_types = self._collect_literal_values(
+            subject_ids=[project_id],
+            predicate_uri=project_type_predicate,
+            organization_code=organization_code,
+        )
+
+        return project_types.get(project_id)
+
+    def get_catchphrases(
+        self,
+        project_id: str,
+        *,
+        catchphrase_predicate: Optional[str],
+        catchphrase_label_predicate: Optional[str],
+        organization_code: Optional[str] = None,
+    ) -> List[str]:
+        """Return catchphrase labels for the project."""
+
+        if not catchphrase_predicate or not catchphrase_label_predicate:
+            return []
+
+        # Get catchphrase entities
+        catchphrase_entities = self.get_related_entities(
+            project_id,
+            catchphrase_predicate,
+            organization_code=organization_code,
+        )
+
+        catchphrase_ids = [entry['id'] for entry in catchphrase_entities if self._is_entity(entry)]
+        if not catchphrase_ids:
+            return []
+
+        # Get catchphrase labels
+        label_map = self._collect_literal_values(
+            subject_ids=catchphrase_ids,
+            predicate_uri=catchphrase_label_predicate,
+            organization_code=organization_code,
+        )
+
+        results = []
+        for catchphrase_id in catchphrase_ids:
+            label = label_map.get(catchphrase_id)
+            if label and label.strip() and label.strip() not in results:
+                results.append(label.strip())
+
+        return results
 
     def get_actor_relationships(
         self,

@@ -99,6 +99,7 @@ class ProjectData(CardData):
     catchphrases: List[str] = None
     project_type: Optional[str] = None
     digital_objects: List[str] = None  # File paths
+    events: List[Dict[str, Any]] = None  # Event details
 
     def __post_init__(self):
         super().__post_init__()
@@ -108,6 +109,8 @@ class ProjectData(CardData):
             self.catchphrases = []
         if self.digital_objects is None:
             self.digital_objects = []
+        if self.events is None:
+            self.events = []
 
 
 class BaseProjectView:

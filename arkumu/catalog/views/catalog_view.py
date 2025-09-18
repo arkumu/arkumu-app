@@ -85,6 +85,15 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
             except EmptyPage:
                 page_obj = paginator.page(paginator.num_pages)
 
+            # Enrich paginated cards with all relationship data (lazy loading)
+            enriched_cards = self._enrich_cards_with_relationships(
+                list(page_obj.object_list),
+                card_schema,
+                relationship_org_code=None  # Cross-institutional: no org filtering
+            )
+            # Replace the page object list with enriched cards
+            page_obj.object_list = enriched_cards
+
             # Calculate result range for display
             total_results = paginator.count
             start_result = (page_obj.number - 1) * self.ITEMS_PER_PAGE + 1 if total_results > 0 else 0
@@ -312,7 +321,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         card_schema: Optional[CardSchema] = None,
         relationship_org_code: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Convert graph data to card format."""
+        """Convert graph data to card format without actor processing (for performance)."""
         cards = []
         nodes = graph.get('nodes', {})
         edges = graph.get('edges', [])
@@ -365,6 +374,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
                     schema,
                     edges_by_subject,
                     relationship_org_code=relationship_org_code,
+                    skip_relationships=True,  # Skip all relationship processing for performance
                 )
                 if card_data:
                     cards.append(card_data)
@@ -397,6 +407,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         edges_by_subject: Dict[str, List[Dict]],
         *,
         relationship_org_code: Optional[str] = None,
+        skip_relationships: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """Extract card data from graph edges for a specific subject."""
 
@@ -495,59 +506,67 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
                     return fk_rel.get('source_property')
             return None
 
-        triple_service = TripleRelationshipService(relationship_org_code)
+        # Initialize default values
+        institution_label = None
+        category_labels = []
+        event_info = {'event_ids': [], 'event_details': {}}
+        actors = []
+        digital_object_paths = []
 
-        logger.info(f"🔧 TRIPLE_SERVICE: Created for org {relationship_org_code}, processing subject {subject_id}")
-        logger.info(f"🔧 CANONICAL_URIS: event={event_prop.canonical_uri if event_prop else None}, actor_link={actor_link_prop.canonical_uri if actor_link_prop else None}, actor_name={actor_name_prop.canonical_uri if actor_name_prop else None}")
+        if not skip_relationships:
+            triple_service = TripleRelationshipService(relationship_org_code)
 
-        institution_label = triple_service.get_institution_data(
-            subject_id,
-            institution_predicate=institution_prop.canonical_uri if institution_prop else None,
-            institution_label_predicate=institution_name_prop.canonical_uri if institution_name_prop else None,
-            organization_code=relationship_org_code,
-        )
-        logger.info(f"🏛️ INSTITUTION: Got '{institution_label}' for {subject_id}")
+            logger.info(f"🔧 TRIPLE_SERVICE: Created for org {relationship_org_code}, processing subject {subject_id}")
+            logger.info(f"🔧 CANONICAL_URIS: event={event_prop.canonical_uri if event_prop else None}, actor_link={actor_link_prop.canonical_uri if actor_link_prop else None}, actor_name={actor_name_prop.canonical_uri if actor_name_prop else None}")
 
-        category_labels = triple_service.get_category_data(
-            subject_id,
-            category_predicate=category_prop.canonical_uri if category_prop else None,
-            category_label_predicate=category_name_prop.canonical_uri if category_name_prop else None,
-            organization_code=relationship_org_code,
-        )
+            institution_label = triple_service.get_institution_data(
+                subject_id,
+                institution_predicate=institution_prop.canonical_uri if institution_prop else None,
+                institution_label_predicate=institution_name_prop.canonical_uri if institution_name_prop else None,
+                organization_code=relationship_org_code,
+            )
+            logger.info(f"🏛️ INSTITUTION: Got '{institution_label}' for {subject_id}")
 
-        event_info = triple_service.get_event_data(
-            subject_id,
-            event_predicate=event_prop.canonical_uri if event_prop else None,
-            event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
-            event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
-            organization_code=relationship_org_code,
-        )
+            category_labels = triple_service.get_category_data(
+                subject_id,
+                category_predicate=category_prop.canonical_uri if category_prop else None,
+                category_label_predicate=category_name_prop.canonical_uri if category_name_prop else None,
+                organization_code=relationship_org_code,
+            )
 
-        actors = triple_service.get_actor_relationships(
-            subject_id,
-            event_predicate=event_prop.canonical_uri if event_prop else None,
-            actor_link_predicate=actor_link_prop.canonical_uri if actor_link_prop else None,
-            role_link_predicate=role_link_prop.canonical_uri if role_link_prop else None,
-            actor_name_predicate=actor_name_prop.canonical_uri if actor_name_prop else None,
-            role_name_predicate=role_name_prop.canonical_uri if role_name_prop else None,
-            event_ids=event_info.get('event_ids'),
-            organization_code=relationship_org_code,
-        )
-        logger.info(f"🎭 ACTORS: Found {len(actors)} actors for {subject_id}")
-        for i, actor in enumerate(actors[:3]):
-            logger.info(f"  Actor {i+1}: {actor.get('name')} - roles: {actor.get('roles')}")
+            event_info = triple_service.get_event_data(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
+                event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
+                organization_code=relationship_org_code,
+            )
 
-        digital_object_link_predicate = _fk_source_for_target(
-            'project',
-            digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
-        )
+            actors = triple_service.get_actor_relationships(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                actor_link_predicate=actor_link_prop.canonical_uri if actor_link_prop else None,
+                role_link_predicate=role_link_prop.canonical_uri if role_link_prop else None,
+                actor_name_predicate=actor_name_prop.canonical_uri if actor_name_prop else None,
+                role_name_predicate=role_name_prop.canonical_uri if role_name_prop else None,
+                event_ids=event_info.get('event_ids'),
+                organization_code=relationship_org_code,
+            )
+            logger.info(f"🎭 ACTORS: Found {len(actors)} actors for {subject_id}")
+            for i, actor in enumerate(actors[:3]):
+                logger.info(f"  Actor {i+1}: {actor.get('name')} - roles: {actor.get('roles')}")
 
-        digital_object_paths = triple_service.get_digital_object_paths(
-            subject_id,
-            link_predicate=digital_object_link_predicate,
-            path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
-            organization_code=relationship_org_code,
-        )
+            digital_object_link_predicate = _fk_source_for_target(
+                'project',
+                digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+            )
+
+            digital_object_paths = triple_service.get_digital_object_paths(
+                subject_id,
+                link_predicate=digital_object_link_predicate,
+                path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+                organization_code=relationship_org_code,
+            )
 
         if institution_label:
             card['institution'] = institution_label
@@ -626,6 +645,136 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
             )
 
         return card if card['title'] else None
+
+    def _enrich_cards_with_relationships(
+        self,
+        cards: List[Dict[str, Any]],
+        card_schema: Optional[CardSchema] = None,
+        relationship_org_code: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Add all relationship data to cards for display (lazy loading)."""
+        if not cards:
+            return cards
+
+        schema = card_schema or copy.deepcopy(CARD_SCHEMA_TEMPLATE)
+        triple_service = TripleRelationshipService(relationship_org_code)
+
+        # Get property definitions
+        def _property(section: str, prop: str) -> Optional[CardProperty]:
+            section_obj = schema.sections.get(section)
+            if not section_obj:
+                return None
+            return section_obj.properties.get(prop)
+
+        # All relationship properties
+        institution_prop = _property('project', 'institution')
+        institution_name_prop = _property('institution', 'german_name')
+        category_prop = _property('project', 'category')
+        category_name_prop = _property('project_category', 'german_name')
+        event_prop = _property('project', 'event')
+        event_start_prop = _property('event', 'start')
+        event_end_prop = _property('event', 'end')
+        actor_link_prop = _property('actor_event', 'actor_link')
+        role_link_prop = _property('actor_event', 'role_link')
+        actor_name_prop = _property('actor', 'name')
+        role_name_prop = _property('role', 'name')
+        digital_object_path_prop = _property('digital_object', 'path')
+
+        logger.info(f"🔗 ENRICHING: Processing all relationships for {len(cards)} cards")
+
+        for card in cards:
+            subject_id = card.get('uri')
+            if not subject_id:
+                continue
+
+            # Get institution data
+            institution_label = triple_service.get_institution_data(
+                subject_id,
+                institution_predicate=institution_prop.canonical_uri if institution_prop else None,
+                institution_label_predicate=institution_name_prop.canonical_uri if institution_name_prop else None,
+                organization_code=relationship_org_code,
+            )
+            if institution_label:
+                card['institution'] = institution_label
+
+            # Get category data
+            category_labels = triple_service.get_category_data(
+                subject_id,
+                category_predicate=category_prop.canonical_uri if category_prop else None,
+                category_label_predicate=category_name_prop.canonical_uri if category_name_prop else None,
+                organization_code=relationship_org_code,
+            )
+            if category_labels:
+                card['categories'] = category_labels
+                # Format categories for template
+                for i, category in enumerate(category_labels[:4]):
+                    card[f"category{i+1}"] = category
+                if len(category_labels) > 4:
+                    card["additional_categories"] = f"{len(category_labels)-4} weitere"
+
+            # Get event data
+            event_info = triple_service.get_event_data(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
+                event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
+                organization_code=relationship_org_code,
+            )
+            event_ids = event_info.get('event_ids', [])
+            event_details = event_info.get('event_details', {})
+            if event_ids:
+                year_range = self._derive_year_range_from_events(event_ids, event_details)
+                if year_range:
+                    card['year_range'] = year_range
+
+            # Get actor data
+            actors = triple_service.get_actor_relationships(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                actor_link_predicate=actor_link_prop.canonical_uri if actor_link_prop else None,
+                role_link_predicate=role_link_prop.canonical_uri if role_link_prop else None,
+                actor_name_predicate=actor_name_prop.canonical_uri if actor_name_prop else None,
+                role_name_predicate=role_name_prop.canonical_uri if role_name_prop else None,
+                event_ids=event_ids,
+                organization_code=relationship_org_code,
+            )
+            if actors:
+                for index, actor in enumerate(actors[:4]):
+                    card[f'contributor{index + 1}_name'] = actor['name']
+                    if actor['roles']:
+                        card[f'contributor{index + 1}_role'] = ', '.join(actor['roles'])
+                if len(actors) > 4:
+                    card['additional_contributors'] = f"{len(actors) - 4} weitere"
+
+            # Get digital object paths
+            def _fk_source_for_target(section_name: str, target_property: Optional[str]) -> Optional[str]:
+                if not target_property:
+                    return None
+                section = schema.sections.get(section_name)
+                if not section or not section.fk_relationships:
+                    return None
+                for fk_rel in section.fk_relationships:
+                    if fk_rel.get('target_property') == target_property:
+                        return fk_rel.get('source_property')
+                return None
+
+            digital_object_link_predicate = _fk_source_for_target(
+                'project',
+                digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+            )
+            digital_object_paths = triple_service.get_digital_object_paths(
+                subject_id,
+                link_predicate=digital_object_link_predicate,
+                path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+                organization_code=relationship_org_code,
+            )
+            if digital_object_paths:
+                card['digital_objects'] = digital_object_paths
+                if card['digital_objects'] and card.get('image') == 'images/main/card_1.png':
+                    card['image'] = card['digital_objects'][0]
+
+        logger.info(f"🔗 ENRICHED: Added all relationship data to {len(cards)} cards")
+        return cards
 
     @staticmethod
     def _derive_year_range_from_events(

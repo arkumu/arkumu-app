@@ -162,7 +162,166 @@
             {% endfor %}
           </div>
           {%endif%}
-          
+
+          <!-- Actors/Contributors Section -->
+          {% if project.actors %}
+          {% comment %}
+          RDF Properties: Actor relationships through event crosstables
+          Actor link: http://arkumu.org/data/properties/akteurin-im-ereignis
+          Role link: http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis
+          Actor name: http://arkumu.org/data/properties/deutscher-name
+          Role name: http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb
+          {% endcomment %}
+          <div class="mb-12">
+            <h2 class="text-3xl font-medium mb-6 transition-colors
+                       text-arkumu-dark
+                       theme-dark:text-arkumu-light
+                       theme-blue:text-arkumu-blue">
+              Akteur:innen
+            </h2>
+            <div class="space-y-4">
+              {% for actor in project.actors %}
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2"
+                     data-rdf-actor-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
+                     data-rdf-role-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis">
+                  <div class="font-medium transition-colors
+                             text-arkumu-dark
+                             theme-dark:text-arkumu-light
+                             theme-blue:text-arkumu-blue"
+                       data-rdf-name="http://arkumu.org/data/properties/deutscher-name">
+                    {{ actor.name }}
+                  </div>
+                  {% if actor.roles %}
+                    <div class="text-sm font-mono transition-colors
+                               text-arkumu-dark opacity-70
+                               theme-dark:text-arkumu-light theme-dark:opacity-70
+                               theme-blue:text-arkumu-blue theme-blue:opacity-70"
+                         data-rdf-role-name="http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb">
+                      {{ actor.roles|join:", " }}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Events Section -->
+          {% if project.events %}
+          {% comment %}
+          RDF Properties: Event information
+          Event: http://arkumu.org/data/properties/ereignis
+          Event name: http://arkumu.org/data/properties/ereignisname
+          Event start: http://arkumu.org/data/properties/ereignisbeginn
+          Event end: http://arkumu.org/data/properties/ereignisende
+          Event location: http://arkumu.org/data/properties/ereignisort
+          Event type: http://arkumu.org/data/properties/ereignistyp
+          Event description: http://arkumu.org/data/properties/ereignisbeschreibung
+          {% endcomment %}
+          <div class="mb-12">
+            <h2 class="text-3xl font-medium mb-6 transition-colors
+                       text-arkumu-dark
+                       theme-dark:text-arkumu-light
+                       theme-blue:text-arkumu-blue">
+              Ereignisse
+            </h2>
+            <div class="space-y-8">
+              {% for event in project.events %}
+                <div class="border-l-4 border-gray-200 pl-6"
+                     data-rdf-event-property="http://arkumu.org/data/properties/ereignis">
+
+                  <!-- Event Name -->
+                  {% if event.name %}
+                    <h3 class="text-xl font-medium mb-3 transition-colors
+                               text-arkumu-dark
+                               theme-dark:text-arkumu-light
+                               theme-blue:text-arkumu-blue"
+                        data-rdf-name="http://arkumu.org/data/properties/ereignisname">
+                      {{ event.name }}
+                    </h3>
+                  {% endif %}
+
+                  <!-- Event Date -->
+                  {% if event.start or event.end %}
+                    <div class="text-sm font-mono mb-2 transition-colors
+                               text-arkumu-dark opacity-70
+                               theme-dark:text-arkumu-light theme-dark:opacity-70
+                               theme-blue:text-arkumu-blue theme-blue:opacity-70">
+                      {% if event.start and event.end %}
+                        {% if event.start == event.end %}
+                          <span data-rdf-start="http://arkumu.org/data/properties/ereignisbeginn"
+                                data-rdf-end="http://arkumu.org/data/properties/ereignisende">
+                            {{ event.start }}
+                          </span>
+                        {% else %}
+                          <span data-rdf-start="http://arkumu.org/data/properties/ereignisbeginn">{{ event.start }}</span>
+                          bis
+                          <span data-rdf-end="http://arkumu.org/data/properties/ereignisende">{{ event.end }}</span>
+                        {% endif %}
+                      {% elif event.start %}
+                        <span data-rdf-start="http://arkumu.org/data/properties/ereignisbeginn">{{ event.start }}</span>
+                      {% elif event.end %}
+                        <span data-rdf-end="http://arkumu.org/data/properties/ereignisende">{{ event.end }}</span>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+
+                  <!-- Event Location -->
+                  {% if event.location %}
+                    <div class="text-sm mb-2 transition-colors
+                               text-arkumu-dark
+                               theme-dark:text-arkumu-light
+                               theme-blue:text-arkumu-blue"
+                         data-rdf-location="http://arkumu.org/data/properties/ereignisort">
+                      📍 {{ event.location }}
+                      {% if event.country %}
+                        <span class="text-xs opacity-70">({{ event.country }})</span>
+                      {% endif %}
+                      {% if event.location_description %}
+                        <div class="text-xs opacity-70 mt-1">{{ event.location_description }}</div>
+                      {% endif %}
+                    </div>
+
+                    <!-- Map if coordinates available -->
+                    {% if event.latitude and event.longitude %}
+                      <div class="mt-3 mb-4">
+                        <div id="event-map-{{ forloop.counter }}"
+                             class="h-48 rounded-lg overflow-hidden border border-gray-200"
+                             data-lat="{{ event.latitude }}"
+                             data-lng="{{ event.longitude }}"
+                             data-location="{{ event.location }}">
+                        </div>
+                      </div>
+                    {% endif %}
+                  {% endif %}
+
+                  <!-- Event Type -->
+                  {% if event.type %}
+                    <div class="text-sm mb-2 transition-colors
+                               text-arkumu-dark opacity-70
+                               theme-dark:text-arkumu-light theme-dark:opacity-70
+                               theme-blue:text-arkumu-blue theme-blue:opacity-70"
+                         data-rdf-type="http://arkumu.org/data/properties/ereignistyp">
+                      Typ: {{ event.type }}
+                    </div>
+                  {% endif %}
+
+                  <!-- Event Description -->
+                  {% if event.description %}
+                    <div class="text-sm transition-colors
+                               text-arkumu-dark
+                               theme-dark:text-arkumu-light
+                               theme-blue:text-arkumu-blue"
+                         data-rdf-description="http://arkumu.org/data/properties/ereignisbeschreibung">
+                      {{ event.description }}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
           <!-- Franja separadora con margen -->
           <div class="w-full h-10 mb-12"></div>
           
@@ -297,4 +456,37 @@
     </div>
   </main>
 </div>
+
+<!-- Leaflet CSS and JS for maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize maps for all event locations with coordinates
+  const mapElements = document.querySelectorAll('[id^="event-map-"]');
+
+  mapElements.forEach(function(mapElement) {
+    const lat = parseFloat(mapElement.dataset.lat);
+    const lng = parseFloat(mapElement.dataset.lng);
+    const locationName = mapElement.dataset.location;
+
+    if (lat && lng) {
+      // Initialize the map
+      const map = L.map(mapElement.id).setView([lat, lng], 13);
+
+      // Add OpenStreetMap tile layer
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      // Add a marker for the location
+      L.marker([lat, lng])
+        .addTo(map)
+        .bindPopup(`<strong>${locationName}</strong>`)
+        .openPopup();
+    }
+  });
+});
+</script>
 {% endblock content %}
