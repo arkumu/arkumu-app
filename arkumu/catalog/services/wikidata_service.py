@@ -52,7 +52,7 @@ class WikidataService:
             headers = {
                 'User-Agent': 'arkumu/1.0 (https://arkumu.nrw; arkumu@arkumu.nrw)'
             }
-            response = requests.get(self.WIKIDATA_API, params=params, headers=headers, timeout=5)
+            response = requests.get(self.WIKIDATA_API, params=params, headers=headers, timeout=1)
             response.raise_for_status()
             data = response.json()
 
@@ -121,7 +121,7 @@ class WikidataService:
             headers = {
                 'User-Agent': 'arkumu/1.0 (https://arkumu.nrw; arkumu@arkumu.nrw)'
             }
-            response = requests.get(self.WIKIDATA_API, params=params, headers=headers, timeout=5)
+            response = requests.get(self.WIKIDATA_API, params=params, headers=headers, timeout=1)
             response.raise_for_status()
             data = response.json()
 
