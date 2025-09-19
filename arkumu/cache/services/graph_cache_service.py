@@ -493,33 +493,75 @@ class GraphCacheService(BaseCacheService):
         logger.info(f"Built cross-institutional graph: {graph_data['counts']['subjects']} projects, {graph_data['counts']['edges']} edges")
         return graph_data
 
-    def refresh_cross_institutional_projects_cache(self) -> Optional[Dict]:
-        """
-        Refresh cross-institutional projects cache by calling the existing view logic.
-        """
+    def refresh_cross_institutional_projects_cache(self, *, force_refresh: bool = False) -> Optional[Dict]:
+        """Refresh cross-institutional projects cache, optionally forcing a rebuild."""
+
+        cache_resource_uri = "arkumu:cross_institutional:all_projects"
+        cache_params_hash = "cross_institutional_projects_canonical"
+
         try:
-            logger.info("Refreshing cross-institutional projects cache using existing view logic...")
+            existing_projects = self.get_traversal_result(
+                resource_uri=cache_resource_uri,
+                traversal_type="catalog_projects",
+                params_hash=cache_params_hash,
+            )
+            existing_graph = self.get_traversal_result(
+                resource_uri=cache_resource_uri,
+                traversal_type="catalog_search",
+                params_hash=cache_params_hash,
+            )
 
-            # Just call the existing cards view logic that builds and caches the data
-            from arkumu.catalog.views.cards import GraphSearchView
+            projects_payload = existing_projects.get('result') if existing_projects else None
+            graph_payload = existing_graph.get('result') if existing_graph else None
 
-            # Skip the view completely - just call the cache logic directly from cards.py
-            # Check if cache exists first
-            cache_service = GraphCacheService()
-            cache_resource_uri = "arkumu:cross_institutional:all_projects"
-            cache_params_hash = "cross_institutional_projects_canonical"
+            if not force_refresh and projects_payload and projects_payload.get('projects'):
+                # Touch existing entries to extend TTL without doing a full rebuild.
+                self.cache_traversal_result(
+                    resource_uri=cache_resource_uri,
+                    traversal_type="catalog_projects",
+                    params_hash=cache_params_hash,
+                    result_data=projects_payload,
+                )
 
-            logger.info("Calling CanonicalGraphService directly to rebuild cache...")
+                if graph_payload:
+                    self.cache_traversal_result(
+                        resource_uri=cache_resource_uri,
+                        traversal_type="catalog_search",
+                        params_hash=cache_params_hash,
+                        result_data=graph_payload,
+                    )
 
-            # Call the same logic that cards.py uses (lines 56-120 from cards.py)
+                project_count = len(projects_payload.get('projects', []))
+                edge_count = (
+                    graph_payload.get('counts', {}).get('edges')
+                    if isinstance(graph_payload, dict)
+                    else 'unknown'
+                )
+                logger.info(
+                    "Cross-institutional projects cache touched (no rebuild needed): %s projects, %s edges",
+                    project_count,
+                    edge_count,
+                )
+
+                return {
+                    "projects": projects_payload.get('projects', []),
+                    "graph": graph_payload,
+                    "counts": graph_payload.get('counts') if isinstance(graph_payload, dict) else None,
+                    "cached_at": timezone.now().isoformat(),
+                }
+
+            logger.info(
+                "Cross-institutional projects cache rebuild triggered (force_refresh=%s)",
+                force_refresh,
+            )
+
             from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
-            service = CanonicalGraphService()  # No org = search all institutions
 
+            service = CanonicalGraphService()  # No org = search all institutions
             canonical_project_uri = "http://arkumu.org/data/types/projekt"
             all_subject_ids = service._find_subject_ids_by_class(canonical_project_uri)
             logger.info(f"Found {len(all_subject_ids)} projects using canonical URI")
 
-            # Normalize subject IDs to strings for downstream consumers
             normalized_subject_ids = [str(subject_id) for subject_id in all_subject_ids]
 
             if not normalized_subject_ids:
@@ -557,7 +599,6 @@ class GraphCacheService(BaseCacheService):
                 },
             }
 
-            # Use the existing CatalogView to convert graph to cards format
             from arkumu.catalog.views.catalog_view import CatalogView
             from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
 
@@ -565,41 +606,37 @@ class GraphCacheService(BaseCacheService):
             schema_service = SchemaManifestService()
             card_schema = schema_service.get_card_schema('fuk')  # Use FUK for consistent schema
 
-            # Convert graph to project cards using the existing method
             all_projects = catalog_view._graph_to_cards(graph, card_schema)
 
-            # Cache the raw graph for search views under catalog_search
             self.cache_traversal_result(
                 resource_uri=cache_resource_uri,
                 traversal_type="catalog_search",
                 params_hash=cache_params_hash,
-                result_data=graph
+                result_data=graph,
             )
 
-            # Cache the derived cards for project/detail views under catalog_projects
             projects_payload = {'projects': all_projects}
             self.cache_traversal_result(
                 resource_uri=cache_resource_uri,
                 traversal_type="catalog_projects",
                 params_hash=cache_params_hash,
-                result_data=projects_payload
+                result_data=projects_payload,
             )
 
             logger.info(
                 "Cached %s project cards and raw graph (%s subjects, %s edges)",
                 len(all_projects),
                 graph['counts']['subjects'],
-                graph['counts']['edges']
+                graph['counts']['edges'],
             )
 
-            logger.info("Cross-institutional projects cache refreshed via existing view logic")
+            logger.info("Cross-institutional projects cache refreshed via rebuild")
 
-            # Return unified payload for callers (tasks/tests)
             return {
                 "projects": all_projects,
                 "graph": graph,
                 "counts": graph['counts'],
-                "cached_at": timezone.now().isoformat()
+                "cached_at": timezone.now().isoformat(),
             }
 
         except Exception as e:

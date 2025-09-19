@@ -326,7 +326,11 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
         # Group edges by subject for easier lookup
         edges_by_subject = {}
-        logger.info(f"Processing {len(edges)} edges. Sample edge keys: {list(edges[0].keys()) if edges else 'No edges'}")
+        logger.info(
+            "Card extraction (bulk): grouping %d edges across %d subjects",
+            len(edges),
+            len(graph.get('subjects', [])),
+        )
 
         for edge in edges:
             # Try different possible subject ID keys
@@ -343,7 +347,10 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
         # Process each subject (project) to create a card
         subjects = graph.get('subjects', [])
-        logger.info(f"Processing {len(subjects)} subjects for card extraction")
+        logger.info(
+            "Card extraction (bulk): scanning %d subjects for usable cards",
+            len(subjects),
+        )
 
         # Debug: check mismatch between subjects and edge subjects
         edge_subject_sample = list(edges_by_subject.keys())[:3]
@@ -355,6 +362,13 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         for i, subject_id in enumerate(subjects):
             subject_edges = edges_by_subject.get(subject_id, [])
             if subject_edges:
+                if i == 0:
+                    sample_uris = set()
+                    for edge in subject_edges:
+                        canonical_uri = edge.get('predicate_canonical') or edge['predicate_uri']
+                        sample_uris.add(canonical_uri)
+                    logger.debug(f"DEBUG: Sample canonical URIs for first subject: {list(sample_uris)[:10]}")
+
                 card_data = self._extract_card_from_graph(
                     subject_id,
                     subject_edges,
@@ -381,7 +395,7 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
             formatted_cards.append(card)
 
-        logger.info(f"Converted graph to {len(formatted_cards)} cards")
+        logger.info(f"Card extraction (bulk): produced {len(formatted_cards)} cached cards")
         return formatted_cards
 
 
@@ -753,9 +767,10 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
             card['_enriched'] = True
 
+        enriched_count = sum(1 for card in cards if card.get('_enriched'))
         logger.info(
-            "🔗 ENRICHED: Added relationship data to %s cards (total processed %s)",
-            sum(1 for card in cards if card.get('_enriched')),
+            "🔗 ENRICHED (page): Added relationship data to %s cards (total processed %s)",
+            enriched_count,
             len(cards)
         )
         return cards

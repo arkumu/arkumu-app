@@ -46,7 +46,7 @@ class Command(BaseCommand):
             )
 
         self.stdout.write("\nRefreshing cache via GraphCacheService...\n")
-        refresh_result = graph_cache.refresh_cross_institutional_projects_cache()
+        refresh_result = graph_cache.refresh_cross_institutional_projects_cache(force_refresh=True)
         if refresh_result:
             self.stdout.write(
                 self.style.SUCCESS(
