@@ -321,18 +321,5 @@ class ProjektShow:
         
         return render(request, 'catalog/projekt.html', context)
 
-# TMP for REST-API
-def keyword_cloud(limit: int):
-    project_category = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/projektkategorie")
-    
-    most_used_category = Triple.objects.filter(predicate=project_category).values('object').annotate(count=Count("object")).order_by('-count')[:limit]
-    tag_entities = [(Entity(keyword['object']), keyword['count']) for keyword in most_used_category]
-    result = [{"id": x[0].resources['Projektkategorie-ID'][0].value, 
-                    "label": x[0].resources['Deutscher Name der Projektkategorie (Breadcrumb)'][0].value, 
-                    "count": x[1]
-                } for x in tag_entities]
-    return result
-
-# TMP for REST-API
-def random_project(*, keyword_id = None, category = None, university = None, year = None, limit = 10):
-    pass
+# Temporary REST-API functions have been moved to arkumu/catalog/services/catalog_insights_service.py
+# and are now accessible via the /api/catalog/ endpoints

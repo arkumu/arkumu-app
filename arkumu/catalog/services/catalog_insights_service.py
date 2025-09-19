@@ -1,0 +1,1005 @@
+"""Service for catalog insights including popular keywords and random projects."""
+
+from collections import defaultdict
+import logging
+import random
+from typing import Any, Dict, List, Optional, Set
+
+from django.db.models import Count, Q
+
+from arkumu.cache.services import CatalogCacheService, cache_manager
+from arkumu.catalog.services.project_views import CardURIs, CardView, ProjectURIs
+from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
+from arkumu.catalog.services.schema_manifest_service import SchemaManifestService, CardProperty
+from arkumu.metadata.models import Resource, ResourceType, Triple
+
+logger = logging.getLogger(__name__)
+
+RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+
+class CatalogInsightsService:
+    """Service for catalog insights and data aggregation."""
+
+    POPULAR_KEYWORDS_CACHE_TYPE = 'popular_keywords'
+    POPULAR_KEYWORDS_TTL = 'catalog_statistics'
+    RANDOM_PROJECTS_CACHE_TYPE = 'random_project_candidates'
+    RANDOM_PROJECTS_TTL = 'catalog_search'
+
+    def __init__(self, user=None):
+        self.catalog_cache = CatalogCacheService()
+        self.user = user
+        self._project_info_cache: Optional[Dict[str, Dict[str, Any]]] = None
+
+    # ------------------------------------------------------------------
+    # Popular keywords
+    # ------------------------------------------------------------------
+    def get_popular_keywords(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Return popular keyword/category statistics."""
+        limit = max(1, min(limit, 200))
+        cache_params = {'limit': limit}
+
+        cached = self.catalog_cache.get_cached(
+            self.POPULAR_KEYWORDS_CACHE_TYPE,
+            **cache_params
+        )
+        if cached is not None:
+            return cached
+
+        category_predicate_ids = self._get_resource_ids_by_canonical(CardURIs.CATEGORY)
+        if not category_predicate_ids:
+            logger.warning("No project category predicate found; returning empty keyword list")
+            return []
+
+        try:
+            most_used_categories = (
+                Triple.objects
+                .filter(
+                    predicate_id__in=category_predicate_ids,
+                    object__resource_type__in=[ResourceType.IRI, ResourceType.ENTITY]
+                )
+                .values('object__id', 'object__uri', 'object__canonical_uri')
+                .annotate(count=Count('object_id'))
+                .order_by('-count')[:limit]
+            )
+        except Exception as exc:
+            logger.error("Failed to aggregate popular keywords: %s", exc, exc_info=True)
+            return []
+
+        results: List[Dict[str, Any]] = []
+        for category_data in most_used_categories:
+            object_id = category_data['object__id']
+            try:
+                category_resource = Resource.objects.get(id=object_id)
+            except Resource.DoesNotExist:
+                logger.debug("Skipping missing category resource id=%s", object_id)
+                continue
+
+            label = self._get_category_label(category_resource)
+            if not label:
+                continue
+
+            canonical_uri = category_data.get('object__canonical_uri') or category_data.get('object__uri')
+            category_id = self._resource_slug(canonical_uri or category_resource.uri)
+            if not category_id:
+                continue
+
+            results.append({
+                'id': category_id,
+                'label': label,
+                'count': int(category_data['count'])
+            })
+
+        results.sort(key=lambda item: item['count'], reverse=True)
+        self.catalog_cache.set_cached(
+            self.POPULAR_KEYWORDS_CACHE_TYPE,
+            results,
+            self.POPULAR_KEYWORDS_TTL,
+            **cache_params
+        )
+        return results
+
+    # ------------------------------------------------------------------
+    # Random projects
+    # ------------------------------------------------------------------
+    def get_random_projects(
+        self,
+        limit: int = 10,
+        keyword_id: Optional[str] = None,
+        category: Optional[str] = None,
+        university: Optional[str] = None,
+        year: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Return randomised project previews with optional filters."""
+        limit = max(1, min(limit, 50))
+
+        cache_params = {
+            'keyword': (keyword_id or '').strip() or 'ALL',
+            'category': (category or '').strip() or 'ALL',
+            'university': (university or '').strip() or 'ALL',
+            'year': year or 'ALL'
+        }
+
+        project_info_map = self._load_project_info_from_graph()
+        if project_info_map:
+            graph_projects = self._get_random_projects_from_graph(
+                limit=limit,
+                cache_params=cache_params,
+                project_info_map=project_info_map,
+                keyword_id=keyword_id,
+                category=category,
+                university=university,
+                year=year,
+            )
+            if graph_projects is not None:
+                return graph_projects
+
+        return self._get_random_projects_from_db(
+            limit=limit,
+            cache_params=cache_params,
+            keyword_id=keyword_id,
+            category=category,
+            university=university,
+            year=year,
+        )
+
+    def _get_random_projects_from_graph(
+        self,
+        *,
+        limit: int,
+        cache_params: Dict[str, Any],
+        project_info_map: Dict[str, Dict[str, Any]],
+        keyword_id: Optional[str],
+        category: Optional[str],
+        university: Optional[str],
+        year: Optional[int],
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Return random projects using pre-built graph/card cache with proper relationship enrichment."""
+
+        candidate_uris = self.catalog_cache.get_cached(
+            self.RANDOM_PROJECTS_CACHE_TYPE,
+            **cache_params
+        )
+
+        if candidate_uris is None:
+            candidate_uris = self._filter_project_uris_from_info(
+                project_info_map,
+                keyword_id=keyword_id,
+                category=category,
+                university=university,
+                year=year,
+            )
+
+            self.catalog_cache.set_cached(
+                self.RANDOM_PROJECTS_CACHE_TYPE,
+                candidate_uris,
+                self.RANDOM_PROJECTS_TTL,
+                **cache_params
+            )
+
+        if not candidate_uris:
+            return []
+
+        available_uris = [uri for uri in candidate_uris if uri in project_info_map]
+        if not available_uris:
+            return []
+
+        if len(available_uris) <= limit:
+            selected_uris = available_uris[:]
+            random.shuffle(selected_uris)
+        else:
+            selected_uris = random.sample(available_uris, limit)
+
+        # Use the same enrichment approach as CatalogView
+        projects = self._enrich_projects_with_relationships(selected_uris, project_info_map)
+
+        return projects
+
+    def _enrich_projects_with_relationships(
+        self,
+        selected_uris: List[str],
+        project_info_map: Dict[str, Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Enrich projects with relationship data using TripleRelationshipService like CatalogView."""
+
+        # Get schema for property definitions (use FUK as per CatalogView)
+        schema_service = SchemaManifestService()
+        card_schema = schema_service.get_card_schema('fuk')
+
+        # Initialize TripleRelationshipService (cross-institutional: no org filtering)
+        triple_service = TripleRelationshipService(organization_code=None)
+
+        def _property(section: str, prop: str) -> Optional[CardProperty]:
+            section_obj = card_schema.sections.get(section)
+            if not section_obj:
+                return None
+            return section_obj.properties.get(prop)
+
+        # Get property definitions
+        institution_prop = _property('project', 'institution')
+        institution_name_prop = _property('institution', 'german_name')
+        category_prop = _property('project', 'category')
+        category_name_prop = _property('project_category', 'german_name')
+        event_prop = _property('project', 'event')
+        event_start_prop = _property('event', 'start')
+        event_end_prop = _property('event', 'end')
+        actor_link_prop = _property('actor_event', 'actor_link')
+        role_link_prop = _property('actor_event', 'role_link')
+        actor_name_prop = _property('actor', 'name')
+        role_name_prop = _property('role', 'name')
+
+        projects: List[Dict[str, Any]] = []
+
+        for uri in selected_uris:
+            info = project_info_map.get(uri)
+            if not info:
+                continue
+
+            subject_id = info['subject_id']
+            slug = info['slug']
+            year_values = sorted(info['year_values'])
+
+            # Get enriched relationship data using TripleRelationshipService
+
+            # Get institution data
+            institution_label = triple_service.get_institution_data(
+                subject_id,
+                institution_predicate=institution_prop.canonical_uri if institution_prop else None,
+                institution_label_predicate=institution_name_prop.canonical_uri if institution_name_prop else None,
+                organization_code=None,  # Cross-institutional
+            )
+
+            # Get category data
+            category_labels = triple_service.get_category_data(
+                subject_id,
+                category_predicate=category_prop.canonical_uri if category_prop else None,
+                category_label_predicate=category_name_prop.canonical_uri if category_name_prop else None,
+                organization_code=None,  # Cross-institutional
+            )
+
+            # Get event data
+            event_info = triple_service.get_event_data(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
+                event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
+                organization_code=None,  # Cross-institutional
+            )
+            event_ids = event_info.get('event_ids', [])
+            event_details = event_info.get('event_details', {})
+
+            # Get actor data (this is the key fix!)
+            actors = triple_service.get_actor_relationships(
+                subject_id,
+                event_predicate=event_prop.canonical_uri if event_prop else None,
+                actor_link_predicate=actor_link_prop.canonical_uri if actor_link_prop else None,
+                role_link_predicate=role_link_prop.canonical_uri if role_link_prop else None,
+                actor_name_predicate=actor_name_prop.canonical_uri if actor_name_prop else None,
+                role_name_predicate=role_name_prop.canonical_uri if role_name_prop else None,
+                event_ids=event_ids,
+                organization_code=None,  # Cross-institutional
+            )
+
+            # Get project type (proper resolution instead of raw ID)
+            project_type = triple_service.get_project_type(
+                subject_id,
+                project_type_predicate='http://arkumu.org/data/properties/projektart',
+                organization_code=None,  # Cross-institutional
+            )
+
+            # Calculate year from events
+            project_year = None
+            if event_ids and event_details:
+                for event_id in event_ids:
+                    entry = event_details.get(event_id) or {}
+                    start = entry.get('start')
+                    if start:
+                        try:
+                            project_year = int(start.split('-')[0] if '-' in start else start)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+
+            # Use year from info if event year not found
+            if not project_year and year_values:
+                project_year = year_values[0]
+
+            projects.append({
+                'id': slug,
+                'title': info['title'],
+                'university': institution_label or info['university_label'],
+                'year': project_year,
+                'project_type': project_type or self._resolve_project_type_name_from_id(info.get('project_type')),  # Use enriched project type or resolve ID
+                'actors': [{'name': actor['name'], 'roles': actor['roles']} for actor in actors],
+                'categories': category_labels or info['category_labels'],
+                'preview_image_url': info['image'],
+                'detail_url': f"/projekt/{slug}",
+            })
+
+            logger.info(f"✅ ENRICHED: {slug} - Institution: '{institution_label}', Actors: {len(actors)}, Categories: {len(category_labels or [])}")
+
+        return projects
+
+    def _get_random_projects_from_db(
+        self,
+        *,
+        limit: int,
+        cache_params: Dict[str, Any],
+        keyword_id: Optional[str],
+        category: Optional[str],
+        university: Optional[str],
+        year: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        """Fallback implementation using database lookups."""
+
+        candidate_uris: Optional[List[str]] = self.catalog_cache.get_cached(
+            self.RANDOM_PROJECTS_CACHE_TYPE,
+            **cache_params
+        )
+
+        if candidate_uris is None:
+            subject_ids = self._get_project_subject_ids()
+            if not subject_ids:
+                self.catalog_cache.set_cached(
+                    self.RANDOM_PROJECTS_CACHE_TYPE,
+                    [],
+                    self.RANDOM_PROJECTS_TTL,
+                    **cache_params
+                )
+                return []
+
+            filtered_ids = subject_ids
+            if keyword_id or category:
+                filtered_ids &= self._filter_projects_by_category(subject_ids, keyword_id, category)
+                if not filtered_ids:
+                    self.catalog_cache.set_cached(
+                        self.RANDOM_PROJECTS_CACHE_TYPE,
+                        [],
+                        self.RANDOM_PROJECTS_TTL,
+                        **cache_params
+                    )
+                    return []
+
+            if university:
+                filtered_ids &= self._filter_projects_by_university(filtered_ids, university)
+                if not filtered_ids:
+                    self.catalog_cache.set_cached(
+                        self.RANDOM_PROJECTS_CACHE_TYPE,
+                        [],
+                        self.RANDOM_PROJECTS_TTL,
+                        **cache_params
+                    )
+                    return []
+
+            if year:
+                filtered_ids &= self._filter_projects_by_year(filtered_ids, year)
+                if not filtered_ids:
+                    self.catalog_cache.set_cached(
+                        self.RANDOM_PROJECTS_CACHE_TYPE,
+                        [],
+                        self.RANDOM_PROJECTS_TTL,
+                        **cache_params
+                    )
+                    return []
+
+            candidate_uris = list(
+                Resource.objects.filter(id__in=filtered_ids).values_list('uri', flat=True)
+            )
+            candidate_uris = [uri for uri in candidate_uris if uri]
+
+            self.catalog_cache.set_cached(
+                self.RANDOM_PROJECTS_CACHE_TYPE,
+                candidate_uris,
+                self.RANDOM_PROJECTS_TTL,
+                **cache_params
+            )
+
+        if not candidate_uris:
+            return []
+
+        if len(candidate_uris) <= limit:
+            selected_uris = candidate_uris[:]
+            random.shuffle(selected_uris)
+        else:
+            selected_uris = random.sample(candidate_uris, limit)
+
+        projects: List[Dict[str, Any]] = []
+        for project_uri in selected_uris:
+            try:
+                card_view = CardView(project_uri)
+                card_data = card_view.get_card_data()
+                if not card_data:
+                    continue
+
+                project_year = self._extract_year(card_data.event_start)
+                project_slug = self._resource_slug(project_uri)
+                projects.append({
+                    'id': project_slug or project_uri,
+                    'year': project_year,
+                    'university': card_data.institution or "",
+                    'title': card_data.title or "",
+                    'project_type': self._get_project_type(project_uri),
+                    'actors': card_data.actors,
+                    'categories': card_data.categories,
+                    'preview_image_url': card_data.image,
+                    'detail_url': f"/projekt/{project_slug}" if project_slug else f"/projekt/{project_uri}",
+                })
+            except Exception as exc:
+                logger.error("Error building project preview for %s: %s", project_uri, exc, exc_info=True)
+
+        return projects
+
+    # ------------------------------------------------------------------
+    # Graph-backed helpers
+    # ------------------------------------------------------------------
+
+    def _filter_project_uris_from_info(
+        self,
+        project_info_map: Dict[str, Dict[str, Any]],
+        *,
+        keyword_id: Optional[str],
+        category: Optional[str],
+        university: Optional[str],
+        year: Optional[int]
+    ) -> List[str]:
+        keyword_slug = (keyword_id or '').strip().lower()
+        category_filter = (category or '').strip().lower()
+        university_filter = (university or '').strip().lower()
+
+        results: List[str] = []
+        for uri, info in project_info_map.items():
+            if keyword_slug and keyword_slug not in info['category_slugs']:
+                continue
+
+            if category_filter and not any(category_filter in label.lower() for label in info['category_labels']):
+                continue
+
+            if university_filter:
+                codes = {code.lower() for code in info['institution_codes']}
+                label_matches = any(university_filter in label.lower() for label in info['institution_labels'])
+                if university_filter not in codes and not label_matches:
+                    continue
+
+            if year and year not in info['year_values']:
+                continue
+
+            results.append(uri)
+
+        return results
+
+    def _load_project_info_from_graph(self) -> Dict[str, Dict[str, Any]]:
+        if self._project_info_cache is not None:
+            return self._project_info_cache
+
+        try:
+            projects_entry = cache_manager.graph.get_traversal_result(
+                resource_uri="arkumu:cross_institutional:all_projects",
+                traversal_type="catalog_projects",
+                params_hash="cross_institutional_projects_canonical",
+            )
+            graph_entry = cache_manager.graph.get_traversal_result(
+                resource_uri="arkumu:cross_institutional:all_projects",
+                traversal_type="catalog_search",
+                params_hash="cross_institutional_projects_canonical",
+            )
+        except Exception as exc:
+            logger.warning("Failed to load project info from graph cache: %s", exc)
+            self._project_info_cache = {}
+            return self._project_info_cache
+
+        if not projects_entry or not graph_entry:
+            self._project_info_cache = {}
+            return self._project_info_cache
+
+        projects_payload = projects_entry.get('result') or {}
+        cards = projects_payload.get('projects') or []
+        card_map = {card.get('uri'): card for card in cards if card.get('uri')}
+
+        graph = graph_entry.get('result') or {}
+        nodes: Dict[str, Dict[str, Any]] = graph.get('nodes') or {}
+        edges: List[Dict[str, Any]] = graph.get('edges') or []
+        subjects: List[str] = graph.get('subjects') or []
+
+        if not nodes or not edges or not subjects:
+            self._project_info_cache = {}
+            return self._project_info_cache
+
+        edges_by_subject: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for edge in edges:
+            subject_id = edge.get('subject_id')
+            if subject_id:
+                edges_by_subject[subject_id].append(edge)
+
+        info_map: Dict[str, Dict[str, Any]] = {}
+        for subject_id in subjects:
+            info = self._build_project_info(subject_id, card_map, nodes, edges_by_subject)
+            if not info:
+                continue
+            info_map[info['uri']] = info
+
+        self._project_info_cache = info_map
+        return self._project_info_cache
+
+    def _build_project_info(
+        self,
+        subject_id: str,
+        card_map: Dict[str, Dict[str, Any]],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Optional[Dict[str, Any]]:
+        node = nodes.get(subject_id)
+        if not node:
+            return None
+
+        project_uri = node.get('uri')
+        if not project_uri:
+            return None
+
+        slug = self._resource_slug(project_uri) or subject_id
+        card = card_map.get(subject_id) or card_map.get(project_uri) or {}
+        title = card.get('title') or self._get_literal_from_subject(subject_id, edges_by_subject, CardURIs.TITLE)
+        if not title:
+            return None
+
+        image = card.get('image') or ''
+
+        institution_info = self._collect_institution_info(subject_id, nodes, edges_by_subject)
+        category_info = self._collect_category_info(subject_id, nodes, edges_by_subject)
+        year_values = self._collect_years(subject_id, nodes, edges_by_subject)
+        project_type = self._collect_project_type_from_edges(subject_id, edges_by_subject, nodes)
+
+        return {
+            'uri': project_uri,
+            'subject_id': subject_id,
+            'slug': slug,
+            'title': title,
+            'image': image,
+            'university_label': institution_info['label'],
+            'institution_labels': institution_info['labels'],
+            'institution_codes': institution_info['codes'],
+            'category_labels': category_info['labels'],
+            'category_slugs': category_info['slugs'],
+            'year_values': year_values,
+            'project_type': project_type,
+            'actors': [],
+        }
+
+    def _collect_institution_info(
+        self,
+        project_id: str,
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        labels: List[str] = []
+        codes: Set[str] = set()
+
+        for edge in edges_by_subject.get(project_id, []):
+            if self._canonical(edge) != CardURIs.INSTITUTION:
+                continue
+
+            inst_id = edge.get('object_id')
+            if not inst_id:
+                continue
+
+            inst_node = nodes.get(inst_id, {})
+            slug = self._extract_node_slug(inst_node)
+            if slug:
+                codes.add(slug.lower())
+            organization = inst_node.get('organization')
+            if organization:
+                codes.add(str(organization).lower())
+
+            label = self._get_literal_from_subject(inst_id, edges_by_subject, CardURIs.INSTITUTION_GERMAN_NAME)
+            if not label:
+                label = inst_node.get('name') or inst_node.get('value') or inst_node.get('uri')
+            if label:
+                normalized = label.strip()
+                if normalized and normalized not in labels:
+                    labels.append(normalized)
+
+        primary_label = labels[0] if labels else (next(iter(codes)).upper() if codes else "")
+
+        return {
+            'label': primary_label,
+            'labels': labels,
+            'codes': codes,
+        }
+
+    def _collect_category_info(
+        self,
+        project_id: str,
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        labels: List[str] = []
+        slugs: Set[str] = set()
+
+        for edge in edges_by_subject.get(project_id, []):
+            if self._canonical(edge) != CardURIs.CATEGORY:
+                continue
+
+            category_id = edge.get('object_id')
+            if not category_id:
+                continue
+
+            category_node = nodes.get(category_id, {})
+            slug = self._extract_node_slug(category_node)
+            if slug:
+                slugs.add(slug.lower())
+
+            label = self._get_literal_from_subject(category_id, edges_by_subject, CardURIs.CATEGORY_GERMAN_NAME)
+            if not label:
+                label = category_node.get('name') or category_node.get('value')
+            if label:
+                normalized = label.split('>')[-1].strip() if '>' in label else label.strip()
+                if normalized and normalized not in labels:
+                    labels.append(normalized)
+
+        return {
+            'labels': labels,
+            'slugs': slugs,
+        }
+
+    def _collect_years(
+        self,
+        project_id: str,
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Set[int]:
+        years: Set[int] = set()
+
+        for edge in edges_by_subject.get(project_id, []):
+            if self._canonical(edge) != CardURIs.EVENT:
+                continue
+
+            event_id = edge.get('object_id')
+            if not event_id:
+                continue
+
+            for event_edge in edges_by_subject.get(event_id, []):
+                if self._canonical(event_edge) != CardURIs.EVENT_START:
+                    continue
+                year = self._extract_year(event_edge.get('object_value'))
+                if year is not None:
+                    years.add(year)
+
+        if not years:
+            project_uri = (nodes.get(project_id) or {}).get('uri')
+            if project_uri:
+                years.update(self._fetch_years_from_db(project_uri))
+
+        return years
+
+    def _fetch_years_from_db(self, project_uri: str) -> Set[int]:
+        result: Set[int] = set()
+
+        if not project_uri:
+            return result
+
+        project = Resource.objects.filter(uri=project_uri).first()
+        if not project:
+            return result
+
+        event_predicate_ids = self._get_resource_ids_by_canonical(CardURIs.EVENT)
+        start_predicate_ids = self._get_resource_ids_by_canonical(CardURIs.EVENT_START)
+        if not event_predicate_ids or not start_predicate_ids:
+            return result
+
+        event_ids = list(
+            Triple.objects.filter(
+                predicate_id__in=event_predicate_ids,
+                subject=project,
+            ).values_list('object_id', flat=True)
+        )
+
+        if not event_ids:
+            return result
+
+        start_values = Triple.objects.filter(
+            predicate_id__in=start_predicate_ids,
+            subject_id__in=event_ids,
+            object__resource_type=ResourceType.LITERAL,
+        ).values_list('object__value', flat=True)
+
+        for value in start_values:
+            year = self._extract_year(value)
+            if year is not None:
+                result.add(year)
+
+        return result
+
+    def _collect_project_type_from_edges(
+        self,
+        project_id: str,
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> Optional[str]:
+        for edge in edges_by_subject.get(project_id, []):
+            if self._canonical(edge) != ProjectURIs.PROJECT_TYPE_FIELD:
+                continue
+
+            if edge.get('object_value'):
+                return edge['object_value']
+
+            object_id = edge.get('object_id')
+            if object_id and object_id in nodes:
+                node = nodes[object_id]
+                return node.get('value') or node.get('name')
+
+        return None
+
+    def _get_literal_from_subject(
+        self,
+        subject_id: str,
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        predicate: str,
+    ) -> Optional[str]:
+        for edge in edges_by_subject.get(subject_id, []):
+            if self._canonical(edge) == predicate and edge.get('object_value'):
+                return edge['object_value']
+        return None
+
+    @staticmethod
+    def _extract_node_slug(node: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not node:
+            return None
+        for key in ('uri', 'canonical_uri'):
+            value = node.get(key)
+            if value:
+                slug = CatalogInsightsService._resource_slug(value)
+                if slug:
+                    return slug
+        return None
+
+    @staticmethod
+    def _canonical(edge: Dict[str, Any]) -> Optional[str]:
+        if not edge:
+            return None
+        return edge.get('predicate_canonical') or edge.get('predicate_uri')
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    def _get_project_subject_ids(self) -> Set[int]:
+        """Return subject IDs for resources that are projects."""
+        project_type_uris = [CardURIs.PROJECT_TYPE, ProjectURIs.PROJECT_TYPE_FUK]
+
+        predicate_ids = self._get_resource_ids_by_canonical(RDF_TYPE_URI)
+        if not predicate_ids:
+            logger.warning("rdf:type predicate not harmonized; unable to locate projects")
+            return set()
+
+        project_type_ids: List[int] = []
+        for uri in project_type_uris:
+            project_type_ids.extend(self._get_resource_ids_by_canonical(uri))
+
+        project_triples = Triple.objects.filter(
+            predicate_id__in=predicate_ids
+        ).filter(
+            Q(object__canonical_uri__in=project_type_uris) |
+            Q(object__uri__in=project_type_uris) |
+            Q(object_id__in=project_type_ids)
+        )
+
+        return set(project_triples.values_list('subject_id', flat=True))
+
+    def _filter_projects_by_category(
+        self,
+        subject_ids: Set[int],
+        keyword_id: Optional[str],
+        category: Optional[str]
+    ) -> Set[int]:
+        if not subject_ids:
+            return set()
+
+        predicate_ids = self._get_resource_ids_by_canonical(CardURIs.CATEGORY)
+        if not predicate_ids:
+            return set()
+
+        category_qs = Triple.objects.filter(
+            predicate_id__in=predicate_ids,
+            subject_id__in=subject_ids
+        )
+
+        if keyword_id:
+            slug = keyword_id.strip()
+            category_qs = category_qs.filter(
+                Q(object__uri__iendswith=f'/{slug}') |
+                Q(object__canonical_uri__iendswith=f'/{slug}')
+            )
+
+        if category:
+            matching_category_ids = self._match_category_ids_by_label(category)
+            if not matching_category_ids:
+                return set()
+            category_qs = category_qs.filter(object_id__in=matching_category_ids)
+
+        return set(category_qs.values_list('subject_id', flat=True))
+
+    def _filter_projects_by_university(self, subject_ids: Set[int], university: str) -> Set[int]:
+        if not subject_ids:
+            return set()
+
+        predicate_ids = self._get_resource_ids_by_canonical(CardURIs.INSTITUTION)
+        if not predicate_ids:
+            return set()
+
+        normalized = university.strip()
+        institution_qs = Triple.objects.filter(
+            predicate_id__in=predicate_ids,
+            subject_id__in=subject_ids
+        ).filter(
+            Q(object__uri__icontains=normalized) |
+            Q(object__canonical_uri__icontains=normalized)
+        )
+
+        if not institution_qs.exists():
+            institution_ids = self._match_institution_ids_by_label(normalized)
+            if not institution_ids:
+                return set()
+
+            institution_qs = Triple.objects.filter(
+                predicate_id__in=predicate_ids,
+                subject_id__in=subject_ids,
+                object_id__in=institution_ids
+            )
+
+        return set(institution_qs.values_list('subject_id', flat=True))
+
+    def _filter_projects_by_year(self, subject_ids: Set[int], year: int) -> Set[int]:
+        if not subject_ids:
+            return set()
+
+        event_predicate_ids = self._get_resource_ids_by_canonical(CardURIs.EVENT)
+        start_predicate_ids = self._get_resource_ids_by_canonical(CardURIs.EVENT_START)
+        if not event_predicate_ids or not start_predicate_ids:
+            return set()
+
+        project_events = Triple.objects.filter(
+            predicate_id__in=event_predicate_ids,
+            subject_id__in=subject_ids
+        )
+
+        event_ids = list(project_events.values_list('object_id', flat=True))
+        if not event_ids:
+            return set()
+
+        matching_event_ids = Triple.objects.filter(
+            predicate_id__in=start_predicate_ids,
+            subject_id__in=event_ids,
+            object__resource_type=ResourceType.LITERAL,
+            object__value__startswith=str(year)
+        ).values_list('subject_id', flat=True)
+
+        if not matching_event_ids:
+            return set()
+
+        return set(
+            project_events.filter(object_id__in=matching_event_ids).values_list('subject_id', flat=True)
+        )
+
+    def _match_category_ids_by_label(self, label: str) -> List[int]:
+        predicate_ids = self._get_resource_ids_by_canonical(CardURIs.CATEGORY_GERMAN_NAME)
+        if not predicate_ids:
+            return []
+
+        return list(
+            Triple.objects.filter(
+                predicate_id__in=predicate_ids,
+                object__resource_type=ResourceType.LITERAL,
+                object__value__icontains=label.strip()
+            ).values_list('subject_id', flat=True)
+        )
+
+    def _match_institution_ids_by_label(self, label: str) -> List[int]:
+        predicate_ids = self._get_resource_ids_by_canonical(CardURIs.INSTITUTION_GERMAN_NAME)
+        if not predicate_ids:
+            return []
+
+        return list(
+            Triple.objects.filter(
+                predicate_id__in=predicate_ids,
+                object__resource_type=ResourceType.LITERAL,
+                object__value__icontains=label.strip()
+            ).values_list('subject_id', flat=True)
+        )
+
+    def _get_resource_ids_by_canonical(self, canonical_uri: str) -> List[int]:
+        ids = list(
+            Resource.objects.filter(canonical_uri=canonical_uri).values_list('id', flat=True)
+        )
+        if ids:
+            return ids
+        return list(Resource.objects.filter(uri=canonical_uri).values_list('id', flat=True))
+
+    def _get_category_label(self, category_resource: Resource) -> Optional[str]:
+        if not category_resource:
+            return None
+
+        cache_params = {
+            'category': category_resource.canonical_uri or category_resource.uri or category_resource.id
+        }
+        cached_label = self.catalog_cache.get_cached('category_label', **cache_params)
+        if cached_label:
+            return cached_label
+
+        label_triple = Triple.objects.filter(
+            subject=category_resource,
+            predicate__canonical_uri=CardURIs.CATEGORY_GERMAN_NAME,
+            object__resource_type=ResourceType.LITERAL
+        ).first()
+
+        label = label_triple.object.literal_value if label_triple and label_triple.object else None
+
+        if not label:
+            label = category_resource.name or category_resource.value
+        if not label and category_resource.uri:
+            label = self._resource_slug(category_resource.uri)
+
+        if label:
+            self.catalog_cache.set_cached('category_label', label, self.POPULAR_KEYWORDS_TTL, **cache_params)
+
+        return label
+
+    def _get_project_type(self, project_uri: str) -> Optional[str]:
+        project = Resource.objects.filter(uri=project_uri).first()
+        if not project:
+            return None
+
+        # Get raw project type ID
+        project_type_triple = Triple.objects.filter(
+            subject=project,
+            predicate__canonical_uri=ProjectURIs.PROJECT_TYPE_FIELD,
+            object__resource_type=ResourceType.LITERAL
+        ).first()
+
+        if project_type_triple and project_type_triple.object:
+            project_type_id = project_type_triple.object.literal_value
+            # Resolve ID to German name
+            return self._resolve_project_type_name_from_id(project_type_id)
+
+        return None
+
+    @staticmethod
+    def _resource_slug(uri: Optional[str]) -> Optional[str]:
+        if not uri:
+            return None
+        return uri.rstrip('/').split('/')[-1]
+
+    @staticmethod
+    def _extract_year(value: Optional[str]) -> Optional[int]:
+        if not value:
+            return None
+        try:
+            return int(str(value)[:4])
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_project_type_name_from_id(self, project_type_id: str) -> Optional[str]:
+        """Resolve project type ID to German name (fallback method)."""
+        if not project_type_id:
+            return None
+
+        # Construct the project type entity URI
+        project_type_uri = f"http://arkumu.org/data/fuk/entities/projektart/{project_type_id}"
+
+        try:
+            # Get the project type entity
+            project_type_entity = Resource.objects.filter(uri=project_type_uri).first()
+            if not project_type_entity:
+                return project_type_id  # Return the ID if we can't resolve it
+
+            # Get the German name
+            german_name_triple = Triple.objects.filter(
+                subject=project_type_entity,
+                predicate__canonical_uri='http://arkumu.org/data/properties/deutscher-name-der-projektart'
+            ).first()
+
+            if german_name_triple and german_name_triple.object:
+                return german_name_triple.object.value
+
+        except Exception as exc:
+            logger.warning(f"Failed to resolve project type '{project_type_id}': {exc}")
+
+        return project_type_id  # Return the ID as fallback
+
