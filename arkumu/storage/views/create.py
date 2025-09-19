@@ -4,44 +4,27 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.forms import formset_factory
 
-# Mock data for URI options - in a real app, this would come from your database or API
+from arkumu.metadata.models import Resource, Triple
+
+def get_uri_options(predicate_name):
+    predicate = Resource.objects.filter(name=predicate_name).first()
+    if not predicate:
+        return []
+    triples = Triple.objects.filter(predicate=predicate)
+    options = []
+    for triple in triples:
+        obj = triple.object
+        label = obj.name if obj.name else obj.value
+        options.append({'id': str(obj.id), 'uri': obj.uri, 'label': label})
+    return options
+
 URI_OPTIONS = {
-    'institution': [
-        {'id': '1', 'uri': 'http://arkumu.org/data/instances/einliefernde-hochschule/hfmdk', 'label': 'Hochschule für Musik und Darstellende Kunst Frankfurt'},
-        {'id': '2', 'uri': 'http://arkumu.org/data/instances/einliefernde-hochschule/hfmw', 'label': 'Hochschule für Musik Würzburg'},
-        {'id': '3', 'uri': 'http://arkumu.org/data/instances/einliefernde-hochschule/hfmk', 'label': 'Hochschule für Musik Karlsruhe'},
-        {'id': '4', 'uri': 'http://arkumu.org/data/instances/einliefernde-hochschule/hfmh', 'label': 'Hochschule für Musik und Theater Hannover'},
-    ],
-    'project_category': [
-        {'id': '1', 'uri': 'http://arkumu.org/data/instances/projektkategorie/kunst', 'label': 'Kunst'},
-        {'id': '2', 'uri': 'http://arkumu.org/data/instances/projektkategorie/musik', 'label': 'Musik'},
-        {'id': '3', 'uri': 'http://arkumu.org/data/instances/projektkategorie/theater', 'label': 'Theater'},
-        {'id': '4', 'uri': 'http://arkumu.org/data/instances/projektkategorie/tanz', 'label': 'Tanz'},
-    ],
-    'project_type': [
-        {'id': '1', 'uri': 'http://arkumu.org/data/instances/projektart/forschungsprojekt', 'label': 'Forschungsprojekt'},
-        {'id': '2', 'uri': 'http://arkumu.org/data/instances/projektart/studienprojekt', 'label': 'Studienprojekt'},
-        {'id': '3', 'uri': 'http://arkumu.org/data/instances/projektart/kunstprojekt', 'label': 'Kunstprojekt'},
-        {'id': '4', 'uri': 'http://arkumu.org/data/instances/projektart/kooperationsprojekt', 'label': 'Kooperationsprojekt'},
-    ],
-    'actor': [
-        {'id': '1', 'uri': 'http://arkumu.org/data/instances/akteurin/anna-mueller', 'label': 'Anna Müller'},
-        {'id': '2', 'uri': 'http://arkumu.org/data/instances/akteurin/hans-schmidt', 'label': 'Hans Schmidt'},
-        {'id': '3', 'uri': 'http://arkumu.org/data/instances/akteurin/clara-wagner', 'label': 'Clara Wagner'},
-        {'id': '4', 'uri': 'http://arkumu.org/data/instances/akteurin/thomas-becker', 'label': 'Thomas Becker'},
-    ],
-    'role': [
-        {'id': '1', 'uri': 'http://arkumu.org/data/instances/rolle/projektleitung', 'label': 'Projektleitung'},
-        {'id': '2', 'uri': 'http://arkumu.org/data/instances/rolle/mitarbeiterin', 'label': 'Mitarbeiterin'},
-        {'id': '3', 'uri': 'http://arkumu.org/data/instances/rolle/studentin', 'label': 'Studentin'},
-        {'id': '4', 'uri': 'http://arkumu.org/data/instances/rolle/gastdozentin', 'label': 'Gastdozentin'},
-    ],
-    'catchphrase': [
-        {'id': '1', 'uri': 'http://arkumu.org/data/instances/schlagwort/kunstgeschichte', 'label': 'Kunstgeschichte'},
-        {'id': '2', 'uri': 'http://arkumu.org/data/instances/schlagwort/musiktheorie', 'label': 'Musiktheorie'},
-        {'id': '3', 'uri': 'http://arkumu.org/data/instances/schlagwort/performing-arts', 'label': 'Performing Arts'},
-        {'id': '4', 'uri': 'http://arkumu.org/data/instances/schlagwort/digital-humanities', 'label': 'Digital Humanities'},
-    ]
+    'institution': get_uri_options("Einliefernde Hochschule"),
+    'project_category': get_uri_options("Projektkategorie"),
+    'project_type': get_uri_options("Projektart"),
+    'actor': get_uri_options("Akteurin"),
+    'role': get_uri_options("Rolle"),
+    'catchphrase': get_uri_options("Schlagwort"),
 }
 
 class BaseEntityForm(forms.Form):
