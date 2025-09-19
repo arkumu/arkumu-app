@@ -67,7 +67,7 @@
     {% block body %}
       <!-- Navbar will be added later -->
       
-<div class="w-full min-h-screen px-4 sm:px-8 md:px-6 lg:px-12 max-w-none mx-auto">     {% if messages %}
+<div class="w-full min-h-screen px-4 sm:px-8 md:px-6 lg:px-12 max-w-none mx-auto bg-arkumu-light theme-dark:bg-arkumu-dark theme-blue:bg-arkumu-light">     {% if messages %}
           {% for message in messages %}
             <div class="alert alert-dismissible {% if message.tags %}alert-{{ message.tags }}{% endif %}">
               {{ message }}

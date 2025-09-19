@@ -1,9 +1,7 @@
-<!-- Unified Results Container - Single update target for HTMX -->
-<div class="w-full">
-
-  <!-- 1. Search Status Bar -->
+<!-- Search Status for OOB update -->
+<div id="search-status-container" hx-swap-oob="true">
   {% if query %}
-  <div id="search-status" class="text-center py-4 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
+  <div class="text-center py-1 mt-2 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
     {% if total_results > 0 %}
       Suche nach "{{ query }}" - {{ total_results }} Projekte gefunden
     {% else %}
@@ -11,13 +9,11 @@
     {% endif %}
   </div>
   {% endif %}
+</div>
 
-  <!-- 2. Results Counter -->
-  {% if total_results > 0 %}
-  <div id="results-count" class="text-center mb-4 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
-    Ergebnisse {{ start_result }}-{{ end_result }} von {{ total_results }}
-  </div>
-  {% endif %}
+<!-- Results Container - Updated by HTMX -->
+<div class="w-full">
+
 
   <!-- 3. Results Grid -->
   <div id="card-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-6 rounded-lg">
@@ -43,6 +39,13 @@
     {% endif %}
     {% endfor %}
   </div>
+
+  <!-- Results Counter -->
+  {% if total_results > 0 %}
+  <div id="results-count" class="text-center mb-4 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
+    Ergebnisse {{ start_result }}-{{ end_result }} von {{ total_results }}
+  </div>
+  {% endif %}
 
   <!-- 4. Pagination Controls -->
   {% if total_pages > 1 %}

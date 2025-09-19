@@ -63,7 +63,7 @@
   <main class="w-full px-4">
     <div class="w-full">
       <!-- Unified container for Description Text and Search Bar -->
-      <div class="w-full max-w-[800px] lg:max-w-[1000px] xl:max-w-[1200px] mx-auto mt-20 mb-24">
+      <div class="w-full max-w-[800px] lg:max-w-[1000px] xl:max-w-[1200px] mx-auto mt-20 mb-4">
         <!-- Description Text -->
         <div class="mb-10">
           {% include 'components/text/arkumu_text.html' %}
@@ -77,6 +77,36 @@
             {% include 'components/inputs/navbar.html' with placeholder_text="Suchbegriff" query=query %}
           </form>
         </div>
+
+        <!-- Search Status - Updated by HTMX out-of-band -->
+        <div id="search-status-container">
+        </div>
+      </div>
+
+      <!-- Search Loading Indicator (Global) -->
+      <div id="search-loading" class="htmx-indicator w-full flex justify-center py-8">
+        <div class="inline-flex items-center px-4 py-2 text-lg font-medium text-arkumu-dark theme-dark:text-arkumu-light">
+          <svg class="animate-spin -ml-1 mr-3 h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          Projekte werden geladen...
+        </div>
+      </div>
+
+      <!-- Results Container -->
+      <div id="results-container" class="w-full mt-2">
+        {% if results or query %}
+          <!-- Include with all context variables -->
+          {% include 'catalog/partials/results_container.html' %}
+        {% else %}
+          <!-- Initial empty state -->
+          <div class="text-center py-12">
+            <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
+              Verwenden Sie die Suchleiste oben, um Projekte zu finden
+            </p>
+          </div>
+        {% endif %}
       </div>
 
       <!-- Dotted Line with Text -->
@@ -100,32 +130,6 @@
             {% include 'components/labels/tag.html' with label_text="Robert Schumann Hochschule Düsseldorf Hochschule für Musik und Tanz Köln" %}
           </div>
         </div>
-      </div>
-
-      <!-- Search Loading Indicator (Global) -->
-      <div id="search-loading" class="htmx-indicator w-full flex justify-center py-8">
-        <div class="inline-flex items-center px-4 py-2 text-lg font-medium text-arkumu-dark theme-dark:text-arkumu-light">
-          <svg class="animate-spin -ml-1 mr-3 h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          Projekte werden geladen...
-        </div>
-      </div>
-
-      <!-- Unified Results Container - All results-related components in one place -->
-      <div id="results-container" class="w-full mt-10 mb-24">
-        {% if results or query %}
-          <!-- Include with all context variables -->
-          {% include 'catalog/partials/results_container.html' %}
-        {% else %}
-          <!-- Initial empty state -->
-          <div class="text-center py-12">
-            <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
-              Verwenden Sie die Suchleiste oben, um Projekte zu finden
-            </p>
-          </div>
-        {% endif %}
       </div>
     </div>
   </main>
