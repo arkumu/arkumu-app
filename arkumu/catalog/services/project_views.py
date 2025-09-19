@@ -297,7 +297,15 @@ class ProjectView(CardView):
 
         # Additional project-specific properties
         project_data.description = self._get_literal_value(self.project_uri, ProjectURIs.DESCRIPTION)
-        project_data.project_type = self._get_literal_value(self.project_uri, ProjectURIs.PROJECT_TYPE_FIELD)
+
+        # Get project type using proper resolution (not raw ID)
+        from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
+        triple_service = TripleRelationshipService(organization_code=None)
+        project_data.project_type = triple_service.get_project_type(
+            str(self.project_resource.id),
+            project_type_predicate='http://arkumu.org/data/properties/projektart',
+            organization_code=None,
+        ) or self._get_literal_value(self.project_uri, ProjectURIs.PROJECT_TYPE_FIELD)  # Fallback to raw value
 
         # Alternative titles (from related resources)
         alt_title_uris = self._get_multiple_related_resource_uris(self.project_uri, ProjectURIs.ALTERNATIVE_TITLE)

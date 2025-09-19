@@ -340,7 +340,7 @@ class TripleRelationshipService:
         project_type_predicate: Optional[str],
         organization_code: Optional[str] = None,
     ) -> Optional[str]:
-        """Return project type."""
+        """Return project type resolved to German name."""
 
         if not project_type_predicate:
             return None
@@ -351,7 +351,44 @@ class TripleRelationshipService:
             organization_code=organization_code,
         )
 
-        return project_types.get(project_id)
+        project_type_id = project_types.get(project_id)
+        if not project_type_id:
+            return None
+
+        # Resolve project type ID to German name
+        return self._resolve_project_type_name(project_type_id)
+
+    def _resolve_project_type_name(self, project_type_id: str) -> Optional[str]:
+        """Resolve project type ID to German name (e.g., '1' -> 'Bachelorarbeit')."""
+        if not project_type_id:
+            return None
+
+        # Construct the project type entity URI
+        project_type_uri = f"http://arkumu.org/data/fuk/entities/projektart/{project_type_id}"
+
+        try:
+            from arkumu.metadata.models import Resource, Triple, ResourceType
+
+            # Get the project type entity
+            project_type_entity = Resource.objects.filter(uri=project_type_uri).first()
+            if not project_type_entity:
+                return None
+
+            # Get the German name
+            german_name_triple = Triple.objects.filter(
+                subject=project_type_entity,
+                predicate__canonical_uri='http://arkumu.org/data/properties/deutscher-name-der-projektart'
+            ).first()
+
+            if german_name_triple and german_name_triple.object:
+                return german_name_triple.object.value
+
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to resolve project type '{project_type_id}': {exc}")
+
+        return None
 
     def get_catchphrases(
         self,
