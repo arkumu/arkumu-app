@@ -303,7 +303,14 @@ class MappingAwareProcessor:
         df = self.data_processor.prepare_for_processing(csv_data, mapping_config)
         if df.height == 0:
             return []
-        
+
+        # Allow delimiter detection to refine separators for multi-value fields
+        multi_value_analysis = self.data_processor.detect_multi_value_columns(df, mapping_config)
+        for column in dataset_config.columns:
+            column_info = multi_value_analysis.get(column.column_name)
+            if column_info and column_info.get('is_multi_value') and column_info.get('separator'):
+                column.multi_value_separator = column_info['separator']
+
         # Group columns by type for efficient processing
         column_groups = self._group_columns_by_type(dataset_config.columns)
         # Initialize per-dataset counters (concise summary logging)
@@ -410,10 +417,16 @@ class MappingAwareProcessor:
         df = self.data_processor.prepare_for_processing(csv_data, mapping_config)
         if df.height == 0:
             return
-        
+
+        multi_value_analysis = self.data_processor.detect_multi_value_columns(df, mapping_config)
+        for column in dataset_config.columns:
+            column_info = multi_value_analysis.get(column.column_name)
+            if column_info and column_info.get('is_multi_value') and column_info.get('separator'):
+                column.multi_value_separator = column_info['separator']
+
         # Create dataset and structural resources
         dataset_resource = self.resource_manager.create_dataset_resource(dataset_name)
-        
+
         # Group columns by type for efficient processing
         column_groups = self._group_columns_by_type(dataset_config.columns)
         
@@ -489,10 +502,16 @@ class MappingAwareProcessor:
         df = self.data_processor.prepare_for_processing(csv_data, mapping_config)
         if df.height == 0:
             return
-        
+
+        multi_value_analysis = self.data_processor.detect_multi_value_columns(df, mapping_config)
+        for column in dataset_config.columns:
+            column_info = multi_value_analysis.get(column.column_name)
+            if column_info and column_info.get('is_multi_value') and column_info.get('separator'):
+                column.multi_value_separator = column_info['separator']
+
         # Create dataset resource
         dataset_resource = self.resource_manager.create_dataset_resource(dataset_name)
-        
+
         # Group columns (exclude FK columns in this phase)
         column_groups = self._group_columns_by_type(dataset_config.columns)
         
@@ -516,26 +535,8 @@ class MappingAwareProcessor:
     def _group_columns_by_type(self, columns: List[ColumnConfig]) -> Dict[str, List[ColumnConfig]]:
         """Group columns by their type using centralized column analysis utility"""
         
-        # Convert columns to mapping config format for centralized analysis
-        mapping_config = {"workspace_columns": {}}
-        for column in columns:
-            mapping_config["workspace_columns"][column.column_name] = {
-                "is_multi_value": column.is_multi_value,
-                "is_fk": column.column_type.value == 'foreign_key' or bool(getattr(column, 'fk_config', None)),
-                "is_anchor": column.is_anchor,
-                "is_external_ontology": column.is_external_ontology,
-                "is_relationship_context": column.column_type.value == 'relationship_context',
-                "column_name": column.column_name,
-                "arkumu_type": column.arkumu_type
-            }
-        
-        # Use centralized analysis from MappingUtils
-        analysis_result = MappingUtils.analyze_mapping_structure(mapping_config)
-        
-        # Use MappingUtils to group columns by type
-        column_groups = MappingUtils.group_columns_by_type(mapping_config)
-        
-        # Convert to the expected format with column objects
+        # Group columns using explicit characteristics so a single column can
+        # participate in multiple pipelines (e.g. multi-value + FK + external).
         groups = {
             'regular': [],
             'anchor': [],
@@ -545,19 +546,30 @@ class MappingAwareProcessor:
             'relationship_context': [],
             'external_ontology': []
         }
-        
-        # Create lookup for columns by name
-        column_lookup = {col.column_name: col for col in columns}
-        
-        # Map column names to column objects using centralized grouping
-        for column_type, column_names in column_groups.items():
-            if column_type in groups:
-                for col_name in column_names:
-                    if col_name in column_lookup:
-                        groups[column_type].append(column_lookup[col_name])
-                        if column_type == 'multi_value_foreign_key':
-                            logger.debug(f"   Column '{col_name}' is multi-value FK - will be processed specially")
-        
+
+        for column in columns:
+            is_fk = bool(getattr(column, 'fk_config', None)) or column.column_type.value == 'foreign_key'
+            is_multi = bool(column.is_multi_value)
+            is_rel_ctx = column.column_type.value == 'relationship_context'
+            is_external = bool(column.is_external_ontology)
+
+            if column.is_anchor:
+                groups['anchor'].append(column)
+            if is_fk:
+                groups['foreign_key'].append(column)
+            if is_multi:
+                groups['multi_value'].append(column)
+            if is_fk and is_multi:
+                groups['multi_value_foreign_key'].append(column)
+                logger.debug(f"   Column '{column.column_name}' is multi-value FK - will be processed specially")
+            if is_rel_ctx:
+                groups['relationship_context'].append(column)
+            if is_external:
+                groups['external_ontology'].append(column)
+
+            if not any([column.is_anchor, is_fk, is_multi, is_rel_ctx, is_external]):
+                groups['regular'].append(column)
+
         return groups
     
     def _generate_entity_uri(self,
@@ -848,30 +860,35 @@ class MappingAwareProcessor:
         
         for column in columns:
             value = row_data.get(column.column_name)
-            if value is not None and str(value).strip():
-                cleaned_value = str(value).strip()
-                
-                # 1. SOFT LINKING: Create normal property triple (entity -> property -> literal)
-                property_uri = self._generate_property_uri(column.arkumu_type)
+            if value is None or not str(value).strip():
+                continue
+
+            cleaned_value = str(value).strip()
+            values = [cleaned_value]
+
+            if getattr(column, 'is_multi_value', False):
+                separator = column.multi_value_separator or ','
+                values = self._split_multi_value(cleaned_value, separator)
+
+            property_uri = self._generate_property_uri(column.arkumu_type)
+
+            for single_value in values:
                 triple = self.resource_manager.create_property_triple(
                     entity_resource,
                     property_uri,
-                    cleaned_value,
+                    single_value,
                     "http://www.w3.org/2001/XMLSchema#string"
                 )
                 try:
                     self.statistics.current_metrics.triples_created += 1
                 except Exception:
                     pass
-                
-                # 2. HARD LINKING: Link external ontology to our literal resource
-                external_uri = self._generate_external_ontology_uri(column, cleaned_value)
-                
+
+                external_uri = self._generate_external_ontology_uri(column, single_value)
+
                 if external_uri and triple:
-                    # Get the literal resource from the triple (object of the triple)
                     literal_resource = triple.object
-                    
-                    # Create external resource (stub)
+
                     external_resource = self.resource_manager.create_external_resource(
                         external_uri,
                         column.external_ontology_config.get('ontology_type', 'external')
@@ -881,8 +898,7 @@ class MappingAwareProcessor:
                         self.statistics.current_metrics.external_ontology_items_created += 1
                     except Exception:
                         pass
-                    
-                    # Create owl:sameAs from external ontology to our literal resource
+
                     self.resource_manager.create_owl_same_as_triple(
                         external_resource,
                         literal_resource
@@ -892,10 +908,15 @@ class MappingAwareProcessor:
                         self.statistics.current_metrics.relationships_created += 1
                     except Exception:
                         pass
-                    
-                    logger.debug(f"Created both soft and hard links for {column.column_name}: "
-                               f"entity -> {property_uri} -> '{cleaned_value}' and "
-                               f"{external_uri} -> owl:sameAs -> literal_resource('{cleaned_value}')")
+
+                    logger.debug(
+                        "Created both soft and hard links for %s: entity -> %s -> '%s' and %s -> owl:sameAs -> literal_resource('%s')",
+                        column.column_name,
+                        property_uri,
+                        single_value,
+                        external_uri,
+                        single_value,
+                    )
     
     def _process_relationship_context_columns(self,
                                              entity_resource,

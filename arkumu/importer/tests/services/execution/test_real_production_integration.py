@@ -276,6 +276,19 @@ class TestRealProductionIntegration:
             
             # Verify dataset-entity linking is working
             self._assert_dataset_entity_linking(execution_config)
+
+            # Ensure multi-value FK literals (e.g. ereignisort) were split correctly
+            from arkumu.metadata.models.triples import Triple as TripleModel
+
+            unsplit_locations = TripleModel.objects.filter(
+                predicate__uri='http://arkumu.org/data/det/properties/ereignisort',
+                object__value__contains=','
+            )
+
+            assert not unsplit_locations.exists(), (
+                "Found unsplit ereignisort literals containing commas: "
+                f"{[tr.object.value for tr in unsplit_locations[:5]]}"
+            )
             
             logger.info("=== INTEGRATION TEST PASSED ===")
             

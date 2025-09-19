@@ -99,6 +99,7 @@ CARD_SCHEMA_TEMPLATE: CardSchema = CardSchema(
             properties={
                 'start': CardProperty('start', 'http://arkumu.org/data/properties/ereignisbeginn'),
                 'end': CardProperty('end', 'http://arkumu.org/data/properties/ereignisende'),
+                'location': CardProperty('location', 'http://arkumu.org/data/properties/ereignisort'),
             },
         ),
         'actor_event': CardSection(

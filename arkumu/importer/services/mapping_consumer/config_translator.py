@@ -261,6 +261,9 @@ class ConfigTranslator:
                 continue
                 
             for column_name, column_config in columns.items():
+                raw_separator = column_config.get('multi_value_separator')
+                separator = raw_separator if raw_separator not in (None, "") else ','
+
                 # Create column configuration with normalized dataset name
                 col_config = ColumnConfig(
                     column_name=normalize_string_nfc(column_name),
@@ -269,7 +272,7 @@ class ConfigTranslator:
                     datatype=column_config.get('datatype', 'http://www.w3.org/2001/XMLSchema#string'),
                     is_anchor=column_config.get('is_anchor', False),
                     is_multi_value=column_config.get('is_multi_value', False),
-                    multi_value_separator=column_config.get('multi_value_separator', ','),
+                    multi_value_separator=separator,
                     confidence=column_config.get('confidence'),
                     is_fk=column_config.get('is_fk', False) or bool(column_config.get('fk_config')),
                     fk_config=column_config.get('fk_config'),
