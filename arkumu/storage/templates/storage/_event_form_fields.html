@@ -22,8 +22,19 @@
       </svg>
       Event Details
     </h2>
-    
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Associated Project</span>
+          {% if event_form.project_uri.errors %}
+          <span class="label-text-alt text-error">{{ event_form.project_uri.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ event_form.project_uri }}
+        <div class="text-xs text-base-content/60 mt-1">Select the project this event is associated with</div>
+      </div>
+
       <div class="form-control">
         <label class="label">
           <span class="label-text font-medium">Ereignisbeginn</span>
@@ -34,7 +45,7 @@
         {{ event_form.ereignisbeginn }}
         <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisbeginn.help_text }}</div>
       </div>
-      
+
       <div class="form-control">
         <label class="label">
           <span class="label-text font-medium">Ereignisende</span>
@@ -46,7 +57,7 @@
         <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisende.help_text }}</div>
       </div>
     </div>
-    
+
     <!-- Actor-Event Crosstable -->
     <div class="space-y-4 pt-6 border-t">
       <div class="flex justify-between items-center">
@@ -58,10 +69,10 @@
           Add Actor
         </button>
       </div>
-      
+
       <!-- This renders the management form fields that Django needs -->
       {{ actor_event_formset.management_form }}
-      
+
       <div class="actor-event-container space-y-4">
         {% for form in actor_event_formset %}
           <div class="actor-event-form p-4 bg-base-100 rounded-lg border border-base-200">
@@ -79,7 +90,7 @@
               </div>
             </div>
             {% endif %}
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div class="form-control">
                 <label class="label">
@@ -90,7 +101,7 @@
                 </label>
                 {{ form.akteurin_uri }}
               </div>
-              
+
               <div class="form-control">
                 <label class="label">
                   <span class="label-text font-medium">Rolle</span>
@@ -104,7 +115,7 @@
           </div>
         {% endfor %}
       </div>
-      
+
       <template id="actor-event-template">
         <div class="actor-event-form">
           {{ actor_event_formset.empty_form.as_p }}
