@@ -83,7 +83,7 @@ if HUEY_PERIODIC_AVAILABLE:
             logger.error(f"Periodic schema cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
 
-    @db_periodic_task(crontab(minute='*/60'))  # Run every 60 minutes
+    @db_periodic_task(crontab(minute='*/20'))  # Run every 20 minutes to stay ahead of the 60m TTL
     def refresh_projects_cache_periodic():
         """Periodically refresh the cross-institutional projects cache."""
         try:
