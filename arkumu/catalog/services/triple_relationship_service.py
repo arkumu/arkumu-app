@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+import uuid
 
 from django.db.models import Q
 
 from arkumu.metadata.models.triples import Triple
-from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.users.models import Organization
 from arkumu.catalog.services.wikidata_service import WikidataService
 
@@ -231,8 +232,8 @@ class TripleRelationshipService:
                 if triple.object.resource_type == ResourceType.LITERAL:
                     event_properties[event_id][predicate_canonical] = triple.object.value
                 else:
-                    # For entities, store the name or ID
-                    event_properties[event_id][predicate_canonical] = triple.object.name or str(triple.object_id)
+                    # For entities, store the object ID so we can resolve it properly later
+                    event_properties[event_id][predicate_canonical] = str(triple.object_id)
 
         # Build detailed event list
         detailed_events = []
@@ -250,25 +251,79 @@ class TripleRelationshipService:
             if event_description_predicate and event_description_predicate in properties:
                 event_info['description'] = properties[event_description_predicate]
             if event_location_predicate and event_location_predicate in properties:
-                location_id = properties[event_location_predicate]
-                event_info['location_id'] = location_id
+                location_raw = properties[event_location_predicate]
+                event_info['location_id'] = location_raw
 
-                # Resolve Wikidata location to name and coordinates
-                if location_id and location_id.startswith('Q'):
-                    location_data = self.wikidata_service.get_location_info(location_id)
-                    event_info['location'] = location_data.get('name', location_id)
-                    event_info['location_description'] = location_data.get('description')
-                    if 'coordinates' in location_data:
-                        event_info['coordinates'] = location_data['coordinates']
-                        event_info['latitude'] = location_data.get('latitude')
-                        event_info['longitude'] = location_data.get('longitude')
-                    if 'country' in location_data:
-                        event_info['country'] = location_data['country']
+                # Handle multiple comma-separated Wikidata IDs
+                if location_raw and isinstance(location_raw, str):
+                    # Split on comma and clean each ID
+                    location_ids = [loc_id.strip() for loc_id in location_raw.split(',') if loc_id.strip()]
+
+                    if location_ids:
+                        location_names = []
+                        all_coordinates = []
+                        countries = set()
+
+                        for location_id in location_ids:
+                            if location_id.startswith('Q'):
+                                location_data = self.wikidata_service.get_location_info(location_id)
+                                name = location_data.get('name', location_id)
+                                location_names.append(name)
+
+                                if 'coordinates' in location_data:
+                                    all_coordinates.append(location_data['coordinates'])
+                                if 'country' in location_data:
+                                    countries.add(location_data['country'])
+                            else:
+                                location_names.append(location_id)
+
+                        # Combine location names
+                        event_info['location'] = ', '.join(location_names) if location_names else location_raw
+
+                        # Use first coordinate if available
+                        if all_coordinates:
+                            event_info['coordinates'] = all_coordinates[0]
+                            if 'latitude' in all_coordinates[0] and 'longitude' in all_coordinates[0]:
+                                event_info['latitude'] = all_coordinates[0]['latitude']
+                                event_info['longitude'] = all_coordinates[0]['longitude']
+
+                        # Combine countries
+                        if countries:
+                            event_info['country'] = ', '.join(sorted(countries))
+                    else:
+                        event_info['location'] = location_raw
                 else:
-                    event_info['location'] = location_id
+                    event_info['location'] = location_raw
 
             if event_type_predicate and event_type_predicate in properties:
-                event_info['type'] = properties[event_type_predicate]
+                event_type_value = properties[event_type_predicate]
+                # The value is an entity ID (UUID string) - we need to resolve it
+                if event_type_value:
+                    try:
+                        # Check if it looks like a UUID (entity reference)
+                        try:
+                            uuid.UUID(event_type_value)
+                            is_entity_ref = True
+                        except ValueError:
+                            is_entity_ref = False
+
+                        if is_entity_ref:
+                            # Look for German name property for this event type entity
+                            german_name_triple = Triple.objects.filter(
+                                subject_id=event_type_value,
+                                predicate__canonical_uri='http://arkumu.org/data/properties/deutscher-name-des-ereignistyps'
+                            ).first()
+                            if german_name_triple and german_name_triple.object.value:
+                                event_type_value = german_name_triple.object.value
+                            else:
+                                # Fallback to the resource name if no German name found
+                                type_resource = Resource.objects.filter(id=event_type_value).first()
+                                if type_resource and type_resource.name:
+                                    event_type_value = type_resource.name
+                    except Exception:
+                        # Keep original value if resolution fails
+                        pass
+                event_info['type'] = event_type_value
 
             detailed_events.append(event_info)
 
