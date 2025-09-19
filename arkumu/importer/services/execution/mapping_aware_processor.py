@@ -368,7 +368,8 @@ class MappingAwareProcessor:
             self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
             
             # Process multi-value columns
-            self._process_multi_value_columns(entity_resource, row_data, column_groups['multi_value'], context)
+            multi_value_columns = column_groups['multi_value'] + column_groups['multi_value_foreign_key']
+            self._process_multi_value_columns(entity_resource, row_data, multi_value_columns, context)
             
             # Queue FK relationships for later resolution (includes multi-value FKs)
             all_fk_columns = column_groups['foreign_key'] + column_groups['multi_value_foreign_key']
@@ -448,7 +449,8 @@ class MappingAwareProcessor:
             self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
             
             # Process multi-value columns
-            self._process_multi_value_columns(entity_resource, row_data, column_groups['multi_value'], context)
+            multi_value_columns = column_groups['multi_value'] + column_groups['multi_value_foreign_key']
+            self._process_multi_value_columns(entity_resource, row_data, multi_value_columns, context)
             
             # Queue FK relationships for later resolution (includes multi-value FKs)
             all_fk_columns = column_groups['foreign_key'] + column_groups['multi_value_foreign_key']
@@ -506,7 +508,8 @@ class MappingAwareProcessor:
             # Process only non-relationship columns
             self._process_regular_columns(entity_resource, row_data, column_groups['regular'], context)
             self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
-            self._process_multi_value_columns(entity_resource, row_data, column_groups['multi_value'], context)
+            multi_value_columns = column_groups['multi_value'] + column_groups['multi_value_foreign_key']
+            self._process_multi_value_columns(entity_resource, row_data, multi_value_columns, context)
             self._process_external_ontology_columns(entity_resource, row_data, column_groups['external_ontology'], context)
             self._process_relationship_context_columns(entity_resource, row_data, column_groups['relationship_context'], context)
     
@@ -1108,153 +1111,204 @@ class MappingAwareProcessor:
                 self._process_junction_entity(rel_context, row_data, context)
     
     def _process_junction_entity(self, rel_context, row_data: Dict[str, Any], context: ProcessingContext):
-        """Process a single junction entity with relationship context and comprehensive logging.
-        
-        Junction entities represent many-to-many relationships with additional attributes.
-        They connect two entities from different datasets while carrying contextual information.
-        
-        Relationship Context Flow:
-        1. Extract primary and secondary FK values from row data
-        2. Generate unique junction entity URI combining both FK values
-        3. Create junction entity with its own type and properties
-        4. Link junction to both primary and secondary entities via relationships
-        5. Add any contextual attributes as properties of the junction entity
-        
-        Args:
-            rel_context: Relationship context configuration
-            row_data: Raw CSV row data containing FK values and context attributes
-            context: Processing context with entity cache
-        """
-        
+        """Process a single junction entity, expanding multi-value FK combinations."""
+
         context_id = rel_context.context_id
         logger.debug(f"🔗 JUNCTION START: Processing junction entity for context '{context_id}'")
-        
-        # Extract FK values with detailed logging
-        primary_value = row_data.get(rel_context.primary_fk, '')
-        secondary_value = row_data.get(rel_context.secondary_fk, '')
-        
-        logger.debug(f"   🔑 PRIMARY FK: '{rel_context.primary_fk}' = '{primary_value}'")
-        logger.debug(f"   🔒 SECONDARY FK: '{rel_context.secondary_fk}' = '{secondary_value}'")
-        
-        if not primary_value or not secondary_value:
+
+        raw_primary = row_data.get(rel_context.primary_fk)
+        raw_secondary = row_data.get(rel_context.secondary_fk)
+
+        primary_raw_value = str(raw_primary).strip() if raw_primary is not None else ""
+        secondary_raw_value = str(raw_secondary).strip() if raw_secondary is not None else ""
+
+        logger.debug(f"   🔑 PRIMARY FK: '{rel_context.primary_fk}' = '{primary_raw_value}'")
+        logger.debug(f"   🔒 SECONDARY FK: '{rel_context.secondary_fk}' = '{secondary_raw_value}'")
+
+        if not primary_raw_value or not secondary_raw_value:
             logger.warning(f"   ⚠️  JUNCTION SKIP: Missing FK values for junction entity '{context_id}'")
-            logger.warning(f"      Primary FK '{rel_context.primary_fk}': '{primary_value}'")
-            logger.warning(f"      Secondary FK '{rel_context.secondary_fk}': '{secondary_value}'")
+            logger.warning(f"      Primary FK '{rel_context.primary_fk}': '{primary_raw_value}'")
+            logger.warning(f"      Secondary FK '{rel_context.secondary_fk}': '{secondary_raw_value}'")
             return
-        
-        # Generate unique junction entity URI
-        junction_uri = self.resource_manager.generate_junction_uri(
+
+        # Expand FK values (handle multi-value columns)
+        primary_values, primary_is_multi = self._extract_junction_fk_values(
             rel_context.dataset_name,
-            str(primary_value),
-            str(secondary_value)
+            rel_context.primary_fk,
+            primary_raw_value,
+            context
         )
-        
-        logger.debug(f"   🎯 JUNCTION URI: {junction_uri}")
-        
-        # Create junction entity with specific type
+        secondary_values, secondary_is_multi = self._extract_junction_fk_values(
+            rel_context.dataset_name,
+            rel_context.secondary_fk,
+            secondary_raw_value,
+            context
+        )
+
+        if not primary_values or not secondary_values:
+            logger.warning(f"   ⚠️  JUNCTION SKIP: No usable FK values after expansion for context '{context_id}'")
+            logger.warning(f"      Expanded primary values: {primary_values}")
+            logger.warning(f"      Expanded secondary values: {secondary_values}")
+            return
+
+        if primary_is_multi:
+            logger.debug(f"   🔁 PRIMARY MULTI-VALUE EXPANSION → {primary_values}")
+        if secondary_is_multi:
+            logger.debug(f"   🔁 SECONDARY MULTI-VALUE EXPANSION → {secondary_values}")
+
+        combinations: List[Tuple[str, str]] = []
+        seen_pairs: Set[Tuple[str, str]] = set()
+        for primary_value in primary_values:
+            for secondary_value in secondary_values:
+                pair = (primary_value, secondary_value)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                combinations.append(pair)
+
+        if not combinations:
+            logger.warning(f"   ⚠️  JUNCTION SKIP: No FK combinations generated for context '{context_id}'")
+            return
+
         junction_type = f"{rel_context.dataset_name}_junction"
-        junction_entity = self.resource_manager.create_entity_resource(
-            junction_uri,
-            junction_type
-        )
-        
-        logger.debug(f"   ✅ JUNCTION CREATED: Entity '{junction_uri}' of type '{junction_type}'")
-        
-        # Link junction entity to its type via rdf:type
-        self._create_rdf_type_relationship(junction_entity, junction_type)
-        
-        # Process contextual attributes with detailed logging
-        context_attributes_added = 0
-        if hasattr(rel_context, 'context_columns'):
-            logger.debug(f"   🏷️  JUNCTION ATTRIBUTES: Processing {len(rel_context.context_columns)} context attributes")
-            
-            for context_column in rel_context.context_columns:
-                value = row_data.get(context_column)
-                if value is not None and str(value).strip():
-                    property_uri = self._generate_property_uri(f"junction_{context_column}")
-                    triple = self.resource_manager.create_property_triple(
-                        junction_entity,
-                        property_uri,
-                        str(value).strip(),
-                        "http://www.w3.org/2001/XMLSchema#string"
-                    )
-                    
-                    if triple:
-                        context_attributes_added += 1
-                        logger.debug(f"     🏷️  ATTRIBUTE: '{context_column}' = '{value}'")
-                    else:
-                        logger.warning(f"     ❌ ATTRIBUTE FAILED: Could not create attribute '{context_column}'")
-                else:
-                    logger.debug(f"     ⚠️  ATTRIBUTE SKIP: Empty value for '{context_column}'")
-        else:
-            logger.debug(f"   🏷️  JUNCTION ATTRIBUTES: No context columns defined")
-        
-        # Resolve target datasets for FK relationships
         primary_dataset = self._get_target_dataset_from_fk(rel_context.primary_fk, context)
         secondary_dataset = self._get_target_dataset_from_fk(rel_context.secondary_fk, context)
-        
-        logger.debug(f"   🔗 JUNCTION LINKS: primary → '{primary_dataset}', secondary → '{secondary_dataset}'")
-        
-        # Create relationships to primary and secondary entities
-        primary_entity_uri = self._generate_target_entity_uri(
-            primary_dataset,
-            str(primary_value),
-            context
+
+        logger.debug(
+            f"   🔗 JUNCTION LINKS: primary → '{primary_dataset}', secondary → '{secondary_dataset}', "
+            f"combinations: {len(combinations)}"
         )
-        
-        secondary_entity_uri = self._generate_target_entity_uri(
-            secondary_dataset,
-            str(secondary_value),
-            context
+
+        # Pre-compute target entity URIs for faster lookups
+        unique_primary_values = {primary for primary, _ in combinations}
+        unique_secondary_values = {secondary for _, secondary in combinations}
+        primary_uri_map = {
+            value: self._generate_target_entity_uri(primary_dataset, value, context)
+            for value in unique_primary_values
+        }
+        secondary_uri_map = {
+            value: self._generate_target_entity_uri(secondary_dataset, value, context)
+            for value in unique_secondary_values
+        }
+
+        total_junctions = 0
+        total_relationships_created = 0
+        total_context_attributes = 0
+
+        context_columns = list(getattr(rel_context, 'context_columns', []))
+        if not context_columns and hasattr(rel_context, 'junction_attributes'):
+            context_columns = list(getattr(rel_context, 'junction_attributes', []))
+
+        for primary_value, secondary_value in combinations:
+            junction_uri = self.resource_manager.generate_junction_uri(
+                rel_context.dataset_name,
+                primary_value,
+                secondary_value
+            )
+            logger.debug(f"   🎯 JUNCTION URI: {junction_uri}")
+
+            junction_entity = self.resource_manager.create_entity_resource(
+                junction_uri,
+                junction_type
+            )
+            total_junctions += 1
+
+            # Link junction entity to its type via rdf:type
+            self._create_rdf_type_relationship(junction_entity, junction_type)
+
+            # Process contextual attributes for this combination
+            attributes_added = 0
+            if context_columns:
+                logger.debug(f"   🏷️  JUNCTION ATTRIBUTES ({len(context_columns)} columns)")
+            for context_column in context_columns:
+                value = row_data.get(context_column)
+                if value is None:
+                    continue
+                cleaned_value = str(value).strip()
+                if not cleaned_value:
+                    logger.debug(f"     ⚠️  ATTRIBUTE SKIP: Empty value for '{context_column}'")
+                    continue
+
+                property_uri = self._generate_property_uri(f"junction_{context_column}")
+                triple = self.resource_manager.create_property_triple(
+                    junction_entity,
+                    property_uri,
+                    cleaned_value,
+                    "http://www.w3.org/2001/XMLSchema#string"
+                )
+
+                if triple:
+                    attributes_added += 1
+                    logger.debug(f"     🏷️  ATTRIBUTE: '{context_column}' = '{cleaned_value}'")
+                else:
+                    logger.warning(f"     ❌ ATTRIBUTE FAILED: Could not create attribute '{context_column}'")
+
+            total_context_attributes += attributes_added
+
+            # Create relationships to primary and secondary entities
+            relationships_created = 0
+            primary_entity_uri = primary_uri_map.get(primary_value)
+            secondary_entity_uri = secondary_uri_map.get(secondary_value)
+
+            if primary_entity_uri and primary_entity_uri in context.entity_cache:
+                property_uri = self._generate_property_uri("involves_primary")
+                primary_triple = self.resource_manager.create_relationship_triple(
+                    junction_entity,
+                    property_uri,
+                    context.entity_cache[primary_entity_uri]
+                )
+                if primary_triple:
+                    relationships_created += 1
+                    logger.debug(
+                        f"   🔗 PRIMARY LINK: {junction_uri} -[involves_primary]→ {primary_entity_uri}"
+                    )
+                else:
+                    logger.warning(
+                        f"   ❌ PRIMARY LINK FAILED: Could not link to primary entity '{primary_entity_uri}'"
+                    )
+            else:
+                logger.warning(
+                    f"   👻 PRIMARY MISSING: Entity {primary_entity_uri} not found in cache for context '{context_id}'"
+                )
+
+            if secondary_entity_uri and secondary_entity_uri in context.entity_cache:
+                property_uri = self._generate_property_uri("involves_secondary")
+                secondary_triple = self.resource_manager.create_relationship_triple(
+                    junction_entity,
+                    property_uri,
+                    context.entity_cache[secondary_entity_uri]
+                )
+                if secondary_triple:
+                    relationships_created += 1
+                    logger.debug(
+                        f"   🔗 SECONDARY LINK: {junction_uri} -[involves_secondary]→ {secondary_entity_uri}"
+                    )
+                else:
+                    logger.warning(
+                        f"   ❌ SECONDARY LINK FAILED: Could not link to secondary entity '{secondary_entity_uri}'"
+                    )
+            else:
+                logger.warning(
+                    f"   👻 SECONDARY MISSING: Entity {secondary_entity_uri} not found in cache for context '{context_id}'"
+                )
+
+            total_relationships_created += relationships_created
+
+        logger.info(
+            f"   ✅ JUNCTION COMPLETE: Context '{context_id}' → {total_junctions} entities, "
+            f"{total_context_attributes} attributes, {total_relationships_created} relationships"
         )
-        
-        relationships_created = 0
-        
-        # Link to primary entity
-        if primary_entity_uri in context.entity_cache:
-            property_uri = self._generate_property_uri("involves_primary")
-            primary_triple = self.resource_manager.create_relationship_triple(
-                junction_entity,
-                property_uri,
-                context.entity_cache[primary_entity_uri]
-            )
-            if primary_triple:
-                relationships_created += 1
-                logger.debug(f"   🔗 PRIMARY LINK: {junction_uri} -[involves_primary]→ {primary_entity_uri}")
-            else:
-                logger.warning(f"   ❌ PRIMARY LINK FAILED: Could not link to primary entity")
-        else:
-            logger.warning(f"   👻 PRIMARY MISSING: Entity {primary_entity_uri} not found in cache")
-        
-        # Link to secondary entity
-        if secondary_entity_uri in context.entity_cache:
-            property_uri = self._generate_property_uri("involves_secondary")
-            secondary_triple = self.resource_manager.create_relationship_triple(
-                junction_entity,
-                property_uri,
-                context.entity_cache[secondary_entity_uri]
-            )
-            if secondary_triple:
-                relationships_created += 1
-                logger.debug(f"   🔗 SECONDARY LINK: {junction_uri} -[involves_secondary]→ {secondary_entity_uri}")
-            else:
-                logger.warning(f"   ❌ SECONDARY LINK FAILED: Could not link to secondary entity")
-        else:
-            logger.warning(f"   👻 SECONDARY MISSING: Entity {secondary_entity_uri} not found in cache")
-        
-        # Log junction entity completion summary
-        logger.info(f"   ✅ JUNCTION COMPLETE: Context '{context_id}' → {context_attributes_added} attributes, {relationships_created} relationships")
-        
-        # Update statistics
-        self.statistics.current_metrics.relationships_created += relationships_created
-        if context_attributes_added > 0:
-            self.statistics.current_metrics.cells_processed += context_attributes_added
-        # Update concise per-dataset counters for the junction dataset
-        ds = rel_context.dataset_name
-        dc = context.dataset_counters.setdefault(ds, {})
-        dc['junctions'] = dc.get('junctions', 0) + 1
-        if context_attributes_added:
-            dc['junction_attrs'] = dc.get('junction_attrs', 0) + context_attributes_added
+
+        # Update statistics and counters
+        self.statistics.current_metrics.relationships_created += total_relationships_created
+        if total_context_attributes > 0:
+            self.statistics.current_metrics.cells_processed += total_context_attributes
+
+        junction_dataset = rel_context.dataset_name
+        dataset_counters = context.dataset_counters.setdefault(junction_dataset, {})
+        dataset_counters['junctions'] = dataset_counters.get('junctions', 0) + total_junctions
+        if total_context_attributes:
+            dataset_counters['junction_attrs'] = dataset_counters.get('junction_attrs', 0) + total_context_attributes
     
     # Helper methods
     
@@ -1264,6 +1318,42 @@ class MappingAwareProcessor:
             return [value] if value else []
         
         return [v.strip() for v in value.split(separator) if v.strip()]
+
+    def _extract_junction_fk_values(self,
+                                    dataset_name: str,
+                                    column_name: str,
+                                    raw_value: str,
+                                    context: ProcessingContext) -> Tuple[List[str], bool]:
+        """Extract FK values for junction processing, handling multi-value columns."""
+
+        if not raw_value:
+            return [], False
+
+        column_config = None
+        try:
+            column_config = context.execution_config.get_column_config(dataset_name, column_name)
+        except AttributeError:
+            column_config = None
+
+        is_configured_multi = False
+        separator = ','
+
+        if column_config:
+            is_configured_multi = bool(getattr(column_config, 'is_multi_value', False))
+            column_type_value = getattr(getattr(column_config, 'column_type', None), 'value', '')
+            if column_type_value == 'multi_value_foreign_key':
+                is_configured_multi = True
+            separator = getattr(column_config, 'multi_value_separator', None) or ','
+
+        if is_configured_multi:
+            raw_values = self._split_multi_value(raw_value, separator)
+        else:
+            raw_values = [raw_value]
+
+        normalized_values = [MappingUtils.normalize_fk_value(val) for val in raw_values if val]
+        expanded_multi = is_configured_multi and len(normalized_values) > 1
+
+        return normalized_values, expanded_multi
     
     def _create_schema_metadata_for_empty_dataset(self, dataset_config, dataset_resource, context: ProcessingContext):
         """Create schema metadata triples for empty datasets based on mapping configuration."""
@@ -2051,7 +2141,7 @@ class MappingAwareProcessor:
                 column_groups = self._group_columns_by_type(dataset_config.columns)
                 total_regular += len(column_groups['regular'])
                 total_anchor += len(column_groups['anchor'])
-                total_multi_value += len(column_groups['multi_value'])
+                total_multi_value += len(column_groups['multi_value']) + len(column_groups['multi_value_foreign_key'])
                 total_fk += len(column_groups['foreign_key']) + len(column_groups['multi_value_foreign_key'])
                 total_ontology += len(column_groups['external_ontology'])
                 total_relationship_context += len(column_groups['relationship_context'])
