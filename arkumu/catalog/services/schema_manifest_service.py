@@ -148,6 +148,9 @@ CARD_SCHEMA_TEMPLATE: CardSchema = CardSchema(
 )
 
 
+_CARD_SCHEMA_CACHE_SENTINEL = object()
+
+
 class SchemaManifestService:
     """Loads schema manifests and exposes canonical mappings for consumers."""
 
@@ -160,7 +163,21 @@ class SchemaManifestService:
             organization_code,
         )
 
+        cache_key = f"card_schema_manifest:{organization_code}"
+        cached_schema = cache.get(cache_key, _CARD_SCHEMA_CACHE_SENTINEL)
+        if cached_schema is not _CARD_SCHEMA_CACHE_SENTINEL:
+            logger.info(
+                "SchemaManifestService.get_card_schema: Cache HIT for built card schema (org '%s')",
+                organization_code,
+            )
+            return copy.deepcopy(cached_schema)
+
         canonical_schema = self._get_canonical_schema(organization_code)
+
+        logger.info(
+            "SchemaManifestService.get_card_schema: Cache MISS for built card schema (org '%s')",
+            organization_code,
+        )
 
         # Create new schema with fresh binding lists (only copy structure, not data)
         schema = CardSchema(
@@ -186,6 +203,12 @@ class SchemaManifestService:
             logger.warning(
                 "SchemaManifestService.get_card_schema: No canonical schema found for org '%s'",
                 organization_code,
+            )
+            cache.set(cache_key, copy.deepcopy(schema), self.CACHE_TIMEOUT)
+            logger.info(
+                "SchemaManifestService.get_card_schema: Cached empty card schema for org '%s' (timeout: %ds)",
+                organization_code,
+                self.CACHE_TIMEOUT,
             )
             return schema
 
@@ -256,6 +279,13 @@ class SchemaManifestService:
             "SchemaManifestService.get_card_schema: Returning schema with %d available sections: %s",
             len(available_sections),
             available_sections,
+        )
+
+        cache.set(cache_key, copy.deepcopy(schema), self.CACHE_TIMEOUT)
+        logger.info(
+            "SchemaManifestService.get_card_schema: Cached built card schema for org '%s' (timeout: %ds)",
+            organization_code,
+            self.CACHE_TIMEOUT,
         )
 
         return schema
