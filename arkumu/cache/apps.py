@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import sys
+import threading
 from django.apps import AppConfig
 from django.conf import settings
 
@@ -13,6 +15,31 @@ class CacheConfig(AppConfig):
 
     def ready(self):
         """Clear all caches and warm critical caches on application startup."""
+
+        def _call_threadsafe(func, *args, **kwargs):
+            """Run sync functions safely whether or not an event loop is active."""
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return func(*args, **kwargs)
+
+            result_holder = {}
+            exception_holder = {}
+
+            def runner():
+                try:
+                    result_holder['value'] = func(*args, **kwargs)
+                except Exception as exc:  # pragma: no cover - defensive path
+                    exception_holder['error'] = exc
+
+            thread = threading.Thread(target=runner, daemon=True)
+            thread.start()
+            thread.join()
+
+            if exception_holder:
+                raise exception_holder['error']
+
+            return result_holder.get('value')
         # Clear caches only in development for fresh FK logic
         if settings.DEBUG and getattr(settings, 'CLEAR_CACHE_ON_STARTUP', False):
             try:
@@ -43,7 +70,10 @@ class CacheConfig(AppConfig):
                 schema_cache = SchemaMapCacheService()
 
                 # Warm only the global cache for fast startup
-                schema_map = schema_cache.get_complete_schema_map(include_properties=True)
+                schema_map = _call_threadsafe(
+                    schema_cache.get_complete_schema_map,
+                    include_properties=True,
+                )
                 logger.info(
                     f"Schema cache warmed: {schema_map['meta']['total_classes']} classes, "
                     f"{schema_map['meta']['total_properties']} properties"
@@ -55,7 +85,7 @@ class CacheConfig(AppConfig):
                 for org_code in card_schema_orgs:
                     try:
                         logger.info("Warming card schema cache for org '%s' on startup", org_code)
-                        schema_service.get_card_schema(org_code)
+                        _call_threadsafe(schema_service.get_card_schema, org_code)
                     except Exception as inner_exc:
                         logger.warning(
                             "Failed to warm card schema cache for org '%s': %s",
