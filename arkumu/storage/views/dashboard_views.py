@@ -1,9 +1,11 @@
 import logging
+import os
 import time
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.views import View
 from arkumu.storage.services.bucket_service import BucketService
+from arkumu.storage.services.upload.upload_utils import normalize_s3_key
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.template.loader import render_to_string
@@ -449,9 +451,9 @@ def refresh_file_browser(request, organization):
     for key, value in request.GET.items():
         if key.startswith('expected_'):
             expected_files.append(value)
-    
-    if expected_files:
-        logger.info(f"📋 REFRESH: Looking for expected files: {expected_files}")
+
+        if expected_files:
+            logger.info(f"📋 REFRESH: Looking for expected files: {expected_files}")
     
     try:
         # Clear all possible cache keys for this organization
@@ -499,7 +501,14 @@ def refresh_file_browser(request, organization):
                     except:
                         pass  # Continue if subfolder check fails
             
-            missing_files = [f for f in expected_files if f not in all_files]
+            available_names = set(all_files)
+
+            def _matches_available(name: str) -> bool:
+                # Check if the expected filename (after S3 normalization) exists in the available files
+                normalized_expected = normalize_s3_key(name)
+                return normalized_expected in available_names
+
+            missing_files = [f for f in expected_files if not _matches_available(f)]
             
             if missing_files and retry_count < max_retries:
                 retry_delay = (retry_count + 1) * 1000  # 1s, 2s, 3s delays
