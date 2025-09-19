@@ -6,17 +6,49 @@ from django.forms import formset_factory
 
 from arkumu.metadata.models import Resource, Triple
 
-def get_uri_options(predicate_name):
+def get_objects_from_predicate(predicate_name):
     predicate = Resource.objects.filter(name=predicate_name).first()
     if not predicate:
         return []
     triples = Triple.objects.filter(predicate=predicate)
+    resources = list(set([triple.object for triple in triples]))
+    return resources
+
+def get_objects_from_predicate_can_uri(predicate_can_uri):
+    predicate = Resource.objects.get(canonical_uri=predicate_can_uri)
+    if not predicate:
+        return []
+    triples = Triple.objects.filter(predicate=predicate)
+    resources = list(set([triple.object for triple in triples]))
+    return resources
+
+def get_uri_options(predicate_name):
+    resources = get_objects_from_predicate(predicate_name)
     options = []
-    for triple in triples:
-        obj = triple.object
-        label = obj.name if obj.name else obj.value
-        options.append({'id': str(obj.id), 'uri': obj.uri, 'label': label})
+    for resource in resources:
+        label = get_label(predicate_name, resource)
+        options.append({'uri': resource.uri, 'label': label})
     return options
+
+def get_label(predicate_name, resource :Resource):
+    label = ""
+    match predicate_name :
+        case "Einliefernde Hochschule":
+            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule")[0].value
+        case "Projektkategorie":
+            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb")[0].value
+        case "Projektart":
+            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-projektart")[0].value
+        case "Akteurin":
+            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name")[0].value
+        case "Rolle":
+            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb")[0].value
+        case "Schlagwort":
+            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutsches-wikidata-label")[0].value
+        case "Projekt":
+            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/bevorzugter-titel")[0].value
+    return label
+
 
 URI_OPTIONS = {
     'institution': get_uri_options("Einliefernde Hochschule"),
@@ -58,12 +90,12 @@ class ProjectForm(BaseEntityForm):
     einliefernde_hochschule_uri = forms.ChoiceField(
         label="Einliefernde Hochschule",
         required=True,
-        choices=[('', 'Select an institution')] + [(opt['id'], f"{opt['label']} ({opt['uri']})") for opt in URI_OPTIONS['institution']]
+        choices=[('', 'Select an institution')] + [(opt['uri'], opt['label']) for opt in URI_OPTIONS['institution']]
     )
     projektkategorie_uri = forms.ChoiceField(
         label="Projektkategorie",
         required=True,
-        choices=[('', 'Select a category')] + [(opt['id'], f"{opt['label']} ({opt['uri']})") for opt in URI_OPTIONS['project_category']]
+        choices=[('', 'Select a category')] + [(opt['uri'], opt['label']) for opt in URI_OPTIONS['project_category']]
     )
     beschreibung = forms.CharField(
         label="Beschreibung",
@@ -74,13 +106,13 @@ class ProjectForm(BaseEntityForm):
     schlagwort_uris = forms.MultipleChoiceField(
         label="Schlagwörter",
         required=False,
-        choices=[(opt['id'], f"{opt['label']} ({opt['uri']})") for opt in URI_OPTIONS['catchphrase']],
+        choices=[(opt['uri'], opt['label']) for opt in URI_OPTIONS['catchphrase']],
         widget=forms.SelectMultiple
     )
     projektart_uri = forms.ChoiceField(
         label="Projektart",
         required=True,
-        choices=[('', 'Select a project type')] + [(opt['id'], f"{opt['label']} ({opt['uri']})") for opt in URI_OPTIONS['project_type']]
+        choices=[('', 'Select a project type')] + [(opt['uri'], opt['label']) for opt in URI_OPTIONS['project_type']]
     )
     vorschaubild_uri = forms.CharField(
         label="Vorschaubild",
@@ -92,7 +124,7 @@ class EventForm(BaseEntityForm):
     project_uri = forms.ChoiceField(
         label="Associated Project",
         required=True,
-        choices=[('', 'Select a project')] + [(opt['id'], f"{opt['label']} ({opt['uri']})") for opt in URI_OPTIONS['project']]
+        choices=[('', 'Select a project')] + [(opt['uri'], opt['label']) for opt in URI_OPTIONS['project']]
     )
     ereignisbeginn = forms.DateTimeField(
         label="Ereignisbeginn",
@@ -111,12 +143,12 @@ class ActorEventForm(BaseEntityForm):
     akteurin_uri = forms.ChoiceField(
         label="Akteurin",
         required=True,
-        choices=[('', 'Select an actor')] + [(opt['id'], f"{opt['label']} ({opt['uri']})") for opt in URI_OPTIONS['actor']]
+        choices=[('', 'Select an actor')] + [(opt['uri'], opt['label']) for opt in URI_OPTIONS['actor']]
     )
     rollen_uri = forms.ChoiceField(
         label="Rolle",
         required=True,
-        choices=[('', 'Select a role')] + [(opt['id'], f"{opt['label']} ({opt['uri']})") for opt in URI_OPTIONS['role']]
+        choices=[('', 'Select a role')] + [(opt['uri'], opt['label']) for opt in URI_OPTIONS['role']]
     )
 
 # Create formsets for nested forms

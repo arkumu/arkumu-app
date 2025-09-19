@@ -46,33 +46,6 @@
 {{ block.super }}
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    // Format URI fields to show both label and URI in a readable way
-    // Only process actual select elements with options
-    document.querySelectorAll('.uri-field').forEach(function(element) {
-      // Check if this is a select element with options
-      if (element.tagName === 'SELECT' && element.options) {
-        try {
-          Array.from(element.options).forEach(function(option) {
-            if (option.value) {
-              const match = option.text.match(/(.*)\s+$(http\S+)$/);
-              if (match) {
-                const label = match[1];
-                const uri = match[2];
-
-                // Update display text to be more compact
-                option.text = `${label} (${uri.substring(0, 25)}...)`;
-
-                // Add hover tooltip to show full URI
-                option.title = `${label}\n${uri}`;
-              }
-            }
-          });
-        } catch (e) {
-          console.error('Error processing URI field:', e);
-        }
-      }
-    });
-
     // Handle dynamic addition of actor-event forms
     document.querySelectorAll('.add-actor-event').forEach(function(button) {
       button.addEventListener('click', function(e) {
