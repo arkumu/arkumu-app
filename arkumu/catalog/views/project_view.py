@@ -1,14 +1,16 @@
-"""
-Project detail view using canonical URIs.
-"""
+from __future__ import annotations
+
+"""Project detail view using canonical URIs."""
 
 from django.views.generic import View
 from django.shortcuts import render
 from django.contrib.auth.mixins import LoginRequiredMixin
-from typing import Optional
+from django.urls import reverse
+from django.http import HttpResponseBadRequest, HttpResponseNotFound
+from typing import Optional, Tuple, Dict, Any
 import logging
 
-from arkumu.catalog.services.project_views import ProjectData
+from arkumu.catalog.services.project_views import ProjectData, ProjectURIs, CardURIs
 from arkumu.cache.services import CacheManager
 from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
@@ -37,104 +39,129 @@ class ProjectView(LoginRequiredMixin, View):
         logger.info(f"✅ ProjectView - Project URI: {projekt_uri}")
 
         try:
-            # Get project data from the same graph cache that already contains all projects
-            logger.info(f"📊 Getting project from cached graph: {projekt_uri}")
+            enriched_project, project_data = self._load_project(projekt_uri)
+        except LookupError:
+            logger.error(f"❌ Project not found: {projekt_uri}")
+            return render(request, 'catalog/design_error.html', {
+                'error': f'Project not found: {projekt_uri}'
+            })
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(f"Error loading project {projekt_uri}: {exc}")
+            return render(request, 'catalog/design_error.html', {
+                'error': f'Error loading project: {exc}'
+            })
 
-            cache_manager = CacheManager()
-            graph_cache = cache_manager.graph
+        project_context = self._build_project_context(project_data)
+        metadata = self._build_metadata(enriched_project, project_data)
 
-            # Get from the graph cache that already contains 840 projects
-            cached_graph = graph_cache.get_traversal_result(
-                resource_uri="arkumu:cross_institutional:all_projects",
-                traversal_type="catalog_projects",
-                params_hash="cross_institutional_projects_canonical"
+        context = {
+            'project': project_context,
+            'metadata': metadata,
+            'tab_endpoint': reverse('catalog:projekt_tab'),
+        }
+
+        logger.info(f"Successfully loaded project data for: {projekt_uri}")
+        return render(request, 'catalog/projekt.html', context)
+
+    def _load_project(self, projekt_uri: str) -> Tuple[Dict[str, Any], ProjectData]:
+        """Load enriched project payload and converted ProjectData."""
+        logger.info(f"📊 Getting project from cached graph: {projekt_uri}")
+
+        cache_manager = CacheManager()
+        graph_cache = cache_manager.graph
+
+        cached_graph = graph_cache.get_traversal_result(
+            resource_uri="arkumu:cross_institutional:all_projects",
+            traversal_type="catalog_projects",
+            params_hash="cross_institutional_projects_canonical"
+        )
+
+        if not cached_graph or 'result' not in cached_graph or 'projects' not in cached_graph['result']:
+            logger.error("❌ No cached graph found")
+            raise LookupError("Project cache unavailable")
+
+        projects = cached_graph['result']['projects']
+        logger.info(f"📊 Found {len(projects)} projects in cached graph")
+
+        for project in projects:
+            if project.get('uri') != projekt_uri:
+                continue
+
+            detail_cache = graph_cache.get_traversal_result(
+                resource_uri=projekt_uri,
+                traversal_type="catalog_project_detail",
+                params_hash="canonical"
             )
 
-            project_data = None
-            if cached_graph and cached_graph.get('result') and 'projects' in cached_graph['result']:
-                projects = cached_graph['result']['projects']
-                logger.info(f"📊 Found {len(projects)} projects in cached graph")
-
-                # Find the specific project by URI
-                for project in projects:
-                    if project.get('uri') == projekt_uri:
-                        logger.info(f"✅ Found project in cached graph!")
-                        # Try cached project detail first to avoid reprocessing relationships
-                        detail_cache = graph_cache.get_traversal_result(
-                            resource_uri=projekt_uri,
-                            traversal_type="catalog_project_detail",
-                            params_hash="canonical"
-                        )
-
-                        if detail_cache and detail_cache.get('result'):
-                            logger.info("📦 Using cached project detail payload")
-                            enriched_project = detail_cache['result']
-                        else:
-                            logger.info("♻️ Detail cache miss – enriching project relationships")
-                            enriched_project = self._enrich_project_with_relationships(project)
-
-                            if enriched_project:
-                                graph_cache.cache_traversal_result(
-                                    resource_uri=projekt_uri,
-                                    traversal_type="catalog_project_detail",
-                                    params_hash="canonical",
-                                    result_data=enriched_project
-                                )
-
-                        project_data = self._convert_cached_project_to_project_data(enriched_project)
-                        break
-
-                if not project_data:
-                    logger.error(f"❌ Project {projekt_uri} not found in {len(projects)} cached projects")
+            if detail_cache and detail_cache.get('result'):
+                logger.info("📦 Using cached project detail payload")
+                enriched_project = detail_cache['result']
             else:
-                logger.error(f"❌ No cached graph found")
+                logger.info("♻️ Detail cache miss – enriching project relationships")
+                enriched_project = self._enrich_project_with_relationships(project)
+                if enriched_project:
+                    graph_cache.cache_traversal_result(
+                        resource_uri=projekt_uri,
+                        traversal_type="catalog_project_detail",
+                        params_hash="canonical",
+                        result_data=enriched_project,
+                    )
 
-            if not project_data:
-                logger.error(f"❌ Project not found: {projekt_uri}")
-                return render(request, 'catalog/design_error.html', {
-                    'error': f'Project not found: {projekt_uri}'
-                })
+            project_data = self._convert_cached_project_to_project_data(enriched_project)
+            return enriched_project, project_data
 
-            # Format date range
-            year_range = ''
-            if project_data.event_start and project_data.event_end:
-                start_year = project_data.event_start.split('-')[0] if '-' in project_data.event_start else project_data.event_start
-                end_year = project_data.event_end.split('-')[0] if '-' in project_data.event_end else project_data.event_end
-                if start_year == end_year:
-                    year_range = start_year
-                else:
-                    year_range = f"{start_year} bis {end_year}"
-            elif project_data.event_start:
-                year_range = project_data.event_start.split('-')[0] if '-' in project_data.event_start else project_data.event_start
+        raise LookupError("Project not found")
 
-            # Convert ProjectData to template context
-            context = {
-                'project': {
-                    'uri': project_data.uri,
-                    'title': project_data.title or 'Untitled Project',
-                    'subtitle': project_data.subtitle or '',
-                    'alternative_title': project_data.alternative_titles[0] if project_data.alternative_titles else '',
-                    'descriptions': [project_data.description] if project_data.description else [],
-                    'image': project_data.image or 'images/main/card_1.png',
-                    'institution': project_data.institution or '',
-                    'projektart': project_data.project_type or '',
-                    'year_range': year_range,
-                    'categories': project_data.categories or [],
-                    'actors': project_data.actors or [],
-                    'catchphrases': project_data.catchphrases or [],
-                    'digital_objects': project_data.digital_objects or [],
-                    'events': project_data.events or [],  # Add events data
-                }
-            }
+    def _build_project_context(self, project_data: ProjectData) -> Dict[str, Any]:
+        """Shape project data for templates."""
+        year_range = ''
+        if project_data.event_start and project_data.event_end:
+            start_year = project_data.event_start.split('-')[0] if '-' in project_data.event_start else project_data.event_start
+            end_year = project_data.event_end.split('-')[0] if '-' in project_data.event_end else project_data.event_end
+            year_range = start_year if start_year == end_year else f"{start_year} bis {end_year}"
+        elif project_data.event_start:
+            year_range = project_data.event_start.split('-')[0] if '-' in project_data.event_start else project_data.event_start
 
-            logger.info(f"Successfully loaded project data for: {projekt_uri}")
-            return render(request, 'catalog/projekt.html', context)
+        return {
+            'uri': project_data.uri,
+            'title': project_data.title or 'Untitled Project',
+            'subtitle': project_data.subtitle or '',
+            'alternative_title': project_data.alternative_titles[0] if project_data.alternative_titles else '',
+            'descriptions': [project_data.description] if project_data.description else [],
+            'image': project_data.image or 'images/main/card_1.png',
+            'institution': project_data.institution or '',
+            'projektart': project_data.project_type or '',
+            'year_range': year_range,
+            'categories': project_data.categories or [],
+            'actors': project_data.actors or [],
+            'catchphrases': project_data.catchphrases or [],
+            'digital_objects': project_data.digital_objects or [],
+            'events': project_data.events or [],
+        }
 
-        except Exception as e:
-            logger.error(f"Error loading project {projekt_uri}: {e}")
-            return render(request, 'catalog/design_error.html', {
-                'error': f'Error loading project: {str(e)}'
-            })
+    def _build_metadata(self, enriched_project: Dict[str, Any], project_data: ProjectData) -> list[Dict[str, Any]]:
+        """Prepare metadata tab payload."""
+
+        def _entry(label: str, value: Any) -> Dict[str, Any]:
+            if isinstance(value, (list, tuple, set)):
+                values = [item for item in value if item]
+                return {'key': label, 'values': values} if values else {'key': label, 'value': '—'}
+            return {'key': label, 'value': value or '—'}
+
+        metadata_entries = [
+            _entry('Projekt URI', project_data.uri),
+            _entry('Institution', project_data.institution),
+            _entry('Projektart', project_data.project_type),
+            _entry('Schlagworte', project_data.catchphrases or []),
+            _entry('Kategorien', project_data.categories or []),
+            _entry('Digitale Objekte', project_data.digital_objects or []),
+            _entry('Alternative Titel', project_data.alternative_titles or []),
+        ]
+
+        if enriched_project and enriched_project.get('events'):
+            metadata_entries.append(_entry('Anzahl Ereignisse', len(enriched_project['events'])))
+
+        return metadata_entries
 
     def _convert_entity_graph_to_project_data(self, project_graph: dict, projekt_uri: str) -> Optional[ProjectData]:
         """Convert entity graph from CanonicalGraphService to ProjectData."""
@@ -585,3 +612,76 @@ class ProjectView(LoginRequiredMixin, View):
         except Exception as e:
             logger.error(f"❌ Error enriching project with relationships: {e}")
             return project_dict
+
+
+class ProjectTabView(LoginRequiredMixin, View):
+    """Serve tab content for project detail via HTMX."""
+
+    def get(self, request, *args, **kwargs):
+        projekt_uri = request.GET.get('projekt')
+        tab = request.GET.get('tab', 'overview').lower()
+
+        if not projekt_uri:
+            return HttpResponseBadRequest("Missing project URI")
+
+        helper = ProjectView()
+        try:
+            enriched_project, project_data = helper._load_project(projekt_uri)
+        except LookupError:
+            return HttpResponseNotFound("Project not found")
+
+        project_context = helper._build_project_context(project_data)
+        metadata = helper._build_metadata(enriched_project, project_data)
+
+        if tab == 'events':
+            events = self._build_event_payload(projekt_uri)
+            return render(request, 'catalog/partials/project_events.html', {'events': events})
+
+        if tab == 'metadata':
+            return render(request, 'catalog/partials/project_metadata.html', {'metadata': metadata})
+
+        return render(request, 'catalog/partials/project_overview.html', {'project': project_context})
+
+    @staticmethod
+    def _build_event_payload(projekt_uri: str) -> list[dict[str, Any]]:
+        triple_service = TripleRelationshipService(None)
+
+        events = triple_service.get_detailed_event_data(
+            projekt_uri,
+            event_predicate=ProjectURIs.EVENT,
+            event_start_predicate=ProjectURIs.EVENT_START,
+            event_end_predicate=ProjectURIs.EVENT_END,
+            event_name_predicate=ProjectURIs.EVENT_NAME,
+            event_description_predicate=ProjectURIs.EVENT_DESCRIPTION,
+            event_location_predicate=ProjectURIs.EVENT_LOCATION,
+            event_type_predicate=ProjectURIs.EVENT_TYPE,
+            organization_code=None,
+        )
+
+        event_ids = [event.get('id') for event in events if event.get('id')]
+
+        actors = triple_service.get_actor_relationships(
+            projekt_uri,
+            event_predicate=ProjectURIs.EVENT,
+            actor_link_predicate=CardURIs.ACTOR_IN_EVENT,
+            role_link_predicate=CardURIs.ACTOR_ROLE,
+            actor_name_predicate=CardURIs.ACTOR_GERMAN_NAME,
+            role_name_predicate=CardURIs.ROLE_GERMAN_NAME,
+            event_ids=event_ids,
+            organization_code=None,
+        )
+
+        actors_by_event: Dict[str, list[dict[str, Any]]] = {}
+        for actor in actors:
+            actor_entry = {
+                'name': actor.get('name'),
+                'roles': actor.get('roles', []),
+            }
+            for event_id in actor.get('event_ids', []):
+                actors_by_event.setdefault(event_id, []).append(actor_entry)
+
+        for event in events:
+            event_id = event.get('id')
+            event['actors'] = actors_by_event.get(event_id, [])
+
+        return events

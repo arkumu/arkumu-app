@@ -1,0 +1,34 @@
+<div class="w-full px-4 py-8 transition-colors
+            text-arkumu-dark
+            theme-dark:text-arkumu-light
+            theme-blue:text-arkumu-blue">
+  <div class="w-full max-w-7xl mx-auto">
+    <h2 class="text-3xl font-medium mb-6">Metadaten</h2>
+    <div class="overflow-x-auto border border-arkumu-dark/10 rounded-xl p-4 transition-colors
+                theme-dark:border-arkumu-light/20">
+      <table class="min-w-full text-sm">
+        <tbody class="divide-y divide-arkumu-dark/10 theme-dark:divide-arkumu-light/10">
+          {% for item in metadata %}
+          <tr>
+            <th class="text-left py-3 font-mono uppercase tracking-wide text-xs text-arkumu-dark/70
+                       theme-dark:text-arkumu-light/70">
+              {{ item.key }}
+            </th>
+            <td class="py-3">
+              {% if item.values %}
+                <ul class="list-disc list-inside space-y-1">
+                  {% for entry in item.values %}
+                    <li>{{ entry }}</li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                {{ item.value }}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
