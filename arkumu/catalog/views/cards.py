@@ -33,6 +33,11 @@ class GraphSearchView(LoginRequiredMixin, View):
             snapshot_service = ProjectSnapshotService()
             snapshot = snapshot_service.get_cross_institutional_snapshot()
             records = snapshot.projects
+            logger.info(
+                "GraphSearchView: snapshot generated %s with %d projects",
+                snapshot.generated_at.isoformat(),
+                len(records),
+            )
 
             if query:
                 records = [record for record in records if record.matches_query(query)]

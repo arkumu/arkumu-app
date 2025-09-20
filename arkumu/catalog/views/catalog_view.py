@@ -152,10 +152,21 @@ class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
         snapshot_service = ProjectSnapshotService()
         snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=skip_cache)
         records = snapshot.projects
+        logger.info(
+            "CATALOG_SNAPSHOT: generated %s with %d total projects (force_refresh=%s)",
+            snapshot.generated_at.isoformat(),
+            len(records),
+            skip_cache,
+        )
 
         if query:
             matching_records = [record for record in records if record.matches_query(query)]
             logger.info("🔍 FILTERED: %d projects match '%s'", len(matching_records), query)
+            logger.debug(
+                "🔍 FILTERED_CODES: institutions=%s categories=%s",
+                sorted({code for record in matching_records for code in record.institution_codes}),
+                sorted({slug for record in matching_records for slug in record.category_slugs}),
+            )
         else:
             matching_records = records
 

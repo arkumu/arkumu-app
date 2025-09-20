@@ -25,12 +25,24 @@ class ProjectView(LoginRequiredMixin, View):
             snapshot_service = ProjectSnapshotService()
             snapshot = snapshot_service.get_cross_institutional_snapshot()
             record = self._find_record(snapshot.projects, projekt_uri)
+            logger.info(
+                "ProjectView: using snapshot %s (project_found=%s)",
+                snapshot.generated_at.isoformat(),
+                bool(record),
+            )
 
             if not record:
                 logger.warning("ProjectView: project not found in snapshot: %s", projekt_uri)
                 return self._render_error(request, f'Project not found: {projekt_uri}')
 
-            context = {'project': self._build_context(record)}
+            context_payload = self._build_context(record)
+            logger.debug(
+                "ProjectView: resolved project %s with institution_codes=%s category_slugs=%s",
+                projekt_uri,
+                record.institution_codes,
+                record.category_slugs,
+            )
+            context = {'project': context_payload}
             return render(request, 'catalog/projekt.html', context)
 
         except Exception as exc:

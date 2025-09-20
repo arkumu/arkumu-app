@@ -9,7 +9,14 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 from django.utils import timezone
 
 from arkumu.cache.services.project_cache_service import ProjectCacheService
-from arkumu.catalog.services.schema_manifest_service import SchemaManifestService, CardSchema, CardProperty
+from arkumu.catalog.services.schema_manifest_service import (
+    SchemaManifestService,
+    CardSchema,
+    CardSection,
+    CardProperty,
+    CanonicalPropertyBinding,
+    CARD_SCHEMA_TEMPLATE,
+)
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
@@ -33,11 +40,20 @@ class ProjectSnapshotService:
     """Constructs project snapshots backed by cache."""
 
     CROSS_SCOPE_URI = "arkumu:cross_institutional:all_projects"
+    DEFAULT_ORGANIZATION_CODES: Sequence[str] = (
+        "fuk",
+        "rsh",
+        "det",
+        "khm",
+        "uk",
+        "hfmt",
+    )
 
     def __init__(self, relationship_org_code: Optional[str] = None) -> None:
         self.relationship_org_code = relationship_org_code
         self.cache = ProjectCacheService()
         self.schema_service = SchemaManifestService()
+        self._graph_service_factory = CanonicalGraphService
 
     def get_cross_institutional_snapshot(self, *, force_refresh: bool = False) -> ProjectSnapshot:
         """Return cached snapshot or rebuild if necessary."""
@@ -60,7 +76,7 @@ class ProjectSnapshotService:
 
     def _build_snapshot(self) -> ProjectSnapshot:
         graph = self._fetch_cross_institutional_graph()
-        card_schema = self.schema_service.get_card_schema('fuk')
+        card_schema = self._get_card_schema()
         records = self._graph_to_records(graph, card_schema)
         counts = graph.get('counts', {})
         if not counts:
@@ -77,55 +93,239 @@ class ProjectSnapshotService:
 
     def _fetch_cross_institutional_graph(self) -> Dict[str, Any]:
         logger.info("Building cross-institutional project graph via CanonicalGraphService")
-        service = CanonicalGraphService()
-        canonical_project_uri = CardURIs.PROJECT_TYPE
+        primary_graph = self._graph_service_factory().get_project_graph(
+            dataset_name="Projekt",
+            type_canonical_uri=CardURIs.PROJECT_TYPE,
+            expand_neighbors=True,
+        )
 
-        subject_ids = service._find_subject_ids_by_class(canonical_project_uri)
-        normalized_subject_ids = [str(subject_id) for subject_id in subject_ids]
-        logger.info("Found %d projects using canonical URI", len(normalized_subject_ids))
+        if primary_graph.get('subjects'):
+            logger.info(
+                "Cross-institutional graph built from canonical class: %d subjects",
+                len(primary_graph.get('subjects', [])),
+            )
+            return self._deduplicate_graph(primary_graph)
 
-        if not normalized_subject_ids:
-            logger.info("Falling back to organization-specific project classes")
-            institution_uris = [
-                "http://arkumu.org/data/fuk/types/projekt",
-                "http://arkumu.org/data/rsh/types/projekt",
-                "http://arkumu.org/data/det/types/projekt",
-                "http://arkumu.org/data/khm/types/projekt",
-                "http://arkumu.org/data/uk/types/projekt",
-                "http://arkumu.org/data/hfmt/types/projekt",
-            ]
-            for uri in institution_uris:
-                ids = service._find_subject_ids_by_class(uri)
-                normalized_subject_ids.extend(str(subject_id) for subject_id in ids)
-                logger.info("  %s -> %d subjects", uri, len(ids))
+        logger.info(
+            "No subjects found for canonical project type; falling back to per-organization graphs",
+        )
+        combined_graph = self._build_combined_organization_graphs()
+        logger.info(
+            "Combined per-organization graphs: %d subjects, %d nodes, %d edges",
+            len(combined_graph.get('subjects', [])),
+            len(combined_graph.get('nodes', {})),
+            len(combined_graph.get('edges', [])),
+        )
+        return combined_graph
 
-        edges = service._fetch_triples_for_subjects(normalized_subject_ids)
-        if edges:
-            neighbor_ids = [edge.object_id for edge in edges if edge.object_type != 'LITERAL'][:1000]
-            if neighbor_ids:
-                neighbor_edges = service._fetch_triples_for_subjects(neighbor_ids)
-                edges.extend(neighbor_edges)
-        nodes = service._collect_nodes_from_edges(edges)
+    def _build_combined_organization_graphs(self) -> Dict[str, Any]:
+        subjects: List[str] = []
+        nodes: Dict[str, Dict[str, Any]] = {}
+        edges: List[Dict[str, Any]] = []
+        edge_signatures: set[tuple] = set()
 
-        graph = {
+        for org_code in self.DEFAULT_ORGANIZATION_CODES:
+            try:
+                org_graph = self._graph_service_factory(org_code=org_code).get_project_graph(
+                    dataset_name="Projekt",
+                    expand_neighbors=True,
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.exception(
+                    "Failed to build organization graph for '%s': %s",
+                    org_code,
+                    exc,
+                )
+                continue
+
+            org_subjects = [str(subject) for subject in org_graph.get('subjects', [])]
+            for subject in org_subjects:
+                if subject not in subjects:
+                    subjects.append(subject)
+
+            nodes.update(org_graph.get('nodes', {}))
+
+            for edge in org_graph.get('edges', []):
+                signature = self._edge_signature(edge)
+                if signature in edge_signatures:
+                    continue
+                edge_signatures.add(signature)
+                edges.append(edge)
+
+        return {
             'organization': 'cross-institutional',
             'dataset': 'Projekt',
-            'subjects': normalized_subject_ids,
+            'subjects': subjects,
             'nodes': nodes,
-            'edges': [edge.__dict__ for edge in edges],
+            'edges': edges,
             'counts': {
-                'subjects': len(normalized_subject_ids),
+                'subjects': len(subjects),
                 'nodes': len(nodes),
                 'edges': len(edges),
             },
         }
-        logger.info(
-            "Cross-institutional graph built: %d subjects, %d nodes, %d edges",
-            graph['counts']['subjects'],
-            graph['counts']['nodes'],
-            graph['counts']['edges'],
+
+    def _deduplicate_graph(self, graph: Dict[str, Any]) -> Dict[str, Any]:
+        subjects = []
+        seen_subjects: set[str] = set()
+        for subject in graph.get('subjects', []):
+            subject_str = str(subject)
+            if subject_str in seen_subjects:
+                continue
+            seen_subjects.add(subject_str)
+            subjects.append(subject_str)
+
+        nodes = graph.get('nodes', {}) or {}
+
+        edge_signatures: set[tuple] = set()
+        edges: List[Dict[str, Any]] = []
+        for edge in graph.get('edges', []):
+            signature = self._edge_signature(edge)
+            if signature in edge_signatures:
+                continue
+            edge_signatures.add(signature)
+            edges.append(edge)
+
+        return {
+            'organization': 'cross-institutional',
+            'dataset': graph.get('dataset', 'Projekt'),
+            'subjects': subjects,
+            'nodes': nodes,
+            'edges': edges,
+            'counts': {
+                'subjects': len(subjects),
+                'nodes': len(nodes),
+                'edges': len(edges),
+            },
+        }
+
+    @staticmethod
+    def _edge_signature(edge: Dict[str, Any]) -> tuple:
+        return (
+            edge.get('triple_id'),
+            edge.get('subject_id') or edge.get('subject') or edge.get('s'),
+            edge.get('predicate_uri') or edge.get('predicate_canonical'),
+            edge.get('object_id'),
+            edge.get('object_value'),
         )
-        return graph
+
+    def _get_card_schema(self) -> CardSchema:
+        if self.relationship_org_code:
+            return self.schema_service.get_card_schema(self.relationship_org_code)
+
+        schemas = [
+            self.schema_service.get_card_schema(code)
+            for code in self.DEFAULT_ORGANIZATION_CODES
+        ]
+        return self._combine_card_schemas(schemas)
+
+    @staticmethod
+    def _combine_card_schemas(schemas: Sequence[CardSchema]) -> CardSchema:
+        if not schemas:
+            return CardSchema(sections={})
+
+        section_names = set(CARD_SCHEMA_TEMPLATE.sections.keys())
+        for schema in schemas:
+            section_names.update(schema.sections.keys())
+
+        combined_sections: Dict[str, CardSection] = {}
+        for name in section_names:
+            template_section = CARD_SCHEMA_TEMPLATE.sections.get(name)
+            source_section = None
+            if not template_section:
+                for schema in schemas:
+                    candidate = schema.sections.get(name)
+                    if candidate:
+                        source_section = candidate
+                        break
+
+            section_def = template_section or source_section
+            if section_def is None:
+                continue
+
+            combined_sections[name] = CardSection(
+                label=section_def.label,
+                canonical_class_uri=section_def.canonical_class_uri,
+                properties={
+                    prop_name: CardProperty(
+                        name=prop.name,
+                        canonical_uri=prop.canonical_uri,
+                        bindings=[],
+                    )
+                    for prop_name, prop in section_def.properties.items()
+                },
+                fk_relationships=[],
+            )
+
+        for schema in schemas:
+            for section_name, section in schema.sections.items():
+                combined_section = combined_sections.get(section_name)
+                if not combined_section:
+                    continue
+
+                existing_fk_signatures = {
+                    ProjectSnapshotService._fk_signature(entry)
+                    for entry in combined_section.fk_relationships
+                }
+                for fk_entry in section.fk_relationships:
+                    signature = ProjectSnapshotService._fk_signature(fk_entry)
+                    if signature in existing_fk_signatures:
+                        continue
+                    existing_fk_signatures.add(signature)
+                    combined_section.fk_relationships.append(fk_entry)
+
+                for prop_name, prop in section.properties.items():
+                    combined_prop = combined_section.properties.get(prop_name)
+                    if not combined_prop:
+                        continue
+                    combined_prop.bindings = ProjectSnapshotService._merge_property_bindings(
+                        combined_prop.bindings,
+                        prop.bindings,
+                    )
+
+        return CardSchema(sections=combined_sections)
+
+    @staticmethod
+    def _fk_signature(entry: Dict[str, Any]) -> tuple:
+        return (
+            entry.get('source_property'),
+            entry.get('target_property'),
+            entry.get('target_dataset'),
+            entry.get('target_column'),
+            entry.get('is_multi_value', False),
+        )
+
+    @staticmethod
+    def _merge_property_bindings(
+        existing: Sequence[CanonicalPropertyBinding],
+        new_bindings: Sequence[CanonicalPropertyBinding],
+    ) -> List[CanonicalPropertyBinding]:
+        merged = list(existing)
+        seen = {
+            (
+                binding.dataset,
+                binding.column,
+                binding.canonical_uri,
+                binding.local_uri,
+                binding.name,
+            )
+            for binding in merged
+        }
+
+        for binding in new_bindings:
+            key = (
+                binding.dataset,
+                binding.column,
+                binding.canonical_uri,
+                binding.local_uri,
+                binding.name,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(binding)
+
+        return merged
 
     def _graph_to_records(self, graph: Dict[str, Any], card_schema: CardSchema) -> List[ProjectRecord]:
         nodes: Dict[str, Dict[str, Any]] = graph.get('nodes', {})
@@ -273,27 +473,33 @@ class ProjectSnapshotService:
         ]
 
         institution_ids = self._related_ids(subject_edges, institution_prop.canonical_uri if institution_prop else None)
-        institution = None
+        institution: Optional[ProjectInstitution] = None
         institution_codes: List[str] = []
         if institution_ids:
-            inst_id = institution_ids[0]
-            inst_node = nodes.get(inst_id, {})
-            inst_uri = inst_node.get('uri') or inst_node.get('canonical_uri')
-            inst_label = self._first_literal(
-                edges_by_subject.get(inst_id, []),
-                institution_name_prop.canonical_uri if institution_name_prop else None,
-            ) or inst_node.get('name') or inst_node.get('value')
-            inst_code = inst_node.get('organization') or self._resource_slug(inst_uri)
-            if inst_code:
-                institution_codes.append(str(inst_code).lower())
-            institution = ProjectInstitution(
-                label=inst_label,
-                uri=inst_uri,
-                code=str(inst_code).lower() if inst_code else None,
-            )
+            for inst_index, inst_id in enumerate(institution_ids):
+                inst_node = nodes.get(inst_id, {})
+                inst_uri = inst_node.get('uri') or inst_node.get('canonical_uri')
+                inst_label = self._first_literal(
+                    edges_by_subject.get(inst_id, []),
+                    institution_name_prop.canonical_uri if institution_name_prop else None,
+                ) or inst_node.get('name') or inst_node.get('value')
+                inst_code = inst_node.get('organization') or self._resource_slug(inst_uri)
+                normalized_code = str(inst_code).lower() if inst_code else None
+                if normalized_code and normalized_code not in institution_codes:
+                    institution_codes.append(normalized_code)
+
+                inst_object = ProjectInstitution(
+                    label=inst_label,
+                    uri=inst_uri,
+                    code=normalized_code,
+                )
+                if inst_index == 0 and institution is None:
+                    institution = inst_object
+
 
         categories: List[ProjectCategory] = []
         category_slugs: List[str] = []
+        seen_category_keys: set[tuple] = set()
         for category_id in self._related_ids(subject_edges, category_prop.canonical_uri if category_prop else None):
             cat_node = nodes.get(category_id, {})
             cat_uri = cat_node.get('uri') or cat_node.get('canonical_uri')
@@ -302,8 +508,14 @@ class ProjectSnapshotService:
                 category_name_prop.canonical_uri if category_name_prop else None,
             ) or cat_node.get('name') or cat_node.get('value')
             cat_slug = self._resource_slug(cat_uri)
+            dedupe_key = (cat_uri, cat_label)
+            if dedupe_key in seen_category_keys:
+                continue
+            seen_category_keys.add(dedupe_key)
             if cat_slug:
-                category_slugs.append(cat_slug.lower())
+                normalized_slug = cat_slug.lower()
+                if normalized_slug not in category_slugs:
+                    category_slugs.append(normalized_slug)
             categories.append(ProjectCategory(label=cat_label, uri=cat_uri, slug=cat_slug))
 
         def _fk_source_for_target(section_name: str, target_property: Optional[str]) -> Optional[str]:
