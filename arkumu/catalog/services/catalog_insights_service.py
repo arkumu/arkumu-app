@@ -7,11 +7,11 @@ from typing import Any, Dict, List, Optional, Set
 
 from django.db.models import Count, Q
 
-from arkumu.cache.services import CatalogCacheService, cache_manager
+from arkumu.cache.services import CatalogCacheService
 from arkumu.catalog.services.project_views import CardURIs, CardView, ProjectURIs
-from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
-from arkumu.catalog.services.schema_manifest_service import SchemaManifestService, CardProperty
 from arkumu.metadata.models import Resource, ResourceType, Triple
+from arkumu.projects import ProjectRecord
+from arkumu.projects.services import ProjectSnapshotService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ class CatalogInsightsService:
         self.catalog_cache = CatalogCacheService()
         self.user = user
         self._project_info_cache: Optional[Dict[str, Dict[str, Any]]] = None
+        self._records_cache: Optional[List[ProjectRecord]] = None
 
     # ------------------------------------------------------------------
     # Popular keywords
@@ -200,33 +201,7 @@ class CatalogInsightsService:
         selected_uris: List[str],
         project_info_map: Dict[str, Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Enrich projects with relationship data using TripleRelationshipService like CatalogView."""
-
-        # Get schema for property definitions (use FUK as per CatalogView)
-        schema_service = SchemaManifestService()
-        card_schema = schema_service.get_card_schema('fuk')
-
-        # Initialize TripleRelationshipService (cross-institutional: no org filtering)
-        triple_service = TripleRelationshipService(organization_code=None)
-
-        def _property(section: str, prop: str) -> Optional[CardProperty]:
-            section_obj = card_schema.sections.get(section)
-            if not section_obj:
-                return None
-            return section_obj.properties.get(prop)
-
-        # Get property definitions
-        institution_prop = _property('project', 'institution')
-        institution_name_prop = _property('institution', 'german_name')
-        category_prop = _property('project', 'category')
-        category_name_prop = _property('project_category', 'german_name')
-        event_prop = _property('project', 'event')
-        event_start_prop = _property('event', 'start')
-        event_end_prop = _property('event', 'end')
-        actor_link_prop = _property('actor_event', 'actor_link')
-        role_link_prop = _property('actor_event', 'role_link')
-        actor_name_prop = _property('actor', 'name')
-        role_name_prop = _property('role', 'name')
+        """Build random project previews directly from snapshot records."""
 
         projects: List[Dict[str, Any]] = []
 
@@ -235,88 +210,14 @@ class CatalogInsightsService:
             if not info:
                 continue
 
-            subject_id = info['subject_id']
-            slug = info['slug']
-            year_values = sorted(info['year_values'])
+            record: Optional[ProjectRecord] = info.get('record')
+            if not record:
+                continue
 
-            # Get enriched relationship data using TripleRelationshipService
-
-            # Get institution data
-            institution_label = triple_service.get_institution_data(
-                subject_id,
-                institution_predicate=institution_prop.canonical_uri if institution_prop else None,
-                institution_label_predicate=institution_name_prop.canonical_uri if institution_name_prop else None,
-                organization_code=None,  # Cross-institutional
-            )
-
-            # Get category data
-            category_labels = triple_service.get_category_data(
-                subject_id,
-                category_predicate=category_prop.canonical_uri if category_prop else None,
-                category_label_predicate=category_name_prop.canonical_uri if category_name_prop else None,
-                organization_code=None,  # Cross-institutional
-            )
-
-            # Get event data
-            event_info = triple_service.get_event_data(
-                subject_id,
-                event_predicate=event_prop.canonical_uri if event_prop else None,
-                event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
-                event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
-                organization_code=None,  # Cross-institutional
-            )
-            event_ids = event_info.get('event_ids', [])
-            event_details = event_info.get('event_details', {})
-
-            # Get actor data (this is the key fix!)
-            actors = triple_service.get_actor_relationships(
-                subject_id,
-                event_predicate=event_prop.canonical_uri if event_prop else None,
-                actor_link_predicate=actor_link_prop.canonical_uri if actor_link_prop else None,
-                role_link_predicate=role_link_prop.canonical_uri if role_link_prop else None,
-                actor_name_predicate=actor_name_prop.canonical_uri if actor_name_prop else None,
-                role_name_predicate=role_name_prop.canonical_uri if role_name_prop else None,
-                event_ids=event_ids,
-                organization_code=None,  # Cross-institutional
-            )
-
-            # Get project type (proper resolution instead of raw ID)
-            project_type = triple_service.get_project_type(
-                subject_id,
-                project_type_predicate='http://arkumu.org/data/properties/projektart',
-                organization_code=None,  # Cross-institutional
-            )
-
-            # Calculate year from events
-            project_year = None
-            if event_ids and event_details:
-                for event_id in event_ids:
-                    entry = event_details.get(event_id) or {}
-                    start = entry.get('start')
-                    if start:
-                        try:
-                            project_year = int(start.split('-')[0] if '-' in start else start)
-                            break
-                        except (ValueError, TypeError):
-                            continue
-
-            # Use year from info if event year not found
-            if not project_year and year_values:
-                project_year = year_values[0]
-
-            projects.append({
-                'id': slug,
-                'title': info['title'],
-                'university': institution_label or info['university_label'],
-                'year': project_year,
-                'project_type': project_type or self._resolve_project_type_name_from_id(info.get('project_type')),  # Use enriched project type or resolve ID
-                'actors': [{'name': actor['name'], 'roles': actor['roles']} for actor in actors],
-                'categories': category_labels or info['category_labels'],
-                'preview_image_url': info['image'],
-                'detail_url': f"/projekt/{slug}",
-            })
-
-            logger.info(f"✅ ENRICHED: {slug} - Institution: '{institution_label}', Actors: {len(actors)}, Categories: {len(category_labels or [])}")
+            preview = self._record_to_preview(record)
+            if not preview.get('preview_image_url'):
+                preview['preview_image_url'] = info['image']
+            projects.append(preview)
 
         return projects
 
@@ -467,58 +368,121 @@ class CatalogInsightsService:
 
         return results
 
+    def _get_snapshot_records(self) -> List[ProjectRecord]:
+        if self._records_cache is not None:
+            return self._records_cache
+
+        try:
+            snapshot = ProjectSnapshotService().get_cross_institutional_snapshot()
+            self._records_cache = snapshot.projects
+        except Exception as exc:
+            logger.warning("Failed to load project snapshot for insights: %s", exc)
+            self._records_cache = []
+
+        return self._records_cache
+
     def _load_project_info_from_graph(self) -> Dict[str, Dict[str, Any]]:
         if self._project_info_cache is not None:
             return self._project_info_cache
 
-        try:
-            projects_entry = cache_manager.graph.get_traversal_result(
-                resource_uri="arkumu:cross_institutional:all_projects",
-                traversal_type="catalog_projects",
-                params_hash="cross_institutional_projects_canonical",
-            )
-            graph_entry = cache_manager.graph.get_traversal_result(
-                resource_uri="arkumu:cross_institutional:all_projects",
-                traversal_type="catalog_search",
-                params_hash="cross_institutional_projects_canonical",
-            )
-        except Exception as exc:
-            logger.warning("Failed to load project info from graph cache: %s", exc)
+        records = self._get_snapshot_records()
+        if not records:
             self._project_info_cache = {}
             return self._project_info_cache
 
-        if not projects_entry or not graph_entry:
-            self._project_info_cache = {}
-            return self._project_info_cache
-
-        projects_payload = projects_entry.get('result') or {}
-        cards = projects_payload.get('projects') or []
-        card_map = {card.get('uri'): card for card in cards if card.get('uri')}
-
-        graph = graph_entry.get('result') or {}
-        nodes: Dict[str, Dict[str, Any]] = graph.get('nodes') or {}
-        edges: List[Dict[str, Any]] = graph.get('edges') or []
-        subjects: List[str] = graph.get('subjects') or []
-
-        if not nodes or not edges or not subjects:
-            self._project_info_cache = {}
-            return self._project_info_cache
-
-        edges_by_subject: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        for edge in edges:
-            subject_id = edge.get('subject_id')
-            if subject_id:
-                edges_by_subject[subject_id].append(edge)
-
-        info_map: Dict[str, Dict[str, Any]] = {}
-        for subject_id in subjects:
-            info = self._build_project_info(subject_id, card_map, nodes, edges_by_subject)
-            if not info:
-                continue
-            info_map[info['uri']] = info
+        info_map = {
+            record.uri: self._build_info_from_record(record)
+            for record in records
+            if record.uri
+        }
 
         self._project_info_cache = info_map
         return self._project_info_cache
+
+    def _build_info_from_record(self, record: ProjectRecord) -> Dict[str, Any]:
+        image = record.image
+        if not image and record.digital_objects:
+            image = record.digital_objects[0].path
+
+        institution_label = record.institution.label if record.institution and record.institution.label else ''
+        institution_codes = list(record.institution_codes)
+        if record.institution and record.institution.code and record.institution.code not in institution_codes:
+            institution_codes.append(record.institution.code.lower())
+
+        category_labels = [cat.label for cat in record.categories if cat.label]
+        year_values = self._extract_years_from_record(record)
+
+        return {
+            'uri': record.uri,
+            'subject_id': record.subject_id,
+            'slug': record.slug,
+            'title': record.title or '',
+            'image': image or '',
+            'university_label': institution_label,
+            'institution_labels': [institution_label] if institution_label else [],
+            'institution_codes': [code.lower() for code in institution_codes],
+            'category_labels': category_labels,
+            'category_slugs': record.category_slugs,
+            'year_values': year_values,
+            'project_type': record.project_type.label if record.project_type and record.project_type.label else '',
+            'record': record,
+        }
+
+    @staticmethod
+    def _extract_years_from_record(record: ProjectRecord) -> Set[int]:
+        years: Set[int] = set()
+
+        for event in record.events:
+            for value in (event.start, event.end):
+                if not value:
+                    continue
+                try:
+                    years.add(int(value.split('-')[0]))
+                except (ValueError, TypeError):
+                    continue
+
+        if record.year_range:
+            parts = [part.strip() for part in record.year_range.split('bis')]
+            for part in parts:
+                if not part:
+                    continue
+                try:
+                    years.add(int(part.split('-')[0]))
+                except (ValueError, TypeError):
+                    continue
+
+        return years
+
+    def _record_to_preview(self, record: ProjectRecord) -> Dict[str, Any]:
+        slug = record.slug
+        image = record.image
+        if not image and record.digital_objects:
+            image = record.digital_objects[0].path
+
+        preview = {
+            'id': slug,
+            'title': record.title or '',
+            'university': record.institution.label if record.institution and record.institution.label else '',
+            'year': self._primary_year(record),
+            'project_type': record.project_type.label if record.project_type and record.project_type.label else None,
+            'actors': [
+                {
+                    'name': actor.name,
+                    'roles': actor.roles,
+                }
+                for actor in record.actors
+                if actor.name
+            ],
+            'categories': [cat.label for cat in record.categories if cat.label],
+            'preview_image_url': image or '',
+            'detail_url': f"/projekt/{slug}",
+        }
+
+        return preview
+
+    def _primary_year(self, record: ProjectRecord) -> Optional[int]:
+        years = sorted(self._extract_years_from_record(record))
+        return years[0] if years else None
 
     def _build_project_info(
         self,
@@ -1002,4 +966,3 @@ class CatalogInsightsService:
             logger.warning(f"Failed to resolve project type '{project_type_id}': {exc}")
 
         return project_type_id  # Return the ID as fallback
-
