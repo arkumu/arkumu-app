@@ -7,13 +7,11 @@ import logging
 from typing import Optional
 
 from django.conf import settings
-from huey.contrib.djhuey import db_task
+from huey import crontab
+from huey.contrib.djhuey import db_task, periodic_task
 
-try:
-    from huey.contrib.djhuey import db_periodic_task, crontab
-    HUEY_PERIODIC_AVAILABLE = True
-except ImportError:
-    HUEY_PERIODIC_AVAILABLE = False
+# Periodic tasks are always available in djhuey
+HUEY_PERIODIC_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +95,7 @@ def warm_card_schema_cache(organization_code: Optional[str] = None):
 
 
 if HUEY_PERIODIC_AVAILABLE:
-    @db_periodic_task(crontab(minute='*/30'))  # Run every 30 minutes
+    @periodic_task(crontab(minute='*/30'))  # Run every 30 minutes
     def refresh_schema_cache_periodic():
         """Periodically refresh the schema map cache."""
         try:
@@ -116,7 +114,7 @@ if HUEY_PERIODIC_AVAILABLE:
             logger.error(f"Periodic schema cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
 
-    @db_periodic_task(crontab(minute='*/20'))  # Run every 20 minutes to stay ahead of the 60m TTL
+    @periodic_task(crontab(minute='*/20'))  # Run every 20 minutes to stay ahead of the 60m TTL
     def refresh_projects_cache_periodic():
         """Periodically refresh the cross-institutional projects cache."""
         try:
@@ -144,7 +142,7 @@ if HUEY_PERIODIC_AVAILABLE:
             logger.error(f"Periodic projects cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
 
-    @db_periodic_task(crontab(minute='*/10'))  # Run every 10 minutes to align with card schema TTL
+    @periodic_task(crontab(minute='*/10'))  # Run every 10 minutes to align with card schema TTL
     def refresh_card_schema_cache_periodic():
         """Periodically refresh built card schema caches."""
         try:
