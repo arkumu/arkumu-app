@@ -95,7 +95,7 @@ def warm_card_schema_cache(organization_code: Optional[str] = None):
 
 
 if HUEY_PERIODIC_AVAILABLE:
-    @periodic_task(crontab(minute='*/30'))  # Run every 30 minutes
+    @periodic_task(crontab(minute='7,37'))  # Staggered twice hourly to avoid 0/30 pileups
     def refresh_schema_cache_periodic():
         """Periodically refresh the schema map cache."""
         try:
@@ -114,7 +114,7 @@ if HUEY_PERIODIC_AVAILABLE:
             logger.error(f"Periodic schema cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
 
-    @periodic_task(crontab(minute='*/20'))  # Run every 20 minutes to stay ahead of the 60m TTL
+    @periodic_task(crontab(minute='13,33,53'))  # Offset to share load with schema refresh
     def refresh_projects_cache_periodic():
         """Periodically refresh the cross-institutional projects cache."""
         try:
@@ -142,7 +142,7 @@ if HUEY_PERIODIC_AVAILABLE:
             logger.error(f"Periodic projects cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
 
-    @periodic_task(crontab(minute='*/10'))  # Run every 10 minutes to align with card schema TTL
+    @periodic_task(crontab(minute='2,12,22,32,42,52'))  # Keeps cache warm without colliding with other jobs
     def refresh_card_schema_cache_periodic():
         """Periodically refresh built card schema caches."""
         try:

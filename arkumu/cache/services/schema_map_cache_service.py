@@ -42,7 +42,10 @@ class SchemaMapCacheService(BaseCacheService):
         return self._get_properties_for_class_with_orgs(class_uri)
 
     CACHE_KEY = 'complete_schema_map:global'
-    CACHE_TIMEOUT_SECONDS = 600
+    # Keep schema map warm for the full interval between background refreshes.
+    # The refresh task runs twice every hour, so we give the cache a one hour TTL
+    # to prevent user requests from expiring before the next refresh completes.
+    CACHE_TIMEOUT_SECONDS = 3600
 
     def get_complete_schema_map(
         self,
