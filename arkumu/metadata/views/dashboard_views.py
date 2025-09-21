@@ -1,5 +1,7 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.views.decorators.http import require_POST
 from django.db.models import Count
 
 from arkumu.metadata.models.resource import Resource, ResourceType
@@ -232,3 +234,26 @@ def upload_session_stats(request, session_id):
         })
 
 
+@general_login_required
+@require_POST
+def trigger_cache_refresh(request):
+    """Enqueue Huey jobs that rebuild project and schema caches."""
+    if not request.user.is_staff:
+        messages.error(request, 'Only staff members can trigger cache refreshes.')
+        return redirect('metadata:metadata_dashboard')
+
+    from arkumu.cache.tasks import (
+        warm_cross_institutional_projects_cache,
+        warm_schema_cache,
+        warm_card_schema_cache,
+    )
+
+    warm_cross_institutional_projects_cache.schedule(delay=0)
+    warm_schema_cache.schedule(delay=0)
+    warm_card_schema_cache.schedule(delay=0)
+
+    messages.success(
+        request,
+        'Cache warm-up tasks enqueued. Huey will rebuild snapshots and schema data shortly.',
+    )
+    return redirect('metadata:metadata_dashboard')
