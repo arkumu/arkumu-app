@@ -9,9 +9,8 @@ import uuid
 from django.db.models import Q
 
 from arkumu.metadata.models.triples import Triple
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models import Resource, ResourceType, WikidataEntity
 from arkumu.users.models import Organization
-from arkumu.catalog.services.wikidata_service import WikidataService
 
 
 class TripleRelationshipService:
@@ -21,7 +20,6 @@ class TripleRelationshipService:
         self.organization_code = organization_code
         self._organization: Optional[Organization] = None
         self._org_cache: Dict[str, Optional[Organization]] = {}
-        self.wikidata_service = WikidataService()
         if organization_code:
             self._organization = self._get_org_by_code(organization_code)
 
@@ -260,36 +258,31 @@ class TripleRelationshipService:
                     location_ids = [loc_id.strip() for loc_id in location_raw.split(',') if loc_id.strip()]
 
                     if location_ids:
-                        location_names = []
-                        all_coordinates = []
-                        countries = set()
+                        location_names: List[str] = []
+
+                        cached_entities = {
+                            entity.wikidata_id: entity
+                            for entity in WikidataEntity.objects.filter(wikidata_id__in=[loc for loc in location_ids if loc.startswith('Q')])
+                        }
 
                         for location_id in location_ids:
                             if location_id.startswith('Q'):
-                                location_data = self.wikidata_service.get_location_info(location_id)
-                                name = location_data.get('name', location_id)
-                                location_names.append(name)
-
-                                if 'coordinates' in location_data:
-                                    all_coordinates.append(location_data['coordinates'])
-                                if 'country' in location_data:
-                                    countries.add(location_data['country'])
+                                cached_entity = cached_entities.get(location_id)
+                                display_name = (
+                                    cached_entity.label_de
+                                    or cached_entity.label_en
+                                    if cached_entity
+                                    else None
+                                )
+                                location_names.append(display_name or location_id)
                             else:
                                 location_names.append(location_id)
 
-                        # Combine location names
-                        event_info['location'] = ', '.join(location_names) if location_names else location_raw
-
-                        # Use first coordinate if available
-                        if all_coordinates:
-                            event_info['coordinates'] = all_coordinates[0]
-                            if 'latitude' in all_coordinates[0] and 'longitude' in all_coordinates[0]:
-                                event_info['latitude'] = all_coordinates[0]['latitude']
-                                event_info['longitude'] = all_coordinates[0]['longitude']
-
-                        # Combine countries
-                        if countries:
-                            event_info['country'] = ', '.join(sorted(countries))
+                        event_info['location'] = (
+                            ', '.join(location_names)
+                            if location_names
+                            else location_raw
+                        )
                     else:
                         event_info['location'] = location_raw
                 else:
