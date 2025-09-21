@@ -63,13 +63,29 @@ def warm_cross_institutional_projects_cache():
 def warm_card_schema_cache(organization_code: Optional[str] = None):
     """Warm the built card schema cache for catalog views."""
     from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
+    from arkumu.metadata.models import Mapping
 
     target_orgs = [organization_code] if organization_code else _DEFAULT_CARD_SCHEMA_ORGS
+    if not target_orgs:
+        logger.info("Card schema cache warm-up skipped: no target organizations configured")
+        return "No schemas warmed"
+
+    existing_orgs = set(
+        Mapping.objects
+        .filter(organization_id__in=target_orgs)
+        .values_list('organization_id', flat=True)
+    )
 
     service = SchemaManifestService()
     warmed = 0
 
     for org in target_orgs:
+        if org not in existing_orgs:
+            logger.info(
+                "Card schema warm-up skipped for org '%s': no mapping configuration found",
+                org,
+            )
+            continue
         try:
             logger.info("Starting card schema cache warm-up for org '%s'", org)
             schema = service.get_card_schema(org)
