@@ -149,6 +149,15 @@ class ProjectView(LoginRequiredMixin, View):
 
         uri = _attr(event, 'uri')
         name = _attr(event, 'name')
+        start_value = _attr(event, 'start')
+        end_value = _attr(event, 'end')
+        if start_value and end_value:
+            display_date = start_value if start_value == end_value else f"{start_value} – {end_value}"
+        else:
+            display_date = start_value or end_value or None
+
+        primary_actor = actor_entries[0]['name'] if len(actor_entries) > 0 else ''
+        secondary_actor = actor_entries[1]['name'] if len(actor_entries) > 1 else ''
 
         return {
             'id': _attr(event, 'id'),
@@ -165,6 +174,9 @@ class ProjectView(LoginRequiredMixin, View):
             'latitude': _attr(event, 'latitude'),
             'longitude': _attr(event, 'longitude'),
             'actors': actor_entries,
+            'display_date': display_date,
+            'primary_actor': primary_actor,
+            'secondary_actor': secondary_actor,
         }
 
     @staticmethod
