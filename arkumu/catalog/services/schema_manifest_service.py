@@ -281,5 +281,3 @@ class SchemaManifestService:
                     )
 
             section.fk_relationships.extend(canonical_class.get("relationships", []))
-
-*** remainder unchanged ***
