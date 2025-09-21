@@ -47,6 +47,12 @@
                 <dd>{{ event.location }}</dd>
               </div>
               {% endif %}
+              {% if event.country %}
+              <div class="flex justify-between">
+                <dt class="font-mono uppercase tracking-wide">Land</dt>
+                <dd>{{ event.country }}</dd>
+              </div>
+              {% endif %}
             </dl>
 
             {% if event.latitude and event.longitude %}
@@ -68,7 +74,7 @@
               {% for actor in event.actors %}
               <li class="px-3 py-1 border border-arkumu-dark/20 rounded-full transition-colors
                          theme-dark:border-arkumu-light/30">
-                {{ actor.name }}{% if actor.roles %} — {{ actor.roles|join:", " }}{% endif %}
+                {{ actor.name }}{% if actor.roles %} &ndash; {{ actor.roles|join:", " }}{% endif %}
               </li>
               {% endfor %}
             </ul>
@@ -78,28 +84,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="p-8 border border-dashed border-arkumu-dark/20 rounded-xl text-center text-sm
-                  theme-dark:border-arkumu-light/20">
-        Keine Ereignisse gefunden.
-      </div>
+      <p class="text-sm text-arkumu-dark/70 theme-dark:text-arkumu-light/70">Keine Ereignisse vorhanden.</p>
     {% endif %}
   </div>
 </div>
-<script>
-  window.initializeEventMaps = function () {
-    if (!window.L) { return; }
-    document.querySelectorAll('[data-event-map]').forEach(function (el) {
-      if (el.dataset.initialized) { return; }
-      var lat = parseFloat(el.dataset.lat);
-      var lng = parseFloat(el.dataset.lng);
-      if (!isFinite(lat) || !isFinite(lng)) { return; }
-      var map = L.map(el).setView([lat, lng], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(map);
-      L.marker([lat, lng]).addTo(map).bindPopup(el.dataset.location || '').openPopup();
-      el.dataset.initialized = 'true';
-    });
-  };
-  window.initializeEventMaps();
-</script>
