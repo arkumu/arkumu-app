@@ -33,6 +33,9 @@ CACHE_TTL = {
 
     # Metadata caching
     'metadata_export': 1 * 3600, # 1 hour - export formats (was 2h)
+
+    # Project snapshots
+    'project_snapshot': 45 * 60,  # 45 minutes - cross-institutional project snapshot
 }
 
 # Cache size limits to prevent memory leaks
@@ -47,6 +50,7 @@ CACHE_PREFIXES = {
     'graph': 'arkumu:graph',
     'catalog': 'arkumu:catalog',
     'metadata': 'arkumu:metadata',
+    'projects': 'arkumu:projects',
 }
 
 

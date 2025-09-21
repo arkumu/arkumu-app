@@ -1,9 +1,9 @@
-"""Management command to verify cross-institutional projects cache refresh."""
+"""Management command to verify project snapshot cache refresh."""
 
-from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
-from arkumu.cache.services.graph_cache_service import GraphCacheService
+from arkumu.cache.services.project_cache_service import ProjectCacheService
+from arkumu.projects.services import ProjectSnapshotService
 
 
 class Command(BaseCommand):
@@ -12,55 +12,31 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("=== Testing Projects Cache Refresh ===")
 
-        graph_cache = GraphCacheService()
-        resource_uri = "arkumu:cross_institutional:all_projects"
-        params_hash = "cross_institutional_projects_canonical"
+        cache_service = ProjectCacheService()
+        snapshot_service = ProjectSnapshotService()
 
-        timestamp = graph_cache._get_resource_timestamp(resource_uri)
-
-        def cache_status(traversal_type: str):
-            cache_params = {
-                "uri": resource_uri,
-                "type": traversal_type,
-                "params": params_hash,
-                "timestamp": timestamp,
-            }
-            cache_key = graph_cache._get_cache_key("traversal", **cache_params)
-            payload = cache.get(cache_key)
-            exists = payload is not None
-            counts = {}
-            if payload:
-                result = payload.get("result") or payload
-                if isinstance(result, dict):
-                    counts = result.get("counts") or {
-                        "projects": len(result.get("projects", [])),
-                        "subjects": len(result.get("subjects", [])) if result.get("subjects") else 0,
-                        "edges": len(result.get("edges", [])) if result.get("edges") else 0,
-                    }
-            return cache_key, exists, counts
-
-        for traversal_type in ("catalog_search", "catalog_projects"):
-            cache_key, exists, counts = cache_status(traversal_type)
+        existing_snapshot = cache_service.get_cross_institutional_snapshot()
+        if existing_snapshot:
             self.stdout.write(
-                f"{traversal_type}: {'EXISTS' if exists else 'EMPTY'} -> {cache_key} (counts={counts})"
-            )
-
-        self.stdout.write("\nRefreshing cache via GraphCacheService...\n")
-        refresh_result = graph_cache.refresh_cross_institutional_projects_cache(force_refresh=True)
-        if refresh_result:
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"Refresh returned {len(refresh_result.get('projects', []))} cards, "
-                    f"{refresh_result.get('counts', {}).get('edges')} edges"
-                )
+                f"Cache before refresh: {len(existing_snapshot.projects)} projects, counts={existing_snapshot.counts}"
             )
         else:
-            self.stdout.write(self.style.ERROR("Refresh returned no payload"))
+            self.stdout.write("Cache before refresh: EMPTY")
 
-        for traversal_type in ("catalog_search", "catalog_projects"):
-            cache_key, exists, counts = cache_status(traversal_type)
-            self.stdout.write(
-                f"After refresh {traversal_type}: {'EXISTS' if exists else 'EMPTY'} -> {cache_key} (counts={counts})"
+        self.stdout.write("\nRefreshing snapshot via ProjectSnapshotService...\n")
+        snapshot = snapshot_service.refresh_cross_institutional_snapshot()
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Refresh completed: {len(snapshot.projects)} projects, counts={snapshot.counts}"
             )
+        )
+
+        post_snapshot = cache_service.get_cross_institutional_snapshot()
+        if post_snapshot:
+            self.stdout.write(
+                f"Cache after refresh: {len(post_snapshot.projects)} projects, counts={post_snapshot.counts}"
+            )
+        else:
+            self.stdout.write(self.style.ERROR("Cache after refresh: EMPTY"))
 
         self.stdout.write("=== Test Complete ===")

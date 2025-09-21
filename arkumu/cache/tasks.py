@@ -44,22 +44,15 @@ def warm_schema_cache():
 @db_task()
 def warm_cross_institutional_projects_cache():
     """Warm the cross-institutional projects cache for fast catalog searches."""
-    from arkumu.cache.services.graph_cache_service import GraphCacheService
+    from arkumu.projects.services import ProjectSnapshotService
 
     try:
         logger.info("Starting cross-institutional projects cache warming...")
-
-        # Use the new atomic refresh method
-        graph_cache = GraphCacheService()
-        result = graph_cache.refresh_cross_institutional_projects_cache(force_refresh=False)
-
-        if result and result.get('projects'):
-            project_count = len(result['projects'])
-            logger.info(f"Cross-institutional projects cache warmed: {project_count} projects")
-            return f"Success: {project_count} projects cached"
-
-        logger.error("Failed to warm projects cache - no project data returned")
-        return "Failed: No data returned"
+        snapshot_service = ProjectSnapshotService()
+        snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=True)
+        project_count = len(snapshot.projects)
+        logger.info("Cross-institutional projects cache warmed: %d projects", project_count)
+        return f"Success: {project_count} projects cached"
 
     except Exception as e:
         logger.error(f"Failed to warm cross-institutional projects cache: {e}")
@@ -95,7 +88,7 @@ def warm_card_schema_cache(organization_code: Optional[str] = None):
 
 
 if HUEY_PERIODIC_AVAILABLE:
-    @periodic_task(crontab(minute='7,37'))  # Staggered twice hourly to avoid 0/30 pileups
+    @periodic_task(crontab(minute='*/30'))  # Run every 30 minutes
     def refresh_schema_cache_periodic():
         """Periodically refresh the schema map cache."""
         try:
@@ -114,35 +107,28 @@ if HUEY_PERIODIC_AVAILABLE:
             logger.error(f"Periodic schema cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
 
-    @periodic_task(crontab(minute='13,33,53'))  # Offset to share load with schema refresh
+    @periodic_task(crontab(minute='*/20'))  # Run every 20 minutes to stay ahead of the 60m TTL
     def refresh_projects_cache_periodic():
         """Periodically refresh the cross-institutional projects cache."""
         try:
             logger.info("Running periodic projects cache refresh...")
-            from arkumu.cache.services.graph_cache_service import GraphCacheService
+            from arkumu.projects.services import ProjectSnapshotService
 
-            graph_cache = GraphCacheService()
-            result = graph_cache.refresh_cross_institutional_projects_cache(force_refresh=False)
-
-            if result and result.get('projects'):
-                project_count = len(result['projects'])
-                edge_count = (
-                    result.get('counts', {}).get('edges')
-                    if isinstance(result.get('counts'), dict)
-                    else 'unknown'
-                )
-                logger.info(
-                    f"Periodic projects cache refresh completed: {project_count} projects, "
-                    f"{edge_count} edges"
-                )
-            else:
-                logger.warning("Periodic projects cache refresh returned no project data")
+            snapshot_service = ProjectSnapshotService()
+            snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=True)
+            project_count = len(snapshot.projects)
+            edge_count = snapshot.counts.get('edges')
+            logger.info(
+                "Periodic projects cache refresh completed: %d projects, %s edges",
+                project_count,
+                edge_count,
+            )
 
         except Exception as e:
             logger.error(f"Periodic projects cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
 
-    @periodic_task(crontab(minute='2,12,22,32,42,52'))  # Keeps cache warm without colliding with other jobs
+    @periodic_task(crontab(minute='*/10'))  # Run every 10 minutes to align with card schema TTL
     def refresh_card_schema_cache_periodic():
         """Periodically refresh built card schema caches."""
         try:
