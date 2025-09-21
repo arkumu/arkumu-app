@@ -106,3 +106,98 @@ class RandomProjectsQuerySerializer(serializers.Serializer):
         max_value=2100,
         help_text="Filter by year"
     )
+
+
+class ProjectListQuerySerializer(serializers.Serializer):
+    """Query parameters for project snapshot listing endpoint."""
+
+    limit = serializers.IntegerField(
+        required=False,
+        default=25,
+        min_value=1,
+        max_value=200,
+        help_text="Maximum number of projects to return (default 25, max 200)"
+    )
+    offset = serializers.IntegerField(
+        required=False,
+        default=0,
+        min_value=0,
+        help_text="Number of projects to skip before returning results"
+    )
+    institution = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Filter by institution code or label substring"
+    )
+    category = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Filter by category slug or label substring"
+    )
+    year = serializers.IntegerField(
+        required=False,
+        min_value=1400,
+        max_value=2100,
+        help_text="Filter by derived project year"
+    )
+    search = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Case-insensitive substring search across title, subtitle and description"
+    )
+
+
+class ProjectEventActorSerializer(serializers.Serializer):
+    """Serializer for actors attached to a project event."""
+
+    name = serializers.CharField()
+    roles = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Roles performed by the actor within the event"
+    )
+
+
+class ProjectEventSerializer(serializers.Serializer):
+    """Serializer for project event metadata."""
+
+    id = serializers.CharField(allow_null=True)
+    uri = serializers.CharField(allow_null=True)
+    name = serializers.CharField(allow_null=True)
+    description = serializers.CharField(allow_null=True)
+    location = serializers.CharField(allow_null=True)
+    location_id = serializers.CharField(allow_null=True)
+    country = serializers.CharField(allow_null=True)
+    type = serializers.CharField(allow_null=True)
+    start = serializers.CharField(allow_null=True)
+    end = serializers.CharField(allow_null=True)
+    latitude = serializers.FloatField(allow_null=True)
+    longitude = serializers.FloatField(allow_null=True)
+    actors = ProjectEventActorSerializer(many=True)
+
+
+class ProjectRecordSerializer(serializers.Serializer):
+    """Serializer for full project snapshot records."""
+
+    uri = serializers.CharField()
+    slug = serializers.CharField()
+    title = serializers.CharField(allow_null=True)
+    subtitle = serializers.CharField(allow_null=True)
+    alternative_title = serializers.CharField(allow_null=True)
+    descriptions = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Project description paragraphs"
+    )
+    image = serializers.CharField(allow_null=True)
+    institution = serializers.CharField(allow_null=True)
+    institution_codes = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Institution codes associated with the project"
+    )
+    project_type = serializers.CharField(allow_null=True)
+    year_range = serializers.CharField(allow_null=True)
+    categories = serializers.ListField(child=serializers.CharField())
+    category_slugs = serializers.ListField(child=serializers.CharField())
+    actors = ActorSerializer(many=True)
+    catchphrases = serializers.ListField(child=serializers.CharField())
+    digital_objects = serializers.ListField(child=serializers.CharField())
+    events = ProjectEventSerializer(many=True)
