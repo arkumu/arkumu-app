@@ -47,8 +47,7 @@ class ProjectSnapshotService:
         "rsh",
         "det",
         "khm",
-        "uk",
-        "hfmt",
+        "hmt",
     )
 
     def __init__(self, relationship_org_code: Optional[str] = None) -> None:
