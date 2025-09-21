@@ -104,9 +104,36 @@
   <div class="w-full max-w-7xl mx-auto border-t border-arkumu-dark/10 pt-8 mt-12 transition-colors
               theme-dark:border-arkumu-light/20">
     <h2 class="text-2xl font-medium mb-4">Kurzüberblick Ereignisse</h2>
-    <div class="space-y-6">
-      {% for event in project.events|slice:":3" %}
-        {% include 'catalog/blocks/project_event_item.html' with event=event %}
+    <div class="grid gap-4 md:grid-cols-2">
+      {% for event in project.events|slice:":4" %}
+      <article class="p-4 border border-arkumu-dark/10 rounded-lg transition-colors
+                      theme-dark:border-arkumu-light/20">
+        <div class="text-xs uppercase tracking-wide mb-1 text-arkumu-dark/70
+                    theme-dark:text-arkumu-light/70">
+          {{ event.display_date|default:event.start|default:event.end|default:"Datum unbekannt" }}
+        </div>
+        <h3 class="text-lg font-semibold mb-1 transition-colors
+                    text-arkumu-dark
+                    theme-dark:text-arkumu-light
+                    theme-blue:text-arkumu-blue">
+          {{ event.name|default:event.uri|default:"Ereignis" }}
+        </h3>
+        {% if event.type %}
+        <div class="text-xs font-mono uppercase tracking-wide mb-2 text-arkumu-dark/70
+                    theme-dark:text-arkumu-light/70">
+          {{ event.type }}
+        </div>
+        {% endif %}
+        {% if event.primary_actor or event.secondary_actor %}
+        <div class="text-sm text-arkumu-dark/80 theme-dark:text-arkumu-light/80">
+          {% if event.primary_actor %}{{ event.primary_actor }}{% endif %}
+          {% if event.secondary_actor %}
+            {% if event.primary_actor %} · {% endif %}
+            {{ event.secondary_actor }}
+          {% endif %}
+        </div>
+        {% endif %}
+      </article>
       {% endfor %}
     </div>
   </div>
