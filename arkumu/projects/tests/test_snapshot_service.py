@@ -124,7 +124,17 @@ def minimal_card_schema() -> CardSchema:
                         name="german_name",
                         canonical_uri=CardURIs.CATEGORY_GERMAN_NAME,
                         bindings=[],
-                    )
+                    ),
+                    "synonyms": CardProperty(
+                        name="synonyms",
+                        canonical_uri=CardURIs.CATEGORY_SYNONYMS,
+                        bindings=[],
+                    ),
+                    "wikidata_id": CardProperty(
+                        name="wikidata_id",
+                        canonical_uri=CardURIs.CATEGORY_WIKIDATA_ID,
+                        bindings=[],
+                    ),
                 },
                 fk_relationships=[],
             ),
@@ -212,6 +222,10 @@ def test_build_project_record_collects_all_institution_codes():
             {
                 "predicate_canonical": CardURIs.CATEGORY_GERMAN_NAME,
                 "object_value": "Performing Arts",
+            },
+            {
+                "predicate_canonical": CardURIs.CATEGORY_WIKIDATA_ID,
+                "object_value": "Q123",
             }
         ],
     }
@@ -228,3 +242,4 @@ def test_build_project_record_collects_all_institution_codes():
     assert record.institution.code == "fuk"
     assert record.institution_codes == ["fuk", "rsh"]
     assert record.category_slugs == ["performing-arts"]
+    assert [category.label for category in record.categories] == ["Q123"]

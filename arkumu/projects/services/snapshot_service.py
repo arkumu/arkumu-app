@@ -19,6 +19,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 )
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
+from arkumu.metadata.models.resource import ResourceType
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
     ProjectActor,
@@ -398,6 +399,8 @@ class ProjectSnapshotService:
 
         institution_name_prop = _property('institution', 'german_name')
         category_name_prop = _property('project_category', 'german_name')
+        category_synonym_prop = _property('project_category', 'synonyms')
+        category_wikidata_prop = _property('project_category', 'wikidata_id')
         digital_object_path_prop = _property('digital_object', 'path')
 
         title = self._first_literal(subject_edges, title_prop.canonical_uri if title_prop else None)
@@ -532,11 +535,24 @@ class ProjectSnapshotService:
         seen_category_keys: set[tuple] = set()
         for category_id in self._related_ids(subject_edges, category_prop.canonical_uri if category_prop else None):
             cat_node = nodes.get(category_id, {})
+            if (cat_node.get('resource_type') or '').upper() == ResourceType.LITERAL:
+                continue
             cat_uri = cat_node.get('uri') or cat_node.get('canonical_uri')
-            cat_label = self._first_literal(
+            wikidata_literal = self._first_literal(
+                edges_by_subject.get(category_id, []),
+                category_wikidata_prop.canonical_uri if category_wikidata_prop else None,
+            )
+            raw_label = self._first_literal(
                 edges_by_subject.get(category_id, []),
                 category_name_prop.canonical_uri if category_name_prop else None,
             ) or cat_node.get('name') or cat_node.get('value')
+            synonym_literal = self._first_literal(
+                edges_by_subject.get(category_id, []),
+                category_synonym_prop.canonical_uri if category_synonym_prop else None,
+            )
+            cat_label = self._resolve_category_label(wikidata_literal, synonym_literal, raw_label)
+            if not cat_label:
+                continue
             cat_slug = self._resource_slug(cat_uri)
             dedupe_key = (cat_uri, cat_label)
             if dedupe_key in seen_category_keys:
@@ -632,6 +648,59 @@ class ProjectSnapshotService:
         if not uri:
             return None
         return uri.rstrip('/').split('/')[-1]
+
+    @staticmethod
+    def _resolve_category_label(
+        wikidata_literal: Optional[Any],
+        synonyms_literal: Optional[Any],
+        breadcrumb_literal: Optional[Any],
+    ) -> Optional[str]:
+        wikidata_label = ProjectSnapshotService._normalize_wikidata_id(wikidata_literal)
+        if wikidata_label:
+            return wikidata_label
+        synonym = ProjectSnapshotService._preferred_synonym(synonyms_literal)
+        if synonym:
+            return synonym
+        breadcrumb = ProjectSnapshotService._normalize_breadcrumb(breadcrumb_literal)
+        if breadcrumb:
+            return breadcrumb
+        return None
+
+    @staticmethod
+    def _normalize_wikidata_id(value: Optional[Any]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip().upper()
+        if not text:
+            return None
+        if text.startswith('Q') and text[1:].isdigit():
+            return text
+        if text.isdigit():
+            return f"Q{text}"
+        return None
+
+    @staticmethod
+    def _normalize_breadcrumb(label: Optional[Any]) -> Optional[str]:
+        if label is None:
+            return None
+        text = str(label).strip()
+        if not text:
+            return None
+        if '>' in text:
+            parts = [part.strip() for part in text.split('>') if part.strip()]
+            text = parts[-1] if parts else ''
+        if not text or text.isdigit():
+            return None
+        return text
+
+    @staticmethod
+    def _preferred_synonym(value: Optional[Any]) -> Optional[str]:
+        if value is None:
+            return None
+        tokens = [token.strip() for token in str(value).replace(';', ',').split(',') if token.strip()]
+        if not tokens:
+            return None
+        return tokens[0]
 
     @staticmethod
     def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:

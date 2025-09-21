@@ -142,7 +142,9 @@ CARD_SCHEMA_TEMPLATE: CardSchema = CardSchema(
             label='project_category',
             canonical_class_uri='http://arkumu.org/data/types/projektkategorie',
             properties={
-                'german_name': CardProperty('german_name', 'http://arkumu.org/data/properties/deutscher-name-der-projektkategorie'),
+                'german_name': CardProperty('german_name', 'http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb'),
+                'synonyms': CardProperty('synonyms', 'http://arkumu.org/data/properties/synonyme'),
+                'wikidata_id': CardProperty('wikidata_id', 'http://arkumu.org/data/properties/wikidata-id'),
             },
         ),
     },

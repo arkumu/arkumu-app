@@ -87,9 +87,17 @@ def sample_catalog_data(db):
     )
 
     category_name_pred, _ = Resource.objects.get_or_create(
-        uri="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie",
+        uri="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb",
         defaults={
-            'canonical_uri': "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie",
+            'canonical_uri': "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb",
+            'resource_type': ResourceType.PROPERTY
+        }
+    )
+
+    category_wikidata_pred, _ = Resource.objects.get_or_create(
+        uri="http://arkumu.org/data/properties/wikidata-id",
+        defaults={
+            'canonical_uri': "http://arkumu.org/data/properties/wikidata-id",
             'resource_type': ResourceType.PROPERTY
         }
     )
@@ -131,6 +139,26 @@ def sample_catalog_data(db):
         subject=category2,
         predicate=category_name_pred,
         object=cat2_label
+    )
+
+    cat1_wikidata, _ = Resource.objects.get_or_create(
+        value="Q1001",
+        defaults={'resource_type': ResourceType.LITERAL}
+    )
+    cat2_wikidata, _ = Resource.objects.get_or_create(
+        value="Q1002",
+        defaults={'resource_type': ResourceType.LITERAL}
+    )
+
+    Triple.objects.get_or_create(
+        subject=category1,
+        predicate=category_wikidata_pred,
+        object=cat1_wikidata
+    )
+    Triple.objects.get_or_create(
+        subject=category2,
+        predicate=category_wikidata_pred,
+        object=cat2_wikidata
     )
 
     Triple.objects.get_or_create(
