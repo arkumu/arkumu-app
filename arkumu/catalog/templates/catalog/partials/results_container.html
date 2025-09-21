@@ -29,13 +29,6 @@
         Verwenden Sie die Suchleiste oben, um Projekte zu finden
       </p>
     </div>
-    {% else %}
-    <!-- No results found for search -->
-    <div class="col-span-full text-center py-12">
-      <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
-        Keine Projekte gefunden für "{{ query }}"
-      </p>
-    </div>
     {% endif %}
     {% endfor %}
   </div>
