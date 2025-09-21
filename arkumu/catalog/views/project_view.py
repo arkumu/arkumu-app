@@ -150,9 +150,6 @@ class ProjectView(LoginRequiredMixin, View):
         uri = _attr(event, 'uri')
         name = _attr(event, 'name')
 
-        primary_actor = actor_entries[0]['name'] if actor_entries else ''
-        secondary_actor = actor_entries[1]['name'] if len(actor_entries) > 1 else ''
-
         return {
             'id': _attr(event, 'id'),
             'uri': name or uri,
@@ -168,8 +165,6 @@ class ProjectView(LoginRequiredMixin, View):
             'latitude': _attr(event, 'latitude'),
             'longitude': _attr(event, 'longitude'),
             'actors': actor_entries,
-            'primary_actor': primary_actor,
-            'secondary_actor': secondary_actor,
         }
 
     @staticmethod
