@@ -104,16 +104,9 @@
   <div class="w-full max-w-7xl mx-auto border-t border-arkumu-dark/10 pt-8 mt-12 transition-colors
               theme-dark:border-arkumu-light/20">
     <h2 class="text-2xl font-medium mb-4">Kurzüberblick Ereignisse</h2>
-    <div class="grid gap-4 md:grid-cols-2">
-      {% for event in project.events|slice:":4" %}
-      <div class="p-4 border border-arkumu-dark/10 rounded-lg transition-colors
-                  theme-dark:border-arkumu-light/20">
-        <div class="text-xs uppercase tracking-wide mb-2 text-arkumu-dark/70
-                    theme-dark:text-arkumu-light/70">
-          {{ event.start|default:event.end|default:"Datum unbekannt" }}
-        </div>
-        <div class="font-medium">{{ event.uri|default:"Ereignis" }}</div>
-      </div>
+    <div class="space-y-6">
+      {% for event in project.events|slice:":3" %}
+        {% include 'catalog/blocks/project_event_item.html' with event=event %}
       {% endfor %}
     </div>
   </div>

@@ -1,0 +1,22 @@
+{% comment %}
+  Local wrapper to render the styled event component without modifying the shared component.
+  Accepts an `event` context variable (snapshot event dict).
+{% endcomment %}
+{% with
+  beginn_ende=event.start|default:event.end|default:"Datum unbekannt"
+  ereignistyp=event.type
+  ereignistitel=event.name|default:"Ereignis"
+  akteur1=event.actors.0.name|default:""
+  akteur2=event.actors.1.name|default:""
+%}
+  {% include 'components/events/event_item.html' with
+     beginn_ende=beginn_ende
+     ereignistyp=ereignistyp
+     ereignistitel=ereignistitel
+     akteur1=akteur1
+     akteur2=akteur2
+     button_text="Details"
+     large_media_url=None
+     small_media_url=None
+  %}
+{% endwith %}
