@@ -17,6 +17,7 @@ from arkumu.rest.catalog_serializers import (
     PopularKeywordsQuerySerializer,
     RandomProjectsQuerySerializer,
     ProjectListQuerySerializer,
+    ProjectPreviewSearchQuerySerializer,
 )
 from arkumu.projects import ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
@@ -486,3 +487,66 @@ class CatalogViewSet(viewsets.GenericViewSet):
                 {"error": "Failed to fetch random projects"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @extend_schema(
+        operation_id='catalog_search_preview_projects',
+        summary='Search project previews',
+        description='Returns project preview cards matching a free-text query.',
+        parameters=[
+            OpenApiParameter(
+                name='query',
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description='Free-text query to filter projects'
+            ),
+            OpenApiParameter(
+                name='limit',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Maximum number of results to return (default 25, max 50)'
+            ),
+        ],
+        responses={
+            200: ProjectPreviewSerializer(many=True),
+            400: dict,
+        },
+        tags=['Catalog']
+    )
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='projects/search',
+        url_name='search-projects'
+    )
+    def search_projects(self, request):
+        """Return project previews that match the provided query string."""
+        query_serializer = ProjectPreviewSearchQuerySerializer(data=request.query_params)
+        if not query_serializer.is_valid():
+            return Response(
+                {"errors": query_serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        params = query_serializer.validated_data
+        query = params['query']
+        limit = params.get('limit', 25)
+
+        try:
+            projects = self.catalog_service.search_project_previews(query=query, limit=limit)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Error searching project previews: %s", exc, exc_info=True)
+            return Response(
+                {"error": "Failed to search projects"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        serializer = ProjectPreviewSerializer(projects, many=True)
+        return Response(
+            {
+                'count': len(projects),
+                'results': serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )

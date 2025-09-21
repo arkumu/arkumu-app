@@ -26,6 +26,7 @@ class CatalogInsightsService:
     POPULAR_KEYWORDS_TTL = 'catalog_statistics'
     RANDOM_PROJECTS_CACHE_TYPE = 'random_project_candidates'
     RANDOM_PROJECTS_TTL = 'catalog_search'
+    PROJECT_PREVIEW_SEARCH_CACHE_TYPE = 'project_preview_search'
 
     def __init__(self, user=None):
         self.catalog_cache = CatalogCacheService()
@@ -187,6 +188,48 @@ class CatalogInsightsService:
             university=university,
             year=year,
         )
+
+    def search_project_previews(self, query: str, limit: int = 25) -> List[Dict[str, Any]]:
+        """Return project preview cards matching a free-text query."""
+        if not query:
+            return []
+
+        limit = max(1, min(limit, 50))
+        normalized_query = query.strip().lower()
+        if not normalized_query:
+            return []
+
+        cache_params = {
+            'query': normalized_query,
+            'limit': limit,
+        }
+
+        cached = self.catalog_cache.get_cached(
+            self.PROJECT_PREVIEW_SEARCH_CACHE_TYPE,
+            **cache_params,
+        )
+        if cached is not None:
+            return cached
+
+        records = self._get_snapshot_records()
+        matches: List[ProjectRecord] = []
+        for record in records:
+            try:
+                if record.matches_query(normalized_query):
+                    matches.append(record)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("Failed to evaluate search for %s: %s", record.uri, exc)
+
+        previews = [self._record_to_preview(record) for record in matches[:limit]]
+
+        self.catalog_cache.set_cached(
+            self.PROJECT_PREVIEW_SEARCH_CACHE_TYPE,
+            previews,
+            self.RANDOM_PROJECTS_TTL,
+            **cache_params,
+        )
+
+        return previews
 
     def _get_random_projects_from_graph(
         self,

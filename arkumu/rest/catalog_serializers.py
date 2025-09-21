@@ -108,6 +108,23 @@ class RandomProjectsQuerySerializer(serializers.Serializer):
     )
 
 
+class ProjectPreviewSearchQuerySerializer(serializers.Serializer):
+    """Query parameters for project preview search endpoint."""
+
+    query = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        help_text="Free-text query to filter projects"
+    )
+    limit = serializers.IntegerField(
+        required=False,
+        default=25,
+        min_value=1,
+        max_value=50,
+        help_text="Maximum number of results to return (default 25, max 50)"
+    )
+
+
 class ProjectListQuerySerializer(serializers.Serializer):
     """Query parameters for project snapshot listing endpoint."""
 
