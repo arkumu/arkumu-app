@@ -385,8 +385,27 @@ class TripleRelationshipService:
             predicate_uri=description_predicate,
             organization_code=organization_code,
         )
+        description_value = descriptions.get(project_id)
 
-        return descriptions.get(project_id)
+        entity_entries = self.get_related_entities(
+            project_id,
+            description_predicate,
+            organization_code=organization_code,
+        )
+        entity_ids = [entry['id'] for entry in entity_entries if self._is_entity(entry)]
+
+        if entity_ids:
+            label_map = self._collect_literal_values(
+                subject_ids=entity_ids,
+                predicate_uri='http://arkumu.org/data/properties/beschreibung',
+                organization_code=organization_code,
+            )
+            for entity_id in entity_ids:
+                label = label_map.get(entity_id)
+                if label:
+                    return label
+
+        return description_value
 
     def get_project_type(
         self,
