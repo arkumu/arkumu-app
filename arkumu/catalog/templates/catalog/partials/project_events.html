@@ -1,0 +1,90 @@
+<div class="w-full px-4 py-8 transition-colors
+            text-arkumu-dark
+            theme-dark:text-arkumu-light
+            theme-blue:text-arkumu-blue">
+  <div class="w-full max-w-7xl mx-auto">
+    <h2 class="text-3xl font-medium mb-8">Ereignisliste</h2>
+    {% if events %}
+      <div class="space-y-6">
+        {% for event in events %}
+        <article class="border border-arkumu-dark/10 rounded-xl p-5 transition-colors
+                         bg-arkumu-light/40
+                         theme-dark:bg-arkumu-dark/40 theme-dark:border-arkumu-light/20
+                         theme-blue:bg-arkumu-light theme-blue:border-arkumu-blue/30">
+          <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+            <div>
+              <div class="text-xs uppercase tracking-wide text-arkumu-dark/70
+                          theme-dark:text-arkumu-light/70">{{ event.start|default:event.end|default:"Datum unbekannt" }}</div>
+              <h3 class="text-2xl font-semibold">{{ event.name|default:"Ereignis" }}</h3>
+            </div>
+            {% if event.type %}
+            <span class="px-3 py-1 text-xs border rounded-full transition-colors
+                         border-arkumu-dark text-arkumu-dark
+                         theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                         theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+              {{ event.type }}
+            </span>
+            {% endif %}
+          </header>
+
+          {% if event.description %}
+          <p class="mb-4 text-sm leading-relaxed">{{ event.description }}</p>
+          {% endif %}
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <dl class="text-sm space-y-2">
+              <div class="flex justify-between">
+                <dt class="font-mono uppercase tracking-wide">Beginn</dt>
+                <dd>{{ event.start|default:"–" }}</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="font-mono uppercase tracking-wide">Ende</dt>
+                <dd>{{ event.end|default:"–" }}</dd>
+              </div>
+              {% if event.location %}
+              <div class="flex justify-between">
+                <dt class="font-mono uppercase tracking-wide">Ort</dt>
+                <dd>{{ event.location }}</dd>
+              </div>
+              {% endif %}
+              {% if event.country %}
+              <div class="flex justify-between">
+                <dt class="font-mono uppercase tracking-wide">Land</dt>
+                <dd>{{ event.country }}</dd>
+              </div>
+              {% endif %}
+            </dl>
+
+            {% if event.latitude and event.longitude %}
+            <div class="h-48 rounded-lg overflow-hidden border border-arkumu-dark/10
+                        theme-dark:border-arkumu-light/20"
+                 data-event-map
+                 data-event-id="{{ event.id }}"
+                 data-lat="{{ event.latitude }}"
+                 data-lng="{{ event.longitude }}"
+                 data-location="{{ event.location|default:"Ort" }}">
+            </div>
+            {% endif %}
+          </div>
+
+          {% if event.actors %}
+          <footer class="mt-4">
+            <h4 class="text-sm font-mono uppercase tracking-wide mb-2">Akteur:innen</h4>
+            <ul class="flex flex-wrap gap-2 text-sm">
+              {% for actor in event.actors %}
+              <li class="px-3 py-1 border border-arkumu-dark/20 rounded-full transition-colors
+                         theme-dark:border-arkumu-light/30">
+                {{ actor.name }}{% if actor.roles %} &ndash; {{ actor.roles|join:", " }}{% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          </footer>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-sm text-arkumu-dark/70 theme-dark:text-arkumu-light/70">Keine Ereignisse vorhanden.</p>
+    {% endif %}
+  </div>
+</div>
