@@ -22,6 +22,11 @@ from .split_views import split_table_graph_view, get_graph_data
 
 # Direct data views
 from .direct_data_views import direct_split_table_graph_view
+from .metadata_entry_views import (
+    MetadataEntryDashboardView,
+    MetadataEntrySectionView,
+    MetadataEntrySubmitView,
+)
 
 __all__ = [
     # Dashboard
@@ -58,4 +63,9 @@ __all__ = [
     
     # Direct data views
     'direct_split_table_graph_view',
+
+    # Metadata entry
+    'MetadataEntryDashboardView',
+    'MetadataEntrySectionView',
+    'MetadataEntrySubmitView',
 ] 

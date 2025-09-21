@@ -59,6 +59,9 @@
             <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
             <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
             <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
+            <li id="nav-metadata-entry-mobile" class="{% if 'metadata-entry' in request.path %}active{% endif %}">
+              <a href="{% url 'metadata:metadata_entry' %}">Metadata Entry</a>
+            </li>
 
             <li><a href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a></li>
           {% else %}
@@ -77,6 +80,9 @@
           <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
           <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
           <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
+          <li id="nav-metadata-entry-desktop" class="{% if 'metadata-entry' in request.path %}active{% endif %}">
+            <a href="{% url 'metadata:metadata_entry' %}">Metadata Entry</a>
+          </li>
           <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2">
             <i class="fas fa-search"></i>
             <span>Catalog Explorer</span>

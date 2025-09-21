@@ -1,5 +1,6 @@
 from django.urls import path
 from arkumu.metadata.views import dashboard_views, resource_views, triple_views, graph_views, bulk_editor_views, data_discovery_views, data_explorer_views, split_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
+from arkumu.metadata.views import metadata_entry_views
 # Temporarily disabled bulk arkumu mapping views
 # from arkumu.metadata.views.bulk_arkumu_mapping_views import (
 #     BulkArkumuMappingView,
@@ -150,7 +151,12 @@ urlpatterns = [
     # Cross-Dataset Relationship Discovery
     path('direct-analysis/relationship-discovery/', direct_data_views.direct_relationship_discovery_view, name='direct_relationship_discovery'),
     path('direct-analysis/dataset-linking/', direct_data_views.direct_dataset_linking_view, name='direct_dataset_linking'),
-    
+
+    # Canonical metadata entry (HTMX)
+    path('metadata-entry/', metadata_entry_views.MetadataEntryDashboardView.as_view(), name='metadata_entry'),
+    path('metadata-entry/section/', metadata_entry_views.MetadataEntrySectionView.as_view(), name='metadata_entry_section'),
+    path('metadata-entry/submit/', metadata_entry_views.MetadataEntrySubmitView.as_view(), name='metadata_entry_submit'),
+
     # Manual Relationship Builder
     path('add-column-to-workspace/', direct_data_views.add_column_to_workspace, name='add_column_to_workspace'),
     path('remove-column-from-workspace/', direct_data_views.remove_column_from_workspace, name='remove_column_from_workspace'),
