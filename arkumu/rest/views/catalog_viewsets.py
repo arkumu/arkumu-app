@@ -74,19 +74,41 @@ class CatalogViewSet(viewsets.GenericViewSet):
 
         categories = [item.label for item in record.categories if item.label]
         category_slugs = [item.slug for item in record.categories if item.slug]
-        actors = [
-            {
-                'name': actor.name,
-                'roles': list(actor.roles) if actor.roles else [],
-            }
-            for actor in record.actors
-            if actor.name
-        ]
+        actors = []
+        for actor in record.actors:
+            if not actor:
+                continue
+            if isinstance(actor, dict):
+                name = actor.get('name')
+                roles = actor.get('roles') or []
+            else:
+                name = getattr(actor, 'name', None)
+                roles = list(getattr(actor, 'roles', []) or [])
+            if not name:
+                continue
+            actors.append({
+                'name': name,
+                'roles': roles,
+            })
         catchphrases = [item.label for item in record.catchphrases if item.label]
         digital_objects = [item.path for item in record.digital_objects if item.path]
 
         events: List[Dict[str, Any]] = []
         for event in record.events:
+            event_actors = []
+            for actor in (event.actors or []):
+                if not actor:
+                    continue
+                if isinstance(actor, dict):
+                    name = actor.get('name')
+                    roles = actor.get('roles') or []
+                else:
+                    name = getattr(actor, 'name', None)
+                    roles = list(getattr(actor, 'roles', []) or [])
+                if not name:
+                    continue
+                event_actors.append({'name': name, 'roles': roles})
+
             events.append({
                 'id': event.id,
                 'uri': event.uri,
@@ -100,14 +122,7 @@ class CatalogViewSet(viewsets.GenericViewSet):
                 'end': event.end,
                 'latitude': event.latitude,
                 'longitude': event.longitude,
-                'actors': [
-                    {
-                        'name': actor.name,
-                        'roles': list(actor.roles) if actor.roles else [],
-                    }
-                    for actor in (event.actors or [])
-                    if actor and actor.name
-                ],
+                'actors': event_actors,
             })
 
         return {
