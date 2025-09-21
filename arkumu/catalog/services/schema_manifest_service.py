@@ -155,7 +155,8 @@ _CARD_SCHEMA_CACHE_SENTINEL = object()
 class SchemaManifestService:
     """Loads schema manifests and exposes canonical mappings for consumers."""
 
-    CACHE_TIMEOUT = 600  # seconds
+    # Card schema usage is read-heavy; rely on importer-driven invalidation rather than short TTLs.
+    CACHE_TIMEOUT = 30 * 24 * 3600  # 30 days
 
     def get_card_schema(self, organization_code: str) -> CardSchema:
         """Return a card-specific view of the schema manifest for an organization."""

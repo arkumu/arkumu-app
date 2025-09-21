@@ -35,7 +35,8 @@ CACHE_TTL = {
     'metadata_export': 1 * 3600, # 1 hour - export formats (was 2h)
 
     # Project snapshots
-    'project_snapshot': 45 * 60,  # 45 minutes - cross-institutional project snapshot
+    # Snapshot rebuilds are driven by importer hooks; keep cache warm until explicit invalidation.
+    'project_snapshot': 30 * 24 * 3600,  # 30 days - cross-institutional project snapshot
 }
 
 # Cache size limits to prevent memory leaks
