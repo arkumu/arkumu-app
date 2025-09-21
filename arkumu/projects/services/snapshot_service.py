@@ -215,9 +215,18 @@ class ProjectSnapshotService:
         if self.relationship_org_code:
             return self.schema_service.get_card_schema(self.relationship_org_code)
 
+        from arkumu.metadata.models import Mapping
+
+        available_orgs = set(
+            Mapping.objects
+            .filter(organization_id__in=self.DEFAULT_ORGANIZATION_CODES)
+            .values_list('organization_id', flat=True)
+        )
+
         schemas = [
             self.schema_service.get_card_schema(code)
             for code in self.DEFAULT_ORGANIZATION_CODES
+            if code in available_orgs
         ]
         return self._combine_card_schemas(schemas)
 
