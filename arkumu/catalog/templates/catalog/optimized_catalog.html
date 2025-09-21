@@ -15,6 +15,7 @@
         <div class="search-container">
             <input type="search" 
                    name="q"
+                   autocomplete="off"
                    placeholder="Search projects, people, events..."
                    class="search-input"
                    hx-get="{% url 'catalog:search' %}"
