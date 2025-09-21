@@ -61,6 +61,10 @@ class ProjectURIs(CardURIs):
     DESCRIPTION = "http://arkumu.org/data/properties/beschreibung"
     CATCHPHRASE = "http://arkumu.org/data/properties/schlagwort"
     PROJECT_TYPE_FIELD = "http://arkumu.org/data/properties/projektart"
+    EVENT_NAME = "http://arkumu.org/data/properties/ereignisname"
+    EVENT_DESCRIPTION = "http://arkumu.org/data/properties/ereignisbeschreibung"
+    EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
+    EVENT_TYPE = "http://arkumu.org/data/properties/ereignistyp"
 
     # Alternative Title
     ALTERNATIVE_TITLE_TYPE = "http://arkumu.org/data/types/alternativer-titel"

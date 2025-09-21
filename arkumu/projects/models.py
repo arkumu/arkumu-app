@@ -53,10 +53,26 @@ class ProjectActor:
 
 
 @dataclass
+class ProjectEventActor:
+    name: Optional[str]
+    roles: List[str] = field(default_factory=list)
+
+
+@dataclass
 class ProjectEvent:
-    start: Optional[str]
-    end: Optional[str]
+    id: Optional[str] = None
     uri: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    location_id: Optional[str] = None
+    country: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    type: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    actors: List[ProjectEventActor] = field(default_factory=list)
 
 
 @dataclass

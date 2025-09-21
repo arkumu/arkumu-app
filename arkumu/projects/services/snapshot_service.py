@@ -27,6 +27,7 @@ from arkumu.projects import (
     ProjectCatchphrase,
     ProjectDigitalObject,
     ProjectEvent,
+    ProjectEventActor,
     ProjectInstitution,
     ProjectRecord,
     ProjectSnapshot,
@@ -438,24 +439,41 @@ class ProjectSnapshotService:
         )
         project_type = ProjectType(label=project_type_label) if project_type_label else None
 
-        events_payload = triple_service.get_event_data(
+        event_entries = triple_service.get_detailed_event_data(
             subject_id,
             event_predicate=event_prop.canonical_uri if event_prop else None,
             event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
             event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
+            event_name_predicate=ProjectURIs.EVENT_NAME,
+            event_description_predicate=ProjectURIs.EVENT_DESCRIPTION,
+            event_location_predicate=ProjectURIs.EVENT_LOCATION,
+            event_type_predicate=ProjectURIs.EVENT_TYPE,
             organization_code=self.relationship_org_code,
         )
-        event_ids = events_payload.get('event_ids', [])
-        event_details = events_payload.get('event_details', {})
-        events = [
-            ProjectEvent(
-                start=event_details.get(event_id, {}).get('start'),
-                end=event_details.get(event_id, {}).get('end'),
-                uri=nodes.get(event_id, {}).get('uri'),
+        event_ids: List[str] = []
+        events: List[ProjectEvent] = []
+        for entry in event_entries:
+            event_id = entry.get('id')
+            if event_id:
+                event_ids.append(event_id)
+            event_node = nodes.get(event_id, {}) if event_id else {}
+            events.append(
+                ProjectEvent(
+                    id=event_id,
+                    uri=event_node.get('uri') or event_node.get('canonical_uri'),
+                    name=entry.get('name'),
+                    description=entry.get('description'),
+                    location=entry.get('location'),
+                    location_id=entry.get('location_id'),
+                    country=entry.get('country'),
+                    latitude=self._maybe_float(entry.get('latitude')),
+                    longitude=self._maybe_float(entry.get('longitude')),
+                    type=entry.get('type'),
+                    start=entry.get('start'),
+                    end=entry.get('end'),
+                )
             )
-            for event_id in event_ids
-        ]
-        year_range = self._derive_year_range(event_ids, event_details)
+        year_range = self._derive_year_range(events)
 
         actors_payload = triple_service.get_actor_relationships(
             subject_id,
@@ -467,10 +485,22 @@ class ProjectSnapshotService:
             event_ids=event_ids,
             organization_code=self.relationship_org_code,
         )
-        actors = [
-            ProjectActor(name=payload.get('name'), roles=payload.get('roles', []))
-            for payload in actors_payload
-        ]
+        actors_by_event: Dict[str, List[ProjectEventActor]] = defaultdict(list)
+        actors: List[ProjectActor] = []
+        for payload in actors_payload:
+            name = payload.get('name')
+            if not name:
+                continue
+            roles = list(payload.get('roles', []))
+            actors.append(ProjectActor(name=name, roles=roles))
+            for event_id in payload.get('event_ids', []):
+                actors_by_event[event_id].append(
+                    ProjectEventActor(name=name, roles=list(roles))
+                )
+
+        for event in events:
+            if event.id:
+                event.actors = list(actors_by_event.get(event.id, []))
 
         institution_ids = self._related_ids(subject_edges, institution_prop.canonical_uri if institution_prop else None)
         institution: Optional[ProjectInstitution] = None
@@ -571,6 +601,15 @@ class ProjectSnapshotService:
             return None
         return edge.get('predicate_canonical') or edge.get('predicate_uri')
 
+    @staticmethod
+    def _maybe_float(value: Optional[Any]) -> Optional[float]:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def _first_literal(self, edges: Iterable[Dict[str, Any]], predicate: Optional[str]) -> Optional[str]:
         if not predicate:
             return None
@@ -595,14 +634,10 @@ class ProjectSnapshotService:
         return uri.rstrip('/').split('/')[-1]
 
     @staticmethod
-    def _derive_year_range(
-        event_ids: Sequence[str],
-        event_details: Dict[str, Dict[str, Optional[str]]],
-    ) -> Optional[str]:
-        for event_id in event_ids:
-            entry = event_details.get(event_id) or {}
-            start = entry.get('start')
-            end = entry.get('end')
+    def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:
+        for event in events:
+            start = event.start
+            end = event.end
             if start and end:
                 start_year = start.split('-')[0] if '-' in start else start
                 end_year = end.split('-')[0] if '-' in end else end

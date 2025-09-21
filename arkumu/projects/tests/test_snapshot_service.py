@@ -79,6 +79,9 @@ class DummyTripleService:
     def get_event_data(self, *_, **__):
         return {"event_ids": [], "event_details": {}}
 
+    def get_detailed_event_data(self, *_, **__):
+        return []
+
     def get_actor_relationships(self, *_, **__):
         return []
 

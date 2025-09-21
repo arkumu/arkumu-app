@@ -2,488 +2,178 @@
 {% load static %}
 {% block title %}arkumu{% endblock title %}
 
-{% block navbar %}
-  <!-- Override to hide navbar for clean design -->
-{% endblock navbar %}
-
+{% block navbar %}{% endblock navbar %}
 {% block body_class %}h-full{% endblock body_class %}
-
 {% block messages_wrapper_class %}w-full px-4{% endblock messages_wrapper_class %}
-
 {% block container_class %}w-full h-full px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto{% endblock container_class %}
 
 {% block content %}
 <div class="w-full min-h-screen"
      data-rdf-type="http://arkumu.org/data/fuk/types/projekt"
      data-uri="{{ project.uri }}">
-  <!-- Header con el contenido existente sin cambios -->
   <header class="w-full py-8 px-4 transition-colors
-               text-arkumu-dark
-               theme-dark:text-arkumu-light
-               theme-blue:text-arkumu-light">
+                 text-arkumu-dark
+                 theme-dark:text-arkumu-light
+                 theme-blue:text-arkumu-light">
     <div class="flex items-center justify-between w-full">
-      <!-- Left side: Logo placeholder con tamaño adaptativo más grande -->
       <div class="w-48 md:w-56 lg:w-64 transition-all duration-300">
-        <!-- Logo con variantes para cada tema -->
         <a href="/" class="block">
-          <!-- Logo para tema predeterminado (claro) -->
-          <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo" 
+          <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo"
                class="w-full h-auto transition-all duration-300 block theme-dark:hidden theme-blue:hidden">
-          
-          <!-- Logo para tema oscuro -->
-          <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo" 
+          <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
                class="w-full h-auto transition-all duration-300 hidden theme-dark:block theme-blue:hidden">
-          
-          <!-- Logo para tema azul -->
-          <img src="{% static 'images/arkumu-logo-blue.svg' %}" alt="arkumu logo" 
+          <img src="{% static 'images/arkumu-logo-blue.svg' %}" alt="arkumu logo"
                class="w-full h-auto transition-all duration-300 hidden theme-dark:hidden theme-blue:block">
         </a>
       </div>
-      
-      <!-- Right side: Theme buttons and icons -->
+
       <div class="flex items-center">
-        <!-- Theme buttons -->
         <div class="theme-buttons">
           {% include 'components/header/theme_buttons.html' %}
         </div>
-        
-        <!-- Extra spacing between theme buttons and icons -->
-        <div class="w-6 md:w-8 lg:w-10 transition-all duration-300"></div>
-        
-        <!-- Search and Menu icons with labels -->
-        <div class="flex items-center space-x-4 md:space-x-5 lg:space-x-6 transition-all duration-300">
+        <div class="w-6 md:w-8 lg:w-10"></div>
+        <div class="flex items-center space-x-4 md:space-x-5 lg:space-x-6">
           <div class="flex flex-col items-center">
             {% include 'components/header/search_button.html' %}
-            <span class="text-xs mt-1 font-mono 
-            text-arkumu-dark
-            theme-dark:text-arkumu-light
-            theme-blue:text-arkumu-blue">Suche</span>
+            <span class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Suche</span>
           </div>
           <div class="flex flex-col items-center">
             {% include 'components/header/menu_button.html' %}
-            <span class="text-xs mt-1 font-mono
-            text-arkumu-dark
-            theme-dark:text-arkumu-light
-            theme-blue:text-arkumu-blue">Menü</span>
+            <span class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Menü</span>
           </div>
         </div>
       </div>
     </div>
   </header>
 
-  <!-- Main Content Area con proyecto detallado y márgenes ajustados -->
-  <main class="w-full px-4 py-8 transition-colors
-               text-arkumu-dark
-               theme-dark:text-arkumu-light
-               theme-blue:text-arkumu-blue">
+  <section class="px-4">
     <div class="w-full max-w-7xl mx-auto">
-      
-      <!-- Year and Institution Header (Componente más grande) -->
-      {% comment %}
-      RDF Property: http://arkumu.org/data/properties/ereignis (event)
-      RDF Type: http://arkumu.org/data/types/ereignis
-      Event start: http://arkumu.org/data/properties/ereignisbeginn
-      Event end: http://arkumu.org/data/properties/ereignisende
-      Institution: http://arkumu.org/data/properties/einliefernde-hochschule
-      Institution type: http://arkumu.org/data/types/einliefernde-hochschule
-      {% endcomment %}
-      <div data-rdf-property="http://arkumu.org/data/properties/ereignis"
-           data-rdf-type="http://arkumu.org/data/types/ereignis"
-           data-rdf-institution-property="http://arkumu.org/data/properties/einliefernde-hochschule"
-           data-rdf-institution-type="http://arkumu.org/data/types/einliefernde-hochschule">
+      <div class="mb-6">
         {% include 'components/text/projekt_title.html' with year_range=project.year_range institution=project.institution %}
       </div>
-      
-      <!-- Project Content - Two Column Layout on larger screens -->
-      <div class="flex flex-col lg:flex-row gap-10 lg:gap-20 mb-16">
-        <!-- Left Column - Main Content (2/3) -->
-        <div class="lg:w-2/3">
-          <!-- Project Title and Subtitle -->
-          <div class="mb-10">
-            {% comment %}
-            RDF Property: http://arkumu.org/data/properties/bevorzugter-titel
-            {% endcomment %}
-            <h1 class="text-4xl font-medium mb-3 transition-colors
-                       text-arkumu-dark
-                       theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue"
-                data-rdf-property="http://arkumu.org/data/properties/bevorzugter-titel">
-              {{project.title}}
-            </h1>
-            {% comment %}
-            RDF Property: http://arkumu.org/data/fuk/properties/alternativer-titel-set
-            RDF Type: http://arkumu.org/data/types/alternativer-titel
-            Alternative title: http://arkumu.org/data/properties/alternativer-titel
-            {% endcomment %}
-            <h2 class="text-2xl font-normal mb-2 transition-colors
-                       text-arkumu-dark
-                       theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue"
-                data-rdf-property="http://arkumu.org/data/fuk/properties/alternativer-titel-set"
-                data-rdf-type="http://arkumu.org/data/types/alternativer-titel">
-              {{project.alternative_title}}
-            </h2>
-            {% comment %}
-            RDF Property: http://arkumu.org/data/properties/bevorzugter-untertitel
-            {% endcomment %}
-            <h3 class="text-xl font-light mb-4 transition-colors
-                       text-arkumu-dark
-                       theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue"
-                data-rdf-property="http://arkumu.org/data/properties/bevorzugter-untertitel">
-              {{project.subtitle}}
-            </h3>
-            {% comment %}
-            RDF Property: http://arkumu.org/data/properties/projektart
-            {% endcomment %}
-            <p class="text-base font-mono transition-colors
-                      text-arkumu-dark
-                      theme-dark:text-arkumu-light
-                      theme-blue:text-arkumu-blue"
-               data-rdf-property="http://arkumu.org/data/properties/projektart">
-              {{project.projektart}}
-            </p>
-          </div>
-          
-          <!-- Project Categories con botones pequeños -->
-          {% if project.categories %}
-          {% comment %}
-          RDF Property: http://arkumu.org/data/properties/projektkategorie
-          RDF Type: http://arkumu.org/data/types/projektkategorie
-          German name: http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb
-          {% endcomment %}
-          <div class="mb-12 flex flex-wrap gap-2"
-               data-rdf-property="http://arkumu.org/data/properties/projektkategorie">
-            {% for category in project.categories %}
-              <div data-rdf-type="http://arkumu.org/data/types/projektkategorie"
-                   data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
-                {% include 'components/buttons/small_secondary_button.html' with button_text=category %}
-              </div>
-            {% endfor %}
-          </div>
-          {%endif%}
 
-          <!-- Actors/Contributors Section -->
-          {% if project.actors %}
-          {% comment %}
-          RDF Properties: Actor relationships through event crosstables
-          Actor link: http://arkumu.org/data/properties/akteurin-im-ereignis
-          Role link: http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis
-          Actor name: http://arkumu.org/data/properties/deutscher-name
-          Role name: http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb
-          {% endcomment %}
-          <div class="mb-12">
-            <h2 class="text-3xl font-medium mb-6 transition-colors
-                       text-arkumu-dark
-                       theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
-              Akteur:innen
-            </h2>
-            <div class="space-y-4">
-              {% for actor in project.actors %}
-                <div class="flex flex-col sm:flex-row sm:items-center gap-2"
-                     data-rdf-actor-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                     data-rdf-role-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis">
-                  <div class="font-medium transition-colors
-                             text-arkumu-dark
-                             theme-dark:text-arkumu-light
-                             theme-blue:text-arkumu-blue"
-                       data-rdf-name="http://arkumu.org/data/properties/deutscher-name">
-                    {{ actor.name }}
-                  </div>
-                  {% if actor.roles %}
-                    <div class="text-sm font-mono transition-colors
-                               text-arkumu-dark opacity-70
-                               theme-dark:text-arkumu-light theme-dark:opacity-70
-                               theme-blue:text-arkumu-blue theme-blue:opacity-70"
-                         data-rdf-role-name="http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb">
-                      {{ actor.roles|join:", " }}
-                    </div>
-                  {% endif %}
-                </div>
-              {% endfor %}
-            </div>
-          </div>
-          {% endif %}
-
-          <!-- Events Section -->
-          {% if project.events %}
-          {% comment %}
-          RDF Properties: Event information
-          Event: http://arkumu.org/data/properties/ereignis
-          Event name: http://arkumu.org/data/properties/ereignisname
-          Event start: http://arkumu.org/data/properties/ereignisbeginn
-          Event end: http://arkumu.org/data/properties/ereignisende
-          Event location: http://arkumu.org/data/properties/ereignisort
-          Event type: http://arkumu.org/data/properties/ereignistyp
-          Event description: http://arkumu.org/data/properties/ereignisbeschreibung
-          {% endcomment %}
-          <div class="mb-12">
-            <h2 class="text-3xl font-medium mb-6 transition-colors
-                       text-arkumu-dark
-                       theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
-              Ereignisse
-            </h2>
-            <div class="space-y-8">
-              {% for event in project.events %}
-                <div class="border-l-4 border-gray-200 pl-6"
-                     data-rdf-event-property="http://arkumu.org/data/properties/ereignis">
-
-                  <!-- Event Name -->
-                  {% if event.name %}
-                    <h3 class="text-xl font-medium mb-3 transition-colors
-                               text-arkumu-dark
-                               theme-dark:text-arkumu-light
-                               theme-blue:text-arkumu-blue"
-                        data-rdf-name="http://arkumu.org/data/properties/ereignisname">
-                      {{ event.name }}
-                    </h3>
-                  {% endif %}
-
-                  <!-- Event Date -->
-                  {% if event.start or event.end %}
-                    <div class="text-sm font-mono mb-2 transition-colors
-                               text-arkumu-dark opacity-70
-                               theme-dark:text-arkumu-light theme-dark:opacity-70
-                               theme-blue:text-arkumu-blue theme-blue:opacity-70">
-                      {% if event.start and event.end %}
-                        {% if event.start == event.end %}
-                          <span data-rdf-start="http://arkumu.org/data/properties/ereignisbeginn"
-                                data-rdf-end="http://arkumu.org/data/properties/ereignisende">
-                            {{ event.start }}
-                          </span>
-                        {% else %}
-                          <span data-rdf-start="http://arkumu.org/data/properties/ereignisbeginn">{{ event.start }}</span>
-                          bis
-                          <span data-rdf-end="http://arkumu.org/data/properties/ereignisende">{{ event.end }}</span>
-                        {% endif %}
-                      {% elif event.start %}
-                        <span data-rdf-start="http://arkumu.org/data/properties/ereignisbeginn">{{ event.start }}</span>
-                      {% elif event.end %}
-                        <span data-rdf-end="http://arkumu.org/data/properties/ereignisende">{{ event.end }}</span>
-                      {% endif %}
-                    </div>
-                  {% endif %}
-
-                  <!-- Event Location -->
-                  {% if event.location %}
-                    <div class="text-sm mb-2 transition-colors
-                               text-arkumu-dark
-                               theme-dark:text-arkumu-light
-                               theme-blue:text-arkumu-blue"
-                         data-rdf-location="http://arkumu.org/data/properties/ereignisort">
-                      📍 {{ event.location }}
-                      {% if event.country %}
-                        <span class="text-xs opacity-70">({{ event.country }})</span>
-                      {% endif %}
-                      {% if event.location_description %}
-                        <div class="text-xs opacity-70 mt-1">{{ event.location_description }}</div>
-                      {% endif %}
-                    </div>
-
-                    <!-- Map if coordinates available -->
-                    {% if event.latitude and event.longitude %}
-                      <div class="mt-3 mb-4">
-                        <div id="event-map-{{ forloop.counter }}"
-                             class="h-48 rounded-lg overflow-hidden border border-gray-200"
-                             data-lat="{{ event.latitude }}"
-                             data-lng="{{ event.longitude }}"
-                             data-location="{{ event.location }}">
-                        </div>
-                      </div>
-                    {% endif %}
-                  {% endif %}
-
-                  <!-- Event Type -->
-                  {% if event.type %}
-                    <div class="text-sm mb-2 transition-colors
-                               text-arkumu-dark opacity-70
-                               theme-dark:text-arkumu-light theme-dark:opacity-70
-                               theme-blue:text-arkumu-blue theme-blue:opacity-70"
-                         data-rdf-type="http://arkumu.org/data/properties/ereignistyp">
-                      Typ: {{ event.type }}
-                    </div>
-                  {% endif %}
-
-                  <!-- Event Description -->
-                  {% if event.description %}
-                    <div class="text-sm transition-colors
-                               text-arkumu-dark
-                               theme-dark:text-arkumu-light
-                               theme-blue:text-arkumu-blue"
-                         data-rdf-description="http://arkumu.org/data/properties/ereignisbeschreibung">
-                      {{ event.description }}
-                    </div>
-                  {% endif %}
-                </div>
-              {% endfor %}
-            </div>
-          </div>
-          {% endif %}
-
-          <!-- Franja separadora con margen -->
-          <div class="w-full h-10 mb-12"></div>
-          
-          <!-- Project Description -->
-          {% if project.descriptions %}
-          <div class="mb-12">
-            <h2 class="text-3xl font-medium mb-6 transition-colors
-                       text-arkumu-dark
-                       theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
-              Projektbeschreibung
-            </h2>
-
-            {% for description in project.descriptions %}
-              <div class="mb-8">
-                {% comment %}
-                RDF Property: http://arkumu.org/data/properties/beschreibung
-                {% endcomment %}
-                <p class="mb-3 transition-colors
-                          text-arkumu-dark
-                          theme-dark:text-arkumu-light
-                          theme-blue:text-arkumu-blue"
-                   data-rdf-property="http://arkumu.org/data/properties/beschreibung">
-                  {{description}}
-                </p>
-                <a href="#" class="text-sm underline transition-colors
-                                text-arkumu-dark hover:opacity-70
-                                theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                                theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
-                  weiterlesen
-                </a>
-              </div>
-            {% endfor %}
-          </div>
-          {% endif %}
+      <nav class="tab-navigation w-full mb-6" role="tablist">
+        <div class="flex flex-wrap gap-3" id="project-tab-buttons"
+             data-tab-endpoint="{{ tab_endpoint }}"
+             data-project-uri="{{ project.uri|urlencode }}">
+          <button type="button"
+                  class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light active"
+                  data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
+                  data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                  data-tab="overview"
+                  hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=overview"
+                  hx-target="#project-tab-content"
+                  hx-swap="innerHTML"
+                  hx-push-url="false"
+                  hx-indicator="#project-tab-indicator"
+                  aria-selected="true"
+                  role="tab">
+            Übersicht
+          </button>
+          <button type="button"
+                  class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                  data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
+                  data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                  data-tab="events"
+                  hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=events"
+                  hx-target="#project-tab-content"
+                  hx-swap="innerHTML"
+                  hx-push-url="false"
+                  hx-indicator="#project-tab-indicator"
+                  aria-selected="false"
+                  role="tab">
+            Ereignisliste
+          </button>
+          <button type="button"
+                  class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                  data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
+                  data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                  data-tab="metadata"
+                  hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=metadata"
+                  hx-target="#project-tab-content"
+                  hx-swap="innerHTML"
+                  hx-push-url="false"
+                  hx-indicator="#project-tab-indicator"
+                  aria-selected="false"
+                  role="tab">
+            Metadaten
+          </button>
         </div>
-        
-        <!-- Right Column - Additional Information (1/3) -->
-        <div class="lg:w-1/3">
-          <!-- Franja decorativa rosa -->
-          {% if project.collection_title or project.catchphrases %}
-          <div class="w-full h-full p-6">
-            {% if project.collection_title %}
-            <div class="mb-10">
-              <p class="mb-2 transition-colors font-medium
-                        text-arkumu-dark
-                        theme-dark:text-arkumu-light
-                        theme-blue:text-arkumu-blue">
-                Ist Teil von Sammlung:
-              </p>
-              <a href="#" class="underline transition-colors
-                               text-arkumu-dark hover:opacity-70
-                               theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                               theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
-                {{project.collection_title}}
-              </a>
-            </div>
-            {% endif %}
-            
-            {% if project.catchphrases %}
-            <div class="mb-6">
-              <p class="mb-3 font-medium transition-colors
-                        text-arkumu-dark
-                        theme-dark:text-arkumu-light
-                        theme-blue:text-arkumu-blue">
-                Schlagworte
-              </p>
-              <div class="flex flex-wrap gap-2">
-                {% for catchphrase in project.catchphrases %}
-                {% comment %}
-                RDF Property: http://arkumu.org/data/properties/schlagwort
-                RDF Type: http://arkumu.org/data/types/schlagwort
-                Wikidata label: http://arkumu.org/data/properties/deutsches-wikidata-label
-                {% endcomment %}
-                <span class="transition-colors
-                           text-arkumu-dark
-                           theme-dark:text-arkumu-light
-                           theme-blue:text-arkumu-blue"
-                      data-rdf-property="http://arkumu.org/data/properties/schlagwort"
-                      data-rdf-type="http://arkumu.org/data/types/schlagwort"
-                      data-rdf-wikidata-label="http://arkumu.org/data/properties/deutsches-wikidata-label">
-                  {{catchphrase}}
-                </span>
-                {% endfor %}
-              </div>
-            </div>
-            {% endif %}
-          </div>
-          {% endif %}
-        </div>
-      </div>
-      
-      <!-- Tab Navigation -->
-      {% include 'components/inputs/tab_navigation.html' with active_tab="1" %}
-      
-      <!-- Media Gallery Section -->
-      <div class="media-gallery-section w-full mb-8">
-        
-        <!-- Media Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          
-          <!-- Primera fila - Media grandes -->
-          <div>
-            {% include 'components/media/big_media.html' with media_title="Ereignis Titel" %}
-          </div>
-          
-          <div>
-            {% include 'components/media/big_media.html' with media_title="Ereignis Titel" %}
-          </div>
-        </div>
-        
-        <!-- Segunda fila - Grid de 4 elementos pequeños -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {% include 'components/media/small_media.html' with media_title="Ereignis Titel" %}
-          {% include 'components/media/small_media.html' with media_title="Ereignis Titel" %}
-          {% include 'components/media/small_media.html' with media_title="Ereignis Titel" %}
-          {% include 'components/media/small_media.html' with media_title="Ereignis Titel" %}
-        </div>
-        
-        <!-- Audio Player -->
-        {% include 'components/media/audio.html' with audio_title="Ereignis Titel" %}
-        
-      </div>
-      
-      <!-- Línea de puntos final con margen superior -->
-      <div class="mt-20">
-        {% include 'components/text/text_dotted_line.html' with text="Projekte in Relation" %}
+      </nav>
+
+      <div id="project-tab-indicator" class="hidden text-sm text-arkumu-dark/60 theme-dark:text-arkumu-light/60">Lade …</div>
+
+      <div id="project-tab-content">
+        {% include 'catalog/partials/project_overview.html' with project=project %}
       </div>
     </div>
-  </main>
+  </section>
 </div>
 
-<!-- Leaflet CSS and JS for maps -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  // Initialize maps for all event locations with coordinates
-  const mapElements = document.querySelectorAll('[id^="event-map-"]');
-
-  mapElements.forEach(function(mapElement) {
-    const lat = parseFloat(mapElement.dataset.lat);
-    const lng = parseFloat(mapElement.dataset.lng);
-    const locationName = mapElement.dataset.location;
-
-    if (lat && lng) {
-      // Initialize the map
-      const map = L.map(mapElement.id).setView([lat, lng], 13);
-
-      // Add OpenStreetMap tile layer
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(map);
-
-      // Add a marker for the location
-      L.marker([lat, lng])
-        .addTo(map)
-        .bindPopup(`<strong>${locationName}</strong>`)
-        .openPopup();
+  (function () {
+    function toggleStateClasses(btn, activate) {
+      var activeClasses = (btn.dataset.activeClass || '').split(/\s+/).filter(Boolean);
+      var inactiveClasses = (btn.dataset.inactiveClass || '').split(/\s+/).filter(Boolean);
+      if (activate) {
+        inactiveClasses.forEach(function (cls) { btn.classList.remove(cls); });
+        activeClasses.forEach(function (cls) { btn.classList.add(cls); });
+      } else {
+        activeClasses.forEach(function (cls) { btn.classList.remove(cls); });
+        inactiveClasses.forEach(function (cls) { btn.classList.add(cls); });
+      }
     }
-  });
-});
+
+    function setActiveTab(button) {
+      document.querySelectorAll('#project-tab-buttons .project-tab-btn').forEach(function (btn) {
+        if (btn === button) {
+          btn.classList.add('active');
+          btn.setAttribute('aria-selected', 'true');
+          toggleStateClasses(btn, true);
+        } else {
+          btn.classList.remove('active');
+          btn.setAttribute('aria-selected', 'false');
+          toggleStateClasses(btn, false);
+        }
+      });
+    }
+
+    document.addEventListener('click', function (event) {
+      if (event.target.closest('.project-tab-btn')) {
+        setActiveTab(event.target.closest('.project-tab-btn'));
+      }
+    });
+
+    document.addEventListener('htmx:beforeRequest', function () {
+      var indicator = document.querySelector('#project-tab-indicator');
+      if (indicator) {
+        indicator.classList.remove('hidden');
+      }
+    });
+
+    document.addEventListener('htmx:afterSwap', function (event) {
+      if (event.detail.target && event.detail.target.id === 'project-tab-content') {
+        var indicator = document.querySelector('#project-tab-indicator');
+        if (indicator) {
+          indicator.classList.add('hidden');
+        }
+        if (typeof window.initializeEventMaps === 'function') {
+          window.initializeEventMaps();
+        }
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+      var initial = document.querySelector('#project-tab-buttons .project-tab-btn.active');
+      if (initial) {
+        toggleStateClasses(initial, true);
+      }
+      if (typeof window.initializeEventMaps === 'function') {
+        window.initializeEventMaps();
+      }
+    });
+  })();
 </script>
 {% endblock content %}

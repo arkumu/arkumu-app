@@ -3,6 +3,7 @@
 from .models import (
     ProjectRecord,
     ProjectEvent,
+    ProjectEventActor,
     ProjectActor,
     ProjectInstitution,
     ProjectCategory,
@@ -16,6 +17,7 @@ from .models import (
 __all__ = [
     "ProjectRecord",
     "ProjectEvent",
+    "ProjectEventActor",
     "ProjectActor",
     "ProjectInstitution",
     "ProjectCategory",
