@@ -210,7 +210,12 @@ class SchemaManifestService:
         return copy.deepcopy(schema)
 
     def _get_canonical_schema(self, organization_code: str) -> Dict[str, Any]:
-        canonical_schema = Mapping.objects.filter(organization_id=organization_code).first()
+        canonical_schema = (
+            Mapping.objects
+            .filter(organization_id=organization_code)
+            .order_by('-created_at')
+            .first()
+        )
         if not canonical_schema:
             logger.warning(
                 "SchemaManifestService.get_canonical_schema: No canonical schema found for org '%s'",
@@ -219,7 +224,14 @@ class SchemaManifestService:
             return {}
 
         try:
-            return canonical_schema.load_mapping()
+            mapping_payload = canonical_schema.mapping_config or {}
+            if not isinstance(mapping_payload, dict):
+                logger.error(
+                    "SchemaManifestService.get_canonical_schema: mapping_config malformed for org '%s'",
+                    organization_code,
+                )
+                return {}
+            return mapping_payload
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error(
                 "SchemaManifestService.get_canonical_schema: Failed to load schema for org '%s': %s",
