@@ -23,12 +23,7 @@
     </div>
     {% empty %}
     {% if not query %}
-    <!-- Empty state when no search has been performed -->
-    <div class="col-span-full text-center py-12">
-      <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
-        Verwenden Sie die Suchleiste oben, um Projekte zu finden
-      </p>
-    </div>
+    <div class="col-span-full py-12"></div>
     {% endif %}
     {% endfor %}
   </div>
