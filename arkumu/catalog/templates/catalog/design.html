@@ -99,13 +99,6 @@
         {% if results or query %}
           <!-- Include with all context variables -->
           {% include 'catalog/partials/results_container.html' %}
-        {% else %}
-          <!-- Initial empty state -->
-          <div class="text-center py-12">
-            <p class="text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue font-mono">
-              Verwenden Sie die Suchleiste oben, um Projekte zu finden
-            </p>
-          </div>
         {% endif %}
       </div>
 

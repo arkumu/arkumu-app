@@ -26,6 +26,7 @@ from arkumu.common.data_types import BulkUpdateStats
 # REMOVED: from arkumu.common.import_service_bridge import bridge_service  # OLD SYSTEM ELIMINATED
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.metadata.models import Organization, Mapping
+from arkumu.projects.services import ProjectSnapshotService
 
 
 logger = logging.getLogger(__name__)
@@ -387,7 +388,41 @@ def run_csv_import_with_structured_error_handling(
             # Update ingest session
             if ingest_session:
                 ingest_session.mark_completed(result["final_stats"])
-            
+
+                # Refresh project snapshot and schema caches so explorer views stay consistent.
+                try:
+                    logger.info(
+                        "Refreshing cross-institutional project snapshot after import for org %s",
+                        institution,
+                    )
+                    ProjectSnapshotService().refresh_cross_institutional_snapshot()
+                except Exception:  # pragma: no cover - defensive safety
+                    logger.exception(
+                        "Failed to refresh project snapshot after import for org %s",
+                        institution,
+                    )
+
+                from arkumu.cache.services import SchemaMapCacheService
+                from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
+
+                try:
+                    logger.info(
+                        "Refreshing schema manifest cache for org %s",
+                        institution,
+                    )
+                    SchemaManifestService().get_card_schema(institution)
+                except Exception:  # pragma: no cover - defensive safety
+                    logger.exception(
+                        "Failed to refresh schema manifest cache for org %s",
+                        institution,
+                    )
+
+                try:
+                    logger.info("Refreshing schema map cache after import")
+                    SchemaMapCacheService().refresh_cache()
+                except Exception:  # pragma: no cover - defensive safety
+                    logger.exception("Failed to refresh schema map cache after import")
+
             # Generate success message
             success_message = (
                 f"Dataset '{dataset_name}' imported successfully. "

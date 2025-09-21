@@ -121,6 +121,33 @@ This command uses the **CanonicalUriMappingService** from `arkumu.metadata.servi
 ### Related Commands
 
 - `reset_canonical_uris.py` - Resets/clears canonical URI assignments for an organization
+- `sync_wikidata_entities.py` - Fetches Wikidata entities in bulk and stores labels/descriptions locally
+
+## sync_wikidata_entities
+
+Bulk resolve Wikidata IDs and persist their labels/aliases in the local cache (see `WikidataEntity`).
+
+### Usage
+
+```bash
+# Cache a couple of Wikidata IDs
+docker compose -f docker-compose.local.yml run --rm django \
+  python manage.py sync_wikidata_entities --ids Q42 Q64
+
+# Read identifiers from a file and force refresh
+docker compose -f docker-compose.local.yml run --rm django \
+  python manage.py sync_wikidata_entities --file /path/to/qids.txt --force
+
+# Request an additional language (can be repeated)
+docker compose -f docker-compose.local.yml run --rm django \
+  python manage.py sync_wikidata_entities --ids Q151 --language de --language en --language fr
+```
+
+### Notes
+
+- Identifiers are normalised automatically (e.g. `64` → `Q64`).
+- Cached entities store German/English labels, German description and aliases, plus the raw payload.
+- The command skips already cached IDs unless `--force` is provided.
 
 ### Technical Notes
 

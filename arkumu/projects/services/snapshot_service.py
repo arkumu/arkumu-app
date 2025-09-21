@@ -19,6 +19,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 )
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
+from arkumu.metadata.models.resource import ResourceType
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
     ProjectActor,
@@ -27,6 +28,7 @@ from arkumu.projects import (
     ProjectCatchphrase,
     ProjectDigitalObject,
     ProjectEvent,
+    ProjectEventActor,
     ProjectInstitution,
     ProjectRecord,
     ProjectSnapshot,
@@ -397,6 +399,8 @@ class ProjectSnapshotService:
 
         institution_name_prop = _property('institution', 'german_name')
         category_name_prop = _property('project_category', 'german_name')
+        category_synonym_prop = _property('project_category', 'synonyms')
+        category_wikidata_prop = _property('project_category', 'wikidata_id')
         digital_object_path_prop = _property('digital_object', 'path')
 
         title = self._first_literal(subject_edges, title_prop.canonical_uri if title_prop else None)
@@ -438,24 +442,41 @@ class ProjectSnapshotService:
         )
         project_type = ProjectType(label=project_type_label) if project_type_label else None
 
-        events_payload = triple_service.get_event_data(
+        event_entries = triple_service.get_detailed_event_data(
             subject_id,
             event_predicate=event_prop.canonical_uri if event_prop else None,
             event_start_predicate=event_start_prop.canonical_uri if event_start_prop else None,
             event_end_predicate=event_end_prop.canonical_uri if event_end_prop else None,
+            event_name_predicate=ProjectURIs.EVENT_NAME,
+            event_description_predicate=ProjectURIs.EVENT_DESCRIPTION,
+            event_location_predicate=ProjectURIs.EVENT_LOCATION,
+            event_type_predicate=ProjectURIs.EVENT_TYPE,
             organization_code=self.relationship_org_code,
         )
-        event_ids = events_payload.get('event_ids', [])
-        event_details = events_payload.get('event_details', {})
-        events = [
-            ProjectEvent(
-                start=event_details.get(event_id, {}).get('start'),
-                end=event_details.get(event_id, {}).get('end'),
-                uri=nodes.get(event_id, {}).get('uri'),
+        event_ids: List[str] = []
+        events: List[ProjectEvent] = []
+        for entry in event_entries:
+            event_id = entry.get('id')
+            if event_id:
+                event_ids.append(event_id)
+            event_node = nodes.get(event_id, {}) if event_id else {}
+            events.append(
+                ProjectEvent(
+                    id=event_id,
+                    uri=event_node.get('uri') or event_node.get('canonical_uri'),
+                    name=entry.get('name'),
+                    description=entry.get('description'),
+                    location=entry.get('location'),
+                    location_id=entry.get('location_id'),
+                    country=entry.get('country'),
+                    latitude=self._maybe_float(entry.get('latitude')),
+                    longitude=self._maybe_float(entry.get('longitude')),
+                    type=entry.get('type'),
+                    start=entry.get('start'),
+                    end=entry.get('end'),
+                )
             )
-            for event_id in event_ids
-        ]
-        year_range = self._derive_year_range(event_ids, event_details)
+        year_range = self._derive_year_range(events)
 
         actors_payload = triple_service.get_actor_relationships(
             subject_id,
@@ -467,10 +488,22 @@ class ProjectSnapshotService:
             event_ids=event_ids,
             organization_code=self.relationship_org_code,
         )
-        actors = [
-            ProjectActor(name=payload.get('name'), roles=payload.get('roles', []))
-            for payload in actors_payload
-        ]
+        actors_by_event: Dict[str, List[ProjectEventActor]] = defaultdict(list)
+        actors: List[ProjectActor] = []
+        for payload in actors_payload:
+            name = payload.get('name')
+            if not name:
+                continue
+            roles = list(payload.get('roles', []))
+            actors.append(ProjectActor(name=name, roles=roles))
+            for event_id in payload.get('event_ids', []):
+                actors_by_event[event_id].append(
+                    ProjectEventActor(name=name, roles=list(roles))
+                )
+
+        for event in events:
+            if event.id:
+                event.actors = list(actors_by_event.get(event.id, []))
 
         institution_ids = self._related_ids(subject_edges, institution_prop.canonical_uri if institution_prop else None)
         institution: Optional[ProjectInstitution] = None
@@ -502,11 +535,24 @@ class ProjectSnapshotService:
         seen_category_keys: set[tuple] = set()
         for category_id in self._related_ids(subject_edges, category_prop.canonical_uri if category_prop else None):
             cat_node = nodes.get(category_id, {})
+            if (cat_node.get('resource_type') or '').upper() == ResourceType.LITERAL:
+                continue
             cat_uri = cat_node.get('uri') or cat_node.get('canonical_uri')
-            cat_label = self._first_literal(
+            wikidata_literal = self._first_literal(
+                edges_by_subject.get(category_id, []),
+                category_wikidata_prop.canonical_uri if category_wikidata_prop else None,
+            )
+            raw_label = self._first_literal(
                 edges_by_subject.get(category_id, []),
                 category_name_prop.canonical_uri if category_name_prop else None,
             ) or cat_node.get('name') or cat_node.get('value')
+            synonym_literal = self._first_literal(
+                edges_by_subject.get(category_id, []),
+                category_synonym_prop.canonical_uri if category_synonym_prop else None,
+            )
+            cat_label = self._resolve_category_label(wikidata_literal, synonym_literal, raw_label)
+            if not cat_label:
+                continue
             cat_slug = self._resource_slug(cat_uri)
             dedupe_key = (cat_uri, cat_label)
             if dedupe_key in seen_category_keys:
@@ -571,6 +617,15 @@ class ProjectSnapshotService:
             return None
         return edge.get('predicate_canonical') or edge.get('predicate_uri')
 
+    @staticmethod
+    def _maybe_float(value: Optional[Any]) -> Optional[float]:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def _first_literal(self, edges: Iterable[Dict[str, Any]], predicate: Optional[str]) -> Optional[str]:
         if not predicate:
             return None
@@ -595,14 +650,63 @@ class ProjectSnapshotService:
         return uri.rstrip('/').split('/')[-1]
 
     @staticmethod
-    def _derive_year_range(
-        event_ids: Sequence[str],
-        event_details: Dict[str, Dict[str, Optional[str]]],
+    def _resolve_category_label(
+        wikidata_literal: Optional[Any],
+        synonyms_literal: Optional[Any],
+        breadcrumb_literal: Optional[Any],
     ) -> Optional[str]:
-        for event_id in event_ids:
-            entry = event_details.get(event_id) or {}
-            start = entry.get('start')
-            end = entry.get('end')
+        wikidata_label = ProjectSnapshotService._normalize_wikidata_id(wikidata_literal)
+        if wikidata_label:
+            return wikidata_label
+        synonym = ProjectSnapshotService._preferred_synonym(synonyms_literal)
+        if synonym:
+            return synonym
+        breadcrumb = ProjectSnapshotService._normalize_breadcrumb(breadcrumb_literal)
+        if breadcrumb:
+            return breadcrumb
+        return None
+
+    @staticmethod
+    def _normalize_wikidata_id(value: Optional[Any]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip().upper()
+        if not text:
+            return None
+        if text.startswith('Q') and text[1:].isdigit():
+            return text
+        if text.isdigit():
+            return f"Q{text}"
+        return None
+
+    @staticmethod
+    def _normalize_breadcrumb(label: Optional[Any]) -> Optional[str]:
+        if label is None:
+            return None
+        text = str(label).strip()
+        if not text:
+            return None
+        if '>' in text:
+            parts = [part.strip() for part in text.split('>') if part.strip()]
+            text = parts[-1] if parts else ''
+        if not text or text.isdigit():
+            return None
+        return text
+
+    @staticmethod
+    def _preferred_synonym(value: Optional[Any]) -> Optional[str]:
+        if value is None:
+            return None
+        tokens = [token.strip() for token in str(value).replace(';', ',').split(',') if token.strip()]
+        if not tokens:
+            return None
+        return tokens[0]
+
+    @staticmethod
+    def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:
+        for event in events:
+            start = event.start
+            end = event.end
             if start and end:
                 start_year = start.split('-')[0] if '-' in start else start
                 end_year = end.split('-')[0] if '-' in end else end

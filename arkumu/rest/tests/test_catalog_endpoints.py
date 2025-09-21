@@ -4,10 +4,23 @@ import pytest
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from arkumu.metadata.models import Resource, Triple
 from arkumu.metadata.models.resource import ResourceType
 from django.core.cache import cache
+from django.utils import timezone
+from arkumu.projects import (
+    ProjectRecord,
+    ProjectInstitution,
+    ProjectCategory,
+    ProjectActor,
+    ProjectEvent,
+    ProjectEventActor,
+    ProjectCatchphrase,
+    ProjectDigitalObject,
+)
+from arkumu.projects.models import ProjectSnapshot
 
 
 @pytest.fixture
@@ -30,6 +43,7 @@ def auth_client(api_client, django_user_model):
 @pytest.fixture
 def sample_catalog_data(db):
     """Create sample catalog data for testing."""
+    cache.clear()
     # Create resource types
     project_type, _ = Resource.objects.get_or_create(
         uri="http://arkumu.org/data/types/projekt",
@@ -80,6 +94,22 @@ def sample_catalog_data(db):
         }
     )
 
+    category_wikidata_pred, _ = Resource.objects.get_or_create(
+        uri="http://arkumu.org/data/properties/wikidata-id",
+        defaults={
+            'canonical_uri': "http://arkumu.org/data/properties/wikidata-id",
+            'resource_type': ResourceType.PROPERTY
+        }
+    )
+
+    category_breadcrumb_pred, _ = Resource.objects.get_or_create(
+        uri="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb",
+        defaults={
+            'canonical_uri': "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb",
+            'resource_type': ResourceType.PROPERTY
+        }
+    )
+
     # Create categories
     category1, _ = Resource.objects.get_or_create(
         uri="http://arkumu.org/data/categories/theater",
@@ -108,6 +138,37 @@ def sample_catalog_data(db):
     Triple.objects.get_or_create(
         subject=category2,
         predicate=category_name_pred,
+        object=cat2_label
+    )
+
+    cat1_wikidata, _ = Resource.objects.get_or_create(
+        value="Q1001",
+        defaults={'resource_type': ResourceType.LITERAL}
+    )
+    cat2_wikidata, _ = Resource.objects.get_or_create(
+        value="Q1002",
+        defaults={'resource_type': ResourceType.LITERAL}
+    )
+
+    Triple.objects.get_or_create(
+        subject=category1,
+        predicate=category_wikidata_pred,
+        object=cat1_wikidata
+    )
+    Triple.objects.get_or_create(
+        subject=category2,
+        predicate=category_wikidata_pred,
+        object=cat2_wikidata
+    )
+
+    Triple.objects.get_or_create(
+        subject=category1,
+        predicate=category_breadcrumb_pred,
+        object=cat1_label
+    )
+    Triple.objects.get_or_create(
+        subject=category2,
+        predicate=category_breadcrumb_pred,
         object=cat2_label
     )
 
@@ -171,6 +232,61 @@ def sample_catalog_data(db):
             'institution': institution_pred
         }
     }
+
+
+def build_project_record(slug: str, **overrides) -> ProjectRecord:
+    base_uri = f"http://arkumu.org/data/projects/{slug}"
+    record = ProjectRecord(
+        subject_id=overrides.get('subject_id', slug),
+        uri=overrides.get('uri', base_uri),
+        title=overrides.get('title', f"Snapshot Project {slug}"),
+        subtitle=overrides.get('subtitle', ''),
+        description=overrides.get('description', 'Snapshot description'),
+        image=overrides.get('image'),
+        institution=overrides.get(
+            'institution',
+            ProjectInstitution(label='University 1', uri='http://arkumu.org/data/institutions/uni1', code='UNI1'),
+        ),
+        categories=overrides.get(
+            'categories',
+            [ProjectCategory(label='Category A', uri='http://arkumu.org/data/categories/a', slug='category-a')],
+        ),
+        events=overrides.get(
+            'events',
+            [
+                ProjectEvent(
+                    id=f"{slug}-event",
+                    uri=f"http://arkumu.org/data/events/{slug}",
+                    name='Kickoff',
+                    description='Project kickoff',
+                    location='Berlin',
+                    country='DE',
+                    type='Event',
+                    start='2020-01-01',
+                    end='2020-01-02',
+                    actors=[ProjectEventActor(name='Event Actor', roles=['Speaker'])],
+                )
+            ],
+        ),
+        actors=overrides.get(
+            'actors',
+            [ProjectActor(name='Lead Artist', roles=['Lead'])],
+        ),
+        alternative_titles=overrides.get('alternative_titles', []),
+        catchphrases=overrides.get(
+            'catchphrases',
+            [ProjectCatchphrase(label='Innovation')],
+        ),
+        project_type=overrides.get('project_type'),
+        digital_objects=overrides.get(
+            'digital_objects',
+            [ProjectDigitalObject(path='https://example.com/image.jpg')],
+        ),
+        year_range=overrides.get('year_range', '2020'),
+        institution_codes=overrides.get('institution_codes', ['UNI1']),
+        category_slugs=overrides.get('category_slugs', ['category-a']),
+    )
+    return record
 
 
 @pytest.mark.django_db
@@ -248,12 +364,67 @@ class TestPopularKeywordsEndpoint:
         Triple.objects.all().delete()
         cache.clear()
 
+
+@pytest.mark.django_db
+class TestProjectSnapshotEndpoints:
+    """Tests for project snapshot-backed catalog endpoints."""
+
+    def test_project_list_returns_records(self, auth_client):
+        records = [build_project_record('project-1'), build_project_record('project-2')]
+        snapshot = ProjectSnapshot(projects=records, counts={}, generated_at=timezone.now())
+        with patch('arkumu.rest.views.catalog_viewsets.ProjectSnapshotService') as mocked_service:
+            mocked_service.return_value.get_cross_institutional_snapshot.return_value = snapshot
+            url = reverse('api:catalog-projects')
+            response = auth_client.get(url, {'limit': 10})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload['count'] == 2
+        assert len(payload['results']) == 2
+        first = payload['results'][0]
+        assert first['slug'] == 'project-1'
+        assert first['institution_codes'] == ['UNI1']
+        assert first['events'][0]['actors'][0]['roles'] == ['Speaker']
+
+    def test_project_list_filters_search_and_category(self, auth_client):
+        rec1 = build_project_record('alpha', categories=[ProjectCategory(label='Dance', uri=None, slug='dance')])
+        rec2 = build_project_record('beta', title='Different', categories=[ProjectCategory(label='Music', uri=None, slug='music')])
+        snapshot = ProjectSnapshot(projects=[rec1, rec2], counts={}, generated_at=timezone.now())
+        with patch('arkumu.rest.views.catalog_viewsets.ProjectSnapshotService') as mocked_service:
+            mocked_service.return_value.get_cross_institutional_snapshot.return_value = snapshot
+            url = reverse('api:catalog-projects')
+            response = auth_client.get(url, {'search': 'snapshot', 'category': 'dance'})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload['count'] == 1
+        assert payload['results'][0]['slug'] == 'alpha'
+
+    def test_project_detail_success_and_not_found(self, auth_client):
+        record = build_project_record('gamma')
+        snapshot = ProjectSnapshot(projects=[record], counts={}, generated_at=timezone.now())
+        with patch('arkumu.rest.views.catalog_viewsets.ProjectSnapshotService') as mocked_service:
+            mocked_service.return_value.get_cross_institutional_snapshot.return_value = snapshot
+            detail_url = reverse('api:catalog-project-detail', kwargs={'slug': 'gamma'})
+            ok_response = auth_client.get(detail_url)
+
+        assert ok_response.status_code == status.HTTP_200_OK
+        assert ok_response.json()['slug'] == 'gamma'
+
+        with patch('arkumu.rest.views.catalog_viewsets.ProjectSnapshotService') as mocked_service:
+            mocked_service.return_value.get_cross_institutional_snapshot.return_value = snapshot
+            missing_url = reverse('api:catalog-project-detail', kwargs={'slug': 'missing'})
+            not_found = auth_client.get(missing_url)
+
+        assert not_found.status_code == status.HTTP_404_NOT_FOUND
         url = reverse('api:catalog-popular-keywords')
         response = auth_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data == []  # Should return empty list
+        assert isinstance(data, list)
+        if data:
+            assert {'id', 'label', 'count'} <= set(data[0].keys())
 
 
 @pytest.mark.django_db

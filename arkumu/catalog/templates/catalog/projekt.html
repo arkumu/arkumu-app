@@ -65,7 +65,6 @@
                   hx-target="#project-tab-content"
                   hx-swap="innerHTML"
                   hx-push-url="false"
-                  hx-indicator="#project-tab-indicator"
                   aria-selected="true"
                   role="tab">
             Übersicht
@@ -79,7 +78,6 @@
                   hx-target="#project-tab-content"
                   hx-swap="innerHTML"
                   hx-push-url="false"
-                  hx-indicator="#project-tab-indicator"
                   aria-selected="false"
                   role="tab">
             Ereignisliste
@@ -93,15 +91,12 @@
                   hx-target="#project-tab-content"
                   hx-swap="innerHTML"
                   hx-push-url="false"
-                  hx-indicator="#project-tab-indicator"
                   aria-selected="false"
                   role="tab">
             Metadaten
           </button>
         </div>
       </nav>
-
-      <div id="project-tab-indicator" class="hidden text-sm text-arkumu-dark/60 theme-dark:text-arkumu-light/60">Lade …</div>
 
       <div id="project-tab-content">
         {% include 'catalog/partials/project_overview.html' with project=project %}
@@ -110,8 +105,6 @@
   </section>
 </div>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   (function () {
     function toggleStateClasses(btn, activate) {
@@ -146,19 +139,8 @@
       }
     });
 
-    document.addEventListener('htmx:beforeRequest', function (event) {
-      var indicator = document.querySelector('#project-tab-indicator');
-      if (indicator) {
-        indicator.classList.remove('hidden');
-      }
-    });
-
     document.addEventListener('htmx:afterSwap', function (event) {
       if (event.detail.target && event.detail.target.id === 'project-tab-content') {
-        var indicator = document.querySelector('#project-tab-indicator');
-        if (indicator) {
-          indicator.classList.add('hidden');
-        }
         if (typeof window.initializeEventMaps === 'function') {
           window.initializeEventMaps();
         }
@@ -169,9 +151,6 @@
       var initial = document.querySelector('#project-tab-buttons .project-tab-btn.active');
       if (initial) {
         toggleStateClasses(initial, true);
-      }
-      if (typeof window.initializeEventMaps === 'function') {
-        window.initializeEventMaps();
       }
     });
   })();

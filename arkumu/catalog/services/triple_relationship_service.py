@@ -9,9 +9,8 @@ import uuid
 from django.db.models import Q
 
 from arkumu.metadata.models.triples import Triple
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models import Resource, ResourceType, WikidataEntity
 from arkumu.users.models import Organization
-from arkumu.catalog.services.wikidata_service import WikidataService
 
 
 class TripleRelationshipService:
@@ -21,7 +20,6 @@ class TripleRelationshipService:
         self.organization_code = organization_code
         self._organization: Optional[Organization] = None
         self._org_cache: Dict[str, Optional[Organization]] = {}
-        self.wikidata_service = WikidataService()
         if organization_code:
             self._organization = self._get_org_by_code(organization_code)
 
@@ -260,36 +258,31 @@ class TripleRelationshipService:
                     location_ids = [loc_id.strip() for loc_id in location_raw.split(',') if loc_id.strip()]
 
                     if location_ids:
-                        location_names = []
-                        all_coordinates = []
-                        countries = set()
+                        location_names: List[str] = []
+
+                        cached_entities = {
+                            entity.wikidata_id: entity
+                            for entity in WikidataEntity.objects.filter(wikidata_id__in=[loc for loc in location_ids if loc.startswith('Q')])
+                        }
 
                         for location_id in location_ids:
                             if location_id.startswith('Q'):
-                                location_data = self.wikidata_service.get_location_info(location_id)
-                                name = location_data.get('name', location_id)
-                                location_names.append(name)
-
-                                if 'coordinates' in location_data:
-                                    all_coordinates.append(location_data['coordinates'])
-                                if 'country' in location_data:
-                                    countries.add(location_data['country'])
+                                cached_entity = cached_entities.get(location_id)
+                                display_name = (
+                                    cached_entity.label_de
+                                    or cached_entity.label_en
+                                    if cached_entity
+                                    else None
+                                )
+                                location_names.append(display_name or location_id)
                             else:
                                 location_names.append(location_id)
 
-                        # Combine location names
-                        event_info['location'] = ', '.join(location_names) if location_names else location_raw
-
-                        # Use first coordinate if available
-                        if all_coordinates:
-                            event_info['coordinates'] = all_coordinates[0]
-                            if 'latitude' in all_coordinates[0] and 'longitude' in all_coordinates[0]:
-                                event_info['latitude'] = all_coordinates[0]['latitude']
-                                event_info['longitude'] = all_coordinates[0]['longitude']
-
-                        # Combine countries
-                        if countries:
-                            event_info['country'] = ', '.join(sorted(countries))
+                        event_info['location'] = (
+                            ', '.join(location_names)
+                            if location_names
+                            else location_raw
+                        )
                     else:
                         event_info['location'] = location_raw
                 else:
@@ -385,8 +378,27 @@ class TripleRelationshipService:
             predicate_uri=description_predicate,
             organization_code=organization_code,
         )
+        description_value = descriptions.get(project_id)
 
-        return descriptions.get(project_id)
+        entity_entries = self.get_related_entities(
+            project_id,
+            description_predicate,
+            organization_code=organization_code,
+        )
+        entity_ids = [entry['id'] for entry in entity_entries if self._is_entity(entry)]
+
+        if entity_ids:
+            label_map = self._collect_literal_values(
+                subject_ids=entity_ids,
+                predicate_uri='http://arkumu.org/data/properties/beschreibung',
+                organization_code=organization_code,
+            )
+            for entity_id in entity_ids:
+                label = label_map.get(entity_id)
+                if label:
+                    return label
+
+        return description_value
 
     def get_project_type(
         self,
@@ -407,6 +419,36 @@ class TripleRelationshipService:
         )
 
         project_type_id = project_types.get(project_id)
+        # Collect related project type entities (if any) for richer resolution
+        entity_entries = self.get_related_entities(
+            project_id,
+            project_type_predicate,
+            organization_code=organization_code,
+        )
+        entity_ids = [entry['id'] for entry in entity_entries if self._is_entity(entry)]
+
+        if entity_ids:
+            label_map = self._collect_literal_values(
+                subject_ids=entity_ids,
+                predicate_uri='http://arkumu.org/data/properties/deutscher-name-der-projektart',
+                organization_code=organization_code,
+            )
+            for entity_id in entity_ids:
+                label = label_map.get(entity_id)
+                if label:
+                    return label
+
+            # Fallback to resource name if literal label missing
+            from arkumu.metadata.models import Resource
+
+            for entity_id in entity_ids:
+                try:
+                    resource = Resource.objects.filter(id=entity_id).first()
+                except Exception:  # pragma: no cover - defensive
+                    resource = None
+                if resource and resource.name:
+                    return resource.name
+
         if not project_type_id:
             return None
 

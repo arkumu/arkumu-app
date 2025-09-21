@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 
 from .views.cards import GraphSearchView
 from .views.catalog_view import CatalogView
-from .views.project_view import ProjectView, ProjectTabView
+from .views.project_view import ProjectTabView, ProjectView
 from .views.explorer import (
     CatalogExplorerView,
     CatalogExplorerPropertiesView,

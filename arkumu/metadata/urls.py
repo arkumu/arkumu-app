@@ -36,6 +36,7 @@ app_name = 'metadata'
 urlpatterns = [
     # Dashboard
     path('dashboard/', dashboard_views.metadata_dashboard, name='metadata_dashboard'),
+    path('dashboard/cache-refresh/', dashboard_views.trigger_cache_refresh, name='metadata_dashboard_cache_refresh'),
     path('dashboard/all-uploads/', dashboard_views.all_upload_sessions, name='all_upload_sessions'),
     path('dashboard/all-ingests/', dashboard_views.all_ingest_sessions, name='all_ingest_sessions'),
     path('dashboard/ingest-stats/<uuid:session_id>/', dashboard_views.ingest_session_stats, name='ingest_session_stats'),

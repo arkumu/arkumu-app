@@ -6,6 +6,7 @@ import random
 from typing import Any, Dict, List, Optional, Set
 
 from django.db.models import Count, Q
+from django.utils.text import slugify
 
 from arkumu.cache.services import CatalogCacheService
 from arkumu.catalog.services.project_views import CardURIs, CardView, ProjectURIs
@@ -25,6 +26,7 @@ class CatalogInsightsService:
     POPULAR_KEYWORDS_TTL = 'catalog_statistics'
     RANDOM_PROJECTS_CACHE_TYPE = 'random_project_candidates'
     RANDOM_PROJECTS_TTL = 'catalog_search'
+    PROJECT_PREVIEW_SEARCH_CACHE_TYPE = 'project_preview_search'
 
     def __init__(self, user=None):
         self.catalog_cache = CatalogCacheService()
@@ -47,6 +49,49 @@ class CatalogInsightsService:
         if cached is not None:
             return cached
 
+        # Prefer snapshot data so keyword cloud reflects the cached project snapshot.
+        info_map = self._load_project_info_from_graph()
+        if info_map:
+            counts: Dict[str, int] = defaultdict(int)
+            labels: Dict[str, str] = {}
+
+            for info in info_map.values():
+                category_labels = info.get('category_labels', [])
+                category_slugs = info.get('category_slugs', [])
+                max_len = max(len(category_labels), len(category_slugs))
+
+                for idx in range(max_len):
+                    slug = category_slugs[idx] if idx < len(category_slugs) else ''
+                    label = category_labels[idx] if idx < len(category_labels) else ''
+
+                    if not slug:
+                        slug = slugify(label) if label else ''
+
+                    if not slug:
+                        continue
+
+                    counts[slug] += 1
+                    if slug not in labels and label:
+                        labels[slug] = label
+
+            if counts:
+                sorted_items = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+                results = []
+                for slug, count in sorted_items[:limit]:
+                    label = labels.get(slug)
+                    if not label:
+                        label = slug.replace('-', ' ').title()
+                    results.append({'id': slug, 'label': label, 'count': count})
+
+                self.catalog_cache.set_cached(
+                    self.POPULAR_KEYWORDS_CACHE_TYPE,
+                    results,
+                    self.POPULAR_KEYWORDS_TTL,
+                    **cache_params
+                )
+                return results
+
+        # Snapshot data missing or empty: fall back to database aggregation.
         category_predicate_ids = self._get_resource_ids_by_canonical(CardURIs.CATEGORY)
         if not category_predicate_ids:
             logger.warning("No project category predicate found; returning empty keyword list")
@@ -144,6 +189,48 @@ class CatalogInsightsService:
             year=year,
         )
 
+    def search_project_previews(self, query: str, limit: int = 25) -> List[Dict[str, Any]]:
+        """Return project preview cards matching a free-text query."""
+        if not query:
+            return []
+
+        limit = max(1, min(limit, 50))
+        normalized_query = query.strip().lower()
+        if not normalized_query:
+            return []
+
+        cache_params = {
+            'query': normalized_query,
+            'limit': limit,
+        }
+
+        cached = self.catalog_cache.get_cached(
+            self.PROJECT_PREVIEW_SEARCH_CACHE_TYPE,
+            **cache_params,
+        )
+        if cached is not None:
+            return cached
+
+        records = self._get_snapshot_records()
+        matches: List[ProjectRecord] = []
+        for record in records:
+            try:
+                if record.matches_query(normalized_query):
+                    matches.append(record)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("Failed to evaluate search for %s: %s", record.uri, exc)
+
+        previews = [self._record_to_preview(record) for record in matches[:limit]]
+
+        self.catalog_cache.set_cached(
+            self.PROJECT_PREVIEW_SEARCH_CACHE_TYPE,
+            previews,
+            self.RANDOM_PROJECTS_TTL,
+            **cache_params,
+        )
+
+        return previews
+
     def _get_random_projects_from_graph(
         self,
         *,
@@ -157,12 +244,15 @@ class CatalogInsightsService:
     ) -> Optional[List[Dict[str, Any]]]:
         """Return random projects using pre-built graph/card cache with proper relationship enrichment."""
 
+        if not project_info_map:
+            return None
+
         candidate_uris = self.catalog_cache.get_cached(
             self.RANDOM_PROJECTS_CACHE_TYPE,
             **cache_params
         )
 
-        if candidate_uris is None:
+        if candidate_uris in (None, []):
             candidate_uris = self._filter_project_uris_from_info(
                 project_info_map,
                 keyword_id=keyword_id,
@@ -171,19 +261,27 @@ class CatalogInsightsService:
                 year=year,
             )
 
-            self.catalog_cache.set_cached(
-                self.RANDOM_PROJECTS_CACHE_TYPE,
-                candidate_uris,
-                self.RANDOM_PROJECTS_TTL,
-                **cache_params
-            )
+            if candidate_uris:
+                self.catalog_cache.set_cached(
+                    self.RANDOM_PROJECTS_CACHE_TYPE,
+                    candidate_uris,
+                    self.RANDOM_PROJECTS_TTL,
+                    **cache_params
+                )
+            else:
+                # Avoid reusing stale empty cache entries; surface empty list to caller.
+                self.catalog_cache.invalidate(
+                    self.RANDOM_PROJECTS_CACHE_TYPE,
+                    **cache_params
+                )
+                return []
 
         if not candidate_uris:
-            return []
+            return None
 
         available_uris = [uri for uri in candidate_uris if uri in project_info_map]
         if not available_uris:
-            return []
+            return None
 
         if len(available_uris) <= limit:
             selected_uris = available_uris[:]
@@ -194,7 +292,7 @@ class CatalogInsightsService:
         # Use the same enrichment approach as CatalogView
         projects = self._enrich_projects_with_relationships(selected_uris, project_info_map)
 
-        return projects
+        return projects or None
 
     def _enrich_projects_with_relationships(
         self,

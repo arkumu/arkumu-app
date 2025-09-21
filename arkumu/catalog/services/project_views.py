@@ -52,6 +52,8 @@ class CardURIs:
     # Project Category
     CATEGORY_TYPE = "http://arkumu.org/data/types/projektkategorie"
     CATEGORY_GERMAN_NAME = "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb"
+    CATEGORY_SYNONYMS = "http://arkumu.org/data/properties/synonyme"
+    CATEGORY_WIKIDATA_ID = "http://arkumu.org/data/properties/wikidata-id"
 
 
 # Additional URI constants for Project View (extends Card)
