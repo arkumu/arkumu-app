@@ -210,7 +210,7 @@ class SchemaManifestService:
         return copy.deepcopy(schema)
 
     def _get_canonical_schema(self, organization_code: str) -> Dict[str, Any]:
-        canonical_schema = Mapping.objects.filter(constants__organization_code=organization_code).first()
+        canonical_schema = Mapping.objects.filter(organization_id=organization_code).first()
         if not canonical_schema:
             logger.warning(
                 "SchemaManifestService.get_canonical_schema: No canonical schema found for org '%s'",
