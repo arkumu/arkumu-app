@@ -24,14 +24,17 @@
     <!-- Search Bar -->
     <div class="card bg-base-100 shadow-xl mb-6">
         <div class="card-body">
-            <form method="get" action="{% url 'catalog:search' %}" class="flex gap-4 items-end">
+            <form method="get" action="{% url 'catalog:search' %}" class="flex gap-4 items-end" autocomplete="off">
                 <div class="form-control flex-1">
                     <label class="label">
                         <span class="label-text">Search across all resources</span>
                     </label>
                     <input type="text" 
-                           name="q" 
+                           name="query" 
                            autocomplete="off"
+                           autocorrect="off"
+                           autocapitalize="none"
+                           spellcheck="false"
                            placeholder="Search projects, events, people, documents..." 
                            class="input input-bordered w-full" />
                 </div>

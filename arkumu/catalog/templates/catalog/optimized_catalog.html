@@ -14,8 +14,11 @@
         {# HTMX-powered search with debounce #}
         <div class="search-container">
             <input type="search" 
-                   name="q"
+                   name="query"
                    autocomplete="off"
+                   autocorrect="off"
+                   autocapitalize="none"
+                   spellcheck="false"
                    placeholder="Search projects, people, events..."
                    class="search-input"
                    hx-get="{% url 'catalog:search' %}"
