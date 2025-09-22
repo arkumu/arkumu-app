@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from arkumu.metadata.services.domain_schema_parser import ArkumuModelExportService
+from arkumu.metadata.services.property_markdown_parser import (
+    PropertyMarkdownParser,
+    PropertyDefinition,
+)
 
 
 @dataclass
@@ -19,6 +23,9 @@ class GeneratedField:
     label_de: Optional[str]
     source_name_en: str
     source_name_de: Optional[str]
+    predicate_uri: Optional[str] = None
+    graph_representation: Optional[str] = None
+    property_slug: Optional[str] = None
 
     def render(self, indent: str = "    ") -> str:
         metadata_parts = [
@@ -29,6 +36,12 @@ class GeneratedField:
             metadata_parts.append(f"'source_de_name': '{self.source_name_de}'")
         if self.label_de:
             metadata_parts.append(f"'label_de': '{self.label_de}'")
+        if self.predicate_uri:
+            metadata_parts.append(f"'predicate_uri': '{self.predicate_uri}'")
+        if self.graph_representation:
+            metadata_parts.append(f"'graph_id': '{self.graph_representation}'")
+        if self.property_slug:
+            metadata_parts.append(f"'property_slug': '{self.property_slug}'")
         metadata = ', '.join(metadata_parts)
         return (
             f"{indent}{self.name}: list[str] = field(\n"
@@ -59,11 +72,21 @@ class GeneratedClass:
 class DomainDataclassGenerator:
     """Generate dataclass module strings from the Arkumu domain markdown."""
 
-    def __init__(self, export_service: Optional[ArkumuModelExportService] = None) -> None:
+    def __init__(
+        self,
+        export_service: Optional[ArkumuModelExportService] = None,
+        property_parser: Optional[PropertyMarkdownParser] = None,
+    ) -> None:
         self.export_service = export_service or ArkumuModelExportService()
+        self.property_parser = property_parser or PropertyMarkdownParser()
+        self._property_map: Dict[str, PropertyDefinition] = {}
 
     def build_module(self, markdown_path: Path | str) -> str:
         payload = self.export_service.build_schema(markdown_path)
+        property_definitions = self.property_parser.parse_file(markdown_path)
+        self._property_map = {
+            definition.normalized_key: definition for definition in property_definitions
+        }
         classes = [
             self._build_class_definition(class_payload)
             for class_payload in payload.get("classes", [])
@@ -120,6 +143,7 @@ class DomainDataclassGenerator:
 
             normalized_key = self._normalize_property_name(name_en_raw)
             de_entry = german_map.get(normalized_key)
+            prop_def = self._property_map.get(normalized_key)
             fields.append(
                 GeneratedField(
                     name=snake_name,
@@ -127,6 +151,9 @@ class DomainDataclassGenerator:
                     label_de=str(de_entry.get("label")) if de_entry else None,
                     source_name_en=name_en_raw,
                     source_name_de=str(de_entry.get("name")) if de_entry else None,
+                    predicate_uri=prop_def.uri if prop_def else None,
+                    graph_representation=prop_def.graph_representation if prop_def else None,
+                    property_slug=prop_def.slug if prop_def else None,
                 )
             )
 

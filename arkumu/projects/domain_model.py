@@ -15,151 +15,151 @@ class Actor(ArkumuEntity):
 DE: Ein:e Akteur:in ist entweder eine einzelne lebende oder verstorbene reale Person, eine Gruppe solcher Personen oder eine Körperschaft. Fiktive Akteur:innen oder Rollennamen, zum Beispiel, sollten als Beschreibung oder Kommentar in einem Ereignis verzeichnet werden."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     alternative_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has alternative name', 'label_en': 'Alternative Name' },
+        metadata={ 'source_en_name': 'has alternative name', 'label_en': 'Alternative Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-alternative-name', 'graph_id': 'arkumu:hasAlternativeName', 'property_slug': 'has-alternative-name' },
     )
     non_public_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has non-public name', 'label_en': 'Non-public Name' },
+        metadata={ 'source_en_name': 'has non-public name', 'label_en': 'Non-public Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-non-public-name', 'graph_id': 'arkumu:hasNon-publicName', 'property_slug': 'has-non-public-name' },
     )
     preceding_title: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has preceding title', 'label_en': 'Preceding Title' },
+        metadata={ 'source_en_name': 'has preceding title', 'label_en': 'Preceding Title', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-preceding-title', 'graph_id': 'arkumu:hasPrecedingTitle', 'property_slug': 'has-preceding-title' },
     )
     trailing_title: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has trailing title', 'label_en': 'Trailing Title' },
+        metadata={ 'source_en_name': 'has trailing title', 'label_en': 'Trailing Title', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-trailing-title', 'graph_id': 'arkumu:hasTrailingTitle', 'property_slug': 'has-trailing-title' },
     )
     gender: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has gender', 'label_en': 'Gender' },
+        metadata={ 'source_en_name': 'has gender', 'label_en': 'Gender', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gender', 'graph_id': 'arkumu:hasGender', 'property_slug': 'has-gender' },
     )
     date_of_birth: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has date of birth', 'label_en': 'Date of Birth' },
+        metadata={ 'source_en_name': 'has date of birth', 'label_en': 'Date of Birth', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-date-of-birth', 'graph_id': 'arkumu:hasDateOfBirth', 'property_slug': 'has-date-of-birth' },
     )
     date_of_death: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has date of death', 'label_en': 'Date of Death' },
+        metadata={ 'source_en_name': 'has date of death', 'label_en': 'Date of Death', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-date-of-death', 'graph_id': 'arkumu:hasDateOfDeath', 'property_slug': 'has-date-of-death' },
     )
     beginning_of_activity: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has beginning of activity', 'label_en': 'Beginning of Activity' },
+        metadata={ 'source_en_name': 'has beginning of activity', 'label_en': 'Beginning of Activity', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-beginning-of-activity', 'graph_id': 'arkumu:hasBeginningOfActivity', 'property_slug': 'has-beginning-of-activity' },
     )
     end_of_activity: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has end of activity', 'label_en': 'End of Activity' },
+        metadata={ 'source_en_name': 'has end of activity', 'label_en': 'End of Activity', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-end-of-activity', 'graph_id': 'arkumu:hasEndOfActivity', 'property_slug': 'has-end-of-activity' },
     )
     place: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has place of birth', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has place of birth', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-place-of-birth', 'graph_id': 'arkumu:hasPlaceOfBirth', 'property_slug': 'has-place-of-birth' },
     )
     place_2: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has place of death', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has place of death', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-place-of-death', 'graph_id': 'arkumu:hasPlaceOfDeath', 'property_slug': 'has-place-of-death' },
     )
     place_3: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has place of activity', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has place of activity', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-place-of-activity', 'graph_id': 'arkumu:hasPlaceOfActivity', 'property_slug': 'has-place-of-activity' },
     )
     place_4: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has place of foundation', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has place of foundation', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-place-of-foundation', 'graph_id': 'arkumu:hasPlaceOfFoundation', 'property_slug': 'has-place-of-foundation' },
     )
     place_5: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has place of dissolution', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has place of dissolution', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-place-of-dissolution', 'graph_id': 'arkumu:hasPlaceOfDissolution', 'property_slug': 'has-place-of-dissolution' },
     )
     german_short_biography: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german short biography', 'label_en': 'German Short Biography' },
+        metadata={ 'source_en_name': 'has german short biography', 'label_en': 'German Short Biography', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-short-biography', 'graph_id': 'arkumu:hasGermanShortBiography', 'property_slug': 'has-german-short-biography' },
     )
     english_short_biography: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english short biography', 'label_en': 'English Short Biography' },
+        metadata={ 'source_en_name': 'has english short biography', 'label_en': 'English Short Biography', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-short-biography', 'graph_id': 'arkumu:hasEnglishShortBiography', 'property_slug': 'has-english-short-biography' },
     )
     german_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary' },
+        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-commentary', 'graph_id': 'arkumu:hasGermanCommentary', 'property_slug': 'has-german-commentary' },
     )
     english_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary' },
+        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-commentary', 'graph_id': 'arkumu:hasEnglishCommentary', 'property_slug': 'has-english-commentary' },
     )
     internal_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary' },
+        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-internal-commentary', 'graph_id': 'arkumu:hasInternalCommentary', 'property_slug': 'has-internal-commentary' },
     )
     role: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has profession or activity', 'label_en': 'Role' },
+        metadata={ 'source_en_name': 'has profession or activity', 'label_en': 'Role', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-profession-or-activity', 'graph_id': 'arkumu:hasProfessionOrActivity', 'property_slug': 'has-profession-or-activity' },
     )
     orcid: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has ORCID', 'label_en': 'ORCID' },
+        metadata={ 'source_en_name': 'has ORCID', 'label_en': 'ORCID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-orcid', 'graph_id': 'arkumu:hasOrcid', 'property_slug': 'has-orcid' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     viaf_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has VIAF ID', 'label_en': 'VIAF ID' },
+        metadata={ 'source_en_name': 'has VIAF ID', 'label_en': 'VIAF ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-viaf-id', 'graph_id': 'arkumu:hasViafId', 'property_slug': 'has-viaf-id' },
     )
     lccn_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has LCCN ID', 'label_en': 'LCCN ID' },
+        metadata={ 'source_en_name': 'has LCCN ID', 'label_en': 'LCCN ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-lccn-id', 'graph_id': 'arkumu:hasLccnId', 'property_slug': 'has-lccn-id' },
     )
     other_authority_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has other authority ID', 'label_en': 'Other Authority ID' },
+        metadata={ 'source_en_name': 'has other authority ID', 'label_en': 'Other Authority ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-other-authority-id', 'graph_id': 'arkumu:hasOtherAuthorityId', 'property_slug': 'has-other-authority-id' },
     )
     website: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has website', 'label_en': 'Website' },
+        metadata={ 'source_en_name': 'has website', 'label_en': 'Website', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-website', 'graph_id': 'arkumu:hasWebsite', 'property_slug': 'has-website' },
     )
     contact_e_mail: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has contact e-mail', 'label_en': 'Contact (E-Mail)' },
+        metadata={ 'source_en_name': 'has contact e-mail', 'label_en': 'Contact (E-Mail)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-contact-e-mail', 'graph_id': 'arkumu:hasContactE-mail', 'property_slug': 'has-contact-e-mail' },
     )
     contact_phone: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has contact phone number', 'label_en': 'Contact (Phone)' },
+        metadata={ 'source_en_name': 'has contact phone number', 'label_en': 'Contact (Phone)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-contact-phone-number', 'graph_id': 'arkumu:hasContactPhoneNumber', 'property_slug': 'has-contact-phone-number' },
     )
     contact_postal_address: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has contact postal address', 'label_en': 'Contact (Postal Address)' },
+        metadata={ 'source_en_name': 'has contact postal address', 'label_en': 'Contact (Postal Address)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-contact-postal-address', 'graph_id': 'arkumu:hasContactPostalAddress', 'property_slug': 'has-contact-postal-address' },
     )
     dataset_id_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor' },
+        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-id-at-depositor', 'graph_id': 'arkumu:hasDatasetIdAtDepositor', 'property_slug': 'has-dataset-id-at-depositor' },
     )
     organisational_unit: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit' },
+        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-depositor', 'graph_id': 'arkumu:hasDepositor', 'property_slug': 'has-depositor' },
     )
     dataset_creation_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-creation-date-at-depositor', 'graph_id': 'arkumu:hasDatasetCreationDateAtDepositor', 'property_slug': 'has-dataset-creation-date-at-depositor' },
     )
     dataset_last_modification_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-last-modification-date-at-depositor', 'graph_id': 'arkumu:hasDatasetLastModificationDateAtDepositor', 'property_slug': 'has-dataset-last-modification-date-at-depositor' },
     )
     actor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has related actor', 'label_en': 'Actor' },
+        metadata={ 'source_en_name': 'has related actor', 'label_en': 'Actor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-related-actor', 'graph_id': 'arkumu:hasRelatedActor', 'property_slug': 'has-related-actor' },
     )
 
 @dataclass
@@ -168,11 +168,11 @@ class AlternativeTitleSet(ArkumuEntity):
 DE: A set of a possible alternative title and a possible alternative subtitle."""
     alternative_title: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has alternative title', 'label_en': 'Alternative Title' },
+        metadata={ 'source_en_name': 'has alternative title', 'label_en': 'Alternative Title', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-alternative-title', 'graph_id': 'arkumu:hasAlternativeTitle', 'property_slug': 'has-alternative-title' },
     )
     alternative_subtitle: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has alternative subtitle', 'label_en': 'Alternative Subtitle' },
+        metadata={ 'source_en_name': 'has alternative subtitle', 'label_en': 'Alternative Subtitle', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-alternative-subtitle', 'graph_id': 'arkumu:hasAlternativeSubtitle', 'property_slug': 'has-alternative-subtitle' },
     )
 
 @dataclass
@@ -181,19 +181,19 @@ class DepositingUniversity(ArkumuEntity):
 DE: Die für die eingelieferten Daten verantwortliche Hochschule."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
 
 @dataclass
@@ -202,155 +202,155 @@ class DigitalObject(ArkumuEntity):
 DE: Ein Digitales Objekt ist eine einzelne Datei mit dazugehörigen Metadaten. Beschreibene Metadaten werden von Nutzer:innen eingegeben, technische Metadaten werden von Software automatisch ausgelesen."""
     file_path: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has file path', 'label_en': 'File Path' },
+        metadata={ 'source_en_name': 'has file path', 'label_en': 'File Path', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-file-path', 'graph_id': 'arkumu:hasFilePath', 'property_slug': 'has-file-path' },
     )
     file_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has file name', 'label_en': 'File Name' },
+        metadata={ 'source_en_name': 'has file name', 'label_en': 'File Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-file-name', 'graph_id': 'arkumu:hasFileName', 'property_slug': 'has-file-name' },
     )
     file_size: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has file size', 'label_en': 'File Size' },
+        metadata={ 'source_en_name': 'has file size', 'label_en': 'File Size', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-file-size', 'graph_id': 'arkumu:hasFileSize', 'property_slug': 'has-file-size' },
     )
     mime_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has MIME type', 'label_en': 'MIME Type' },
+        metadata={ 'source_en_name': 'has MIME type', 'label_en': 'MIME Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-mime-type', 'graph_id': 'arkumu:hasMimeType', 'property_slug': 'has-mime-type' },
     )
     media_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has media type', 'label_en': 'Media Type' },
+        metadata={ 'source_en_name': 'has media type', 'label_en': 'Media Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-media-type', 'graph_id': 'arkumu:hasMediaType', 'property_slug': 'has-media-type' },
     )
     genesis_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has genesis type', 'label_en': 'Genesis Type' },
+        metadata={ 'source_en_name': 'has genesis type', 'label_en': 'Genesis Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-genesis-type', 'graph_id': 'arkumu:hasGenesisType', 'property_slug': 'has-genesis-type' },
     )
     file_package: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'is file package', 'label_en': 'File Package' },
+        metadata={ 'source_en_name': 'is file package', 'label_en': 'File Package', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#is-file-package', 'graph_id': 'arkumu:isFilePackage', 'property_slug': 'is-file-package' },
     )
     preservation_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has preservation type', 'label_en': 'Preservation Type' },
+        metadata={ 'source_en_name': 'has preservation type', 'label_en': 'Preservation Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-preservation-type', 'graph_id': 'arkumu:hasPreservationType', 'property_slug': 'has-preservation-type' },
     )
     derivate_copy_number: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has derivate copy number', 'label_en': 'Derivate Copy Number' },
+        metadata={ 'source_en_name': 'has derivate copy number', 'label_en': 'Derivate Copy Number', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-derivate-copy-number', 'graph_id': 'arkumu:hasDerivateCopyNumber', 'property_slug': 'has-derivate-copy-number' },
     )
     digital_object_keyword: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has digital object keyword', 'label_en': 'Digital Object Keyword' },
+        metadata={ 'source_en_name': 'has digital object keyword', 'label_en': 'Digital Object Keyword', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-digital-object-keyword', 'graph_id': 'arkumu:hasDigitalObjectKeyword', 'property_slug': 'has-digital-object-keyword' },
     )
     digital_object_license: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has digital object license', 'label_en': 'Digital Object License' },
+        metadata={ 'source_en_name': 'has digital object license', 'label_en': 'Digital Object License', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-digital-object-license', 'graph_id': 'arkumu:hasDigitalObjectLicense', 'property_slug': 'has-digital-object-license' },
     )
     german_content_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german content description', 'label_en': 'German Content Description' },
+        metadata={ 'source_en_name': 'has german content description', 'label_en': 'German Content Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-content-description', 'graph_id': 'arkumu:hasGermanContentDescription', 'property_slug': 'has-german-content-description' },
     )
     english_content_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english content description', 'label_en': 'English Content Description' },
+        metadata={ 'source_en_name': 'has english content description', 'label_en': 'English Content Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-content-description', 'graph_id': 'arkumu:hasEnglishContentDescription', 'property_slug': 'has-english-content-description' },
     )
     german_image_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german image description', 'label_en': 'German Image Description' },
+        metadata={ 'source_en_name': 'has german image description', 'label_en': 'German Image Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-image-description', 'graph_id': 'arkumu:hasGermanImageDescription', 'property_slug': 'has-german-image-description' },
     )
     english_image_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english image description', 'label_en': 'English Image Description' },
+        metadata={ 'source_en_name': 'has english image description', 'label_en': 'English Image Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-image-description', 'graph_id': 'arkumu:hasEnglishImageDescription', 'property_slug': 'has-english-image-description' },
     )
     german_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary' },
+        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-commentary', 'graph_id': 'arkumu:hasGermanCommentary', 'property_slug': 'has-german-commentary' },
     )
     english_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary' },
+        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-commentary', 'graph_id': 'arkumu:hasEnglishCommentary', 'property_slug': 'has-english-commentary' },
     )
     internal_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary' },
+        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-internal-commentary', 'graph_id': 'arkumu:hasInternalCommentary', 'property_slug': 'has-internal-commentary' },
     )
     significant_properties_german: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has significant properties (german)', 'label_en': 'Significant Properties (German)' },
+        metadata={ 'source_en_name': 'has significant properties (german)', 'label_en': 'Significant Properties (German)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-significant-properties-german', 'graph_id': 'arkumu:hasSignificantPropertiesGerman', 'property_slug': 'has-significant-properties-german' },
     )
     significant_properties_english: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has significant properties (english)', 'label_en': 'Significant Properties (English)' },
+        metadata={ 'source_en_name': 'has significant properties (english)', 'label_en': 'Significant Properties (English)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-significant-properties-english', 'graph_id': 'arkumu:hasSignificantPropertiesEnglish', 'property_slug': 'has-significant-properties-english' },
     )
     system_requirements: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has system requirements', 'label_en': 'System Requirements' },
+        metadata={ 'source_en_name': 'has system requirements', 'label_en': 'System Requirements', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-system-requirements', 'graph_id': 'arkumu:hasSystemRequirements', 'property_slug': 'has-system-requirements' },
     )
     checksum: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has checksum', 'label_en': 'Checksum' },
+        metadata={ 'source_en_name': 'has checksum', 'label_en': 'Checksum', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-checksum', 'graph_id': 'arkumu:hasChecksum', 'property_slug': 'has-checksum' },
     )
     checksum_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has checksum at depositor', 'label_en': 'Checksum at Depositor' },
+        metadata={ 'source_en_name': 'has checksum at depositor', 'label_en': 'Checksum at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-checksum-at-depositor', 'graph_id': 'arkumu:hasChecksumAtDepositor', 'property_slug': 'has-checksum-at-depositor' },
     )
     jhove_status: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has JHOVE status', 'label_en': 'JHOVE Status' },
+        metadata={ 'source_en_name': 'has JHOVE status', 'label_en': 'JHOVE Status', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-jhove-status', 'graph_id': 'arkumu:hasJhoveStatus', 'property_slug': 'has-jhove-status' },
     )
     droid_puid: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has DROID puid', 'label_en': 'DROID PUID' },
+        metadata={ 'source_en_name': 'has DROID puid', 'label_en': 'DROID PUID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-droid-puid', 'graph_id': 'arkumu:hasDroidPuid', 'property_slug': 'has-droid-puid' },
     )
     jhove_metadata: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has JHOVE metadata', 'label_en': 'JHOVE Metadata' },
+        metadata={ 'source_en_name': 'has JHOVE metadata', 'label_en': 'JHOVE Metadata', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-jhove-metadata', 'graph_id': 'arkumu:hasJhoveMetadata', 'property_slug': 'has-jhove-metadata' },
     )
     droid_metadata: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has DROID metadata', 'label_en': 'DROID Metadata' },
+        metadata={ 'source_en_name': 'has DROID metadata', 'label_en': 'DROID Metadata', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-droid-metadata', 'graph_id': 'arkumu:hasDroidMetadata', 'property_slug': 'has-droid-metadata' },
     )
     exiftool_metadata: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has ExifTool metadata', 'label_en': 'ExifTool Metadata' },
+        metadata={ 'source_en_name': 'has ExifTool metadata', 'label_en': 'ExifTool Metadata', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-exiftool-metadata', 'graph_id': 'arkumu:hasExiftoolMetadata', 'property_slug': 'has-exiftool-metadata' },
     )
     mediainfo_metadata: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has MediaInfo metadata', 'label_en': 'MediaInfo Metadata' },
+        metadata={ 'source_en_name': 'has MediaInfo metadata', 'label_en': 'MediaInfo Metadata', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-mediainfo-metadata', 'graph_id': 'arkumu:hasMediainfoMetadata', 'property_slug': 'has-mediainfo-metadata' },
     )
     dataset_id_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor' },
+        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-id-at-depositor', 'graph_id': 'arkumu:hasDatasetIdAtDepositor', 'property_slug': 'has-dataset-id-at-depositor' },
     )
     organisational_unit: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit' },
+        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-depositor', 'graph_id': 'arkumu:hasDepositor', 'property_slug': 'has-depositor' },
     )
     dataset_creation_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-creation-date-at-depositor', 'graph_id': 'arkumu:hasDatasetCreationDateAtDepositor', 'property_slug': 'has-dataset-creation-date-at-depositor' },
     )
     dataset_last_modification_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-last-modification-date-at-depositor', 'graph_id': 'arkumu:hasDatasetLastModificationDateAtDepositor', 'property_slug': 'has-dataset-last-modification-date-at-depositor' },
     )
     is_arkumu_preview: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has is arkumu preview', 'label_en': 'is arkumu Preview' },
+        metadata={ 'source_en_name': 'has is arkumu preview', 'label_en': 'is arkumu Preview', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-is-arkumu-preview', 'graph_id': 'arkumu:hasIsArkumuPreview', 'property_slug': 'has-is-arkumu-preview' },
     )
     is_poster_image: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has is poster image', 'label_en': 'is Poster Image' },
+        metadata={ 'source_en_name': 'has is poster image', 'label_en': 'is Poster Image', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-is-poster-image', 'graph_id': 'arkumu:hasIsPosterImage', 'property_slug': 'has-is-poster-image' },
     )
     television_standard: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has television standard', 'label_en': 'Television Standard' },
+        metadata={ 'source_en_name': 'has television standard', 'label_en': 'Television Standard', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-television-standard', 'graph_id': 'arkumu:hasTelevisionStandard', 'property_slug': 'has-television-standard' },
     )
     frame_rate: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has frame rate', 'label_en': 'Frame Rate' },
+        metadata={ 'source_en_name': 'has frame rate', 'label_en': 'Frame Rate', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-frame-rate', 'graph_id': 'arkumu:hasFrameRate', 'property_slug': 'has-frame-rate' },
     )
     aspect_ratio: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has aspect ratio', 'label_en': 'Aspect Ratio' },
+        metadata={ 'source_en_name': 'has aspect ratio', 'label_en': 'Aspect Ratio', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-aspect-ratio', 'graph_id': 'arkumu:hasAspectRatio', 'property_slug': 'has-aspect-ratio' },
     )
 
 @dataclass
@@ -359,31 +359,31 @@ class EquipmentAndSoftware(ArkumuEntity):
 DE: Werkzeuge und Software, die während eines Ereignisses verwendet wurden, um das Ergebnis einer bestimmten Aktivität zu erreichen."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     producer: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has producer', 'label_en': 'Producer' },
+        metadata={ 'source_en_name': 'has producer', 'label_en': 'Producer', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-producer', 'graph_id': 'arkumu:hasProducer', 'property_slug': 'has-producer' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     german_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description' },
+        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-description', 'graph_id': 'arkumu:hasGermanDescription', 'property_slug': 'has-german-description' },
     )
     english_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description' },
+        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-description', 'graph_id': 'arkumu:hasEnglishDescription', 'property_slug': 'has-english-description' },
     )
 
 @dataclass
@@ -392,23 +392,23 @@ class EquipmentType(ArkumuEntity):
 DE: Eine Ereignisart kategorisiert eine Stück Equipment oder ein Stück Software mit Hilfe eines kontrollierten Vokabulars."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     aat_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID' },
+        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-aat-id', 'graph_id': 'arkumu:hasAatId', 'property_slug': 'has-aat-id' },
     )
 
 @dataclass
@@ -417,99 +417,99 @@ class Event(ArkumuEntity):
 DE: Ereignisse bilden Geschehnisse in der realen Welt ab, die im Zusammenhang mit einem Projekt und dessen Akteur:innen passiert sind. Ereignisse haben einen zeitlichen Beginn und ein zeitliches Ende und finden an realen Orten statt. Abstrakte Orte ("im Internet") oder fiktive Orte ("Entenhausen") sind als Kommentar zu verzeichnen. Ereignisse werden von verschiedenen Akteur:innen durch- oder aufgeführt, wodurch sich rechtliche Ansprüche ableiten können. Ereignisse manifestieren sich oder werden dokumentiert in Digitalen Objekten (Dateien und ihren Metadaten)."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     event_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event type', 'label_en': 'Event Type' },
+        metadata={ 'source_en_name': 'has event type', 'label_en': 'Event Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-type', 'graph_id': 'arkumu:hasEventType', 'property_slug': 'has-event-type' },
     )
     event_beginning: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event beginning', 'label_en': 'Event Beginning' },
+        metadata={ 'source_en_name': 'has event beginning', 'label_en': 'Event Beginning', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-beginning', 'graph_id': 'arkumu:hasEventBeginning', 'property_slug': 'has-event-beginning' },
     )
     event_end: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event end', 'label_en': 'Event End' },
+        metadata={ 'source_en_name': 'has event end', 'label_en': 'Event End', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-end', 'graph_id': 'arkumu:hasEventEnd', 'property_slug': 'has-event-end' },
     )
     place: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event place', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has event place', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-place', 'graph_id': 'arkumu:hasEventPlace', 'property_slug': 'has-event-place' },
     )
     event_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event description', 'label_en': 'Event Description' },
+        metadata={ 'source_en_name': 'has event description', 'label_en': 'Event Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-description', 'graph_id': 'arkumu:hasEventDescription', 'property_slug': 'has-event-description' },
     )
     german_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary' },
+        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-commentary', 'graph_id': 'arkumu:hasGermanCommentary', 'property_slug': 'has-german-commentary' },
     )
     english_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary' },
+        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-commentary', 'graph_id': 'arkumu:hasEnglishCommentary', 'property_slug': 'has-english-commentary' },
     )
     internal_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary' },
+        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-internal-commentary', 'graph_id': 'arkumu:hasInternalCommentary', 'property_slug': 'has-internal-commentary' },
     )
     event_property: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event property', 'label_en': 'Event Property' },
+        metadata={ 'source_en_name': 'has event property', 'label_en': 'Event Property', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-property', 'graph_id': 'arkumu:hasEventProperty', 'property_slug': 'has-event-property' },
     )
     event: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has related event', 'label_en': 'Event' },
+        metadata={ 'source_en_name': 'has related event', 'label_en': 'Event', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-related-event', 'graph_id': 'arkumu:hasRelatedEvent', 'property_slug': 'has-related-event' },
     )
     actor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has actor', 'label_en': 'Actor' },
+        metadata={ 'source_en_name': 'has actor', 'label_en': 'Actor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-actor', 'graph_id': 'arkumu:hasActor', 'property_slug': 'has-actor' },
     )
     equipment_and_software: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has equipment and software', 'label_en': 'Equipment and Software' },
+        metadata={ 'source_en_name': 'has equipment and software', 'label_en': 'Equipment and Software', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-equipment-and-software', 'graph_id': 'arkumu:hasEquipmentAndSoftware', 'property_slug': 'has-equipment-and-software' },
     )
     physical_object: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has physical object', 'label_en': 'Physical Object' },
+        metadata={ 'source_en_name': 'has physical object', 'label_en': 'Physical Object', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-physical-object', 'graph_id': 'arkumu:hasPhysicalObject', 'property_slug': 'has-physical-object' },
     )
     information_storage_medium: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has information storage medium', 'label_en': 'Information Storage Medium' },
+        metadata={ 'source_en_name': 'has information storage medium', 'label_en': 'Information Storage Medium', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-information-storage-medium', 'graph_id': 'arkumu:hasInformationStorageMedium', 'property_slug': 'has-information-storage-medium' },
     )
     digital_object: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has digital object', 'label_en': 'Digital Object' },
+        metadata={ 'source_en_name': 'has digital object', 'label_en': 'Digital Object', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-digital-object', 'graph_id': 'arkumu:hasDigitalObject', 'property_slug': 'has-digital-object' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     viaf_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has VIAF ID', 'label_en': 'VIAF ID' },
+        metadata={ 'source_en_name': 'has VIAF ID', 'label_en': 'VIAF ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-viaf-id', 'graph_id': 'arkumu:hasViafId', 'property_slug': 'has-viaf-id' },
     )
     dataset_id_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor' },
+        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-id-at-depositor', 'graph_id': 'arkumu:hasDatasetIdAtDepositor', 'property_slug': 'has-dataset-id-at-depositor' },
     )
     organisational_unit: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit' },
+        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-depositor', 'graph_id': 'arkumu:hasDepositor', 'property_slug': 'has-depositor' },
     )
     dataset_creation_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-creation-date-at-depositor', 'graph_id': 'arkumu:hasDatasetCreationDateAtDepositor', 'property_slug': 'has-dataset-creation-date-at-depositor' },
     )
     dataset_last_modification_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-last-modification-date-at-depositor', 'graph_id': 'arkumu:hasDatasetLastModificationDateAtDepositor', 'property_slug': 'has-dataset-last-modification-date-at-depositor' },
     )
 
 @dataclass
@@ -518,11 +518,11 @@ class EventDescription(ArkumuEntity):
 DE: Ein Text, der beschreibt, was während eines Ereignisses passiert ist oder der zusätzliche Informationen zu dem betreffenden Ereignis enthält. Dabei kann es sich um Texte handeln, die von den Künstlern selbst oder von einer dritten Person verfasst wurden."""
     description_text: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has description text', 'label_en': 'Description Text' },
+        metadata={ 'source_en_name': 'has description text', 'label_en': 'Description Text', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-description-text', 'graph_id': 'arkumu:hasDescriptionText', 'property_slug': 'has-description-text' },
     )
     sorting_number: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has sorting number', 'label_en': 'Sorting Number' },
+        metadata={ 'source_en_name': 'has sorting number', 'label_en': 'Sorting Number', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-sorting-number', 'graph_id': 'arkumu:hasSortingNumber', 'property_slug': 'has-sorting-number' },
     )
 
 @dataclass
@@ -531,35 +531,35 @@ class EventType(ArkumuEntity):
 DE: Ein Ereignistyp kategorisiert ein Ereignis mit Hilfe eines kontrollierten Vokabulars."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     german_synonyms: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german synonyms', 'label_en': 'German Synonyms' },
+        metadata={ 'source_en_name': 'has german synonyms', 'label_en': 'German Synonyms', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-synonyms', 'graph_id': 'arkumu:hasGermanSynonyms', 'property_slug': 'has-german-synonyms' },
     )
     english_synonyms: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english synonyms', 'label_en': 'English Synonyms' },
+        metadata={ 'source_en_name': 'has english synonyms', 'label_en': 'English Synonyms', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-synonyms', 'graph_id': 'arkumu:hasEnglishSynonyms', 'property_slug': 'has-english-synonyms' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     aat_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID' },
+        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-aat-id', 'graph_id': 'arkumu:hasAatId', 'property_slug': 'has-aat-id' },
     )
     lido_terminology_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has LIDO Terminology ID', 'label_en': 'LIDO Terminology ID' },
+        metadata={ 'source_en_name': 'has LIDO Terminology ID', 'label_en': 'LIDO Terminology ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-lido-terminology-id', 'graph_id': 'arkumu:hasLidoTerminologyId', 'property_slug': 'has-lido-terminology-id' },
     )
 
 @dataclass
@@ -568,31 +568,31 @@ class ExistingLicenseAgreement(ArkumuEntity):
 DE: Ein bereits bestehender, standardisierter Lizenzvertrag für ein Projekt, der an einer der einreichenden Universitäten verwendet wird."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     depositing_university: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has accountable university', 'label_en': 'Depositing University' },
+        metadata={ 'source_en_name': 'has accountable university', 'label_en': 'Depositing University', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-accountable-university', 'graph_id': 'arkumu:hasAccountableUniversity', 'property_slug': 'has-accountable-university' },
     )
     german_wording: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german wording', 'label_en': 'German Wording' },
+        metadata={ 'source_en_name': 'has german wording', 'label_en': 'German Wording', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-wording', 'graph_id': 'arkumu:hasGermanWording', 'property_slug': 'has-german-wording' },
     )
     english_wording: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english wording', 'label_en': 'English Wording' },
+        metadata={ 'source_en_name': 'has english wording', 'label_en': 'English Wording', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-wording', 'graph_id': 'arkumu:hasEnglishWording', 'property_slug': 'has-english-wording' },
     )
     pdf: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has pdf', 'label_en': 'PDF', 'source_de_name': 'has pdf', 'label_de': 'PDF' },
+        metadata={ 'source_en_name': 'has pdf', 'label_en': 'PDF', 'source_de_name': 'has pdf', 'label_de': 'PDF', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-pdf', 'graph_id': 'arkumu:hasPdf', 'property_slug': 'has-pdf' },
     )
     uri: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has uri', 'label_en': 'URI', 'source_de_name': 'has uri', 'label_de': 'URI' },
+        metadata={ 'source_en_name': 'has uri', 'label_en': 'URI', 'source_de_name': 'has uri', 'label_de': 'URI', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-uri', 'graph_id': 'arkumu:hasUri', 'property_slug': 'has-uri' },
     )
 
 @dataclass
@@ -601,111 +601,111 @@ class InformationStorageMedium(ArkumuEntity):
 DE: Besondere Art eines Physischen Objekts, auf dem Daten gespeichert können. Synonyme: Speichermedium, Aufzeichnungsmedium, Datenträger, Trägermedium."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     label: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has label', 'label_en': 'Label' },
+        metadata={ 'source_en_name': 'has label', 'label_en': 'Label', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-label', 'graph_id': 'arkumu:hasLabel', 'property_slug': 'has-label' },
     )
     information_storage_medium_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has information storage medium type', 'label_en': 'Information Storage Medium Type' },
+        metadata={ 'source_en_name': 'has information storage medium type', 'label_en': 'Information Storage Medium Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-information-storage-medium-type', 'graph_id': 'arkumu:hasInformationStorageMediumType', 'property_slug': 'has-information-storage-medium-type' },
     )
     product_id_value: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has product ID', 'label_en': 'Product ID Value' },
+        metadata={ 'source_en_name': 'has product ID', 'label_en': 'Product ID Value', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-product-id', 'graph_id': 'arkumu:hasProductId', 'property_slug': 'has-product-id' },
     )
     external_inventory_number: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has external inventory number', 'label_en': 'External Inventory Number' },
+        metadata={ 'source_en_name': 'has external inventory number', 'label_en': 'External Inventory Number', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-external-inventory-number', 'graph_id': 'arkumu:hasExternalInventoryNumber', 'property_slug': 'has-external-inventory-number' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     place: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has depository', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has depository', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-depository', 'graph_id': 'arkumu:hasDepository', 'property_slug': 'has-depository' },
     )
     actor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has owner', 'label_en': 'Actor' },
+        metadata={ 'source_en_name': 'has owner', 'label_en': 'Actor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-owner', 'graph_id': 'arkumu:hasOwner', 'property_slug': 'has-owner' },
     )
     actor_2: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has legal rights holder', 'label_en': 'Actor' },
+        metadata={ 'source_en_name': 'has legal rights holder', 'label_en': 'Actor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-legal-rights-holder', 'graph_id': 'arkumu:hasLegalRightsHolder', 'property_slug': 'has-legal-rights-holder' },
     )
     provenance: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has provenance', 'label_en': 'Provenance' },
+        metadata={ 'source_en_name': 'has provenance', 'label_en': 'Provenance', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-provenance', 'graph_id': 'arkumu:hasProvenance', 'property_slug': 'has-provenance' },
     )
     german_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description' },
+        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-description', 'graph_id': 'arkumu:hasGermanDescription', 'property_slug': 'has-german-description' },
     )
     english_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description' },
+        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-description', 'graph_id': 'arkumu:hasEnglishDescription', 'property_slug': 'has-english-description' },
     )
     german_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary' },
+        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-commentary', 'graph_id': 'arkumu:hasGermanCommentary', 'property_slug': 'has-german-commentary' },
     )
     english_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary' },
+        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-commentary', 'graph_id': 'arkumu:hasEnglishCommentary', 'property_slug': 'has-english-commentary' },
     )
     internal_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary' },
+        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-internal-commentary', 'graph_id': 'arkumu:hasInternalCommentary', 'property_slug': 'has-internal-commentary' },
     )
     material_keyword: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has material keyword', 'label_en': 'Material Keyword' },
+        metadata={ 'source_en_name': 'has material keyword', 'label_en': 'Material Keyword', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-material-keyword', 'graph_id': 'arkumu:hasMaterialKeyword', 'property_slug': 'has-material-keyword' },
     )
     dimensions: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dimensions', 'label_en': 'Dimensions' },
+        metadata={ 'source_en_name': 'has dimensions', 'label_en': 'Dimensions', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dimensions', 'graph_id': 'arkumu:hasDimensions', 'property_slug': 'has-dimensions' },
     )
     condition_state_german: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has condition state (german)', 'label_en': 'Condition State (German)' },
+        metadata={ 'source_en_name': 'has condition state (german)', 'label_en': 'Condition State (German)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-condition-state-german', 'graph_id': 'arkumu:hasConditionStateGerman', 'property_slug': 'has-condition-state-german' },
     )
     condition_state_english: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has condition state (english)', 'label_en': 'Condition State (English)' },
+        metadata={ 'source_en_name': 'has condition state (english)', 'label_en': 'Condition State (English)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-condition-state-english', 'graph_id': 'arkumu:hasConditionStateEnglish', 'property_slug': 'has-condition-state-english' },
     )
     compilation: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'is compilation', 'label_en': 'Compilation' },
+        metadata={ 'source_en_name': 'is compilation', 'label_en': 'Compilation', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#is-compilation', 'graph_id': 'arkumu:isCompilation', 'property_slug': 'is-compilation' },
     )
     compilation_title: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has compilation title', 'label_en': 'Compilation Title' },
+        metadata={ 'source_en_name': 'has compilation title', 'label_en': 'Compilation Title', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-compilation-title', 'graph_id': 'arkumu:hasCompilationTitle', 'property_slug': 'has-compilation-title' },
     )
     compilation_series_number: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has compilation series number', 'label_en': 'Compilation Series Number' },
+        metadata={ 'source_en_name': 'has compilation series number', 'label_en': 'Compilation Series Number', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-compilation-series-number', 'graph_id': 'arkumu:hasCompilationSeriesNumber', 'property_slug': 'has-compilation-series-number' },
     )
     original_language: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has original language', 'label_en': 'Original Language' },
+        metadata={ 'source_en_name': 'has original language', 'label_en': 'Original Language', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-original-language', 'graph_id': 'arkumu:hasOriginalLanguage', 'property_slug': 'has-original-language' },
     )
     subtitle_language: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has subtitle language', 'label_en': 'Subtitle Language' },
+        metadata={ 'source_en_name': 'has subtitle language', 'label_en': 'Subtitle Language', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-subtitle-language', 'graph_id': 'arkumu:hasSubtitleLanguage', 'property_slug': 'has-subtitle-language' },
     )
     language_version: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has language version', 'label_en': 'Language Version' },
+        metadata={ 'source_en_name': 'has language version', 'label_en': 'Language Version', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-language-version', 'graph_id': 'arkumu:hasLanguageVersion', 'property_slug': 'has-language-version' },
     )
 
 @dataclass
@@ -714,39 +714,39 @@ class InformationStorageMediumType(ArkumuEntity):
 DE: Ein Informationsträgertyp kategorisiert einen Informationsträger mit Hilfe eines kontrollierten Vokabulars."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     german_synonyms: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german synonyms', 'label_en': 'German Synonyms' },
+        metadata={ 'source_en_name': 'has german synonyms', 'label_en': 'German Synonyms', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-synonyms', 'graph_id': 'arkumu:hasGermanSynonyms', 'property_slug': 'has-german-synonyms' },
     )
     english_synonyms: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english synonyms', 'label_en': 'English Synonyms' },
+        metadata={ 'source_en_name': 'has english synonyms', 'label_en': 'English Synonyms', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-synonyms', 'graph_id': 'arkumu:hasEnglishSynonyms', 'property_slug': 'has-english-synonyms' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     aat_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID' },
+        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-aat-id', 'graph_id': 'arkumu:hasAatId', 'property_slug': 'has-aat-id' },
     )
     pbcore_link: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has PBCore link', 'label_en': 'PBCore Link' },
+        metadata={ 'source_en_name': 'has PBCore link', 'label_en': 'PBCore Link', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-pbcore-link', 'graph_id': 'arkumu:hasPbcoreLink', 'property_slug': 'has-pbcore-link' },
     )
     information_storage_medium_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has broader information storage medium type', 'label_en': 'Information Storage Medium Type' },
+        metadata={ 'source_en_name': 'has broader information storage medium type', 'label_en': 'Information Storage Medium Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-broader-information-storage-medium-type', 'graph_id': 'arkumu:hasBroaderInformationStorageMediumType', 'property_slug': 'has-broader-information-storage-medium-type' },
     )
 
 @dataclass
@@ -755,35 +755,35 @@ class Keyword(ArkumuEntity):
 DE: Ein Metadaten-Eintrag aus dem kontrollierten Vokabular von Wikidata."""
     german_wikidata_label: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german wikidata label', 'label_en': 'German Wikidata Label' },
+        metadata={ 'source_en_name': 'has german wikidata label', 'label_en': 'German Wikidata Label', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-wikidata-label', 'graph_id': 'arkumu:hasGermanWikidataLabel', 'property_slug': 'has-german-wikidata-label' },
     )
     english_wikidata_label: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english wikidata label', 'label_en': 'English Wikidata Label' },
+        metadata={ 'source_en_name': 'has english wikidata label', 'label_en': 'English Wikidata Label', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-wikidata-label', 'graph_id': 'arkumu:hasEnglishWikidataLabel', 'property_slug': 'has-english-wikidata-label' },
     )
     german_wikidata_synonym: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german wikidata synonym', 'label_en': 'German Wikidata Synonym' },
+        metadata={ 'source_en_name': 'has german wikidata synonym', 'label_en': 'German Wikidata Synonym', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-wikidata-synonym', 'graph_id': 'arkumu:hasGermanWikidataSynonym', 'property_slug': 'has-german-wikidata-synonym' },
     )
     english_wikidata_synonym: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english wikidata synonym', 'label_en': 'English Wikidata Synonym' },
+        metadata={ 'source_en_name': 'has english wikidata synonym', 'label_en': 'English Wikidata Synonym', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-wikidata-synonym', 'graph_id': 'arkumu:hasEnglishWikidataSynonym', 'property_slug': 'has-english-wikidata-synonym' },
     )
     german_wikidata_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german wikidata description', 'label_en': 'German Wikidata Description' },
+        metadata={ 'source_en_name': 'has german wikidata description', 'label_en': 'German Wikidata Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-wikidata-description', 'graph_id': 'arkumu:hasGermanWikidataDescription', 'property_slug': 'has-german-wikidata-description' },
     )
     german_wikidata_description_2: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german wikidata description', 'label_en': 'German Wikidata Description' },
+        metadata={ 'source_en_name': 'has german wikidata description', 'label_en': 'German Wikidata Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-wikidata-description', 'graph_id': 'arkumu:hasGermanWikidataDescription', 'property_slug': 'has-german-wikidata-description' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
 
 @dataclass
@@ -792,23 +792,23 @@ class Language(ArkumuEntity):
 DE: Eine Sprache, die durch die Norm ISO 639-2 definiert ist. Dieser Standard wurde gewählt, um mit allen Bibliotheken kompatibel zu sein."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     iso_639_2_b_code: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has ISO 639-2(B) code', 'label_en': 'ISO 639-2(B) Code' },
+        metadata={ 'source_en_name': 'has ISO 639-2(B) code', 'label_en': 'ISO 639-2(B) Code', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-iso-639-2b-code', 'graph_id': 'arkumu:hasIso639-2-B-Code', 'property_slug': 'has-iso-639-2b-code' },
     )
     iso_639_2_t_code: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has ISO 639-2(T) code', 'label_en': 'ISO 639-2(T) Code' },
+        metadata={ 'source_en_name': 'has ISO 639-2(T) code', 'label_en': 'ISO 639-2(T) Code', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-iso-639-2t-code', 'graph_id': 'hasIso639-2-T-Code', 'property_slug': 'has-iso-639-2t-code' },
     )
     iso_639_1_code: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has ISO 639-1 code', 'label_en': 'ISO 639-1 Code' },
+        metadata={ 'source_en_name': 'has ISO 639-1 code', 'label_en': 'ISO 639-1 Code', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-iso-639-1-code', 'graph_id': 'arkumu:hasIso639-1-Code', 'property_slug': 'has-iso-639-1-code' },
     )
 
 @dataclass
@@ -817,19 +817,19 @@ class OrganisationalUnit(ArkumuEntity):
 DE: Ein Fachbereich, Institut, ein Studiengang oder eine künstlerisch/wissenschaftliche Einrichtung."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     german_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description' },
+        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-description', 'graph_id': 'arkumu:hasGermanDescription', 'property_slug': 'has-german-description' },
     )
     english_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description' },
+        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-description', 'graph_id': 'arkumu:hasEnglishDescription', 'property_slug': 'has-english-description' },
     )
 
 @dataclass
@@ -838,39 +838,39 @@ class Place(ArkumuEntity):
 DE: Ein Ort-Metadaten-Eintrag aus dem kontrollierten Vokabular von Wikidata. Nur "reale" Orte sind erlaubt, d.h. sie müssen mit Geokoordinaten identifierbar sein."""
     german_wikidata_label: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german wikidata label', 'label_en': 'German Wikidata Label' },
+        metadata={ 'source_en_name': 'has german wikidata label', 'label_en': 'German Wikidata Label', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-wikidata-label', 'graph_id': 'arkumu:hasGermanWikidataLabel', 'property_slug': 'has-german-wikidata-label' },
     )
     english_wikidata_label: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english wikidata label', 'label_en': 'English Wikidata Label' },
+        metadata={ 'source_en_name': 'has english wikidata label', 'label_en': 'English Wikidata Label', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-wikidata-label', 'graph_id': 'arkumu:hasEnglishWikidataLabel', 'property_slug': 'has-english-wikidata-label' },
     )
     place_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has place type', 'label_en': 'Place Type' },
+        metadata={ 'source_en_name': 'has place type', 'label_en': 'Place Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-place-type', 'graph_id': 'arkumu:hasPlaceType', 'property_slug': 'has-place-type' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     viaf_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has VIAF ID', 'label_en': 'VIAF ID' },
+        metadata={ 'source_en_name': 'has VIAF ID', 'label_en': 'VIAF ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-viaf-id', 'graph_id': 'arkumu:hasViafId', 'property_slug': 'has-viaf-id' },
     )
     longitude: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has longitude', 'label_en': 'Longitude' },
+        metadata={ 'source_en_name': 'has longitude', 'label_en': 'Longitude', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-longitude', 'graph_id': 'arkumu:hasLongitude', 'property_slug': 'has-longitude' },
     )
     latitude: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has latitude', 'label_en': 'Latitude' },
+        metadata={ 'source_en_name': 'has latitude', 'label_en': 'Latitude', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-latitude', 'graph_id': 'arkumu:hasLatitude', 'property_slug': 'has-latitude' },
     )
     place: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has broader place', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has broader place', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-broader-place', 'graph_id': 'arkumu:hasBroaderPlace', 'property_slug': 'has-broader-place' },
     )
 
 @dataclass
@@ -879,83 +879,83 @@ class PhyiscalObject(ArkumuEntity):
 DE: A physically delineated object, a part of such, or a material that was created or used in an Event."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     external_inventory_number: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has external inventory number', 'label_en': 'External Inventory Number' },
+        metadata={ 'source_en_name': 'has external inventory number', 'label_en': 'External Inventory Number', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-external-inventory-number', 'graph_id': 'arkumu:hasExternalInventoryNumber', 'property_slug': 'has-external-inventory-number' },
     )
     place: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has depository', 'label_en': 'Place' },
+        metadata={ 'source_en_name': 'has depository', 'label_en': 'Place', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-depository', 'graph_id': 'arkumu:hasDepository', 'property_slug': 'has-depository' },
     )
     actor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has owner', 'label_en': 'Actor' },
+        metadata={ 'source_en_name': 'has owner', 'label_en': 'Actor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-owner', 'graph_id': 'arkumu:hasOwner', 'property_slug': 'has-owner' },
     )
     actor_2: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has legal rights holder', 'label_en': 'Actor' },
+        metadata={ 'source_en_name': 'has legal rights holder', 'label_en': 'Actor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-legal-rights-holder', 'graph_id': 'arkumu:hasLegalRightsHolder', 'property_slug': 'has-legal-rights-holder' },
     )
     provenance: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has provenance', 'label_en': 'Provenance' },
+        metadata={ 'source_en_name': 'has provenance', 'label_en': 'Provenance', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-provenance', 'graph_id': 'arkumu:hasProvenance', 'property_slug': 'has-provenance' },
     )
     german_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description' },
+        metadata={ 'source_en_name': 'has german description', 'label_en': 'German Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-description', 'graph_id': 'arkumu:hasGermanDescription', 'property_slug': 'has-german-description' },
     )
     english_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description' },
+        metadata={ 'source_en_name': 'has english description', 'label_en': 'English Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-description', 'graph_id': 'arkumu:hasEnglishDescription', 'property_slug': 'has-english-description' },
     )
     german_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary' },
+        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-commentary', 'graph_id': 'arkumu:hasGermanCommentary', 'property_slug': 'has-german-commentary' },
     )
     english_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary' },
+        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-commentary', 'graph_id': 'arkumu:hasEnglishCommentary', 'property_slug': 'has-english-commentary' },
     )
     internal_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary' },
+        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-internal-commentary', 'graph_id': 'arkumu:hasInternalCommentary', 'property_slug': 'has-internal-commentary' },
     )
     classifying_keyword: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has classifying keyword', 'label_en': 'Classifying Keyword' },
+        metadata={ 'source_en_name': 'has classifying keyword', 'label_en': 'Classifying Keyword', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-classifying-keyword', 'graph_id': 'arkumu:hasClassifyingKeyword', 'property_slug': 'has-classifying-keyword' },
     )
     material_keyword: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has material keyword', 'label_en': 'Material Keyword' },
+        metadata={ 'source_en_name': 'has material keyword', 'label_en': 'Material Keyword', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-material-keyword', 'graph_id': 'arkumu:hasMaterialKeyword', 'property_slug': 'has-material-keyword' },
     )
     technique_keyword: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has technique keyword', 'label_en': 'Technique Keyword' },
+        metadata={ 'source_en_name': 'has technique keyword', 'label_en': 'Technique Keyword', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-technique-keyword', 'graph_id': 'arkumu:hasTechniqueKeyword', 'property_slug': 'has-technique-keyword' },
     )
     german_technique_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german technique commentary', 'label_en': 'German Technique Commentary' },
+        metadata={ 'source_en_name': 'has german technique commentary', 'label_en': 'German Technique Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-technique-commentary', 'graph_id': 'arkumu:hasGermanTechniqueCommentary', 'property_slug': 'has-german-technique-commentary' },
     )
     english_technique_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english technique commentary', 'label_en': 'English Technique Commentary' },
+        metadata={ 'source_en_name': 'has english technique commentary', 'label_en': 'English Technique Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-technique-commentary', 'graph_id': 'arkumu:hasEnglishTechniqueCommentary', 'property_slug': 'has-english-technique-commentary' },
     )
     dimensions: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dimensions', 'label_en': 'Dimensions' },
+        metadata={ 'source_en_name': 'has dimensions', 'label_en': 'Dimensions', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dimensions', 'graph_id': 'arkumu:hasDimensions', 'property_slug': 'has-dimensions' },
     )
     condition_state_german: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has condition state (german)', 'label_en': 'Condition State (German)' },
+        metadata={ 'source_en_name': 'has condition state (german)', 'label_en': 'Condition State (German)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-condition-state-german', 'graph_id': 'arkumu:hasConditionStateGerman', 'property_slug': 'has-condition-state-german' },
     )
     condition_state_english: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has condition state (english)', 'label_en': 'Condition State (English)' },
+        metadata={ 'source_en_name': 'has condition state (english)', 'label_en': 'Condition State (English)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-condition-state-english', 'graph_id': 'arkumu:hasConditionStateEnglish', 'property_slug': 'has-condition-state-english' },
     )
 
 @dataclass
@@ -964,127 +964,127 @@ class Project(ArkumuEntity):
 DE: Ein Projekt ist ein Datensatz, der Kunst und kunstbezogene Dinge beschreibt sowie den aktuellen Rechts- und Nutzungsrechtsstatus dieses geistigen Eigentums enthält. Ein Projekt ist die zentrale Verzeichnungseinheit von arkumu.nrw."""
     preferred_title: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has preferred title', 'label_en': 'Preferred Title' },
+        metadata={ 'source_en_name': 'has preferred title', 'label_en': 'Preferred Title', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-preferred-title', 'graph_id': 'arkumu:hasPreferredTitle', 'property_slug': 'has-preferred-title' },
     )
     preferred_subtitle: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has preferred subtitle', 'label_en': 'Preferred Subtitle' },
+        metadata={ 'source_en_name': 'has preferred subtitle', 'label_en': 'Preferred Subtitle', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-preferred-subtitle', 'graph_id': 'arkumu:hasPreferredSubtitle', 'property_slug': 'has-preferred-subtitle' },
     )
     alternative_title_set: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has alternative title set', 'label_en': 'Alternative Title Set' },
+        metadata={ 'source_en_name': 'has alternative title set', 'label_en': 'Alternative Title Set', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-alternative-title-set', 'graph_id': 'arkumu:hasAlternativeTitleSet', 'property_slug': 'has-alternative-title-set' },
     )
     depositing_university: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has depositing university', 'label_en': 'Depositing University' },
+        metadata={ 'source_en_name': 'has depositing university', 'label_en': 'Depositing University', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-depositing-university', 'graph_id': 'arkumu:hasDepositingUniversity', 'property_slug': 'has-depositing-university' },
     )
     organisational_unit: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has organisational unit', 'label_en': 'Organisational Unit' },
+        metadata={ 'source_en_name': 'has organisational unit', 'label_en': 'Organisational Unit', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-organisational-unit', 'graph_id': 'arkumu:hasOrganisationalUnit', 'property_slug': 'has-organisational-unit' },
     )
     project_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has project type', 'label_en': 'Project Type' },
+        metadata={ 'source_en_name': 'has project type', 'label_en': 'Project Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-type', 'graph_id': 'arkumu:hasProjectType', 'property_slug': 'has-project-type' },
     )
     project_category: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has project category', 'label_en': 'Project Category' },
+        metadata={ 'source_en_name': 'has project category', 'label_en': 'Project Category', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-category', 'graph_id': 'arkumu:hasProjectCategory', 'property_slug': 'has-project-category' },
     )
     keyword: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has keyword', 'label_en': 'Keyword' },
+        metadata={ 'source_en_name': 'has keyword', 'label_en': 'Keyword', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-keyword', 'graph_id': 'arkumu:hasKeyword', 'property_slug': 'has-keyword' },
     )
     project_description: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has project description', 'label_en': 'Project Description' },
+        metadata={ 'source_en_name': 'has project description', 'label_en': 'Project Description', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-description', 'graph_id': 'arkumu:hasProjectDescription', 'property_slug': 'has-project-description' },
     )
     german_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary' },
+        metadata={ 'source_en_name': 'has german commentary', 'label_en': 'German Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-commentary', 'graph_id': 'arkumu:hasGermanCommentary', 'property_slug': 'has-german-commentary' },
     )
     english_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary' },
+        metadata={ 'source_en_name': 'has english commentary', 'label_en': 'English Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-commentary', 'graph_id': 'arkumu:hasEnglishCommentary', 'property_slug': 'has-english-commentary' },
     )
     internal_commentary: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary' },
+        metadata={ 'source_en_name': 'has internal commentary', 'label_en': 'Internal Commentary', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-internal-commentary', 'graph_id': 'arkumu:hasInternalCommentary', 'property_slug': 'has-internal-commentary' },
     )
     event: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event', 'label_en': 'Event' },
+        metadata={ 'source_en_name': 'has event', 'label_en': 'Event', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event', 'graph_id': 'arkumu:hasEvent', 'property_slug': 'has-event' },
     )
     project_property: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has project property', 'label_en': 'Project Property' },
+        metadata={ 'source_en_name': 'has project property', 'label_en': 'Project Property', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-property', 'graph_id': 'arkumu:hasProjectProperty', 'property_slug': 'has-project-property' },
     )
     project: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has related project', 'label_en': 'Project' },
+        metadata={ 'source_en_name': 'has related project', 'label_en': 'Project', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-related-project', 'graph_id': 'arkumu:hasRelatedProject', 'property_slug': 'has-related-project' },
     )
     arkumu_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has arkumu ID', 'label_en': 'arkumu ID' },
+        metadata={ 'source_en_name': 'has arkumu ID', 'label_en': 'arkumu ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-arkumu-id', 'graph_id': 'arkumu:hasArkumuId', 'property_slug': 'has-arkumu-id' },
     )
     ark_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has ARK ID', 'label_en': 'ARK ID' },
+        metadata={ 'source_en_name': 'has ARK ID', 'label_en': 'ARK ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-ark-id', 'graph_id': 'arkumu:hasArkId', 'property_slug': 'has-ark-id' },
     )
     id_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has ID at depositor', 'label_en': 'ID at Depositor' },
+        metadata={ 'source_en_name': 'has ID at depositor', 'label_en': 'ID at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-id-at-depositor', 'graph_id': 'arkumu:hasIdAtDepositor', 'property_slug': 'has-id-at-depositor' },
     )
     catalogue_raisonn_reference_number: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has catalogue raisonné reference number', 'label_en': 'Catalogue Raisonné Reference Number' },
+        metadata={ 'source_en_name': 'has catalogue raisonné reference number', 'label_en': 'Catalogue Raisonné Reference Number', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-catalogue-raisonne-reference-number', 'graph_id': 'arkumu:hasCatalogueRaisonneReferenceNumber', 'property_slug': 'has-catalogue-raisonn-reference-number' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     website: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has website', 'label_en': 'Website' },
+        metadata={ 'source_en_name': 'has website', 'label_en': 'Website', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-website', 'graph_id': 'arkumu:hasWebsite', 'property_slug': 'has-website' },
     )
     dataset_id_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor' },
+        metadata={ 'source_en_name': 'has dataset ID at depositor', 'label_en': 'Dataset ID at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-id-at-depositor', 'graph_id': 'arkumu:hasDatasetIdAtDepositor', 'property_slug': 'has-dataset-id-at-depositor' },
     )
     organisational_unit_2: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit' },
+        metadata={ 'source_en_name': 'has depositor', 'label_en': 'Organisational Unit', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-depositor', 'graph_id': 'arkumu:hasDepositor', 'property_slug': 'has-depositor' },
     )
     dataset_creation_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset creation date at depositor', 'label_en': 'Dataset Creation Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-creation-date-at-depositor', 'graph_id': 'arkumu:hasDatasetCreationDateAtDepositor', 'property_slug': 'has-dataset-creation-date-at-depositor' },
     )
     dataset_last_modification_date_at_depositor: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor' },
+        metadata={ 'source_en_name': 'has dataset last modification date at depositor', 'label_en': 'Dataset Last Modification Date at Depositor', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-dataset-last-modification-date-at-depositor', 'graph_id': 'arkumu:hasDatasetLastModificationDateAtDepositor', 'property_slug': 'has-dataset-last-modification-date-at-depositor' },
     )
     rights_status: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has rights status', 'label_en': 'Rights Status' },
+        metadata={ 'source_en_name': 'has rights status', 'label_en': 'Rights Status', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-rights-status', 'graph_id': 'arkumu:hasRightsStatus', 'property_slug': 'has-rights-status' },
     )
     existing_license_agreement: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has existing license agreement', 'label_en': 'Existing License Agreement' },
+        metadata={ 'source_en_name': 'has existing license agreement', 'label_en': 'Existing License Agreement', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-existing-license-agreement', 'graph_id': 'arkumu:hasExistingLicenseAgreement', 'property_slug': 'has-existing-license-agreement' },
     )
     new_arkumu_license_agreement: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has new arkumu license agreement', 'label_en': 'New arkumu License Agreement' },
+        metadata={ 'source_en_name': 'has new arkumu license agreement', 'label_en': 'New arkumu License Agreement', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-new-arkumu-license-agreement', 'graph_id': 'arkumu:hasNewArkumuLicenseAgreement', 'property_slug': 'has-new-arkumu-license-agreement' },
     )
     additional_rights_document: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has additional rights document', 'label_en': 'Additional Rights Document' },
+        metadata={ 'source_en_name': 'has additional rights document', 'label_en': 'Additional Rights Document', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-additional-rights-document', 'graph_id': 'arkumu:hasAdditionalRightsDocument', 'property_slug': 'has-additional-rights-document' },
     )
     file_license_document: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has file license document', 'label_en': 'File License Document' },
+        metadata={ 'source_en_name': 'has file license document', 'label_en': 'File License Document', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-file-license-document', 'graph_id': 'arkumu:hasFileLicenseDocument', 'property_slug': 'has-file-license-document' },
     )
 
 @dataclass
@@ -1093,39 +1093,39 @@ class ProjectCategory(ArkumuEntity):
 DE: Eine Projektkategorie typisiert ein Projekt, in einem künstlerischen Sinne, mit Hilfe eines kontrollierten Vokabulars."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     german_synonyms: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german synonyms', 'label_en': 'German Synonyms' },
+        metadata={ 'source_en_name': 'has german synonyms', 'label_en': 'German Synonyms', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-synonyms', 'graph_id': 'arkumu:hasGermanSynonyms', 'property_slug': 'has-german-synonyms' },
     )
     english_synonyms: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english synonyms', 'label_en': 'English Synonyms' },
+        metadata={ 'source_en_name': 'has english synonyms', 'label_en': 'English Synonyms', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-synonyms', 'graph_id': 'arkumu:hasEnglishSynonyms', 'property_slug': 'has-english-synonyms' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID' },
+        metadata={ 'source_en_name': 'has GND ID', 'label_en': 'GND ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id', 'graph_id': 'arkumu:hasGndId', 'property_slug': 'has-gnd-id' },
     )
     aat_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID' },
+        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-aat-id', 'graph_id': 'arkumu:hasAatId', 'property_slug': 'has-aat-id' },
     )
     filmportal_de_category_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has filmportal.de category ID', 'label_en': 'filmportal.de Category ID' },
+        metadata={ 'source_en_name': 'has filmportal.de category ID', 'label_en': 'filmportal.de Category ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-filmportalde-category-id', 'graph_id': 'arkumu:hasFilmportalDeCategoryId', 'property_slug': 'has-filmportal-de-category-id' },
     )
     project_category: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has broader project category', 'label_en': 'Project Category' },
+        metadata={ 'source_en_name': 'has broader project category', 'label_en': 'Project Category', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-broader-project-category', 'graph_id': 'arkumu:hasBroaderProjectCategory', 'property_slug': 'has-broader-project-category' },
     )
 
 @dataclass
@@ -1134,11 +1134,11 @@ class ProjectDescription(ArkumuEntity):
 DE: Ein Text, der den Inhalt des Projekts beschreibt oder was das Projekt ist. Dabei kann es sich um Texte handeln, die von den Künstler:innen selbst oder von einer dritten Person verfasst wurden."""
     description_text: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has description text', 'label_en': 'Description Text' },
+        metadata={ 'source_en_name': 'has description text', 'label_en': 'Description Text', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-description-text', 'graph_id': 'arkumu:hasDescriptionText', 'property_slug': 'has-description-text' },
     )
     sorting_number: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has sorting number', 'label_en': 'Sorting Number' },
+        metadata={ 'source_en_name': 'has sorting number', 'label_en': 'Sorting Number', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-sorting-number', 'graph_id': 'arkumu:hasSortingNumber', 'property_slug': 'has-sorting-number' },
     )
 
 @dataclass
@@ -1147,15 +1147,15 @@ class ProjectType(ArkumuEntity):
 DE: Eine Projektart kategorisiert den akademischen Kontext eines Projekts mit Hilfe eines kontrollierten Vokabulars."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
 
 @dataclass
@@ -1164,35 +1164,35 @@ class Role(ArkumuEntity):
 DE: Eine künstlerische oder nicht-künstlerische Rolle einer Person, einer Gruppe oder einer Körperschaft, entweder als globale Rolle, als Beruf oder Tätigkeit, direkt an eine:n Akteur:in gebunden oder situativ ausgeführt in einem Event."""
     german_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name' },
+        metadata={ 'source_en_name': 'has german name', 'label_en': 'German Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-german-name', 'graph_id': 'arkumu:hasGermanName', 'property_slug': 'has-german-name' },
     )
     english_name: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name' },
+        metadata={ 'source_en_name': 'has english name', 'label_en': 'English Name', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-english-name', 'graph_id': 'arkumu:hasEnglishName', 'property_slug': 'has-english-name' },
     )
     wikidata_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID' },
+        metadata={ 'source_en_name': 'has Wikidata ID', 'label_en': 'Wikidata ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-wikidata-id', 'graph_id': 'arkumu:hasWikidataId', 'property_slug': 'has-wikidata-id' },
     )
     gnd_id_male: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID (male)', 'label_en': 'GND ID (male)' },
+        metadata={ 'source_en_name': 'has GND ID (male)', 'label_en': 'GND ID (male)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id-male', 'graph_id': 'arkumu:hasGndIdMale', 'property_slug': 'has-gnd-id-male' },
     )
     gnd_id_female: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID (female)', 'label_en': 'GND ID (female)' },
+        metadata={ 'source_en_name': 'has GND ID (female)', 'label_en': 'GND ID (female)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id-female', 'graph_id': 'arkumu:hasGndIdFemale', 'property_slug': 'has-gnd-id-female' },
     )
     gnd_id_group: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has GND ID (group)', 'label_en': 'GND ID (group)' },
+        metadata={ 'source_en_name': 'has GND ID (group)', 'label_en': 'GND ID (group)', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gnd-id-group', 'graph_id': 'arkumu:hasGndIdGroup', 'property_slug': 'has-gnd-id-group' },
     )
     aat_id: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID' },
+        metadata={ 'source_en_name': 'has AAT ID', 'label_en': 'AAT ID', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-aat-id', 'graph_id': 'arkumu:hasAatId', 'property_slug': 'has-aat-id' },
     )
     role: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has broader role', 'label_en': 'Role' },
+        metadata={ 'source_en_name': 'has broader role', 'label_en': 'Role', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-broader-role', 'graph_id': 'arkumu:hasBroaderRole', 'property_slug': 'has-broader-role' },
     )
 
 @dataclass
@@ -1219,7 +1219,7 @@ class AlternativeSubtitle(ArkumuEntity):
 DE: Ein alternative kurze, ergänzende Textzeile für eine Projekt, die über ein Alternatives Titel-Set verbunden wird."""
     language: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has language', 'label_en': 'Language' },
+        metadata={ 'source_en_name': 'has language', 'label_en': 'Language', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-language', 'graph_id': 'arkumu:hasLanguage', 'property_slug': 'has-language' },
     )
 
 @dataclass
@@ -1228,7 +1228,7 @@ class AlternativeTitle(ArkumuEntity):
 DE: Ein alternative Benennung für ein Projekt, die über ein Alternatives Titel-Set verbunden wird."""
     language: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has language', 'label_en': 'Language' },
+        metadata={ 'source_en_name': 'has language', 'label_en': 'Language', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-language', 'graph_id': 'arkumu:hasLanguage', 'property_slug': 'has-language' },
     )
 
 @dataclass

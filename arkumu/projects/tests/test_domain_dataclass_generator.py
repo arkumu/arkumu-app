@@ -1,3 +1,4 @@
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ def test_generated_module_contains_actor_class(markdown_path):
 
     assert "class Actor(ArkumuEntity):" in module_source
     assert "german_name: list[str]" in module_source
+    assert "'predicate_uri'" in module_source
 
 
 def test_generated_module_executes(markdown_path):
@@ -34,3 +36,9 @@ def test_generated_module_executes(markdown_path):
     assert isinstance(instance.identifiers, list)
     assert instance.german_name == []
 
+    metadata = {
+        field.name: field.metadata for field in dataclass_fields(actor_cls)
+    }
+    german_name_meta = metadata["german_name"]
+    assert german_name_meta["predicate_uri"].endswith("#has-german-name")
+    assert german_name_meta["graph_id"] == "arkumu:hasGermanName"
