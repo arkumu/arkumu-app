@@ -4,7 +4,14 @@ from django.views.generic import TemplateView
 
 from django.contrib.auth.decorators import login_required
 
-from .views import file_operations_views, dashboard_views, upload_status_view, file_browser_oob_views, upload_views, create
+from .views import (
+    file_operations_views,
+    dashboard_views,
+    upload_status_view,
+    file_browser_oob_views,
+    upload_views,
+)
+from arkumu.metadata.views import entity_creation_views
 
 app_name = "storage"
 
@@ -70,6 +77,6 @@ urlpatterns = [
     path("test/oob-refresh/<str:organization>/", file_browser_oob_views.test_oob_refresh, name="test_oob_refresh"),
 
     # Entity creation endpoints
-    path('create/project/', login_required(create.create_project), name='create_project'),
-    path('create/event/', login_required(create.create_event), name='create_event'),
+    path('create/project/', entity_creation_views.create_project, name='create_project'),
+    path('create/event/', entity_creation_views.create_event, name='create_event'),
 ] 
