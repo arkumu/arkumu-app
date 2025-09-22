@@ -1,0 +1,93 @@
+<div class="container mx-auto px-6 py-10">
+    <div class="flex flex-col gap-6">
+        <div class="bg-base-200 rounded-box p-6 border border-base-300">
+            <h1 class="text-2xl font-bold">Projekt-Metadaten erfassen</h1>
+            <p class="text-sm text-base-content/70 mt-1">
+                Erfasse neue Projekte mit einer institutionseigenen Datensatzstruktur. Wähle zuerst deine Institution, danach eine Sektion.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <aside class="lg:col-span-4 space-y-4">
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                    <div class="card-body space-y-3">
+                        <h2 class="text-lg font-semibold">Institution</h2>
+                        {% if organizations %}
+                        <select name="organization"
+                                class="select select-bordered w-full"
+                                hx-get="{% url 'metadata:metadata_entry' %}"
+                                hx-target="#metadata-entry-root"
+                                hx-select="#metadata-entry-root"
+                                hx-push-url="true"
+                                hx-trigger="change"
+                                aria-label="Institution auswählen">
+                            {% for org in organizations %}
+                            <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
+                                {{ org.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <p class="text-sm">Keine Institutionen für die manuelle Eingabe konfiguriert.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                    <div class="card-body space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-lg font-semibold">Sektionen</h2>
+                            <span class="badge badge-soft badge-sm">{{ sections|length }}</span>
+                        </div>
+                        {% if selected_organization %}
+                            {% if sections %}
+                                <div class="space-y-2">
+                                {% for section in sections %}
+                                    <button type="button"
+                                            class="btn btn-outline btn-sm w-full justify-start"
+                                            hx-get="{% url 'metadata:metadata_entry_section' %}"
+                                            hx-target="#metadata-entry-panel"
+                                            hx-swap="innerHTML"
+                                            hx-vals='{"organization": "{{ selected_organization }}", "section": "{{ section.name }}"}'
+                                            aria-label="{{ section.label }} öffnen">
+                                        <div class="text-left">
+                                            <span class="font-medium block">{{ section.label }}</span>
+                                            {% if section.description %}
+                                            <span class="text-xs text-base-content/60">{{ section.description }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </button>
+                                {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-sm text-base-content/70">Für diese Institution sind noch keine Sektionen hinterlegt.</p>
+                            {% endif %}
+                        {% else %}
+                            <p class="text-sm text-base-content/70">Wähle zunächst eine Institution.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </aside>
+
+            <div class="lg:col-span-8">
+                <div id="metadata-entry-panel" class="card bg-base-100 border border-dashed border-base-300 shadow-none">
+                    <div class="card-body">
+                        {% if selected_organization %}
+                            <h2 class="text-lg font-semibold mb-2">Sektion wählen</h2>
+                            <p class="text-sm text-base-content/70">
+                                Die Formulare basieren auf den Projekt-Datenklassen deiner Organisation und lassen sich direkt mit HTMX ausfüllen.
+                            </p>
+                        {% else %}
+                            <h2 class="text-lg font-semibold mb-2">Institution wählen</h2>
+                            <p class="text-sm text-base-content/70">
+                                Nach der Auswahl wird die passende Struktur zum Erfassen neuer Projekte angezeigt.
+                            </p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ navbar_metadata_entry_link|safe }}

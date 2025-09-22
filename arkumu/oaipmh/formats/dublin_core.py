@@ -44,6 +44,72 @@ DEFAULT_PREDICATE_MAP: Dict[str, str] = {
     f"{DCTERMS_NS}relation": "relation",
     f"{DCTERMS_NS}coverage": "coverage",
     f"{DCTERMS_NS}rights": "rights",
+
+    # Arkumu canonical predicates (from database canonical_uri mappings)
+    # Title mappings
+    "http://arkumu.org/data/properties/bevorzugter-titel": "title",
+    "http://arkumu.org/data/properties/alternativer-titel": "title",
+    "http://arkumu.org/data/properties/kompilationstitel": "title",
+    "http://arkumu.org/data/properties/bevorzugter-untertitel": "title",
+    "http://arkumu.org/data/properties/alternativer-untertitel": "title",
+
+    # Description mappings
+    "http://arkumu.org/data/properties/beschreibung": "description",
+    "http://arkumu.org/data/properties/deutsche-beschreibung": "description",
+    "http://arkumu.org/data/properties/englische-beschreibung": "description",
+    "http://arkumu.org/data/properties/kurzbeschreibung-deutsch": "description",
+    "http://arkumu.org/data/properties/kurzbeschreibung-englisch": "description",
+    "http://arkumu.org/data/properties/deutsche-inhaltliche-beschreibung": "description",
+    "http://arkumu.org/data/properties/englische-inhaltliche-beschreibung": "description",
+    "http://arkumu.org/data/properties/bildbeschreibung-deutsch": "description",
+    "http://arkumu.org/data/properties/bildbeschreibung-englisch": "description",
+    "http://arkumu.org/data/properties/ereignisbeschreibung": "description",
+    "http://arkumu.org/data/properties/deutscher-kommentar": "description",
+    "http://arkumu.org/data/properties/englischer-kommentar": "description",
+
+    # Identifier mappings
+    "http://arkumu.org/data/properties/datensatz-id-beim-einlieferer": "identifier",
+    "http://arkumu.org/data/properties/andere-normdaten": "identifier",
+
+    # File/relation mappings
+    "http://arkumu.org/data/properties/dateiname": "relation",
+    "http://arkumu.org/data/properties/dateipfad": "relation",
+    "http://arkumu.org/data/properties/dateipaket": "relation",
+    "http://arkumu.org/data/properties/ausgangsprojekt": "relation",
+    "http://arkumu.org/data/properties/externe-projektwebseite": "relation",
+
+    # Subject mappings
+    "http://arkumu.org/data/properties/schlagwort": "subject",
+    "http://arkumu.org/data/properties/klassifizierendes-schlagwort": "subject",
+    "http://arkumu.org/data/properties/materialschlagwort": "subject",
+
+    # Rights mappings
+    "http://arkumu.org/data/properties/rechtsstatus": "rights",
+    "http://arkumu.org/data/properties/bestehender-lizenzvertrag": "rights",
+
+    # Language mappings
+    "http://arkumu.org/data/properties/originalsprache": "language",
+    "http://arkumu.org/data/properties/sprache": "language",
+    "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels": "language",
+    "http://arkumu.org/data/properties/sprache-des-bevorzugten-untertitels": "language",
+    "http://arkumu.org/data/properties/sprache-des-alternativen-titels": "language",
+    "http://arkumu.org/data/properties/sprache-des-alternativen-untertitels": "language",
+
+    # Coverage/location mappings
+    "http://arkumu.org/data/properties/ereignisort": "coverage",
+    "http://arkumu.org/data/properties/aufbewahrungsort": "coverage",
+
+    # Date mappings
+    "http://arkumu.org/data/properties/datensatzerstellung-beim-einlieferer": "date",
+    "http://arkumu.org/data/properties/letzte-datensatzmodifikation-beim-einlieferer": "date",
+
+    # Type mappings
+    "http://arkumu.org/data/properties/projektkategorie": "type",
+    "http://arkumu.org/data/properties/projektart": "type",
+    "http://arkumu.org/data/properties/objekttyp": "type",
+
+    # Format mappings
+    "http://arkumu.org/data/properties/informationstraeger": "format",
 }
 
 
@@ -124,11 +190,11 @@ class DublinCoreSerializer:
     def _add(self, out: Dict[str, List[str]], term: str, value: Optional[str]) -> None:
         if value is None:
             return
-        v = value.strip()
-        if not v:
+        # Filter empty strings but preserve whitespace-only values
+        if value == "":
             return
         key = self._dc_key(term)
-        out.setdefault(key, []).append(v)
+        out.setdefault(key, []).append(value)
 
     # --- Mode 1: graph triples crosswalk ---
     def serialize_from_triples(
@@ -146,18 +212,22 @@ class DublinCoreSerializer:
         """
         out: Dict[str, List[str]] = {}
         for t in triples:
-            if isinstance(t, tuple) and len(t) >= 3:
-                _, predicate_uri, obj = t[0], t[1], t[2]
-                value = str(obj)
-            else:
-                if not get_predicate or not get_object_value:
-                    raise ValueError("Provide get_predicate/get_object_value for object triples")
-                predicate_uri = get_predicate(t)
-                value = get_object_value(t)
+            try:
+                if isinstance(t, tuple) and len(t) >= 3:
+                    _, predicate_uri, obj = t[0], t[1], t[2]
+                    value = str(obj)
+                else:
+                    if not get_predicate or not get_object_value:
+                        raise ValueError("Provide get_predicate/get_object_value for object triples")
+                    predicate_uri = get_predicate(t)
+                    value = get_object_value(t)
 
-            dc_term = self.predicate_map.get(predicate_uri)
-            if dc_term:
-                self._add(out, dc_term, value)
+                dc_term = self.predicate_map.get(predicate_uri)
+                if dc_term:
+                    self._add(out, dc_term, value)
+            except (KeyError, AttributeError, TypeError):
+                # Skip triples that cause exceptions in accessor functions
+                continue
         return out
 
     # --- Mode 2: mapping-config aware crosswalk ---

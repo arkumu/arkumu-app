@@ -10,7 +10,7 @@
                        {% if selected_property == prop_uri %}checked{% endif %}
                        hx-get="{% url 'catalog:explorer_literals' %}"
                        hx-trigger="change"
-                       hx-include="[name='class']:checked"
+                       hx-include="[name='class']:checked, [name='organization']:checked"
                        hx-vals='{"property": "{{ prop_uri }}"}'
                        hx-target="#results-container"
                        class="mr-2">

@@ -16,10 +16,12 @@ from arkumu.users.mixins import general_login_required
 from arkumu.storage.models import S3FileObject, UploadSession
 from arkumu.metadata.models import Resource
 from arkumu.metadata.services.metatdata_s3_mapping.map_resources_to_files import FileResourceMatcherService
+from arkumu.metadata.services.resource_traversal_service import ResourceTraversalService
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.storage.services.s3_sync_service import S3SyncService
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+from arkumu.cache.services import OAICacheService
 
 logger = logging.getLogger(__name__)
 
@@ -235,9 +237,37 @@ def link_file_to_resource(request):
         s3_file = get_object_or_404(S3FileObject, id=file_id)
         resource = get_object_or_404(Resource, id=resource_id)
 
-        # Link them
-        s3_file.related_resource = resource
-        s3_file.save()
+        # Find the project entity associated with this resource
+        traversal_service = ResourceTraversalService()
+        project_entity = traversal_service.get_project_entity_for_resource(resource)
+
+        if project_entity:
+            # Link to the project entity instead of the literal/intermediate resource
+            s3_file.related_resource = project_entity
+            s3_file.save()
+            logger.info(f"Linked S3FileObject {s3_file.id} to project entity {project_entity.uri} via resource {resource.value}")
+        else:
+            # No project entity found, fallback to original resource (for backward compatibility)
+            s3_file.related_resource = resource
+            s3_file.save()
+            logger.warning(f"No project entity found for resource {resource.value}, linked directly to resource")
+
+        # Trigger OAI-PMH cache warming for the affected resource
+        try:
+            # Get the final linked resource (project entity or fallback resource)
+            final_resource = s3_file.related_resource
+            if final_resource and final_resource.organization:
+                logger.debug(f"🔥 SINGLE CACHE DEBUG: Warming cache for {final_resource.uri} (org: {final_resource.organization.code})")
+
+                # Warm cache for both metadata formats using centralized service
+                oai_cache = OAICacheService()
+                oai_cache.warm_resource_with_graph_integration(final_resource)
+
+                logger.info(f"Warmed OAI-PMH cache for resource {final_resource.uri}")
+            else:
+                logger.debug(f"🔥 SINGLE CACHE DEBUG: Skipping cache warming - resource has no organization")
+        except Exception as e:
+            logger.error(f"Error warming OAI-PMH cache: {str(e)}")
 
         # Return updated files list for HTMX or redirect for regular requests
         if request.headers.get('HX-Request'):
@@ -279,66 +309,90 @@ def batch_link_files(request):
                 })
             return HttpResponse(message, status=400)
         
-        # Get selected file IDs from form data
-        file_ids = request.POST.getlist('selected_files')
-        
-        logger.info(f"Batch link request received. Selected file IDs: {file_ids}")
-        logger.info(f"Select all enabled: {select_all_enabled}, Organization: {organization}")
+        # When Select All is enabled, process ALL filtered files instead of just selected ones
+        if select_all_enabled:
+            # Recreate the same filter logic as the main view
+            selected_files = S3FileObject.objects.select_related(
+                'related_resource', 'session', 'session__user'
+            )
 
-        if not file_ids:
-            message = 'No files selected - this should not happen when Select All is enabled'
-            logger.warning(f"Batch link failed: {message}")
-            if request.headers.get('HX-Request'):
-                return render(request, 'partials/toast.html', {
-                    'message': message,
-                    'type': 'warning'
-                })
-            return HttpResponse(message, status=400)
+            # Filter by organization bucket if one is selected
+            if organization:
+                selected_files = selected_files.filter(session__s3_bucket=organization)
 
-        # Get the queryset of selected files
-        selected_files = S3FileObject.objects.filter(id__in=file_ids)
-        
-        # Use the same partial matching logic as manual search
-        processed = 0
-        linked = 0
-        ambiguous = 0
-        errors = 0
-        
-        for s3_file in selected_files:
-            processed += 1
-            try:
-                # Use full filename including extension for search query
-                query = s3_file.file_name
-                
-                # Use more precise endswith matching for batch operations
-                matching_resources = Resource.objects.filter(
-                    Q(value__iendswith=query) | Q(uri__iendswith=query)
-                ).distinct()
-                
-                if matching_resources.count() == 1:
-                    # Single match - link it
-                    resource = matching_resources.first()
-                    s3_file.related_resource = resource
-                    s3_file.save()
-                    linked += 1
-                    logger.info(f"Linked {s3_file.file_name} to resource {resource.value}")
-                elif matching_resources.count() > 1:
-                    # Multiple matches - count as ambiguous but link to first one
-                    resource = matching_resources.first()
-                    s3_file.related_resource = resource
-                    s3_file.save()
-                    ambiguous += 1
-                    logger.info(f"Ambiguous match for {s3_file.file_name}: {matching_resources.count()} resources found, linked to {resource.value}")
-                else:
-                    # No matches found
-                    logger.info(f"No matching resources found for {s3_file.file_name} with query '{query}'")
-                    
-            except Exception as e:
-                errors += 1
-                logger.error(f"Error processing {s3_file.file_name}: {str(e)}")
+            # Filter by data folder within bucket
+            selected_files = selected_files.filter(s3_key__startswith='data/')
 
-        message = f'Batch processing complete. Processed: {processed}, Linked: {linked}, Ambiguous: {ambiguous}, Errors: {errors}'
+            # Apply any status filters from the request
+            status_filter = request.POST.get('status_filter', '') or request.GET.get('status_filter', '')
+            if status_filter == 'linked':
+                selected_files = selected_files.filter(related_resource__isnull=False)
+            elif status_filter == 'unlinked':
+                selected_files = selected_files.filter(related_resource__isnull=True)
+
+            # Apply date filters if they exist (for future extensibility)
+            from_date = request.POST.get('from_date', '') or request.GET.get('from_date', '')
+            until_date = request.POST.get('until_date', '') or request.GET.get('until_date', '')
+            if from_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    from_date_parsed = parse_date(from_date)
+                    if from_date_parsed:
+                        selected_files = selected_files.filter(created_at__gte=from_date_parsed)
+                except:
+                    pass
+            if until_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    until_date_parsed = parse_date(until_date)
+                    if until_date_parsed:
+                        selected_files = selected_files.filter(created_at__lte=until_date_parsed)
+                except:
+                    pass
+
+            logger.info(f"Batch link request: Select All enabled, processing {selected_files.count()} files for org {organization}")
+        else:
+            # Fallback to individual file selection (current page only)
+            file_ids = request.POST.getlist('selected_files')
+            logger.info(f"Batch link request received. Selected file IDs: {file_ids}")
+
+            if not file_ids:
+                message = 'No files selected'
+                logger.warning(f"Batch link failed: {message}")
+                if request.headers.get('HX-Request'):
+                    return render(request, 'partials/toast.html', {
+                        'message': message,
+                        'type': 'warning'
+                    })
+                return HttpResponse(message, status=400)
+
+            # Get the queryset of selected files
+            selected_files = S3FileObject.objects.filter(id__in=file_ids)
         
+        # Schedule background task for batch linking
+        try:
+            from arkumu.oaipmh.tasks import batch_link_files_task
+
+            # Get file IDs for the task
+            file_ids = list(selected_files.values_list('id', flat=True))
+
+            # Schedule the background task
+            batch_link_files_task.schedule(
+                args=(file_ids, organization, request.user.id),
+                delay=5  # Small delay to let UI respond first
+            )
+
+            message = f'Batch linking started for {len(file_ids)} files. Processing in background...'
+            logger.info(f"Scheduled batch linking task for {len(file_ids)} files")
+
+        except ImportError:
+            logger.error("Could not import batch linking task - falling back to synchronous processing")
+            # Fallback to synchronous processing if task system unavailable
+            message = 'Task system unavailable - batch linking will be processed synchronously'
+        except Exception as e:
+            logger.error(f"Error scheduling batch link task: {str(e)}")
+            message = f'Error starting batch linking: {str(e)}'
+
         if request.headers.get('HX-Request'):
             # Clear select all state after batch operation
             from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
@@ -414,36 +468,89 @@ def batch_unlink_files(request):
                 })
             return HttpResponse(message, status=400)
         
-        # Get selected file IDs from form data
-        file_ids = request.POST.getlist('selected_files')
-        
-        logger.info(f"Batch unlink request received. Selected file IDs: {file_ids}")
-        logger.info(f"Select all enabled: {select_all_enabled}, Organization: {organization}")
+        # When Select All is enabled, process ALL filtered files instead of just selected ones
+        if select_all_enabled:
+            # Recreate the same filter logic as the main view
+            selected_files = S3FileObject.objects.select_related(
+                'related_resource', 'session', 'session__user'
+            )
 
-        if not file_ids:
-            message = 'No files selected - this should not happen when Select All is enabled'
-            logger.warning(f"Batch unlink failed: {message}")
-            if request.headers.get('HX-Request'):
-                return render(request, 'partials/toast.html', {
-                    'message': message,
-                    'type': 'warning'
-                })
-            return HttpResponse(message, status=400)
+            # Filter by organization bucket if one is selected
+            if organization:
+                selected_files = selected_files.filter(session__s3_bucket=organization)
 
-        # Get the queryset of selected files
-        selected_files = S3FileObject.objects.filter(id__in=file_ids)
+            # Filter by data folder within bucket
+            selected_files = selected_files.filter(s3_key__startswith='data/')
+
+            # Apply any status filters from the request
+            status_filter = request.POST.get('status_filter', '') or request.GET.get('status_filter', '')
+            if status_filter == 'linked':
+                selected_files = selected_files.filter(related_resource__isnull=False)
+            elif status_filter == 'unlinked':
+                selected_files = selected_files.filter(related_resource__isnull=True)
+
+            # Apply date filters if they exist (for future extensibility)
+            from_date = request.POST.get('from_date', '') or request.GET.get('from_date', '')
+            until_date = request.POST.get('until_date', '') or request.GET.get('until_date', '')
+            if from_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    from_date_parsed = parse_date(from_date)
+                    if from_date_parsed:
+                        selected_files = selected_files.filter(created_at__gte=from_date_parsed)
+                except:
+                    pass
+            if until_date:
+                from django.utils.dateparse import parse_date
+                try:
+                    until_date_parsed = parse_date(until_date)
+                    if until_date_parsed:
+                        selected_files = selected_files.filter(created_at__lte=until_date_parsed)
+                except:
+                    pass
+
+            logger.info(f"Batch unlink request: Select All enabled, processing {selected_files.count()} files for org {organization}")
+        else:
+            # Fallback to individual file selection (current page only)
+            file_ids = request.POST.getlist('selected_files')
+            logger.info(f"Batch unlink request received. Selected file IDs: {file_ids}")
+
+            if not file_ids:
+                message = 'No files selected'
+                logger.warning(f"Batch unlink failed: {message}")
+                if request.headers.get('HX-Request'):
+                    return render(request, 'partials/toast.html', {
+                        'message': message,
+                        'type': 'warning'
+                    })
+                return HttpResponse(message, status=400)
+
+            # Get the queryset of selected files
+            selected_files = S3FileObject.objects.filter(id__in=file_ids)
         
         # Process files for unlinking
         processed = 0
         unlinked = 0
         errors = 0
+        unlinked_resources = set()  # Track resources that were unlinked for cache warming
+
+        logger.debug(f"🔍 BATCH UNLINK DEBUG: Starting batch unlinking for {selected_files.count()} files")
         
         for s3_file in selected_files:
             processed += 1
             try:
+                logger.debug(f"🔍 BATCH UNLINK DEBUG: Processing file {s3_file.file_name} (ID: {s3_file.id})")
+
                 if s3_file.related_resource:
-                    # Store resource info for logging
-                    old_resource = s3_file.related_resource.value
+                    # Store original resource info before unlinking
+                    resource = s3_file.related_resource
+                    old_resource = resource.value
+                    logger.debug(f"🔍 BATCH UNLINK DEBUG: Unlinking from {resource.resource_type}: {resource.uri} (org: {resource.organization.code if resource.organization else 'None'})")
+
+                    # Track the resource for cache warming
+                    if resource.organization:
+                        unlinked_resources.add((resource.uri, resource.organization.code))
+
                     # Unlink the file
                     s3_file.related_resource = None
                     s3_file.save()
@@ -451,6 +558,7 @@ def batch_unlink_files(request):
                     logger.info(f"Unlinked {s3_file.file_name} from resource {old_resource}")
                 else:
                     # File was already unlinked
+                    logger.debug(f"🔍 BATCH UNLINK DEBUG: File was already unlinked, skipping")
                     logger.info(f"File {s3_file.file_name} was already unlinked")
                     
             except Exception as e:
@@ -458,7 +566,33 @@ def batch_unlink_files(request):
                 logger.error(f"Error processing {s3_file.file_name}: {str(e)}")
 
         message = f'Batch unlinking complete. Processed: {processed}, Unlinked: {unlinked}, Errors: {errors}'
-        
+
+        # Trigger OAI-PMH cache warming for affected resources if any files were unlinked
+        if unlinked > 0:
+            logger.debug(f"🔥 CACHE WARM DEBUG: Starting cache warming for {len(unlinked_resources)} unlinked resources")
+
+            try:
+                # Warm cache for each unlinked resource directly using centralized service
+                for i, (uri, org_code) in enumerate(unlinked_resources):
+                    logger.debug(f"🔥 CACHE WARM DEBUG: Warming unlinked resource {i+1}: {uri} (org: {org_code})")
+
+                    try:
+                        resource = Resource.objects.get(uri=uri, organization__code=org_code)
+                        # Warm cache for both metadata formats using centralized service
+                        oai_cache = OAICacheService()
+                        oai_cache.warm_resource_with_graph_integration(resource)
+                    except Resource.DoesNotExist:
+                        logger.warning(f"Resource not found for cache warming: {uri}")
+                    except Exception as resource_error:
+                        logger.error(f"Error warming cache for resource {uri}: {str(resource_error)}")
+
+                logger.info(f"Warmed OAI-PMH cache for {len(unlinked_resources)} resources after unlinking {unlinked} files")
+
+            except Exception as e:
+                logger.error(f"Error warming OAI-PMH cache: {str(e)}")
+        else:
+            logger.debug(f"🔥 CACHE WARM DEBUG: No files unlinked, skipping cache warming")
+
         if request.headers.get('HX-Request'):
             # Clear select all state after batch operation
             from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin

@@ -91,3 +91,7 @@ STORAGES = {
 DATA_UPLOAD_MAX_NUMBER_FILES = 10000  # Allow up to 10000 files
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB - keep files in memory below this
 DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024 * 1024  # 100GB total request size
+
+# Cache settings for development
+# ------------------------------------------------------------------------------
+WARM_CACHE_ON_STARTUP = True  # Enable cache warming for better development experience

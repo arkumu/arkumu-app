@@ -1,0 +1,33 @@
+<div class="alert alert-success shadow-sm">
+    <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+            <span class="font-semibold">Metadaten gespeichert</span>
+            {% if result.resource %}
+                <a class="link link-hover text-sm"
+                   href="{% url 'metadata:resource_detail' result.resource.id %}?origin=metadata-entry"
+                   target="_blank" rel="noopener">
+                    Datensatz öffnen ↗
+                </a>
+            {% endif %}
+        </div>
+        {% if organization %}
+        <p class="text-sm text-base-content/70">
+            Neuer Projektdatensatz für <span class="font-medium">{{ organization.name }}</span> wurde angelegt.
+        </p>
+        {% endif %}
+        {% if result.display_rows %}
+        <div class="overflow-x-auto">
+            <table class="table table-compact">
+                <tbody>
+                {% for row in result.display_rows %}
+                    <tr>
+                        <th class="w-48 align-top">{{ row.label }}</th>
+                        <td>{{ row.value }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>

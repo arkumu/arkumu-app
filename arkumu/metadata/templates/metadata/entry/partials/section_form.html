@@ -1,0 +1,87 @@
+<div id="metadata-entry-panel" class="card bg-base-100 border border-base-300 shadow-lg">
+    <div class="card-body space-y-6">
+        <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+            <div>
+                <h2 class="text-xl font-semibold">{{ manifest.label }}</h2>
+                {% if manifest.description %}
+                <p class="text-sm text-base-content/70">{{ manifest.description }}</p>
+                {% endif %}
+            </div>
+            {% if organization %}
+            <div class="badge badge-outline badge-lg">{{ organization.name }}</div>
+            {% endif %}
+        </div>
+
+        {% if result and result.success %}
+            {% include "metadata/entry/partials/resource_summary.html" %}
+        {% endif %}
+
+        <form hx-post="{% url 'metadata:metadata_entry_submit' %}"
+              hx-target="#metadata-entry-panel"
+              hx-swap="outerHTML"
+              class="space-y-6">
+            {% csrf_token %}
+            <input type="hidden" name="organization" value="{{ organization_code }}">
+            <input type="hidden" name="section" value="{{ manifest.name }}">
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {% for block in fields %}
+                {% with field=block.field value=block.value error=block.error %}
+                <div class="form-control">
+                    <label class="label justify-between">
+                        <span class="label-text font-medium flex items-center gap-1">
+                            {{ field.label }}
+                            {% if field.required %}
+                                <span class="text-xs text-error">*</span>
+                            {% endif %}
+                        </span>
+                    </label>
+
+                    {% if field.widget == 'textarea' %}
+                        <textarea name="{{ field.name }}"
+                                  class="textarea textarea-bordered h-32"
+                                  placeholder="{{ field.placeholder }}">{{ value }}</textarea>
+                    {% elif field.widget == 'tags' %}
+                        <textarea name="{{ field.name }}"
+                                  class="textarea textarea-bordered h-24"
+                                  placeholder="{{ field.placeholder }}">{{ value }}</textarea>
+                        <span class="text-xs text-base-content/60 mt-1">
+                            Werte zeilenweise oder durch Komma getrennt eingeben.
+                        </span>
+                    {% else %}
+                        <input type="text"
+                               name="{{ field.name }}"
+                               value="{{ value }}"
+                               class="input input-bordered w-full"
+                               placeholder="{{ field.placeholder }}"
+                               autocomplete="off">
+                    {% endif %}
+
+                    {% if error %}
+                        <span class="text-xs text-error mt-1">{{ error }}</span>
+                    {% endif %}
+
+                    {% if field.help_text %}
+                        <span class="text-xs text-base-content/60 mt-1">{{ field.help_text }}</span>
+                    {% endif %}
+                </div>
+                {% endwith %}
+                {% endfor %}
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button type="submit" class="btn btn-primary">Speichern</button>
+                <button type="button"
+                        class="btn btn-ghost"
+                        hx-get="{% url 'metadata:metadata_entry_section' %}"
+                        hx-target="#metadata-entry-panel"
+                        hx-swap="innerHTML"
+                        hx-vals='{"organization": "{{ organization_code }}", "section": "{{ manifest.name }}"}'>
+                    Zurücksetzen
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{{ navbar_metadata_entry_link|safe }}

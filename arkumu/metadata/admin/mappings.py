@@ -101,6 +101,7 @@ class MappingAdmin(admin.ModelAdmin):
         'column_count_display',
         'relationship_count_display',
         'mapping_preview',
+        'schema_manifest_preview',
         'execution_stats_display',
         'last_executed_display',
     ]
@@ -114,7 +115,7 @@ class MappingAdmin(admin.ModelAdmin):
             'description': 'List of datasets this mapping applies to.',
         }),
         (_('Mapping Configuration'), {
-            'fields': ('mapping_config', 'mapping_preview'),
+            'fields': ('mapping_config', 'mapping_preview', 'schema_manifest_preview'),
             'description': 'JSON configuration that defines the mapping rules.',
             'classes': ('wide',),
         }),
@@ -317,12 +318,56 @@ class MappingAdmin(admin.ModelAdmin):
                 str(e)
             )
     mapping_preview.short_description = _('Configuration Preview')
-    
+
+    def schema_manifest_preview(self, obj):
+        """Display a formatted preview of the schema manifest."""
+        manifest = (obj.mapping_config or {}).get('schema_manifest')
+        if not manifest:
+            return format_html('<span style="color: #6c757d;">No schema manifest stored</span>')
+
+        try:
+            dataset_count = len(manifest)
+            summary_html = '<div style="font-family: monospace; line-height: 1.6;">'
+            summary_html += f'<strong>Datasets:</strong> {dataset_count}<br>'
+
+            # List first 3 datasets with property counts
+            for dataset_name in list(manifest.keys())[:3]:
+                dataset_info = manifest[dataset_name]
+                prop_count = len(dataset_info.get('properties', {}))
+                fk_count = len(dataset_info.get('fk_relationships', []))
+                summary_html += (
+                    f'  • {dataset_name}: '
+                    f'{prop_count} properties, {fk_count} FKs<br>'
+                )
+            if dataset_count > 3:
+                summary_html += f'  <em>... and {dataset_count - 3} more datasets</em><br>'
+
+            summary_html += '</div>'
+
+            json_str = json.dumps(manifest, indent=2, sort_keys=True)
+            summary_html += f'''
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; color: #0066cc;">View Full Schema Manifest</summary>
+                <pre style="background: #f8f9fa; padding: 10px; margin-top: 5px;
+                           border: 1px solid #dee2e6; border-radius: 4px;
+                           overflow-x: auto; max-height: 400px;">{json_str}</pre>
+            </details>
+            '''
+
+            return mark_safe(summary_html)
+
+        except Exception as exc:
+            return format_html(
+                '<span style="color: #dc3545;">Error rendering schema manifest: {}</span>',
+                str(exc)
+            )
+    schema_manifest_preview.short_description = _('Schema Manifest')
+
     def execution_stats_display(self, obj):
         """Display execution statistics in a formatted way."""
         if not obj.execution_stats:
             return format_html('<span style="color: #6c757d;">No execution statistics</span>')
-        
+
         try:
             stats = obj.execution_stats
             

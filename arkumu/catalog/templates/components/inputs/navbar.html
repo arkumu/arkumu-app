@@ -1,10 +1,20 @@
 <!-- Arkumu Navbar Component with Theme Support -->
 <!-- Search Bar -->
 <div class="container mx-auto px-4 my-5">
+  <!-- Search loading indicator -->
+  <div class="htmx-indicator flex items-center justify-center mb-2">
+    <div class="inline-flex items-center px-4 py-2 text-sm font-medium text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
+      <svg class="animate-spin -ml-1 mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      Searching...
+    </div>
+  </div>
   <div class="flex w-full">
-    <input type="text" 
+    <input type="text"
            class="flex-grow px-4 py-3 font-mono transition-colors
-                  bg-arkumu-light 
+                  bg-arkumu-light
                   border border-arkumu-dark
                   text-arkumu-dark
                   placeholder:text-arkumu-dark
@@ -15,25 +25,29 @@
                   theme-blue:border-arkumu-blue
                   theme-blue:text-arkumu-blue
                   theme-blue:placeholder:text-arkumu-blue"
-           placeholder="{{placeholder_text}}" 
+           placeholder="{{placeholder_text}}"
            id="searchbar"
            name="query"
-           hx-get="../search_cards"
-           hx-target="#search_results"
-           hx-swap="outerHTML"
-           hx-include="#searchbar"
-           hx-trigger="keyup[keyCode==13]"
+           value="{{query|default:''}}"
+           hx-get="{% url 'catalog:browse' %}"
+           hx-target="#results-container"
+           hx-swap="innerHTML"
+           hx-trigger="input changed delay:50ms, keyup[keyCode==13]"
+           hx-indicator="#search-loading"
+           hx-push-url="true"
           >
     <!-- Reducido el margen izquierdo de ml-2 a ml-1 -->
-    <button type="button" 
+    <button type="button"
             class="ml-1 px-6 py-3 font-medium font-mono transition-colors
                    bg-arkumu-dark text-arkumu-light hover:bg-arkumu-dark-hover
                    theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-dark:hover:bg-arkumu-light-hover
                    theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light theme-blue:hover:bg-arkumu-blue-hover"
-            hx-get="../search_cards"
-            hx-target="#search_results"
-            hx-swap="outerHTML"
+            hx-get="{% url 'catalog:browse' %}"
+            hx-target="#results-container"
+            hx-swap="innerHTML"
             hx-include="#searchbar"
+            hx-indicator="#search-loading"
+            hx-push-url="true"
             hx-trigger="click">
       Projekte durchsuchen
     </button>

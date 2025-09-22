@@ -23,7 +23,16 @@ class OptimizedDataExplorerView(ListView):
     def get_queryset(self):
         """Ultra-optimized queryset WITHOUT expensive Count queries."""
         # Cache the queryset for this request
-        cache_key = f'explorer_qs_{self.request.user.id if self.request.user.is_authenticated else "anon"}_{self.request.GET.urlencode()}'
+        # Shared cache key with proper scope separation
+        if not self.request.user.is_authenticated:
+            cache_scope = "anonymous"
+        elif self.request.user.organization:
+            cache_scope = f"org:{self.request.user.organization.code}"
+        else:
+            # Authenticated users without org see cross-institutional public catalog
+            cache_scope = "cross_institutional"
+
+        cache_key = f'explorer_qs:{cache_scope}:{self.request.GET.urlencode()}'
         cached_ids = cache.get(cache_key)
         
         if cached_ids and not self.request.GET.get('nocache'):
@@ -95,7 +104,9 @@ class OptimizedDataExplorerView(ListView):
     
     def _get_accessible_organizations(self):
         """Cached organization list."""
-        cache_key = f'org_list_{self.request.user.id if self.request.user.is_authenticated else "anon"}'
+        # Shared cache - all users see same org list based on auth status
+        auth_status = "authenticated" if self.request.user.is_authenticated else "anonymous"
+        cache_key = f'org_list:{auth_status}'
         cached = cache.get(cache_key)
         if cached:
             return cached
@@ -254,7 +265,16 @@ class OptimizedDataExplorerView(ListView):
         context = super().get_context_data(**kwargs)
         
         # Cache filter options
-        cache_key = f'filter_options_{self.request.user.id if self.request.user.is_authenticated else "anon"}'
+        # Shared cache with proper scope separation
+        if not self.request.user.is_authenticated:
+            cache_scope = "anonymous"
+        elif self.request.user.organization:
+            cache_scope = f"org:{self.request.user.organization.code}"
+        else:
+            # Authenticated users without org see cross-institutional filter options
+            cache_scope = "cross_institutional"
+
+        cache_key = f'filter_options:{cache_scope}'
         filter_options = cache.get(cache_key)
         
         if not filter_options:
@@ -414,7 +434,16 @@ class SemanticStatsView(ListView):
     
     def _get_semantic_stats(self, request):
         """Optimized semantic statistics with single query."""
-        cache_key = f'semantic_stats_{request.user.id if request.user.is_authenticated else "anon"}'
+        # Shared cache with proper scope separation
+        if not request.user.is_authenticated:
+            cache_scope = "anonymous"
+        elif request.user.organization:
+            cache_scope = f"org:{request.user.organization.code}"
+        else:
+            # Authenticated users without org see cross-institutional stats
+            cache_scope = "cross_institutional"
+
+        cache_key = f'semantic_stats:{cache_scope}'
         cached = cache.get(cache_key)
         if cached:
             return cached

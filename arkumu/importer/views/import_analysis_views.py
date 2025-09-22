@@ -16,6 +16,7 @@ from django.views.decorators.http import require_http_methods
 
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models import Resource, Triple
+from arkumu.metadata.models.resource import ResourceType
 from arkumu.users.models import Organization
 from arkumu.importer.models.ingest_sessions import IngestSession
 from arkumu.importer.utils.mapping_utils import MappingUtils
@@ -90,7 +91,7 @@ def import_results_dashboard(request):
                                 source=org_instance,
                                 predicate__uri__in=list(fk_predicates),
                                 subject__uri__contains='/entities/',
-                                object__resource_type='IRI',
+                                object__resource_type__in=[ResourceType.ENTITY, ResourceType.IRI],
                                 object__uri__contains='/entities/'
                             ).count()
                         analysis.setdefault('import_results', {})['fk_relationships_total'] = fk_total
@@ -319,7 +320,7 @@ def _analyze_ingest_session_results(ingest_session, organization, detailed=False
         # Count FK relationships (entity-to-entity IRI relationships, excluding dataset membership)
         relationship_triples = session_triples.filter(
             subject__uri__contains='/entities/',
-            object__resource_type='IRI',
+            object__resource_type__in=[ResourceType.ENTITY, ResourceType.IRI],
             object__uri__contains='/entities/'
         ).exclude(
             predicate__uri__contains='isPartOf'

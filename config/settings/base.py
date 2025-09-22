@@ -116,6 +116,7 @@ LOCAL_APPS = [
     "arkumu.catalog",
     "arkumu.rest",
     "arkumu.oaipmh",
+    "arkumu.cache",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -404,3 +405,7 @@ MULTIPART_UPLOAD_SETTINGS = {
     'enable_resume': True,
     'cleanup_failed_uploads': True,
 }
+
+# Feature flags for optional REST APIs
+ENABLE_IMPORT_API = False
+ENABLE_CANONICAL_URI_API = False

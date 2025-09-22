@@ -7,8 +7,9 @@ Efficient navigation: Class → Entity → Property → Literal
 from typing import Dict, List, Optional, Any
 import logging
 from django.db.models import Q, Count, Prefetch
-from django.core.cache import cache
+from django.utils import timezone
 from arkumu.metadata.models import Resource, Triple, ResourceType
+from arkumu.cache.services import GraphCacheService, CatalogCacheService
 
 logger = logging.getLogger(__name__)
 
@@ -28,31 +29,57 @@ class GraphSearchService:
     def __init__(self, user=None):
         self.user = user
         self.rdf_type_uri = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+        self.graph_cache = GraphCacheService()
+        self.catalog_cache = CatalogCacheService()
+        self.user_org = user.organization.code if user and hasattr(user, 'organization') and user.organization else None
 
-    def get_classes_with_counts(self, limit: int = 50) -> List[Dict]:
+    def _get_cached_catalog_data(self, cache_type: str, **kwargs) -> Optional[Any]:
+        cached = self.catalog_cache.get_cached(cache_type, **kwargs)
+        if cached:
+            return cached.get('data')
+        return None
+
+    def _set_cached_catalog_data(self, cache_type: str, ttl_key: str, data: Any, **kwargs):
+        payload = {
+            'data': data,
+            'cached_at': timezone.now().isoformat()
+        }
+        self.catalog_cache.set_cached(cache_type, payload, ttl_key, **kwargs)
+
+    def get_classes_with_counts(self, organization_code: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """
         Get all classes with entity counts and sample properties.
 
         Returns:
             List of classes with their entity counts and top properties
         """
-        cache_key = 'catalog:classes:overview'
-        cached = cache.get(cache_key)
+        cache_scope = organization_code or 'all'
+        cached = self._get_cached_catalog_data(
+            'classes_overview',
+            org=cache_scope
+        )
         if cached:
             return cached
 
         # Get classes with entity counts using efficient aggregation
         # Only show classes that have canonical URIs (harmonized catalog data)
+        entity_filter = Q(
+            object_triples__predicate__uri=self.rdf_type_uri,
+            object_triples__subject__resource_type=ResourceType.ENTITY,
+            object_triples__object__canonical_uri__isnull=False  # Ensure the class has canonical URI
+        )
+
+        # Add organization filter if specified
+        if organization_code:
+            entity_filter &= Q(object_triples__subject__organization__code=organization_code)
+
         classes = Resource.objects.filter(
             resource_type=ResourceType.CLASS,
             canonical_uri__isnull=False
         ).annotate(
             entity_count=Count(
                 'object_triples__subject',
-                filter=Q(
-                    object_triples__predicate__uri=self.rdf_type_uri,
-                    object_triples__subject__resource_type=ResourceType.ENTITY
-                ),
+                filter=entity_filter,
                 distinct=True
             )
         ).filter(entity_count__gt=0).order_by('-entity_count')[:limit]
@@ -67,10 +94,15 @@ class GraphSearchService:
                 'description': f"{cls.entity_count} entities"
             })
 
-        cache.set(cache_key, results, 300)  # Cache for 5 minutes
+        self._set_cached_catalog_data(
+            'classes_overview',
+            'catalog_classes',
+            results,
+            org=cache_scope
+        )
         return results
 
-    def get_properties_for_class(self, class_uri: str, limit: int = 30) -> List[Dict]:
+    def get_properties_for_class(self, class_uri: str, limit: int = 30, organization_code: str = None) -> List[Dict]:
         """
         Get all properties used by entities of a specific class.
 
@@ -81,22 +113,34 @@ class GraphSearchService:
         Returns:
             List of properties with usage counts and sample values
         """
-        cache_key = f'catalog:properties:{class_uri}'
-        cached = cache.get(cache_key)
+        cache_params = {
+            'class_uri': class_uri,
+            'org': organization_code or 'global'
+        }
+        cached = self._get_cached_catalog_data('class_properties', **cache_params)
         if cached:
             return cached
 
         # Get ALL entities of this class for accurate counts
         # Note: triples still use the raw URI, not canonical URI
         try:
-            class_resource = Resource.objects.get(canonical_uri=class_uri)
-            class_raw_uri = class_resource.uri
-        except Resource.DoesNotExist:
-            class_raw_uri = class_uri
+            # Handle multiple resources with same canonical URI across organizations
+            # We want to search across ALL organizations, so get all matching resources
+            class_resources = Resource.objects.filter(canonical_uri=class_uri)
+
+            if class_resources.exists():
+                # Get all raw URIs for this canonical URI across organizations
+                class_raw_uris = list(class_resources.values_list('uri', flat=True))
+                logger.debug(f"Found {len(class_raw_uris)} resources for canonical URI {class_uri}")
+            else:
+                class_raw_uris = [class_uri]
+        except Exception as e:
+            logger.warning(f"Error getting class resources for {class_uri}: {e}")
+            class_raw_uris = [class_uri]
 
         all_entity_ids = Triple.objects.filter(
             predicate__uri=self.rdf_type_uri,
-            object__uri=class_raw_uri
+            object__uri__in=class_raw_uris
         ).values_list('subject_id', flat=True)
 
         # Get properties used by these entities with ACTUAL counts
@@ -134,7 +178,12 @@ class GraphSearchService:
                 'sample_values': list(sample_values)
             })
 
-        cache.set(cache_key, results, 300)
+        self._set_cached_catalog_data(
+            'class_properties',
+            'catalog_property_snapshot',
+            results,
+            **cache_params
+        )
         return results
 
     def search_literals(self,
@@ -301,13 +350,13 @@ class GraphSearchService:
             'relationships': relationships
         }
 
-    def get_available_types(self, limit: int = 50) -> List[Dict]:
+    def get_available_types(self, organization_code: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """
         Get available entity types (classes) with counts.
 
         Alias for get_classes_with_counts for backward compatibility.
         """
-        classes = self.get_classes_with_counts(limit=limit)
+        classes = self.get_classes_with_counts(organization_code=organization_code, limit=limit)
 
         # Transform to expected format
         results = []
@@ -316,7 +365,7 @@ class GraphSearchService:
                 'name': cls['name'],
                 'display_name': cls['name'],
                 'uri': cls['uri'],
-                'count': cls['entity_count']
+                'entity_count': cls['entity_count']  # Keep consistent field name
             })
 
         return results
@@ -334,8 +383,7 @@ class GraphSearchService:
             return self.get_properties_for_class(resource_type, limit=limit)
 
         # Get all properties across all classes
-        cache_key = 'catalog:properties:all'
-        cached = cache.get(cache_key)
+        cached = self._get_cached_catalog_data('all_properties_overview', scope='all')
         if cached:
             return cached
 
@@ -364,7 +412,12 @@ class GraphSearchService:
                 'usage_count': prop['usage_count']
             })
 
-        cache.set(cache_key, results, 300)
+        self._set_cached_catalog_data(
+            'all_properties_overview',
+            'catalog_property_snapshot',
+            results,
+            scope='all'
+        )
         return results
 
     def search_by_property_with_graph(self,
@@ -475,14 +528,17 @@ class GraphSearchService:
         return results
 
     def browse_property_values(self, property_uri: str, class_uri: Optional[str] = None,
-                              search_term: Optional[str] = None, offset: int = 0, limit: int = 50) -> Dict:
+                              organization_code: Optional[str] = None, search_term: Optional[str] = None,
+                              offset: int = 0, limit: int = 50) -> Dict:
         """
         Browse literal values for a property with optional search filtering.
 
         Args:
             property_uri: URI of the property to browse
             class_uri: Optional class filter
+            organization_code: Optional organization filter
             search_term: Optional search term to filter values
+            offset: Database-level pagination offset
             limit: Maximum results
 
         Returns:
@@ -501,6 +557,10 @@ class GraphSearchService:
                 object__canonical_uri=class_uri
             ).values('subject_id')
             base_query = base_query.filter(subject_id__in=entity_subquery)
+
+        # Apply organization filter
+        if organization_code:
+            base_query = base_query.filter(subject__organization__code=organization_code)
 
         # Apply search filter using trigram index for efficient text search
         if search_term:
@@ -560,8 +620,7 @@ class GraphSearchService:
     def get_statistics(self) -> Dict:
         """Get overall catalog statistics."""
 
-        cache_key = 'catalog:statistics'
-        cached = cache.get(cache_key)
+        cached = self._get_cached_catalog_data('catalog_statistics', scope='global')
         if cached:
             return cached
 
@@ -581,7 +640,12 @@ class GraphSearchService:
             'total_triples': Triple.objects.count()
         }
 
-        cache.set(cache_key, stats, 600)  # Cache for 10 minutes
+        self._set_cached_catalog_data(
+            'catalog_statistics',
+            'catalog_statistics',
+            stats,
+            scope='global'
+        )
         return stats
 
     def browse_entities_by_class(self, class_uri: str, limit: int = 20) -> List[Dict]:
@@ -680,4 +744,170 @@ class GraphSearchService:
             return []
         except Exception as e:
             logger.error(f"Error browsing entities for class {class_uri}: {e}")
+            return []
+
+    def get_entity_relationships_from_cache(self, entity_uri: str) -> Optional[Dict]:
+        """
+        Get entity relationships leveraging cached graph data from OAI operations.
+
+        This method tries to reuse expensive graph traversals that were cached
+        during OAI-PMH metadata generation, avoiding duplicate work.
+        """
+        try:
+            cached_relationships = self.catalog_cache.get_entity_relationships_from_graph_cache(
+                entity_uri,
+                self.user_org
+            )
+
+            if cached_relationships:
+                logger.debug(f"Reusing cached graph data for catalog view: {entity_uri}")
+                return self._format_relationships_for_catalog(cached_relationships)
+
+            # If no cached data, we could trigger fresh graph generation
+            # but for now, fall back to regular methods
+            logger.debug(f"No cached graph data available for {entity_uri}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting cached relationships for {entity_uri}: {e}")
+            return None
+
+    def _format_relationships_for_catalog(self, graph_relationships: Dict) -> Dict:
+        """
+        Format cached graph relationships for catalog display.
+
+        Transforms the graph data structure into the format expected by catalog views.
+        """
+        if not graph_relationships:
+            return {}
+
+        # Transform the cached graph data into catalog-friendly format
+        formatted = {
+            'incoming_relationships': [],
+            'outgoing_relationships': [],
+            'properties': {},
+            'connected_entities_count': 0
+        }
+
+        # Extract incoming relationships
+        for rel in graph_relationships.get('incoming', []):
+            formatted['incoming_relationships'].append({
+                'property': rel.get('property', ''),
+                'entity_uri': rel.get('source_uri', ''),
+                'entity_title': rel.get('source_title', 'Unknown')
+            })
+
+        # Extract outgoing relationships
+        for rel in graph_relationships.get('outgoing', []):
+            formatted['outgoing_relationships'].append({
+                'property': rel.get('property', ''),
+                'entity_uri': rel.get('target_uri', ''),
+                'entity_title': rel.get('target_title', 'Unknown')
+            })
+
+        # Extract literal properties
+        for prop_uri, values in graph_relationships.get('literals', {}).items():
+            prop_name = prop_uri.split('/')[-1].replace('-', '_')
+            formatted['properties'][prop_name] = values
+
+        # Count connected entities
+        formatted['connected_entities_count'] = (
+            len(formatted['incoming_relationships']) +
+            len(formatted['outgoing_relationships'])
+        )
+
+        return formatted
+
+
+    def get_available_properties(self, selected_class: str = '') -> List[Dict]:
+        """
+        Get available properties with caching support.
+
+        This method checks if properties data is already available in cache
+        before performing expensive database queries.
+        """
+        # Try to leverage any cached property information
+        # Shared cache key - same class properties for all users in same org
+        cache_params = {
+            'class_uri': selected_class or 'ALL',
+            'org': self.user_org or 'global'
+        }
+        cached_properties = self._get_cached_catalog_data(
+            'available_properties',
+            **cache_params
+        )
+
+        if cached_properties is not None:
+            logger.debug(f"Using cached available properties for class: {selected_class}")
+            return cached_properties
+
+        # Fallback to original method
+        logger.debug(f"Cache miss - fetching available properties for class: {selected_class}")
+        properties = self.get_properties_for_class(selected_class) if selected_class else []
+
+        # Cache for future use
+        self._set_cached_catalog_data(
+            'available_properties',
+            'catalog_property_list',
+            properties,
+            **cache_params
+        )
+
+        return properties
+
+    def get_available_organizations(self) -> List[Dict]:
+        """
+        Get available organizations with resource counts, cached.
+        """
+        cached_orgs = self._get_cached_catalog_data('catalog_organizations', scope='all')
+
+        if cached_orgs is not None:
+            logger.debug("Using cached available organizations")
+            return cached_orgs
+
+        logger.debug("Cache miss - fetching available organizations")
+
+        try:
+            from arkumu.users.models import Organization
+
+            # Debug: Check HMT specifically
+            hmt_org = Organization.objects.filter(code='hmt').first()
+            if hmt_org:
+                hmt_total_resources = hmt_org.resource_set.count()
+                hmt_canonical_resources = hmt_org.resource_set.filter(canonical_uri__isnull=False).count()
+                logger.debug(f"HMT has {hmt_total_resources} total resources, {hmt_canonical_resources} with canonical URIs")
+
+            # Get organizations that have resources with canonical URIs (harmonized data)
+            logger.debug("Fetching organizations with canonical URIs only")
+            orgs_with_counts = Organization.objects.filter(
+                resource__isnull=False,
+                resource__canonical_uri__isnull=False
+            ).annotate(
+                resource_count=Count('resource', filter=Q(resource__canonical_uri__isnull=False), distinct=True)
+            ).filter(resource_count__gt=0).order_by('-resource_count', 'name')
+
+            logger.debug(f"Found {orgs_with_counts.count()} organizations with canonical URIs")
+
+            organizations = []
+            for org in orgs_with_counts:
+                logger.debug(f"Organization: {org.code} ({org.name}) - {org.resource_count} canonical resources")
+                organizations.append({
+                    'code': org.code,
+                    'name': org.name,
+                    'display_name': f"{org.name} ({org.code})",
+                    'resource_count': org.resource_count
+                })
+
+            self._set_cached_catalog_data(
+                'catalog_organizations',
+                'catalog_organizations',
+                organizations,
+                scope='all'
+            )
+            logger.debug(f"Cached {len(organizations)} organizations")
+
+            return organizations
+
+        except Exception as e:
+            logger.error(f"Error getting available organizations: {e}")
             return []

@@ -63,10 +63,12 @@ class CanonicalGraphService:
 
     def __init__(
         self,
-        org_code: str,
+        org_code: Optional[str] = None,  # Made optional for cross-institutional use
         mapping_id: Optional[str] = None,
     ) -> None:
-        self.organization = Organization.objects.get(code=org_code)
+        # Organization is optional - when None, searches across all institutions
+        self.organization = Organization.objects.get(code=org_code) if org_code else None
+        self.org_code = org_code  # Keep for backward compatibility
         self.mapping_id = mapping_id
         self._schema: Optional[SchemaService] = None
         if mapping_id and SchemaService is not None:
@@ -81,7 +83,6 @@ class CanonicalGraphService:
         predicate_canon_whitelist: Optional[Sequence[str]] = None,
         expand_neighbors: bool = True,
         neighbor_predicate_canon_whitelist: Optional[Sequence[str]] = None,
-        limit_subjects: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Build a subject‑centric graph for a dataset (e.g., FUK Projekt).
 
@@ -96,7 +97,8 @@ class CanonicalGraphService:
         if not canonical_type:
             raise ValueError("Canonical class URI is required (schema unavailable and not provided).")
 
-        subject_ids = self._find_subject_ids_by_class(canonical_type, restrict_to_org=True, limit=limit_subjects)
+        # Get ALL subjects with canonical mapping - no limits
+        subject_ids = self._find_subject_ids_by_class(canonical_type)
 
         edges = self._fetch_triples_for_subjects(subject_ids, predicate_canon_whitelist)
 
@@ -109,7 +111,7 @@ class CanonicalGraphService:
         nodes = self._collect_nodes_from_edges(edges)
 
         return {
-            "organization": self.organization.code,
+            "organization": self.organization.code if self.organization else "cross-institutional",
             "dataset": dataset_name,
             "type_canonical_uri": canonical_type,
             "subjects": subject_ids,
@@ -167,7 +169,7 @@ class CanonicalGraphService:
         nodes = self._collect_nodes_from_edges(edges)
 
         return {
-            "organization": self.organization.code,
+            "organization": self.organization.code if self.organization else "cross-institutional",
             "root_uri": resource.uri,
             "root_id": root_id,
             "nodes": nodes,
@@ -219,23 +221,25 @@ class CanonicalGraphService:
         self,
         canonical_type_uri: str,
         *,
-        restrict_to_org: bool = True,
-        limit: Optional[int] = None,
+        restrict_to_org: Optional[bool] = None,  # None means use default based on self.organization
     ) -> List[str]:
-        q = Q(predicate__uri=RDF_TYPE_URI) & (
-            Q(object__canonical_uri=canonical_type_uri) | Q(object__uri=canonical_type_uri)
-        )
-        if restrict_to_org:
+        # ONLY find subjects with canonical URI mapping - no fallbacks
+        q = Q(predicate__uri=RDF_TYPE_URI) & Q(object__canonical_uri=canonical_type_uri)
+
+        # Default behavior: restrict to org only if organization is set
+        if restrict_to_org is None:
+            restrict_to_org = self.organization is not None
+
+        if restrict_to_org and self.organization:
             q &= Q(subject__organization=self.organization)
 
+        # Get ALL subjects with canonical mapping - no limits
         qs = (
             Triple.objects.filter(q)
             .order_by("subject_id")
             .values_list("subject_id", flat=True)
             .distinct()
         )
-        if limit is not None:
-            qs = qs[: limit]
         return list(qs)
 
     def _fetch_triples_for_subjects(
@@ -248,9 +252,8 @@ class CanonicalGraphService:
 
         q = Q(subject_id__in=subject_ids)
         if predicate_canon_whitelist:
-            q &= Q(predicate__canonical_uri__in=predicate_canon_whitelist) | Q(
-                predicate__uri__in=predicate_canon_whitelist
-            )
+            # ONLY use canonical URIs - no fallbacks
+            q &= Q(predicate__canonical_uri__in=predicate_canon_whitelist)
 
         triples = (
             Triple.objects.filter(q)
@@ -275,12 +278,12 @@ class CanonicalGraphService:
                     triple_id=str(t.id),
                     subject_id=str(t.subject_id),
                     predicate_uri=t.predicate.uri,
-                    predicate_canonical=getattr(t.predicate, "canonical_uri", None),
+                    predicate_canonical=t.predicate.canonical_uri if hasattr(t.predicate, "canonical_uri") else None,
                     object_id=str(t.object.id),
-                    object_uri=getattr(t.object, "uri", None),
+                    object_uri=t.object.uri if hasattr(t.object, "uri") else None,
                     object_type=t.object.resource_type,
-                    object_value=getattr(t.object, "value", None),
-                    object_canonical=getattr(t.object, "canonical_uri", None),
+                    object_value=t.object.value if hasattr(t.object, "value") else None,
+                    object_canonical=t.object.canonical_uri if hasattr(t.object, "canonical_uri") else None,
                 )
             )
         return edges
@@ -351,12 +354,12 @@ class CanonicalGraphService:
                     triple_id=str(t.id),
                     subject_id=str(t.subject_id),
                     predicate_uri=t.predicate.uri,
-                    predicate_canonical=getattr(t.predicate, "canonical_uri", None),
+                    predicate_canonical=t.predicate.canonical_uri if hasattr(t.predicate, "canonical_uri") else None,
                     object_id=str(t.object.id),
-                    object_uri=getattr(t.object, "uri", None),
+                    object_uri=t.object.uri if hasattr(t.object, "uri") else None,
                     object_type=t.object.resource_type,
-                    object_value=getattr(t.object, "value", None),
-                    object_canonical=getattr(t.object, "canonical_uri", None),
+                    object_value=t.object.value if hasattr(t.object, "value") else None,
+                    object_canonical=t.object.canonical_uri if hasattr(t.object, "canonical_uri") else None,
                 )
             )
         return edges

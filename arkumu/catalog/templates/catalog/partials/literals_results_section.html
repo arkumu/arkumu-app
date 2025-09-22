@@ -15,7 +15,7 @@
         <!-- First Page -->
         {% if page_obj.number > 2 %}
         <button hx-get="{% url 'catalog:explorer_literals' %}"
-                hx-include="[name='class']:checked, #literal-search-input"
+                hx-include="[name='class']:checked, [name='organization']:checked, #literal-search-input"
                 hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "1"}'
                 hx-target="#literals-results"
                 hx-swap="innerHTML focus-scroll:false"
@@ -27,7 +27,7 @@
 
         <!-- Previous Page -->
         <button hx-get="{% url 'catalog:explorer_literals' %}"
-                hx-include="[name='class']:checked, #literal-search-input"
+                hx-include="[name='class']:checked, [name='organization']:checked, #literal-search-input"
                 hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "{{ page_obj.previous_page_number|default:1 }}"}'
                 hx-target="#literals-results"
                 hx-swap="innerHTML focus-scroll:false"
@@ -44,7 +44,7 @@
 
         <!-- Next Page -->
         <button hx-get="{% url 'catalog:explorer_literals' %}"
-                hx-include="[name='class']:checked, #literal-search-input"
+                hx-include="[name='class']:checked, [name='organization']:checked, #literal-search-input"
                 hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "{{ page_obj.next_page_number|default:page_obj.paginator.num_pages }}"}'
                 hx-target="#literals-results"
                 hx-swap="innerHTML focus-scroll:false"
@@ -57,7 +57,7 @@
         <!-- Last Page -->
         {% if page_obj.number < page_obj.paginator.num_pages|add:"-1" %}
         <button hx-get="{% url 'catalog:explorer_literals' %}"
-                hx-include="[name='class']:checked, #literal-search-input"
+                hx-include="[name='class']:checked, [name='organization']:checked, #literal-search-input"
                 hx-vals='{"property": "{{ property_uri }}", "class": "{{ class_uri }}", "page": "{{ page_obj.paginator.num_pages }}"}'
                 hx-target="#literals-results"
                 hx-swap="innerHTML focus-scroll:false"

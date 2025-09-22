@@ -59,6 +59,9 @@
             <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
             <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
             <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
+            <li id="nav-metadata-entry-mobile" class="{% if 'metadata-entry' in request.path %}active{% endif %}">
+              <a href="{% url 'metadata:metadata_entry' %}">Metadata Entry</a>
+            </li>
 
             <li><a href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a></li>
           {% else %}
@@ -77,6 +80,9 @@
           <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
           <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
           <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
+          <li id="nav-metadata-entry-desktop" class="{% if 'metadata-entry' in request.path %}active{% endif %}">
+            <a href="{% url 'metadata:metadata_entry' %}">Metadata Entry</a>
+          </li>
           <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2">
             <i class="fas fa-search"></i>
             <span>Catalog Explorer</span>
@@ -140,7 +146,7 @@
           </div>
           <ul tabindex="0" class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">
             <li><a href="{% url 'users:detail' request.user.username %}">Profile</a></li>
-            <li><a href="{% url 'catalog:design' %}">Design Testing</a></li>
+            <li><a href="{% url 'catalog:browse' %}">Design Testing</a></li>
             <li><a href="{% url 'catalog:components' %}">Components</a></li>
             <li><a href="{% url 'account_logout' %}">Logout</a></li>
           </ul>
