@@ -43,3 +43,11 @@ def test_generated_module_executes(markdown_path):
     assert german_name_meta["predicate_uri"].endswith("#has-german-name")
     assert german_name_meta["graph_id"] == "arkumu:hasGermanName"
     assert german_name_meta["cardinality"] == "repeatable"
+
+    event_cls = namespace.get("Event")
+    assert event_cls is not None
+    event_metadata = {
+        field.name: field.metadata for field in dataclass_fields(event_cls)
+    }
+    event_meta = event_metadata["event_type"]
+    assert event_meta["vocabulary"] == "event-types"

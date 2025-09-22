@@ -18,6 +18,7 @@ class PropertyDefinition:
     uri: Optional[str]
     graph_representation: Optional[str]
     metadata: Dict[str, str]
+    vocabulary_slug: Optional[str] = None
 
     @property
     def slug(self) -> str:

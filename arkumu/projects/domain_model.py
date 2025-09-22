@@ -39,7 +39,7 @@ DE: Ein:e Akteur:in ist entweder eine einzelne lebende oder verstorbene reale Pe
     )
     gender: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has gender', 'label_en': 'Gender', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gender', 'graph_id': 'arkumu:hasGender', 'property_slug': 'has-gender', 'cardinality': 'repeatable' },
+        metadata={ 'source_en_name': 'has gender', 'label_en': 'Gender', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-gender', 'graph_id': 'arkumu:hasGender', 'property_slug': 'has-gender', 'cardinality': 'repeatable', 'vocabulary': 'genders' },
     )
     date_of_birth: list[str] = field(
         default_factory=list,
@@ -218,11 +218,11 @@ DE: Ein Digitales Objekt ist eine einzelne Datei mit dazugehörigen Metadaten. B
     )
     media_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has media type', 'label_en': 'Media Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-media-type', 'graph_id': 'arkumu:hasMediaType', 'property_slug': 'has-media-type', 'cardinality': 'repeatable' },
+        metadata={ 'source_en_name': 'has media type', 'label_en': 'Media Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-media-type', 'graph_id': 'arkumu:hasMediaType', 'property_slug': 'has-media-type', 'cardinality': 'repeatable', 'vocabulary': 'media-types' },
     )
     genesis_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has genesis type', 'label_en': 'Genesis Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-genesis-type', 'graph_id': 'arkumu:hasGenesisType', 'property_slug': 'has-genesis-type', 'cardinality': 'repeatable' },
+        metadata={ 'source_en_name': 'has genesis type', 'label_en': 'Genesis Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-genesis-type', 'graph_id': 'arkumu:hasGenesisType', 'property_slug': 'has-genesis-type', 'cardinality': 'repeatable', 'vocabulary': 'genesis-types' },
     )
     file_package: list[str] = field(
         default_factory=list,
@@ -425,7 +425,7 @@ DE: Ereignisse bilden Geschehnisse in der realen Welt ab, die im Zusammenhang mi
     )
     event_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has event type', 'label_en': 'Event Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-type', 'graph_id': 'arkumu:hasEventType', 'property_slug': 'has-event-type', 'cardinality': 'repeatable' },
+        metadata={ 'source_en_name': 'has event type', 'label_en': 'Event Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-event-type', 'graph_id': 'arkumu:hasEventType', 'property_slug': 'has-event-type', 'cardinality': 'repeatable', 'vocabulary': 'event-types' },
     )
     event_beginning: list[str] = field(
         default_factory=list,
@@ -613,7 +613,7 @@ DE: Besondere Art eines Physischen Objekts, auf dem Daten gespeichert können. S
     )
     information_storage_medium_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has information storage medium type', 'label_en': 'Information Storage Medium Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-information-storage-medium-type', 'graph_id': 'arkumu:hasInformationStorageMediumType', 'property_slug': 'has-information-storage-medium-type', 'cardinality': 'repeatable' },
+        metadata={ 'source_en_name': 'has information storage medium type', 'label_en': 'Information Storage Medium Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-information-storage-medium-type', 'graph_id': 'arkumu:hasInformationStorageMediumType', 'property_slug': 'has-information-storage-medium-type', 'cardinality': 'repeatable', 'vocabulary': 'information-storage-medium-types' },
     )
     product_id_value: list[str] = field(
         default_factory=list,
@@ -984,11 +984,11 @@ DE: Ein Projekt ist ein Datensatz, der Kunst und kunstbezogene Dinge beschreibt 
     )
     project_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has project type', 'label_en': 'Project Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-type', 'graph_id': 'arkumu:hasProjectType', 'property_slug': 'has-project-type', 'cardinality': 'repeatable' },
+        metadata={ 'source_en_name': 'has project type', 'label_en': 'Project Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-type', 'graph_id': 'arkumu:hasProjectType', 'property_slug': 'has-project-type', 'cardinality': 'repeatable', 'vocabulary': 'project-types' },
     )
     project_category: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has project category', 'label_en': 'Project Category', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-category', 'graph_id': 'arkumu:hasProjectCategory', 'property_slug': 'has-project-category', 'cardinality': 'repeatable' },
+        metadata={ 'source_en_name': 'has project category', 'label_en': 'Project Category', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-category', 'graph_id': 'arkumu:hasProjectCategory', 'property_slug': 'has-project-category', 'cardinality': 'repeatable', 'vocabulary': 'project-categories' },
     )
     keyword: list[str] = field(
         default_factory=list,

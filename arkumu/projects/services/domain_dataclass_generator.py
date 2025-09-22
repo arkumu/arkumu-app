@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from arkumu.metadata.services.controlled_vocabulary_parser import (
+    ControlledVocabularyMarkdownParser,
+)
 from arkumu.metadata.services.domain_schema_parser import ArkumuModelExportService
 from arkumu.metadata.services.property_markdown_parser import (
     PropertyMarkdownParser,
@@ -28,6 +31,7 @@ class GeneratedField:
     property_slug: Optional[str] = None
     cardinality: str = "repeatable"
     value_type: Optional[str] = None
+    vocabulary_slug: Optional[str] = None
 
     def render(self, indent: str = "    ") -> str:
         metadata_parts = [
@@ -48,6 +52,8 @@ class GeneratedField:
             metadata_parts.append(f"'cardinality': '{self.cardinality}'")
         if self.value_type:
             metadata_parts.append(f"'value_type': '{self.value_type}'")
+        if self.vocabulary_slug:
+            metadata_parts.append(f"'vocabulary': '{self.vocabulary_slug}'")
         metadata = ', '.join(metadata_parts)
         return (
             f"{indent}{self.name}: list[str] = field(\n"
@@ -82,10 +88,14 @@ class DomainDataclassGenerator:
         self,
         export_service: Optional[ArkumuModelExportService] = None,
         property_parser: Optional[PropertyMarkdownParser] = None,
+        vocabulary_parser: Optional[ControlledVocabularyMarkdownParser] = None,
     ) -> None:
         self.export_service = export_service or ArkumuModelExportService()
         self.property_parser = property_parser or PropertyMarkdownParser()
         self._property_map: Dict[str, PropertyDefinition] = {}
+        self.vocabulary_parser = vocabulary_parser or ControlledVocabularyMarkdownParser()
+        self._vocabulary_map: Dict[str, Dict[str, str]] = {}
+        self._vocabulary_by_entity: Dict[str, list[str]] = {}
 
     def build_module(self, markdown_path: Path | str) -> str:
         payload = self.export_service.build_schema(markdown_path)
@@ -93,6 +103,12 @@ class DomainDataclassGenerator:
         self._property_map = {
             definition.normalized_key: definition for definition in property_definitions
         }
+        vocab_path = Path(markdown_path).parent / "202509221948 arkumu controlled vocabularies.md"
+        if vocab_path.exists():
+            vocab_doc = self.vocabulary_parser.parse_file(vocab_path)
+            self._vocabulary_map = self._build_vocabulary_map(vocab_doc.sections)
+        else:
+            self._vocabulary_map = {}
         classes = [
             self._build_class_definition(class_payload)
             for class_payload in payload.get("classes", [])
@@ -162,6 +178,7 @@ class DomainDataclassGenerator:
                     property_slug=prop_def.slug if prop_def else None,
                     cardinality=(prop_def.cardinality or "repeatable") if prop_def else "repeatable",
                     value_type=prop_def.value_type if prop_def else None,
+                    vocabulary_slug=self._match_vocabulary(english_name, label_en),
                 )
             )
 
@@ -195,3 +212,46 @@ class DomainDataclassGenerator:
         while f"{candidate}_{suffix}" in existing:
             suffix += 1
         return f"{candidate}_{suffix}"
+
+    def _build_vocabulary_map(self, sections) -> Dict[str, Dict[str, str]]:
+        mapping: Dict[str, Dict[str, str]] = {}
+        for section in sections:
+            for entry in section.entries:
+                entity_key = self._normalize_vocab_key(entry.entity)
+                if not entity_key:
+                    continue
+                vocab_key = self._normalize_vocab_key(entry.english_name)
+                if not vocab_key:
+                    continue
+                mapping.setdefault(entity_key, {})[vocab_key] = entry.slug
+                # add singular variant if the english label ends with plural forms
+                if vocab_key.endswith('s'):
+                    mapping[entity_key].setdefault(vocab_key[:-1], entry.slug)
+                if vocab_key.endswith('ies'):
+                    mapping[entity_key].setdefault(vocab_key[:-3] + 'y', entry.slug)
+        return mapping
+
+    def _match_vocabulary(self, class_english_name: str, field_label: str) -> Optional[str]:
+        entity_key = self._normalize_vocab_key(class_english_name)
+        vocab_entries = self._vocabulary_map.get(entity_key)
+        if not vocab_entries:
+            return None
+
+        label_key = self._normalize_vocab_key(field_label)
+        if label_key in vocab_entries:
+            return vocab_entries[label_key]
+
+        # attempt plural variations
+        plural_key = self._normalize_vocab_key(field_label + 's')
+        if plural_key in vocab_entries:
+            return vocab_entries[plural_key]
+
+        plural_es_key = self._normalize_vocab_key(field_label + 'es')
+        if plural_es_key in vocab_entries:
+            return vocab_entries[plural_es_key]
+
+        return None
+
+    def _normalize_vocab_key(self, value: str) -> str:
+        value = value or ""
+        return re.sub(r"[^a-z0-9]", "", value.lower())
