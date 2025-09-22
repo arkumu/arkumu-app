@@ -156,6 +156,7 @@ urlpatterns = [
     path('metadata-entry/', metadata_entry_views.MetadataEntryDashboardView.as_view(), name='metadata_entry'),
     path('metadata-entry/section/', metadata_entry_views.MetadataEntrySectionView.as_view(), name='metadata_entry_section'),
     path('metadata-entry/submit/', metadata_entry_views.MetadataEntrySubmitView.as_view(), name='metadata_entry_submit'),
+    path('metadata-entry/latest/', metadata_entry_views.MetadataEntryLatestProjectsView.as_view(), name='metadata_entry_latest'),
 
     # Manual Relationship Builder
     path('add-column-to-workspace/', direct_data_views.add_column_to_workspace, name='add_column_to_workspace'),

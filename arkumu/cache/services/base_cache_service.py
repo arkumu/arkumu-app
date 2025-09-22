@@ -33,6 +33,7 @@ CACHE_TTL = {
 
     # Metadata caching
     'metadata_export': 1 * 3600, # 1 hour - export formats (was 2h)
+    'metadata_recent_entries': 5 * 60,  # 5 minutes - latest metadata submissions sidebar
 
     # Project snapshots
     # Snapshot rebuilds are driven by importer hooks; keep cache warm until explicit invalidation.

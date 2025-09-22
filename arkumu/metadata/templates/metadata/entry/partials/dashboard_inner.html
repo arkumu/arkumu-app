@@ -1,5 +1,5 @@
-<div class="container mx-auto px-6 py-10">
-    <div class="flex flex-col gap-6">
+<div class="max-w-screen-2xl mx-auto px-6 py-10">
+    <div class="space-y-6">
         <div class="bg-base-200 rounded-box p-6 border border-base-300">
             <h1 class="text-2xl font-bold">Projekt-Metadaten erfassen</h1>
             <p class="text-sm text-base-content/70 mt-1">
@@ -7,8 +7,8 @@
             </p>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <aside class="lg:col-span-4 space-y-4">
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            <aside class="xl:col-span-3 space-y-4">
                 <div class="card bg-base-100 border border-base-300 shadow-sm">
                     <div class="card-body space-y-3">
                         <h2 class="text-lg font-semibold">Institution</h2>
@@ -69,7 +69,7 @@
                 </div>
             </aside>
 
-            <div class="lg:col-span-8">
+            <main class="xl:col-span-6">
                 <div id="metadata-entry-panel" class="card bg-base-100 border border-dashed border-base-300 shadow-none">
                     <div class="card-body">
                         {% if selected_organization %}
@@ -85,7 +85,29 @@
                         {% endif %}
                     </div>
                 </div>
-            </div>
+            </main>
+
+            <section class="xl:col-span-3 space-y-4">
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                    <div class="card-body space-y-4">
+                        <div>
+                            <h2 class="text-lg font-semibold">Projektstruktur</h2>
+                            <p class="text-xs text-base-content/70">Aus den Dataclasses des Snapshots abgeleitete Felder und Relationen.</p>
+                        </div>
+                        <div class="space-y-4 text-sm">
+                            {% include "metadata/entry/partials/project_structure_tree.html" with node=project_structure %}
+                        </div>
+                    </div>
+                </div>
+
+                <div id="metadata-entry-latest"
+                     hx-get="{% url 'metadata:metadata_entry_latest' %}{% if selected_organization %}?organization={{ selected_organization }}{% endif %}"
+                     hx-trigger="load, metadata-entry:submission-success from:body"
+                     hx-target="this"
+                     hx-swap="innerHTML">
+                    {% include "metadata/entry/partials/latest_projects.html" %}
+                </div>
+            </section>
         </div>
     </div>
 </div>

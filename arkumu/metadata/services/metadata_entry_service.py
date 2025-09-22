@@ -70,6 +70,7 @@ class EntryResult:
     resource: Optional[Resource]
     field_errors: Dict[str, str]
     display_rows: List[EntryDisplayRow]
+    record: Optional[ProjectRecord] = None
 
 
 # ---------------------------------------------------------------------------
@@ -554,7 +555,7 @@ class MetadataEntryService:
             resource = self.mapper.persist(record=record, organization=self.organization)
 
         display_rows = self._build_summary_rows(record)
-        return EntryResult(True, resource, {}, display_rows)
+        return EntryResult(True, resource, {}, display_rows, record)
 
     def _build_summary_rows(self, record: ProjectRecord) -> List[EntryDisplayRow]:
         rows: List[EntryDisplayRow] = []

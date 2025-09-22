@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Dict, Iterable, List
 
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
@@ -13,6 +14,10 @@ from arkumu.metadata.services.metadata_entry_service import (
     EntryResult,
     MetadataEntryService,
     SectionManifest,
+)
+from arkumu.metadata.services.project_structure_service import ProjectStructureService
+from arkumu.metadata.services.recent_metadata_entry_service import (
+    RecentMetadataEntryService,
 )
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import (
     CSVMappingTemplateHelperMixin,
@@ -66,6 +71,16 @@ class MetadataEntryMixin(MetadataEditorMixin, CSVMappingTemplateHelperMixin):
                 context["organization"] = service.organization
         else:
             context["sections"] = []
+
+        structure_service = ProjectStructureService()
+        context["project_structure"] = structure_service.get_project_structure()
+
+        recent_entries_service = RecentMetadataEntryService()
+        allowed_codes = [org.code for org in organizations]
+        context["recent_entries"] = recent_entries_service.list_recent_entries(
+            organization_code=org_code,
+            fallback_codes=allowed_codes,
+        )
         return context
 
     def _build_field_context(
@@ -151,11 +166,21 @@ class MetadataEntrySubmitView(MetadataEntryMixin, View):
 
         payload = self._build_payload(request.POST, manifest)
         result: EntryResult = service.persist_entry(section, payload)
+        recent_entries_service = RecentMetadataEntryService()
 
         if result.success:
             manifest = service.get_section_manifest(section)
             initial_data = service.build_initial_data(section)
             errors: Dict[str, str] = {}
+            if result.record:
+                resource_uri = result.resource.uri if result.resource else ""
+                resource_id = str(result.resource.id) if result.resource else None
+                recent_entries_service.record_entry(
+                    organization_code=org_code,
+                    title=result.record.title,
+                    uri=resource_uri,
+                    resource_id=resource_id,
+                )
         else:
             initial_data = payload
             errors = result.field_errors
@@ -172,6 +197,36 @@ class MetadataEntrySubmitView(MetadataEntryMixin, View):
                 active=True,
             ),
             "fields": self._build_field_context(manifest, initial_data, errors),
+        }
+        response = render(request, self.template_name, context)
+        if result.success:
+            trigger_payload = {
+                "metadata-entry:submission-success": {
+                    "organization": org_code,
+                }
+            }
+            response["HX-Trigger"] = json.dumps(trigger_payload)
+        return response
+
+
+class MetadataEntryLatestProjectsView(MetadataEntryMixin, View):
+    """HTMX endpoint providing the latest project submissions panel."""
+
+    template_name = "metadata/entry/partials/latest_projects.html"
+
+    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        org_code = self._resolve_organization_code(request)
+        organizations = list(self._allowed_organizations())
+        recent_entries_service = RecentMetadataEntryService()
+        fallback_codes = [org.code for org in organizations]
+        recent_entries = recent_entries_service.list_recent_entries(
+            organization_code=org_code,
+            fallback_codes=fallback_codes,
+        )
+
+        context = {
+            "recent_entries": recent_entries,
+            "selected_organization": org_code,
         }
         return render(request, self.template_name, context)
 
