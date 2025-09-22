@@ -325,7 +325,7 @@ class DataclassToTripleMapper:
             resource_type=ResourceType.ENTITY,
             name=record.title,
             organization=organization,
-            canonical_uri=CardURIs.PROJECT_TYPE,
+            # canonical_uri=CardURIs.PROJECT_TYPE,
         )
 
         self._ensure_type_triple(project_resource, CardURIs.PROJECT_TYPE, organization)
