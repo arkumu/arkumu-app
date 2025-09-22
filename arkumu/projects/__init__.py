@@ -1,6 +1,4 @@
 """Project domain models and services."""
-
-from . import domain_model
 from .models import (
     ProjectRecord,
     ProjectEvent,
@@ -27,5 +25,4 @@ __all__ = [
     "ProjectCatchphrase",
     "ProjectType",
     "ProjectSnapshot",
-    "domain_model",
 ]

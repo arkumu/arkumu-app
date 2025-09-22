@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
-
-from django.utils.text import slugify
+from typing import Dict, Iterable, List
 
 from arkumu.metadata.models.mappings import Mapping
-from arkumu.projects import domain_model
 
 
 def _camel_case(value: str) -> str:
@@ -30,20 +27,6 @@ def _snake_case(value: str) -> str:
     if cand[0].isdigit():
         cand = f"value_{cand}"
     return cand
-
-
-def _load_vocabulary_map() -> Dict[str, str]:
-    vocab: Dict[str, str] = {}
-    for name in dir(domain_model):
-        obj = getattr(domain_model, name)
-        if getattr(obj, "__dataclass_fields__", None):
-            for field in obj.__dataclass_fields__.values():  # type: ignore[attr-defined]
-                meta = field.metadata or {}
-                canonical = meta.get("predicate_uri")
-                vocabulary = meta.get("vocabulary")
-                if canonical and vocabulary:
-                    vocab[canonical] = vocabulary
-    return vocab
 
 
 @dataclass
@@ -70,7 +53,7 @@ class SchemaManifestDataclassGenerator:
     }
 
     def __init__(self) -> None:
-        self._vocabulary_map = _load_vocabulary_map()
+        pass
 
     def load_manifest(self, organization_code: str) -> Dict[str, ManifestClass]:
         mapping = (
@@ -100,9 +83,6 @@ class SchemaManifestDataclassGenerator:
                 local_uri = prop.get('uri')
                 if local_uri:
                     metadata['local_uri'] = local_uri
-                vocabulary = self._vocabulary_map.get(canonical_prop)
-                if vocabulary:
-                    metadata['vocabulary'] = vocabulary
                 fields.append(
                     ManifestField(
                         name=field_name,
@@ -149,4 +129,3 @@ class SchemaManifestDataclassGenerator:
                 f"    {field_def.name}: list[str] = field(default_factory=list, metadata={{ {metadata_string} }})"
             )
         return "\n".join(lines)
-
