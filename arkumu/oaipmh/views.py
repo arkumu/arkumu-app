@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
@@ -9,13 +10,16 @@ from django.views.decorators.http import require_GET
 from django.utils import timezone
 import xml.etree.ElementTree as ET
 
-from arkumu.metadata.models.resource import Resource
+from django.db.models import Q
+
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.users.models import Organization
-from .formats.dublin_core import DublinCoreSerializer, DEFAULT_PREDICATE_MAP, DCTERMS_NS, OAI_DC_NS, DC_NS
-from .formats.mets import METSSerializer
+from arkumu.projects import ProjectRecord
+from arkumu.projects.services import ProjectSnapshotService
+from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
-from arkumu.cache.services import OAICacheService, GraphCacheService
+from arkumu.cache.services import OAICacheService
 from .authentication import oai_authentication_required
 
 
@@ -29,10 +33,16 @@ REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
+ROSETTA_METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
+ROSETTA_DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
+ROSETTA_XLINK_NS = "http://www.w3.org/1999/xlink"
+
 # Initialize services
 resumption_service = ResumptionTokenService(page_size=100)
 oai_cache = OAICacheService()
-graph_cache = GraphCacheService()
+snapshot_service = ProjectSnapshotService()
+
+logger = logging.getLogger(__name__)
 
 
 def _get_cached_record(resource: Resource, metadata_prefix: str) -> Optional[Dict[str, Any]]:
@@ -398,13 +408,33 @@ def _parse_identifier(identifier: str) -> str:
     return identifier
 
 
-def _get_resources_queryset(set_spec: Optional[str] = None, from_date: Optional[str] = None, until_date: Optional[str] = None, metadata_prefix: Optional[str] = None):
+def _get_resources_queryset(
+    set_spec: Optional[str] = None,
+    from_date: Optional[str] = None,
+    until_date: Optional[str] = None,
+    metadata_prefix: Optional[str] = None,
+):
     """Build a filtered queryset for harvestable resources."""
     # For both Dublin Core and METS: expose only project entities as primary records
     # Each project will have rich metadata assembled from its complete graph
-    queryset = Resource.objects.filter(
-        uri__regex=r'/entities/projekt/[0-9]+$'
-    ).select_related('organization').order_by('updated_at', 'id')
+    access_clause = Q(public_access_level=PublicAccessLevel.RESTRICTED) | (
+        Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
+    )
+
+    queryset = (
+        Resource.objects.filter(
+            Q(uri__regex=r'/entities/projekt/[0-9]+$') & access_clause
+        )
+        .select_related('organization')
+        .order_by('updated_at', 'id')
+    )
+
+    if not queryset.exists():
+        queryset = (
+            Resource.objects.filter(access_clause)
+            .select_related('organization')
+            .order_by('updated_at', 'id')
+        )
 
     # Filter by set (organization)
     if set_spec:
@@ -491,316 +521,296 @@ def _build_record_header(resource: Resource) -> ET.Element:
     return header
 
 
+def _get_snapshot_record(resource: Resource) -> Optional[ProjectRecord]:
+    """Lookup project record for the resource via cached snapshot."""
+
+    project_uri = getattr(resource, 'uri', None)
+    if not project_uri:
+        return None
+
+    record = snapshot_service.get_record_by_uri(project_uri)
+    if record:
+        return record
+
+    try:
+        snapshot_service.refresh_cross_institutional_snapshot()
+    except Exception:
+        logger.exception("Failed to refresh project snapshot while building OAI metadata for %s", project_uri)
+        return None
+
+    return snapshot_service.get_record_by_uri(project_uri)
+
+
+def _add_dc_value(
+    payload: Dict[str, List[str]],
+    term: str,
+    value: Optional[str],
+    namespace: str = 'dc',
+) -> None:
+    if value is None:
+        return
+    normalized = str(value).strip()
+    if not normalized:
+        return
+    key = f"{namespace}:{term}"
+    entries = payload.setdefault(key, [])
+    if normalized not in entries:
+        entries.append(normalized)
+
+
+def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> Dict[str, List[str]]:
+    payload: Dict[str, List[str]] = {}
+
+    _add_dc_value(payload, 'title', record.title)
+    for alt in record.alternative_titles:
+        _add_dc_value(payload, 'title', getattr(alt, 'value', None))
+
+    _add_dc_value(payload, 'description', record.description)
+
+    if record.institution and record.institution.label:
+        _add_dc_value(payload, 'publisher', record.institution.label)
+        _add_dc_value(payload, 'contributor', record.institution.label)
+
+    for actor in record.actors:
+        name = getattr(actor, 'name', None)
+        if name:
+            _add_dc_value(payload, 'creator', name)
+        if getattr(actor, 'roles', None):
+            for role in actor.roles:
+                _add_dc_value(payload, 'contributor', f"{name} ({role})" if name else role)
+
+    if record.project_type and record.project_type.label:
+        _add_dc_value(payload, 'type', record.project_type.label)
+
+    for category in record.categories:
+        _add_dc_value(payload, 'subject', getattr(category, 'label', None))
+
+    for catchphrase in record.catchphrases:
+        _add_dc_value(payload, 'subject', getattr(catchphrase, 'label', None))
+
+    for event in record.events:
+        if event.start:
+            _add_dc_value(payload, 'date', event.start)
+        if event.end and event.end != event.start:
+            _add_dc_value(payload, 'date', event.end)
+        if event.location:
+            _add_dc_value(payload, 'coverage', event.location)
+        if event.country:
+            _add_dc_value(payload, 'coverage', event.country)
+
+    if record.year_range:
+        _add_dc_value(payload, 'date', record.year_range)
+
+    if resource.canonical_uri:
+        _add_dc_value(payload, 'identifier', resource.canonical_uri)
+    _add_dc_value(payload, 'identifier', resource.uri)
+    _add_dc_value(payload, 'identifier', record.uri)
+
+    if getattr(resource, 'updated_at', None):
+        _add_dc_value(payload, 'dateSubmitted', _format_datestamp(resource.updated_at), namespace='dcterms')
+
+    for code in record.institution_codes:
+        _add_dc_value(payload, 'isPartOf', code.upper())
+
+    for obj in record.digital_objects:
+        display = obj.access_url or obj.storage_key or obj.path
+        _add_dc_value(payload, 'relation', display)
+        if obj.file_name:
+            _add_dc_value(payload, 'identifier', obj.file_name)
+        if obj.storage_key:
+            _add_dc_value(payload, 'identifier', obj.storage_key)
+        if obj.content_type:
+            _add_dc_value(payload, 'format', obj.content_type)
+
+    return payload
+
+
+def _append_dc_metadata(metadata: ET.Element, dc_payload: Dict[str, List[str]]) -> None:
+    dc_root = ET.SubElement(
+        metadata,
+        "{http://www.openarchives.org/OAI/2.0/oai_dc/}dc",
+        {
+            "xmlns:oai_dc": OAI_DC_NS,
+            "xmlns:dc": DC_NS,
+            "xmlns:dcterms": DCTERMS_NS,
+            "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+            "xsi:schemaLocation": " ".join([
+                OAI_DC_NS,
+                "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+            ]),
+        },
+    )
+
+    for key, values in dc_payload.items():
+        namespace, term = key.split(":", 1)
+        ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
+        for value in values:
+            ET.SubElement(dc_root, f"{{{ns_uri}}}{term}").text = value
+
+
+def _build_mets_from_record(
+    record: ProjectRecord,
+    resource: Resource,
+    dc_payload: Dict[str, List[str]],
+) -> ET.Element:
+    ET.register_namespace('mets', ROSETTA_METS_NS)
+    ET.register_namespace('dc', DC_NS)
+    ET.register_namespace('dcterms', DCTERMS_NS)
+    ET.register_namespace('xlink', ROSETTA_XLINK_NS)
+    ET.register_namespace('xsi', "http://www.w3.org/2001/XMLSchema-instance")
+
+    mets_root = ET.Element(
+        f"{{{ROSETTA_METS_NS}}}mets",
+        {
+            "xmlns:mets": ROSETTA_METS_NS,
+            "xmlns:dc": DC_NS,
+            "xmlns:dcterms": DCTERMS_NS,
+            "xmlns:xlink": ROSETTA_XLINK_NS,
+            "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+            "xmlns": ROSETTA_DNX_NS,
+        },
+    )
+
+    timestamp = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    mets_hdr = ET.SubElement(
+        mets_root,
+        f"{{{ROSETTA_METS_NS}}}metsHdr",
+        {
+            "CREATEDATE": timestamp,
+            "LASTMODDATE": timestamp,
+        },
+    )
+    agent = ET.SubElement(
+        mets_hdr,
+        f"{{{ROSETTA_METS_NS}}}agent",
+        {
+            "ROLE": "CREATOR",
+            "TYPE": "OTHER",
+            "OTHERTYPE": "SOFTWARE",
+        },
+    )
+    ET.SubElement(agent, f"{{{ROSETTA_METS_NS}}}name").text = "Arkumu OAI-PMH Provider"
+
+    dmd_sec = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}dmdSec", {"ID": "ie-dmd"})
+    md_wrap = ET.SubElement(dmd_sec, f"{{{ROSETTA_METS_NS}}}mdWrap", {"MDTYPE": "DC"})
+    xml_data = ET.SubElement(md_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    dc_record = ET.SubElement(xml_data, f"{{{DC_NS}}}record")
+    for key, values in dc_payload.items():
+        namespace, term = key.split(":", 1)
+        ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
+        for value in values:
+            ET.SubElement(dc_record, f"{{{ns_uri}}}{term}").text = value
+
+    ie_amd = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}amdSec", {"ID": "ie-amd"})
+    tech_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}techMD", {"ID": "ie-amd-tech"})
+    tech_wrap = ET.SubElement(
+        tech_md,
+        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
+    )
+    tech_xml = ET.SubElement(tech_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    ET.SubElement(tech_xml, "dnx")
+
+    file_sec = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}fileSec")
+    struct_map = ET.SubElement(
+        mets_root,
+        f"{{{ROSETTA_METS_NS}}}structMap",
+        {"ID": "rep-struct", "TYPE": "LOGICAL"},
+    )
+    struct_root = ET.SubElement(struct_map, f"{{{ROSETTA_METS_NS}}}div")
+
+    digital_objects = record.digital_objects or []
+    for index, obj in enumerate(digital_objects, start=1):
+        rep_id = f"rep{index}"
+        file_id = f"fid{index}-1"
+
+        rep_amd = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}amdSec", {"ID": f"{rep_id}-amd"})
+        rep_tech = ET.SubElement(rep_amd, f"{{{ROSETTA_METS_NS}}}techMD", {"ID": f"{rep_id}-amd-tech"})
+        rep_wrap = ET.SubElement(
+            rep_tech,
+            f"{{{ROSETTA_METS_NS}}}mdWrap",
+            {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
+        )
+        rep_xml = ET.SubElement(rep_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+        rep_dnx = ET.SubElement(rep_xml, "dnx")
+        section = ET.SubElement(rep_dnx, "section", {"id": "generalRepCharacteristics"})
+        rec = ET.SubElement(section, "record")
+        ET.SubElement(rec, "key", {"id": "preservationType"}).text = "PRESERVATION_MASTER"
+        ET.SubElement(rec, "key", {"id": "usageType"}).text = "VIEW"
+
+        file_grp = ET.SubElement(
+            file_sec,
+            f"{{{ROSETTA_METS_NS}}}fileGrp",
+            {
+                "USE": "VIEW",
+                "ID": rep_id,
+                "ADMID": f"{rep_id}-amd",
+            },
+        )
+
+        file_attrs: Dict[str, Any] = {
+            "ID": file_id,
+            "ADMID": f"{file_id}-amd",
+        }
+        if obj.content_type:
+            file_attrs["MIMETYPE"] = obj.content_type
+        if obj.size_bytes:
+            file_attrs["SIZE"] = str(obj.size_bytes)
+
+        file_elem = ET.SubElement(file_grp, f"{{{ROSETTA_METS_NS}}}file", file_attrs)
+        href = obj.access_url or obj.storage_key or obj.path
+        if href:
+            loctype = "URL" if href.startswith(('http://', 'https://')) else "OTHER"
+            flocat_attrs = {
+                "LOCTYPE": loctype,
+                f"{{{ROSETTA_XLINK_NS}}}href": href,
+                f"{{{ROSETTA_XLINK_NS}}}type": "simple",
+            }
+            if loctype == "OTHER":
+                flocat_attrs["OTHERLOCTYPE"] = "FILESYSTEM"
+            ET.SubElement(file_elem, f"{{{ROSETTA_METS_NS}}}FLocat", flocat_attrs)
+
+        file_amd = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}amdSec", {"ID": f"{file_id}-amd"})
+        file_tech = ET.SubElement(file_amd, f"{{{ROSETTA_METS_NS}}}techMD", {"ID": f"{file_id}-amd-tech"})
+        file_wrap = ET.SubElement(
+            file_tech,
+            f"{{{ROSETTA_METS_NS}}}mdWrap",
+            {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
+        )
+        file_xml = ET.SubElement(file_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+        ET.SubElement(file_xml, "dnx")
+
+        label = obj.file_name or obj.path or obj.storage_key or f"Digital Object {index}"
+        div = ET.SubElement(
+            struct_root,
+            f"{{{ROSETTA_METS_NS}}}div",
+            {
+                "ORDERLABEL": label,
+                "TYPE": "FILE",
+                "LABEL": label,
+            },
+        )
+        ET.SubElement(div, f"{{{ROSETTA_METS_NS}}}fptr", {"FILEID": file_id})
+
+    return mets_root
+
+
 def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Element:
     """Build metadata element for different formats."""
     metadata = ET.Element("metadata")
 
+    record = _get_snapshot_record(resource)
+    if not record:
+        logger.warning("No snapshot record found for %s", getattr(resource, 'uri', 'unknown'))
+        return metadata
+
     if metadata_prefix == "oai_dc":
-        # Build Dublin Core metadata
-        org_code = resource.organization.code if resource.organization else None
-        if not org_code:
-            return metadata  # Empty metadata if no organization
-
-        predicate_whitelist = [
-            "http://arkumu.org/data/properties/bevorzugter-titel",
-            "http://arkumu.org/data/properties/alternativer-titel",
-            "http://arkumu.org/data/properties/beschreibung",
-            "http://arkumu.org/data/properties/kuenstler",
-            "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels",
-            "http://arkumu.org/data/properties/schlagwort",
-            "http://arkumu.org/data/properties/projektkategorie",
-            "http://arkumu.org/data/properties/projektart",
-            "http://arkumu.org/data/properties/datensatz-id-beim-einlieferer",
-            "http://arkumu.org/data/properties/rechtsstatus",
-            "http://arkumu.org/data/properties/ereignisort",
-            "http://arkumu.org/data/properties/datensatzerstellung-beim-einlieferer",
-            # Actor relationships
-            "http://arkumu.org/data/properties/akteurin",
-            "http://arkumu.org/data/properties/urheber",
-            # Related project relationships
-            "http://arkumu.org/data/properties/ausgangsprojekt",
-            # File relationships
-            "http://arkumu.org/data/properties/dateiname",
-            "http://arkumu.org/data/properties/dateipfad",
-        ]
-
-        graph_payload = graph_cache.get_entity_graph(
-            resource.uri,
-            depth=2,
-            organization_code=org_code,
-            predicate_whitelist=predicate_whitelist,
-            include_incoming=True,
-            expand_neighbors=True,
-            restrict_to_org=True
-        )
-
-        if not graph_payload:
-            return metadata
-
-        graph = graph_payload.get('graph', {})
-        dc = _build_dc_metadata_from_entity_graph(graph, resource)
-
-        # Include both canonical URI (if available) and original URI as identifiers
-        identifiers = list(dc.get("dc:identifier", []))
-
-        # Use canonical URI as primary identifier if available
-        if resource.canonical_uri and resource.canonical_uri not in identifiers:
-            identifiers.append(resource.canonical_uri)
-
-        # Always include the original URI as an identifier
-        if resource.uri and resource.uri not in identifiers:
-            identifiers.append(resource.uri)
-
-        if identifiers:
-            dc["dc:identifier"] = identifiers
-
-        # Integrate file access URLs for Rosetta (dc:relation)
-        try:
-            # Defer heavy imports and handle absence gracefully
-            from arkumu.storage.models.s3_file_objects import S3FileObject
-            from arkumu.storage.services.rosetta_export_service import RosettaExportService
-
-            # Limit number of relations to avoid oversized records
-            file_qs = S3FileObject.objects.filter(related_resource=resource).order_by("created_at")[:10]
-            if file_qs:
-                export_svc = RosettaExportService()
-                relation_urls: List[str] = []
-                for f in file_qs:
-                    try:
-                        access = export_svc.prepare_file_for_harvest(f)
-                        url = access.get("url")
-                        if url:
-                            relation_urls.append(url)
-                        elif f.s3_url:
-                            relation_urls.append(f.s3_url)
-                    except Exception:
-                        # On any error generating presigned URL, fall back to stored S3 URL if present
-                        if getattr(f, "s3_url", None):
-                            relation_urls.append(f.s3_url)
-                if relation_urls:
-                    dc_rel = list(dc.get("dc:relation", []))
-                    # De-duplicate while preserving order
-                    seen = set(dc_rel)
-                    for u in relation_urls:
-                        if u not in seen:
-                            dc_rel.append(u)
-                            seen.add(u)
-                    dc["dc:relation"] = dc_rel
-        except Exception:
-            # If storage integration is not available, skip silently
-            pass
-
-        # oai_dc container
-        dc_root = ET.SubElement(
-            metadata,
-            "{http://www.openarchives.org/OAI/2.0/oai_dc/}dc",
-            {
-                "xmlns:oai_dc": OAI_DC_NS,
-                "xmlns:dc": DC_NS,
-                "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
-                "xsi:schemaLocation": " ".join([
-                    OAI_DC_NS,
-                    "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
-                ]),
-            },
-        )
-        for key, values in dc.items():  # key like 'dc:title'
-            term = key.split(":", 1)[-1]
-            for v in values:
-                ET.SubElement(dc_root, f"{{{DC_NS}}}{term}").text = v
-
+        dc_payload = _build_dc_payload_from_record(record, resource)
+        _append_dc_metadata(metadata, dc_payload)
     elif metadata_prefix == "mets":
-        # Build METS metadata with complete project graph as RDF/XML
-        org_code = resource.organization.code if resource.organization else None
-        if not org_code:
-            return metadata  # Empty metadata if no organization
-
-        graph_payload = graph_cache.get_entity_graph(
-            resource.uri,
-            depth=3,
-            organization_code=org_code,
-            include_incoming=True,
-            expand_neighbors=True,
-            restrict_to_org=True
-        )
-
-        if not graph_payload:
-            return metadata
-
-        graph = graph_payload.get('graph', {})
-
-        # Build METS container
-        mets_root = ET.SubElement(
-            metadata,
-            "{http://www.loc.gov/METS/}mets",
-            {
-                "xmlns:mets": "http://www.loc.gov/METS/",
-                "xmlns:rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-                "xmlns:arkumu": "http://arkumu.org/data/",
-                "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
-            },
-        )
-
-        # Add METS header
-        mets_header = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}metsHdr")
-        mets_header.set("CREATEDATE", timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
-
-        # Add descriptive metadata section with RDF/XML
-        dmd_sec = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}dmdSec")
-        dmd_sec.set("ID", "DMD1")
-
-        md_wrap = ET.SubElement(dmd_sec, "{http://www.loc.gov/METS/}mdWrap")
-        md_wrap.set("MDTYPE", "OTHER")
-        md_wrap.set("OTHERMDTYPE", "RDF")
-
-        xml_data = ET.SubElement(md_wrap, "{http://www.loc.gov/METS/}xmlData")
-
-        # Build RDF/XML representation of the complete graph
-        rdf_root = ET.SubElement(xml_data, "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF")
-
-        # Get edges and group by subject
-        edges = graph.get("edges", [])
-        root_id = graph.get("root_id")
-
-        # Group edges by subject_id to create RDF descriptions
-        subjects = {}
-        for edge in edges:
-            subject_id = edge.get("subject_id")
-            if subject_id not in subjects:
-                subjects[subject_id] = []
-            subjects[subject_id].append(edge)
-
-        # Create RDF Description for each subject
-        for subject_id, subject_edges in subjects.items():
-            # Use resource URI if available, otherwise use subject_id
-            # For the root, use the project URI
-            if subject_id == root_id:
-                subject_uri = resource.uri
-            else:
-                # Try to find object_uri from edges that reference this subject as object
-                subject_uri = None
-                for edge in edges:
-                    if edge.get("object_id") == subject_id and edge.get("object_uri"):
-                        subject_uri = edge.get("object_uri")
-                        break
-                if not subject_uri:
-                    subject_uri = f"urn:uuid:{subject_id}"  # Fallback
-
-            # Create RDF Description
-            description = ET.SubElement(
-                rdf_root,
-                "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}Description"
-            )
-            description.set("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about", subject_uri)
-
-            # Add properties as RDF triples
-            for edge in subject_edges:
-                predicate_uri = edge.get("predicate_canonical") or edge.get("predicate_uri")
-                if predicate_uri:
-                    # Create property element with proper namespace
-                    local_name = predicate_uri.split("/")[-1] if "/" in predicate_uri else predicate_uri
-
-                    # Sanitize local name for valid XML element names
-                    # XML element names cannot start with numbers or contain # symbols
-                    import re
-                    local_name = re.sub(r'^[0-9]', '_', local_name)  # Prefix with _ if starts with number
-                    local_name = re.sub(r'[#:]', '_', local_name)    # Replace # and : with _
-                    local_name = re.sub(r'[^a-zA-Z0-9_-]', '_', local_name)  # Replace invalid chars with _
-
-                    # Use canonical namespace if available
-                    if edge.get("predicate_canonical"):
-                        namespace_base = "/".join(edge.get("predicate_canonical").split("/")[:-1]) + "/"
-                    else:
-                        namespace_base = "http://arkumu.org/data/properties/"
-
-                    prop_elem = ET.SubElement(description, f"{{{namespace_base}}}{local_name}")
-
-                    # Handle literal values
-                    if edge.get("object_value") is not None:
-                        prop_elem.text = str(edge.get("object_value"))
-
-                    # Handle object references
-                    elif edge.get("object_uri"):
-                        prop_elem.set("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource", edge.get("object_uri"))
-
-            # Add rdf:type for the project
-            if subject_id == root_id:
-                type_elem = ET.SubElement(
-                    description,
-                    "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}type"
-                )
-                type_elem.set(
-                    "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource",
-                    "http://arkumu.org/data/types/projekt"
-                )
-
-        # Add fileSec and structMap sections for file integration
-        try:
-            from arkumu.storage.models.s3_file_objects import S3FileObject
-
-            # Get files linked to this project resource
-            project_files = S3FileObject.objects.filter(related_resource=resource).order_by("s3_key")[:50]  # Limit to 50 files
-
-            if project_files:
-                # Add fileSec section
-                file_sec = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}fileSec")
-                file_grp = ET.SubElement(file_sec, "{http://www.loc.gov/METS/}fileGrp")
-                file_grp.set("USE", "DEFAULT")
-
-                # Add structMap section
-                struct_map = ET.SubElement(mets_root, "{http://www.loc.gov/METS/}structMap")
-                struct_map.set("TYPE", "LOGICAL")
-
-                # Main project div
-                main_div = ET.SubElement(struct_map, "{http://www.loc.gov/METS/}div")
-                main_div.set("TYPE", "project")
-
-                # Set project label from graph metadata if available
-                project_title = None
-                for edge in edges:
-                    if edge.get("subject_id") == root_id:
-                        predicate_canonical = edge.get("predicate_canonical") or edge.get("predicate_uri")
-                        if predicate_canonical == "http://arkumu.org/data/properties/bevorzugter-titel":
-                            if edge.get("object_value"):
-                                project_title = str(edge.get("object_value"))
-                                break
-
-                if project_title:
-                    main_div.set("LABEL", project_title)
-                else:
-                    main_div.set("LABEL", f"Project {resource.uri.split('/')[-1] if resource.uri else 'Unknown'}")
-
-                # Add files to both fileSec and structMap
-                file_counter = 1
-                for s3_file in project_files:
-                    # Add to fileSec
-                    file_elem = ET.SubElement(file_grp, "{http://www.loc.gov/METS/}file")
-                    file_id = f"FILE_{file_counter:03d}"
-                    file_elem.set("ID", file_id)
-                    file_elem.set("MIMETYPE", s3_file.content_type or "application/octet-stream")
-                    file_elem.set("SIZE", str(s3_file.file_size_bytes))
-
-                    # Add FLocat pointing to the S3 key path (for Rosetta NFS access)
-                    flocat = ET.SubElement(file_elem, "{http://www.loc.gov/METS/}FLocat")
-                    flocat.set("LOCTYPE", "OTHER")
-                    flocat.set("OTHERLOCTYPE", "FILESYSTEM")  # Indicates NFS/filesystem access
-                    flocat.set("{http://www.w3.org/1999/xlink}href", s3_file.s3_key)  # Relative path for both S3 and NFS
-                    flocat.set("{http://www.w3.org/1999/xlink}type", "simple")
-
-                    # Add to structMap
-                    file_div = ET.SubElement(main_div, "{http://www.loc.gov/METS/}div")
-                    file_div.set("TYPE", "file")
-                    file_div.set("LABEL", s3_file.file_name)
-
-                    # Link to file via fptr
-                    fptr = ET.SubElement(file_div, "{http://www.loc.gov/METS/}fptr")
-                    fptr.set("FILEID", file_id)
-
-                    file_counter += 1
-
-        except Exception as e:
-            # If file integration fails, don't break the entire METS response
-            pass
+        dc_payload = _build_dc_payload_from_record(record, resource)
+        mets_root = _build_mets_from_record(record, resource, dc_payload)
+        metadata.append(mets_root)
 
     return metadata
 
@@ -858,274 +868,6 @@ def _mint_arkumu_pid(resource: Resource) -> Optional[str]:
         return f"arkumu-{org_slug}-{local_id}"
     except Exception:
         return None
-
-
-def _build_dc_metadata_from_entity_graph(graph: Dict[str, Any], resource: Optional[Any] = None) -> Dict[str, List[str]]:
-    """Build rich Dublin Core metadata from complete graph traversal with canonical URI support."""
-    root_id = graph.get("root_id")
-    edges = graph.get("edges", [])
-    nodes = graph.get("nodes", {})
-
-    # Initialize Dublin Core dictionary
-    dc_dict = {
-        "dc:title": [],
-        "dc:creator": [],
-        "dc:contributor": [],
-        "dc:subject": [],
-        "dc:description": [],
-        "dc:date": [],
-        "dc:type": [],
-        "dc:language": [],
-        "dc:relation": [],
-        "dc:coverage": [],
-        "dc:rights": [],
-        "dc:identifier": []
-    }
-
-    # Helper functions with canonical URI support
-    def get_canonical_predicate(edge: Dict[str, Any]) -> str:
-        """Get canonical predicate URI with fallback."""
-        return edge.get("predicate_canonical") or edge.get("predicate_uri")
-
-    def get_entity_rich_data(entity_id: str, entity_uri: str) -> Dict[str, str]:
-        """Extract rich data for an entity from the complete graph."""
-        entity_data = {"name": None, "type": None, "language_code": None, "description": None}
-
-        # Find all edges where this entity is the subject
-        entity_edges = [e for e in edges if e.get("subject_id") == entity_id]
-
-        # Name priority order for different entity types
-        name_predicates = [
-            "http://arkumu.org/data/properties/deutscher-name",
-            "http://arkumu.org/data/properties/englischer-name",
-            "http://arkumu.org/data/properties/bevorzugter-titel",
-            "http://arkumu.org/data/properties/bezeichnung",
-            "http://arkumu.org/data/properties/deutscher-name-der-sprache",
-            "http://arkumu.org/data/properties/englischer-name-der-sprache",
-            "http://arkumu.org/data/properties/deutscher-name-der-projektart",
-            "http://arkumu.org/data/properties/englischer-name-der-projektart",
-            "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb",
-            "http://arkumu.org/data/properties/englischer-name-der-projektkategorie-breadcrumb",
-            # Description predicates
-            "http://arkumu.org/data/properties/deutsche-beschreibung",
-            "http://arkumu.org/data/properties/englische-beschreibung",
-            "http://arkumu.org/data/properties/beschreibung",
-        ]
-
-        # Extract name/content with preference for canonical predicates
-        for predicate in name_predicates:
-            for edge in entity_edges:
-                edge_predicate = get_canonical_predicate(edge)
-                if edge_predicate == predicate:
-                    # Use our enhanced value extractor
-                    value = get_actual_value(edge)
-                    if value:
-                        if "beschreibung" in predicate:
-                            entity_data["description"] = value
-                        else:
-                            entity_data["name"] = value
-                        break
-            if entity_data["name"] or entity_data["description"]:
-                break
-
-        # For description entities, prioritize getting the actual description text
-        if "/beschreibung/" in entity_uri and not entity_data["description"]:
-            for edge in entity_edges:
-                value = get_actual_value(edge)
-                if value and len(str(value).strip()) > 10:  # Reasonable description length
-                    entity_data["description"] = value
-                    break
-
-        # Extract language ISO code for language entities
-        if "/sprache/" in entity_uri:
-            for edge in entity_edges:
-                edge_predicate = get_canonical_predicate(edge)
-                if edge_predicate == "http://arkumu.org/data/properties/iso-639-1-code":
-                    value = get_actual_value(edge)
-                    if value:
-                        entity_data["language_code"] = value
-                        break
-
-        # For Wikidata entities (Q-IDs), try to get readable labels
-        if entity_uri and entity_uri.startswith("http://www.wikidata.org/entity/Q"):
-            qid = entity_uri.split("/")[-1]
-            # Look for wikidata labels in the graph
-            for edge in entity_edges:
-                edge_predicate = get_canonical_predicate(edge)
-                if "label" in edge_predicate.lower() or "name" in edge_predicate.lower():
-                    value = get_actual_value(edge)
-                    if value:
-                        entity_data["name"] = value
-                        break
-            # Fallback to Q-ID if no label found
-            if not entity_data["name"]:
-                entity_data["name"] = qid
-
-        # Fallback to URI fragment if no name found
-        if not entity_data["name"] and not entity_data["description"] and entity_uri:
-            if "/" in entity_uri:
-                fragment = entity_uri.split("/")[-1]
-                if fragment.startswith("Q") and fragment[1:].isdigit():
-                    # Keep Wikidata Q-IDs as is for now
-                    entity_data["name"] = fragment
-                else:
-                    entity_data["name"] = fragment.replace("-", " ").title()
-            else:
-                entity_data["name"] = entity_uri
-
-        return entity_data
-
-    # Process ALL edges in the graph (not just root edges) for richer metadata
-    serializer = DublinCoreSerializer(predicate_map=DEFAULT_PREDICATE_MAP)
-
-    # 1. Process direct properties of the project (both literals and literal resources)
-    def get_actual_value(edge: Dict[str, Any]) -> Optional[str]:
-        """Get the actual string value from an edge, handling both direct values and literal resources."""
-        # First try direct object_value
-        if edge.get("object_value") is not None:
-            return str(edge.get("object_value"))
-
-        # Then try to get value from literal resource node
-        object_id = edge.get("object_id")
-        if object_id and object_id in nodes:
-            node = nodes[object_id]
-            if node.get("resource_type") == "LITERAL" and node.get("value"):
-                return str(node.get("value"))
-
-        return None
-
-    # Process all direct edges from root (both literal values and literal resources)
-    root_direct_edges = [
-        e for e in edges if e.get("subject_id") == root_id
-    ]
-
-    # Use our enhanced value extractor
-    basic_dc = serializer.serialize_from_triples(
-        root_direct_edges,
-        get_predicate=get_canonical_predicate,
-        get_object_value=get_actual_value
-    )
-
-    # Merge basic DC metadata (only non-None values)
-    for key, values in basic_dc.items():
-        if key in dc_dict:
-            # Filter out None values and empty strings
-            valid_values = [v for v in values if v is not None and str(v).strip()]
-            dc_dict[key].extend(valid_values)
-
-    # 2. Process relationships to other entities with deep traversal
-    relationship_edges = [
-        e for e in edges if e.get("subject_id") == root_id and e.get("object_uri") is not None
-    ]
-
-    for edge in relationship_edges:
-        predicate = get_canonical_predicate(edge)
-        object_uri = edge.get("object_uri")
-        object_id = edge.get("object_id")
-
-        if predicate and object_uri and object_id:
-            # Check if this predicate maps to a Dublin Core field
-            dc_field = serializer.predicate_map.get(predicate)
-            if dc_field:
-                # Get rich entity data from the graph
-                entity_data = get_entity_rich_data(object_id, object_uri)
-
-                # Choose the best content based on the field type
-                content = None
-                if dc_field == "description":
-                    # For descriptions, prefer the description content over name
-                    content = entity_data.get("description") or entity_data.get("name")
-                elif dc_field == "language" and entity_data.get("language_code"):
-                    # For languages, use ISO code if available
-                    content = entity_data["language_code"]
-                else:
-                    # For other fields, use name
-                    content = entity_data.get("name")
-
-                if content:
-                    dc_key = f"dc:{dc_field}"
-                    if dc_key not in dc_dict:
-                        dc_dict[dc_key] = []
-                    dc_dict[dc_key].append(content)
-
-            # Enhanced actor/contributor processing with role distinction
-            elif "/akteurin/" in object_uri:
-                entity_data = get_entity_rich_data(object_id, object_uri)
-                entity_name = entity_data.get("name")
-                if entity_name:
-                    # Determine creator vs contributor based on canonical predicate semantics
-                    if (predicate in [
-                        "http://arkumu.org/data/properties/urheber",
-                        "http://arkumu.org/data/properties/kuenstler",
-                        "http://arkumu.org/data/properties/autor"
-                    ]):
-                        dc_dict["dc:creator"].append(entity_name)
-                    else:
-                        dc_dict["dc:contributor"].append(entity_name)
-
-            # Handle related projects with richer metadata
-            elif "/projekt/" in object_uri and object_uri != (resource.uri if resource else None):
-                entity_data = get_entity_rich_data(object_id, object_uri)
-                entity_name = entity_data.get("name")
-                if entity_name:
-                    dc_dict["dc:relation"].append(f"Related project: {entity_name}")
-
-    # 3. Traverse neighboring entities for additional metadata
-    # Look for entities that reference our project for more context
-    incoming_edges = [
-        e for e in edges if e.get("object_id") == root_id and e.get("subject_id") != root_id
-    ]
-
-    for edge in incoming_edges:
-        predicate = get_canonical_predicate(edge)
-        subject_id = edge.get("subject_id")
-        subject_uri = edge.get("object_uri")  # This would be in nodes
-
-        # Find subject URI from nodes if not directly available
-        if not subject_uri and subject_id in nodes:
-            subject_uri = nodes[subject_id].get("uri")
-
-        if subject_uri and predicate:
-            # Add projects that reference this project
-            if "/projekt/" in subject_uri:
-                entity_data = get_entity_rich_data(subject_id, subject_uri)
-                entity_name = entity_data.get("name")
-                if entity_name:
-                    dc_dict["dc:relation"].append(f"Referenced by: {entity_name}")
-
-    # Clean up and deduplicate with intelligent filtering
-    for key in dc_dict:
-        # Remove duplicates while preserving order
-        unique_values = list(dict.fromkeys(dc_dict[key]))
-
-        # Filter out problematic values
-        filtered_values = []
-        for item in unique_values:
-            if not item or not str(item).strip():
-                continue
-
-            item_str = str(item).strip()
-
-            # Skip obvious hash/ID values (hexadecimal patterns)
-            if len(item_str) == 16 and all(c in '0123456789ABCDEFabcdef' for c in item_str):
-                continue
-
-            # Skip very short meaningless values for descriptions
-            if key == "dc:description" and len(item_str) < 10:
-                continue
-
-            # Skip pure numbers for non-identifier fields
-            if key not in ["dc:identifier"] and item_str.isdigit():
-                continue
-
-            filtered_values.append(item)
-
-        dc_dict[key] = filtered_values
-
-    # Remove empty fields
-    dc_dict = {k: v for k, v in dc_dict.items() if v}
-
-    return dc_dict
 
 
 def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:

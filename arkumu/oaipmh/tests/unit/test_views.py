@@ -7,7 +7,7 @@ focusing on logic and XML generation without HTTP layer.
 
 import pytest
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 
@@ -16,6 +16,16 @@ from django.test import RequestFactory
 
 from arkumu.oaipmh import views
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.projects import (
+    ProjectRecord,
+    ProjectDigitalObject,
+    ProjectInstitution,
+    ProjectCategory,
+    ProjectCatchphrase,
+    ProjectActor,
+    ProjectEvent,
+    ProjectType,
+)
 
 
 class TestOAIViewFunctions:
@@ -24,6 +34,35 @@ class TestOAIViewFunctions:
     def setup_method(self):
         """Set up test method."""
         self.factory = RequestFactory()
+
+    def _build_snapshot_record(self, resource: Resource, include_files: bool = False) -> ProjectRecord:
+        digital_objects = []
+        if include_files:
+            digital_objects.append(
+                ProjectDigitalObject(
+                    path="org/test1.txt",
+                    storage_key="org/test1.txt",
+                    file_name="test1.txt",
+                    content_type="text/plain",
+                    size_bytes=123,
+                    access_url="https://download.example/test1.txt",
+                )
+            )
+
+        return ProjectRecord(
+            subject_id="subj-1",
+            uri=resource.uri,
+            title="Sample Project",
+            description="Sample description",
+            institution=ProjectInstitution(label="Test Institution", code="ti"),
+            categories=[ProjectCategory(label="Category One", slug="category-one")],
+            catchphrases=[ProjectCatchphrase(label="Keyword")],
+            actors=[ProjectActor(name="Jane Doe", roles=["Creator"])],
+            events=[ProjectEvent(name="Launch", start="2020-01-01", location="Berlin")],
+            project_type=ProjectType(label="Type A"),
+            digital_objects=digital_objects,
+            institution_codes=["ti"],
+        )
 
     # ============================================================================
     # XML UTILITY FUNCTION TESTS
@@ -95,41 +134,15 @@ class TestOAIViewFunctions:
         assert identify.find("granularity").text == "YYYY-MM-DDThh:mm:ssZ"
 
     @pytest.mark.django_db
-    @patch('arkumu.storage.services.rosetta_export_service.RosettaExportService')
-    def test_dc_includes_file_relations_when_present(self, mock_export_svc, sample_resources):
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_dc_includes_file_relations_when_present(self, mock_get_record, sample_resources):
         """_build_metadata_element for oai_dc should include dc:relation URLs when files exist."""
-        # Arrange resource with related files
         resource = sample_resources[0]
-        from arkumu.storage.models.s3_file_objects import S3FileObject
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
 
-        file1 = S3FileObject.objects.create(
-            file_name="test1.txt",
-            s3_key="org/test1.txt",
-            file_size_bytes=123,
-            content_type="text/plain",
-            related_resource=resource,
-            s3_url="https://s3.example/org/test1.txt",
-            status='completed'
-        )
+        metadata = views._build_metadata_element(resource, "oai_dc")
 
-        # Mock presigned URL generation
-        mock_instance = Mock()
-        mock_export_svc.return_value = mock_instance
-        mock_instance.prepare_file_for_harvest.return_value = {
-            'access_method': 'presigned_url',
-            'url': 'https://download.example/test1.txt',
-            'expires_at': datetime.now(timezone.utc)
-        }
-
-        # Also mock canonical graph to keep DC building simple
-        with patch('arkumu.oaipmh.views.CanonicalGraphService') as mock_canon:
-            mock_canon.return_value.get_entity_graph.return_value = {
-                'root_id': resource.uri,
-                'edges': []
-            }
-            metadata = views._build_metadata_element(resource, "oai_dc")
-
-        # Act: parse XML and assert dc:relation present
         dc_root = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_root is not None
         relations = dc_root.findall("{http://purl.org/dc/elements/1.1/}relation")
@@ -367,42 +380,30 @@ class TestOAIViewFunctions:
     # DUBLIN CORE METADATA BUILDING TESTS
     # ============================================================================
 
-    @patch('arkumu.oaipmh.views.CanonicalGraphService')
-    def test_build_dc_metadata_from_entity_graph(self, mock_service_class, sample_graph_data):
-        """Test _build_dc_metadata_from_entity_graph."""
-        dc_dict = views._build_dc_metadata_from_entity_graph(sample_graph_data)
+    def test_build_dc_payload_from_record(self, sample_resources):
+        """_build_dc_payload_from_record assembles title, identifiers, and relations."""
+        resource = sample_resources[0]
+        record = self._build_snapshot_record(resource, include_files=True)
 
-        assert isinstance(dc_dict, dict)
-        assert "dc:title" in dc_dict
-        assert "dc:creator" in dc_dict
+        payload = views._build_dc_payload_from_record(record, resource)
 
-        # Should have proper values
-        assert "Sample Resource Title" in dc_dict["dc:title"]
-        assert len(dc_dict["dc:creator"]) == 2  # Jane Doe and John Smith
-        assert "Jane Doe" in dc_dict["dc:creator"]
-        assert "John Smith" in dc_dict["dc:creator"]
+        assert "dc:title" in payload
+        assert record.title in payload["dc:title"]
+        assert "dc:identifier" in payload
+        assert resource.uri in payload["dc:identifier"]
+        assert any(value.startswith('https://download.example') for value in payload.get("dc:relation", []))
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
     # ============================================================================
 
-    @patch('arkumu.oaipmh.views.CanonicalGraphService')
-    def test_build_metadata_element_dublin_core(self, mock_service_class, sample_resources):
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_build_metadata_element_dublin_core(self, mock_get_record, sample_resources):
         """Test _build_metadata_element with Dublin Core format."""
-        mock_instance = Mock()
-        mock_service_class.return_value = mock_instance
-        mock_instance.get_entity_graph.return_value = {
-            "root_id": "test_uri",
-            "edges": [
-                {
-                    "subject_id": "test_uri",
-                    "predicate_canonical": "http://purl.org/dc/terms/title",
-                    "object_value": "Test Title"
-                }
-            ]
-        }
-
         resource = sample_resources[0]
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
         metadata = views._build_metadata_element(resource, "oai_dc")
 
         assert metadata.tag == "metadata"
@@ -411,20 +412,19 @@ class TestOAIViewFunctions:
         dc_element = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_element is not None
 
-    @patch('arkumu.oaipmh.views.METSSerializer')
-    def test_build_metadata_element_mets(self, mock_mets_class, sample_resources):
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_build_metadata_element_mets(self, mock_get_record, sample_resources):
         """Test _build_metadata_element with METS format."""
-        mock_serializer = Mock()
-        mock_mets_class.return_value = mock_serializer
-        mock_serializer.serialize_resource.return_value = '<mets:mets xmlns:mets="http://www.loc.gov/METS/"><mets:metsHdr/></mets:mets>'
-
         resource = sample_resources[0]
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
         metadata = views._build_metadata_element(resource, "mets")
 
         assert metadata.tag == "metadata"
 
         # Should contain METS element
-        mets_elements = metadata.findall(".//{http://www.loc.gov/METS/}mets")
+        mets_elements = metadata.findall(".//{http://www.exlibrisgroup.com/xsd/dps/rosettaMets}mets")
         assert len(mets_elements) > 0
 
     def test_build_metadata_element_no_organization(self):
@@ -433,7 +433,8 @@ class TestOAIViewFunctions:
         mock_resource = Mock()
         mock_resource.organization = None
 
-        metadata = views._build_metadata_element(mock_resource, "oai_dc")
+        with patch('arkumu.oaipmh.views._get_snapshot_record', return_value=None):
+            metadata = views._build_metadata_element(mock_resource, "oai_dc")
 
         assert metadata.tag == "metadata"
         # Should be empty metadata element
@@ -501,19 +502,12 @@ class TestOAIViewFunctions:
     # LIST RECORDS FUNCTION TESTS
     # ============================================================================
 
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
     @patch('arkumu.oaipmh.views._get_resources_queryset')
-    @patch('arkumu.oaipmh.views.CanonicalGraphService')
-    def test_list_records_basic(self, mock_service_class, mock_queryset, sample_resources):
+    def test_list_records_basic(self, mock_queryset, mock_get_record, sample_resources):
         """Test _list_records function basic functionality."""
         mock_queryset.return_value = sample_resources[:1]  # Return 1 resource
-
-        # Mock the canonical graph service
-        mock_instance = Mock()
-        mock_service_class.return_value = mock_instance
-        mock_instance.get_entity_graph.return_value = {
-            "root_id": "test_uri",
-            "edges": []
-        }
+        mock_get_record.return_value = self._build_snapshot_record(sample_resources[0], include_files=True)
 
         request = self.factory.get('/oai/', {
             'metadataPrefix': 'oai_dc'

@@ -49,12 +49,25 @@ class ProjectSnapshotService:
         "khm",
         "hmt",
     )
+    DIGITAL_OBJECT_LINK_URI = "http://arkumu.org/data/properties/digitales-objekt"
 
     def __init__(self, relationship_org_code: Optional[str] = None) -> None:
         self.relationship_org_code = relationship_org_code
         self.cache = ProjectCacheService()
         self.schema_service = SchemaManifestService()
         self._graph_service_factory = CanonicalGraphService
+        self._record_index: Dict[str, ProjectRecord] = {}
+        self._record_index_version: Optional[str] = None
+
+    def get_record_by_uri(self, uri: str) -> Optional[ProjectRecord]:
+        """Return cached project record for a given project URI."""
+
+        if not uri:
+            return None
+
+        snapshot = self.get_cross_institutional_snapshot()
+        self._ensure_record_index(snapshot)
+        return self._record_index.get(uri)
 
     def get_cross_institutional_snapshot(self, *, force_refresh: bool = False) -> ProjectSnapshot:
         """Return cached snapshot or rebuild if necessary."""
@@ -62,17 +75,20 @@ class ProjectSnapshotService:
             cached = self.cache.get_cross_institutional_snapshot()
             if cached:
                 logger.info("ProjectSnapshotService: cache hit for cross-institutional snapshot")
+                self._ensure_record_index(cached)
                 return cached
 
         logger.info("ProjectSnapshotService: cache miss – rebuilding cross-institutional snapshot")
         snapshot = self._build_snapshot()
         self.cache.set_cross_institutional_snapshot(snapshot)
+        self._ensure_record_index(snapshot)
         return snapshot
 
     def refresh_cross_institutional_snapshot(self) -> ProjectSnapshot:
         """Force a snapshot rebuild and update cache."""
         snapshot = self._build_snapshot()
         self.cache.set_cross_institutional_snapshot(snapshot)
+        self._ensure_record_index(snapshot)
         return snapshot
 
     def _build_snapshot(self) -> ProjectSnapshot:
@@ -86,11 +102,24 @@ class ProjectSnapshotService:
                 'subjects': len(graph.get('subjects', [])),
                 'edges': len(graph.get('edges', [])),
             }
-        return ProjectSnapshot(
+        snapshot = ProjectSnapshot(
             projects=records,
             counts=counts,
             generated_at=timezone.now(),
         )
+        self._ensure_record_index(snapshot)
+        return snapshot
+
+    def _ensure_record_index(self, snapshot: ProjectSnapshot) -> None:
+        marker = snapshot.generated_at.isoformat()
+        if self._record_index_version == marker and self._record_index:
+            return
+        self._record_index = {
+            record.uri: record
+            for record in snapshot.projects
+            if record.uri
+        }
+        self._record_index_version = marker
 
     def _fetch_cross_institutional_graph(self) -> Dict[str, Any]:
         logger.info("Building cross-institutional project graph via CanonicalGraphService")
@@ -349,6 +378,22 @@ class ProjectSnapshotService:
                 continue
             edges_by_subject[str(subject_id)].append(edge)
 
+        storage_files_map: Dict[str, List[Any]] = defaultdict(list)
+        try:  # pragma: no cover - storage optional during tests
+            from arkumu.storage.models.s3_file_objects import S3FileObject
+
+            if subjects:
+                normalized_subjects = {str(subject_id) for subject_id in subjects}
+                files_qs = (
+                    S3FileObject.objects
+                    .filter(related_resource_id__in=normalized_subjects)
+                    .order_by('created_at')
+                )
+                for file_obj in files_qs:
+                    storage_files_map[str(file_obj.related_resource_id)].append(file_obj)
+        except Exception:
+            storage_files_map = defaultdict(list)
+
         triple_service = TripleRelationshipService(self.relationship_org_code)
         records: List[ProjectRecord] = []
 
@@ -359,6 +404,7 @@ class ProjectSnapshotService:
                 edges_by_subject,
                 card_schema,
                 triple_service,
+                storage_files_map.get(str(subject_id), []),
             )
             if record:
                 records.append(record)
@@ -373,6 +419,7 @@ class ProjectSnapshotService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         card_schema: CardSchema,
         triple_service: TripleRelationshipService,
+        storage_files: Sequence[Any],
     ) -> Optional[ProjectRecord]:
         node = nodes.get(subject_id)
         if not node:
@@ -584,16 +631,44 @@ class ProjectSnapshotService:
             return None
 
         digital_link_predicate = _fk_source_for_target('project', digital_object_path_prop.canonical_uri if digital_object_path_prop else None)
-        digital_objects = [
-            ProjectDigitalObject(path=path)
-            for path in triple_service.get_digital_object_paths(
-                subject_id,
-                link_predicate=digital_link_predicate,
-                path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
-                organization_code=self.relationship_org_code,
+        digital_paths = triple_service.get_digital_object_paths(
+            subject_id,
+            link_predicate=digital_link_predicate,
+            path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+            organization_code=self.relationship_org_code,
+        )
+
+        digital_objects = [ProjectDigitalObject(path=path) for path in digital_paths if path]
+
+        if not digital_objects:
+            collected_ids: set[str] = set()
+            collected_ids.update(
+                self._related_ids(subject_edges, self.DIGITAL_OBJECT_LINK_URI)
             )
-            if path
-        ]
+            for event_id in event_ids:
+                event_edges = edges_by_subject.get(event_id, [])
+                collected_ids.update(
+                    self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
+                )
+
+            for digital_id in collected_ids:
+                edges_for_digital = edges_by_subject.get(digital_id, [])
+                path_literal = self._first_literal(
+                    edges_for_digital,
+                    digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+                )
+                if not path_literal:
+                    continue
+                digital_node = nodes.get(digital_id, {})
+                digital_objects.append(
+                    ProjectDigitalObject(
+                        path=path_literal,
+                        uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
+                    )
+                )
+
+        if storage_files:
+            digital_objects = self._merge_storage_metadata(digital_objects, storage_files)
 
         if not title:
             return None
@@ -618,6 +693,61 @@ class ProjectSnapshotService:
             category_slugs=category_slugs,
         )
         return record
+
+    @staticmethod
+    def _merge_storage_metadata(
+        digital_objects: List[ProjectDigitalObject],
+        storage_files: Sequence[Any],
+    ) -> List[ProjectDigitalObject]:
+        if not storage_files:
+            return digital_objects
+
+        objects_by_path: Dict[str, ProjectDigitalObject] = {}
+        for obj in digital_objects:
+            key = obj.path or obj.storage_key or obj.access_url
+            if key:
+                objects_by_path.setdefault(key, obj)
+
+        for file_obj in storage_files:
+            candidates = [
+                getattr(file_obj, 's3_key', None),
+                getattr(file_obj, 'original_path', None),
+                getattr(file_obj, 'file_name', None),
+            ]
+            matched: Optional[ProjectDigitalObject] = None
+            for candidate in candidates:
+                if candidate and candidate in objects_by_path:
+                    matched = objects_by_path[candidate]
+                    break
+
+            if not matched:
+                derived_path = next(
+                    (candidate for candidate in candidates if candidate),
+                    None,
+                ) or ""
+                matched = ProjectDigitalObject(path=derived_path or getattr(file_obj, 's3_key', ""))
+                digital_objects.append(matched)
+                normalized_key = matched.path or matched.storage_key or matched.access_url
+                if normalized_key:
+                    objects_by_path.setdefault(normalized_key, matched)
+
+            matched.storage_key = getattr(file_obj, 's3_key', None) or matched.storage_key
+            matched.file_name = getattr(file_obj, 'file_name', None) or matched.file_name
+            matched.content_type = getattr(file_obj, 'content_type', None) or matched.content_type
+            matched.size_bytes = getattr(file_obj, 'file_size_bytes', None) or matched.size_bytes
+            matched.checksum = getattr(file_obj, 'sha256_checksum', None) or matched.checksum
+            matched.access_url = getattr(file_obj, 's3_url', None) or matched.access_url
+            matched.storage_status = getattr(file_obj, 'status', None) or matched.storage_status
+
+            created_at = getattr(file_obj, 'created_at', None)
+            if created_at and not matched.created_at:
+                matched.created_at = created_at.isoformat()
+
+            updated_at = getattr(file_obj, 'updated_at', None)
+            if updated_at:
+                matched.updated_at = updated_at.isoformat()
+
+        return digital_objects
 
     @staticmethod
     def _canonical(edge: Dict[str, Any]) -> Optional[str]:

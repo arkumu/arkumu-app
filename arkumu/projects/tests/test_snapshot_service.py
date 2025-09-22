@@ -236,6 +236,7 @@ def test_build_project_record_collects_all_institution_codes():
         edges_by_subject=edges_by_subject,
         card_schema=card_schema,
         triple_service=triple_service,
+        storage_files=[],
     )
 
     assert record is not None
