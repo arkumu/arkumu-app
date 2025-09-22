@@ -56,15 +56,3 @@ class DirectoryImportSerializer(serializers.Serializer):
         if not data.get('directory_path') and not data.get('zip_file'):
             raise serializers.ValidationError("Either directory_path or zip_file must be provided")
         return data
-
-class ClearDatabaseSerializer(serializers.Serializer):
-    """Serializer for clearing database data."""
-    institution = serializers.CharField(
-        required=False,
-        default="DEFAULT",
-        help_text="Institution code to clear data for"
-    )
-    confirm = serializers.BooleanField(
-        required=True,
-        help_text="Must be true to confirm the destructive operation"
-    ) 

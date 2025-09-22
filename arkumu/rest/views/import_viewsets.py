@@ -5,23 +5,18 @@ import tempfile
 import zipfile
 import shutil
 from django.conf import settings
-from django.db import connection
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
-from rdflib import Graph
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 
 from arkumu.importer.services.orchestrator.import_orchestrator import ImportOrchestrator
 from arkumu.importer.services.file_upload.s3_upload_service import S3UploadService
 from arkumu.storage.models import UploadSession, S3FileObject
-from arkumu.rest.serializers import (
-    DirectoryImportSerializer,
-    ClearDatabaseSerializer
-)
+from arkumu.rest.serializers import DirectoryImportSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -250,104 +245,3 @@ class ImportViewSet(GeneralLoginRequiredMixin, viewsets.GenericViewSet):
                     logger.info(f"Cleaned up temporary directory: {temp_dir}")
                 except Exception as e:
                     logger.warning(f"Failed to clean up temporary directory {temp_dir}: {str(e)}")
-
-
-@extend_schema(tags=['testing'])
-class TestingViewSet(GeneralLoginRequiredMixin, viewsets.GenericViewSet):
-    """
-    API endpoints for testing operations.
-    """
-    # This base name will be used in the URL
-    basename = 'testing'
-    
-    # Define the serializer class for schema generation
-    serializer_class = ClearDatabaseSerializer
-    
-    # Define the queryset (even though we don't use it)
-    queryset = None
-    
-    # Allow any access
-    permission_classes = [AllowAny]
-    
-    @extend_schema(
-        operation_id='clear_database',
-        description='Clear all data from the database (for testing purposes only).',
-        request=ClearDatabaseSerializer,
-        responses={
-            200: dict,
-            400: {"description": "Missing confirmation or invalid request"},
-            403: {"description": "Operation not allowed in production mode"}
-        },
-        examples=[
-            OpenApiExample(
-                'Example Request',
-                value={
-                    'confirm': True
-                },
-                request_only=True,
-            ),
-        ]
-    )
-    @action(
-        detail=False,
-        methods=['post'],
-        url_path='clear-database'
-    )
-    def clear_database(self, request):
-        """
-        Clear all data from the database (for testing purposes only).
-        """
-        serializer = ClearDatabaseSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        # Check if confirmation is provided
-        if not serializer.validated_data.get('confirm'):
-            return Response(
-                {'error': 'Confirmation required. Set confirm=true to proceed with database clearing'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        try:
-            # WARNING: This is a destructive operation and should only be used in testing environments
-            if not settings.DEBUG:
-                return Response(
-                    {'error': 'This operation is only allowed in DEBUG mode'}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            # Clear the RDF store
-            g = Graph()
-            
-            # Get the RDF store backend from settings
-            store_type = getattr(settings, 'RDFLIB_STORE', 'default')
-            
-            if store_type == 'SQLAlchemy':
-                # If using SQLAlchemy store, clear through SQL
-                with connection.cursor() as cursor:
-                    cursor.execute("DELETE FROM rdf_term")
-                    cursor.execute("DELETE FROM rdf_namespace")
-                    cursor.execute("DELETE FROM rdf_triple")
-                    cursor.execute("DELETE FROM rdf_literal")
-                    
-                stats = {
-                    'message': 'Database cleared successfully via SQL',
-                    'tables_cleared': ['rdf_term', 'rdf_namespace', 'rdf_triple', 'rdf_literal']
-                }
-            else:
-                # Default approach using rdflib
-                store_config = getattr(settings, 'RDFLIB_STORE_CONFIG', {})
-                g.open(store_config, create=False)
-                g.remove((None, None, None))  # Remove all triples
-                g.close()
-                
-                stats = {
-                    'message': 'Database cleared successfully via rdflib',
-                    'triples_removed': 'all'
-                }
-            
-            return Response(stats, status=status.HTTP_200_OK)
-            
-        except Exception as e:
-            logger.error(f"Error clearing database: {e}")
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

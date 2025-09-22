@@ -405,3 +405,7 @@ MULTIPART_UPLOAD_SETTINGS = {
     'enable_resume': True,
     'cleanup_failed_uploads': True,
 }
+
+# Feature flags for optional REST APIs
+ENABLE_IMPORT_API = False
+ENABLE_CANONICAL_URI_API = False
