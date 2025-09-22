@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
@@ -34,6 +35,7 @@ class CatalogViewSet(viewsets.GenericViewSet):
 
     # Required by DRF even though we only use custom actions
     queryset = None
+    permission_classes = [IsAuthenticated]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -418,11 +420,11 @@ class CatalogViewSet(viewsets.GenericViewSet):
                 description='Filter by category name'
             ),
             OpenApiParameter(
-                name='university',
+                name='organization',
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description='Filter by university'
+                description='Filter by archive code or organization name'
             ),
             OpenApiParameter(
                 name='year',
@@ -449,7 +451,7 @@ class CatalogViewSet(viewsets.GenericViewSet):
         Get random projects with optional filters.
 
         Returns a random sample of project preview cards that can be
-        filtered by keyword, category, university, or year.
+        filtered by keyword, category, organization, or year.
         """
         # Validate query parameters
         query_serializer = RandomProjectsQuerySerializer(data=request.query_params)
@@ -467,7 +469,7 @@ class CatalogViewSet(viewsets.GenericViewSet):
                 limit=validated_data.get('limit', 10),
                 keyword_id=validated_data.get('keyword_id'),
                 category=validated_data.get('category'),
-                university=validated_data.get('university'),
+                organization=validated_data.get('organization'),
                 year=validated_data.get('year')
             )
 

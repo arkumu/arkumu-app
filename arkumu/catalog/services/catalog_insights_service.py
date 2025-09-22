@@ -153,7 +153,7 @@ class CatalogInsightsService:
         limit: int = 10,
         keyword_id: Optional[str] = None,
         category: Optional[str] = None,
-        university: Optional[str] = None,
+        organization: Optional[str] = None,
         year: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Return randomised project previews with optional filters."""
@@ -162,7 +162,7 @@ class CatalogInsightsService:
         cache_params = {
             'keyword': (keyword_id or '').strip() or 'ALL',
             'category': (category or '').strip() or 'ALL',
-            'university': (university or '').strip() or 'ALL',
+            'organization': (organization or '').strip() or 'ALL',
             'year': year or 'ALL'
         }
 
@@ -174,7 +174,7 @@ class CatalogInsightsService:
                 project_info_map=project_info_map,
                 keyword_id=keyword_id,
                 category=category,
-                university=university,
+                organization=organization,
                 year=year,
             )
             if graph_projects is not None:
@@ -185,7 +185,7 @@ class CatalogInsightsService:
             cache_params=cache_params,
             keyword_id=keyword_id,
             category=category,
-            university=university,
+            organization=organization,
             year=year,
         )
 
@@ -239,7 +239,7 @@ class CatalogInsightsService:
         project_info_map: Dict[str, Dict[str, Any]],
         keyword_id: Optional[str],
         category: Optional[str],
-        university: Optional[str],
+        organization: Optional[str],
         year: Optional[int],
     ) -> Optional[List[Dict[str, Any]]]:
         """Return random projects using pre-built graph/card cache with proper relationship enrichment."""
@@ -257,7 +257,7 @@ class CatalogInsightsService:
                 project_info_map,
                 keyword_id=keyword_id,
                 category=category,
-                university=university,
+                organization=organization,
                 year=year,
             )
 
@@ -326,7 +326,7 @@ class CatalogInsightsService:
         cache_params: Dict[str, Any],
         keyword_id: Optional[str],
         category: Optional[str],
-        university: Optional[str],
+        organization: Optional[str],
         year: Optional[int],
     ) -> List[Dict[str, Any]]:
         """Fallback implementation using database lookups."""
@@ -359,8 +359,8 @@ class CatalogInsightsService:
                     )
                     return []
 
-            if university:
-                filtered_ids &= self._filter_projects_by_university(filtered_ids, university)
+            if organization:
+                filtered_ids &= self._filter_projects_by_organization(filtered_ids, organization)
                 if not filtered_ids:
                     self.catalog_cache.set_cached(
                         self.RANDOM_PROJECTS_CACHE_TYPE,
@@ -415,7 +415,7 @@ class CatalogInsightsService:
                 projects.append({
                     'id': project_slug or project_uri,
                     'year': project_year,
-                    'university': card_data.institution or "",
+                    'organization': card_data.institution or "",
                     'title': card_data.title or "",
                     'project_type': self._get_project_type(project_uri),
                     'actors': card_data.actors,
@@ -438,12 +438,12 @@ class CatalogInsightsService:
         *,
         keyword_id: Optional[str],
         category: Optional[str],
-        university: Optional[str],
+        organization: Optional[str],
         year: Optional[int]
     ) -> List[str]:
         keyword_slug = (keyword_id or '').strip().lower()
         category_filter = (category or '').strip().lower()
-        university_filter = (university or '').strip().lower()
+        organization_filter = (organization or '').strip().lower()
 
         results: List[str] = []
         for uri, info in project_info_map.items():
@@ -453,10 +453,10 @@ class CatalogInsightsService:
             if category_filter and not any(category_filter in label.lower() for label in info['category_labels']):
                 continue
 
-            if university_filter:
+            if organization_filter:
                 codes = {code.lower() for code in info['institution_codes']}
-                label_matches = any(university_filter in label.lower() for label in info['institution_labels'])
-                if university_filter not in codes and not label_matches:
+                label_matches = any(organization_filter in label.lower() for label in info['institution_labels'])
+                if organization_filter not in codes and not label_matches:
                     continue
 
             if year and year not in info['year_values']:
@@ -516,7 +516,7 @@ class CatalogInsightsService:
             'slug': record.slug,
             'title': record.title or '',
             'image': image or '',
-            'university_label': institution_label,
+            'organization_label': institution_label,
             'institution_labels': [institution_label] if institution_label else [],
             'institution_codes': [code.lower() for code in institution_codes],
             'category_labels': category_labels,
@@ -560,7 +560,7 @@ class CatalogInsightsService:
         preview = {
             'id': slug,
             'title': record.title or '',
-            'university': record.institution.label if record.institution and record.institution.label else '',
+            'organization': record.institution.label if record.institution and record.institution.label else '',
             'year': self._primary_year(record),
             'project_type': record.project_type.label if record.project_type and record.project_type.label else None,
             'actors': [
@@ -616,7 +616,7 @@ class CatalogInsightsService:
             'slug': slug,
             'title': title,
             'image': image,
-            'university_label': institution_info['label'],
+            'organization_label': institution_info['label'],
             'institution_labels': institution_info['labels'],
             'institution_codes': institution_info['codes'],
             'category_labels': category_info['labels'],
@@ -878,7 +878,7 @@ class CatalogInsightsService:
 
         return set(category_qs.values_list('subject_id', flat=True))
 
-    def _filter_projects_by_university(self, subject_ids: Set[int], university: str) -> Set[int]:
+    def _filter_projects_by_organization(self, subject_ids: Set[int], organization: str) -> Set[int]:
         if not subject_ids:
             return set()
 
@@ -886,7 +886,7 @@ class CatalogInsightsService:
         if not predicate_ids:
             return set()
 
-        normalized = university.strip()
+        normalized = organization.strip()
         institution_qs = Triple.objects.filter(
             predicate_id__in=predicate_ids,
             subject_id__in=subject_ids

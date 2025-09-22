@@ -38,8 +38,9 @@ class ProjectPreviewSerializer(serializers.Serializer):
         allow_null=True,
         help_text="Year from event start date"
     )
-    university = serializers.CharField(
-        help_text="University/institution name"
+    organization = serializers.CharField(
+        allow_blank=True,
+        help_text="Archive or institution name"
     )
     title = serializers.CharField(
         help_text="Project title"
@@ -95,10 +96,10 @@ class RandomProjectsQuerySerializer(serializers.Serializer):
         allow_blank=False,
         help_text="Filter by category name"
     )
-    university = serializers.CharField(
+    organization = serializers.CharField(
         required=False,
         allow_blank=False,
-        help_text="Filter by university"
+        help_text="Filter by archive code (fuk, hmt, khm, rsh, det) or institution name"
     )
     year = serializers.IntegerField(
         required=False,

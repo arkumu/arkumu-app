@@ -445,7 +445,7 @@ class TestRandomProjectsEndpoint:
             project = data[0]
             assert 'id' in project
             assert 'title' in project
-            assert 'university' in project
+            assert 'organization' in project
             assert 'year' in project
             assert 'project_type' in project
             assert 'actors' in project
@@ -498,10 +498,10 @@ class TestRandomProjectsEndpoint:
         assert response.status_code == status.HTTP_200_OK
         # Results depend on data but should not error
 
-    def test_random_projects_filter_by_university(self, auth_client, sample_catalog_data):
-        """Test filtering by university."""
+    def test_random_projects_filter_by_organization(self, auth_client, sample_catalog_data):
+        """Test filtering by organization."""
         url = reverse('api:catalog-random-projects')
-        response = auth_client.get(url, {'university': 'University 1'})
+        response = auth_client.get(url, {'organization': 'UNI1'})
 
         assert response.status_code == status.HTTP_200_OK
         # Results depend on data but should not error

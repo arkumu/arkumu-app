@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework.routers import SimpleRouter
 
 from arkumu.users.api.views import UserViewSet
-from arkumu.rest.views.import_viewsets import ImportViewSet, TestingViewSet
+from arkumu.rest.views.import_viewsets import ImportViewSet
 from arkumu.rest.views.canonical_uri_viewsets import CanonicalUriMappingViewSet
 from arkumu.rest.views.catalog_viewsets import CatalogViewSet
 
@@ -19,14 +19,15 @@ else:
 router.register("users", UserViewSet)
 
 # Import viewsets - explicitly set basename and viewset
-router.register(r'import', ImportViewSet, basename='import')
-router.register(r'testing', TestingViewSet, basename='testing')
+if getattr(settings, "ENABLE_IMPORT_API", False):
+    router.register(r'import', ImportViewSet, basename='import')
 
 # Catalog viewsets
 router.register(r'catalog', CatalogViewSet, basename='catalog')
 
 # Metadata API sub-router
-metadata_router.register(r'canonical-uri', CanonicalUriMappingViewSet, basename='canonical-uri')
+if getattr(settings, "ENABLE_CANONICAL_URI_API", False):
+    metadata_router.register(r'canonical-uri', CanonicalUriMappingViewSet, basename='canonical-uri')
 
 app_name = "api"
 urlpatterns = [
