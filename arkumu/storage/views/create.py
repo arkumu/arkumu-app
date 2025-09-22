@@ -6,12 +6,15 @@ from django.forms import formset_factory
 
 from arkumu.metadata.models import Resource, Triple
 
-def get_objects_from_predicate(predicate_name):
-    predicate = Resource.objects.filter(name=predicate_name).first()
-    if not predicate:
+
+prt = ""
+
+def get_objects_from_type_can_uri(type_can_uri):
+    type = Resource.objects.get(canonical_uri=type_can_uri)
+    if not type:
         return []
-    triples = Triple.objects.filter(predicate=predicate)
-    resources = list(set([triple.object for triple in triples]))
+    triples = Triple.objects.filter(object=type)
+    resources = list(set([triple.subject for triple in triples]))
     return resources
 
 def get_objects_from_predicate_can_uri(predicate_can_uri):
@@ -22,42 +25,55 @@ def get_objects_from_predicate_can_uri(predicate_can_uri):
     resources = list(set([triple.object for triple in triples]))
     return resources
 
-def get_uri_options(predicate_name):
-    resources = get_objects_from_predicate(predicate_name)
+def get_object_from_predicate_and_subject_can_uri(predicate_can_uri, subject):
+    predicate = Resource.objects.get(canonical_uri=predicate_can_uri)
+    if not predicate:
+        return []
+    triple = Triple.objects.filter(subject=subject, predicate=predicate).first()
+    if not triple:
+        return None
+    resource = triple.object
+    return resource
+
+def get_uri_options(predicate_uri):
+    resources = get_objects_from_type_can_uri(predicate_uri)
     options = []
     for resource in resources:
-        label = get_label(predicate_name, resource)
+        label = get_label(predicate_uri, resource)
+        if label == "fehlendes Label":
+            label = "Unbekannter Eintrag (" + resource.uri + ")"
         options.append({'uri': resource.uri, 'label': label})
     return options
 
-def get_label(predicate_name, resource :Resource):
-    label = ""
-    match predicate_name :
-        case "Einliefernde Hochschule":
-            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule")[0].value
-        case "Projektkategorie":
-            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb")[0].value
-        case "Projektart":
-            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-projektart")[0].value
-        case "Akteurin":
-            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name")[0].value
-        case "Rolle":
-            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb")[0].value
-        case "Schlagwort":
-            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/deutsches-wikidata-label")[0].value
-        case "Projekt":
-            label = get_objects_from_predicate_can_uri("http://arkumu.org/data/properties/bevorzugter-titel")[0].value
-    return label
+def get_label(predicate_uri, resource :Resource):
+    object = None
+    match predicate_uri :
+        case "http://arkumu.org/data/types/einliefernde-hochschule":
+            object = get_object_from_predicate_and_subject_can_uri("http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule", resource)
+        case "http://arkumu.org/data/types/projektkategorie":
+            object = get_object_from_predicate_and_subject_can_uri("http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb", resource)
+        case "http://arkumu.org/data/types/projektart":
+            object = get_object_from_predicate_and_subject_can_uri("http://arkumu.org/data/properties/deutscher-name-der-projektart", resource)
+        case "http://arkumu.org/data/types/akteurin":
+            object = get_object_from_predicate_and_subject_can_uri("http://arkumu.org/data/properties/deutscher-name", resource)
+        case "http://arkumu.org/data/types/rolle":
+            object = get_object_from_predicate_and_subject_can_uri("http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb", resource)
+        case "http://arkumu.org/data/types/schlagwort":
+            object = get_object_from_predicate_and_subject_can_uri("http://arkumu.org/data/properties/deutsches-wikidata-label", resource)
+        case "http://arkumu.org/data/types/projekt":
+            object = get_object_from_predicate_and_subject_can_uri("http://arkumu.org/data/properties/bevorzugter-titel", resource)
+    return object.value if object else "fehlendes Label"
 
+#[{"uri": "uri", "label": "label"}],#
 
 URI_OPTIONS = {
-    'institution': get_uri_options("Einliefernde Hochschule"),
-    'project_category': get_uri_options("Projektkategorie"),
-    'project_type': get_uri_options("Projektart"),
-    'actor': get_uri_options("Akteurin"),
-    'role': get_uri_options("Rolle"),
-    'catchphrase': get_uri_options("Schlagwort"),
-    'project': get_uri_options("Projekt"),  # Add project options for event creation
+    'institution': get_uri_options("http://arkumu.org/data/types/einliefernde-hochschule"),
+    'project_category': get_uri_options("http://arkumu.org/data/types/projektkategorie"),
+    'project_type': get_uri_options("http://arkumu.org/data/types/projektart"),
+    'actor': get_uri_options("http://arkumu.org/data/types/akteurin"),
+    'role': get_uri_options("http://arkumu.org/data/types/rolle"),
+    'catchphrase': get_uri_options("http://arkumu.org/data/types/schlagwort"),
+    'project': get_uri_options("http://arkumu.org/data/types/projekt"),  # Add project options for event creation
 }
 
 class BaseEntityForm(forms.Form):
@@ -158,10 +174,11 @@ ActorEventFormSet = formset_factory(ActorEventForm, extra=1, min_num=1, validate
 def create_project(request):
     if request.method == "POST":
         project_form = ProjectForm(request.POST)
-        actor_event_formset = ActorEventFormSet(request.POST, prefix='actors')
 
-        if project_form.is_valid() and actor_event_formset.is_valid():
+        if project_form.is_valid():
             # Process the form data (in a real app, save to database)
+
+
             return HttpResponseRedirect("/storage/dashboard/")
     else:
         project_form = ProjectForm()
@@ -172,7 +189,8 @@ def create_project(request):
         "actor_event_formset": actor_event_formset,
         "entity_type": "project",
         "title": "Create New Project",
-        "description": "Fill in the details to create a new archival project"
+        "description": "Fill in the details to create a new archival project",
+        "prt" : prt
     })
 
 @login_required
