@@ -28,6 +28,14 @@ class PropertyDefinition:
     def normalized_key(self) -> str:
         return self.english_name.strip().lower()
 
+    @property
+    def cardinality(self) -> Optional[str]:
+        return self.metadata.get('cardinality')
+
+    @property
+    def value_type(self) -> Optional[str]:
+        return self.metadata.get('value type')
+
 
 class PropertyMarkdownParser:
     """Scan markdown for property blocks and extract key columns."""
@@ -113,4 +121,3 @@ class PropertyMarkdownParser:
         if text.startswith("<") and text.endswith(">"):
             text = text[1:-1]
         return re.sub(r"\s+", " ", text)
-

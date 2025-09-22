@@ -26,6 +26,8 @@ class GeneratedField:
     predicate_uri: Optional[str] = None
     graph_representation: Optional[str] = None
     property_slug: Optional[str] = None
+    cardinality: str = "repeatable"
+    value_type: Optional[str] = None
 
     def render(self, indent: str = "    ") -> str:
         metadata_parts = [
@@ -42,6 +44,10 @@ class GeneratedField:
             metadata_parts.append(f"'graph_id': '{self.graph_representation}'")
         if self.property_slug:
             metadata_parts.append(f"'property_slug': '{self.property_slug}'")
+        if self.cardinality:
+            metadata_parts.append(f"'cardinality': '{self.cardinality}'")
+        if self.value_type:
+            metadata_parts.append(f"'value_type': '{self.value_type}'")
         metadata = ', '.join(metadata_parts)
         return (
             f"{indent}{self.name}: list[str] = field(\n"
@@ -154,6 +160,8 @@ class DomainDataclassGenerator:
                     predicate_uri=prop_def.uri if prop_def else None,
                     graph_representation=prop_def.graph_representation if prop_def else None,
                     property_slug=prop_def.slug if prop_def else None,
+                    cardinality=(prop_def.cardinality or "repeatable") if prop_def else "repeatable",
+                    value_type=prop_def.value_type if prop_def else None,
                 )
             )
 

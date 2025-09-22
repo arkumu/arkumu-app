@@ -42,3 +42,4 @@ def test_generated_module_executes(markdown_path):
     german_name_meta = metadata["german_name"]
     assert german_name_meta["predicate_uri"].endswith("#has-german-name")
     assert german_name_meta["graph_id"] == "arkumu:hasGermanName"
+    assert german_name_meta["cardinality"] == "repeatable"
