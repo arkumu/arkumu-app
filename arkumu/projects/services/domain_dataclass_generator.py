@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from arkumu.metadata.services.controlled_vocabulary_parser import (
-    ControlledVocabularyMarkdownParser,
+from arkumu.metadata.services.controlled_vocabulary_detail_parser import (
+    ControlledVocabularyDetailParser,
 )
+from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.metadata.services.domain_schema_parser import ArkumuModelExportService
 from arkumu.metadata.services.property_markdown_parser import (
     PropertyMarkdownParser,
@@ -88,12 +90,12 @@ class DomainDataclassGenerator:
         self,
         export_service: Optional[ArkumuModelExportService] = None,
         property_parser: Optional[PropertyMarkdownParser] = None,
-        vocabulary_parser: Optional[ControlledVocabularyMarkdownParser] = None,
+        vocabulary_parser: Optional[ControlledVocabularyDetailParser] = None,
     ) -> None:
         self.export_service = export_service or ArkumuModelExportService()
         self.property_parser = property_parser or PropertyMarkdownParser()
         self._property_map: Dict[str, PropertyDefinition] = {}
-        self.vocabulary_parser = vocabulary_parser or ControlledVocabularyMarkdownParser()
+        self.vocabulary_parser = vocabulary_parser or ControlledVocabularyDetailParser()
         self._vocabulary_map: Dict[str, Dict[str, str]] = {}
         self._vocabulary_by_entity: Dict[str, list[str]] = {}
 
@@ -103,12 +105,8 @@ class DomainDataclassGenerator:
         self._property_map = {
             definition.normalized_key: definition for definition in property_definitions
         }
-        vocab_path = Path(markdown_path).parent / "202509221948 arkumu controlled vocabularies.md"
-        if vocab_path.exists():
-            vocab_doc = self.vocabulary_parser.parse_file(vocab_path)
-            self._vocabulary_map = self._build_vocabulary_map(vocab_doc.sections)
-        else:
-            self._vocabulary_map = {}
+        vocab_dir = Path(markdown_path).parent
+        self._vocabulary_map = self._load_vocabulary_map(vocab_dir)
         classes = [
             self._build_class_definition(class_payload)
             for class_payload in payload.get("classes", [])
@@ -213,23 +211,33 @@ class DomainDataclassGenerator:
             suffix += 1
         return f"{candidate}_{suffix}"
 
-    def _build_vocabulary_map(self, sections) -> Dict[str, Dict[str, str]]:
+    def _load_vocabulary_map(self, vocab_dir: Path) -> Dict[str, Dict[str, str]]:
         mapping: Dict[str, Dict[str, str]] = {}
-        for section in sections:
-            for entry in section.entries:
-                entity_key = self._normalize_vocab_key(entry.entity)
-                if not entity_key:
-                    continue
-                vocab_key = self._normalize_vocab_key(entry.english_name)
-                if not vocab_key:
-                    continue
-                mapping.setdefault(entity_key, {})[vocab_key] = entry.slug
-                # add singular variant if the english label ends with plural forms
-                if vocab_key.endswith('s'):
-                    mapping[entity_key].setdefault(vocab_key[:-1], entry.slug)
-                if vocab_key.endswith('ies'):
-                    mapping[entity_key].setdefault(vocab_key[:-3] + 'y', entry.slug)
+        for file_path in vocab_dir.glob("*controlled vocabulary*.md"):
+            try:
+                document = self.vocabulary_parser.parse_file(file_path)
+            except Exception:
+                continue
+            entity_key = self._normalize_vocab_key(document.entity or "")
+            if not entity_key:
+                continue
+            store = mapping.setdefault(entity_key, {})
+            vocab_slug = self._infer_vocabulary_slug(document, file_path)
+            labels = [vocab_slug.replace('-', ' ')] if vocab_slug else []
+            if labels and vocab_slug:
+                self._register_vocab_labels(store, vocab_slug, labels)
         return mapping
+
+    def _register_vocab_labels(self, store: Dict[str, str], slug: str, labels: Iterable[str]) -> None:
+        for label in labels:
+            key = self._normalize_vocab_key(label)
+            if not key:
+                continue
+            store.setdefault(key, slug)
+            if key.endswith('s'):
+                store.setdefault(key[:-1], slug)
+            if key.endswith('ies'):
+                store.setdefault(key[:-3] + 'y', slug)
 
     def _match_vocabulary(self, class_english_name: str, field_label: str) -> Optional[str]:
         entity_key = self._normalize_vocab_key(class_english_name)
@@ -255,3 +263,17 @@ class DomainDataclassGenerator:
     def _normalize_vocab_key(self, value: str) -> str:
         value = value or ""
         return re.sub(r"[^a-z0-9]", "", value.lower())
+
+    def _infer_vocabulary_slug(self, document, file_path: Path) -> Optional[str]:
+        for entry in document.entries:
+            if entry.uri:
+                parsed = urlparse(entry.uri)
+                segment = parsed.path.rstrip('/').split('/')[-1]
+                if segment:
+                    return segment
+        stem = file_path.stem
+        if 'controlled vocabulary - ' in stem:
+            slug_source = stem.split('controlled vocabulary - ', 1)[1]
+            slug_source = slug_source.split('(')[0].strip()
+            return slugify_uri_part(slug_source)
+        return None

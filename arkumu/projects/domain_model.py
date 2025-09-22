@@ -613,7 +613,7 @@ DE: Besondere Art eines Physischen Objekts, auf dem Daten gespeichert können. S
     )
     information_storage_medium_type: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has information storage medium type', 'label_en': 'Information Storage Medium Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-information-storage-medium-type', 'graph_id': 'arkumu:hasInformationStorageMediumType', 'property_slug': 'has-information-storage-medium-type', 'cardinality': 'repeatable', 'vocabulary': 'information-storage-medium-types' },
+        metadata={ 'source_en_name': 'has information storage medium type', 'label_en': 'Information Storage Medium Type', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-information-storage-medium-type', 'graph_id': 'arkumu:hasInformationStorageMediumType', 'property_slug': 'has-information-storage-medium-type', 'cardinality': 'repeatable' },
     )
     product_id_value: list[str] = field(
         default_factory=list,
@@ -988,7 +988,7 @@ DE: Ein Projekt ist ein Datensatz, der Kunst und kunstbezogene Dinge beschreibt 
     )
     project_category: list[str] = field(
         default_factory=list,
-        metadata={ 'source_en_name': 'has project category', 'label_en': 'Project Category', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-category', 'graph_id': 'arkumu:hasProjectCategory', 'property_slug': 'has-project-category', 'cardinality': 'repeatable', 'vocabulary': 'project-categories' },
+        metadata={ 'source_en_name': 'has project category', 'label_en': 'Project Category', 'predicate_uri': 'https://gitlab.git.nrw/arkumu/arkumu-exchange-portal/-/wikis/data-model/classes-and-properties#has-project-category', 'graph_id': 'arkumu:hasProjectCategory', 'property_slug': 'has-project-category', 'cardinality': 'repeatable' },
     )
     keyword: list[str] = field(
         default_factory=list,
