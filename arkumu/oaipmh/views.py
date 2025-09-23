@@ -41,6 +41,7 @@ REPO_REPOSITORY_IDENTIFIER = "arkumu"
 ROSETTA_METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
 ROSETTA_DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
 ROSETTA_XLINK_NS = "http://www.w3.org/1999/xlink"
+XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets", "rdf"]
@@ -75,13 +76,14 @@ def _oai_envelope(request: HttpRequest) -> ET.Element:
 
     oai = ET.Element(
         "OAI-PMH",
-        {
-            "xmlns": "http://www.openarchives.org/OAI/2.0/",
-            "xmlns:oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
-            "xmlns:dc": "http://purl.org/dc/elements/1.1/",
-            "xmlns:mets": ROSETTA_METS_NS,
-            "xmlns:xlink": ROSETTA_XLINK_NS,
-            "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+            {
+                "xmlns": "http://www.openarchives.org/OAI/2.0/",
+                "xmlns:oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+                "xmlns:dc": "http://purl.org/dc/elements/1.1/",
+                "xmlns:dcterms": DCTERMS_NS,
+                "xmlns:mets": ROSETTA_METS_NS,
+                "xmlns:xlink": ROSETTA_XLINK_NS,
+                "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
             "xsi:schemaLocation": " ".join(
                 [
                     "http://www.openarchives.org/OAI/2.0/",
@@ -122,12 +124,41 @@ def _xml_response(elem: ET.Element) -> HttpResponse:
             xml_str = xml_str[:match.start()] + xml_str[match.end():]
 
     # Do the same for other commonly duplicated namespaces
-    for ns_prefix in ['xmlns:dc', 'xmlns:mets', 'xmlns:xlink']:
+    for ns_prefix in ['xmlns:dc', 'xmlns:dcterms', 'xmlns:mets', 'xmlns:xlink']:
         pattern = rf'{re.escape(ns_prefix)}="[^"]*"'
         matches = list(re.finditer(pattern, xml_str))
         if len(matches) > 1:
             for match in reversed(matches[1:]):
                 xml_str = xml_str[:match.start()] + xml_str[match.end():]
+
+    canonical_ns_map = {
+        ROSETTA_METS_NS: 'mets',
+        DC_NS: 'dc',
+        DCTERMS_NS: 'dcterms',
+        ROSETTA_XLINK_NS: 'xlink',
+        ROSETTA_DNX_NS: '',
+    }
+
+    alias_pattern = re.compile(r'\s+xmlns:(ns\d+)="([^"]+)"')
+    alias_matches = list(alias_pattern.finditer(xml_str))
+    for match in reversed(alias_matches):
+        alias, uri = match.groups()
+        if uri not in canonical_ns_map:
+            continue
+
+        xml_str = xml_str[:match.start()] + xml_str[match.end():]
+        replacement_prefix = canonical_ns_map[uri]
+        if replacement_prefix:
+            xml_str = re.sub(rf'\b{alias}:', f'{replacement_prefix}:', xml_str)
+        else:
+            xml_str = re.sub(rf'\b{alias}:', '', xml_str)
+            default_declaration = f'xmlns="{uri}"'
+            if default_declaration not in xml_str:
+                xml_str = xml_str.replace('<mets:mets', f'<mets:mets {default_declaration}', 1)
+
+    default_declaration = f'xmlns="{ROSETTA_DNX_NS}"'
+    if '<mets:mets' in xml_str and default_declaration not in xml_str:
+        xml_str = xml_str.replace('<mets:mets', f'<mets:mets {default_declaration}', 1)
 
 # ElementTree naturally uses single quotes, keep them
 
@@ -775,19 +806,10 @@ def _build_mets_from_record(
     ET.register_namespace('dc', DC_NS)
     ET.register_namespace('dcterms', DCTERMS_NS)
     ET.register_namespace('xlink', ROSETTA_XLINK_NS)
-    ET.register_namespace('xsi', "http://www.w3.org/2001/XMLSchema-instance")
+    ET.register_namespace('xsi', XSI_NS)
 
-    mets_root = ET.Element(
-        f"{{{ROSETTA_METS_NS}}}mets",
-        {
-            "xmlns:mets": ROSETTA_METS_NS,
-            "xmlns:dc": DC_NS,
-            "xmlns:dcterms": DCTERMS_NS,
-            "xmlns:xlink": ROSETTA_XLINK_NS,
-            "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
-            "xmlns": ROSETTA_DNX_NS,
-        },
-    )
+    mets_root = ET.Element(f"{{{ROSETTA_METS_NS}}}mets")
+    mets_root.set('xmlns', ROSETTA_DNX_NS)
 
     timestamp = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     mets_hdr = ET.SubElement(
@@ -850,7 +872,7 @@ def _build_mets_from_record(
         source_xml,
         "epicur",
         {
-            "xsi:schemaLocation": "urn:nbn:de:1111-2004033116 http://www.persistent-identifier.de/xepicur/version1.0/xepicur.xsd",
+            f"{{{XSI_NS}}}schemaLocation": "urn:nbn:de:1111-2004033116 http://www.persistent-identifier.de/xepicur/version1.0/xepicur.xsd",
         },
     )
     administrative = ET.SubElement(epicur, "administrative_data")
