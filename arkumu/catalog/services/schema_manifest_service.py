@@ -5,9 +5,10 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from django.core.cache import cache
+from django.utils.text import slugify
 
 from arkumu.metadata.models.mappings import Mapping
 
@@ -60,6 +61,7 @@ class CardSection:
     canonical_class_uri: str
     properties: Dict[str, CardProperty]
     fk_relationships: List[Dict[str, Any]] = field(default_factory=list)
+    relationship_contexts: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def available(self) -> bool:
@@ -198,6 +200,7 @@ class SchemaManifestService:
                         for prop_name, prop in section.properties.items()
                     },
                     fk_relationships=copy.deepcopy(section.fk_relationships),
+                    relationship_contexts=copy.deepcopy(section.relationship_contexts),
                 )
                 for name, section in CARD_SCHEMA_TEMPLATE.sections.items()
             },
@@ -251,8 +254,106 @@ class SchemaManifestService:
         canonical_classes = canonical_schema.get("classes", [])
         canonical_properties = canonical_schema.get("properties", [])
 
+        manifest_property_lookup: Dict[str, Dict[str, Any]] = {}
+        manifest_class_lookup: Dict[str, Dict[str, Any]] = {}
+
+        manifest_datasets = canonical_schema.get("schema_manifest", {}) or {}
+        if manifest_datasets:
+            for dataset_name, dataset_manifest in manifest_datasets.items():
+                entity_info = dataset_manifest.get("entity_type") or {}
+                canonical_class_uri = entity_info.get("canonical_uri") or entity_info.get("uri")
+                if not canonical_class_uri:
+                    continue
+
+                class_entry = manifest_class_lookup.setdefault(
+                    canonical_class_uri,
+                    {
+                        "uri": canonical_class_uri,
+                        "datasets": [],
+                        "properties": [],
+                        "relationships": [],
+                        "label": entity_info.get("name") or canonical_class_uri,
+                    },
+                )
+
+                if dataset_name not in class_entry["datasets"]:
+                    class_entry["datasets"].append(dataset_name)
+
+                for column_name, prop_snapshot in (dataset_manifest.get("properties") or {}).items():
+                    canonical_property_uri = prop_snapshot.get("canonical_uri") or prop_snapshot.get("uri")
+                    if not canonical_property_uri:
+                        continue
+
+                    manifest_property_lookup[canonical_property_uri] = {
+                        "uri": prop_snapshot.get("uri"),
+                        "canonical_uri": canonical_property_uri,
+                        "name": prop_snapshot.get("name") or column_name,
+                    }
+
+                    property_entry = next(
+                        (p for p in class_entry["properties"] if p["canonical_property"] == canonical_property_uri),
+                        None,
+                    )
+                    if not property_entry:
+                        property_entry = {
+                            "canonical_property": canonical_property_uri,
+                            "bindings": [],
+                        }
+                        class_entry["properties"].append(property_entry)
+
+                    property_entry["bindings"].append(
+                        {
+                            "dataset": dataset_name,
+                            "column": column_name,
+                            "local_property_uri": prop_snapshot.get("uri"),
+                            "name": prop_snapshot.get("name"),
+                        }
+                    )
+
+                for rel in dataset_manifest.get("fk_relationships", []) or []:
+                    # Ensure canonical fields exist for downstream consumers
+                    rel_copy = dict(rel)
+                    if rel_copy.get("source_canonical_property"):
+                        rel_copy.setdefault("source_property", rel_copy["source_canonical_property"])
+                    if rel_copy.get("target_canonical_property"):
+                        rel_copy.setdefault("target_property", rel_copy["target_canonical_property"])
+                    rel_copy.setdefault("source_dataset", dataset_name)
+                    class_entry["relationships"].append(rel_copy)
+
+                for ctx in dataset_manifest.get("relationship_contexts", []) or []:
+                    class_entry.setdefault("relationship_contexts", []).append(ctx)
+
+            if not canonical_classes:
+                canonical_classes = list(manifest_class_lookup.values())
+            canonical_properties = canonical_properties or list(manifest_property_lookup.values())
+
+            # Ensure schema has sections for all canonical classes we discovered in manifest
+            existing_class_uris: Set[str] = {
+                section.canonical_class_uri for section in schema.sections.values()
+            }
+            for class_uri, class_entry in manifest_class_lookup.items():
+                if class_uri in existing_class_uris:
+                    continue
+
+                raw_label = class_entry.get("label") or class_uri.split('/')[-1]
+                section_key = slugify(raw_label or class_uri) or f"section_{len(schema.sections)}"
+                if section_key in schema.sections:
+                    section_key = f"{section_key}_{len(schema.sections)}"
+
+                schema.sections[section_key] = CardSection(
+                    label=raw_label,
+                    canonical_class_uri=class_uri,
+                    properties={},
+                    fk_relationships=[],
+                    relationship_contexts=[],
+                )
+                existing_class_uris.add(class_uri)
+
         class_lookup = {item.get("uri"): item for item in canonical_classes}
         property_lookup = {prop.get("uri"): prop for prop in canonical_properties}
+
+        if manifest_property_lookup:
+            property_lookup.update({uri: data for uri, data in manifest_property_lookup.items() if uri})
 
         for section in schema.sections.values():
             canonical_class = class_lookup.get(section.canonical_class_uri)
@@ -293,3 +394,4 @@ class SchemaManifestService:
                     )
 
             section.fk_relationships.extend(canonical_class.get("relationships", []))
+            section.relationship_contexts.extend(copy.deepcopy(canonical_class.get("relationship_contexts", [])))

@@ -21,6 +21,7 @@ from arkumu.metadata.models.resource import ResourceType, Resource
 from arkumu.metadata.models.mappings import Mapping
 from .statistics import ExecutionStatistics, ExecutionMetrics
 from arkumu.common.enums import UpdateStrategy
+from arkumu.common.uri_utils import normalize_string_nfc
 from arkumu.metadata.services.mapping import FKConfig as BulkFKRelationship
 from arkumu.importer.utils.progress import publish_progress
 from arkumu.importer.utils.mapping_utils import MappingUtils
@@ -2439,7 +2440,11 @@ class MappingAwareProcessor:
             for column in dataset_config.columns:
                 # Check if column has FK configuration (not all ColumnConfig implementations may have this)
                 if hasattr(column, 'fk_config') and column.fk_config:
-                    fk_relationship = self._create_fk_relationship_definition(column, dataset_config.dataset_name)
+                    fk_relationship = self._create_fk_relationship_definition(
+                        column,
+                        dataset_config.dataset_name,
+                        blueprint,
+                    )
                     blueprint['fk_relationships'].append(fk_relationship)
                     total_fk_relationships += 1
             
@@ -2448,16 +2453,44 @@ class MappingAwareProcessor:
         
         logger.info(f"   🔗 Total FK relationships mapped: {total_fk_relationships}")
     
-    def _create_fk_relationship_definition(self, column, source_dataset):
+    def _create_fk_relationship_definition(self, column, source_dataset, blueprint):
         """Create FK relationship definition."""
         # fk_config is a dictionary, not an object
         fk_config = column.fk_config
+        source_property_resource = None
+        if blueprint:
+            source_property_resource = blueprint.get('property_resources', {}).get(column.column_name)
+
+        def _extract_uris(resource):
+            if not resource:
+                return None, None
+            if hasattr(resource, 'uri'):
+                return getattr(resource, 'uri', None), getattr(resource, 'canonical_uri', None)
+            if isinstance(resource, dict):
+                return resource.get('uri'), resource.get('canonical_uri') or resource.get('uri')
+            return None, None
+
+        source_property_uri, source_canonical_uri = _extract_uris(source_property_resource)
+
+        target_dataset = fk_config.get('target_dataset', '')
+        target_property_resource = None
+        if target_dataset:
+            target_blueprint = self.dataset_blueprints.get(target_dataset, {})
+            target_property_resource = target_blueprint.get('property_resources', {}).get(
+                fk_config.get('target_column', '')
+            )
+        target_property_uri, target_canonical_uri = _extract_uris(target_property_resource)
+
         return {
             'source_dataset': source_dataset,
             'source_column': column.column_name,
             'source_property': column.arkumu_type,
-            'target_dataset': fk_config.get('target_dataset', ''),
+            'source_property_uri': source_property_uri,
+            'source_canonical_property': source_canonical_uri,
+            'target_dataset': target_dataset,
             'target_column': fk_config.get('target_column', ''),
+            'target_property_uri': target_property_uri,
+            'target_canonical_property': target_canonical_uri,
             'relationship_type': column.arkumu_type,
             'is_multi_value': column.is_multi_value,
             'fk_config': fk_config
@@ -2494,13 +2527,13 @@ class MappingAwareProcessor:
             return
 
         try:
-            manifest = self._build_schema_manifest()
             mapping = Mapping.objects.filter(id=mapping_id).first()
             if not mapping:
                 logger.warning(f"   📝 Schema manifest skipped – mapping {mapping_id} not found")
                 return
 
             config = mapping.mapping_config or {}
+            manifest = self._build_schema_manifest(config)
             if config.get('schema_manifest') == manifest:
                 logger.info("   📝 Schema manifest unchanged – skipping update")
                 return
@@ -2512,9 +2545,10 @@ class MappingAwareProcessor:
         except Exception as exc:
             logger.warning(f"   ⚠️  Failed to persist schema manifest for mapping {mapping_id}: {exc}")
 
-    def _build_schema_manifest(self) -> Dict[str, Any]:
+    def _build_schema_manifest(self, mapping_config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a JSON-serializable snapshot of the dataset blueprints."""
         manifest: Dict[str, Any] = {}
+        relationship_contexts_config = mapping_config.get('relationship_contexts', {}) or {}
 
         for dataset_name, blueprint in self.dataset_blueprints.items():
             entity_snapshot = self._serialize_resource_snapshot(blueprint.get('entity_type_resource'))
@@ -2529,19 +2563,93 @@ class MappingAwareProcessor:
                     'source_dataset': fk_rel.get('source_dataset'),
                     'source_column': fk_rel.get('source_column'),
                     'source_property': fk_rel.get('source_property'),
+                    'source_property_uri': fk_rel.get('source_property_uri'),
+                    'source_canonical_property': fk_rel.get('source_canonical_property'),
                     'target_dataset': fk_rel.get('target_dataset'),
                     'target_column': fk_rel.get('target_column'),
+                    'target_property_uri': fk_rel.get('target_property_uri'),
+                    'target_canonical_property': fk_rel.get('target_canonical_property'),
                     'relationship_type': fk_rel.get('relationship_type'),
                     'is_multi_value': fk_rel.get('is_multi_value')
                 })
 
+            relationship_context_entries: List[Dict[str, Any]] = []
+
+            if relationship_contexts_config:
+                relationship_context_entries = self._build_relationship_context_manifest_entries(
+                    dataset_name,
+                    blueprint,
+                    relationship_contexts_config,
+                )
+
             manifest[dataset_name] = {
                 'entity_type': entity_snapshot,
                 'properties': property_snapshots,
-                'fk_relationships': fk_entries
+                'fk_relationships': fk_entries,
+                'relationship_contexts': relationship_context_entries,
             }
 
         return manifest
+
+    def _build_relationship_context_manifest_entries(
+        self,
+        dataset_name: str,
+        blueprint: Dict[str, Any],
+        relationship_contexts_config: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        def _extract_uris(resource: Any) -> Tuple[Optional[str], Optional[str]]:
+            if not resource:
+                return None, None
+            if hasattr(resource, 'uri'):
+                return getattr(resource, 'uri', None), getattr(resource, 'canonical_uri', None)
+            if isinstance(resource, dict):
+                return resource.get('uri'), resource.get('canonical_uri') or resource.get('uri')
+            return None, None
+
+        normalized_dataset = normalize_string_nfc(dataset_name)
+        entries: List[Dict[str, Any]] = []
+
+        for ctx_key, ctx_config in relationship_contexts_config.items():
+            parts = ctx_key.split('::')
+            if len(parts) < 3:
+                continue
+            ctx_dataset = normalize_string_nfc(parts[1].removesuffix('.csv'))
+            if ctx_dataset != normalized_dataset:
+                continue
+            context_column = normalize_string_nfc('::'.join(parts[2:]))
+
+            property_resource = (blueprint.get('property_resources') or {}).get(context_column)
+            context_property_uri, context_canonical_property = _extract_uris(property_resource)
+
+            primary_column = normalize_string_nfc(ctx_config.get('primary_fk_column') or ctx_config.get('primary_fk') or '')
+            secondary_column = normalize_string_nfc(ctx_config.get('secondary_fk_column') or ctx_config.get('secondary_fk') or '')
+
+            primary_property_uri = primary_canonical_property = None
+            secondary_property_uri = secondary_canonical_property = None
+
+            if primary_column:
+                primary_resource = (blueprint.get('property_resources') or {}).get(primary_column)
+                primary_property_uri, primary_canonical_property = _extract_uris(primary_resource)
+            if secondary_column:
+                secondary_resource = (blueprint.get('property_resources') or {}).get(secondary_column)
+                secondary_property_uri, secondary_canonical_property = _extract_uris(secondary_resource)
+
+            entries.append({
+                'context_column': context_column,
+                'context_predicate': ctx_config.get('context_predicate'),
+                'context_property_uri': context_property_uri,
+                'context_canonical_property': context_canonical_property,
+                'primary_fk_dataset': normalize_string_nfc(ctx_config.get('primary_fk_dataset', '')),
+                'primary_fk_column': primary_column,
+                'primary_property_uri': primary_property_uri,
+                'primary_canonical_property': primary_canonical_property,
+                'secondary_fk_dataset': normalize_string_nfc(ctx_config.get('secondary_fk_dataset', '')),
+                'secondary_fk_column': secondary_column,
+                'secondary_property_uri': secondary_property_uri,
+                'secondary_canonical_property': secondary_canonical_property,
+            })
+
+        return entries
 
     def _serialize_resource_snapshot(self, resource: Any) -> Dict[str, Optional[str]]:
         """Extract URI information from a Resource or cached dict representation."""
