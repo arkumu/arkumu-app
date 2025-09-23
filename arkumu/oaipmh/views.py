@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import re
 from pathlib import Path
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict, List, Optional
@@ -44,6 +45,8 @@ RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets", "rdf"]
 ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
+
+PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
 # Initialize services
 resumption_service = ResumptionTokenService(page_size=100)
@@ -110,7 +113,6 @@ def _xml_response(elem: ET.Element) -> HttpResponse:
     xml_str = data.decode("utf-8")
 
     # Remove duplicate xmlns:xsi declarations
-    import re
     # Find all xmlns:xsi declarations and keep only the first one
     xsi_pattern = r'xmlns:xsi="[^"]*"'
     matches = list(re.finditer(xsi_pattern, xml_str))
@@ -995,12 +997,89 @@ def _build_rdf_from_resource(resource: Resource) -> ET.Element:
     rdf_graph = rdflib.Graph()
     nodes = graph_data.get("nodes", {})
 
+    namespace_cache: Dict[str, rdflib.Namespace] = {
+        RDF_NS: rdflib.Namespace(RDF_NS),
+        RDFS_NS: rdflib.Namespace(RDFS_NS),
+        DCTERMS_NS: rdflib.Namespace(DCTERMS_NS),
+        DC_NS: rdflib.Namespace(DC_NS),
+        "http://arkumu.org/data/properties/": rdflib.Namespace("http://arkumu.org/data/properties/"),
+    }
+    prefix_map: Dict[str, str] = {
+        RDF_NS: "rdf",
+        RDFS_NS: "rdfs",
+        DCTERMS_NS: "dcterms",
+        DC_NS: "dc",
+        "http://arkumu.org/data/properties/": "ark",
+    }
+    used_prefixes = set(prefix_map.values())
+
+    for ns_uri, prefix in prefix_map.items():
+        rdf_graph.bind(prefix, namespace_cache[ns_uri], override=True)
+
+    def _normalize_predicate_uri(uri: Optional[str]) -> Optional[str]:
+        if not uri:
+            return None
+        return PROPERTY_NAMESPACE_PATTERN.sub(r"\1\3", uri, count=1)
+
+    def _split_namespace(uri: str) -> tuple[str, str]:
+        if "#" in uri:
+            base, local = uri.rsplit("#", 1)
+            return f"{base}#", local
+        if "/" in uri:
+            base, local = uri.rsplit("/", 1)
+            if not local:
+                return uri, ""
+            if not base.endswith("/"):
+                base = f"{base}/"
+            return base, local
+        return uri, ""
+
+    def _resolve_prefix(ns_uri: str) -> str:
+        if ns_uri in prefix_map:
+            return prefix_map[ns_uri]
+
+        if ns_uri.startswith("http://arkumu.org/data/") and ns_uri.endswith("/properties/"):
+            suffix = ns_uri[len("http://arkumu.org/data/"):-len("/properties/")].strip("/")
+            if not suffix:
+                candidate = "ark_prop"
+            else:
+                parts = [part for part in suffix.split("/") if part]
+                candidate = f"{parts[-1]}_prop" if len(parts) >= 1 else "ark_prop"
+        else:
+            parsed = urlparse(ns_uri)
+            host = parsed.netloc.split(":")[0].replace(".", "_")
+            path_parts = [p for p in parsed.path.split("/") if p]
+            candidate_parts = [part for part in (host, path_parts[-1] if path_parts else None) if part]
+            candidate = "_".join(candidate_parts) if candidate_parts else "ns"
+
+        candidate = re.sub(r"[^a-zA-Z0-9_]", "_", candidate).lower()
+        if not candidate or not candidate[0].isalpha():
+            candidate = f"ns_{candidate or 'namespace'}"
+
+        base_candidate = candidate
+        index = 1
+        while candidate in used_prefixes:
+            candidate = f"{base_candidate}{index}"
+            index += 1
+
+        prefix_map[ns_uri] = candidate
+        used_prefixes.add(candidate)
+        return candidate
+
+    def _ensure_namespace(ns_uri: str) -> Optional[rdflib.Namespace]:
+        if not ns_uri:
+            return None
+        if ns_uri in namespace_cache:
+            return namespace_cache[ns_uri]
+
+        prefix = _resolve_prefix(ns_uri)
+        namespace = rdflib.Namespace(ns_uri)
+        rdf_graph.bind(prefix, namespace, override=True)
+        namespace_cache[ns_uri] = namespace
+        return namespace
+
     def _node_info(node_id: str) -> Optional[Dict[str, Any]]:
         return nodes.get(node_id)
-
-    def _node_uri(node_id: str) -> Optional[str]:
-        node = _node_info(node_id)
-        return node.get("uri") if node else None
 
     def _node_type(node: Dict[str, Any]) -> str:
         node_type = node.get("resource_type")
@@ -1017,13 +1096,13 @@ def _build_rdf_from_resource(resource: Resource) -> ET.Element:
     for edge in graph_data.get("edges", []):
         subj_node = _node_info(edge.get("subject_id"))
         obj_node = _node_info(edge.get("object_id"))
-        pred_uri = edge.get("predicate_uri")
-        pred_canonical = edge.get("predicate_canonical") or pred_uri
+        predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")
+        normalized_predicate = _normalize_predicate_uri(predicate_source)
 
-        if not subj_node or not obj_node or not pred_uri:
+        if not subj_node or not obj_node or not normalized_predicate:
             continue
 
-        if pred_canonical and "defines" in pred_canonical.lower():
+        if predicate_source and "defines" in predicate_source.lower():
             continue
 
         if not _is_data_node(subj_node):
@@ -1033,24 +1112,36 @@ def _build_rdf_from_resource(resource: Resource) -> ET.Element:
         if not subj_uri:
             continue
 
+        namespace_uri, local_name = _split_namespace(normalized_predicate)
+        if not local_name:
+            continue
+
+        namespace = _ensure_namespace(namespace_uri)
+        if not namespace:
+            continue
+
+        predicate_ref = namespace[local_name]
         subject_ref = rdflib.URIRef(subj_uri)
-        predicate_ref = rdflib.URIRef(pred_uri)
 
         if _is_literal(obj_node):
             literal_value = obj_node.get("value") or ""
             rdf_graph.add((subject_ref, predicate_ref, rdflib.Literal(literal_value)))
-        else:
-            if not _is_data_node(obj_node):
-                continue
-            obj_uri = obj_node.get("uri")
-            if not obj_uri:
-                continue
-            rdf_graph.add((subject_ref, predicate_ref, rdflib.URIRef(obj_uri)))
+            continue
 
-    rdf_graph.bind("rdf", rdflib.Namespace(RDF_NS))
-    rdf_graph.bind("rdfs", rdflib.Namespace(RDFS_NS))
-    rdf_graph.bind("dcterms", rdflib.Namespace(DCTERMS_NS))
-    rdf_graph.bind("dc", rdflib.Namespace(DC_NS))
+        if not _is_data_node(obj_node):
+            continue
+
+        obj_uri = obj_node.get("uri")
+        if not obj_uri:
+            continue
+
+        rdf_graph.add((subject_ref, predicate_ref, rdflib.URIRef(obj_uri)))
+
+    ET.register_namespace("rdf", RDF_NS)
+    ET.register_namespace("rdfs", RDFS_NS)
+    ET.register_namespace("dcterms", DCTERMS_NS)
+    ET.register_namespace("dc", DC_NS)
+    ET.register_namespace("ark", "http://arkumu.org/data/properties/")
 
     rdf_xml = rdf_graph.serialize(format="application/rdf+xml")
     rdf_element = ET.fromstring(rdf_xml.encode("utf-8"))
