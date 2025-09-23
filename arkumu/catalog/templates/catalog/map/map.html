@@ -1,10 +1,21 @@
 
 
+<link rel='stylesheet' href='/static/js/src/maplibre-gl/maplibre-gl.css' />
+<script src='/static/js/src/maplibre-gl/maplibre-gl.js'></script>
+  <style>
+    #map {
+      width: {{ width|default:800}}px;   /* hier Breite festlegen */
+      height: {{ height|default:500}}px;  /* und Höhe */
+    }
+  </style>
+
 <div id="map"></div>
 <script>
+  y = {{ coord_y|default:"50.9254927"}}
+  x = {{ coord_y|default:"6.9328194"}}
   const map = new maplibregl.Map({
     style: `https://tiles.openfreemap.org/styles/bright`,
-    center: [{{ x|default:50.9254927 }}, {{ y|default:6.9328194 }}],
+    center: [x,y],
     zoom: 15.5,
     pitch: 45,
     bearing: -17.6,
