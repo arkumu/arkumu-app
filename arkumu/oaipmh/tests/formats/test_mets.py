@@ -398,16 +398,16 @@ class TestMETSSerializer:
         }
         # Find CONTENT group
         content_grp = None
-        for grp in root.findall('.//{http://www.loc.gov/METS/}fileGrp'):
+        for grp in root.findall(f'.//{{{METS_NS}}}fileGrp'):
             if grp.get('USE') == 'CONTENT':
                 content_grp = grp
                 break
         assert content_grp is not None, "CONTENT fileGrp not found in METS"
 
         # Find first file and FLocat
-        file_elem = content_grp.find('{http://www.loc.gov/METS/}file')
+        file_elem = content_grp.find(f'{{{METS_NS}}}file')
         assert file_elem is not None
-        flocat = file_elem.find('{http://www.loc.gov/METS/}FLocat')
+        flocat = file_elem.find(f'{{{METS_NS}}}FLocat')
         assert flocat is not None
         href = flocat.get('{http://www.w3.org/1999/xlink}href')
         assert href == 'https://download.example/test1.txt'
@@ -583,7 +583,7 @@ class TestMETSSerializer:
 
     def test_namespace_constants(self):
         """Test that namespace constants are correct."""
-        assert METS_NS == "http://www.loc.gov/METS/"
+        assert METS_NS == "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
         assert XLINK_NS == "http://www.w3.org/1999/xlink"
 
         # Ensure METS namespace ends with /

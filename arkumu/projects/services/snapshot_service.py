@@ -704,8 +704,13 @@ class ProjectSnapshotService:
 
         objects_by_path: Dict[str, ProjectDigitalObject] = {}
         for obj in digital_objects:
-            key = obj.path or obj.storage_key or obj.access_url
-            if key:
+            keys = [obj.path, obj.storage_key, obj.access_url]
+            for key in keys:
+                if not key:
+                    continue
+                normalized = self._normalize_storage_key(key)
+                if normalized:
+                    objects_by_path.setdefault(normalized, obj)
                 objects_by_path.setdefault(key, obj)
 
         for file_obj in storage_files:
@@ -715,8 +720,11 @@ class ProjectSnapshotService:
                 getattr(file_obj, 'file_name', None),
             ]
             matched: Optional[ProjectDigitalObject] = None
-            for candidate in candidates:
-                if candidate and candidate in objects_by_path:
+            normalized_candidates = [self._normalize_storage_key(candidate) for candidate in candidates if candidate]
+            search_order = [c for c in normalized_candidates if c]
+            search_order.extend([c for c in candidates if c])
+            for candidate in search_order:
+                if candidate in objects_by_path:
                     matched = objects_by_path[candidate]
                     break
 
@@ -725,13 +733,21 @@ class ProjectSnapshotService:
                     (candidate for candidate in candidates if candidate),
                     None,
                 ) or ""
-                matched = ProjectDigitalObject(path=derived_path or getattr(file_obj, 's3_key', ""))
+                normalized_path = self._normalize_storage_key(derived_path) or self._normalize_storage_key(getattr(file_obj, 's3_key', None)) or derived_path
+                matched = ProjectDigitalObject(path=normalized_path or "")
                 digital_objects.append(matched)
                 normalized_key = matched.path or matched.storage_key or matched.access_url
                 if normalized_key:
                     objects_by_path.setdefault(normalized_key, matched)
 
-            matched.storage_key = getattr(file_obj, 's3_key', None) or matched.storage_key
+            raw_s3_key = getattr(file_obj, 's3_key', None)
+            normalized_s3_key = self._normalize_storage_key(raw_s3_key)
+            if normalized_s3_key:
+                matched.storage_key = normalized_s3_key
+                matched.path = normalized_s3_key
+                objects_by_path.setdefault(normalized_s3_key, matched)
+            elif raw_s3_key:
+                matched.storage_key = raw_s3_key
             matched.file_name = getattr(file_obj, 'file_name', None) or matched.file_name
             matched.content_type = getattr(file_obj, 'content_type', None) or matched.content_type
             matched.size_bytes = getattr(file_obj, 'file_size_bytes', None) or matched.size_bytes
@@ -754,6 +770,15 @@ class ProjectSnapshotService:
         if not edge:
             return None
         return edge.get('predicate_canonical') or edge.get('predicate_uri')
+
+    @staticmethod
+    def _normalize_storage_key(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = str(value).strip().replace('\\', '/').replace('//', '/')
+        if normalized.startswith('./'):
+            normalized = normalized[2:]
+        return normalized or None
 
     @staticmethod
     def _maybe_float(value: Optional[Any]) -> Optional[float]:

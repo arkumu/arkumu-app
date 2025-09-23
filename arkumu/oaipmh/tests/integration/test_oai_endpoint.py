@@ -9,6 +9,8 @@ import pytest
 from django.urls import reverse
 from urllib.parse import quote
 
+from arkumu.oaipmh import views
+
 
 @pytest.mark.django_db
 class TestOAIEndpoint:
@@ -76,7 +78,7 @@ class TestOAIEndpoint:
 
         # Check for METS format
         assert "<metadataPrefix>mets</metadataPrefix>" in content
-        assert "http://www.loc.gov/standards/mets/mets.xsd" in content
+        assert views.ROSETTA_METS_NS in content
 
     def test_list_metadata_formats_with_identifier(self, oai_client, sample_resources, xml_validator):
         """Test ListMetadataFormats with valid identifier parameter."""
@@ -505,7 +507,7 @@ class TestOAIEndpoint:
         # Parse and check for FLocat xlink:href
         root = ET.fromstring(response.content)
         # Find FLocat
-        flocats = root.findall('.//{http://www.loc.gov/METS/}FLocat')
+        flocats = root.findall(f'.//{{{views.ROSETTA_METS_NS}}}FLocat')
         assert any(
             f.get('{http://www.w3.org/1999/xlink}href') == 'https://download.example/test1.txt'
             for f in flocats

@@ -28,21 +28,23 @@ class OAICacheService(BaseCacheService):
         super().__init__('oai')
         self.graph_cache = GraphCacheService()
 
-    def get_cached_record(self, resource, metadata_prefix: str) -> Optional[Dict]:
+    def get_cached_record(self, resource, metadata_prefix: str, profile_version: str = "") -> Optional[Dict]:
         """Get cached record data if available."""
         cache_params = {
             'uri': resource.uri,
             'metadata_prefix': metadata_prefix,
-            'timestamp': int(resource.updated_at.timestamp())
+            'timestamp': int(resource.updated_at.timestamp()),
+            'profile_version': profile_version,
         }
         return self.get_cached('record', **cache_params)
 
-    def cache_record(self, resource, metadata_prefix: str, header_xml: str, metadata_xml: str):
+    def cache_record(self, resource, metadata_prefix: str, header_xml: str, metadata_xml: str, profile_version: str = ""):
         """Cache individual record data."""
         cache_params = {
             'uri': resource.uri,
             'metadata_prefix': metadata_prefix,
-            'timestamp': int(resource.updated_at.timestamp())
+            'timestamp': int(resource.updated_at.timestamp()),
+            'profile_version': profile_version,
         }
 
         cached_record = {

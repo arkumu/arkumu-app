@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
+from pathlib import Path
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
@@ -14,7 +16,7 @@ from django.db.models import Q
 
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.users.models import Organization
-from arkumu.projects import ProjectRecord
+from arkumu.projects import ProjectDigitalObject, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
 from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
 from .resumption import ResumptionTokenService
@@ -36,6 +38,7 @@ REPO_REPOSITORY_IDENTIFIER = "arkumu"
 ROSETTA_METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
 ROSETTA_DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
 ROSETTA_XLINK_NS = "http://www.w3.org/1999/xlink"
+ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
 
 # Initialize services
 resumption_service = ResumptionTokenService(page_size=100)
@@ -47,12 +50,14 @@ logger = logging.getLogger(__name__)
 
 def _get_cached_record(resource: Resource, metadata_prefix: str) -> Optional[Dict[str, Any]]:
     """Get cached OAI-PMH record if available."""
-    return oai_cache.get_cached_record(resource, metadata_prefix)
+    profile_version = ROSETTA_METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
+    return oai_cache.get_cached_record(resource, metadata_prefix, profile_version=profile_version)
 
 
 def _cache_record(resource: Resource, metadata_prefix: str, header_xml: str, metadata_xml: str):
     """Cache OAI-PMH record data."""
-    oai_cache.cache_record(resource, metadata_prefix, header_xml, metadata_xml)
+    profile_version = ROSETTA_METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
+    oai_cache.cache_record(resource, metadata_prefix, header_xml, metadata_xml, profile_version=profile_version)
 
 
 def _oai_envelope(request: HttpRequest) -> ET.Element:
@@ -66,8 +71,8 @@ def _oai_envelope(request: HttpRequest) -> ET.Element:
             "xmlns": "http://www.openarchives.org/OAI/2.0/",
             "xmlns:oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
             "xmlns:dc": "http://purl.org/dc/elements/1.1/",
-            "xmlns:mets": "http://www.loc.gov/METS/",
-            "xmlns:xlink": "http://www.w3.org/1999/xlink",
+            "xmlns:mets": ROSETTA_METS_NS,
+            "xmlns:xlink": ROSETTA_XLINK_NS,
             "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
             "xsi:schemaLocation": " ".join(
                 [
@@ -215,8 +220,8 @@ def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) ->
     # METS format for complete graphs
     mets_format = ET.SubElement(list_metadata_formats, "metadataFormat")
     ET.SubElement(mets_format, "metadataPrefix").text = "mets"
-    ET.SubElement(mets_format, "schema").text = "http://www.loc.gov/standards/mets/mets.xsd"
-    ET.SubElement(mets_format, "metadataNamespace").text = "http://www.loc.gov/METS/"
+    ET.SubElement(mets_format, "schema").text = ROSETTA_METS_NS
+    ET.SubElement(mets_format, "metadataNamespace").text = ROSETTA_METS_NS
 
     return oai
 
@@ -558,6 +563,82 @@ def _add_dc_value(
         entries.append(normalized)
 
 
+def _normalize_reference(value: Optional[str]) -> Optional[str]:
+    """Normalize filesystem-like references for Rosetta consumption."""
+    if not value:
+        return value
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if trimmed.startswith(('http://', 'https://')):
+        return trimmed
+    # Replace Windows separators and collapse duplicate slashes
+    normalized = trimmed.replace('\\', '/').strip()
+    while '//' in normalized:
+        normalized = normalized.replace('//', '/')
+    if normalized.startswith('./'):
+        normalized = normalized[2:]
+    normalized = normalized.lstrip('/')
+    return normalized or None
+
+
+def _guess_mime_type(obj: ProjectDigitalObject) -> Optional[str]:
+    """Derive a MIME type from explicit metadata or file extension."""
+    if obj.content_type:
+        return obj.content_type
+    candidates = [obj.file_name, obj.access_url, obj.path, obj.storage_key]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        guess, _ = mimetypes.guess_type(candidate)
+        if guess:
+            return guess
+    return None
+
+
+def _default_language_for_resource(resource: Resource, record: ProjectRecord) -> Optional[str]:
+    """Return a best-effort ISO-639-3 language code for the record."""
+    org_code = resource.organization.code.lower() if resource.organization and resource.organization.code else None
+    organization_defaults = {
+        'fuk': 'deu',
+        'khm': 'deu',
+        'rsh': 'deu',
+        'hmt': 'deu',
+        'det': 'deu',
+    }
+    return organization_defaults.get(org_code)
+
+
+def _rights_label_for_resource(resource: Resource) -> Optional[str]:
+    """Translate public access configuration to a human readable rights statement."""
+    mapping = {
+        PublicAccessLevel.PUBLIC: "Open Access",
+        PublicAccessLevel.RESTRICTED: "Restricted Access",
+        PublicAccessLevel.PRIVATE: "Internal Access Only",
+    }
+    level = getattr(resource, 'public_access_level', None)
+    if not level:
+        return None
+    return mapping.get(level)
+
+
+def _collect_collection_labels(resource: Resource, record: ProjectRecord) -> List[str]:
+    """Return descriptive collection strings suitable for dc:collection."""
+    labels: List[str] = []
+    if record.institution and record.institution.label:
+        labels.append(record.institution.label)
+    if record.institution_codes:
+        labels.extend(code.upper() for code in record.institution_codes if code)
+    org = getattr(resource, 'organization', None)
+    if org:
+        if org.name and org.name not in labels:
+            labels.append(org.name)
+        display_name = org.get_organization_type_display_name()
+        if display_name and display_name not in labels:
+            labels.append(display_name)
+    return labels
+
+
 def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> Dict[str, List[str]]:
     payload: Dict[str, List[str]] = {}
 
@@ -612,15 +693,39 @@ def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> 
     for code in record.institution_codes:
         _add_dc_value(payload, 'isPartOf', code.upper())
 
+    formats_before = set(payload.get('dc:format', []))
+
     for obj in record.digital_objects:
         display = obj.access_url or obj.storage_key or obj.path
-        _add_dc_value(payload, 'relation', display)
+        normalized_display = _normalize_reference(display) or display
+        if normalized_display:
+            _add_dc_value(payload, 'relation', normalized_display)
         if obj.file_name:
             _add_dc_value(payload, 'identifier', obj.file_name)
         if obj.storage_key:
             _add_dc_value(payload, 'identifier', obj.storage_key)
         if obj.content_type:
             _add_dc_value(payload, 'format', obj.content_type)
+
+    if not payload.get('dc:format'):
+        for obj in record.digital_objects:
+            guess = _guess_mime_type(obj)
+            if guess:
+                _add_dc_value(payload, 'format', guess)
+
+    if not payload.get('dc:language'):
+        language = _default_language_for_resource(resource, record)
+        if language:
+            _add_dc_value(payload, 'language', language)
+
+    if not payload.get('dc:rights'):
+        rights = _rights_label_for_resource(resource)
+        if rights:
+            _add_dc_value(payload, 'rights', rights)
+
+    if not payload.get('dc:collection'):
+        for label in _collect_collection_labels(resource, record):
+            _add_dc_value(payload, 'collection', label)
 
     return payload
 
@@ -711,13 +816,65 @@ def _build_mets_from_record(
     tech_xml = ET.SubElement(tech_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
     ET.SubElement(tech_xml, "dnx")
 
-    file_sec = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}fileSec")
-    struct_map = ET.SubElement(
-        mets_root,
-        f"{{{ROSETTA_METS_NS}}}structMap",
-        {"ID": "rep-struct", "TYPE": "LOGICAL"},
+    rights_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}rightsMD", {"ID": "ie-amd-rights"})
+    rights_wrap = ET.SubElement(
+        rights_md,
+        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
     )
-    struct_root = ET.SubElement(struct_map, f"{{{ROSETTA_METS_NS}}}div")
+    rights_xml = ET.SubElement(rights_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    rights_dnx = ET.SubElement(rights_xml, "dnx")
+    ET.SubElement(rights_dnx, "section", {"id": "accessRightsPolicy"})
+
+    source_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}sourceMD", {"ID": "ie-amd-source-OTHER"})
+    source_wrap = ET.SubElement(
+        source_md,
+        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"},
+    )
+    source_xml = ET.SubElement(source_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    epicur = ET.SubElement(
+        source_xml,
+        "epicur",
+        {
+            "xsi:schemaLocation": "urn:nbn:de:1111-2004033116 http://www.persistent-identifier.de/xepicur/version1.0/xepicur.xsd",
+        },
+    )
+    administrative = ET.SubElement(epicur, "administrative_data")
+    delivery = ET.SubElement(administrative, "delivery")
+    ET.SubElement(delivery, "update_status", {"type": "urn_new"})
+    epicur_record = ET.SubElement(epicur, "record")
+
+    digiprov_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}digiprovMD", {"ID": "ie-amd-digiprov"})
+    digiprov_wrap = ET.SubElement(
+        digiprov_md,
+        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
+    )
+    digiprov_xml = ET.SubElement(digiprov_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    ET.SubElement(digiprov_xml, "dnx")
+
+    file_sec = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}fileSec")
+
+    def _append_epicur_resource(obj: ProjectDigitalObject, *, role: str = "secondary", type_attr: Optional[str] = None, target: Optional[str] = None) -> None:
+        href = obj.access_url or obj.path or obj.storage_key
+        if not href:
+            return
+        if not href.startswith(('http://', 'https://')):
+            normalized = _normalize_reference(href)
+            if normalized:
+                href = normalized
+        resource_elem = ET.SubElement(epicur_record, "resource")
+        identifier_attrs = {"scheme": "url", "origin": "original"}
+        if type_attr:
+            identifier_attrs["type"] = type_attr
+        if role != "secondary":
+            identifier_attrs["role"] = role
+        if target:
+            identifier_attrs["target"] = target
+        ET.SubElement(resource_elem, "identifier", identifier_attrs).text = href
+        if obj.content_type:
+            ET.SubElement(resource_elem, "format", {"scheme": "imt"}).text = obj.content_type
 
     digital_objects = record.digital_objects or []
     for index, obj in enumerate(digital_objects, start=1):
@@ -735,8 +892,13 @@ def _build_mets_from_record(
         rep_dnx = ET.SubElement(rep_xml, "dnx")
         section = ET.SubElement(rep_dnx, "section", {"id": "generalRepCharacteristics"})
         rec = ET.SubElement(section, "record")
-        ET.SubElement(rec, "key", {"id": "preservationType"}).text = "PRESERVATION_MASTER"
+        preservation_type = "PRESERVATION_MASTER" if index == 1 else "MODIFIED_MASTER"
+        ET.SubElement(rec, "key", {"id": "preservationType"}).text = preservation_type
         ET.SubElement(rec, "key", {"id": "usageType"}).text = "VIEW"
+
+        if index == 1:
+            _append_epicur_resource(obj, role="primary", type_attr="frontpage")
+        _append_epicur_resource(obj, target="transfer")
 
         file_grp = ET.SubElement(
             file_sec,
@@ -760,14 +922,17 @@ def _build_mets_from_record(
         file_elem = ET.SubElement(file_grp, f"{{{ROSETTA_METS_NS}}}file", file_attrs)
         href = obj.access_url or obj.storage_key or obj.path
         if href:
-            loctype = "URL" if href.startswith(('http://', 'https://')) else "OTHER"
+            is_url = href.startswith(('http://', 'https://'))
+            if not is_url:
+                normalized = _normalize_reference(href)
+                if normalized:
+                    href = normalized
+            loctype = "URL" if is_url else "URL"
             flocat_attrs = {
                 "LOCTYPE": loctype,
                 f"{{{ROSETTA_XLINK_NS}}}href": href,
                 f"{{{ROSETTA_XLINK_NS}}}type": "simple",
             }
-            if loctype == "OTHER":
-                flocat_attrs["OTHERLOCTYPE"] = "FILESYSTEM"
             ET.SubElement(file_elem, f"{{{ROSETTA_METS_NS}}}FLocat", flocat_attrs)
 
         file_amd = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}amdSec", {"ID": f"{file_id}-amd"})
@@ -780,7 +945,16 @@ def _build_mets_from_record(
         file_xml = ET.SubElement(file_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
         ET.SubElement(file_xml, "dnx")
 
-        label = obj.file_name or obj.path or obj.storage_key or f"Digital Object {index}"
+        label_source = obj.file_name or obj.storage_key or obj.path or f"Digital Object {index}"
+        label_normalized = _normalize_reference(label_source)
+        label = label_normalized or label_source
+
+        struct_map = ET.SubElement(
+            mets_root,
+            f"{{{ROSETTA_METS_NS}}}structMap",
+            {"ID": f"{rep_id}-1", "TYPE": "LOGICAL"},
+        )
+        struct_root = ET.SubElement(struct_map, f"{{{ROSETTA_METS_NS}}}div")
         div = ET.SubElement(
             struct_root,
             f"{{{ROSETTA_METS_NS}}}div",

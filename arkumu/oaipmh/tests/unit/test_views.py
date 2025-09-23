@@ -15,6 +15,7 @@ from django.http import HttpRequest
 from django.test import RequestFactory
 
 from arkumu.oaipmh import views
+from arkumu.oaipmh.views import ROSETTA_METS_NS, ROSETTA_DNX_NS
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.projects import (
     ProjectRecord,
@@ -46,6 +47,16 @@ class TestOAIViewFunctions:
                     content_type="text/plain",
                     size_bytes=123,
                     access_url="https://download.example/test1.txt",
+                )
+            )
+            digital_objects.append(
+                ProjectDigitalObject(
+                    path="org/test2.pdf",
+                    storage_key="org/test2.pdf",
+                    file_name="test2.pdf",
+                    content_type="application/pdf",
+                    size_bytes=456,
+                    access_url="https://download.example/test2.pdf",
                 )
             )
 
@@ -179,8 +190,8 @@ class TestOAIViewFunctions:
         assert dc_format.find("metadataNamespace").text == "http://www.openarchives.org/OAI/2.0/oai_dc/"
 
         assert mets_format is not None
-        assert mets_format.find("schema").text == "http://www.loc.gov/standards/mets/mets.xsd"
-        assert mets_format.find("metadataNamespace").text == "http://www.loc.gov/METS/"
+        assert mets_format.find("schema").text == views.ROSETTA_METS_NS
+        assert mets_format.find("metadataNamespace").text == views.ROSETTA_METS_NS
 
     # ============================================================================
     # LIST SETS FUNCTION TESTS
@@ -426,6 +437,40 @@ class TestOAIViewFunctions:
         # Should contain METS element
         mets_elements = metadata.findall(".//{http://www.exlibrisgroup.com/xsd/dps/rosettaMets}mets")
         assert len(mets_elements) > 0
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_rosetta_mets_structure(self, mock_get_record, sample_resources):
+        """Ensure Rosetta METS output matches expected structural profile."""
+        resource = sample_resources[0]
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{ROSETTA_METS_NS}}}mets")
+        assert mets_root is not None
+
+        # Intellectual entity ADM sections
+        rights_md = mets_root.find(f".//{{{ROSETTA_METS_NS}}}rightsMD[@ID='ie-amd-rights']")
+        assert rights_md is not None
+        source_md = mets_root.find(f".//{{{ROSETTA_METS_NS}}}sourceMD[@ID='ie-amd-source-OTHER']")
+        assert source_md is not None
+        epicur = source_md.find(f".//{{{ROSETTA_DNX_NS}}}epicur")
+        assert epicur is not None
+
+        resources = epicur.findall(f".//{{{ROSETTA_DNX_NS}}}resource")
+        assert len(resources) >= len(record.digital_objects)
+
+        # File groups and structural maps should mirror digital objects
+        file_grps = mets_root.findall(f".//{{{ROSETTA_METS_NS}}}fileGrp")
+        assert len(file_grps) == len(record.digital_objects)
+
+        struct_maps = mets_root.findall(f".//{{{ROSETTA_METS_NS}}}structMap")
+        assert len(struct_maps) == len(record.digital_objects)
+
+        # Each structMap should point to a file
+        for struct_map in struct_maps:
+            fptr = struct_map.find(f".//{{{ROSETTA_METS_NS}}}fptr")
+            assert fptr is not None
 
     def test_build_metadata_element_no_organization(self):
         """Test _build_metadata_element with resource without organization."""
