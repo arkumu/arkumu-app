@@ -1,7 +1,7 @@
 """Metadata services exports."""
 
-from .wikidata_entity_cache_service import WikidataEntityCacheService
+from .external_sources_entity_cache_service import ExternalSourcesEntityCacheService
 
 __all__ = [
-    "WikidataEntityCacheService",
+    "ExternalSourcesEntityCacheService",
 ]

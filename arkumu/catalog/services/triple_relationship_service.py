@@ -9,7 +9,7 @@ import uuid
 from django.db.models import Q
 
 from arkumu.metadata.models.triples import Triple
-from arkumu.metadata.models import Resource, ResourceType, WikidataEntity
+from arkumu.metadata.models import Resource, ResourceType, ExternalSourcesEntity
 from arkumu.users.models import Organization
 
 
@@ -261,8 +261,8 @@ class TripleRelationshipService:
                         location_names: List[str] = []
 
                         cached_entities = {
-                            entity.wikidata_id: entity
-                            for entity in WikidataEntity.objects.filter(wikidata_id__in=[loc for loc in location_ids if loc.startswith('Q')])
+                            entity.data_id: entity
+                            for entity in ExternalSourcesEntity.objects.filter(data_id__in=[loc for loc in location_ids if loc.startswith('Q')])
                         }
 
                         for location_id in location_ids:

@@ -1,4 +1,4 @@
-"""Management command to populate the Wikidata entity cache."""
+"""Management command to populate the ExternalSources entity cache."""
 
 from __future__ import annotations
 
@@ -7,17 +7,22 @@ from typing import Iterable, List, Set
 
 from django.core.management.base import BaseCommand, CommandError
 
-from arkumu.metadata.services import WikidataEntityCacheService
+from arkumu.metadata.services import ExternalSourcesEntityCacheService
 
 
 class Command(BaseCommand):
-    help = "Fetch Wikidata metadata for the supplied identifiers and cache them locally."
+    help = "Fetch metadata from External Sources for the supplied identifiers and cache them locally."
 
     def add_arguments(self, parser) -> None:
         parser.add_argument(
             "--ids",
             nargs="*",
-            help="Wikidata identifiers (e.g. Q42 Q64). Comma separated lists are also accepted.",
+            help="Identifiers (e.g. Q42 Q64). Comma separated lists are also accepted.",
+        )
+        parser.add_argument(
+            "--properties",
+            nargs="*",
+            help="Properties (e.g. P42 P64). Comma separated lists are also accepted.",
         )
         parser.add_argument(
             "--file",
@@ -28,26 +33,24 @@ class Command(BaseCommand):
             action="store_true",
             help="Force refresh even if the entity is already cached.",
         )
-        parser.add_argument(
-            "--language",
-            action="append",
-            dest="languages",
-            help="Additional language codes to request (default: de, en). Can be specified multiple times.",
-        )
 
     def handle(self, *args, **options):
-        wikidata_ids = self._collect_ids(options.get("ids"), options.get("file"))
-        if not wikidata_ids:
-            raise CommandError("No Wikidata identifiers supplied.")
+        data_ids = self._collect_ids(options.get("ids"), options.get("file"))
+        property_ids = [property_id.strip() for property_id in options.get("properties").split(',')]
+        if not data_ids:
+            raise CommandError("No identifiers supplied.")
+        if not property_ids:
+            raise CommandError("No properties supplied")
 
-        languages = options.get("languages") or None
-        service = WikidataEntityCacheService(languages=languages)
+        service = ExternalSourcesEntityCacheService()
 
         self.stdout.write(
-            f"Caching {len(wikidata_ids)} Wikidata entities (force={options['force']})...",
+            f"Caching {len(data_ids)} Wikidata entities (force={options['force']})...",
         )
         updated = service.ensure_cached(
-            wikidata_ids,
+            data_ids,
+            property_ids,
+            ExternalSourcesEntityCacheService.Source.WD,
             force_refresh=options["force"],
         )
 
