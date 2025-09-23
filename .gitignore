@@ -331,3 +331,8 @@ AGENTS.md
 .claude/
 .cursor/
 
+# Markdown tracking policy: keep only README variants under version control
+*.md
+!README.md
+!*/README.md
+*.xml
