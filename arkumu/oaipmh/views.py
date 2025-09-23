@@ -14,15 +14,17 @@ import xml.etree.ElementTree as ET
 
 from django.db.models import Q
 
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.users.models import Organization
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
+from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
 from .authentication import oai_authentication_required
+import rdflib
 
 
 # Minimal repository config (can be moved to settings)
@@ -38,6 +40,9 @@ REPO_REPOSITORY_IDENTIFIER = "arkumu"
 ROSETTA_METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
 ROSETTA_DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
 ROSETTA_XLINK_NS = "http://www.w3.org/1999/xlink"
+RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
+SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets", "rdf"]
 ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
 
 # Initialize services
@@ -223,6 +228,12 @@ def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) ->
     ET.SubElement(mets_format, "schema").text = ROSETTA_METS_NS
     ET.SubElement(mets_format, "metadataNamespace").text = ROSETTA_METS_NS
 
+    # RDF/XML format for canonical graph export
+    rdf_format = ET.SubElement(list_metadata_formats, "metadataFormat")
+    ET.SubElement(rdf_format, "metadataPrefix").text = "rdf"
+    ET.SubElement(rdf_format, "schema").text = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    ET.SubElement(rdf_format, "metadataNamespace").text = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
     return oai
 
 
@@ -262,8 +273,8 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
     has_resumption_param = "resumptionToken" in request.GET
 
     # Validate metadata format
-    if not has_resumption_param and (not metadata_prefix or metadata_prefix not in ["oai_dc", "mets"]):
-        return _error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported")
+    if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
+        return _error(oai, "cannotDisseminateFormat", "Only oai_dc, mets, and rdf are supported")
 
     # Validate date parameters
     if not has_resumption_param:
@@ -969,6 +980,83 @@ def _build_mets_from_record(
     return mets_root
 
 
+def _build_rdf_from_resource(resource: Resource) -> ET.Element:
+    """Generate RDF/XML metadata element for a resource graph."""
+
+    org_code = resource.organization.code if resource.organization else None
+    graph_service = CanonicalGraphService(org_code=org_code)
+    graph_data = graph_service.get_entity_graph(
+        resource_uri=resource.uri,
+        expand_neighbors=True,
+        depth=2,
+        restrict_to_org=bool(org_code),
+    )
+
+    rdf_graph = rdflib.Graph()
+    nodes = graph_data.get("nodes", {})
+
+    def _node_info(node_id: str) -> Optional[Dict[str, Any]]:
+        return nodes.get(node_id)
+
+    def _node_uri(node_id: str) -> Optional[str]:
+        node = _node_info(node_id)
+        return node.get("uri") if node else None
+
+    def _node_type(node: Dict[str, Any]) -> str:
+        node_type = node.get("resource_type")
+        if isinstance(node_type, ResourceType):
+            return node_type.value
+        return str(node_type).upper() if node_type else ""
+
+    def _is_literal(node: Dict[str, Any]) -> bool:
+        return _node_type(node) == ResourceType.LITERAL.value
+
+    def _is_data_node(node: Dict[str, Any]) -> bool:
+        return _node_type(node) in {ResourceType.IRI.value, ResourceType.ENTITY.value}
+
+    for edge in graph_data.get("edges", []):
+        subj_node = _node_info(edge.get("subject_id"))
+        obj_node = _node_info(edge.get("object_id"))
+        pred_uri = edge.get("predicate_uri")
+        pred_canonical = edge.get("predicate_canonical") or pred_uri
+
+        if not subj_node or not obj_node or not pred_uri:
+            continue
+
+        if pred_canonical and "defines" in pred_canonical.lower():
+            continue
+
+        if not _is_data_node(subj_node):
+            continue
+
+        subj_uri = subj_node.get("uri")
+        if not subj_uri:
+            continue
+
+        subject_ref = rdflib.URIRef(subj_uri)
+        predicate_ref = rdflib.URIRef(pred_uri)
+
+        if _is_literal(obj_node):
+            literal_value = obj_node.get("value") or ""
+            rdf_graph.add((subject_ref, predicate_ref, rdflib.Literal(literal_value)))
+        else:
+            if not _is_data_node(obj_node):
+                continue
+            obj_uri = obj_node.get("uri")
+            if not obj_uri:
+                continue
+            rdf_graph.add((subject_ref, predicate_ref, rdflib.URIRef(obj_uri)))
+
+    rdf_graph.bind("rdf", rdflib.Namespace(RDF_NS))
+    rdf_graph.bind("rdfs", rdflib.Namespace(RDFS_NS))
+    rdf_graph.bind("dcterms", rdflib.Namespace(DCTERMS_NS))
+    rdf_graph.bind("dc", rdflib.Namespace(DC_NS))
+
+    rdf_xml = rdf_graph.serialize(format="application/rdf+xml")
+    rdf_element = ET.fromstring(rdf_xml.encode("utf-8"))
+    return rdf_element
+
+
 def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Element:
     """Build metadata element for different formats."""
     metadata = ET.Element("metadata")
@@ -985,6 +1073,9 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         dc_payload = _build_dc_payload_from_record(record, resource)
         mets_root = _build_mets_from_record(record, resource, dc_payload)
         metadata.append(mets_root)
+    elif metadata_prefix == "rdf":
+        rdf_element = _build_rdf_from_resource(resource)
+        metadata.append(rdf_element)
 
     return metadata
 
@@ -1054,8 +1145,8 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
     has_resumption_param = "resumptionToken" in request.GET
 
     # Validate metadata format
-    if not has_resumption_param and (not metadata_prefix or metadata_prefix not in ["oai_dc", "mets"]):
-        return _error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported")
+    if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
+        return _error(oai, "cannotDisseminateFormat", "Only oai_dc, mets, and rdf are supported")
 
     # Validate date parameters
     if not has_resumption_param:
@@ -1282,8 +1373,8 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             metadata_prefix = request.GET.get("metadataPrefix")
             if not identifier or not metadata_prefix:
                 return _xml_response(_error(oai, "badArgument", "identifier and metadataPrefix are required"))
-            if metadata_prefix not in ["oai_dc", "mets"]:
-                return _xml_response(_error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported"))
+            if metadata_prefix not in SUPPORTED_METADATA_FORMATS:
+                return _xml_response(_error(oai, "cannotDisseminateFormat", "Only oai_dc, mets, and rdf are supported"))
 
             # Resolve Arkumu resource by identifier
             resource_uri = _parse_identifier(identifier)
