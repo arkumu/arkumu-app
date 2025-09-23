@@ -331,3 +331,10 @@ AGENTS.md
 .claude/
 .cursor/
 
+
+# Markdown tracking policy
+*.md
+!README.md
+!*/README.md
+# XML exports and samples
+*.xml
