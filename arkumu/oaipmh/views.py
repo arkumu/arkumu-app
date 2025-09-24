@@ -656,22 +656,8 @@ def _add_dc_value(
 
 
 def _normalize_reference(value: Optional[str]) -> Optional[str]:
-    """Normalize filesystem-like references for Rosetta consumption."""
-    if not value:
-        return value
-    trimmed = value.strip()
-    if not trimmed:
-        return None
-    if trimmed.startswith(('http://', 'https://')):
-        return trimmed
-    # Replace Windows separators and collapse duplicate slashes
-    normalized = trimmed.replace('\\', '/').strip()
-    while '//' in normalized:
-        normalized = normalized.replace('//', '/')
-    if normalized.startswith('./'):
-        normalized = normalized[2:]
-    normalized = normalized.lstrip('/')
-    return normalized or None
+    """Return the reference as-is; S3 keys already encode the desired path."""
+    return value
 
 
 def _guess_mime_type(obj: ProjectDigitalObject) -> Optional[str]:
@@ -787,23 +773,20 @@ def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> 
 
     formats_before = set(payload.get('dc:format', []))
 
-    for obj in record.digital_objects:
-        display = obj.access_url or obj.storage_key or obj.path
-        normalized_display = _normalize_reference(display) or display
-        if normalized_display:
-            _add_dc_value(payload, 'relation', normalized_display)
-        if obj.file_name:
-            _add_dc_value(payload, 'identifier', obj.file_name)
-        if obj.storage_key:
-            _add_dc_value(payload, 'identifier', obj.storage_key)
-        if obj.content_type:
-            _add_dc_value(payload, 'format', obj.content_type)
-
-    if not payload.get('dc:format'):
+    if record.digital_objects:
+        formats_added: set[str] = set(payload.get('dc:format', []))
         for obj in record.digital_objects:
-            guess = _guess_mime_type(obj)
-            if guess:
-                _add_dc_value(payload, 'format', guess)
+            if obj.content_type:
+                if obj.content_type not in formats_added:
+                    _add_dc_value(payload, 'format', obj.content_type)
+                    formats_added.add(obj.content_type)
+
+        if not payload.get('dc:format'):
+            for obj in record.digital_objects:
+                guess = _guess_mime_type(obj)
+                if guess and guess not in formats_added:
+                    _add_dc_value(payload, 'format', guess)
+                    formats_added.add(guess)
 
     if not payload.get('dc:language'):
         language = _default_language_for_resource(resource, record)

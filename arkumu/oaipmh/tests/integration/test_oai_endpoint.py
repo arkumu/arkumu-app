@@ -607,8 +607,8 @@ class TestOAIEndpoint:
         assert code == "idDoesNotExist"
 
     @pytest.mark.django_db
-    def test_get_record_dc_includes_file_relations(self, oai_client, sample_resources, mock_canonical_graph_service):
-        """GetRecord oai_dc should include dc:relation URLs when files exist."""
+    def test_get_record_dc_excludes_file_paths(self, oai_client, sample_resources, mock_canonical_graph_service):
+        """GetRecord oai_dc should not list per-file identifiers/relations."""
         from arkumu.storage.models.s3_file_objects import S3FileObject
         from unittest.mock import patch, Mock
         resource = sample_resources[0]
@@ -660,8 +660,9 @@ class TestOAIEndpoint:
 
         assert response.status_code == 200
         content = response.content.decode()
-        # Expect relation URL present
-        assert 'https://download.example/test1.txt' in content
+        assert 'https://download.example/test1.txt' not in content
+        assert 'org/test1.txt' not in content
+        assert '<dc:format>text/plain</dc:format>' in content
 
     @pytest.mark.django_db
     def test_get_record_mets_includes_flocat_urls(self, oai_client, sample_resources):

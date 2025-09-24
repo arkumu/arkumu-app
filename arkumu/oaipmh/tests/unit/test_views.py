@@ -146,8 +146,8 @@ class TestOAIViewFunctions:
 
     @pytest.mark.django_db
     @patch('arkumu.oaipmh.views._get_snapshot_record')
-    def test_dc_includes_file_relations_when_present(self, mock_get_record, sample_resources):
-        """_build_metadata_element for oai_dc should include dc:relation URLs when files exist."""
+    def test_dc_excludes_file_relations(self, mock_get_record, sample_resources):
+        """_build_metadata_element for oai_dc should not emit per-file relations/identifiers."""
         resource = sample_resources[0]
         record = self._build_snapshot_record(resource, include_files=True)
         mock_get_record.return_value = record
@@ -157,7 +157,9 @@ class TestOAIViewFunctions:
         dc_root = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_root is not None
         relations = dc_root.findall("{http://purl.org/dc/elements/1.1/}relation")
-        assert any(e.text == 'https://download.example/test1.txt' for e in relations)
+        assert relations == []
+        formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
+        assert any(elem.text == 'text/plain' for elem in formats)
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS
@@ -402,7 +404,9 @@ class TestOAIViewFunctions:
         assert record.title in payload["dc:title"]
         assert "dc:identifier" in payload
         assert resource.uri in payload["dc:identifier"]
-        assert any(value.startswith('https://download.example') for value in payload.get("dc:relation", []))
+        assert not payload.get("dc:relation")
+        assert 'dc:format' in payload
+        assert 'text/plain' in payload['dc:format']
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
