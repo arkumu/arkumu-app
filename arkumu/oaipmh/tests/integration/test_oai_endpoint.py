@@ -6,9 +6,11 @@ following the OAI-PMH 2.0 specification.
 """
 
 import pytest
-from django.urls import reverse
-from urllib.parse import quote
 import xml.etree.ElementTree as ET
+from django.urls import reverse
+from django.utils import timezone
+from urllib.parse import quote
+from arkumu.projects.models import ProjectRecord, ProjectDigitalObject
 
 from arkumu.oaipmh import views
 
@@ -40,7 +42,7 @@ class TestOAIEndpoint:
         # baseURL should be absolute
         assert "<baseURL>http://testserver/oai/</baseURL>" in content
         assert "<protocolVersion>2.0</protocolVersion>" in content
-        assert "<adminEmail>admin@example.org</adminEmail>" in content
+        assert "<adminEmail>mondaca@uni-koeln.de</adminEmail>" in content
         assert "<earliestDatestamp>1970-01-01T00:00:00Z</earliestDatestamp>" in content
         assert "<deletedRecord>no</deletedRecord>" in content
         assert "<granularity>YYYY-MM-DDThh:mm:ssZ</granularity>" in content
@@ -313,7 +315,7 @@ class TestOAIEndpoint:
         assert "<ListRecords>" in content
         assert "<record>" in content
         assert "<header>" in content
-        assert "<metadata>" in content
+        assert "<metadata" in content
 
         # Check Dublin Core metadata structure
         assert 'xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"' in content
@@ -342,6 +344,42 @@ class TestOAIEndpoint:
         assert code == "badArgument"
         assert "metadataPrefix is required" in message
 
+    def test_list_records_inclusive_datestamp_range(self, oai_client, sample_resources, xml_validator, mock_canonical_graph_service):
+        """Ensure from/until datestamps include records within the same second."""
+        resource = sample_resources[0]
+        target_ts = timezone.now().replace(microsecond=654321)
+        resource.__class__.objects.filter(pk=resource.pk).update(updated_at=target_ts)
+
+        datestamp = target_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+        identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
+
+        response = oai_client.get(self.oai_url, {
+            "verb": "ListRecords",
+            "metadataPrefix": "oai_dc",
+            "from": datestamp,
+            "until": datestamp
+        })
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert '<error code="noRecordsMatch"' not in content
+        assert identifier in content
+        assert xml_validator.validate_oai_response(content)
+
+    def test_list_records_granularity_mismatch(self, oai_client, xml_validator):
+        """Mixed granularity between from/until should raise badArgument."""
+        response = oai_client.get(self.oai_url, {
+            "verb": "ListRecords",
+            "metadataPrefix": "oai_dc",
+            "from": "2023-01-01",
+            "until": "2023-01-02T00:00:00Z"
+        })
+
+        assert response.status_code == 200
+        code, message = xml_validator.extract_error(response.content.decode())
+        assert code == "badArgument"
+        assert "same granularity" in message
+
     # ============================================================================
     # GETRECORD VERB TESTS
     # ============================================================================
@@ -364,7 +402,7 @@ class TestOAIEndpoint:
         assert "<GetRecord>" in content
         assert "<record>" in content
         assert "<header>" in content
-        assert "<metadata>" in content
+        assert "<metadata" in content
         assert identifier in content
 
     def test_get_record_mets_format(self, oai_client, sample_resources, xml_validator, mock_canonical_graph_service):
@@ -380,6 +418,28 @@ class TestOAIEndpoint:
 
         assert response.status_code == 200
         assert xml_validator.validate_oai_response(response.content.decode())
+
+    def test_post_identify_supported(self, oai_client):
+        """The endpoint should accept POST Identify requests without CSRF errors."""
+        response = oai_client.post(self.oai_url, {"verb": "Identify"})
+
+        assert response.status_code == 200
+        assert "<Identify>" in response.content.decode()
+
+    def test_post_get_record_supported(self, oai_client, sample_resources, xml_validator, mock_canonical_graph_service):
+        """POST requests should work for GetRecord as well."""
+        resource = sample_resources[0]
+        identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
+
+        response = oai_client.post(self.oai_url, {
+            "verb": "GetRecord",
+            "identifier": identifier,
+            "metadataPrefix": "oai_dc"
+        })
+
+        assert response.status_code == 200
+        assert xml_validator.validate_oai_response(response.content.decode())
+        assert identifier in response.content.decode()
 
     def test_get_record_missing_identifier(self, oai_client, xml_validator):
         """Test GetRecord without required identifier."""
@@ -451,13 +511,32 @@ class TestOAIEndpoint:
         )
 
         # Patch export service used in views
-        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls:
+        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls, \
+             patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
+             patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:
             mock_export = Mock()
             mock_export.prepare_file_for_harvest.return_value = {
                 'access_method': 'presigned_url',
                 'url': 'https://download.example/test1.txt'
             }
             mock_export_cls.return_value = mock_export
+
+            mock_oai_cache.get_cached_record.return_value = None
+            mock_oai_cache.get_cached_page.return_value = None
+
+            mock_record = ProjectRecord(
+                subject_id=resource.uri,
+                uri=resource.uri,
+                digital_objects=[
+                    ProjectDigitalObject(
+                        path='org/test1.txt',
+                        access_url='https://download.example/test1.txt',
+                        content_type='text/plain',
+                    )
+                ],
+            )
+
+            mock_snapshot_service.get_record_by_uri.return_value = mock_record
 
             identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
             response = oai_client.get(
@@ -490,13 +569,32 @@ class TestOAIEndpoint:
         )
 
         # Patch export service used in METSSerializer
-        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls:
+        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls, \
+             patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
+             patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:
             mock_export = Mock()
             mock_export.prepare_file_for_harvest.return_value = {
                 'access_method': 'presigned_url',
                 'url': 'https://download.example/test1.txt'
             }
             mock_export_cls.return_value = mock_export
+
+            mock_oai_cache.get_cached_record.return_value = None
+            mock_oai_cache.get_cached_page.return_value = None
+
+            mock_record = ProjectRecord(
+                subject_id=resource.uri,
+                uri=resource.uri,
+                digital_objects=[
+                    ProjectDigitalObject(
+                        path='org/test1.txt',
+                        access_url='https://download.example/test1.txt',
+                        content_type='text/plain',
+                    )
+                ],
+            )
+
+            mock_snapshot_service.get_record_by_uri.return_value = mock_record
 
             identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
             response = oai_client.get(

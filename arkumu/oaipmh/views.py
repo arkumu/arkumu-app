@@ -4,12 +4,13 @@ import logging
 import mimetypes
 import re
 from pathlib import Path
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone, timedelta
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 from django.http import HttpRequest, HttpResponse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 import xml.etree.ElementTree as ET
 
@@ -252,14 +253,14 @@ def _list_sets(oai: ET.Element) -> ET.Element:
     return oai
 
 
-def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
+def _list_identifiers(oai: ET.Element, params) -> ET.Element:
     """Implement ListIdentifiers verb with pagination."""
-    metadata_prefix = request.GET.get("metadataPrefix")
-    set_spec = request.GET.get("set")
-    from_date = request.GET.get("from")
-    until_date = request.GET.get("until")
-    resumption_token = request.GET.get("resumptionToken")
-    has_resumption_param = "resumptionToken" in request.GET
+    metadata_prefix = params.get("metadataPrefix")
+    set_spec = params.get("set")
+    from_date = params.get("from")
+    until_date = params.get("until")
+    resumption_token = params.get("resumptionToken")
+    has_resumption_param = "resumptionToken" in params
 
     # Validate metadata format
     if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
@@ -277,12 +278,16 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
             if error_msg:
                 return _error(oai, "badArgument", f"Invalid 'until' parameter: {error_msg}")
 
-        # Validate date range
         if from_date and until_date:
+            from_has_time = 'T' in from_date
+            until_has_time = 'T' in until_date
+            if from_has_time != until_has_time:
+                return _error(oai, "badArgument", "'from' and 'until' must have the same granularity")
+
             try:
-                from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')) if 'T' in from_date else datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
-                until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00')) if 'T' in until_date else datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
-                if from_dt > until_dt:
+                from_dt = _parse_from_datestamp(from_date)
+                until_dt = _parse_until_datestamp(until_date)
+                if from_dt >= until_dt:
                     return _error(oai, "badArgument", "'from' date must be earlier than 'until' date")
             except ValueError:
                 pass  # Already validated above
@@ -290,7 +295,7 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
     # Handle resumption token
     offset = 0
     if has_resumption_param:
-        if not resumption_token.strip():
+        if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
 
         is_valid, token_data, error_msg = resumption_service.parse_token(resumption_token)
@@ -413,6 +418,23 @@ def _parse_identifier(identifier: str) -> str:
     return identifier
 
 
+def _parse_from_datestamp(date_str: str) -> datetime:
+    """Parse a 'from' datestamp into an inclusive datetime."""
+    if 'T' in date_str:
+        return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+    dt = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
+    return dt
+
+
+def _parse_until_datestamp(date_str: str) -> datetime:
+    """Parse an 'until' datestamp and return an exclusive upper bound."""
+    if 'T' in date_str:
+        base = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        return base + timedelta(seconds=1)
+    base = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
+    return base + timedelta(days=1)
+
+
 def _get_resources_queryset(
     set_spec: Optional[str] = None,
     from_date: Optional[str] = None,
@@ -448,25 +470,15 @@ def _get_resources_queryset(
     # Temporal filtering with proper OAI-PMH date validation
     if from_date:
         try:
-            # Support both YYYY-MM-DD and YYYY-MM-DDThh:mm:ssZ formats
-            if 'T' in from_date:
-                from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-            else:
-                from_dt = datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
+            from_dt = _parse_from_datestamp(from_date)
             queryset = queryset.filter(updated_at__gte=from_dt)
         except ValueError:
             pass  # Invalid date format, ignore
 
     if until_date:
         try:
-            # Support both YYYY-MM-DD and YYYY-MM-DDThh:mm:ssZ formats
-            if 'T' in until_date:
-                until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00'))
-            else:
-                until_dt = datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
-                # For date-only format, include the entire day
-                until_dt = until_dt.replace(hour=23, minute=59, second=59)
-            queryset = queryset.filter(updated_at__lte=until_dt)
+            until_dt = _parse_until_datestamp(until_date)
+            queryset = queryset.filter(updated_at__lt=until_dt)
         except ValueError:
             pass  # Invalid date format, ignore
 
@@ -1204,14 +1216,14 @@ def _mint_arkumu_pid(resource: Resource) -> Optional[str]:
         return None
 
 
-def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
+def _list_records(oai: ET.Element, params) -> ET.Element:
     """Implement ListRecords verb with complete metadata and pagination."""
-    metadata_prefix = request.GET.get("metadataPrefix")
-    set_spec = request.GET.get("set")
-    from_date = request.GET.get("from")
-    until_date = request.GET.get("until")
-    resumption_token = request.GET.get("resumptionToken")
-    has_resumption_param = "resumptionToken" in request.GET
+    metadata_prefix = params.get("metadataPrefix")
+    set_spec = params.get("set")
+    from_date = params.get("from")
+    until_date = params.get("until")
+    resumption_token = params.get("resumptionToken")
+    has_resumption_param = "resumptionToken" in params
 
     # Validate metadata format
     if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
@@ -1229,12 +1241,16 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
             if error_msg:
                 return _error(oai, "badArgument", f"Invalid 'until' parameter: {error_msg}")
 
-        # Validate date range
         if from_date and until_date:
+            from_has_time = 'T' in from_date
+            until_has_time = 'T' in until_date
+            if from_has_time != until_has_time:
+                return _error(oai, "badArgument", "'from' and 'until' must have the same granularity")
+
             try:
-                from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')) if 'T' in from_date else datetime.strptime(from_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
-                until_dt = datetime.fromisoformat(until_date.replace('Z', '+00:00')) if 'T' in until_date else datetime.strptime(until_date, '%Y-%m-%d').replace(tzinfo=dt_timezone.utc)
-                if from_dt > until_dt:
+                from_dt = _parse_from_datestamp(from_date)
+                until_dt = _parse_until_datestamp(until_date)
+                if from_dt >= until_dt:
                     return _error(oai, "badArgument", "'from' date must be earlier than 'until' date")
             except ValueError:
                 pass  # Already validated above
@@ -1242,7 +1258,7 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
     # Handle resumption token
     offset = 0
     if has_resumption_param:
-        if not resumption_token.strip():
+        if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
 
         is_valid, token_data, error_msg = resumption_service.parse_token(resumption_token)
@@ -1369,17 +1385,24 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
     return oai
 
 
-@require_GET
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
     try:
-        verb = request.GET.get("verb", "").strip()
+        params = request.GET.copy()
+        if request.method == "POST":
+            post_data = request.POST.copy()
+            for key in post_data:
+                params.setlist(key, post_data.getlist(key))
+
+        verb = params.get("verb", "").strip()
         oai = _oai_envelope(request)
 
         request_elem = oai.find("request")
         if request_elem is not None:
             if verb:
                 request_elem.set("verb", verb)
-            for param, value in request.GET.items():
+            for param, value in params.items():
                 if param == "verb":
                     continue
                 if value:
@@ -1387,7 +1410,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 
         # Check for illegal arguments first
         valid_verbs = ["Identify", "ListMetadataFormats", "ListSets", "ListIdentifiers", "ListRecords", "GetRecord"]
-        all_args = set(request.GET.keys())
+        all_args = set(params.keys())
 
         if not verb:
             return _xml_response(_error(oai, "badVerb", "Missing verb"))
@@ -1416,7 +1439,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             return _xml_response(_identify(oai, request))
 
         if verb == "ListMetadataFormats":
-            identifier = request.GET.get("identifier")
+            identifier = params.get("identifier")
             return _xml_response(_list_metadata_formats(oai, identifier))
 
         if verb == "ListSets":
@@ -1424,31 +1447,31 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 
         if verb == "ListIdentifiers":
             # Exclusive argument checking
-            has_resumption_param = "resumptionToken" in request.GET
-            if has_resumption_param and len([k for k in request.GET.keys() if k != "verb" and k != "resumptionToken"]) > 0:
+            has_resumption_param = "resumptionToken" in params
+            if has_resumption_param and len([k for k in params.keys() if k != "verb" and k != "resumptionToken"]) > 0:
                 return _xml_response(_error(oai, "badArgument", "resumptionToken cannot be combined with other arguments"))
 
             # Required argument checking
-            if not has_resumption_param and not request.GET.get("metadataPrefix"):
+            if not has_resumption_param and not params.get("metadataPrefix"):
                 return _xml_response(_error(oai, "badArgument", "metadataPrefix is required"))
 
-            return _xml_response(_list_identifiers(oai, request))
+            return _xml_response(_list_identifiers(oai, params))
 
         if verb == "ListRecords":
             # Exclusive argument checking
-            has_resumption_param = "resumptionToken" in request.GET
-            if has_resumption_param and len([k for k in request.GET.keys() if k != "verb" and k != "resumptionToken"]) > 0:
+            has_resumption_param = "resumptionToken" in params
+            if has_resumption_param and len([k for k in params.keys() if k != "verb" and k != "resumptionToken"]) > 0:
                 return _xml_response(_error(oai, "badArgument", "resumptionToken cannot be combined with other arguments"))
 
             # Required argument checking
-            if not has_resumption_param and not request.GET.get("metadataPrefix"):
+            if not has_resumption_param and not params.get("metadataPrefix"):
                 return _xml_response(_error(oai, "badArgument", "metadataPrefix is required"))
 
-            return _xml_response(_list_records(oai, request))
+            return _xml_response(_list_records(oai, params))
 
         if verb == "GetRecord":
-            identifier = request.GET.get("identifier")
-            metadata_prefix = request.GET.get("metadataPrefix")
+            identifier = params.get("identifier")
+            metadata_prefix = params.get("metadataPrefix")
             if not identifier or not metadata_prefix:
                 return _xml_response(_error(oai, "badArgument", "identifier and metadataPrefix are required"))
             if metadata_prefix not in SUPPORTED_METADATA_FORMATS:
@@ -1457,11 +1480,28 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             # Resolve Arkumu resource by identifier
             resource_uri = _parse_identifier(identifier)
 
+            access_clause = Q(public_access_level=PublicAccessLevel.RESTRICTED) | (
+                Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
+            )
+
             # Filter to only project entities
-            resource = Resource.objects.filter(
-                uri=resource_uri,
-                uri__regex=r'/entities/projekt/[0-9]+$'
-            ).select_related("organization").first()
+            resource = (
+                Resource.objects.filter(
+                    uri=resource_uri,
+                    uri__regex=r'/entities/projekt/[0-9]+$',
+                )
+                .filter(access_clause)
+                .select_related("organization")
+                .first()
+            )
+
+            if not resource:
+                resource = (
+                    Resource.objects.filter(uri=resource_uri)
+                    .filter(access_clause)
+                    .select_related("organization")
+                    .first()
+                )
 
             if not resource:
                 return _xml_response(_error(oai, "idDoesNotExist", "Identifier not found"))
