@@ -8,6 +8,7 @@ following the OAI-PMH 2.0 specification.
 import pytest
 from functools import lru_cache
 from lxml import etree as LET
+import xml.etree.ElementTree as ET
 from django.urls import reverse
 from django.utils import timezone
 from urllib.parse import quote
@@ -76,7 +77,7 @@ class TestOAIEndpoint:
                     file_name="sample.jpg",
                     content_type="image/jpeg",
                     size_bytes=1024,
-                    access_url="https://download.example/sample.jpg",
+                    storage_key="data/sample-bucket/files/sample.jpg",
                 )
             ],
             institution_codes=[resource.organization.code] if resource.organization else [],
@@ -466,7 +467,7 @@ class TestOAIEndpoint:
         assert identifier in content
         assert 'ns0:' not in content
 
-        parser = LET.XMLParser(ns_clean=True, recover=True)
+        parser = LET.XMLParser(ns_clean=True)
         root = LET.fromstring(response.content, parser=parser)
         metadata_elem = root.find('.//{http://www.openarchives.org/OAI/2.0/}metadata')
         assert metadata_elem is not None
@@ -501,7 +502,7 @@ class TestOAIEndpoint:
         assert response.status_code == 200
         assert 'ns0:' not in response.content.decode()
 
-        parser = LET.XMLParser(ns_clean=True, recover=True)
+        parser = LET.XMLParser(ns_clean=True)
         root = LET.fromstring(response.content, parser=parser)
         metadata_elem = root.find('.//{http://www.openarchives.org/OAI/2.0/}metadata')
         assert metadata_elem is not None
@@ -643,6 +644,7 @@ class TestOAIEndpoint:
                     ProjectDigitalObject(
                         path='org/test1.txt',
                         access_url='https://download.example/test1.txt',
+                        storage_key='org/test1.txt',
                         content_type='text/plain',
                     )
                 ],
@@ -701,6 +703,7 @@ class TestOAIEndpoint:
                     ProjectDigitalObject(
                         path='org/test1.txt',
                         access_url='https://download.example/test1.txt',
+                        storage_key='org/test1.txt',
                         content_type='text/plain',
                     )
                 ],
@@ -718,9 +721,10 @@ class TestOAIEndpoint:
         # Parse and check for FLocat xlink:href
         root = ET.fromstring(response.content)
         # Find FLocat
-        flocats = root.findall(f'.//{{{views.ROSETTA_METS_NS}}}FLocat')
+        flocats = root.findall(f'.//{{{views.METS_NS}}}FLocat')
+        expected_href = 'org/test1.txt'
         assert any(
-            f.get('{http://www.w3.org/1999/xlink}href') == 'https://download.example/test1.txt'
+            f.get('{http://www.w3.org/1999/xlink}href') == expected_href
             for f in flocats
         )
 

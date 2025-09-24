@@ -583,7 +583,7 @@ class TestMETSSerializer:
 
     def test_namespace_constants(self):
         """Test that namespace constants are correct."""
-        assert METS_NS == "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
+        assert METS_NS == "http://www.loc.gov/METS/"
         assert XLINK_NS == "http://www.w3.org/1999/xlink"
 
         # Ensure METS namespace ends with /

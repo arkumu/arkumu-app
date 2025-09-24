@@ -25,6 +25,7 @@ from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
+from arkumu.storage.models.s3_file_objects import S3FileObject
 import rdflib
 
 
@@ -47,6 +48,7 @@ RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
 ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
+HARVESTABLE_FILE_STATUSES = {"completed", "verified"}
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
@@ -73,6 +75,76 @@ def _cache_record(resource: Resource, metadata_prefix: str, header_xml: str, met
     """Cache OAI-PMH record data."""
     profile_version = ROSETTA_METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
     oai_cache.cache_record(resource, metadata_prefix, header_xml, metadata_xml, profile_version=profile_version)
+
+
+def _restrict_to_harvestable_files(queryset):
+    """Limit queryset to resources with at least one linked S3 object ready for harvest."""
+
+    return (
+        queryset.filter(
+            s3fileobject__status__in=HARVESTABLE_FILE_STATUSES,
+            s3fileobject__s3_key__isnull=False,
+        )
+        .exclude(s3fileobject__s3_key__exact="")
+        .distinct()
+    )
+
+
+def _metadata_element_has_flocat(metadata_elem: ET.Element) -> bool:
+    """Return True when the provided metadata element contains at least one METS FLocat."""
+
+    return metadata_elem.find(f'.//{{{METS_NS}}}FLocat') is not None
+
+
+def _metadata_xml_has_flocat(metadata_xml: str) -> bool:
+    """Return True when the serialized metadata payload includes a METS FLocat."""
+
+    try:
+        elem = ET.fromstring(metadata_xml)
+    except ET.ParseError:
+        return False
+    return _metadata_element_has_flocat(elem)
+
+
+def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]:
+    """Construct a minimal ProjectRecord using linked S3 files."""
+
+    if not isinstance(resource, Resource) or getattr(resource, 'pk', None) is None:
+        return None
+
+    files = list(
+        S3FileObject.objects.filter(
+            related_resource=resource,
+            status__in=HARVESTABLE_FILE_STATUSES,
+            s3_key__isnull=False,
+        ).exclude(s3_key="")
+    )
+    if not files:
+        return None
+
+    digital_objects: List[ProjectDigitalObject] = []
+    for file_obj in files:
+        digital_objects.append(
+            ProjectDigitalObject(
+                path=file_obj.s3_key,
+                storage_key=file_obj.s3_key,
+                file_name=file_obj.file_name,
+                content_type=file_obj.content_type,
+                size_bytes=file_obj.file_size_bytes,
+                checksum=file_obj.sha256_checksum,
+                access_url=file_obj.s3_url,
+            )
+        )
+
+    title = getattr(resource, 'value', None) or getattr(resource, 'name', None) or resource.uri
+
+    return ProjectRecord(
+        subject_id=str(resource.id),
+        uri=resource.uri,
+        title=title,
+        digital_objects=digital_objects,
+        institution_codes=[resource.organization.code] if resource.organization else [],
+    )
 
 
 def _oai_envelope(request: HttpRequest) -> ET.Element:
@@ -131,7 +203,7 @@ def _xml_response(elem: ET.Element) -> HttpResponse:
             xml_str = xml_str[:match.start()] + xml_str[match.end():]
 
     # Do the same for other commonly duplicated namespaces
-    for ns_prefix in ['xmlns:dc', 'xmlns:dcterms', 'xmlns:mets', 'xmlns:xlink']:
+    for ns_prefix in ['xmlns:oai_dc', 'xmlns:dc', 'xmlns:dcterms', 'xmlns:mets', 'xmlns:xlink']:
         pattern = rf'{re.escape(ns_prefix)}="[^"]*"'
         matches = list(re.finditer(pattern, xml_str))
         if len(matches) > 1:
@@ -469,6 +541,8 @@ def _get_resources_queryset(
             .order_by('updated_at', 'id')
         )
 
+    queryset = _restrict_to_harvestable_files(queryset)
+
     # Filter by set (organization)
     if set_spec:
         queryset = queryset.filter(organization__code=set_spec, organization__is_active=True)
@@ -781,9 +855,9 @@ def _build_mets_from_record(
     ET.register_namespace('dcterms', DCTERMS_NS)
     ET.register_namespace('xlink', XLINK_NS)
     ET.register_namespace('xsi', XSI_NS)
+    ET.register_namespace('dnx', DNX_NS)
 
     mets_root = ET.Element(f"{{{METS_NS}}}mets")
-    mets_root.set('xmlns', DNX_NS)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
 
     timestamp = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -824,7 +898,7 @@ def _build_mets_from_record(
         {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
     )
     tech_xml = ET.SubElement(tech_wrap, f"{{{METS_NS}}}xmlData")
-    ET.SubElement(tech_xml, "dnx")
+    ET.SubElement(tech_xml, f"{{{DNX_NS}}}dnx")
 
     rights_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}rightsMD", {"ID": "ie-amd-rights"})
     rights_wrap = ET.SubElement(
@@ -833,8 +907,8 @@ def _build_mets_from_record(
         {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
     )
     rights_xml = ET.SubElement(rights_wrap, f"{{{METS_NS}}}xmlData")
-    rights_dnx = ET.SubElement(rights_xml, "dnx")
-    ET.SubElement(rights_dnx, "section", {"id": "accessRightsPolicy"})
+    rights_dnx = ET.SubElement(rights_xml, f"{{{DNX_NS}}}dnx")
+    ET.SubElement(rights_dnx, f"{{{DNX_NS}}}section", {"id": "accessRightsPolicy"})
 
     source_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}sourceMD", {"ID": "ie-amd-source-OTHER"})
     source_wrap = ET.SubElement(
@@ -845,15 +919,15 @@ def _build_mets_from_record(
     source_xml = ET.SubElement(source_wrap, f"{{{METS_NS}}}xmlData")
     epicur = ET.SubElement(
         source_xml,
-        "epicur",
+        f"{{{DNX_NS}}}epicur",
         {
             f"{{{XSI_NS}}}schemaLocation": "urn:nbn:de:1111-2004033116 http://www.persistent-identifier.de/xepicur/version1.0/xepicur.xsd",
         },
     )
-    administrative = ET.SubElement(epicur, "administrative_data")
-    delivery = ET.SubElement(administrative, "delivery")
-    ET.SubElement(delivery, "update_status", {"type": "urn_new"})
-    epicur_record = ET.SubElement(epicur, "record")
+    administrative = ET.SubElement(epicur, f"{{{DNX_NS}}}administrative_data")
+    delivery = ET.SubElement(administrative, f"{{{DNX_NS}}}delivery")
+    ET.SubElement(delivery, f"{{{DNX_NS}}}update_status", {"type": "urn_new"})
+    epicur_record = ET.SubElement(epicur, f"{{{DNX_NS}}}record")
 
     digiprov_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}digiprovMD", {"ID": "ie-amd-digiprov"})
     digiprov_wrap = ET.SubElement(
@@ -862,19 +936,18 @@ def _build_mets_from_record(
         {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
     )
     digiprov_xml = ET.SubElement(digiprov_wrap, f"{{{METS_NS}}}xmlData")
-    ET.SubElement(digiprov_xml, "dnx")
+    ET.SubElement(digiprov_xml, f"{{{DNX_NS}}}dnx")
 
     file_sec = ET.SubElement(mets_root, f"{{{METS_NS}}}fileSec")
 
     def _append_epicur_resource(obj: ProjectDigitalObject, *, role: str = "secondary", type_attr: Optional[str] = None, target: Optional[str] = None) -> None:
-        href = obj.access_url or obj.path or obj.storage_key
+        href = obj.storage_key
         if not href:
             return
-        if not href.startswith(('http://', 'https://')):
-            normalized = _normalize_reference(href)
-            if normalized:
-                href = normalized
-        resource_elem = ET.SubElement(epicur_record, "resource")
+        normalized = _normalize_reference(href)
+        if normalized:
+            href = normalized
+        resource_elem = ET.SubElement(epicur_record, f"{{{DNX_NS}}}resource")
         identifier_attrs = {"scheme": "url", "origin": "original"}
         if type_attr:
             identifier_attrs["type"] = type_attr
@@ -882,12 +955,14 @@ def _build_mets_from_record(
             identifier_attrs["role"] = role
         if target:
             identifier_attrs["target"] = target
-        ET.SubElement(resource_elem, "identifier", identifier_attrs).text = href
+        ET.SubElement(resource_elem, f"{{{DNX_NS}}}identifier", identifier_attrs).text = href
         if obj.content_type:
-            ET.SubElement(resource_elem, "format", {"scheme": "imt"}).text = obj.content_type
+            ET.SubElement(resource_elem, f"{{{DNX_NS}}}format", {"scheme": "imt"}).text = obj.content_type
 
     digital_objects = record.digital_objects or []
-    for index, obj in enumerate(digital_objects, start=1):
+    filtered_objects = [obj for obj in digital_objects if getattr(obj, 'storage_key', None)]
+
+    for index, obj in enumerate(filtered_objects, start=1):
         rep_id = f"rep{index}"
         file_id = f"fid{index}-1"
 
@@ -899,12 +974,12 @@ def _build_mets_from_record(
             {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
         )
         rep_xml = ET.SubElement(rep_wrap, f"{{{METS_NS}}}xmlData")
-        rep_dnx = ET.SubElement(rep_xml, "dnx")
-        section = ET.SubElement(rep_dnx, "section", {"id": "generalRepCharacteristics"})
-        rec = ET.SubElement(section, "record")
+        rep_dnx = ET.SubElement(rep_xml, f"{{{DNX_NS}}}dnx")
+        section = ET.SubElement(rep_dnx, f"{{{DNX_NS}}}section", {"id": "generalRepCharacteristics"})
+        rec = ET.SubElement(section, f"{{{DNX_NS}}}record")
         preservation_type = "PRESERVATION_MASTER" if index == 1 else "MODIFIED_MASTER"
-        ET.SubElement(rec, "key", {"id": "preservationType"}).text = preservation_type
-        ET.SubElement(rec, "key", {"id": "usageType"}).text = "VIEW"
+        ET.SubElement(rec, f"{{{DNX_NS}}}key", {"id": "preservationType"}).text = preservation_type
+        ET.SubElement(rec, f"{{{DNX_NS}}}key", {"id": "usageType"}).text = "VIEW"
 
         if index == 1:
             _append_epicur_resource(obj, role="primary", type_attr="frontpage")
@@ -930,20 +1005,16 @@ def _build_mets_from_record(
             file_attrs["SIZE"] = str(obj.size_bytes)
 
         file_elem = ET.SubElement(file_grp, f"{{{METS_NS}}}file", file_attrs)
-        href = obj.access_url or obj.storage_key or obj.path
-        if href:
-            is_url = href.startswith(('http://', 'https://'))
-            if not is_url:
-                normalized = _normalize_reference(href)
-                if normalized:
-                    href = normalized
-            loctype = "URL" if is_url else "URL"
-            flocat_attrs = {
-                "LOCTYPE": loctype,
-                f"{{{XLINK_NS}}}href": href,
-                f"{{{XLINK_NS}}}type": "simple",
-            }
-            ET.SubElement(file_elem, f"{{{METS_NS}}}FLocat", flocat_attrs)
+        href = obj.storage_key
+        normalized = _normalize_reference(href)
+        if normalized:
+            href = normalized
+        flocat_attrs = {
+            "LOCTYPE": "URL",
+            f"{{{XLINK_NS}}}href": href,
+            f"{{{XLINK_NS}}}type": "simple",
+        }
+        ET.SubElement(file_elem, f"{{{METS_NS}}}FLocat", flocat_attrs)
 
         file_amd = ET.SubElement(mets_root, f"{{{METS_NS}}}amdSec", {"ID": f"{file_id}-amd"})
         file_tech = ET.SubElement(file_amd, f"{{{METS_NS}}}techMD", {"ID": f"{file_id}-amd-tech"})
@@ -953,9 +1024,9 @@ def _build_mets_from_record(
             {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
         )
         file_xml = ET.SubElement(file_wrap, f"{{{METS_NS}}}xmlData")
-        ET.SubElement(file_xml, "dnx")
+        ET.SubElement(file_xml, f"{{{DNX_NS}}}dnx")
 
-        label_source = obj.file_name or obj.storage_key or obj.path or f"Digital Object {index}"
+        label_source = obj.file_name or obj.storage_key or f"Digital Object {index}"
         label_normalized = _normalize_reference(label_source)
         label = label_normalized or label_source
 
@@ -1151,6 +1222,11 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
 
     record = _get_snapshot_record(resource)
     if not record:
+        record = _fallback_record_from_storage(resource)
+        if record:
+            logger.info("Using storage-backed fallback record for %s", getattr(resource, 'uri', 'unknown'))
+
+    if not record:
         logger.warning("No snapshot record found for %s", getattr(resource, 'uri', 'unknown'))
         return metadata
 
@@ -1158,6 +1234,11 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         dc_payload = _build_dc_payload_from_record(record, resource)
         _append_dc_metadata(metadata, dc_payload)
     elif metadata_prefix == "mets":
+        if not any(getattr(obj, 'storage_key', None) for obj in record.digital_objects):
+            fallback_record = _fallback_record_from_storage(resource)
+            if fallback_record:
+                record = fallback_record
+
         dc_payload = _build_dc_payload_from_record(record, resource)
         mets_root = _build_mets_from_record(record, resource, dc_payload)
         metadata.append(mets_root)
@@ -1302,7 +1383,13 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
         until_date=until_date or '',
         offset=offset
     )
-    if cached_page:
+    if cached_page and not (
+        metadata_prefix == 'mets'
+        and any(
+            not _metadata_xml_has_flocat(record_data['metadata'])
+            for record_data in cached_page.get('records', [])
+        )
+    ):
         # Rebuild from cached data
         list_records = ET.SubElement(oai, "ListRecords")
 
@@ -1324,37 +1411,55 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
     # Build response (cache miss)
     list_records = ET.SubElement(oai, "ListRecords")
     records_data = []  # For caching
+    records_added = 0
 
     for resource in resources:
-        record = ET.SubElement(list_records, "record")
-
         # Try to get cached record first
         cached_record = _get_cached_record(resource, metadata_prefix)
 
+        if cached_record and metadata_prefix == 'mets' and not _metadata_xml_has_flocat(cached_record['metadata']):
+            cached_record = None
+
         if cached_record:
             # Use cached record
+            record = ET.SubElement(list_records, "record")
             header = ET.fromstring(cached_record['header'])
             metadata = ET.fromstring(cached_record['metadata'])
             record.append(header)
             record.append(metadata)
             records_data.append(cached_record)
-        else:
-            # Build record and cache it
-            header = _build_record_header(resource)
-            metadata = _build_metadata_element(resource, metadata_prefix)
-            record.append(header)
-            record.append(metadata)
+            records_added += 1
+            continue
 
-            # Cache individual record
-            header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
-            metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
-            _cache_record(resource, metadata_prefix, header_xml, metadata_xml)
+        # Build record and cache it
+        header = _build_record_header(resource)
+        metadata = _build_metadata_element(resource, metadata_prefix)
 
-            records_data.append({
-                'header': header_xml,
-                'metadata': metadata_xml,
-                'timestamp': int(resource.updated_at.timestamp())
-            })
+        if metadata_prefix == 'mets' and not _metadata_element_has_flocat(metadata):
+            logger.info(
+                "Skipping resource %s for METS harvest because no FLocat was generated",
+                getattr(resource, 'uri', 'unknown'),
+            )
+            continue
+
+        record = ET.SubElement(list_records, "record")
+        record.append(header)
+        record.append(metadata)
+
+        # Cache individual record
+        header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
+        metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
+        _cache_record(resource, metadata_prefix, header_xml, metadata_xml)
+
+        records_data.append({
+            'header': header_xml,
+            'metadata': metadata_xml,
+            'timestamp': int(resource.updated_at.timestamp())
+        })
+        records_added += 1
+
+    if records_added == 0 and offset == 0 and not has_more:
+        return _error(oai, "noRecordsMatch", "No records found matching the criteria")
 
     # Add resumption token if needed
     resumption_token = None
@@ -1492,23 +1597,23 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             )
 
             # Filter to only project entities
-            resource = (
+            resource_qs = (
                 Resource.objects.filter(
                     uri=resource_uri,
                     uri__regex=r'/entities/projekt/[0-9]+$',
                 )
                 .filter(access_clause)
                 .select_related("organization")
-                .first()
             )
+            resource = _restrict_to_harvestable_files(resource_qs).first()
 
             if not resource:
-                resource = (
+                fallback_qs = (
                     Resource.objects.filter(uri=resource_uri)
                     .filter(access_clause)
                     .select_related("organization")
-                    .first()
                 )
+                resource = _restrict_to_harvestable_files(fallback_qs).first()
 
             if not resource:
                 return _xml_response(_error(oai, "idDoesNotExist", "Identifier not found"))
@@ -1518,6 +1623,9 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 
             # Check cache first
             cached_record = _get_cached_record(resource, metadata_prefix)
+            if cached_record and metadata_prefix == 'mets' and not _metadata_xml_has_flocat(cached_record['metadata']):
+                cached_record = None
+
             if cached_record:
                 # Build OAI response from cache
                 get_record = ET.SubElement(oai, "GetRecord")
@@ -1541,6 +1649,17 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 
             # Add metadata
             metadata = _build_metadata_element(resource, metadata_prefix)
+            if metadata_prefix == 'mets' and not _metadata_element_has_flocat(metadata):
+                fallback_record = _fallback_record_from_storage(resource)
+                if fallback_record:
+                    metadata = ET.Element("metadata")
+                    dc_payload = _build_dc_payload_from_record(fallback_record, resource)
+                    mets_root = _build_mets_from_record(fallback_record, resource, dc_payload)
+                    metadata.append(mets_root)
+
+            if metadata_prefix == 'mets' and not _metadata_element_has_flocat(metadata):
+                return _xml_response(_error(oai, "idDoesNotExist", "Identifier not available for METS dissemination"))
+
             record.append(metadata)
 
             # Cache the record for future requests
