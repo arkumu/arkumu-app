@@ -8,6 +8,7 @@ following the OAI-PMH 2.0 specification.
 import pytest
 from django.urls import reverse
 from urllib.parse import quote
+import xml.etree.ElementTree as ET
 
 from arkumu.oaipmh import views
 
@@ -553,8 +554,12 @@ class TestOAIEndpoint:
 
         assert response.status_code == 200
         content = response.content.decode()
-        assert "<request>" in content and "</request>" in content
-        assert self.oai_url in content
+        root = ET.fromstring(content)
+        ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
+        request_elem = root.find("oai:request", ns)
+        assert request_elem is not None
+        assert request_elem.text == f"http://testserver{self.oai_url}"
+        assert request_elem.get("verb") == "Identify"
 
     def test_xml_declaration_and_content_type(self, oai_client):
         """Test proper XML declaration and Content-Type header."""

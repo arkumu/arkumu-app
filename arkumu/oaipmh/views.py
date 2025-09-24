@@ -1412,6 +1412,16 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
         verb = request.GET.get("verb", "").strip()
         oai = _oai_envelope(request)
 
+        request_elem = oai.find("request")
+        if request_elem is not None:
+            if verb:
+                request_elem.set("verb", verb)
+            for param, value in request.GET.items():
+                if param == "verb":
+                    continue
+                if value:
+                    request_elem.set(param, value)
+
         # Check for illegal arguments first
         valid_verbs = ["Identify", "ListMetadataFormats", "ListSets", "ListIdentifiers", "ListRecords", "GetRecord"]
         all_args = set(request.GET.keys())
