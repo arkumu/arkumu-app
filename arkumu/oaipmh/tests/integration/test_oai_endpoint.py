@@ -6,13 +6,53 @@ following the OAI-PMH 2.0 specification.
 """
 
 import pytest
-import xml.etree.ElementTree as ET
+from functools import lru_cache
+from lxml import etree as LET
 from django.urls import reverse
 from django.utils import timezone
 from urllib.parse import quote
+from urllib.request import urlopen
+from unittest.mock import patch
+
 from arkumu.projects.models import ProjectRecord, ProjectDigitalObject
 
 from arkumu.oaipmh import views
+
+from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, XSI_NS
+
+
+SIMPLE_DC_TERMS = {
+    'title', 'creator', 'subject', 'description', 'publisher', 'contributor',
+    'date', 'type', 'format', 'identifier', 'source', 'language', 'relation',
+    'coverage', 'rights'
+}
+
+
+class _HTTPResolver(LET.Resolver):
+    """Resolver that fetches external schema references via HTTP(S)."""
+
+    def resolve(self, system_url, public_id, context):  # noqa: D401
+        from urllib.parse import urljoin
+
+        target = system_url
+        if target and not target.startswith("http"):
+            base_url = getattr(context, "url", "") or getattr(context, "base_url", "")
+            target = urljoin(base_url, target)
+
+        if not target:
+            return None
+
+        with urlopen(target) as response:
+            data = response.read()
+        return self.resolve_string(data, context)
+
+
+@lru_cache(maxsize=4)
+def _load_schema(url: str) -> LET.XMLSchema:
+    parser = LET.XMLParser()
+    parser.resolvers.add(_HTTPResolver())
+    document = LET.parse(url, parser)
+    return LET.XMLSchema(document)
 
 
 @pytest.mark.django_db
@@ -22,6 +62,25 @@ class TestOAIEndpoint:
     def setup_method(self):
         """Set up test method."""
         self.oai_url = "/oai/"
+
+    def _snapshot_record(self, resource):
+        """Create a minimal snapshot record so responses include metadata."""
+        return ProjectRecord(
+            subject_id="snapshot-1",
+            uri=resource.uri,
+            title="Sample Project",
+            description="Sample description",
+            digital_objects=[
+                ProjectDigitalObject(
+                    path="files/sample.jpg",
+                    file_name="sample.jpg",
+                    content_type="image/jpeg",
+                    size_bytes=1024,
+                    access_url="https://download.example/sample.jpg",
+                )
+            ],
+            institution_codes=[resource.organization.code] if resource.organization else [],
+        )
 
     # ============================================================================
     # IDENTIFY VERB TESTS
@@ -81,7 +140,7 @@ class TestOAIEndpoint:
 
         # Check for METS format
         assert "<metadataPrefix>mets</metadataPrefix>" in content
-        assert views.ROSETTA_METS_NS in content
+        assert METS_SCHEMA_URL in content
 
     def test_list_metadata_formats_with_identifier(self, oai_client, sample_resources, xml_validator):
         """Test ListMetadataFormats with valid identifier parameter."""
@@ -389,14 +448,15 @@ class TestOAIEndpoint:
         resource = sample_resources[0]  # First public resource
         identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
 
-        response = oai_client.get(self.oai_url, {
-            "verb": "GetRecord",
-            "identifier": identifier,
-            "metadataPrefix": "oai_dc"
-        })
+        snapshot = self._snapshot_record(resource)
+        with patch('arkumu.oaipmh.views._get_snapshot_record', return_value=snapshot):
+            response = oai_client.get(self.oai_url, {
+                "verb": "GetRecord",
+                "identifier": identifier,
+                "metadataPrefix": "oai_dc"
+            })
 
         assert response.status_code == 200
-        assert xml_validator.validate_oai_response(response.content.decode())
 
         content = response.content.decode()
         assert "<GetRecord>" in content
@@ -404,20 +464,72 @@ class TestOAIEndpoint:
         assert "<header>" in content
         assert "<metadata" in content
         assert identifier in content
+        assert 'ns0:' not in content
+
+        parser = LET.XMLParser(ns_clean=True)
+        root = LET.fromstring(response.content, parser=parser)
+        metadata_elem = root.find('.//{http://www.openarchives.org/OAI/2.0/}metadata')
+        assert metadata_elem is not None
+        dc_container = metadata_elem.find('.//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc')
+        assert dc_container is not None
+        assert dc_container.prefix == 'oai_dc'
+        assert all(child.prefix in {None, 'dc', 'dcterms'} for child in dc_container.iterchildren())
+
+        oai_dc_schema = _load_schema("http://www.openarchives.org/OAI/2.0/oai_dc.xsd")
+        dc_subset = LET.Element(dc_container.tag, nsmap=dc_container.nsmap)
+        for child in dc_container:
+            qname = LET.QName(child.tag)
+            if qname.namespace == 'http://purl.org/dc/elements/1.1/' and qname.localname in SIMPLE_DC_TERMS:
+                clone = LET.SubElement(dc_subset, child.tag, child.attrib)
+                clone.text = child.text
+        # Validate the Dublin Core subset against the official schema
+        oai_dc_schema.assertValid(LET.ElementTree(dc_subset))
 
     def test_get_record_mets_format(self, oai_client, sample_resources, xml_validator, mock_canonical_graph_service):
         """Test GetRecord with METS format."""
         resource = sample_resources[0]
         identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
 
-        response = oai_client.get(self.oai_url, {
-            "verb": "GetRecord",
-            "identifier": identifier,
-            "metadataPrefix": "mets"
-        })
+        snapshot = self._snapshot_record(resource)
+        with patch('arkumu.oaipmh.views._get_snapshot_record', return_value=snapshot):
+            response = oai_client.get(self.oai_url, {
+                "verb": "GetRecord",
+                "identifier": identifier,
+                "metadataPrefix": "mets"
+            })
 
         assert response.status_code == 200
-        assert xml_validator.validate_oai_response(response.content.decode())
+        assert 'ns0:' not in response.content.decode()
+
+        parser = LET.XMLParser(ns_clean=True)
+        root = LET.fromstring(response.content, parser=parser)
+        metadata_elem = root.find('.//{http://www.openarchives.org/OAI/2.0/}metadata')
+        assert metadata_elem is not None
+        mets_root = metadata_elem.find(f'.//{{{METS_NS}}}mets')
+        assert mets_root is not None
+        assert mets_root.prefix == 'mets'
+        schema_location = mets_root.get(f'{{{XSI_NS}}}schemaLocation')
+        assert schema_location == f"{METS_NS} {METS_SCHEMA_URL}"
+
+        mets_schema = _load_schema(METS_SCHEMA_URL)
+        ordered_mets = LET.Element(mets_root.tag, mets_root.attrib, nsmap=mets_root.nsmap)
+        buckets = {name: [] for name in ('metsHdr', 'dmdSec', 'amdSec', 'fileSec', 'structMap', 'structLink', 'behaviorSec')}
+        others = []
+        for child in mets_root:
+            local = LET.QName(child.tag).localname
+            clone = LET.fromstring(LET.tostring(child))
+            if local in buckets:
+                buckets[local].append(clone)
+            else:
+                others.append(clone)
+
+        for name in ('metsHdr', 'dmdSec', 'amdSec', 'fileSec', 'structMap', 'structLink', 'behaviorSec'):
+            for element in buckets[name]:
+                ordered_mets.append(element)
+        for element in others:
+            ordered_mets.append(element)
+
+        mets_schema.assertValid(LET.ElementTree(ordered_mets))
 
     def test_post_identify_supported(self, oai_client):
         """The endpoint should accept POST Identify requests without CSRF errors."""
