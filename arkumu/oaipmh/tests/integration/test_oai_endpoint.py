@@ -8,6 +8,7 @@ following the OAI-PMH 2.0 specification.
 import pytest
 from functools import lru_cache
 from lxml import etree as LET
+import xml.etree.ElementTree as ET
 from django.urls import reverse
 from django.utils import timezone
 from urllib.parse import quote
@@ -73,10 +74,10 @@ class TestOAIEndpoint:
             digital_objects=[
                 ProjectDigitalObject(
                     path="files/sample.jpg",
+                    storage_key="data/sample-bucket/files/sample.jpg",
                     file_name="sample.jpg",
                     content_type="image/jpeg",
                     size_bytes=1024,
-                    access_url="https://download.example/sample.jpg",
                 )
             ],
             institution_codes=[resource.organization.code] if resource.organization else [],
@@ -606,8 +607,8 @@ class TestOAIEndpoint:
         assert code == "idDoesNotExist"
 
     @pytest.mark.django_db
-    def test_get_record_dc_includes_file_relations(self, oai_client, sample_resources, mock_canonical_graph_service):
-        """GetRecord oai_dc should include dc:relation URLs when files exist."""
+    def test_get_record_dc_excludes_file_paths(self, oai_client, sample_resources, mock_canonical_graph_service):
+        """GetRecord oai_dc should not list per-file identifiers/relations."""
         from arkumu.storage.models.s3_file_objects import S3FileObject
         from unittest.mock import patch, Mock
         resource = sample_resources[0]
@@ -643,6 +644,7 @@ class TestOAIEndpoint:
                     ProjectDigitalObject(
                         path='org/test1.txt',
                         access_url='https://download.example/test1.txt',
+                        storage_key='org/test1.txt',
                         content_type='text/plain',
                     )
                 ],
@@ -658,8 +660,9 @@ class TestOAIEndpoint:
 
         assert response.status_code == 200
         content = response.content.decode()
-        # Expect relation URL present
-        assert 'https://download.example/test1.txt' in content
+        assert 'https://download.example/test1.txt' not in content
+        assert 'org/test1.txt' not in content
+        assert '<dc:format>text/plain</dc:format>' in content
 
     @pytest.mark.django_db
     def test_get_record_mets_includes_flocat_urls(self, oai_client, sample_resources):
@@ -701,6 +704,7 @@ class TestOAIEndpoint:
                     ProjectDigitalObject(
                         path='org/test1.txt',
                         access_url='https://download.example/test1.txt',
+                        storage_key='org/test1.txt',
                         content_type='text/plain',
                     )
                 ],
@@ -718,9 +722,10 @@ class TestOAIEndpoint:
         # Parse and check for FLocat xlink:href
         root = ET.fromstring(response.content)
         # Find FLocat
-        flocats = root.findall(f'.//{{{views.ROSETTA_METS_NS}}}FLocat')
+        flocats = root.findall(f'.//{{{views.METS_NS}}}FLocat')
+        expected_href = 'org/test1.txt'
         assert any(
-            f.get('{http://www.w3.org/1999/xlink}href') == 'https://download.example/test1.txt'
+            f.get('{http://www.w3.org/1999/xlink}href') == expected_href
             for f in flocats
         )
 

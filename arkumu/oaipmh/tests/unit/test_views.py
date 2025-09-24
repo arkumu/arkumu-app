@@ -139,15 +139,15 @@ class TestOAIViewFunctions:
         # baseURL should be absolute
         assert identify.find("baseURL").text == "http://testserver/oai/"
         assert identify.find("protocolVersion").text == "2.0"
-        assert identify.find("adminEmail").text == "admin@example.org"
+        assert identify.find("adminEmail").text == views.REPO_ADMIN_EMAIL
         assert identify.find("earliestDatestamp").text == "1970-01-01T00:00:00Z"
         assert identify.find("deletedRecord").text == "no"
         assert identify.find("granularity").text == "YYYY-MM-DDThh:mm:ssZ"
 
     @pytest.mark.django_db
     @patch('arkumu.oaipmh.views._get_snapshot_record')
-    def test_dc_includes_file_relations_when_present(self, mock_get_record, sample_resources):
-        """_build_metadata_element for oai_dc should include dc:relation URLs when files exist."""
+    def test_dc_excludes_file_relations(self, mock_get_record, sample_resources):
+        """_build_metadata_element for oai_dc should not emit per-file relations/identifiers."""
         resource = sample_resources[0]
         record = self._build_snapshot_record(resource, include_files=True)
         mock_get_record.return_value = record
@@ -157,7 +157,9 @@ class TestOAIViewFunctions:
         dc_root = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_root is not None
         relations = dc_root.findall("{http://purl.org/dc/elements/1.1/}relation")
-        assert any(e.text == 'https://download.example/test1.txt' for e in relations)
+        assert relations == []
+        formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
+        assert any(elem.text == 'text/plain' for elem in formats)
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS
@@ -402,7 +404,9 @@ class TestOAIViewFunctions:
         assert record.title in payload["dc:title"]
         assert "dc:identifier" in payload
         assert resource.uri in payload["dc:identifier"]
-        assert any(value.startswith('https://download.example') for value in payload.get("dc:relation", []))
+        assert not payload.get("dc:relation")
+        assert 'dc:format' in payload
+        assert 'text/plain' in payload['dc:format']
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
@@ -435,7 +439,7 @@ class TestOAIViewFunctions:
         assert metadata.tag == "metadata"
 
         # Should contain METS element
-        mets_elements = metadata.findall(".//{http://www.exlibrisgroup.com/xsd/dps/rosettaMets}mets")
+        mets_elements = metadata.findall(f".//{{{METS_NS}}}mets")
         assert len(mets_elements) > 0
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
@@ -498,7 +502,7 @@ class TestOAIViewFunctions:
             'metadataPrefix': 'oai_dc'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         list_identifiers = result_oai.find("ListIdentifiers")
         assert list_identifiers is not None
@@ -510,7 +514,7 @@ class TestOAIViewFunctions:
         """Test _list_identifiers with missing metadataPrefix."""
         request = self.factory.get('/oai/')  # No metadataPrefix
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None
@@ -522,7 +526,7 @@ class TestOAIViewFunctions:
             'metadataPrefix': 'invalid_format'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None
@@ -537,7 +541,7 @@ class TestOAIViewFunctions:
             'metadataPrefix': 'oai_dc'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None
@@ -558,7 +562,7 @@ class TestOAIViewFunctions:
             'metadataPrefix': 'oai_dc'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_records(oai, request)
+        result_oai = views._list_records(oai, request.GET)
 
         list_records = result_oai.find("ListRecords")
         assert list_records is not None
@@ -575,7 +579,7 @@ class TestOAIViewFunctions:
         """Test _list_records with missing metadataPrefix."""
         request = self.factory.get('/oai/')  # No metadataPrefix
         oai = views._oai_envelope(request)
-        result_oai = views._list_records(oai, request)
+        result_oai = views._list_records(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None

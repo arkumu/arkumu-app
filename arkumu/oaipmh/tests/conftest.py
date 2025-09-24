@@ -13,9 +13,11 @@ from typing import Dict, Any, List
 from django.test import Client, TransactionTestCase
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.core.cache import cache
 
 from arkumu.users.models import Organization
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.storage.models.s3_file_objects import S3FileObject
 
 User = get_user_model()
 
@@ -91,6 +93,15 @@ def sample_resources(db, sample_organizations):
         )
         resources.append(resource)
 
+        S3FileObject.objects.create(
+            file_name=f"test-file-{i+1}.txt",
+            s3_key=f"test_univ/file-{i+1}.txt",
+            file_size_bytes=1024,
+            content_type="text/plain",
+            related_resource=resource,
+            status='completed'
+        )
+
     # Resource from second organization
     resource = Resource.objects.create(
         uri="https://research.example.com/item/1",
@@ -100,6 +111,15 @@ def sample_resources(db, sample_organizations):
         updated_at=base_time.replace(month=2)
     )
     resources.append(resource)
+
+    S3FileObject.objects.create(
+        file_name="research-file-1.txt",
+        s3_key="research_inst/file-1.txt",
+        file_size_bytes=2048,
+        content_type="text/plain",
+        related_resource=resource,
+        status='completed'
+    )
 
     # Private resource (not harvestable)
     resource = Resource.objects.create(
@@ -123,6 +143,11 @@ def sample_resources(db, sample_organizations):
 
     return resources
 
+
+@pytest.fixture(autouse=True)
+def clear_oai_related_cache():
+    """Ensure cache is cleared between tests to avoid stale OAI pages."""
+    cache.clear()
 
 @pytest.fixture
 def mock_canonical_graph_service():
@@ -344,6 +369,15 @@ def large_dataset(db, sample_organizations):
             updated_at=base_time.replace(second=i % 60, minute=(i // 60) % 60)
         )
         resources.append(resource)
+
+        S3FileObject.objects.create(
+            file_name=f"large-file-{i+1:03d}.bin",
+            s3_key=f"test_univ/large/file-{i+1:03d}.bin",
+            file_size_bytes=2048,
+            content_type="application/octet-stream",
+            related_resource=resource,
+            status='completed'
+        )
 
     return resources
 

@@ -482,11 +482,24 @@ class TestDublinCoreSerializer:
 
     def test_default_predicate_map_uses_correct_namespaces(self):
         """Test that default predicate map uses correct namespaces."""
-        for dcterms_uri, dc_term in DEFAULT_PREDICATE_MAP.items():
-            # All keys should start with DCTERMS_NS
-            assert dcterms_uri.startswith(DCTERMS_NS)
+        arkumu_prefix = "http://arkumu.org/data/properties/"
 
-            # Extract the term name and verify consistency
-            dcterms_term = dcterms_uri[len(DCTERMS_NS):]
-            # dc_term should be the same as the dcterms term name
-            assert dcterms_term == dc_term or dc_term == "date"  # Special case for date mapping
+        for predicate_uri, dc_term in DEFAULT_PREDICATE_MAP.items():
+            if predicate_uri.startswith(DCTERMS_NS):
+                dcterms_term = predicate_uri[len(DCTERMS_NS):]
+                assert dcterms_term == dc_term or dc_term == "date"
+            else:
+                assert predicate_uri.startswith(arkumu_prefix)
+                assert dc_term in {
+                    "title",
+                    "description",
+                    "identifier",
+                    "relation",
+                    "subject",
+                    "rights",
+                    "language",
+                    "coverage",
+                    "date",
+                    "type",
+                    "format",
+                }
