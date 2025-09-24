@@ -16,7 +16,8 @@ from arkumu.metadata.services.canonical_graph_service import CanonicalGraphServi
 
 
 # METS namespaces
-METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
+METS_NS = "http://www.loc.gov/METS/"
+METS_SCHEMA_URL = "http://www.loc.gov/standards/mets/mets.xsd"
 XLINK_NS = "http://www.w3.org/1999/xlink"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 DC_NS = "http://purl.org/dc/elements/1.1/"
@@ -92,7 +93,7 @@ class METSSerializer:
         mets = ET.Element(
             f"{{{METS_NS}}}mets",
             {
-                f"{{{XSI_NS}}}schemaLocation": f"{METS_NS} {METS_NS}",
+                f"{{{XSI_NS}}}schemaLocation": f"{METS_NS} {METS_SCHEMA_URL}",
                 "OBJID": resource_uri,
                 "TYPE": "Arkumu Project Graph",
                 "PROFILE": "arkumu-complete-graph-v1.0"

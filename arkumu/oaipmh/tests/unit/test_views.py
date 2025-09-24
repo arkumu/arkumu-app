@@ -15,7 +15,7 @@ from django.http import HttpRequest
 from django.test import RequestFactory
 
 from arkumu.oaipmh import views
-from arkumu.oaipmh.views import ROSETTA_METS_NS, ROSETTA_DNX_NS
+from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.projects import (
     ProjectRecord,
@@ -190,8 +190,8 @@ class TestOAIViewFunctions:
         assert dc_format.find("metadataNamespace").text == "http://www.openarchives.org/OAI/2.0/oai_dc/"
 
         assert mets_format is not None
-        assert mets_format.find("schema").text == views.ROSETTA_METS_NS
-        assert mets_format.find("metadataNamespace").text == views.ROSETTA_METS_NS
+        assert mets_format.find("schema").text == METS_SCHEMA_URL
+        assert mets_format.find("metadataNamespace").text == METS_NS
 
     # ============================================================================
     # LIST SETS FUNCTION TESTS
@@ -446,30 +446,30 @@ class TestOAIViewFunctions:
         mock_get_record.return_value = record
 
         metadata = views._build_metadata_element(resource, "mets")
-        mets_root = metadata.find(f".//{{{ROSETTA_METS_NS}}}mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
         assert mets_root is not None
 
         # Intellectual entity ADM sections
-        rights_md = mets_root.find(f".//{{{ROSETTA_METS_NS}}}rightsMD[@ID='ie-amd-rights']")
+        rights_md = mets_root.find(f".//{{{METS_NS}}}rightsMD[@ID='ie-amd-rights']")
         assert rights_md is not None
-        source_md = mets_root.find(f".//{{{ROSETTA_METS_NS}}}sourceMD[@ID='ie-amd-source-OTHER']")
+        source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-OTHER']")
         assert source_md is not None
-        epicur = source_md.find(f".//{{{ROSETTA_DNX_NS}}}epicur")
+        epicur = source_md.find(f".//{{{DNX_NS}}}epicur")
         assert epicur is not None
 
-        resources = epicur.findall(f".//{{{ROSETTA_DNX_NS}}}resource")
+        resources = epicur.findall(f".//{{{DNX_NS}}}resource")
         assert len(resources) >= len(record.digital_objects)
 
         # File groups and structural maps should mirror digital objects
-        file_grps = mets_root.findall(f".//{{{ROSETTA_METS_NS}}}fileGrp")
+        file_grps = mets_root.findall(f".//{{{METS_NS}}}fileGrp")
         assert len(file_grps) == len(record.digital_objects)
 
-        struct_maps = mets_root.findall(f".//{{{ROSETTA_METS_NS}}}structMap")
+        struct_maps = mets_root.findall(f".//{{{METS_NS}}}structMap")
         assert len(struct_maps) == len(record.digital_objects)
 
         # Each structMap should point to a file
         for struct_map in struct_maps:
-            fptr = struct_map.find(f".//{{{ROSETTA_METS_NS}}}fptr")
+            fptr = struct_map.find(f".//{{{METS_NS}}}fptr")
             assert fptr is not None
 
     def test_build_metadata_element_no_organization(self):

@@ -38,9 +38,10 @@ REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
-ROSETTA_METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
-ROSETTA_DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
-ROSETTA_XLINK_NS = "http://www.w3.org/1999/xlink"
+METS_NS = "http://www.loc.gov/METS/"
+METS_SCHEMA_URL = "http://www.loc.gov/standards/mets/mets.xsd"
+DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
+XLINK_NS = "http://www.w3.org/1999/xlink"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
@@ -53,6 +54,11 @@ PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?
 resumption_service = ResumptionTokenService(page_size=100)
 oai_cache = OAICacheService()
 snapshot_service = ProjectSnapshotService()
+
+# Register stable namespace prefixes so ElementTree uses human-friendly tags
+ET.register_namespace("oai_dc", OAI_DC_NS)
+ET.register_namespace("dc", DC_NS)
+ET.register_namespace("dcterms", DCTERMS_NS)
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +88,8 @@ def _oai_envelope(request: HttpRequest) -> ET.Element:
                 "xmlns:oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
                 "xmlns:dc": "http://purl.org/dc/elements/1.1/",
                 "xmlns:dcterms": DCTERMS_NS,
-                "xmlns:mets": ROSETTA_METS_NS,
-                "xmlns:xlink": ROSETTA_XLINK_NS,
+                "xmlns:mets": METS_NS,
+                "xmlns:xlink": XLINK_NS,
                 "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
             "xsi:schemaLocation": " ".join(
                 [
@@ -133,11 +139,11 @@ def _xml_response(elem: ET.Element) -> HttpResponse:
                 xml_str = xml_str[:match.start()] + xml_str[match.end():]
 
     canonical_ns_map = {
-        ROSETTA_METS_NS: 'mets',
+        METS_NS: 'mets',
         DC_NS: 'dc',
         DCTERMS_NS: 'dcterms',
-        ROSETTA_XLINK_NS: 'xlink',
-        ROSETTA_DNX_NS: '',
+        XLINK_NS: 'xlink',
+        DNX_NS: '',
     }
 
     alias_pattern = re.compile(r'\s+xmlns:(ns\d+)="([^"]+)"')
@@ -157,7 +163,7 @@ def _xml_response(elem: ET.Element) -> HttpResponse:
             if default_declaration not in xml_str:
                 xml_str = xml_str.replace('<mets:mets', f'<mets:mets {default_declaration}', 1)
 
-    default_declaration = f'xmlns="{ROSETTA_DNX_NS}"'
+    default_declaration = f'xmlns="{DNX_NS}"'
     if '<mets:mets' in xml_str and default_declaration not in xml_str:
         xml_str = xml_str.replace('<mets:mets', f'<mets:mets {default_declaration}', 1)
 
@@ -221,8 +227,8 @@ def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) ->
     # METS format for complete graphs
     mets_format = ET.SubElement(list_metadata_formats, "metadataFormat")
     ET.SubElement(mets_format, "metadataPrefix").text = "mets"
-    ET.SubElement(mets_format, "schema").text = ROSETTA_METS_NS
-    ET.SubElement(mets_format, "metadataNamespace").text = ROSETTA_METS_NS
+    ET.SubElement(mets_format, "schema").text = METS_SCHEMA_URL
+    ET.SubElement(mets_format, "metadataNamespace").text = METS_NS
 
     return oai
 
@@ -770,19 +776,20 @@ def _build_mets_from_record(
     resource: Resource,
     dc_payload: Dict[str, List[str]],
 ) -> ET.Element:
-    ET.register_namespace('mets', ROSETTA_METS_NS)
+    ET.register_namespace('mets', METS_NS)
     ET.register_namespace('dc', DC_NS)
     ET.register_namespace('dcterms', DCTERMS_NS)
-    ET.register_namespace('xlink', ROSETTA_XLINK_NS)
+    ET.register_namespace('xlink', XLINK_NS)
     ET.register_namespace('xsi', XSI_NS)
 
-    mets_root = ET.Element(f"{{{ROSETTA_METS_NS}}}mets")
-    mets_root.set('xmlns', ROSETTA_DNX_NS)
+    mets_root = ET.Element(f"{{{METS_NS}}}mets")
+    mets_root.set('xmlns', DNX_NS)
+    mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
 
     timestamp = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     mets_hdr = ET.SubElement(
         mets_root,
-        f"{{{ROSETTA_METS_NS}}}metsHdr",
+        f"{{{METS_NS}}}metsHdr",
         {
             "CREATEDATE": timestamp,
             "LASTMODDATE": timestamp,
@@ -790,18 +797,18 @@ def _build_mets_from_record(
     )
     agent = ET.SubElement(
         mets_hdr,
-        f"{{{ROSETTA_METS_NS}}}agent",
+        f"{{{METS_NS}}}agent",
         {
             "ROLE": "CREATOR",
             "TYPE": "OTHER",
             "OTHERTYPE": "SOFTWARE",
         },
     )
-    ET.SubElement(agent, f"{{{ROSETTA_METS_NS}}}name").text = "Arkumu OAI-PMH Provider"
+    ET.SubElement(agent, f"{{{METS_NS}}}name").text = "Arkumu OAI-PMH Provider"
 
-    dmd_sec = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}dmdSec", {"ID": "ie-dmd"})
-    md_wrap = ET.SubElement(dmd_sec, f"{{{ROSETTA_METS_NS}}}mdWrap", {"MDTYPE": "DC"})
-    xml_data = ET.SubElement(md_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    dmd_sec = ET.SubElement(mets_root, f"{{{METS_NS}}}dmdSec", {"ID": "ie-dmd"})
+    md_wrap = ET.SubElement(dmd_sec, f"{{{METS_NS}}}mdWrap", {"MDTYPE": "DC"})
+    xml_data = ET.SubElement(md_wrap, f"{{{METS_NS}}}xmlData")
     dc_record = ET.SubElement(xml_data, f"{{{DC_NS}}}record")
     for key, values in dc_payload.items():
         namespace, term = key.split(":", 1)
@@ -809,33 +816,33 @@ def _build_mets_from_record(
         for value in values:
             ET.SubElement(dc_record, f"{{{ns_uri}}}{term}").text = value
 
-    ie_amd = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}amdSec", {"ID": "ie-amd"})
-    tech_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}techMD", {"ID": "ie-amd-tech"})
+    ie_amd = ET.SubElement(mets_root, f"{{{METS_NS}}}amdSec", {"ID": "ie-amd"})
+    tech_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}techMD", {"ID": "ie-amd-tech"})
     tech_wrap = ET.SubElement(
         tech_md,
-        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        f"{{{METS_NS}}}mdWrap",
         {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
     )
-    tech_xml = ET.SubElement(tech_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    tech_xml = ET.SubElement(tech_wrap, f"{{{METS_NS}}}xmlData")
     ET.SubElement(tech_xml, "dnx")
 
-    rights_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}rightsMD", {"ID": "ie-amd-rights"})
+    rights_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}rightsMD", {"ID": "ie-amd-rights"})
     rights_wrap = ET.SubElement(
         rights_md,
-        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        f"{{{METS_NS}}}mdWrap",
         {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
     )
-    rights_xml = ET.SubElement(rights_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    rights_xml = ET.SubElement(rights_wrap, f"{{{METS_NS}}}xmlData")
     rights_dnx = ET.SubElement(rights_xml, "dnx")
     ET.SubElement(rights_dnx, "section", {"id": "accessRightsPolicy"})
 
-    source_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}sourceMD", {"ID": "ie-amd-source-OTHER"})
+    source_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}sourceMD", {"ID": "ie-amd-source-OTHER"})
     source_wrap = ET.SubElement(
         source_md,
-        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        f"{{{METS_NS}}}mdWrap",
         {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"},
     )
-    source_xml = ET.SubElement(source_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    source_xml = ET.SubElement(source_wrap, f"{{{METS_NS}}}xmlData")
     epicur = ET.SubElement(
         source_xml,
         "epicur",
@@ -848,16 +855,16 @@ def _build_mets_from_record(
     ET.SubElement(delivery, "update_status", {"type": "urn_new"})
     epicur_record = ET.SubElement(epicur, "record")
 
-    digiprov_md = ET.SubElement(ie_amd, f"{{{ROSETTA_METS_NS}}}digiprovMD", {"ID": "ie-amd-digiprov"})
+    digiprov_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}digiprovMD", {"ID": "ie-amd-digiprov"})
     digiprov_wrap = ET.SubElement(
         digiprov_md,
-        f"{{{ROSETTA_METS_NS}}}mdWrap",
+        f"{{{METS_NS}}}mdWrap",
         {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
     )
-    digiprov_xml = ET.SubElement(digiprov_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+    digiprov_xml = ET.SubElement(digiprov_wrap, f"{{{METS_NS}}}xmlData")
     ET.SubElement(digiprov_xml, "dnx")
 
-    file_sec = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}fileSec")
+    file_sec = ET.SubElement(mets_root, f"{{{METS_NS}}}fileSec")
 
     def _append_epicur_resource(obj: ProjectDigitalObject, *, role: str = "secondary", type_attr: Optional[str] = None, target: Optional[str] = None) -> None:
         href = obj.access_url or obj.path or obj.storage_key
@@ -884,14 +891,14 @@ def _build_mets_from_record(
         rep_id = f"rep{index}"
         file_id = f"fid{index}-1"
 
-        rep_amd = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}amdSec", {"ID": f"{rep_id}-amd"})
-        rep_tech = ET.SubElement(rep_amd, f"{{{ROSETTA_METS_NS}}}techMD", {"ID": f"{rep_id}-amd-tech"})
+        rep_amd = ET.SubElement(mets_root, f"{{{METS_NS}}}amdSec", {"ID": f"{rep_id}-amd"})
+        rep_tech = ET.SubElement(rep_amd, f"{{{METS_NS}}}techMD", {"ID": f"{rep_id}-amd-tech"})
         rep_wrap = ET.SubElement(
             rep_tech,
-            f"{{{ROSETTA_METS_NS}}}mdWrap",
+            f"{{{METS_NS}}}mdWrap",
             {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
         )
-        rep_xml = ET.SubElement(rep_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+        rep_xml = ET.SubElement(rep_wrap, f"{{{METS_NS}}}xmlData")
         rep_dnx = ET.SubElement(rep_xml, "dnx")
         section = ET.SubElement(rep_dnx, "section", {"id": "generalRepCharacteristics"})
         rec = ET.SubElement(section, "record")
@@ -905,7 +912,7 @@ def _build_mets_from_record(
 
         file_grp = ET.SubElement(
             file_sec,
-            f"{{{ROSETTA_METS_NS}}}fileGrp",
+            f"{{{METS_NS}}}fileGrp",
             {
                 "USE": "VIEW",
                 "ID": rep_id,
@@ -922,7 +929,7 @@ def _build_mets_from_record(
         if obj.size_bytes:
             file_attrs["SIZE"] = str(obj.size_bytes)
 
-        file_elem = ET.SubElement(file_grp, f"{{{ROSETTA_METS_NS}}}file", file_attrs)
+        file_elem = ET.SubElement(file_grp, f"{{{METS_NS}}}file", file_attrs)
         href = obj.access_url or obj.storage_key or obj.path
         if href:
             is_url = href.startswith(('http://', 'https://'))
@@ -933,19 +940,19 @@ def _build_mets_from_record(
             loctype = "URL" if is_url else "URL"
             flocat_attrs = {
                 "LOCTYPE": loctype,
-                f"{{{ROSETTA_XLINK_NS}}}href": href,
-                f"{{{ROSETTA_XLINK_NS}}}type": "simple",
+                f"{{{XLINK_NS}}}href": href,
+                f"{{{XLINK_NS}}}type": "simple",
             }
-            ET.SubElement(file_elem, f"{{{ROSETTA_METS_NS}}}FLocat", flocat_attrs)
+            ET.SubElement(file_elem, f"{{{METS_NS}}}FLocat", flocat_attrs)
 
-        file_amd = ET.SubElement(mets_root, f"{{{ROSETTA_METS_NS}}}amdSec", {"ID": f"{file_id}-amd"})
-        file_tech = ET.SubElement(file_amd, f"{{{ROSETTA_METS_NS}}}techMD", {"ID": f"{file_id}-amd-tech"})
+        file_amd = ET.SubElement(mets_root, f"{{{METS_NS}}}amdSec", {"ID": f"{file_id}-amd"})
+        file_tech = ET.SubElement(file_amd, f"{{{METS_NS}}}techMD", {"ID": f"{file_id}-amd-tech"})
         file_wrap = ET.SubElement(
             file_tech,
-            f"{{{ROSETTA_METS_NS}}}mdWrap",
+            f"{{{METS_NS}}}mdWrap",
             {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
         )
-        file_xml = ET.SubElement(file_wrap, f"{{{ROSETTA_METS_NS}}}xmlData")
+        file_xml = ET.SubElement(file_wrap, f"{{{METS_NS}}}xmlData")
         ET.SubElement(file_xml, "dnx")
 
         label_source = obj.file_name or obj.storage_key or obj.path or f"Digital Object {index}"
@@ -954,20 +961,20 @@ def _build_mets_from_record(
 
         struct_map = ET.SubElement(
             mets_root,
-            f"{{{ROSETTA_METS_NS}}}structMap",
+            f"{{{METS_NS}}}structMap",
             {"ID": f"{rep_id}-1", "TYPE": "LOGICAL"},
         )
-        struct_root = ET.SubElement(struct_map, f"{{{ROSETTA_METS_NS}}}div")
+        struct_root = ET.SubElement(struct_map, f"{{{METS_NS}}}div")
         div = ET.SubElement(
             struct_root,
-            f"{{{ROSETTA_METS_NS}}}div",
+            f"{{{METS_NS}}}div",
             {
                 "ORDERLABEL": label,
                 "TYPE": "FILE",
                 "LABEL": label,
             },
         )
-        ET.SubElement(div, f"{{{ROSETTA_METS_NS}}}fptr", {"FILEID": file_id})
+        ET.SubElement(div, f"{{{METS_NS}}}fptr", {"FILEID": file_id})
 
     return mets_root
 
