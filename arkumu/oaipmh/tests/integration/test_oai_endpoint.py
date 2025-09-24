@@ -39,6 +39,8 @@ class TestOAIEndpoint:
         assert "<repositoryName>Arkumu Repository</repositoryName>" in content
         # baseURL should be absolute
         assert "<baseURL>http://testserver/oai/</baseURL>" in content
+        assert 'xmlns:oai-identifier="http://www.openarchives.org/OAI/2.0/oai-identifier"' in content
+        assert '<oai-identifier:oai-identifier' in content
         assert "<protocolVersion>2.0</protocolVersion>" in content
         assert "<adminEmail>admin@example.org</adminEmail>" in content
         assert "<earliestDatestamp>1970-01-01T00:00:00Z</earliestDatestamp>" in content

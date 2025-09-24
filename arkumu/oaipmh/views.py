@@ -72,6 +72,7 @@ def _oai_envelope(request: HttpRequest) -> ET.Element:
     # Register namespaces to control prefixes consistently
     ET.register_namespace("", "http://www.openarchives.org/OAI/2.0/")
     ET.register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
+    ET.register_namespace("oai-identifier", "http://www.openarchives.org/OAI/2.0/oai-identifier")
 
     oai = ET.Element(
         "OAI-PMH",
