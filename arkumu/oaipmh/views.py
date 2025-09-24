@@ -24,7 +24,6 @@ from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
-from .authentication import oai_authentication_required
 import rdflib
 
 
@@ -44,7 +43,7 @@ ROSETTA_XLINK_NS = "http://www.w3.org/1999/xlink"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
-SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets", "rdf"]
+SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
 ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
@@ -261,12 +260,6 @@ def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) ->
     ET.SubElement(mets_format, "schema").text = ROSETTA_METS_NS
     ET.SubElement(mets_format, "metadataNamespace").text = ROSETTA_METS_NS
 
-    # RDF/XML format for canonical graph export
-    rdf_format = ET.SubElement(list_metadata_formats, "metadataFormat")
-    ET.SubElement(rdf_format, "metadataPrefix").text = "rdf"
-    ET.SubElement(rdf_format, "schema").text = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-    ET.SubElement(rdf_format, "metadataNamespace").text = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-
     return oai
 
 
@@ -307,7 +300,7 @@ def _list_identifiers(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
     # Validate metadata format
     if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
-        return _error(oai, "cannotDisseminateFormat", "Only oai_dc, mets, and rdf are supported")
+        return _error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported")
 
     # Validate date parameters
     if not has_resumption_param:
@@ -1259,7 +1252,7 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
     # Validate metadata format
     if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
-        return _error(oai, "cannotDisseminateFormat", "Only oai_dc, mets, and rdf are supported")
+        return _error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported")
 
     # Validate date parameters
     if not has_resumption_param:
@@ -1414,7 +1407,6 @@ def _list_records(oai: ET.Element, request: HttpRequest) -> ET.Element:
 
 
 @require_GET
-@oai_authentication_required
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
     try:
         verb = request.GET.get("verb", "").strip()
@@ -1487,7 +1479,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             if not identifier or not metadata_prefix:
                 return _xml_response(_error(oai, "badArgument", "identifier and metadataPrefix are required"))
             if metadata_prefix not in SUPPORTED_METADATA_FORMATS:
-                return _xml_response(_error(oai, "cannotDisseminateFormat", "Only oai_dc, mets, and rdf are supported"))
+                return _xml_response(_error(oai, "cannotDisseminateFormat", "Only oai_dc and mets are supported"))
 
             # Resolve Arkumu resource by identifier
             resource_uri = _parse_identifier(identifier)
