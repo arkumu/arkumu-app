@@ -30,7 +30,7 @@ import rdflib
 # Minimal repository config (can be moved to settings)
 REPO_NAME = "Arkumu Repository"
 REPO_BASEURL = "/oai/"
-REPO_ADMIN_EMAIL = "admin@example.org"
+REPO_ADMIN_EMAIL = "mondaca@uni-koeln.de"
 REPO_PROTOCOL_VERSION = "2.0"
 REPO_EARLIEST_DATASTAMP = "1970-01-01T00:00:00Z"
 REPO_DELETED_RECORD = "no"
