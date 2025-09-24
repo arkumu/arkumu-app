@@ -195,44 +195,6 @@ def _identify(oai: ET.Element, request: HttpRequest) -> ET.Element:
     ET.SubElement(identify, "deletedRecord").text = REPO_DELETED_RECORD
     ET.SubElement(identify, "granularity").text = REPO_GRANULARITY
 
-    # Add <description> with oai-identifier declaration
-    try:
-        desc = ET.SubElement(identify, "description")
-        oai_ident = ET.SubElement(
-            desc,
-            "{http://www.openarchives.org/OAI/2.0/oai-identifier}oai-identifier",
-            {
-                "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation": (
-                    "http://www.openarchives.org/OAI/2.0/oai-identifier "
-                    "http://www.openarchives.org/OAI/2.0/oai-identifier.xsd"
-                )
-            },
-        )
-        ET.SubElement(oai_ident, "{http://www.openarchives.org/OAI/2.0/oai-identifier}scheme").text = "oai"
-        ET.SubElement(
-            oai_ident,
-            "{http://www.openarchives.org/OAI/2.0/oai-identifier}repositoryIdentifier",
-        ).text = REPO_REPOSITORY_IDENTIFIER
-        ET.SubElement(
-            oai_ident, "{http://www.openarchives.org/OAI/2.0/oai-identifier}delimiter"
-        ).text = ":"
-
-        # Build a sample identifier; prefer a real resource if available
-        sample_uri: Optional[str] = (
-            Resource.objects
-            .order_by("id")
-            .values_list("uri", flat=True)
-            .first()
-        )
-        if not sample_uri:
-            sample_uri = "https://example.org/entities/sample"
-        ET.SubElement(
-            oai_ident, "{http://www.openarchives.org/OAI/2.0/oai-identifier}sampleIdentifier"
-        ).text = _build_identifier(sample_uri)
-    except Exception:
-        # Non-fatal if description cannot be built
-        pass
-
     return oai
 
 
