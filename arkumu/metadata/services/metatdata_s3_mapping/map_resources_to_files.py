@@ -116,9 +116,14 @@ class FileResourceMatcherService:
             # Skip resources with null/empty values
             if not resource.value:
                 continue
-                
-            key = resource.value.lower() if not self.config.case_sensitive else resource.value
-            all_resources[key].append(resource)
+
+            raw_value = resource.value if self.config.case_sensitive else resource.value.lower()
+            all_resources[raw_value].append(resource)
+
+            base_value, _ = os.path.splitext(resource.value)
+            if base_value and base_value != resource.value:
+                normalized_base = base_value if self.config.case_sensitive else base_value.lower()
+                all_resources[normalized_base].append(resource)
 
         # Use iterator with chunk_size for better memory efficiency and to avoid slicing issues
         for s3_file in files_to_process.iterator(chunk_size=batch_size):
@@ -131,13 +136,23 @@ class FileResourceMatcherService:
                     self._log(f"Skipping S3FileObject ID {s3_file.id} ('{s3_file.s3_key}') - empty filename after stripping extension.")
                     continue
 
-                # Normalize for comparison
-                search_key = (file_name_without_extension.lower() 
-                            if not self.config.case_sensitive 
-                            else file_name_without_extension)
-                
-                # Find matching resources using pre-fetched data
-                matching_resources = all_resources.get(search_key, [])
+                candidate_names = [file_name_without_extension, s3_file.file_name]
+                matching_resources = []
+
+                for name in candidate_names:
+                    if not name:
+                        continue
+                    search_key = name if self.config.case_sensitive else name.lower()
+                    hits = all_resources.get(search_key)
+                    if hits:
+                        matching_resources.extend(hits)
+
+                # Deduplicate while preserving order
+                seen_ids = set()
+                matching_resources = [
+                    res for res in matching_resources
+                    if (res.id not in seen_ids and not seen_ids.add(res.id))
+                ]
 
                 match_count = len(matching_resources)
 
@@ -394,4 +409,3 @@ class FileResourceMatcherService:
             'unlinked_files': unlinked_files,
             'link_percentage': round((linked_files / total_files * 100) if total_files > 0 else 0, 2)
         }
-
