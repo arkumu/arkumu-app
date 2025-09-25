@@ -409,3 +409,6 @@ MULTIPART_UPLOAD_SETTINGS = {
 # Feature flags for optional REST APIs
 ENABLE_IMPORT_API = False
 ENABLE_CANONICAL_URI_API = False
+
+# Optional HTTP Basic Auth for OAI endpoint (uses Django users)
+OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=["hbz-dev"])

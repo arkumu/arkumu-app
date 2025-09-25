@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import mimetypes
 import re
@@ -8,6 +10,8 @@ from datetime import datetime, timezone as dt_timezone, timedelta
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
+from django.conf import settings
+from django.contrib.auth import authenticate
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
@@ -63,6 +67,32 @@ ET.register_namespace("dc", DC_NS)
 ET.register_namespace("dcterms", DCTERMS_NS)
 
 logger = logging.getLogger(__name__)
+
+
+def _enforce_basic_auth(request: HttpRequest) -> Optional[HttpResponse]:
+    """Enforce optional HTTP Basic Auth for the OAI endpoint."""
+
+    allowed_users = getattr(settings, "OAI_BASIC_AUTH_ALLOWED_USERS", [])
+    if not allowed_users:
+        return None
+
+    auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+    if auth_header.startswith("Basic "):
+        encoded = auth_header.split(" ", 1)[1].strip()
+        try:
+            decoded = base64.b64decode(encoded).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            decoded = ""
+        if decoded:
+            input_username, _, input_password = decoded.partition(":")
+            if input_username and input_password:
+                user = authenticate(request=request, username=input_username, password=input_password)
+                if user is not None and user.is_active and user.username in allowed_users:
+                    return None
+
+    response = HttpResponse(status=401)
+    response["WWW-Authenticate"] = 'Basic realm="Arkumu OAI"'
+    return response
 
 
 def _get_cached_record(resource: Resource, metadata_prefix: str) -> Optional[Dict[str, Any]]:
@@ -1483,6 +1513,10 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
+    auth_response = _enforce_basic_auth(request)
+    if auth_response is not None:
+        return auth_response
+
     try:
         params = request.GET.copy()
         if request.method == "POST":
