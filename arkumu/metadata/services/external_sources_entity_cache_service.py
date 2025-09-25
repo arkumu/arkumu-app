@@ -46,7 +46,7 @@ class ExternalSourcesEntityCacheService:
         normalized_p = self._normalize_ids(property_ids)
         if not normalized_p:
             return []
-        normalized = itertools.product(normalized_q, normalized_p)
+        normalized = [*itertools.product(normalized_q, normalized_p)]
 
         if not force_refresh:
             existing = set(
@@ -56,16 +56,14 @@ class ExternalSourcesEntityCacheService:
             pending = [qid for qid in normalized if qid not in existing]
         else:
             pending = normalized
+        ExternalSourcesEntity.objects.filter(data_id__in=[q for q, p in pending], property__in=[p for q, p in pending], source=source.name).delete()
 
         to_fetch = defaultdict(list)
         for q, p in pending:
             to_fetch[p].append(q)
         fetched = self._fetch(to_fetch, source)
-        logger.info(fetched)
-        ExternalSourcesEntity.objects.bulk_create([ExternalSourcesEntity(**row) for row in fetched],
-                                                  update_conflicts=True,
-                                                  update_fields=["datum", "updated_at"],
-                                                  unique_fields=["source", "data_id", "property"])
+
+        ExternalSourcesEntity.objects.bulk_create([ExternalSourcesEntity(**row) for row in fetched])
 
         logger.info(
             "External entities cache sync completed – %d entities processed (force=%s)",
@@ -81,7 +79,7 @@ class ExternalSourcesEntityCacheService:
         # ----------------------------------
         pred = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/ereignisort")
         places = Triple.objects.filter(predicate=pred, object__resource_type=ResourceType.LITERAL)
-        return self.ensure_cached(set([place.object.value for place in places]), ["P625"], self.Source.WD, force_refresh=force_refresh)
+        return self.ensure_cached(set([place.object.value for place in places]), ["P625", "P1448"], self.Source.WD, force_refresh=force_refresh)
 
     # ------------------------------------------------------------------
     # Internal helpers
