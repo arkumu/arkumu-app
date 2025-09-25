@@ -36,7 +36,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         data_ids = self._collect_ids(options.get("ids"), options.get("file"))
-        property_ids = [property_id.strip() for property_id in options.get("properties").split(',')]
+        property_ids = self._collect_ids(options.get("properties"))
         if not data_ids:
             raise CommandError("No identifiers supplied.")
         if not property_ids:
@@ -59,7 +59,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write("No entities required updating.")
 
-    def _collect_ids(self, ids: Iterable[str] | None, file_path: str | None) -> List[str]:
+    def _collect_ids(self, ids: Iterable[str] | None, file_path: str | None = None) -> List[str]:
         unique_ids: Set[str] = set()
 
         def _ingest(token: str) -> None:

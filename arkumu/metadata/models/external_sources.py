@@ -13,6 +13,8 @@ class ExternalSourcesEntity(UUIDModel):
     class SourceEnum(models.TextChoices):
         WIKIDATA = "WD", _("WikiData")
 
+
+
     data_id = models.CharField(
         max_length=32,
         help_text="Identifier (e.g. Q42)",
@@ -32,7 +34,7 @@ class ExternalSourcesEntity(UUIDModel):
     )
 
     class Meta:
-        ordering = ["data_id"]
+        ordering = ["source", "data_id", "property"]
         verbose_name = "External Entity"
         verbose_name_plural = "External Entities"
         indexes = [

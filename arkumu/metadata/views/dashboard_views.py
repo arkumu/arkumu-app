@@ -25,18 +25,18 @@ def metadata_dashboard(request):
         'uploads': UploadSession.objects.count(),
         'ingests': IngestSession.objects.count(),
     }
-    
+
     # Get recent uploads
     recent_uploads = UploadSession.objects.all().order_by('-created_at')[:5]
-    
+
     # Get recent ingests
     recent_ingests = IngestSession.objects.select_related('organization').order_by('-created_at')[:5]
-    
+
     # Get institutions with resource counts
     institutions = Resource.objects.values('organization__name').annotate(
         count=Count('id')
     ).order_by('-count')[:10]
-    
+
     # Get organizations with triple counts for selective deletion
     from arkumu.users.models import Organization
     organizations_with_data = []
@@ -51,7 +51,7 @@ def metadata_dashboard(request):
                 'triple_count': triple_count,
                 'resource_count': resource_count
             })
-    
+
     return render(request, 'dashboard.html', {
         'stats': stats,
         'recent_uploads': recent_uploads,
@@ -65,13 +65,13 @@ def metadata_dashboard(request):
 def all_upload_sessions(request):
     """Displays a list of all upload sessions with their files."""
     all_uploads = UploadSession.objects.prefetch_related('files').all().order_by('-created_at')
-    
+
     # Prepare enhanced session data
     enhanced_sessions = []
     for session in all_uploads:
         # Get associated files
         files = list(session.files.all())
-        
+
         # Prepare file information
         file_info = []
         for file_obj in files:
@@ -82,7 +82,7 @@ def all_upload_sessions(request):
                 'content_type': file_obj.content_type,
                 'error_message': file_obj.error_message,
             })
-        
+
         enhanced_sessions.append({
             'session': session,
             'files': file_info,
@@ -91,7 +91,7 @@ def all_upload_sessions(request):
             'completed_files': len([f for f in file_info if f['status'] == 'completed']),
             'failed_files': len([f for f in file_info if f['status'] == 'failed']),
         })
-    
+
     # Calculate aggregate statistics
     total_stats = {
         'total_sessions': len(enhanced_sessions),
@@ -100,7 +100,7 @@ def all_upload_sessions(request):
         'failed_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'failed'),
         'in_progress_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'in_progress'),
     }
-    
+
     return render(request, 'all_upload_sessions.html', {
         'enhanced_sessions': enhanced_sessions,
         'total_stats': total_stats
@@ -111,13 +111,13 @@ def all_upload_sessions(request):
 def all_ingest_sessions(request):
     """Displays a list of all ingest sessions with their datasets."""
     all_ingests = IngestSession.objects.select_related('organization').prefetch_related('import_tasks').all().order_by('-created_at')
-    
+
     # Prepare enhanced session data
     enhanced_sessions = []
     for session in all_ingests:
         # Get associated import tasks (individual datasets)
         import_tasks = list(session.import_tasks.all())
-        
+
         # Determine datasets for this session
         datasets = []
         if import_tasks:
@@ -148,14 +148,14 @@ def all_ingest_sessions(request):
                 'status': session.status,
                 'rows_processed': session.processed_rows,
             })
-        
+
         enhanced_sessions.append({
             'session': session,
             'datasets': datasets,
             'dataset_count': len(datasets),
             'is_multi_dataset': len(datasets) > 1
         })
-    
+
     # Calculate aggregate statistics
     total_stats = {
         'total_sessions': len(enhanced_sessions),
@@ -168,7 +168,7 @@ def all_ingest_sessions(request):
         'total_triples_created': 0,
         'sessions_with_stats': 0,
     }
-    
+
     # Sum up ingestion stats
     for item in enhanced_sessions:
         session = item['session']
@@ -177,7 +177,7 @@ def all_ingest_sessions(request):
             total_stats['total_rows_processed'] += session.ingestion_stats.get('rows_processed', 0)
             total_stats['total_resources_created'] += session.ingestion_stats.get('resources_created', 0)
             total_stats['total_triples_created'] += session.ingestion_stats.get('triples_created', 0)
-    
+
     return render(request, 'all_ingest_sessions.html', {
         'enhanced_sessions': enhanced_sessions,
         'total_stats': total_stats
@@ -204,7 +204,7 @@ def upload_session_stats(request, session_id):
     """HTMX endpoint to show detailed stats for a specific upload session."""
     try:
         session = UploadSession.objects.prefetch_related('files').get(pk=session_id)
-        
+
         # Prepare file information
         files = list(session.files.all())
         file_info = []
@@ -216,11 +216,11 @@ def upload_session_stats(request, session_id):
                 'content_type': file_obj.content_type,
                 'error_message': file_obj.error_message,
             })
-        
+
         # Calculate stats
         completed_files = len([f for f in file_info if f['status'] == 'completed'])
         failed_files = len([f for f in file_info if f['status'] == 'failed'])
-        
+
         return render(request, 'partials/upload_stats_modal_content.html', {
             'session': session,
             'files': file_info,
@@ -255,5 +255,22 @@ def trigger_cache_refresh(request):
     messages.success(
         request,
         'Cache warm-up tasks enqueued. Huey will rebuild snapshots and schema data shortly.',
+    )
+    return redirect('metadata:metadata_dashboard')
+
+@general_login_required
+@require_POST
+def trigger_external_sources_refresh(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Only staff members can trigger external sources refreshes.')
+        return redirect('metadata:metadata_dashboard')
+
+    from arkumu.metadata.services.external_sources_entity_cache_service import ExternalSourcesEntityCacheService
+
+    ExternalSourcesEntityCacheService().ensure_cached(True)
+
+    messages.success(
+        request,
+        'Reload of external sources started.',
     )
     return redirect('metadata:metadata_dashboard')

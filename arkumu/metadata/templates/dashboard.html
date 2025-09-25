@@ -47,6 +47,16 @@
                     Warm Project &amp; Schema Cache
                 </button>
             </form>
+            <form method="post" action="{% url 'metadata:metadata_dashboard_external_sources_refresh' %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-warning btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 15C3 17.8284 3 19.2426 3.87868 20.1213C4.75736 21 6.17157 21 9 21H15C17.8284 21 19.2426 21 20.1213 20.1213C21 19.2426 21 17.8284 21 15" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M12 3V16M12 16L16 11.625M12 16L8 11.625" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Reload External Sources
+                </button>
+            </form>
             {% endif %}
             <!-- Bulk Mapping removed - replaced by canonical URI system during import -->
         </div>
@@ -73,7 +83,7 @@
                             </option>
                             {% endfor %}
                         </select>
-                        <button id="delete-org-btn" 
+                        <button id="delete-org-btn"
                                 class="btn btn-warning btn-sm w-full"
                                 hx-post="{% url 'importer:delete_organization_triples' %}"
                                 hx-target="#delete-org-result"
@@ -98,13 +108,13 @@
                     {% endif %}
                 </div>
             </div>
-            
+
             <!-- Reset Database -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
                     <h4 class="card-title text-sm">Reset All Data</h4>
                     <p class="text-xs text-base-content/70 mb-3">Delete all imported data (Resources and Triples)</p>
-                    <button id="reset-db-btn" 
+                    <button id="reset-db-btn"
                             class="btn btn-error btn-sm w-full"
                             hx-post="{% url 'importer:reset_database' %}"
                             hx-target="#reset-db-result"
@@ -119,13 +129,13 @@
                     </button>
                 </div>
             </div>
-            
+
             <!-- Clear Upload Sessions -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
                     <h4 class="card-title text-sm">Clear Upload Sessions</h4>
                     <p class="text-xs text-base-content/70 mb-3">Delete all upload session records and history</p>
-                    <button id="clear-uploads-btn" 
+                    <button id="clear-uploads-btn"
                             class="btn btn-warning btn-sm w-full"
                             hx-post="{% url 'importer:clear_upload_sessions' %}"
                             hx-target="#clear-uploads-result"
@@ -140,13 +150,13 @@
                     </button>
                 </div>
             </div>
-            
+
             <!-- Clear Ingest Sessions -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
                     <h4 class="card-title text-sm">Clear Ingest Sessions</h4>
                     <p class="text-xs text-base-content/70 mb-3">Delete all ingest session records and history</p>
-                    <button id="clear-ingests-btn" 
+                    <button id="clear-ingests-btn"
                             class="btn btn-warning btn-sm w-full"
                             hx-post="{% url 'importer:clear_ingest_sessions' %}"
                             hx-target="#clear-ingests-result"
@@ -162,7 +172,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Results containers -->
         <div class="mt-4 space-y-2">
             <div id="delete-org-result"></div>
@@ -184,35 +194,35 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Triples</h2>
                 <p class="text-4xl font-bold">{{ stats.total_triples }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Classes</h2>
                 <p class="text-4xl font-bold">{{ stats.class_resources }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Properties</h2>
                 <p class="text-4xl font-bold">{{ stats.property_resources }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Ingests</h2>
                 <p class="text-4xl font-bold">{{ stats.ingests }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title text-sm">Resource Links</h2>
@@ -222,7 +232,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title text-sm">Data Sources</h2>
@@ -242,13 +252,13 @@
             </div>
         </div>
     </div>
-    
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Recent Uploads -->
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Recent Uploads</h2>
-                
+
                 <div class="overflow-x-auto">
                     <table class="table table-zebra w-full">
                         <thead>
@@ -283,18 +293,18 @@
                         </tbody>
                     </table>
                 </div>
-                
+
                 <div class="card-actions justify-end mt-4">
                     <a href="{% url 'metadata:all_upload_sessions' %}" class="btn btn-primary btn-sm">View All</a>
                 </div>
             </div>
         </div>
-        
+
         <!-- Recent Ingests -->
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Recent Ingests</h2>
-                
+
                 <div class="overflow-x-auto">
                     <table class="table table-zebra w-full">
                         <thead>
@@ -335,7 +345,7 @@
                         </tbody>
                     </table>
                 </div>
-                
+
                 <div class="card-actions justify-end mt-4">
                     <a href="{% url 'metadata:all_ingest_sessions' %}" class="btn btn-primary btn-sm">View All</a>
                 </div>
