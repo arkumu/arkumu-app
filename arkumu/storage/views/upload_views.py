@@ -603,23 +603,6 @@ def upload_complete_oob_refresh(request, organization):
 def uploads_dashboard(request):
     """Display consolidated async upload activity."""
 
-    base_sessions = list(
-        AsyncUploadSession.objects.select_related('user').order_by('-created_at')
-    )
-
-    manager = AsyncUploadManager()
-    active_statuses = {"initialized", "presigned_generated", "uploading", "processing"}
-
-    for session in base_sessions:
-        if session.status not in active_statuses:
-            continue
-        if not session.files.filter(status__in=['pending', 'uploading']).exists():
-            continue
-        try:
-            manager.sync_session_state(session)
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.warning("Failed to sync session %s: %s", session.id, exc)
-
     sessions_qs = (
         AsyncUploadSession.objects.select_related('user')
         .prefetch_related('files')
