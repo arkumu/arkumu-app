@@ -17,7 +17,6 @@ from arkumu.metadata.views.dashboard_helpers import (
     build_session_entry,
     summarize_upload_stats,
 )
-from arkumu.storage.services.async_upload_manager import AsyncUploadManager
 
 logger = logging.getLogger(__name__)
 
@@ -609,20 +608,6 @@ def uploads_dashboard(request):
         .prefetch_related('files')
         .order_by('-created_at')
     )
-
-    manager = AsyncUploadManager()
-
-    # Normalise in-memory sessions so stats reflect actual progress even if
-    # the browser did not report every upload completion (e.g. user navigated away).
-    for session in sessions_qs:
-        if not session.files.filter(status__in=['pending', 'uploading']).exists():
-            continue
-        try:
-            manager.sync_session_state(session)
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.warning("Failed to sync session %s: %s", session.id, exc)
-
-    # Rebuild entries after potential mutations so counts are consistent.
     entries = [build_session_entry(session) for session in sessions_qs]
     stats = summarize_upload_stats(entries)
 

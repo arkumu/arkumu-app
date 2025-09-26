@@ -233,64 +233,6 @@ class AsyncUploadManager:
             created_files=created_files,
         )
 
-    # ------------------------------------------------------------------
-    # Synchronisation helpers
-
-    def sync_session_state(self, session: AsyncUploadSession) -> bool:
-        """Ensure database reflects actual upload progress.
-
-        If files are still marked as ``pending`` or ``uploading`` but the
-        objects already exist in S3 (e.g. user navigated away before the
-        browser could call ``mark_file_uploaded``), promote them to
-        ``uploaded`` and enqueue verification. Returns ``True`` when any
-        updates were performed.
-        """
-
-        pending_files = session.files.filter(status__in=["pending", "uploading"])
-        if not pending_files.exists():  # Nothing to normalise
-            return False
-
-        try:
-            bucket_name = self.bucket_service.get_organization_bucket(session.organization)
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.warning(
-                "Unable to resolve bucket for session %s (%s): %s",
-                session.id,
-                session.organization,
-                exc,
-            )
-            return False
-
-        updated_files: List[AsyncUploadFile] = []
-        for upload_file in pending_files:
-            info = self.upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
-            if info and info.get("success"):
-                upload_file.mark_uploaded()
-                updated_files.append(upload_file)
-
-        if not updated_files:
-            return False
-
-        # Promote session to "processing" so the dashboard reflects reality.
-        session.status = "processing"
-        if not session.started_at:
-            session.started_at = timezone.now()
-        session.save(update_fields=["status", "started_at", "updated_at"])
-
-        # Trigger verification for all uploaded files (both newly marked and
-        # those already in "uploaded" status) to advance the pipeline.
-        from arkumu.storage.tasks import verify_and_process_upload  # local import to avoid cycles
-
-        for upload_file in session.files.filter(status="uploaded"):
-            verify_and_process_upload(str(upload_file.id))
-
-        logger.info(
-            "Session %s: normalised %s files to uploaded, verification enqueued",
-            session.id,
-            len(updated_files),
-        )
-        return True
-
     # Helpers -----------------------------------------------------------------
 
     def _derive_base_folder(self, folder: str) -> str:

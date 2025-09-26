@@ -122,7 +122,6 @@ const uploadTracker = {
 
 let uploadToastTimer = null;
 let uploadRefreshTimeout = null;
-let pendingRefreshPayload = null;
 
 function ensureUploadToastElements() {
     let toast = document.getElementById('upload-toast');
@@ -194,12 +193,10 @@ function hideUploadToast() {
 }
 
 function hasFileBrowserTarget() {
-    return Boolean(document.getElementById('file-browser-content'));
+    return document.querySelector('#file-browser-content');
 }
 
 function scheduleFileBrowserRetry(detail = {}) {
-    pendingRefreshPayload = detail;
-
     if (!window.htmx) {
         debugLog('ℹ️ HTMX not available for retry');
         return false;
@@ -216,23 +213,17 @@ function scheduleFileBrowserRetry(detail = {}) {
     }
 
     const delay = detail.delay || 1000;
-    if (!hasFileBrowserTarget()) {
+    const targetElement = hasFileBrowserTarget();
+    if (!targetElement) {
         debugLog('ℹ️ Retry target not found; skipping refresh');
         return false;
     }
 
     uploadRefreshTimeout = setTimeout(() => {
-        const targetExists = hasFileBrowserTarget();
-        if (!targetExists) {
-            debugLog('ℹ️ Retry target disappeared before refresh; deferring');
-            return;
-        }
-
         window.htmx.ajax('GET', retryUrl, {
-            target: '#file-browser-content',
+            target: targetElement,
             swap: 'innerHTML'
         });
-        pendingRefreshPayload = null;
     }, delay);
     return true;
 }
@@ -282,26 +273,6 @@ document.body.addEventListener('upload-refresh-error', (event) => {
     }
     showUploadToast(message, 6000);
 });
-
-function flushPendingUploadRefresh() {
-    if (!pendingRefreshPayload) {
-        return;
-    }
-    if (!hasFileBrowserTarget()) {
-        return;
-    }
-
-    const payload = Object.assign({}, pendingRefreshPayload);
-    if (!payload.retry_url) {
-        pendingRefreshPayload = null;
-        return;
-    }
-
-    // Give the DOM a moment and then execute the retry
-    payload.delay = Math.max(200, payload.delay || 200);
-    pendingRefreshPayload = null;
-    scheduleFileBrowserRetry(payload);
-}
 
 // Upload mode switching for dashboard
 function switchToFilesMode() {
@@ -2346,7 +2317,6 @@ function updateUploadControls() {
 function initializeDashboard() {
     initializeDashboardUpload();
     initializeFileViewer();
-    flushPendingUploadRefresh();
 }
 
 // Initialize when DOM is ready
