@@ -234,34 +234,78 @@ async function initializeAsyncUploadSession(files, folderPath) {
     const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
     const organization = orgSelector ? orgSelector.value : '';
     
-    const batchData = {
-        files: files.map(file => ({
-            name: file.name,
-            relativePath: file.webkitRelativePath || file.name,
-            size: file.size,
-            type: file.type
-        })),
-        folder: folderPath,
-        organization: organization
-    };
-    
-    debugLog('📡 ASYNC: Initializing session with', files.length, 'files');
-    
-    const response = await fetch('/storage/upload/presigned/batch/', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken(),
-        },
-        credentials: 'include',
-        body: JSON.stringify(batchData)
-    });
-    
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const chunkSize = window.ASYNC_UPLOAD_BATCH_SIZE || 250;
+    const totalFiles = files.length;
+    let sessionId = null;
+    let aggregatedUploads = [];
+    let aggregatedErrors = [];
+
+    debugLog('📡 ASYNC: Initializing session with', files.length, 'files using chunk size', chunkSize);
+
+    for (let start = 0; start < files.length; start += chunkSize) {
+        const chunk = files.slice(start, start + chunkSize);
+        const batchData = {
+            files: chunk.map(file => ({
+                name: file.name,
+                relativePath: file.webkitRelativePath || file.name,
+                size: file.size,
+                type: file.type
+            })),
+            folder: folderPath,
+            organization: organization,
+            total_files: totalFiles
+        };
+
+        if (sessionId) {
+            batchData.session_id = sessionId;
+        }
+
+        debugLog('📡 ASYNC: Sending chunk', (start / chunkSize) + 1, 'with', chunk.length, 'files');
+
+        const response = await fetch('/storage/upload/presigned/batch/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            credentials: 'include',
+            body: JSON.stringify(batchData)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!sessionId) {
+            sessionId = data.session_id;
+        }
+
+        if (data.session_id && sessionId && data.session_id !== sessionId) {
+            debugError('❌ Session mismatch detected', data.session_id, sessionId);
+            throw new Error('Upload session mismatch while chunking files');
+        }
+
+        if (Array.isArray(data.uploads)) {
+            aggregatedUploads = aggregatedUploads.concat(data.uploads);
+        }
+
+        if (Array.isArray(data.errors) && data.errors.length > 0) {
+            aggregatedErrors = aggregatedErrors.concat(data.errors);
+        }
     }
-    
-    return await response.json();
+
+    if (!sessionId) {
+        throw new Error('Failed to create upload session');
+    }
+
+    return {
+        success: aggregatedErrors.length === 0,
+        uploads: aggregatedUploads,
+        errors: aggregatedErrors,
+        session_id: sessionId
+    };
 }
 
 function createAsyncUploadCards(uploads, uploadArea) {

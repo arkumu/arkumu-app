@@ -47,6 +47,8 @@ def batch_presigned_urls(request):
         files = data.get('files', [])
         folder = data.get('folder', '')
         organization = data.get('organization', '')
+        session_id = data.get('session_id')
+        total_files_override = data.get('total_files')
         
         if not files:
             logger.error("❌ No files provided in batch request")
@@ -62,13 +64,33 @@ def batch_presigned_urls(request):
         bucket_service = BucketService()
         bucket_name = bucket_service.get_organization_bucket(organization) if organization else None
         
-        # Create upload session for tracking
-        session = AsyncUploadSession.objects.create(
-            user=request.user,
-            total_files=len(files),
-            organization=organization  # Store organization in session
-        )
-        logger.info(f"📝 Created upload session {session.id} for {len(files)} files in bucket {bucket_name}")
+        # Determine base folder (defaults to data for safety)
+        base_folder = (folder.split('/', 1)[0] if folder else 'data').strip() or 'data'
+
+        if session_id:
+            try:
+                session = AsyncUploadSession.objects.get(id=session_id, user=request.user)
+                logger.info(f"📎 Appending to existing session {session_id} with {len(files)} files")
+                session.organization = organization or session.organization
+                session.base_folder = base_folder or session.base_folder
+                if total_files_override:
+                    session.total_files = total_files_override
+                session.save(update_fields=["organization", "base_folder", "total_files", "updated_at"])
+            except AsyncUploadSession.DoesNotExist:
+                logger.error(f"❌ Session {session_id} not found or does not belong to user {request.user.id}")
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Invalid upload session'
+                }, status=400)
+        else:
+            total_files_value = total_files_override if total_files_override else len(files)
+            session = AsyncUploadSession.objects.create(
+                user=request.user,
+                total_files=total_files_value,
+                organization=organization,  # Store organization in session
+                base_folder=base_folder
+            )
+            logger.info(f"📝 Created upload session {session.id} for {len(files)} files in bucket {bucket_name}")
         
         upload_service = UploadService()
         results = []
@@ -135,7 +157,10 @@ def batch_presigned_urls(request):
                             s3_key=init_result['s3_key'],
                             file_size=filesize,
                             content_type=filetype,
-                            status='pending'
+                            relative_path=relative_path,
+                            status='pending',
+                            presigned_url='',
+                            presigned_fields={}
                         )
                         upload_files_created.append(upload_file)
                         logger.info(f"📄 Created multipart upload file record {upload_file.id} for {filename}")
@@ -150,7 +175,8 @@ def batch_presigned_urls(request):
                             'folder': file_dir,  # Add folder path for JavaScript
                             'organization': organization,  # Add organization info
                             'base_folder': folder,  # Add base folder info
-                            'upload_file_id': str(upload_file.id)
+                            'upload_file_id': str(upload_file.id),
+                            'relativePath': relative_path
                         })
                     else:
                         error_msg = init_result.get('error', 'Multipart upload initialization failed')
@@ -183,7 +209,10 @@ def batch_presigned_urls(request):
                             s3_key=result['key'],
                             file_size=filesize,
                             content_type=filetype,
-                            status='pending'
+                            relative_path=relative_path,
+                            status='pending',
+                            presigned_url=result.get('url', ''),
+                            presigned_fields=result.get('fields', {})
                         )
                         upload_files_created.append(upload_file)
                         logger.info(f"📄 Created upload file record {upload_file.id} for {filename}")
@@ -198,7 +227,8 @@ def batch_presigned_urls(request):
                             'filesize': filesize,
                             'filetype': filetype,
                             'max_file_size': result.get('max_file_size'),
-                            'upload_file_id': str(upload_file.id)
+                            'upload_file_id': str(upload_file.id),
+                            'relativePath': relative_path
                         })
                     else:
                         errors.append({
