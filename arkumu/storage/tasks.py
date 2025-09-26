@@ -17,6 +17,59 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+ACTIVE_ASYNC_STATUSES = {"initialized", "presigned_generated", "uploading", "processing"}
+
+
+def _get_async_upload_manager():
+    from arkumu.storage.services.async_upload_manager import AsyncUploadManager
+
+    return AsyncUploadManager()
+
+
+@db_task(retries=1, retry_delay=300)
+def reconcile_async_upload_sessions(limit: int = 50, lookback_hours: int = 48) -> None:
+    """Normalise async upload sessions so stats match S3 reality.
+
+    Looks at recent sessions (default: last 48h) that are still in an active
+    state and promotes files stuck in ``pending``/``uploading`` if their S3
+    objects already exist. Any newly normalised files are fed to the regular
+    verification pipeline.
+    """
+
+    from arkumu.storage.models.upload_tracking import AsyncUploadSession
+
+    cutoff = timezone.now() - timezone.timedelta(hours=lookback_hours)
+    sessions = (
+        AsyncUploadSession.objects.filter(
+            status__in=ACTIVE_ASYNC_STATUSES,
+            created_at__gte=cutoff,
+        )
+        .order_by('-updated_at')[:limit]
+    )
+
+    if not sessions:
+        logger.info("Async reconcile: no matching sessions found")
+        return
+
+    manager = _get_async_upload_manager()
+    normalised = 0
+
+    for session in sessions:
+        if not session.files.filter(status__in=['pending', 'uploading']).exists():
+            continue
+        try:
+            if manager.sync_session_state(session):
+                normalised += 1
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.warning("Async reconcile failed for session %s: %s", session.id, exc)
+
+    logger.info(
+        "Async reconcile complete: %s session(s) normalised (window=%sh, limit=%s)",
+        normalised,
+        lookback_hours,
+        limit,
+    )
+
 
 @db_task(retries=1, retry_delay=30)
 def assemble_file_task(resumable_upload_id: int):
@@ -254,6 +307,12 @@ if HUEY_PERIODIC_AVAILABLE:
             
         except Exception as e:
             logger.error(f"❌ CLEANUP: Error cleaning up sessions: {str(e)}")
+
+    @db_periodic_task(crontab(minute='30', hour='2'))  # Nightly at 02:30
+    def nightly_reconcile_async_uploads():
+        """Nightly normalisation pass to keep async uploads in sync."""
+
+        reconcile_async_upload_sessions()
 else:
     @db_task()
     def cleanup_old_upload_sessions():
@@ -275,6 +334,12 @@ else:
             
         except Exception as e:
             logger.error(f"❌ CLEANUP: Error cleaning up sessions: {str(e)}")
+
+    @db_task()
+    def nightly_reconcile_async_uploads():
+        """Manual trigger for async upload reconciliation when periodic tasks unavailable."""
+
+        reconcile_async_upload_sessions()
 
 
 @db_task(retries=2, retry_delay=30)
