@@ -5,13 +5,13 @@
 
 <div class="container mx-auto px-4 py-8 space-y-6">
 
-    <div class="alert bg-base-100 border border-base-200 shadow-sm">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 w-full">
-            <div>
-                <h2 class="text-lg font-semibold">Upload Activity Overview</h2>
-                <p class="text-sm text-base-content/70">Monitor in-progress uploads, background verification, and recent activity from one place.</p>
-            </div>
-            <a href="{% url 'storage:uploads_dashboard' %}" class="btn btn-primary btn-sm md:self-start">Open Uploads Dashboard</a>
+    <div class="rounded-xl border border-base-200 bg-base-100/90 p-6 shadow-sm">
+        <div class="flex flex-col gap-3 text-sm text-base-content/70 md:flex-row md:items-center md:gap-4">
+            <span>Monitor in-progress uploads, background verification, and recent activity from one place.</span>
+            <a href="{% url 'storage:uploads_dashboard' %}" class="ml-auto inline-flex items-center gap-2 text-sm font-medium text-primary">
+                View dashboard
+                <span class="badge badge-primary badge-outline">Uploads</span>
+            </a>
         </div>
     </div>
 
@@ -57,16 +57,6 @@
                         <button type="button" class="btn btn-ghost btn-xs join-item" id="folder-mode-btn" onclick="switchToFolderMode()">Folders</button>
                     </div>
                     <div class="text-xs text-base-content/60">Folder mode lets you upload directories via browsers that support it.</div>
-                </div>
-
-                <div id="dashboard-upload-area" class="mt-4 space-y-2"></div>
-
-                <div id="upload-controls" class="mt-4 hidden">
-                    <div class="divider">Upload Actions</div>
-                    <div class="flex justify-center items-center gap-3 text-sm text-base-content/70">
-                        <span id="files-count-label">0 files selected</span>
-                        <button id="start-upload-btn" class="btn btn-primary btn-sm" disabled>Start Upload</button>
-                    </div>
                 </div>
 
                 <div id="upload-toast" class="toast toast-top toast-end hidden">

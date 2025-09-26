@@ -120,6 +120,137 @@ const uploadTracker = {
     }
 };
 
+let uploadToastTimer = null;
+let uploadRefreshTimeout = null;
+
+function ensureUploadToastElements() {
+    let toast = document.getElementById('upload-toast');
+    let messageElement = document.getElementById('upload-toast-message');
+
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'upload-toast';
+        toast.className = 'toast toast-top toast-end hidden';
+
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-info shadow-lg';
+
+        messageElement = document.createElement('span');
+        messageElement.id = 'upload-toast-message';
+        messageElement.textContent = '';
+
+        alert.appendChild(messageElement);
+        toast.appendChild(alert);
+        document.body.appendChild(toast);
+    }
+
+    if (!messageElement) {
+        messageElement = toast.querySelector('#upload-toast-message');
+        if (!messageElement) {
+            messageElement = document.createElement('span');
+            messageElement.id = 'upload-toast-message';
+            const alertContainer = toast.querySelector('.alert');
+            if (alertContainer) {
+                alertContainer.appendChild(messageElement);
+            } else {
+                toast.appendChild(messageElement);
+            }
+        }
+    }
+
+    return { toast, messageElement };
+}
+
+function showUploadToast(message, duration = 5000) {
+    const { toast, messageElement } = ensureUploadToastElements();
+
+    if (message) {
+        messageElement.textContent = message;
+    }
+
+    toast.classList.remove('hidden');
+
+    if (uploadToastTimer) {
+        clearTimeout(uploadToastTimer);
+    }
+
+    uploadToastTimer = setTimeout(() => {
+        toast.classList.add('hidden');
+    }, duration);
+}
+
+function hideUploadToast() {
+    const toast = document.getElementById('upload-toast');
+    if (!toast) {
+        return;
+    }
+
+    toast.classList.add('hidden');
+    if (uploadToastTimer) {
+        clearTimeout(uploadToastTimer);
+        uploadToastTimer = null;
+    }
+}
+
+function scheduleFileBrowserRetry(detail = {}) {
+    if (!window.htmx) {
+        debugLog('ℹ️ HTMX not available for retry');
+        return;
+    }
+
+    const retryUrl = detail.retry_url;
+    if (!retryUrl) {
+        debugLog('ℹ️ Retry URL missing');
+        return;
+    }
+
+    if (uploadRefreshTimeout) {
+        clearTimeout(uploadRefreshTimeout);
+    }
+
+    const delay = detail.delay || 1000;
+    uploadRefreshTimeout = setTimeout(() => {
+        window.htmx.ajax('GET', retryUrl, {
+            target: '#file-browser-content',
+            swap: 'innerHTML'
+        });
+    }, delay);
+}
+
+document.body.addEventListener('upload-refresh-retry', (event) => {
+    const detail = event.detail || {};
+    scheduleFileBrowserRetry(detail);
+
+    if (detail.reason === 'error') {
+        showUploadToast('Retrying file list…', Math.min((detail.delay || 2000) + 2000, 6000));
+        return;
+    }
+
+    if ((detail.retry || 1) === 1) {
+        showUploadToast('Waiting for uploaded files to appear…', Math.min((detail.delay || 2000) + 3000, 6000));
+    }
+});
+
+document.body.addEventListener('upload-refresh-missing', (event) => {
+    const detail = event.detail || {};
+    const missingCount = detail.total_missing || 0;
+    if (missingCount > 0) {
+        showUploadToast('Some files are still processing; check the uploads dashboard shortly.', 6000);
+    }
+});
+
+document.body.addEventListener('upload-refresh-warning', (event) => {
+    const detail = event.detail || {};
+    const message = detail.message || 'Temporary issue checking files; retrying…';
+    showUploadToast(message, 5000);
+});
+
+document.body.addEventListener('upload-refresh-error', (event) => {
+    const detail = event.detail || {};
+    const message = detail.message || 'Unable to refresh files. Please check the uploads dashboard.';
+    showUploadToast(message, 6000);
+});
+
 // Upload mode switching for dashboard
 function switchToFilesMode() {
     const fileInput = document.getElementById('dashboard-file-picker');
@@ -204,6 +335,7 @@ async function initializeDashboardUpload() {
         const folderPath = baseFolder;
         
         debugLog('🚀 ASYNC: Starting async upload session');
+        showUploadToast('Upload started; check status in the uploads dashboard.', 6000);
         
         try {
             // Phase 1: Initialize upload session and get presigned URLs
@@ -214,7 +346,9 @@ async function initializeDashboardUpload() {
             }
             
             // Clear previous uploads
-            uploadArea.innerHTML = '';
+            if (uploadArea) {
+                uploadArea.innerHTML = '';
+            }
             
             // Phase 2: Create UI cards for each file  
             createAsyncUploadCards(sessionResponse.results || sessionResponse.uploads, uploadArea);
@@ -224,7 +358,12 @@ async function initializeDashboardUpload() {
             
         } catch (error) {
             debugError('❌ ASYNC: Upload failed:', error);
-            showUploadError(uploadArea, 'Upload failed: ' + error.message);
+            if (uploadArea) {
+                showUploadError(uploadArea, 'Upload failed: ' + error.message);
+            } else {
+                alert('Upload failed: ' + error.message);
+            }
+            showUploadToast('Upload failed. Please review the uploads dashboard.', 6000);
         }
     });
 }
@@ -309,6 +448,10 @@ async function initializeAsyncUploadSession(files, folderPath) {
 }
 
 function createAsyncUploadCards(uploads, uploadArea) {
+    if (!uploadArea) {
+        debugLog('ℹ️ Async upload UI disabled; skipping progress cards');
+        return;
+    }
     // Check if this is a folder upload (many files or files with relative paths)
     const isFolderUpload = uploads.length > 10 || uploads.some(upload => upload.relativePath && upload.relativePath.includes('/'));
     
@@ -831,6 +974,10 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
 // Upload verifying helper - shows coordinated loading state
 function showUploadVerifying(fileCount, uploadedFiles) {
     const uploadArea = document.getElementById('dashboard-upload-area');
+    if (!uploadArea) {
+        debugLog('ℹ️ Skipping verifying banner; no upload area available');
+        return;
+    }
     const verifyingMessage = document.createElement('div');
     verifyingMessage.className = 'alert alert-info mt-4';
     verifyingMessage.id = 'upload-verifying-message';
@@ -859,6 +1006,10 @@ function showUploadComplete(fileCount) {
     }
     
     const uploadArea = document.getElementById('dashboard-upload-area');
+    if (!uploadArea) {
+        debugLog('ℹ️ Skipping completion banner; no upload area available');
+        return;
+    }
     const completionMessage = document.createElement('div');
     completionMessage.className = 'alert alert-success mt-4';
     completionMessage.innerHTML = `
@@ -1399,6 +1550,10 @@ function handleSessionCompletion(sessionStatus) {
 }
 
 function showUploadError(uploadArea, message) {
+    if (!uploadArea) {
+        debugError('Upload error without container:', message);
+        return;
+    }
     const errorDiv = document.createElement('div');
     errorDiv.className = 'alert alert-error mt-4';
     errorDiv.innerHTML = `
