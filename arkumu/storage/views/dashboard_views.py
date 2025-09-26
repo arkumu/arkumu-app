@@ -453,7 +453,8 @@ def refresh_file_browser(request, organization):
             expected_files.append(value)
 
         if expected_files:
-            logger.info(f"📋 REFRESH: Looking for expected files: {expected_files}")
+            logger.info("📋 REFRESH: Looking for %d expected files", len(expected_files))
+            logger.debug("📋 REFRESH (debug) expected files: %s", expected_files)
     
     try:
         # Clear all possible cache keys for this organization
