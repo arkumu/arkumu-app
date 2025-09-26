@@ -192,16 +192,20 @@ function hideUploadToast() {
     }
 }
 
+function hasFileBrowserTarget() {
+    return document.querySelector('#file-browser-content');
+}
+
 function scheduleFileBrowserRetry(detail = {}) {
     if (!window.htmx) {
         debugLog('ℹ️ HTMX not available for retry');
-        return;
+        return false;
     }
 
     const retryUrl = detail.retry_url;
     if (!retryUrl) {
         debugLog('ℹ️ Retry URL missing');
-        return;
+        return false;
     }
 
     if (uploadRefreshTimeout) {
@@ -209,17 +213,27 @@ function scheduleFileBrowserRetry(detail = {}) {
     }
 
     const delay = detail.delay || 1000;
+    const targetElement = hasFileBrowserTarget();
+    if (!targetElement) {
+        debugLog('ℹ️ Retry target not found; skipping refresh');
+        return false;
+    }
+
     uploadRefreshTimeout = setTimeout(() => {
         window.htmx.ajax('GET', retryUrl, {
-            target: '#file-browser-content',
+            target: targetElement,
             swap: 'innerHTML'
         });
     }, delay);
+    return true;
 }
 
 document.body.addEventListener('upload-refresh-retry', (event) => {
     const detail = event.detail || {};
-    scheduleFileBrowserRetry(detail);
+    const scheduled = scheduleFileBrowserRetry(detail);
+    if (!scheduled) {
+        return;
+    }
 
     if (detail.reason === 'error') {
         showUploadToast('Retrying file list…', Math.min((detail.delay || 2000) + 2000, 6000));
@@ -234,6 +248,9 @@ document.body.addEventListener('upload-refresh-retry', (event) => {
 document.body.addEventListener('upload-refresh-missing', (event) => {
     const detail = event.detail || {};
     const missingCount = detail.total_missing || 0;
+    if (!hasFileBrowserTarget()) {
+        return;
+    }
     if (missingCount > 0) {
         showUploadToast('Some files are still processing; check the uploads dashboard shortly.', 6000);
     }
@@ -242,12 +259,18 @@ document.body.addEventListener('upload-refresh-missing', (event) => {
 document.body.addEventListener('upload-refresh-warning', (event) => {
     const detail = event.detail || {};
     const message = detail.message || 'Temporary issue checking files; retrying…';
+    if (!hasFileBrowserTarget()) {
+        return;
+    }
     showUploadToast(message, 5000);
 });
 
 document.body.addEventListener('upload-refresh-error', (event) => {
     const detail = event.detail || {};
     const message = detail.message || 'Unable to refresh files. Please check the uploads dashboard.';
+    if (!hasFileBrowserTarget()) {
+        return;
+    }
     showUploadToast(message, 6000);
 });
 
