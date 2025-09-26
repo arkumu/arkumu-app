@@ -4,11 +4,13 @@ Implements the simplified upload system using presigned URLs.
 """
 import logging
 import json
+from datetime import timedelta
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.utils import timezone
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.async_upload_manager import AsyncUploadManager
 from arkumu.users.mixins import general_login_required
@@ -609,16 +611,24 @@ def uploads_dashboard(request):
 
     manager = AsyncUploadManager()
     active_statuses = {"initialized", "presigned_generated", "uploading", "processing"}
+    cutoff = timezone.now() - timedelta(days=2)
+    max_sync = 3
+    sync_count = 0
 
     for session in base_sessions:
         if session.status not in active_statuses:
             continue
+        if session.created_at < cutoff:
+            continue
         if not session.files.filter(status__in=['pending', 'uploading']).exists():
             continue
         try:
-            manager.sync_session_state(session)
+            if manager.sync_session_state(session):
+                sync_count += 1
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.warning("Failed to sync session %s: %s", session.id, exc)
+        if sync_count >= max_sync:
+            break
 
     sessions_qs = (
         AsyncUploadSession.objects.select_related('user')
