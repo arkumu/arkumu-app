@@ -43,8 +43,8 @@ REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
-METS_NS = "http://www.loc.gov/METS/"
-METS_SCHEMA_URL = "http://www.loc.gov/standards/mets/mets.xsd"
+METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
+METS_SCHEMA_URL = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd"
 DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
 XLINK_NS = "http://www.w3.org/1999/xlink"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
@@ -55,6 +55,81 @@ ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
 HARVESTABLE_FILE_STATUSES = {"completed", "verified"}
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
+
+# Namespace helpers for Rosetta METS output
+
+
+def _register_rosetta_namespaces() -> None:
+    """Register namespace prefixes required for Rosetta METS serialization."""
+    ET.register_namespace('mets', METS_NS)
+    ET.register_namespace('dc', DC_NS)
+    ET.register_namespace('dcterms', DCTERMS_NS)
+    ET.register_namespace('xlink', XLINK_NS)
+    ET.register_namespace('xsi', XSI_NS)
+
+
+def _create_dnx_element(
+    parent: ET.Element,
+    tag: str,
+    attrib: Optional[Dict[str, str]] = None,
+    text: Optional[str] = None,
+) -> ET.Element:
+    """Create a DNX element that renders without an explicit namespace prefix."""
+
+    elem = ET.SubElement(parent, tag, attrib or {})
+
+    if text is not None:
+        elem.text = str(text)
+    else:
+        # Force an explicit closing tag when no text or children are supplied.
+        elem.text = "\n"
+
+    return elem
+
+
+def _infer_representation_type(obj: ProjectDigitalObject) -> str:
+    """Heuristically map digital objects onto Rosetta representation buckets."""
+    hint_parts = [obj.storage_key or '', obj.path or '', obj.file_name or '']
+    hint = " ".join(hint_parts).lower()
+
+    if any(token in hint for token in ("preservation", "master")):
+        return "PRESERVATION_MASTER"
+
+    if any(token in hint for token in ("derivate", "derivative", "modified", "preview", "service")):
+        return "MODIFIED_MASTER"
+
+    if any(token in hint for token in ("access", "web", "thumbnail", "delivery")):
+        return "MODIFIED_MASTER_02"
+
+    if obj.content_type and obj.content_type.lower() in {"application/pdf", "application/vnd.ms-powerpoint"}:
+        return "MODIFIED_MASTER"
+
+    return "PRESERVATION_MASTER"
+
+
+def _group_digital_objects_for_rosetta(objects: List[ProjectDigitalObject]) -> List[tuple[str, List[ProjectDigitalObject]]]:
+    """Group files into at most three Rosetta representations."""
+    buckets: Dict[str, List[ProjectDigitalObject]] = {
+        "PRESERVATION_MASTER": [],
+        "MODIFIED_MASTER": [],
+        "MODIFIED_MASTER_02": [],
+    }
+
+    for obj in objects:
+        rep = _infer_representation_type(obj)
+        if rep not in buckets:
+            rep = "MODIFIED_MASTER_02"
+        buckets[rep].append(obj)
+
+    ordered: List[tuple[str, List[ProjectDigitalObject]]] = []
+    for rep in ("PRESERVATION_MASTER", "MODIFIED_MASTER", "MODIFIED_MASTER_02"):
+        if buckets[rep]:
+            ordered.append((rep, buckets[rep]))
+
+    if not ordered and objects:
+        ordered.append(("PRESERVATION_MASTER", objects))
+
+    return ordered
 
 # Initialize services
 resumption_service = ResumptionTokenService(page_size=100)
@@ -863,104 +938,69 @@ def _build_mets_from_record(
     resource: Resource,
     dc_payload: Dict[str, List[str]],
 ) -> ET.Element:
-    ET.register_namespace('mets', METS_NS)
-    ET.register_namespace('dc', DC_NS)
-    ET.register_namespace('dcterms', DCTERMS_NS)
-    ET.register_namespace('xlink', XLINK_NS)
-    ET.register_namespace('xsi', XSI_NS)
-    ET.register_namespace('dnx', DNX_NS)
+    _register_rosetta_namespaces()
 
-    mets_root = ET.Element(f"{{{METS_NS}}}mets")
+    mets_root = ET.Element(ET.QName(METS_NS, "mets"))
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
+    mets_root.set("xmlns", DNX_NS)
+    mets_root.set("OBJID", resource.uri)
+    mets_root.set("TYPE", "ARKUMU_IE")
 
-    timestamp = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
-    mets_hdr = ET.SubElement(
-        mets_root,
-        f"{{{METS_NS}}}metsHdr",
-        {
-            "CREATEDATE": timestamp,
-            "LASTMODDATE": timestamp,
-        },
-    )
-    agent = ET.SubElement(
-        mets_hdr,
-        f"{{{METS_NS}}}agent",
-        {
-            "ROLE": "CREATOR",
-            "TYPE": "OTHER",
-            "OTHERTYPE": "SOFTWARE",
-        },
-    )
-    ET.SubElement(agent, f"{{{METS_NS}}}name").text = "Arkumu OAI-PMH Provider"
-
-    dmd_sec = ET.SubElement(mets_root, f"{{{METS_NS}}}dmdSec", {"ID": "ie-dmd"})
-    md_wrap = ET.SubElement(dmd_sec, f"{{{METS_NS}}}mdWrap", {"MDTYPE": "DC"})
-    xml_data = ET.SubElement(md_wrap, f"{{{METS_NS}}}xmlData")
-    dc_record = ET.SubElement(xml_data, f"{{{DC_NS}}}record")
+    dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
+    md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+    xml_data = ET.SubElement(md_wrap, ET.QName(METS_NS, "xmlData"))
+    dc_record = ET.SubElement(xml_data, ET.QName(DC_NS, "record"))
     for key, values in dc_payload.items():
         namespace, term = key.split(":", 1)
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
         for value in values:
-            ET.SubElement(dc_record, f"{{{ns_uri}}}{term}").text = value
+            ET.SubElement(dc_record, ET.QName(ns_uri, term)).text = value
 
-    ie_amd = ET.SubElement(mets_root, f"{{{METS_NS}}}amdSec", {"ID": "ie-amd"})
-    tech_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}techMD", {"ID": "ie-amd-tech"})
-    tech_wrap = ET.SubElement(
-        tech_md,
-        f"{{{METS_NS}}}mdWrap",
-        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
-    )
-    tech_xml = ET.SubElement(tech_wrap, f"{{{METS_NS}}}xmlData")
-    ET.SubElement(tech_xml, f"{{{DNX_NS}}}dnx")
+    ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
+    tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
+    tech_wrap = ET.SubElement(tech_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    tech_xml = ET.SubElement(tech_wrap, ET.QName(METS_NS, "xmlData"))
+    _create_dnx_element(tech_xml, "dnx")
 
-    rights_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}rightsMD", {"ID": "ie-amd-rights"})
-    rights_wrap = ET.SubElement(
-        rights_md,
-        f"{{{METS_NS}}}mdWrap",
-        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
-    )
-    rights_xml = ET.SubElement(rights_wrap, f"{{{METS_NS}}}xmlData")
-    rights_dnx = ET.SubElement(rights_xml, f"{{{DNX_NS}}}dnx")
-    ET.SubElement(rights_dnx, f"{{{DNX_NS}}}section", {"id": "accessRightsPolicy"})
+    rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
+    rights_wrap = ET.SubElement(rights_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    rights_xml = ET.SubElement(rights_wrap, ET.QName(METS_NS, "xmlData"))
+    rights_dnx = _create_dnx_element(rights_xml, "dnx")
+    _create_dnx_element(rights_dnx, "section", {"id": "accessRightsPolicy"})
 
-    source_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}sourceMD", {"ID": "ie-amd-source-OTHER"})
-    source_wrap = ET.SubElement(
-        source_md,
-        f"{{{METS_NS}}}mdWrap",
-        {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"},
-    )
-    source_xml = ET.SubElement(source_wrap, f"{{{METS_NS}}}xmlData")
-    epicur = ET.SubElement(
+    source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
+    source_wrap = ET.SubElement(source_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"})
+    source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+    epicur = _create_dnx_element(
         source_xml,
-        f"{{{DNX_NS}}}epicur",
-        {
-            f"{{{XSI_NS}}}schemaLocation": "urn:nbn:de:1111-2004033116 http://www.persistent-identifier.de/xepicur/version1.0/xepicur.xsd",
-        },
+        "epicur",
+        {f"{{{XSI_NS}}}schemaLocation": "urn:nbn:de:1111-2004033116 http://www.persistent-identifier.de/xepicur/version1.0/xepicur.xsd"},
     )
-    administrative = ET.SubElement(epicur, f"{{{DNX_NS}}}administrative_data")
-    delivery = ET.SubElement(administrative, f"{{{DNX_NS}}}delivery")
-    ET.SubElement(delivery, f"{{{DNX_NS}}}update_status", {"type": "urn_new"})
-    epicur_record = ET.SubElement(epicur, f"{{{DNX_NS}}}record")
+    administrative = _create_dnx_element(epicur, "administrative_data")
+    delivery = _create_dnx_element(administrative, "delivery")
+    _create_dnx_element(delivery, "update_status", {"type": "urn_new"})
+    epicur_record = _create_dnx_element(epicur, "record")
 
-    digiprov_md = ET.SubElement(ie_amd, f"{{{METS_NS}}}digiprovMD", {"ID": "ie-amd-digiprov"})
-    digiprov_wrap = ET.SubElement(
-        digiprov_md,
-        f"{{{METS_NS}}}mdWrap",
-        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
-    )
-    digiprov_xml = ET.SubElement(digiprov_wrap, f"{{{METS_NS}}}xmlData")
-    ET.SubElement(digiprov_xml, f"{{{DNX_NS}}}dnx")
+    digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
+    digiprov_wrap = ET.SubElement(digiprov_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    digiprov_xml = ET.SubElement(digiprov_wrap, ET.QName(METS_NS, "xmlData"))
+    _create_dnx_element(digiprov_xml, "dnx")
 
-    file_sec = ET.SubElement(mets_root, f"{{{METS_NS}}}fileSec")
+    digital_objects = record.digital_objects or []
+    filtered_objects = [obj for obj in digital_objects if getattr(obj, 'storage_key', None)]
+    rep_groups = _group_digital_objects_for_rosetta(filtered_objects)
 
-    def _append_epicur_resource(obj: ProjectDigitalObject, *, role: str = "secondary", type_attr: Optional[str] = None, target: Optional[str] = None) -> None:
+    file_sec_entries: List[Dict[str, Any]] = []
+
+    def _append_epicur_resource(obj: ProjectDigitalObject, *, role: str = "secondary",
+                                type_attr: Optional[str] = None, target: Optional[str] = None) -> None:
         href = obj.storage_key
         if not href:
             return
         normalized = _normalize_reference(href)
         if normalized:
             href = normalized
-        resource_elem = ET.SubElement(epicur_record, f"{{{DNX_NS}}}resource")
+        resource_elem = _create_dnx_element(epicur_record, "resource")
         identifier_attrs = {"scheme": "url", "origin": "original"}
         if type_attr:
             identifier_attrs["type"] = type_attr
@@ -968,98 +1008,124 @@ def _build_mets_from_record(
             identifier_attrs["role"] = role
         if target:
             identifier_attrs["target"] = target
-        ET.SubElement(resource_elem, f"{{{DNX_NS}}}identifier", identifier_attrs).text = href
+        _create_dnx_element(resource_elem, "identifier", identifier_attrs, href)
         if obj.content_type:
-            ET.SubElement(resource_elem, f"{{{DNX_NS}}}format", {"scheme": "imt"}).text = obj.content_type
+            _create_dnx_element(resource_elem, "format", {"scheme": "imt"}, obj.content_type)
 
-    digital_objects = record.digital_objects or []
-    filtered_objects = [obj for obj in digital_objects if getattr(obj, 'storage_key', None)]
+    for rep_index, (rep_type, objects) in enumerate(rep_groups, start=1):
+        rep_id = f"rep{rep_index}"
 
-    for index, obj in enumerate(filtered_objects, start=1):
-        rep_id = f"rep{index}"
-        file_id = f"fid{index}-1"
+        rep_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{rep_id}-amd"})
+        rep_tech = ET.SubElement(rep_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{rep_id}-amd-tech"})
+        rep_wrap = ET.SubElement(rep_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+        rep_xml = ET.SubElement(rep_wrap, ET.QName(METS_NS, "xmlData"))
+        rep_dnx = _create_dnx_element(rep_xml, "dnx")
+        section = _create_dnx_element(rep_dnx, "section", {"id": "generalRepCharacteristics"})
+        rec = _create_dnx_element(section, "record")
+        _create_dnx_element(rec, "key", {"id": "preservationType"}, rep_type)
+        _create_dnx_element(rec, "key", {"id": "usageType"}, "VIEW")
 
-        rep_amd = ET.SubElement(mets_root, f"{{{METS_NS}}}amdSec", {"ID": f"{rep_id}-amd"})
-        rep_tech = ET.SubElement(rep_amd, f"{{{METS_NS}}}techMD", {"ID": f"{rep_id}-amd-tech"})
-        rep_wrap = ET.SubElement(
-            rep_tech,
-            f"{{{METS_NS}}}mdWrap",
-            {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
-        )
-        rep_xml = ET.SubElement(rep_wrap, f"{{{METS_NS}}}xmlData")
-        rep_dnx = ET.SubElement(rep_xml, f"{{{DNX_NS}}}dnx")
-        section = ET.SubElement(rep_dnx, f"{{{DNX_NS}}}section", {"id": "generalRepCharacteristics"})
-        rec = ET.SubElement(section, f"{{{DNX_NS}}}record")
-        preservation_type = "PRESERVATION_MASTER" if index == 1 else "MODIFIED_MASTER"
-        ET.SubElement(rec, f"{{{DNX_NS}}}key", {"id": "preservationType"}).text = preservation_type
-        ET.SubElement(rec, f"{{{DNX_NS}}}key", {"id": "usageType"}).text = "VIEW"
+        rep_files: List[Dict[str, Any]] = []
 
-        if index == 1:
-            _append_epicur_resource(obj, role="primary", type_attr="frontpage")
-        _append_epicur_resource(obj, target="transfer")
+        for file_index, obj in enumerate(objects, start=1):
+            file_id = f"{rep_id}-fid{file_index}"
+            file_label_source = obj.file_name or obj.storage_key or obj.path or f"Digital Object {file_index}"
+            label_normalized = _normalize_reference(file_label_source)
+            file_label = label_normalized or file_label_source
 
+            file_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
+            file_tech = ET.SubElement(file_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
+            file_wrap = ET.SubElement(file_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+            file_xml = ET.SubElement(file_wrap, ET.QName(METS_NS, "xmlData"))
+            file_dnx = _create_dnx_element(file_xml, "dnx")
+            size_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixityAndSize"})
+            size_record = _create_dnx_element(size_section, "record")
+            if obj.size_bytes:
+                _create_dnx_element(size_record, "key", {"id": "fileSize"}, str(obj.size_bytes))
+            if obj.checksum:
+                _create_dnx_element(size_record, "key", {"id": "checksum"}, obj.checksum)
+
+            rep_files.append({
+                "file_id": file_id,
+                "label": file_label,
+                "object": obj,
+                "rep_id": rep_id,
+                "rep_type": rep_type,
+            })
+
+            if rep_index == 1 and file_index == 1:
+                _append_epicur_resource(obj, role="primary", type_attr="frontpage")
+            _append_epicur_resource(obj, target="transfer")
+
+        file_sec_entries.append({
+            "rep_id": rep_id,
+            "rep_type": rep_type,
+            "files": rep_files,
+        })
+
+    file_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "fileSec"))
+
+    for entry in file_sec_entries:
+        rep_id = entry["rep_id"]
+        rep_type = entry["rep_type"]
         file_grp = ET.SubElement(
             file_sec,
-            f"{{{METS_NS}}}fileGrp",
+            ET.QName(METS_NS, "fileGrp"),
             {
-                "USE": "VIEW",
+                "USE": rep_type,
                 "ID": rep_id,
                 "ADMID": f"{rep_id}-amd",
             },
         )
 
-        file_attrs: Dict[str, Any] = {
-            "ID": file_id,
-            "ADMID": f"{file_id}-amd",
-        }
-        if obj.content_type:
-            file_attrs["MIMETYPE"] = obj.content_type
-        if obj.size_bytes:
-            file_attrs["SIZE"] = str(obj.size_bytes)
+        for position, file_info in enumerate(entry["files"], start=1):
+            obj = file_info["object"]
+            file_id = file_info["file_id"]
+            attrs: Dict[str, Any] = {
+                "ID": file_id,
+                "ADMID": f"{file_id}-amd",
+            }
+            if obj.content_type:
+                attrs["MIMETYPE"] = obj.content_type
+            if obj.checksum:
+                attrs["CHECKSUM"] = obj.checksum
+                attrs["CHECKSUMTYPE"] = "SHA-256"
 
-        file_elem = ET.SubElement(file_grp, f"{{{METS_NS}}}file", file_attrs)
-        href = obj.storage_key
-        normalized = _normalize_reference(href)
-        if normalized:
-            href = normalized
-        flocat_attrs = {
-            "LOCTYPE": "URL",
-            f"{{{XLINK_NS}}}href": href,
-            f"{{{XLINK_NS}}}type": "simple",
-        }
-        ET.SubElement(file_elem, f"{{{METS_NS}}}FLocat", flocat_attrs)
-
-        file_amd = ET.SubElement(mets_root, f"{{{METS_NS}}}amdSec", {"ID": f"{file_id}-amd"})
-        file_tech = ET.SubElement(file_amd, f"{{{METS_NS}}}techMD", {"ID": f"{file_id}-amd-tech"})
-        file_wrap = ET.SubElement(
-            file_tech,
-            f"{{{METS_NS}}}mdWrap",
-            {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
-        )
-        file_xml = ET.SubElement(file_wrap, f"{{{METS_NS}}}xmlData")
-        ET.SubElement(file_xml, f"{{{DNX_NS}}}dnx")
-
-        label_source = obj.file_name or obj.storage_key or f"Digital Object {index}"
-        label_normalized = _normalize_reference(label_source)
-        label = label_normalized or label_source
+            file_elem = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), attrs)
+            href = obj.storage_key or obj.path or obj.access_url or ""
+            normalized_href = _normalize_reference(href)
+            if normalized_href:
+                href = normalized_href
+            if href:
+                flocat_attrs = {
+                    "LOCTYPE": "URL",
+                    f"{{{XLINK_NS}}}href": href,
+                    f"{{{XLINK_NS}}}type": "simple",
+                }
+                ET.SubElement(file_elem, ET.QName(METS_NS, "FLocat"), flocat_attrs)
 
         struct_map = ET.SubElement(
             mets_root,
-            f"{{{METS_NS}}}structMap",
+            ET.QName(METS_NS, "structMap"),
             {"ID": f"{rep_id}-1", "TYPE": "LOGICAL"},
         )
-        struct_root = ET.SubElement(struct_map, f"{{{METS_NS}}}div")
-        div = ET.SubElement(
-            struct_root,
-            f"{{{METS_NS}}}div",
-            {
-                "ORDERLABEL": label,
-                "TYPE": "FILE",
-                "LABEL": label,
-            },
+        rep_div = ET.SubElement(
+            struct_map,
+            ET.QName(METS_NS, "div"),
+            {"TYPE": rep_type, "LABEL": rep_type, "ORDERLABEL": rep_type},
         )
-        ET.SubElement(div, f"{{{METS_NS}}}fptr", {"FILEID": file_id})
-
+        for order, file_info in enumerate(entry["files"], start=1):
+            file_div = ET.SubElement(
+                rep_div,
+                ET.QName(METS_NS, "div"),
+                {
+                    "TYPE": "FILE",
+                    "LABEL": file_info["label"],
+                    "ORDERLABEL": file_info["label"],
+                    "ORDER": str(order),
+                },
+            )
+            ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
     return mets_root
 
 
