@@ -62,9 +62,9 @@
                    class="{% if current_url_name == 'archivist_dashboard' or current_url_name == 'uploads_dashboard' or current_url_name == 'upload_session_stats' %}active{% endif %}">
               Archivist Dashboard
             </a></li>
-            <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_namespace == 'metadata' %}active{% endif %}">CSV Mapping Editor</a></li>
+            <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
             <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
-            <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_namespace == 'metadata' %}active{% endif %}">Metadata Dashboard</a></li>
+            <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
 
             <li><a href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a></li>
           {% else %}
@@ -83,9 +83,9 @@
                  class="{% if current_url_name == 'archivist_dashboard' or current_url_name == 'uploads_dashboard' or current_url_name == 'upload_session_stats' %}active{% endif %}">
             Archivist Dashboard
           </a></li>
-          <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_namespace == 'metadata' %}active{% endif %}">CSV Mapping Editor</a></li>
+          <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
           <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
-          <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_namespace == 'metadata' %}active{% endif %}">Metadata Dashboard</a></li>
+          <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
           <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2 {% if current_namespace == 'catalog' %}active{% endif %}">
             <i class="fas fa-search"></i>
             <span>Catalog Explorer</span>
