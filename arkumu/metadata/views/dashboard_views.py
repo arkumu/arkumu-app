@@ -3,12 +3,102 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.decorators.http import require_POST
 from django.db.models import Count
+from django.utils import timezone
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
-from arkumu.storage.models import UploadSession
+from typing import List
+from types import SimpleNamespace
+from collections import Counter
+
+from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
 from arkumu.importer.models import IngestSession
 from arkumu.users.mixins import general_login_required
+
+
+def _format_size(bytes_total: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(bytes_total)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+
+
+def _build_file_info(files) -> List[dict]:
+    info = []
+    for file_obj in files:
+        info.append({
+            'name': getattr(file_obj, 'filename', ''),
+            'status': file_obj.status,
+            'size': getattr(file_obj, 'file_size', 0),
+            'content_type': getattr(file_obj, 'content_type', ''),
+            'error_message': getattr(file_obj, 'error_message', ''),
+        })
+    return info
+
+
+class UploadSessionDisplay:
+    """Lightweight view model for async upload sessions."""
+
+    def __init__(self, session: AsyncUploadSession, files: List[AsyncUploadFile]):
+        self.id = session.id
+        self.created_at = session.created_at
+        self.completed_at = session.completed_at
+        self.status = session.status
+        self._status_display = session.get_status_display()
+        self.user = session.user
+        self.institution = session.organization or 'Not specified'
+        self.organization = session.organization
+        self.folder_name = session.base_folder or ''
+        self._status_counts = Counter(f.status for f in files)
+        file_count = len(files)
+        self.total_files = session.total_files or file_count
+        self.completed_files = self._status_counts.get('completed', 0)
+        self.failed_files = self._status_counts.get('failed', 0)
+        # Files that have reached S3 but not yet marked completed/failed
+        self.uploaded_files = (
+            self._status_counts.get('uploaded', 0)
+            + self._status_counts.get('processing', 0)
+        )
+        # Files still pending client upload or mid-transfer
+        self.pending_files = (
+            self._status_counts.get('pending', 0)
+            + self._status_counts.get('uploading', 0)
+        )
+        self.in_progress_files = self.uploaded_files + self.pending_files
+        self.import_stats = _build_import_stats(session, files)
+
+    def get_status_display(self):
+        return self._status_display
+
+
+def _build_import_stats(session: AsyncUploadSession, files: List[AsyncUploadFile]) -> SimpleNamespace:
+    total_size = sum(f.file_size or 0 for f in files)
+    start_time = session.started_at or session.created_at
+    end_time = session.completed_at or timezone.now()
+    duration_seconds = max((end_time - start_time).total_seconds(), 0)
+    error_messages = [f.error_message for f in files if f.error_message]
+
+    summary = SimpleNamespace(
+        bucket=session.organization or '-',
+        base_path=session.base_folder or '-',
+    )
+
+    return SimpleNamespace(
+        duration_seconds=duration_seconds,
+        total_size=total_size,
+        total_size_formatted=_format_size(total_size),
+        summary=summary,
+        error_count=len([f for f in files if f.status == 'failed']),
+        error=error_messages[0] if error_messages else None,
+    )
+
+
+def _build_upload_display(session: AsyncUploadSession, files: List[AsyncUploadFile] | None = None) -> UploadSessionDisplay:
+    if files is None:
+        files = list(session.files.all())
+    return UploadSessionDisplay(session, files)
 
 
 @general_login_required
@@ -22,12 +112,14 @@ def metadata_dashboard(request):
         'literal_resources': Resource.objects.filter(resource_type=ResourceType.LITERAL).count(),
         'class_resources': Resource.objects.filter(resource_type=ResourceType.CLASS).count(),
         'property_resources': Resource.objects.filter(resource_type=ResourceType.PROPERTY).count(),
-        'uploads': UploadSession.objects.count(),
+        'uploads': AsyncUploadSession.objects.count(),
         'ingests': IngestSession.objects.count(),
     }
     
     # Get recent uploads
-    recent_uploads = UploadSession.objects.all().order_by('-created_at')[:5]
+    recent_uploads = []
+    for session in AsyncUploadSession.objects.select_related('user').prefetch_related('files').order_by('-created_at')[:5]:
+        recent_uploads.append(_build_upload_display(session, list(session.files.all())))
     
     # Get recent ingests
     recent_ingests = IngestSession.objects.select_related('organization').order_by('-created_at')[:5]
@@ -64,41 +156,29 @@ def metadata_dashboard(request):
 @general_login_required
 def all_upload_sessions(request):
     """Displays a list of all upload sessions with their files."""
-    all_uploads = UploadSession.objects.prefetch_related('files').all().order_by('-created_at')
-    
-    # Prepare enhanced session data
+    all_sessions = AsyncUploadSession.objects.select_related('user').prefetch_related('files').order_by('-created_at')
+
     enhanced_sessions = []
-    for session in all_uploads:
-        # Get associated files
+    for session in all_sessions:
         files = list(session.files.all())
-        
-        # Prepare file information
-        file_info = []
-        for file_obj in files:
-            file_info.append({
-                'name': file_obj.file_name,
-                'status': file_obj.status,
-                'size': file_obj.file_size_bytes,
-                'content_type': file_obj.content_type,
-                'error_message': file_obj.error_message,
-            })
-        
+        display = _build_upload_display(session, files)
+        file_info = _build_file_info(files)
         enhanced_sessions.append({
-            'session': session,
+            'session': display,
             'files': file_info,
             'file_count': len(file_info),
             'is_multi_file': len(file_info) > 1,
-            'completed_files': len([f for f in file_info if f['status'] == 'completed']),
-            'failed_files': len([f for f in file_info if f['status'] == 'failed']),
+            'completed_files': sum(1 for f in file_info if f['status'] == 'completed'),
+            'failed_files': sum(1 for f in file_info if f['status'] == 'failed'),
         })
-    
-    # Calculate aggregate statistics
+
+    # Aggregate statistics
     total_stats = {
         'total_sessions': len(enhanced_sessions),
         'total_files': sum(item['file_count'] for item in enhanced_sessions),
         'completed_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'completed'),
         'failed_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'failed'),
-        'in_progress_sessions': sum(1 for item in enhanced_sessions if item['session'].status == 'in_progress'),
+        'in_progress_sessions': sum(1 for item in enhanced_sessions if item['session'].status in {'initialized', 'presigned_generated', 'uploading', 'processing'}),
     }
     
     return render(request, 'all_upload_sessions.html', {
@@ -203,32 +283,20 @@ def ingest_session_stats(request, session_id):
 def upload_session_stats(request, session_id):
     """HTMX endpoint to show detailed stats for a specific upload session."""
     try:
-        session = UploadSession.objects.prefetch_related('files').get(pk=session_id)
-        
-        # Prepare file information
-        files = list(session.files.all())
-        file_info = []
-        for file_obj in files:
-            file_info.append({
-                'name': file_obj.file_name,
-                'status': file_obj.status,
-                'size': file_obj.file_size_bytes,
-                'content_type': file_obj.content_type,
-                'error_message': file_obj.error_message,
-            })
-        
-        # Calculate stats
-        completed_files = len([f for f in file_info if f['status'] == 'completed'])
-        failed_files = len([f for f in file_info if f['status'] == 'failed'])
-        
+        session = AsyncUploadSession.objects.prefetch_related('files').get(pk=session_id)
+
+        file_info = _build_file_info(session.files.all())
+        completed_files = sum(1 for f in file_info if f['status'] == 'completed')
+        failed_files = sum(1 for f in file_info if f['status'] == 'failed')
+
         return render(request, 'partials/upload_stats_modal_content.html', {
-            'session': session,
+            'session': _build_upload_display(session),
             'files': file_info,
             'file_count': len(file_info),
             'completed_files': completed_files,
             'failed_files': failed_files,
         })
-    except UploadSession.DoesNotExist:
+    except AsyncUploadSession.DoesNotExist:
         return render(request, 'partials/error_message.html', {
             'error': 'Upload session not found'
         })

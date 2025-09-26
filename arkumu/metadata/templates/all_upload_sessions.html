@@ -69,28 +69,23 @@
                     <td>
                         <div class="space-y-2">
                             <!-- File Count and Status Summary -->
-                            <div class="flex items-center gap-2 flex-wrap">
+                            <div class="flex items-center gap-2 flex-wrap text-xs">
                                 <span class="badge badge-outline badge-sm">
-                                    {{ item.file_count }} file{{ item.file_count|pluralize }}
+                                    Total: {{ item.file_count }}
                                 </span>
-                                
-                                <!-- Status Indicators -->
+                                <span class="badge badge-outline badge-success badge-sm" title="Completed files">
+                                    Done: {{ item.completed_files }}
+                                </span>
+                                <span class="badge badge-outline badge-info badge-sm" title="Uploaded to S3">
+                                    Uploaded: {{ session.uploaded_files }}
+                                </span>
+                                <span class="badge badge-outline badge-ghost badge-sm" title="Pending upload">
+                                    Pending: {{ session.pending_files }}
+                                </span>
                                 {% if item.failed_files > 0 %}
-                                <div class="flex items-center gap-1 text-error" title="{{ item.failed_files }} failed file{{ item.failed_files|pluralize }}">
-                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                                    </svg>
-                                    <span class="text-sm font-medium">{{ item.failed_files }}</span>
-                                </div>
-                                {% endif %}
-                                
-                                {% if item.completed_files > 0 %}
-                                <div class="flex items-center gap-1 text-success" title="{{ item.completed_files }} completed file{{ item.completed_files|pluralize }}">
-                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                                    </svg>
-                                    <span class="text-sm font-medium">{{ item.completed_files }}</span>
-                                </div>
+                                <span class="badge badge-outline badge-error badge-sm" title="Failed files">
+                                    Failed: {{ item.failed_files }}
+                                </span>
                                 {% endif %}
                             </div>
                             
@@ -129,7 +124,10 @@
                         <span class="badge 
                             {% if session.status == 'completed' %}badge-success
                             {% elif session.status == 'failed' %}badge-error
-                            {% elif session.status == 'in_progress' %}badge-info
+                            {% elif session.status == 'initialized' %}badge-info
+                            {% elif session.status == 'presigned_generated' %}badge-info
+                            {% elif session.status == 'uploading' %}badge-info
+                            {% elif session.status == 'processing' %}badge-info
                             {% else %}badge-ghost{% endif %}">
                             {{ session.get_status_display|default:session.status }}
                         </span>
@@ -140,10 +138,8 @@
                     
                     <!-- Actions -->
                     <td class="text-xs">
-                        {% if session.import_stats.error %}
-                            <span class="text-error">{{ session.import_stats.error|truncatewords:6 }}</span>
-                        {% elif session.import_stats %}
-                            <button class="btn btn-xs btn-outline" 
+                        {% if item.file_count > 0 %}
+                            <button class="btn btn-xs btn-outline"
                                     hx-get="{% url 'metadata:upload_session_stats' session.id %}"
                                     hx-target="#stats-modal-content"
                                     hx-swap="innerHTML"

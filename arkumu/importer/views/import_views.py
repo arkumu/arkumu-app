@@ -352,16 +352,20 @@ def clear_upload_sessions(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
     try:
+        from arkumu.storage.models.upload_tracking import AsyncUploadSession
         from arkumu.storage.models.upload_sessions import UploadSession
         from django.db import transaction
         
         with transaction.atomic():
             # Count before deletion
-            upload_count = UploadSession.objects.count()
-            # Delete all upload sessions
+            async_count = AsyncUploadSession.objects.count()
+            legacy_count = UploadSession.objects.count()
+            # Delete all upload sessions in both tables
+            AsyncUploadSession.objects.all().delete()
             UploadSession.objects.all().delete()
+            upload_count = async_count + legacy_count
             
-        logger.info(f"Upload sessions cleared: deleted {upload_count} upload sessions")
+        logger.info(f"Upload sessions cleared: deleted {upload_count} upload sessions (async={async_count}, legacy={legacy_count})")
         
         # Return HTMX-friendly response
         if request.headers.get('HX-Request') == 'true':
