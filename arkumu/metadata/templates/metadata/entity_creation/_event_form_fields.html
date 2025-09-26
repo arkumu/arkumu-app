@@ -26,6 +26,17 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="form-control">
         <label class="label">
+          <span class="label-text font-medium">Ereignisname</span>
+          {% if event_form.ereignisname.errors %}
+          <span class="label-text-alt text-error">{{ event_form.ereignisname.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ event_form.ereignisname }}
+        <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisname.help_text }}</div>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
           <span class="label-text font-medium">Associated Project</span>
           {% if event_form.project_uri.errors %}
           <span class="label-text-alt text-error">{{ event_form.project_uri.errors.0 }}</span>

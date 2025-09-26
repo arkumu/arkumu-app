@@ -111,22 +111,27 @@ class ProjectForm(BaseEntityForm):
 
 
 class EventForm(BaseEntityForm):
+    ereignisname = forms.CharField(
+        label="Ereignisname",
+        required=True,
+        help_text="Name of the event",
+    )
     project_uri = forms.ChoiceField(
         label="Associated Project",
         required=True,
         choices=[],
     )
-    ereignisbeginn = forms.DateTimeField(
+    ereignisbeginn = forms.DateField(
         label="Ereignisbeginn",
-        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        widget=forms.DateTimeInput(attrs={"type": "date"}),
         required=True,
-        help_text="Start date and time of the event",
+        help_text="Start date of the event",
     )
-    ereignisende = forms.DateTimeField(
+    ereignisende = forms.DateField(
         label="Ereignisende",
-        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        widget=forms.DateTimeInput(attrs={"type": "date"}),
         required=False,
-        help_text="End date and time of the event (optional)",
+        help_text="End date of the event (optional)",
     )
 
     def __init__(self, *args, metadata_options=None, **kwargs):
@@ -248,87 +253,96 @@ def create_project(request):
 @login_required
 def create_event(request):
     organization = getattr(request.user, "organization", None)
-    metadata_options = get_default_metadata_option_map(organization=organization)
 
-    # Initialize base URI for resource creation
-    base_uri = "https://arkumu.example.org/data/"
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
 
-    if request.method == "POST":
-        event_form = EventForm(
-            request.POST,
-            metadata_options=metadata_options,
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            event_form = EventForm(
+                request.POST,
+                metadata_options=metadata_options,
+            )
+            actor_event_formset = ActorEventFormSet(
+                request.POST,
+                prefix="actors",
+                form_kwargs={"metadata_options": metadata_options},
+            )
+
+            if event_form.is_valid() and actor_event_formset.is_valid():
+                # Create RDF resources for the event using the wrapper classes
+                # Create Event class resource
+                event_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/ereignis",
+                    name="Ereignis"
+                )
+
+                # Create property resources
+                event_name_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignisname",
+                    name="Ereignisname"
+                )
+                begin_date_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignisbeginn",
+                    name="Ereignisbeginn"
+                )
+
+                end_date_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignisende",
+                    name="Ereignisende"
+                )
+
+                # Create event entity
+                event_entity, created = EntityResource.create_by_organization_and_dataset_name(organization=organization, dataset_name="Ereignis")
+
+                # Set the type of the entity
+                event_entity.set_type(event_class)
+
+                # Set event properties from form data
+                event_name = event_form.cleaned_data.get('ereignisname', '')
+                if event_name:
+                    event_entity.set_property(event_name_prop, event_name)
+
+                begin_date = event_form.cleaned_data.get('ereignisbeginn', '')
+                if begin_date:
+                    event_entity.set_property(begin_date_prop, begin_date.isoformat())
+
+                end_date = event_form.cleaned_data.get('ereignisende', '')
+                if end_date:
+                    event_entity.set_property(end_date_prop, end_date.isoformat())
+
+                # Link to the associated project
+                project_uri = event_form.cleaned_data.get('project_uri', '')
+                if project_uri:
+                    event_prop, _ = PropertyResource.get_or_create(
+                        uri=f"{base_uri}/properties/ereignis",
+                        name="Ereignis"
+                    )
+                    project_entity, _ = EntityResource.get_or_create(
+                        uri=project_uri
+                    )
+                    project_entity.set_property(event_prop, event_entity)
+
+                # The RDF resources are now created and linked automatically
+                # Continue with the rest of the event creation workflow
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            event_form = EventForm(metadata_options=metadata_options)
+            actor_event_formset = ActorEventFormSet(
+                prefix="actors",
+                form_kwargs={"metadata_options": metadata_options},
+            )
+
+        return render(
+            request,
+            "metadata/entity_creation/create_event.html",
+            {
+                "event_form": event_form,
+                "actor_event_formset": actor_event_formset,
+                "entity_type": "event",
+                "title": "Create New Event",
+                "description": "Fill in the details to create a new archival event",
+            },
         )
-        actor_event_formset = ActorEventFormSet(
-            request.POST,
-            prefix="actors",
-            form_kwargs={"metadata_options": metadata_options},
-        )
-
-        if event_form.is_valid() and actor_event_formset.is_valid():
-            # # Create RDF resources for the event using the wrapper classes
-            # # Create Event class resource
-            logger.info(f"🔄 TEST1")
-            # event_class, created = ClassResource.get_or_create(
-            #     uri=f"{base_uri}/Event",
-            #     name="Event"
-            # )
-
-            # # Create property resources
-            # begin_date_prop, _ = PropertyResource.get_or_create(
-            #     uri=f"{base_uri}/beginDate",
-            #     name="beginDate"
-            # )
-
-            # end_date_prop, _ = PropertyResource.get_or_create(
-            #     uri=f"{base_uri}/endDate",
-            #     name="endDate"
-            # )
-
-            # # Create event entity
-            # event_uri = f"{base_uri}/event_{event_form.cleaned_data.get('ereignisbeginn', '').isoformat()[:20]}"
-            # event_entity, created = EntityResource.get_or_create(
-            #     uri=event_uri
-            # )
-
-            # # Set the type of the entity
-            # event_entity.set_type(event_class)
-
-            # # Set event properties from form data
-            # begin_date = event_form.cleaned_data.get('ereignisbeginn', '')
-            # if begin_date:
-            #     event_entity.set_property(begin_date_prop, begin_date.isoformat())
-
-            # end_date = event_form.cleaned_data.get('ereignisende', '')
-            # if end_date:
-            #     event_entity.set_property(end_date_prop, end_date.isoformat())
-
-            # # Link to the associated project
-            # project_uri = event_form.cleaned_data.get('project_uri', '')
-            # if project_uri:
-            #     project_prop, _ = PropertyResource.get_or_create(
-            #         uri=f"{base_uri}/project",
-            #         name="project"
-            #     )
-            #     event_entity.set_property(project_prop, project_uri)
-
-            # The RDF resources are now created and linked automatically
-            # Continue with the rest of the event creation workflow
-            return HttpResponseRedirect("/storage/dashboard/")
-    else:
-        event_form = EventForm(metadata_options=metadata_options)
-        actor_event_formset = ActorEventFormSet(
-            prefix="actors",
-            form_kwargs={"metadata_options": metadata_options},
-        )
-
-    return render(
-        request,
-        "metadata/entity_creation/create_event.html",
-        {
-            "event_form": event_form,
-            "actor_event_formset": actor_event_formset,
-            "entity_type": "event",
-            "title": "Create New Event",
-            "description": "Fill in the details to create a new archival event",
-        },
-    )
