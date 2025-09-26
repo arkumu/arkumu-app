@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">Upload Activity</h1>
+            <p class="text-base-content/70">Live overview of async uploads to S3</p>
+        </div>
+        <a href="{% url 'storage:archivist_dashboard' %}" class="btn btn-sm btn-outline">&larr; Back to Archivist Dashboard</a>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="stat bg-base-100 shadow">
+            <div class="stat-title">Total Sessions</div>
+            <div class="stat-value text-primary">{{ stats.total_sessions }}</div>
+            <div class="stat-desc">{{ stats.total_files }} files overall</div>
+        </div>
+        <div class="stat bg-success/10 border border-success/20">
+            <div class="stat-title">Completed Files</div>
+            <div class="stat-value text-success">{{ stats.completed_files }}</div>
+            <div class="stat-desc">{{ stats.completed_sessions }} sessions finished</div>
+        </div>
+        <div class="stat bg-info/10 border border-info/20">
+            <div class="stat-title">Uploaded (Pending Processing)</div>
+            <div class="stat-value text-info">{{ stats.uploaded_files }}</div>
+            <div class="stat-desc">Awaiting verification</div>
+        </div>
+        <div class="stat bg-error/10 border border-error/20">
+            <div class="stat-title">Failed Files</div>
+            <div class="stat-value text-error">{{ stats.failed_files }}</div>
+            <div class="stat-desc">{{ stats.failed_sessions }} sessions with errors</div>
+        </div>
+    </div>
+
+    {% if sessions %}
+    <div class="overflow-x-auto bg-base-100 shadow-xl rounded-lg">
+        <table class="table table-zebra w-full">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Organization</th>
+                    <th>Files</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in sessions %}
+                {% with session=entry.session %}
+                <tr>
+                    <td class="text-sm">
+                        {{ session.created_at|date:"M d, Y" }}<br>
+                        <span class="text-xs text-base-content/60">{{ session.created_at|date:"H:i" }}</span>
+                    </td>
+                    <td class="text-sm">{{ session.institution }}</td>
+                    <td>
+                        <div class="badge badge-outline badge-sm">Total: {{ entry.file_count }}</div>
+                        <div class="flex gap-2 flex-wrap text-xs mt-1">
+                            <span class="badge badge-outline badge-sm">Total {{ entry.file_count }}</span>
+                            {% if entry.completed_files %}
+                                <span class="badge badge-success badge-sm">Completed {{ entry.completed_files }}</span>
+                            {% endif %}
+                            {% if session.uploaded_files %}
+                                <span class="badge badge-info badge-sm">Uploaded {{ session.uploaded_files }}</span>
+                            {% endif %}
+                            {% if session.pending_files %}
+                                <span class="badge badge-ghost badge-sm">Pending {{ session.pending_files }}</span>
+                            {% endif %}
+                            {% if entry.failed_files %}
+                                <span class="badge badge-error badge-sm">Failed {{ entry.failed_files }}</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge 
+                            {% if session.status == 'completed' %}badge-success
+                            {% elif session.status == 'failed' %}badge-error
+                            {% elif session.status == 'initialized' %}badge-info
+                            {% elif session.status == 'presigned_generated' %}badge-info
+                            {% elif session.status == 'uploading' %}badge-info
+                            {% elif session.status == 'processing' %}badge-info
+                            {% else %}badge-ghost{% endif %}">
+                            {{ session.get_status_display|default:session.status }}
+                        </span>
+                        {% if session.completed_at %}
+                            <div class="text-xs text-base-content/60 mt-1">{{ session.completed_at|date:"M d, H:i" }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if entry.file_count %}
+                        <button class="btn btn-xs btn-outline"
+                                hx-get="{% url 'storage:upload_session_stats' session.id %}"
+                                hx-target="#uploads-stats-modal-content"
+                                hx-swap="innerHTML"
+                                onclick="document.getElementById('uploads-stats-modal').showModal()">
+                            View
+                        </button>
+                        {% else %}-{% endif %}
+                    </td>
+                </tr>
+                {% endwith %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <dialog id="uploads-stats-modal" class="modal">
+        <div class="modal-box w-11/12 max-w-3xl">
+            <div id="uploads-stats-modal-content">
+                <div class="flex items-center justify-center p-10">
+                    <span class="loading loading-spinner loading-lg"></span>
+                </div>
+            </div>
+            <div class="modal-action">
+                <form method="dialog">
+                    <button class="btn">Close</button>
+                </form>
+            </div>
+        </div>
+    </dialog>
+    {% else %}
+    <div class="alert alert-info">
+        <span>No upload sessions recorded yet.</span>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -2,7 +2,7 @@
 # This package contains all view modules for the metadata application
 
 # Dashboard views
-from .dashboard_views import metadata_dashboard, all_upload_sessions, all_ingest_sessions
+from .dashboard_views import metadata_dashboard, all_upload_sessions, all_ingest_sessions, upload_session_stats
 
 # Resource views  
 from .resource_views import resource_list, resource_detail, resource_graph
@@ -26,6 +26,9 @@ from .direct_data_views import direct_split_table_graph_view
 __all__ = [
     # Dashboard
     'metadata_dashboard',
+    'all_upload_sessions',
+    'all_ingest_sessions',
+    'upload_session_stats',
     
     # Resources
     'resource_list', 

@@ -136,12 +136,12 @@ function switchToFilesMode() {
     
     // Update button states
     if (filesBtn) {
-        filesBtn.classList.add('btn-active');
-        filesBtn.classList.remove('btn-outline');
+        filesBtn.classList.add('btn-primary');
+        filesBtn.classList.remove('btn-ghost');
     }
     if (folderBtn) {
-        folderBtn.classList.remove('btn-active');
-        folderBtn.classList.add('btn-outline');
+        folderBtn.classList.add('btn-ghost');
+        folderBtn.classList.remove('btn-primary');
     }
     
     debugLog('📄 Dashboard: Switched to files mode');
@@ -162,12 +162,12 @@ function switchToFolderMode() {
     
     // Update button states
     if (folderBtn) {
-        folderBtn.classList.add('btn-active');
-        folderBtn.classList.remove('btn-outline');
+        folderBtn.classList.add('btn-primary');
+        folderBtn.classList.remove('btn-ghost');
     }
     if (filesBtn) {
-        filesBtn.classList.remove('btn-active');
-        filesBtn.classList.add('btn-outline');
+        filesBtn.classList.add('btn-ghost');
+        filesBtn.classList.remove('btn-primary');
     }
     
     debugLog('📁 Dashboard: Switched to folder mode');

@@ -13,6 +13,10 @@ from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.async_upload_manager import AsyncUploadManager
 from arkumu.users.mixins import general_login_required
 from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
+from arkumu.metadata.views.dashboard_helpers import (
+    build_session_entry,
+    summarize_upload_stats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -593,3 +597,52 @@ def upload_complete_oob_refresh(request, organization):
             f'<div class="alert alert-error"><span>Error refreshing file browser: {str(e)}</span></div>'
             f'</div>'
         )
+
+
+@general_login_required
+def uploads_dashboard(request):
+    """Display consolidated async upload activity."""
+
+    sessions_qs = (
+        AsyncUploadSession.objects.select_related('user')
+        .prefetch_related('files')
+        .order_by('-created_at')
+    )
+    entries = [build_session_entry(session) for session in sessions_qs]
+    stats = summarize_upload_stats(entries)
+
+    return render(
+        request,
+        'dashboard/uploads_dashboard.html',
+        {
+            'sessions': entries,
+            'stats': stats,
+        },
+    )
+
+
+@general_login_required
+def upload_session_stats(request, session_id):
+    """Return upload session statistics for modal display."""
+
+    try:
+        session = AsyncUploadSession.objects.prefetch_related('files').get(pk=session_id)
+    except AsyncUploadSession.DoesNotExist:
+        return HttpResponse(
+            '<div class="alert alert-error"><span>Upload session not found.</span></div>',
+            status=404,
+        )
+
+    entry = build_session_entry(session)
+
+    return render(
+        request,
+        'partials/upload_stats_modal_content.html',
+        {
+            'session': entry['session'],
+            'files': entry['files'],
+            'file_count': entry['file_count'],
+            'completed_files': entry['completed_files'],
+            'failed_files': entry['failed_files'],
+        },
+    )

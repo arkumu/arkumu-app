@@ -70,22 +70,26 @@
                         <div class="space-y-2">
                             <!-- File Count and Status Summary -->
                             <div class="flex items-center gap-2 flex-wrap text-xs">
-                                <span class="badge badge-outline badge-sm">
-                                    Total: {{ item.file_count }}
-                                </span>
-                                <span class="badge badge-outline badge-success badge-sm" title="Completed files">
-                                    Done: {{ item.completed_files }}
-                                </span>
-                                <span class="badge badge-outline badge-info badge-sm" title="Uploaded to S3">
-                                    Uploaded: {{ session.uploaded_files }}
-                                </span>
-                                <span class="badge badge-outline badge-ghost badge-sm" title="Pending upload">
-                                    Pending: {{ session.pending_files }}
-                                </span>
-                                {% if item.failed_files > 0 %}
-                                <span class="badge badge-outline badge-error badge-sm" title="Failed files">
-                                    Failed: {{ item.failed_files }}
-                                </span>
+                                <span class="badge badge-outline badge-sm">Total: {{ item.file_count }}</span>
+                                {% if item.completed_files %}
+                                    <span class="badge badge-outline badge-success badge-sm" title="Completed files">
+                                        Completed: {{ item.completed_files }}
+                                    </span>
+                                {% endif %}
+                                {% if session.uploaded_files %}
+                                    <span class="badge badge-outline badge-info badge-sm" title="Uploaded to S3">
+                                        Uploaded: {{ session.uploaded_files }}
+                                    </span>
+                                {% endif %}
+                                {% if session.pending_files %}
+                                    <span class="badge badge-outline badge-ghost badge-sm" title="Pending upload">
+                                        Pending: {{ session.pending_files }}
+                                    </span>
+                                {% endif %}
+                                {% if item.failed_files %}
+                                    <span class="badge badge-outline badge-error badge-sm" title="Failed files">
+                                        Failed: {{ item.failed_files }}
+                                    </span>
                                 {% endif %}
                             </div>
                             
