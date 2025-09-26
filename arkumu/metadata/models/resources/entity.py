@@ -10,6 +10,9 @@ from arkumu.metadata.models.triples import Triple
 from .base import BaseResource
 from .class_resource import ClassResource
 from .property import PropertyResource
+from arkumu.importer.services.execution.resource_manager import ResourceManager
+import uuid
+
 
 
 class EntityResource(BaseResource):
@@ -49,6 +52,27 @@ class EntityResource(BaseResource):
             }
         )
         return cls(resource), created
+    
+    @classmethod
+    def create_by_organization_and_dataset_name(cls, organization: str, dataset_name:str, base_uri: str = "http://arkumu.org/data", **kwargs) -> tuple['EntityResource', bool]:
+        """
+        Create an entity resource for a specified Organization 
+
+        Args:
+            organization: Organization object
+            dataset_name: Name of the dataset for which a new entity will be created
+            **kwargs: Additional fields for creation
+
+        Returns:
+            Tuple of (entity_resource_instance, was_created)
+        """
+        resource_manager = ResourceManager(
+            organization=organization,
+            base_uri=base_uri
+        )
+        entity_id = uuid.uuid4()
+        uri = resource_manager.generate_entity_uri(dataset_name=dataset_name, entity_id=entity_id)
+        return cls.get_or_create(uri=uri)
 
     @property
     def name(self) -> str:
@@ -63,17 +87,14 @@ class EntityResource(BaseResource):
             class_resource: The class resource this entity should be an instance of
         """
         # Create rdf:type relationship - using the same approach as existing code
-        try:
-            with transaction.atomic():
-                # Direct creation of triple using string predicate (avoiding potential UUID issues)
-                Triple.objects.create(
-                    subject=self._resource,
-                    predicate="http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-                    object=class_resource._resource
-                )
-        except Exception:
-            # If direct creation fails, try the standard approach
-            pass
+        with transaction.atomic():
+            rdf_type_resource = Resource.objects.get(uri="http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+            # Direct creation of triple using string predicate (avoiding potential UUID issues)
+            Triple.objects.create(
+                subject=self._resource,
+                predicate=rdf_type_resource,
+                object=class_resource._resource
+            )
 
     def set_property(self, property_resource: PropertyResource, value: Union[str, int, float, 'EntityResource']) -> None:
         """
@@ -89,7 +110,7 @@ class EntityResource(BaseResource):
                 # Create a relationship to another entity
                 Triple.objects.create(
                     subject=self._resource,
-                    predicate=property_resource.uri,
+                    predicate=property_resource._resource,
                     object=value._resource
                 )
             else:
@@ -108,7 +129,7 @@ class EntityResource(BaseResource):
                 # Create the relationship with literal value
                 Triple.objects.create(
                     subject=self._resource,
-                    predicate=property_resource.uri,
+                    predicate=property_resource._resource,
                     object=literal_resource
                 )
 
@@ -125,7 +146,7 @@ class EntityResource(BaseResource):
         # Get triples where this entity is the subject and property is the predicate
         triples = Triple.objects.filter(
             subject=self._resource,
-            predicate=property_resource.uri
+            predicate=property_resource._resource
         )
 
         results = []

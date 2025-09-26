@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from django import forms
+from django.db import models
 from django.contrib.auth.decorators import login_required
 from django.forms import formset_factory
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 import logging
+
+from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.triples import Triple
 
 from arkumu.metadata.services.vocabulary_options_service import (
     get_default_metadata_option_map,
@@ -17,8 +21,9 @@ from arkumu.metadata.models.resources import (
     PropertyResource,
     EntityResource
 )
+from arkumu.users.models import Organization
 
-
+logger = logging.getLogger(__name__)
 prt = ""
 
 
@@ -161,81 +166,83 @@ ActorEventFormSet = formset_factory(ActorEventForm, extra=1, min_num=1, validate
 @login_required
 def create_project(request):
     organization = getattr(request.user, "organization", None)
-    metadata_options = get_default_metadata_option_map(organization=organization)
+    # logger.info(f"🔄 {request.user._wrapped.__dict__}")
+    # logger.info(f"🔄 {organization}")
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
 
-    # Initialize base URI for resource creation
-    base_uri = "https://arkumu.example.org/data/"
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
 
-    if request.method == "POST":
-        project_form = ProjectForm(
-            request.POST,
-            metadata_options=metadata_options,
+        if request.method == "POST":
+            project_form = ProjectForm(
+                request.POST,
+                metadata_options=metadata_options,
+            )
+            actor_event_formset = ActorEventFormSet(
+                request.POST,
+                prefix="actors",
+                form_kwargs={"metadata_options": metadata_options},
+            )
+
+            if project_form.is_valid():
+                # Create RDF resources for the project using the wrapper classes
+                # Create Project class resource
+                project_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/projekt",
+                    name="Projekt"
+                )
+
+                # Create property resources
+                title_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/bevorzugter-titel",
+                    name="Bevorzugter Titel"
+                )
+
+                description_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/beschreibung",
+                    name="Beschreibung"
+                )
+
+                # Create project entity
+                project_entity, created = EntityResource.create_by_organization_and_dataset_name(
+                    dataset_name="Projekt", organization=organization
+                )
+
+                # Set the type of the entity
+                project_entity.set_type(project_class)
+
+                # Set properties from form data
+                project_title = project_form.cleaned_data.get('bevorzugter_titel', '')
+                if project_title:
+                    project_entity.set_property(title_prop, project_title)
+
+                project_description = project_form.cleaned_data.get('beschreibung', '')
+                if project_description:
+                    project_entity.set_property(description_prop, project_description)
+
+                # The RDF resources are now created and linked automatically
+                # Continue with the rest of the project creation workflow
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            project_form = ProjectForm(metadata_options=metadata_options)
+            actor_event_formset = ActorEventFormSet(
+                prefix="actors",
+                form_kwargs={"metadata_options": metadata_options},
+            )
+
+        return render(
+            request,
+            "metadata/entity_creation/create_project.html",
+            {
+                "project_form": project_form,
+                "actor_event_formset": actor_event_formset,
+                "entity_type": "project",
+                "title": "Create New Project",
+                "description": "Fill in the details to create a new archival project",
+                "prt": prt,
+            },
         )
-        actor_event_formset = ActorEventFormSet(
-            request.POST,
-            prefix="actors",
-            form_kwargs={"metadata_options": metadata_options},
-        )
-
-        if project_form.is_valid():
-            # Create RDF resources for the project using the wrapper classes
-            # Create Project class resource
-            project_class, created = ClassResource.get_or_create(
-                uri=f"{base_uri}/Project",
-                name="Project"
-            )
-
-            # Create property resources
-            title_prop, _ = PropertyResource.get_or_create(
-                uri=f"{base_uri}/title",
-                name="title"
-            )
-
-            description_prop, _ = PropertyResource.get_or_create(
-                uri=f"{base_uri}/description",
-                name="description"
-            )
-
-            # Create project entity
-            project_uri = f"{base_uri}/project_{project_form.cleaned_data.get('bevorzugter_titel', 'unknown').replace(' ', '_')[:50]}"
-            project_entity, created = EntityResource.get_or_create(
-                uri=project_uri
-            )
-
-            # Set the type of the entity
-            project_entity.set_type(project_class)
-
-            # Set properties from form data
-            project_title = project_form.cleaned_data.get('bevorzugter_titel', '')
-            if project_title:
-                project_entity.set_property(title_prop, project_title)
-
-            project_description = project_form.cleaned_data.get('beschreibung', '')
-            if project_description:
-                project_entity.set_property(description_prop, project_description)
-
-            # The RDF resources are now created and linked automatically
-            # Continue with the rest of the project creation workflow
-            return HttpResponseRedirect("/storage/dashboard/")
-    else:
-        project_form = ProjectForm(metadata_options=metadata_options)
-        actor_event_formset = ActorEventFormSet(
-            prefix="actors",
-            form_kwargs={"metadata_options": metadata_options},
-        )
-
-    return render(
-        request,
-        "metadata/entity_creation/create_project.html",
-        {
-            "project_form": project_form,
-            "actor_event_formset": actor_event_formset,
-            "entity_type": "project",
-            "title": "Create New Project",
-            "description": "Fill in the details to create a new archival project",
-            "prt": prt,
-        },
-    )
 
 
 @login_required
@@ -258,51 +265,51 @@ def create_event(request):
         )
 
         if event_form.is_valid() and actor_event_formset.is_valid():
-            # Create RDF resources for the event using the wrapper classes
-            # Create Event class resource
+            # # Create RDF resources for the event using the wrapper classes
+            # # Create Event class resource
             logger.info(f"🔄 TEST1")
-            event_class, created = ClassResource.get_or_create(
-                uri=f"{base_uri}/Event",
-                name="Event"
-            )
+            # event_class, created = ClassResource.get_or_create(
+            #     uri=f"{base_uri}/Event",
+            #     name="Event"
+            # )
 
-            # Create property resources
-            begin_date_prop, _ = PropertyResource.get_or_create(
-                uri=f"{base_uri}/beginDate",
-                name="beginDate"
-            )
+            # # Create property resources
+            # begin_date_prop, _ = PropertyResource.get_or_create(
+            #     uri=f"{base_uri}/beginDate",
+            #     name="beginDate"
+            # )
 
-            end_date_prop, _ = PropertyResource.get_or_create(
-                uri=f"{base_uri}/endDate",
-                name="endDate"
-            )
+            # end_date_prop, _ = PropertyResource.get_or_create(
+            #     uri=f"{base_uri}/endDate",
+            #     name="endDate"
+            # )
 
-            # Create event entity
-            event_uri = f"{base_uri}/event_{event_form.cleaned_data.get('ereignisbeginn', '').isoformat()[:20]}"
-            event_entity, created = EntityResource.get_or_create(
-                uri=event_uri
-            )
+            # # Create event entity
+            # event_uri = f"{base_uri}/event_{event_form.cleaned_data.get('ereignisbeginn', '').isoformat()[:20]}"
+            # event_entity, created = EntityResource.get_or_create(
+            #     uri=event_uri
+            # )
 
-            # Set the type of the entity
-            event_entity.set_type(event_class)
+            # # Set the type of the entity
+            # event_entity.set_type(event_class)
 
-            # Set event properties from form data
-            begin_date = event_form.cleaned_data.get('ereignisbeginn', '')
-            if begin_date:
-                event_entity.set_property(begin_date_prop, begin_date.isoformat())
+            # # Set event properties from form data
+            # begin_date = event_form.cleaned_data.get('ereignisbeginn', '')
+            # if begin_date:
+            #     event_entity.set_property(begin_date_prop, begin_date.isoformat())
 
-            end_date = event_form.cleaned_data.get('ereignisende', '')
-            if end_date:
-                event_entity.set_property(end_date_prop, end_date.isoformat())
+            # end_date = event_form.cleaned_data.get('ereignisende', '')
+            # if end_date:
+            #     event_entity.set_property(end_date_prop, end_date.isoformat())
 
-            # Link to the associated project
-            project_uri = event_form.cleaned_data.get('project_uri', '')
-            if project_uri:
-                project_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/project",
-                    name="project"
-                )
-                event_entity.set_property(project_prop, project_uri)
+            # # Link to the associated project
+            # project_uri = event_form.cleaned_data.get('project_uri', '')
+            # if project_uri:
+            #     project_prop, _ = PropertyResource.get_or_create(
+            #         uri=f"{base_uri}/project",
+            #         name="project"
+            #     )
+            #     event_entity.set_property(project_prop, project_uri)
 
             # The RDF resources are now created and linked automatically
             # Continue with the rest of the event creation workflow
