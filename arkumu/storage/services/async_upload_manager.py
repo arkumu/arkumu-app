@@ -233,6 +233,70 @@ class AsyncUploadManager:
             created_files=created_files,
         )
 
+    # ------------------------------------------------------------------
+    # Session synchronisation helpers
+
+    def sync_session_state(self, session: AsyncUploadSession) -> bool:
+        """Bring a session's file statuses in sync with S3.
+
+        If files remain marked as ``pending`` or ``uploading`` but the
+        objects already exist in S3 (e.g. the browser navigated away before
+        calling ``mark_file_uploaded``), update them to ``uploaded`` and
+        enqueue verification jobs so stats reflect reality. Returns ``True``
+        when any database changes were performed.
+        """
+
+        pending_files = list(
+            session.files.filter(status__in=["pending", "uploading"]).only(
+                "id", "s3_key", "status"
+            )
+        )
+        if not pending_files:
+            return False
+
+        try:
+            bucket_name = self.bucket_service.get_organization_bucket(session.organization)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.warning(
+                "Session %s: unable to resolve bucket for organization '%s': %s",
+                session.id,
+                session.organization,
+                exc,
+            )
+            return False
+
+        updated_files: List[AsyncUploadFile] = []
+        for upload_file in pending_files:
+            info = self.upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
+            if info and info.get("success"):
+                upload_file.mark_uploaded()
+                updated_files.append(upload_file)
+
+        if not updated_files:
+            return False
+
+        if session.status in {"initialized", "presigned_generated"}:
+            session.status = "processing"
+            if not session.started_at:
+                session.started_at = timezone.now()
+            session.save(update_fields=["status", "started_at", "updated_at"])
+
+        # Clear any stale prefetch cache so callers fetch fresh data.
+        if hasattr(session, "_prefetched_objects_cache"):
+            session._prefetched_objects_cache.pop("files", None)
+
+        from arkumu.storage.tasks import verify_and_process_upload  # local import to avoid circular
+
+        for upload_file in session.files.filter(status="uploaded").only("id"):
+            verify_and_process_upload(str(upload_file.id))
+
+        logger.info(
+            "Session %s: normalised %s files to 'uploaded' and enqueued verification",
+            session.id,
+            len(updated_files),
+        )
+        return True
+
     # Helpers -----------------------------------------------------------------
 
     def _derive_base_folder(self, folder: str) -> str:
