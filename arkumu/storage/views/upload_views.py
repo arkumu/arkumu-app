@@ -10,6 +10,7 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from arkumu.storage.services.upload_service import UploadService
+from arkumu.storage.services.async_upload_manager import AsyncUploadManager
 from arkumu.users.mixins import general_login_required
 from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
 
@@ -59,204 +60,43 @@ def batch_presigned_urls(request):
         
         logger.info(f"📁 Processing {len(files)} files with folder='{folder}' for organization='{organization}'")
         
-        # Get the correct bucket for the organization
-        from arkumu.storage.services.bucket_service import BucketService
-        bucket_service = BucketService()
-        bucket_name = bucket_service.get_organization_bucket(organization) if organization else None
-        
-        # Determine base folder (defaults to data for safety)
-        base_folder = (folder.split('/', 1)[0] if folder else 'data').strip() or 'data'
+        manager = AsyncUploadManager()
 
-        if session_id:
-            try:
-                session = AsyncUploadSession.objects.get(id=session_id, user=request.user)
-                logger.info(f"📎 Appending to existing session {session_id} with {len(files)} files")
-                session.organization = organization or session.organization
-                session.base_folder = base_folder or session.base_folder
-                if total_files_override:
-                    session.total_files = total_files_override
-                session.save(update_fields=["organization", "base_folder", "total_files", "updated_at"])
-            except AsyncUploadSession.DoesNotExist:
-                logger.error(f"❌ Session {session_id} not found or does not belong to user {request.user.id}")
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Invalid upload session'
-                }, status=400)
-        else:
-            total_files_value = total_files_override if total_files_override else len(files)
-            session = AsyncUploadSession.objects.create(
+        try:
+            batch_result = manager.prepare_presigned_uploads(
                 user=request.user,
-                total_files=total_files_value,
-                organization=organization,  # Store organization in session
-                base_folder=base_folder
+                files=files,
+                folder=folder,
+                organization=organization,
+                session_id=session_id,
+                total_files_override=total_files_override,
             )
-            logger.info(f"📝 Created upload session {session.id} for {len(files)} files in bucket {bucket_name}")
-        
-        upload_service = UploadService()
-        results = []
-        errors = []
-        upload_files_created = []
-        
-        for file_info in files:
-            filename = file_info.get('name')
-            # Use relative path if provided (for folder uploads with structure)
-            relative_path = file_info.get('relativePath', filename)
-            filesize = file_info.get('size', 0)
-            filetype = file_info.get('type', 'application/octet-stream')
-            
-            logger.info(f"📄 Processing: {filename} -> {relative_path} ({filesize} bytes, {filetype})")
-            
-            try:
-                # Validate upload request
-                validation = upload_service.validate_upload_request(
-                    file_name=filename,
-                    file_size=filesize,
-                    content_type=filetype,
-                    user_id=request.user.id
-                )
-                
-                if not validation['valid']:
-                    # Allow zero-byte files (like .gitkeep) - they're valid
-                    if filesize == 0 and len(validation['errors']) == 1 and 'File size must be greater than 0' in validation['errors']:
-                        logger.info(f"⚪ Allowing zero-byte file: {filename}")
-                        # Override validation for zero-byte files
-                        validation = {
-                            'valid': True,
-                            'errors': [],
-                            'warnings': validation.get('warnings', []) + ['Zero-byte file allowed'],
-                            'should_use_multipart': False
-                        }
-                    else:
-                        errors.append({
-                            'filename': filename,
-                            'errors': validation['errors']
-                        })
-                        continue
-                
-                # Generate presigned URL (same logic as individual request)
-                if validation['should_use_multipart']:
-                    # For large files, initialize multipart upload
-                    # Create full path: base_folder + relative_path
-                    full_path = f"{folder}/{relative_path}" if folder else relative_path
-                    # Extract directory from full path for multipart
-                    import os
-                    file_dir = os.path.dirname(full_path) if os.path.dirname(full_path) else None
-                    
-                    init_result = upload_service.initiate_multipart_upload(
-                        file_name=os.path.basename(full_path),  # Just filename for multipart
-                        content_type=filetype,
-                        path_prefix=file_dir,  # Directory path
-                        organization=organization  # Pass organization for bucket selection
-                    )
-                    
-                    if init_result['success']:
-                        # Create AsyncUploadFile record so we can mark completed later
-                        upload_file = AsyncUploadFile.objects.create(
-                            session=session,
-                            filename=filename,
-                            s3_key=init_result['s3_key'],
-                            file_size=filesize,
-                            content_type=filetype,
-                            relative_path=relative_path,
-                            status='pending',
-                            presigned_url='',
-                            presigned_fields={}
-                        )
-                        upload_files_created.append(upload_file)
-                        logger.info(f"📄 Created multipart upload file record {upload_file.id} for {filename}")
+        except ValueError as exc:
+            logger.error(f"❌ Invalid batch upload request: {exc}")
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
 
-                        results.append({
-                            'filename': filename,
-                            'type': 'multipart',
-                            'upload_id': init_result['upload_id'],
-                            's3_key': init_result['s3_key'],
-                            'filesize': filesize,
-                            'filetype': filetype,
-                            'folder': file_dir,  # Add folder path for JavaScript
-                            'organization': organization,  # Add organization info
-                            'base_folder': folder,  # Add base folder info
-                            'upload_file_id': str(upload_file.id),
-                            'relativePath': relative_path
-                        })
-                    else:
-                        error_msg = init_result.get('error', 'Multipart upload initialization failed')
-                        logger.error(f"❌ Multipart init failed for {filename}: {error_msg}")
-                        errors.append({
-                            'filename': filename,
-                            'errors': [f"Large file upload failed: {error_msg}. Try splitting file or contact support."]
-                        })
-                else:
-                    # Single upload
-                    # Create full path: base_folder + relative_path  
-                    full_path = f"{folder}/{relative_path}" if folder else relative_path
-                    # Extract directory and filename
-                    import os
-                    file_dir = os.path.dirname(full_path) if os.path.dirname(full_path) else None
-                    
-                    result = upload_service.generate_presigned_upload_url(
-                        file_name=os.path.basename(full_path),  # Just filename
-                        content_type=filetype,
-                        path_prefix=file_dir,  # Full directory path preserves structure
-                        max_file_size=filesize,
-                        bucket_name=bucket_name  # Use organization bucket
-                    )
-                    
-                    if result['success']:
-                        # Create AsyncUploadFile record for tracking
-                        upload_file = AsyncUploadFile.objects.create(
-                            session=session,
-                            filename=filename,
-                            s3_key=result['key'],
-                            file_size=filesize,
-                            content_type=filetype,
-                            relative_path=relative_path,
-                            status='pending',
-                            presigned_url=result.get('url', ''),
-                            presigned_fields=result.get('fields', {})
-                        )
-                        upload_files_created.append(upload_file)
-                        logger.info(f"📄 Created upload file record {upload_file.id} for {filename}")
-                        
-                        results.append({
-                            'filename': filename,
-                            'type': 'single',
-                            'url': result['url'],
-                            'method': result.get('method', 'POST'),  # Include method for frontend
-                            'fields': result['fields'],
-                            's3_key': result['key'],
-                            'filesize': filesize,
-                            'filetype': filetype,
-                            'max_file_size': result.get('max_file_size'),
-                            'upload_file_id': str(upload_file.id),
-                            'relativePath': relative_path
-                        })
-                    else:
-                        errors.append({
-                            'filename': filename,
-                            'errors': [result.get('error', 'Presigned URL generation failed')]
-                        })
-                        
-            except Exception as e:
-                logger.error(f"❌ Error processing file {filename}: {str(e)}")
-                errors.append({
-                    'filename': filename,
-                    'errors': [f"Processing error: {str(e)}"]
-                })
-        
         response_data = {
-            'success': len(errors) == 0,
-            'uploads': results,
-            'session_id': str(session.id)
+            'success': batch_result.success,
+            'uploads': batch_result.uploads,
+            'session_id': str(batch_result.session.id),
         }
-        
-        if errors:
-            response_data['errors'] = errors
-        
-        # Session created - verification will be triggered when files are uploaded
-        if upload_files_created:
-            logger.info(f"🚀 Session {session.id} created with {len(results)} files - waiting for uploads")
-        
-        logger.info(f"✅ BATCH_PRESIGNED_URLS: {len(results)} successful, {len(errors)} errors")
+
+        if batch_result.errors:
+            response_data['errors'] = batch_result.errors
+
+        if batch_result.created_files:
+            logger.info(
+                "🚀 Session %s prepared with %s uploads (%s errors)",
+                batch_result.session.id,
+                len(batch_result.uploads),
+                len(batch_result.errors),
+            )
+
+        logger.info(
+            "✅ BATCH_PRESIGNED_URLS: %s successful, %s errors",
+            len(batch_result.uploads),
+            len(batch_result.errors),
+        )
         return JsonResponse(response_data)
         
     except json.JSONDecodeError:
@@ -634,7 +474,7 @@ def mark_file_uploaded(request, file_id):
             # Trigger verification for all files immediately - no polling needed
             from arkumu.storage.tasks import verify_and_process_upload
             for upload_file_obj in session.files.filter(status='uploaded'):
-                verify_and_process_upload(str(upload_file_obj.id))
+                verify_and_process_upload.delay(str(upload_file_obj.id))
         
         # Get organization for OOB refresh
         organization = upload_file.session.organization

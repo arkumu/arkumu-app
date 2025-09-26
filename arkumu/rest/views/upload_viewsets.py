@@ -18,6 +18,7 @@ from django.utils.decorators import method_decorator
 
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.upload import upload_utils
+from arkumu.storage.services.async_upload_manager import AsyncUploadManager
 
 logger = logging.getLogger(__name__)
 
@@ -107,78 +108,27 @@ class UploadViewSet(viewsets.ViewSet):
             if not files_data:
                 return Response({'error': 'No files provided'}, status=400)
             
-            # Create async upload session
-            from arkumu.storage.models.upload_tracking import AsyncUploadSession
-            upload_session = AsyncUploadSession.objects.create(
-                user=request.user,
-                organization=self._extract_org_from_folder(folder),
-                base_folder=self._extract_base_folder_from_folder(folder),
-                total_files=len(files_data),
-                status='initialized'
-            )
-            
-            successful_uploads = []
-            failed_uploads = []
-            
-            for file_data in files_data:
-                try:
-                    # Generate presigned URL using existing service
-                    upload_info = self.upload_service.generate_presigned_upload_url(
-                        filename=file_data['name'],
-                        folder=folder,
-                        file_size=file_data['size'],
-                        content_type=file_data.get('type', 'application/octet-stream')
-                    )
-                    
-                    if upload_info.get('success'):
-                        # Create async upload file record
-                        from arkumu.storage.models.upload_tracking import AsyncUploadFile
-                        upload_file = AsyncUploadFile.objects.create(
-                            session=upload_session,
-                            filename=file_data['name'],
-                            s3_key=upload_info['s3_key'],
-                            file_size=file_data['size'],
-                            content_type=file_data.get('type', 'application/octet-stream'),
-                            relative_path=file_data.get('relativePath', file_data['name']),
-                            presigned_url=upload_info['url'],
-                            presigned_fields=upload_info['fields']
-                        )
-                        
-                        successful_uploads.append({
-                            'file_id': str(upload_file.id),
-                            'filename': upload_info.get('filename', file_data['name']),
-                            's3_key': upload_info['s3_key'],
-                            'url': upload_info['url'],
-                            'fields': upload_info['fields'],
-                            'type': upload_info.get('type', 'single')
-                        })
-                    else:
-                        failed_uploads.append({
-                            'filename': file_data['name'],
-                            'errors': [upload_info.get('error', 'Upload generation failed')]
-                        })
-                        
-                except Exception as e:
-                    failed_uploads.append({
-                        'filename': file_data['name'],
-                        'errors': [str(e)]
-                    })
-            
-            # Update session status
-            if successful_uploads:
-                upload_session.status = 'presigned_generated'
-                upload_session.save()
-                
-                # Schedule monitoring task
-                from arkumu.storage.tasks import monitor_upload_session
-                monitor_upload_session.delay(str(upload_session.id))
-            
-            return Response({
-                'session_id': str(upload_session.id),
-                'uploads': successful_uploads,
-                'errors': failed_uploads,
-                'success': len(successful_uploads) > 0
-            })
+            manager = AsyncUploadManager()
+
+            try:
+                batch_result = manager.prepare_presigned_uploads(
+                    user=request.user,
+                    files=files_data,
+                    folder=folder,
+                    organization=self._extract_org_from_folder(folder),
+                )
+            except ValueError as exc:
+                logger.error(f"❌ Invalid async upload request: {exc}")
+                return Response({'success': False, 'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+            response_payload = {
+                'session_id': str(batch_result.session.id),
+                'uploads': batch_result.uploads,
+                'errors': batch_result.errors,
+                'success': batch_result.success,
+            }
+
+            return Response(response_payload)
             
         except Exception as e:
             logger.error(f"❌ ASYNC_BATCH_PRESIGNED_URLS: Unexpected error: {str(e)}")
@@ -375,8 +325,8 @@ class UploadViewSet(viewsets.ViewSet):
             # Get file info from S3 to verify upload
             try:
                 file_info = self.upload_service.get_file_info(s3_key)
-                if file_info['exists']:
-                    logger.info(f"✅ Upload confirmed: {filename} -> {s3_key} ({file_info.get('size', 0)} bytes)")
+                if file_info.get('success'):
+                    logger.info(f"✅ Upload confirmed: {filename} -> {s3_key} ({file_info.get('file_size', 0)} bytes)")
                     
                     # Here you could add additional post-upload processing:
                     # - Log to database

@@ -171,6 +171,7 @@ def verify_and_process_upload(file_id: str):
             
             # Note: UI refresh happens client-side via JavaScript polling or manual refresh
             logger.debug(f"💡 SESSION: Client should refresh file browser for organization: {session.organization}")
+            trigger_ui_refresh.delay(str(session.id), session.organization)
         
     except Exception as e:
         logger.error(f"❌ VERIFY: Error processing file {file_id}: {str(e)}")
@@ -208,8 +209,7 @@ def check_session_completion(session_id: str):
                 logger.warning(f"⚠️ SESSION: Upload session {session_id} completed with {failed_files} failures")
             
             # Trigger UI refresh via OOB updates
-            # In Django Huey, call tasks directly (no .delay() needed)
-            trigger_ui_refresh(str(session_id), session.organization)
+            trigger_ui_refresh.delay(str(session_id), session.organization)
             
     except Exception as e:
         logger.error(f"❌ SESSION: Error checking completion for {session_id}: {str(e)}")
