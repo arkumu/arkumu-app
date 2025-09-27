@@ -448,7 +448,8 @@ async function initializeDashboardUpload() {
             
             // Phase 3: Start uploading files to S3 automatically
             await startUploads(sessionResponse.results || sessionResponse.uploads, files);
-            
+            showFinalUploadSuccess(files.length);
+
         } catch (error) {
             debugError('❌ ASYNC: Upload failed:', error);
             if (uploadArea) {
@@ -545,9 +546,8 @@ function createAsyncUploadCards(uploads, uploadArea) {
         debugLog('ℹ️ Async upload UI disabled; skipping progress cards');
         return;
     }
-    // Check if this is a folder upload (many files or files with relative paths)
     const isFolderUpload = uploads.length > 10 || uploads.some(upload => upload.relativePath && upload.relativePath.includes('/'));
-    
+
     if (isFolderUpload) {
         createFolderUploadSummary(uploads, uploadArea);
     } else {
@@ -585,7 +585,7 @@ function createFolderUploadSummary(uploads, uploadArea) {
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" data-folder-arrow>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                             </svg>
-                            Uploaded files (${uploads.length})
+                            Files in this batch (${uploads.length})
                         </span>
                         <span class="badge badge-xs">${uploads.length}</span>
                     </button>
