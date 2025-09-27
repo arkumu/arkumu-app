@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.async_upload_manager import AsyncUploadManager
+from arkumu.storage.tasks import verify_upload_session
 from arkumu.users.mixins import general_login_required
 from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
 from arkumu.metadata.views.dashboard_helpers import (
@@ -463,23 +464,19 @@ def mark_file_uploaded(request, file_id):
         upload_file = AsyncUploadFile.objects.get(id=file_id, session__user=request.user)
         upload_file.mark_uploaded()
         logger.info(f"✅ Marked file {upload_file.filename} as uploaded")
-        
-        # Check if all files in session are uploaded
+
         session = upload_file.session
-        uploaded_count = session.files.filter(status='uploaded').count()
-        total_count = session.total_files
-        
-        logger.info(f"📊 Session {session.id}: {uploaded_count}/{total_count} files uploaded")
-        
-        if uploaded_count == total_count:
-            logger.info(f"🎉 All files in session {session.id} uploaded, starting verification immediately")
-            session.mark_processing()
-            
-            # Trigger verification for all files immediately - no polling needed
-            from arkumu.storage.tasks import verify_and_process_upload
-            for upload_file_obj in session.files.filter(status='uploaded'):
-                verify_and_process_upload.delay(str(upload_file_obj.id))
-        
+        if session.status not in ('uploading', 'processing', 'completed', 'failed'):
+            session.mark_uploading()
+
+        all_uploaded = not session.files.exclude(status__in=['uploaded', 'completed', 'failed']).exists()
+        if all_uploaded:
+            logger.info(f"🚀 Scheduling verification for session {session.id}")
+            if session.status != 'processing':
+                session.mark_processing()
+
+            verify_upload_session(str(session.id))
+
         # Get organization for OOB refresh
         organization = upload_file.session.organization
         

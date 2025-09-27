@@ -16,6 +16,7 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 
+from arkumu.storage.tasks import verify_upload_session
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.upload import upload_utils
 from arkumu.storage.services.async_upload_manager import AsyncUploadManager
@@ -446,20 +447,25 @@ class UploadViewSet(viewsets.ViewSet):
         
         try:
             from arkumu.storage.models.upload_tracking import AsyncUploadFile
+
             upload_file = AsyncUploadFile.objects.get(
-                id=file_id, 
-                session_id=session_id
+                id=file_id,
+                session_id=session_id,
             )
-            
-            # Mark as uploaded (client reported completion)
+
             upload_file.mark_uploaded()
-            
-            # Trigger verification and processing task
-            from arkumu.storage.tasks import verify_and_process_upload
-            verify_and_process_upload.delay(file_id)
-            
-            return Response({'status': 'processing'})
-            
+
+            session = upload_file.session
+            if session.status not in ('uploading', 'processing', 'completed', 'failed'):
+                session.mark_uploading()
+
+            all_uploaded = not session.files.exclude(status__in=['uploaded', 'completed', 'failed']).exists()
+            if all_uploaded and session.status != 'processing':
+                session.mark_processing()
+                verify_upload_session(str(session.id))
+
+            return Response({'status': session.status})
+
         except AsyncUploadFile.DoesNotExist:
             return Response({'error': 'Upload file not found'}, status=404)
 
