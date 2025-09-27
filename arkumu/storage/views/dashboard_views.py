@@ -454,8 +454,9 @@ def refresh_file_browser(request, organization):
             expected_files.append(value)
 
         if expected_files:
-            logger.info("📋 REFRESH: Looking for %d expected files", len(expected_files))
-            logger.debug("📋 REFRESH (debug) expected files: %s", expected_files)
+            expected_count = len(expected_files)
+            logger.info("📋 REFRESH: Looking for %d expected files", expected_count)
+            logger.debug("📋 REFRESH expected files: %s", expected_files)
     
     try:
         # Clear all possible cache keys for this organization
@@ -515,6 +516,16 @@ def refresh_file_browser(request, organization):
             missing_files = [f for f in expected_files if not _matches_available(f)]
             retry_payload = None
             exhausted_attempts = False
+
+            if missing_files:
+                missing_preview = ', '.join(missing_files[:5])
+                if len(missing_files) > 5:
+                    missing_preview += ", …"
+                logger.debug(
+                    "📋 REFRESH missing %d file(s) (sample: %s)",
+                    len(missing_files),
+                    missing_preview,
+                )
 
             if missing_files and retry_count < max_retries:
                 retry_delay = (retry_count + 1) * 1000  # 1s, 2s, 3s delays
