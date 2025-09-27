@@ -82,7 +82,11 @@
                             {% elif session.status == 'uploading' %}badge-info
                             {% elif session.status == 'processing' %}badge-info
                             {% else %}badge-ghost{% endif %}">
-                            {{ session.get_status_display|default:session.status }}
+                            {% if session.status == 'processing' %}
+                                <span title="All files finished uploading; an automatic safety check is running to confirm final metadata.">To be verified</span>
+                            {% else %}
+                                {{ session.get_status_display|default:session.status }}
+                            {% endif %}
                         </span>
                         {% if session.completed_at %}
                             <div class="text-xs text-base-content/60 mt-1">{{ session.completed_at|date:"M d, H:i" }}</div>
