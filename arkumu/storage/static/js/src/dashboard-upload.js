@@ -123,6 +123,56 @@ const uploadTracker = {
 let uploadToastTimer = null;
 let uploadRefreshTimeout = null;
 
+const UPLOAD_PANEL_EMPTY_HTML = `
+    <div class="flex items-start gap-3 rounded-lg bg-base-200/80 p-3">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m-2 8a9 9 0 110-18 9 9 0 010 18z" />
+        </svg>
+        <div>
+            <p>No active uploads. Select files on the left to start a new queue.</p>
+        </div>
+    </div>
+`;
+
+function openUploadPanel() {
+    const panel = document.getElementById('dashboard-upload-panel');
+    if (!panel) {
+        return;
+    }
+    panel.classList.remove('hidden');
+    panel.dataset.state = 'open';
+}
+
+function hideUploadPanel() {
+    const panel = document.getElementById('dashboard-upload-panel');
+    if (!panel) {
+        return;
+    }
+    panel.classList.add('hidden');
+    panel.dataset.state = 'hidden';
+}
+
+function getUploadArea(options = {}) {
+    const { autoOpen = false } = options;
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    if (!uploadArea) {
+        return null;
+    }
+    if (autoOpen) {
+        openUploadPanel();
+    }
+    return uploadArea;
+}
+
+function resetUploadPanelToEmptyState() {
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    if (!uploadArea) {
+        return;
+    }
+    uploadArea.dataset.emptyState = 'true';
+    uploadArea.innerHTML = UPLOAD_PANEL_EMPTY_HTML;
+}
+
 function ensureUploadToastElements() {
     let toast = document.getElementById('upload-toast');
     let messageElement = document.getElementById('upload-toast-message');
@@ -161,8 +211,27 @@ function ensureUploadToastElements() {
     return { toast, messageElement };
 }
 
-function showUploadToast(message, duration = 5000) {
+const TOAST_SEVERITY_CLASSES = {
+    info: 'alert-info',
+    warning: 'alert-warning',
+    error: 'alert-error',
+    success: 'alert-success'
+};
+
+function showUploadToast(message, options = {}) {
+    const { duration = 5000, severity = 'info' } = options;
+
+    // Suppress low-severity toasts now that the activity panel handles status updates
+    if (severity === 'info') {
+        return;
+    }
+
     const { toast, messageElement } = ensureUploadToastElements();
+    const alertElement = toast.querySelector('.alert');
+    if (alertElement) {
+        const severityClass = TOAST_SEVERITY_CLASSES[severity] || 'alert-info';
+        alertElement.className = `alert ${severityClass}`;
+    }
 
     if (message) {
         messageElement.textContent = message;
@@ -236,12 +305,12 @@ document.body.addEventListener('upload-refresh-retry', (event) => {
     }
 
     if (detail.reason === 'error') {
-        showUploadToast('Retrying file list…', Math.min((detail.delay || 2000) + 2000, 6000));
+        showUploadToast('Retrying file list…', { duration: Math.min((detail.delay || 2000) + 2000, 6000) });
         return;
     }
 
     if ((detail.retry || 1) === 1) {
-        showUploadToast('Waiting for uploaded files to appear…', Math.min((detail.delay || 2000) + 3000, 6000));
+        showUploadToast('Waiting for uploaded files to appear…', { duration: Math.min((detail.delay || 2000) + 3000, 6000) });
     }
 });
 
@@ -252,7 +321,7 @@ document.body.addEventListener('upload-refresh-missing', (event) => {
         return;
     }
     if (missingCount > 0) {
-        showUploadToast('Some files are still processing; check the uploads dashboard shortly.', 6000);
+        debugLog(`ℹ️ ${missingCount} uploaded file(s) still propagating; no toast shown.`);
     }
 });
 
@@ -262,7 +331,7 @@ document.body.addEventListener('upload-refresh-warning', (event) => {
     if (!hasFileBrowserTarget()) {
         return;
     }
-    showUploadToast(message, 5000);
+    showUploadToast(message, { duration: 5000, severity: 'warning' });
 });
 
 document.body.addEventListener('upload-refresh-error', (event) => {
@@ -271,7 +340,7 @@ document.body.addEventListener('upload-refresh-error', (event) => {
     if (!hasFileBrowserTarget()) {
         return;
     }
-    showUploadToast(message, 6000);
+    showUploadToast(message, { duration: 6000, severity: 'error' });
 });
 
 // Upload mode switching for dashboard
@@ -334,7 +403,7 @@ async function initializeDashboardUpload() {
 
     fileInput.addEventListener('change', async function(e) {
         const files = Array.from(e.target.files);
-        const uploadArea = document.getElementById('dashboard-upload-area');
+        const uploadArea = getUploadArea({ autoOpen: true });
         const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
         const baseFolderSelector = document.getElementById('base-folder');
         
@@ -358,8 +427,8 @@ async function initializeDashboardUpload() {
         const folderPath = baseFolder;
         
         debugLog('🚀 ASYNC: Starting async upload session');
-        showUploadToast('Upload started; check status in the uploads dashboard.', 6000);
-        
+        openUploadPanel();
+
         try {
             // Phase 1: Initialize upload session and get presigned URLs
             const sessionResponse = await initializeAsyncUploadSession(files, folderPath);
@@ -370,6 +439,7 @@ async function initializeDashboardUpload() {
             
             // Clear previous uploads
             if (uploadArea) {
+                uploadArea.dataset.emptyState = 'false';
                 uploadArea.innerHTML = '';
             }
             
@@ -386,7 +456,7 @@ async function initializeDashboardUpload() {
             } else {
                 alert('Upload failed: ' + error.message);
             }
-            showUploadToast('Upload failed. Please review the uploads dashboard.', 6000);
+            showUploadToast('Upload failed. Please review the uploads dashboard.', { duration: 6000, severity: 'error' });
         }
     });
 }
@@ -507,13 +577,20 @@ function createFolderUploadSummary(uploads, uploadArea) {
                 </div>
                 
                 <!-- Collapsible File List -->
-                <div class="collapse collapse-arrow bg-base-200">
-                    <input type="checkbox" />
-                    <div class="collapse-title text-sm font-medium">
-                        View all ${uploads.length} files
-                    </div>
-                    <div class="collapse-content">
-                        <ul class="list mt-2" id="folder-files-list">
+                <div class="rounded-lg border border-base-300/60 bg-base-200/70">
+                    <button type="button"
+                            class="flex w-full items-center justify-between gap-2 rounded-t-lg px-3 py-2 text-left text-sm font-medium transition hover:bg-base-200"
+                            data-folder-toggle>
+                        <span class="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" data-folder-arrow>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                            Uploaded files (${uploads.length})
+                        </span>
+                        <span class="badge badge-xs">${uploads.length}</span>
+                    </button>
+                    <div class="border-t border-base-300/40 px-3 py-3 hidden" data-folder-files tabindex="-1">
+                        <ul class="space-y-1 max-h-48 overflow-y-auto pr-1" id="folder-files-list">
                             ${uploads.map(upload => `
                                 <li class="list-row py-2 upload-file-container" data-filename="${upload.filename}">
                                     <div class="flex-shrink-0">
@@ -550,6 +627,38 @@ function createFolderUploadSummary(uploads, uploadArea) {
     `;
     
     uploadArea.appendChild(summaryContainer);
+    initializeFolderUploadSummaryToggle(summaryContainer);
+}
+
+function initializeFolderUploadSummaryToggle(container) {
+    const toggleButton = container.querySelector('[data-folder-toggle]');
+    const filesWrapper = container.querySelector('[data-folder-files]');
+    const arrowIcon = container.querySelector('[data-folder-arrow]');
+
+    if (!toggleButton || !filesWrapper || !arrowIcon) {
+        return;
+    }
+
+    const updateState = (expanded) => {
+        if (expanded) {
+            filesWrapper.classList.remove('hidden');
+            arrowIcon.style.transform = 'rotate(180deg)';
+        } else {
+            filesWrapper.classList.add('hidden');
+            arrowIcon.style.transform = 'rotate(0deg)';
+        }
+    };
+
+    let isExpanded = false;
+    updateState(isExpanded);
+
+    toggleButton.addEventListener('click', () => {
+        isExpanded = !isExpanded;
+        updateState(isExpanded);
+        if (isExpanded) {
+            filesWrapper.focus({ preventScroll: true });
+        }
+    });
 }
 
 function createIndividualFilesList(uploads, uploadArea) {
@@ -996,51 +1105,32 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
 
 // Upload verifying helper - shows coordinated loading state
 function showUploadVerifying(fileCount, uploadedFiles) {
-    const uploadArea = document.getElementById('dashboard-upload-area');
-    if (!uploadArea) {
-        debugLog('ℹ️ Skipping verifying banner; no upload area available');
-        return;
-    }
-    const verifyingMessage = document.createElement('div');
-    verifyingMessage.className = 'alert alert-info mt-4';
-    verifyingMessage.id = 'upload-verifying-message';
-    
-    const fileNames = uploadedFiles.slice(0, 3).map(f => f.filename).join(', ') + 
-                     (uploadedFiles.length > 3 ? ` and ${uploadedFiles.length - 3} more` : '');
-    
-    verifyingMessage.innerHTML = `
-        <div class="flex items-center gap-3">
-            <span class="loading loading-spinner loading-sm"></span>
-            <div>
-                <div class="font-medium">Files uploaded, verifying availability...</div>
-                <div class="text-sm opacity-70">Uploaded: ${fileNames}</div>
-            </div>
-        </div>
-    `;
-    uploadArea.appendChild(verifyingMessage);
+    debugLog('ℹ️ Uploads finished; waiting for storage consistency (no banner shown).');
 }
 
 // Final completion helper - called after files are confirmed in browser
 function showUploadComplete(fileCount) {
     // Remove the verifying message if it exists
-    const verifyingMessage = document.getElementById('upload-verifying-message');
-    if (verifyingMessage) {
-        verifyingMessage.remove();
-    }
-    
-    const uploadArea = document.getElementById('dashboard-upload-area');
+    const uploadArea = getUploadArea({ autoOpen: true });
     if (!uploadArea) {
         debugLog('ℹ️ Skipping completion banner; no upload area available');
         return;
     }
+    if (uploadArea.dataset.emptyState === 'true') {
+        uploadArea.dataset.emptyState = 'false';
+        uploadArea.innerHTML = '';
+    }
     const completionMessage = document.createElement('div');
-    completionMessage.className = 'alert alert-success mt-4';
+    completionMessage.className = 'mt-4 flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success/90';
     completionMessage.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
         </svg>
-        <span>✅ All ${fileCount} files uploaded and verified!</span>
-        <button class="btn btn-ghost btn-sm" onclick="this.closest('.alert').remove()">
+        <div class="flex-1">
+            <p class="font-medium">Upload complete.</p>
+            <p class="mt-1 opacity-80">${fileCount} file${fileCount === 1 ? '' : 's'} saved to storage. You can close the activity panel whenever you're ready.</p>
+        </div>
+        <button class="btn btn-ghost btn-xs" aria-label="Dismiss" onclick="this.closest('div.mt-4').remove()">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -1209,23 +1299,23 @@ function updateVerificationStatus(fileStatuses) {
 }
 
 function showFinalUploadSuccess(fileCount) {
-    const uploadArea = document.getElementById('dashboard-upload-area');
+    const uploadArea = getUploadArea({ autoOpen: true });
     if (!uploadArea) return;
-    
-    // Remove verifying message if it exists
-    const verifyingMessage = document.getElementById('upload-verifying-message');
-    if (verifyingMessage) {
-        verifyingMessage.remove();
+    if (uploadArea.dataset.emptyState === 'true') {
+        uploadArea.dataset.emptyState = 'false';
+        uploadArea.innerHTML = '';
     }
-    
     const completionMessage = document.createElement('div');
-    completionMessage.className = 'alert alert-success mt-4';
+    completionMessage.className = 'mt-4 flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success/90';
     completionMessage.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
         </svg>
-        <span>🎉 All ${fileCount} files uploaded and verified!</span>
-        <button class="btn btn-ghost btn-sm" onclick="this.closest('.alert').remove()">
+        <div class="flex-1">
+            <p class="font-medium">All files uploaded.</p>
+            <p class="mt-1 opacity-80">Everything is safely stored. You can close this panel or keep browsing.</p>
+        </div>
+        <button class="btn btn-ghost btn-xs" aria-label="Dismiss" onclick="this.closest('div.mt-4').remove()">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -1577,6 +1667,10 @@ function showUploadError(uploadArea, message) {
         debugError('Upload error without container:', message);
         return;
     }
+    if (uploadArea.dataset.emptyState === 'true') {
+        uploadArea.dataset.emptyState = 'false';
+        uploadArea.innerHTML = '';
+    }
     const errorDiv = document.createElement('div');
     errorDiv.className = 'alert alert-error mt-4';
     errorDiv.innerHTML = `
@@ -1915,10 +2009,14 @@ function formatFileSize(bytes) {
 function createUploadCard(uploadInfo, file) {
     debugLog('🏗️ Creating upload card for:', uploadInfo.filename, 'type:', uploadInfo.type);
     
-    const uploadArea = document.getElementById('dashboard-upload-area');
+    const uploadArea = getUploadArea({ autoOpen: true });
     if (!uploadArea) {
         console.error('Upload area not found!');
         return;
+    }
+    if (uploadArea.dataset.emptyState === 'true') {
+        uploadArea.dataset.emptyState = 'false';
+        uploadArea.innerHTML = '';
     }
     
     const uploadContainer = document.createElement('div');
@@ -2294,7 +2392,7 @@ function initializeFileViewer() {
 
 // Batch Upload Control Functions
 function updateUploadControls() {
-    const uploadArea = document.getElementById('dashboard-upload-area');
+    const uploadArea = getUploadArea();
     const uploadControls = document.getElementById('upload-controls');
     const filesCount = document.getElementById('files-count');
     
@@ -2311,10 +2409,33 @@ function updateUploadControls() {
     }
 }
 
+function initializeUploadPanelControls() {
+    const panel = document.getElementById('dashboard-upload-panel');
+    if (panel && !panel.dataset.state) {
+        panel.dataset.state = panel.classList.contains('hidden') ? 'hidden' : 'open';
+    }
+
+    const collapsePanelBtn = document.getElementById('collapse-upload-panel-btn');
+    if (collapsePanelBtn) {
+        collapsePanelBtn.addEventListener('click', () => hideUploadPanel());
+    }
+
+    const openPanelTopBtn = document.getElementById('open-upload-panel-top-btn');
+    if (openPanelTopBtn) {
+        openPanelTopBtn.addEventListener('click', () => openUploadPanel());
+    }
+
+    const uploadArea = document.getElementById('dashboard-upload-area');
+    if (uploadArea && uploadArea.dataset.emptyState === 'true') {
+        resetUploadPanelToEmptyState();
+    }
+}
+
 
 
 // Initialize all dashboard upload functionality
 function initializeDashboard() {
+    initializeUploadPanelControls();
     initializeDashboardUpload();
     initializeFileViewer();
 }

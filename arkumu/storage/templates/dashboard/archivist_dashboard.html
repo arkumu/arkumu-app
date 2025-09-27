@@ -6,18 +6,24 @@
 <div class="container mx-auto px-4 py-8 space-y-6">
 
     <div class="rounded-xl border border-base-200 bg-base-100/90 p-6 shadow-sm">
-        <div class="flex flex-col gap-3 text-sm text-base-content/70 md:flex-row md:items-center md:gap-4">
-            <span>Monitor in-progress uploads, background verification, and recent activity from one place.</span>
-            <a href="{% url 'storage:uploads_dashboard' %}" class="ml-auto inline-flex items-center gap-2 text-sm font-medium text-primary">
-                View dashboard
-                <span class="badge badge-primary badge-outline">Uploads</span>
-            </a>
+        <div class="flex flex-col gap-4 text-sm text-base-content/70 md:flex-row md:items-center md:justify-between">
+            <div class="max-w-2xl">
+                Monitor in-progress uploads in the activity panel or jump to the full uploads dashboard for detailed history.
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="open-upload-panel-top-btn" class="btn btn-primary btn-sm">
+                    Open activity panel
+                </button>
+                <a href="{% url 'storage:uploads_dashboard' %}" class="btn btn-ghost btn-sm">
+                    Full uploads dashboard
+                </a>
+            </div>
         </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
+            <div class="card-body space-y-6">
                 <h2 class="card-title mb-4">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -25,7 +31,7 @@
                     Upload Files to S3
                 </h2>
 
-                <div class="space-y-4 mb-4">
+                <div class="space-y-4">
                     <div id="upload-org-selector" class="form-control">
                         {% include 'dashboard/partials/upload_org_selector.html' %}
                     </div>
@@ -57,6 +63,18 @@
                         <button type="button" class="btn btn-ghost btn-xs join-item" id="folder-mode-btn" onclick="switchToFolderMode()">Folders</button>
                     </div>
                     <div class="text-xs text-base-content/60">Folder mode lets you upload directories via browsers that support it.</div>
+                </div>
+
+                <div class="rounded-lg bg-warning/10 border border-warning/40 p-4 text-sm text-warning/90">
+                    <div class="flex items-start gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        <div>
+                            <p class="font-medium">Keep this page open while uploads run.</p>
+                            <p class="mt-1 text-sm opacity-80">Navigating away or closing the tab stops in-progress uploads. You can minimize the activity panel and continue browsing this dashboard.</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="upload-toast" class="toast toast-top toast-end hidden">
@@ -91,6 +109,36 @@
     <div class="bg-base-100 shadow-lg rounded-lg p-4 flex items-center gap-3">
         <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
         <span class="text-sm">Loading...</span>
+    </div>
+</div>
+
+<div id="dashboard-upload-panel" class="hidden fixed bottom-4 right-4 z-40 w-full max-w-xl md:max-w-lg lg:max-w-xl">
+    <div class="card bg-base-100 shadow-2xl border border-base-200">
+        <div class="card-body p-0 flex max-h-[70vh] flex-col">
+            <div class="flex flex-shrink-0 items-center justify-between border-b border-base-200 px-4 py-3">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <h3 class="text-sm font-semibold tracking-wide uppercase">Upload activity</h3>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button type="button" id="collapse-upload-panel-btn" class="btn btn-ghost btn-xs">
+                        Hide
+                    </button>
+                </div>
+            </div>
+            <div id="dashboard-upload-area" class="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-sm text-base-content/70" data-empty-state="true">
+                <div class="flex items-start gap-3 rounded-lg bg-base-200/80 p-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m-2 8a9 9 0 110-18 9 9 0 010 18z" />
+                    </svg>
+                    <div>
+                        <p>No active uploads. Select files on the left to start a new queue.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
