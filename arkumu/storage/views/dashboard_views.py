@@ -41,7 +41,13 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
             'organizations': organizations,
             'selected_org_slug': selected_org_slug
         }
-        
+
+        refresh_button_html = render_to_string(
+            'dashboard/partials/file_browser_refresh_button.html',
+            context,
+            request=request
+        )
+
         upload_selector = render_to_string(
             'dashboard/partials/upload_org_selector.html', 
             context,
@@ -125,7 +131,8 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
             'upload-org-selector': upload_selector,
             'file-browser-content': file_browser_content,
             's3-browser-title': s3_browser_title,
-            'bucket-size-container': bucket_size_html
+            'bucket-size-container': bucket_size_html,
+            'refresh-button-container': refresh_button_html
         }
     
     def get(self, request):
