@@ -1,0 +1,16 @@
+{% load static %}
+<div id="bucket-size-container"
+     class="btn btn-info btn-sm gap-2 text-info-content{% if not selected_org_slug %} btn-disabled{% endif %}"
+     {% if selected_org_slug %}
+         hx-get="{% url 'storage:bucket_size_info' selected_org_slug %}?force_fresh=true"
+         hx-trigger="load"
+         hx-swap="outerHTML"
+     {% endif %}
+     {% if not selected_org_slug %}disabled{% endif %}>
+    {% if selected_org_slug %}
+        <span class="loading loading-spinner loading-xs"></span>
+        Size
+    {% else %}
+        Size
+    {% endif %}
+</div>

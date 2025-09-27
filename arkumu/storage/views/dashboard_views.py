@@ -48,6 +48,12 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
             request=request
         )
 
+        bucket_size_action_html = render_to_string(
+            'dashboard/partials/bucket_size_action.html',
+            context,
+            request=request
+        )
+
         upload_selector = render_to_string(
             'dashboard/partials/upload_org_selector.html', 
             context,
@@ -132,7 +138,8 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
             'file-browser-content': file_browser_content,
             's3-browser-title': s3_browser_title,
             'bucket-size-container': bucket_size_html,
-            'refresh-button-container': refresh_button_html
+            'refresh-button-container': refresh_button_html,
+            'bucket-size-action-container': bucket_size_action_html
         }
     
     def get(self, request):

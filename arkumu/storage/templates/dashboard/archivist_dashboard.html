@@ -6,42 +6,8 @@
 <div class="container mx-auto px-4 py-8 space-y-6">
 
     <div class="rounded-xl border border-base-300/60 bg-base-200/70 px-4 py-3 shadow-sm">
-        <div class="flex flex-wrap items-center justify-end gap-2 lg:gap-3">
-            <button type="button"
-                    id="open-upload-panel-top-btn"
-                    class="btn btn-primary btn-sm gap-2"
-                        title="Open the live upload activity panel">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Panel
-                </button>
-                <a href="{% url 'storage:uploads_dashboard' %}"
-                   class="btn btn-secondary btn-sm gap-2"
-                   title="Open the uploads dashboard">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                    </svg>
-                    History
-                </a>
-                <div id="refresh-button-container">
-                    {% include 'dashboard/partials/file_browser_refresh_button.html' %}
-                </div>
-            <div id="bucket-size-container"
-                 class="btn btn-outline btn-info btn-sm gap-2{% if not selected_org_slug %} btn-disabled{% endif %}"
-                 {% if selected_org_slug %}
-                     hx-get="{% url 'storage:bucket_size_info' selected_org_slug %}?force_fresh=true"
-                     hx-trigger="load"
-                     hx-swap="outerHTML"
-                 {% endif %}
-                 {% if not selected_org_slug %}disabled{% endif %}>
-                {% if selected_org_slug %}
-                    <span class="loading loading-spinner loading-xs"></span>
-                    Size
-                {% else %}
-                    Size
-                {% endif %}
-            </div>
+        <div id="dashboard-action-bar" class="flex flex-wrap items-center justify-end gap-2 lg:gap-3">
+            {% include 'dashboard/partials/action_bar_controls.html' %}
         </div>
     </div>
 

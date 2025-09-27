@@ -1,5 +1,5 @@
 <div id="bucket-size-container"
-     class="btn btn-outline btn-info btn-sm gap-2"
+     class="btn btn-info btn-sm gap-2 text-info-content"
      hx-get="{% url 'storage:bucket_size_info' organization %}?force_fresh=true"
      hx-swap="outerHTML"
      title="Refresh bucket size for {{ organization|upper }}"
