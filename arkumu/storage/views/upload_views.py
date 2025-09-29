@@ -4,11 +4,14 @@ Implements the simplified upload system using presigned URLs.
 """
 import logging
 import json
+
+from django.db.models import Count
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.async_upload_manager import AsyncUploadManager
 from arkumu.storage.tasks import verify_upload_session
@@ -469,16 +472,27 @@ def mark_file_uploaded(request, file_id):
         if session.status not in ('uploading', 'processing', 'completed', 'failed'):
             session.mark_uploading()
 
-        all_uploaded = not session.files.exclude(status__in=['uploaded', 'completed', 'failed']).exists()
+        verification_triggered = False
+
+        status_counts = {
+            entry['status']: entry['count']
+            for entry in session.files.values('status').annotate(count=Count('id'))
+        }
+
+        total_count = sum(status_counts.values())
+
+        remaining_files = status_counts.get('pending', 0) + status_counts.get('uploading', 0)
+        all_uploaded = remaining_files == 0
+
         if all_uploaded:
             logger.info(f"🚀 Scheduling verification for session {session.id}")
             if session.status != 'processing':
                 session.mark_processing()
-
+            verification_triggered = True
             verify_upload_session(str(session.id))
 
         # Get organization for OOB refresh
-        organization = upload_file.session.organization
+        organization = session.organization
         
         # If this is an HTMX request, return OOB refresh instead of JSON
         if request.headers.get('HX-Request'):
@@ -504,7 +518,21 @@ def mark_file_uploaded(request, file_id):
                 logger.error(f"❌ OOB refresh failed in mark_file_uploaded: {e}")
                 # Fall back to JSON response
         
-        return JsonResponse({'success': True})
+        response_data = {
+            'success': True,
+            'session_id': str(session.id),
+            'session_status': session.status,
+            'total_files': session.total_files or total_count,
+            'uploaded_files': status_counts.get('uploaded', 0),
+            'processing_files': status_counts.get('processing', 0),
+            'completed_files': status_counts.get('completed', 0),
+            'failed_files': status_counts.get('failed', 0),
+            'remaining_files': remaining_files,
+            'all_uploaded': all_uploaded,
+            'verification_triggered': verification_triggered,
+        }
+
+        return JsonResponse(response_data)
     except AsyncUploadFile.DoesNotExist:
         logger.error(f"❌ Upload file {file_id} not found")
         return JsonResponse({'success': False, 'error': 'File not found'}, status=404)
@@ -594,6 +622,45 @@ def upload_complete_oob_refresh(request, organization):
             f'<div class="alert alert-error"><span>Error refreshing file browser: {str(e)}</span></div>'
             f'</div>'
         )
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def upload_session_status(request, session_id):
+    """Return JSON status summary for an async upload session."""
+
+    try:
+        session = AsyncUploadSession.objects.get(id=session_id, user=request.user)
+    except AsyncUploadSession.DoesNotExist:
+        logger.warning("⚠️ upload_session_status: session %s not found for user %s", session_id, request.user.id)
+        return JsonResponse({'success': False, 'error': 'Session not found'}, status=404)
+
+    status_counts = {
+        entry['status']: entry['count']
+        for entry in session.files.values('status').annotate(count=Count('id'))
+    }
+
+    total_count = sum(status_counts.values())
+    completed = status_counts.get('completed', 0)
+    failed = status_counts.get('failed', 0)
+    uploaded = status_counts.get('uploaded', 0)
+    processing = status_counts.get('processing', 0)
+    pending = status_counts.get('pending', 0)
+    uploading = status_counts.get('uploading', 0)
+
+    return JsonResponse(
+        {
+            'success': True,
+            'session_id': str(session.id),
+            'status': session.status,
+            'total_files': session.total_files or total_count,
+            'completed_files': completed,
+            'failed_files': failed,
+            'uploaded_files': uploaded,
+            'processing_files': processing,
+            'pending_files': pending + uploading,
+        }
+    )
 
 
 @general_login_required

@@ -8,6 +8,11 @@ const debugLog = DEBUG_UPLOADS ? console.log.bind(console) : () => {};
 const debugError = DEBUG_UPLOADS ? console.error.bind(console) : () => {};
 
 // Global upload tracker for coordinating multiple uploads
+let currentUploadSessionId = null;
+let verificationStatusElement = null;
+const VERIFICATION_POLL_INTERVAL_MS = 1500;
+const VERIFICATION_TIMEOUT_MS = 60000;
+
 const uploadTracker = {
     activeUploads: new Map(), // filename -> upload state
     totalFiles: 0,
@@ -424,22 +429,28 @@ async function initializeDashboardUpload() {
         try {
             // Phase 1: Initialize upload session and get presigned URLs
             const sessionResponse = await initializeAsyncUploadSession(files, folderPath);
-            
+
             if (!sessionResponse.success) {
                 throw new Error('Failed to initialize upload session');
             }
-            
+
+            currentUploadSessionId = sessionResponse.sessionId || sessionResponse.session_id || null;
+
             // Clear previous uploads
             if (uploadArea) {
                 uploadArea.dataset.emptyState = 'false';
                 uploadArea.innerHTML = '';
             }
-            
+
             // Phase 2: Create UI cards for each file  
             createAsyncUploadCards(sessionResponse.results || sessionResponse.uploads, uploadArea);
-            
+
             // Phase 3: Start uploading files to S3 automatically
-            await startUploads(sessionResponse.results || sessionResponse.uploads, files);
+            await startUploads(
+                sessionResponse.results || sessionResponse.uploads,
+                files,
+                currentUploadSessionId
+            );
             showFinalUploadSuccess(files.length);
 
         } catch (error) {
@@ -529,6 +540,7 @@ async function initializeAsyncUploadSession(files, folderPath) {
         success: aggregatedErrors.length === 0,
         uploads: aggregatedUploads,
         errors: aggregatedErrors,
+        sessionId,
         session_id: sessionId
     };
 }
@@ -725,9 +737,9 @@ function createIndividualFilesList(uploads, uploadArea) {
     });
 }
 
-async function startUploads(uploads, files) {
+async function startUploads(uploads, files, sessionId) {
     debugLog('🚀 Starting uploads for', uploads.length, 'files');
-    
+
     // Initialize upload tracker
     uploadTracker.startSession(files);
     
@@ -746,7 +758,7 @@ async function startUploads(uploads, files) {
             uploadTracker.failFile(uploadInfo.filename);
             return;
         }
-        
+
         try {
             await uploadFileDirectly(uploadInfo, file);
             uploadTracker.completeFile(uploadInfo.filename);
@@ -756,22 +768,28 @@ async function startUploads(uploads, files) {
             uploadTracker.failFile(uploadInfo.filename);
         }
     });
-    
+
     await Promise.allSettled(uploadPromises);
-    
+
     // Extract uploaded filenames to verify they exist
     const uploadedFiles = uploads.map(upload => ({
         filename: upload.filename,
         path: upload.relativePath || upload.filename
     }));
-    
+
     // Show coordinated "verifying files" message instead of immediate success
     showUploadVerifying(uploads.length, uploadedFiles);
-    
-    // Add small delay to improve S3 consistency before refresh
-    debugLog('⏳ Waiting 0.5s for S3 eventual consistency...');
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
+
+    if (sessionId) {
+        try {
+            await waitForUploadVerification(sessionId);
+        } catch (error) {
+            debugError('⚠️ Verification wait failed:', error);
+        }
+    } else {
+        debugLog('ℹ️ No session id available; skipping verification wait.');
+    }
+
     // Refresh file browser with expected files list for verification
     await refreshFileBrowserOOB(uploadedFiles);
 }
@@ -844,21 +862,18 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                     statusText.textContent = `${percentComplete.toFixed(0)}%`;
                 }
                 
-                // Calculate upload speed and ETA
+                // Calculate upload speed
                 if (timeDiff > 0.5) { // Update every 500ms
                     const bytesUploaded = e.loaded - lastLoaded;
                     const uploadSpeed = bytesUploaded / timeDiff;
-                    const remainingBytes = e.total - e.loaded;
-                    const remainingTime = remainingBytes / uploadSpeed;
-                    
+
                     updateUploadMetrics(filename, {
                         progress: percentComplete,
                         loaded: e.loaded,
                         total: e.total,
-                        speed: uploadSpeed,
-                        remainingTime: remainingTime
+                        speed: uploadSpeed
                     });
-                    
+
                     lastLoaded = e.loaded;
                     lastTime = currentTime;
                 }
@@ -877,31 +892,18 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                 debugLog('✅ S3 upload completed:', filename);
                 updateFileStatusByName(filename, 'Upload completed!', 'completed');
                 
-                // Notify server that file was uploaded
                 if (uploadFileId) {
                     try {
-                        const csrfToken = getCsrfToken();
-                        debugLog('🔑 CSRF Token for mark-uploaded:', csrfToken ? 'Found' : 'Missing');
-                        
-                        const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
-                            method: 'POST',
-                            headers: {
-                                'X-CSRFToken': csrfToken,
-                            },
-                            credentials: 'include'
-                        });
-                        
-                        if (response.ok) {
-                            debugLog('✅ Server notified of upload:', filename);
-                        } else {
-                            const errorText = await response.text();
-                            debugError('⚠️ Failed to notify server of upload:', filename, `Status: ${response.status}, Error: ${errorText.substring(0, 200)}`);
-                        }
+                        await notifyServerUploadComplete(uploadFileId, filename);
+                        debugLog('✅ Server notified of upload:', filename);
                     } catch (error) {
                         debugError('⚠️ Error notifying server:', error);
+                        updateFileStatusByName(filename, 'Server verification failed: ' + error.message, error.message);
+                        reject(error);
+                        return;
                     }
                 }
-                
+
                 resolve();
             } else {
                 debugError('❌ Upload failed:', xhr.status, xhr.statusText);
@@ -964,23 +966,27 @@ async function uploadWithHiddenForm(uploadInfo, file, progressBar, statusText) {
         
         // Listen for iframe load (upload complete)
         iframe.onload = () => {
-            // Check if upload succeeded
-            try {
-                // S3 returns empty response on success
-                debugLog('✅ Form upload completed:', uploadInfo.filename);
-                updateFileStatusByName(uploadInfo.filename, 'Upload completed!', 'completed');
-                resolve();
-            } catch (e) {
-                console.error('Form upload may have failed:', e);
-                updateFileStatusByName(uploadInfo.filename, 'Upload status unknown', 'warning');
-                resolve(); // Resolve anyway since we can't get error details
-            } finally {
-                // Cleanup
-                setTimeout(() => {
-                    document.body.removeChild(form);
-                    document.body.removeChild(iframe);
-                }, 1000);
-            }
+            (async () => {
+                try {
+                    debugLog('✅ Form upload completed:', uploadInfo.filename);
+                    updateFileStatusByName(uploadInfo.filename, 'Upload completed!', 'completed');
+
+                    if (uploadInfo.upload_file_id) {
+                        await notifyServerUploadComplete(uploadInfo.upload_file_id, uploadInfo.filename);
+                    }
+
+                    resolve();
+                } catch (e) {
+                    console.error('Form upload verification failed:', e);
+                    updateFileStatusByName(uploadInfo.filename, 'Server verification failed: ' + e.message, e.message);
+                    reject(e);
+                } finally {
+                    setTimeout(() => {
+                        document.body.removeChild(form);
+                        document.body.removeChild(iframe);
+                    }, 1000);
+                }
+            })();
         };
         
         // Submit form
@@ -1016,15 +1022,12 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
                 if (timeDiff > 0.5) { // Update every 500ms
                     const bytesUploaded = e.loaded - lastLoaded;
                     const uploadSpeed = bytesUploaded / timeDiff;
-                    const remainingBytes = e.total - e.loaded;
-                    const remainingTime = remainingBytes / uploadSpeed;
-                    
+
                     updateUploadMetrics(filename, {
                         progress: percentComplete,
                         loaded: e.loaded,
                         total: e.total,
-                        speed: uploadSpeed,
-                        remainingTime: remainingTime
+                        speed: uploadSpeed
                     });
                     
                     lastLoaded = e.loaded;
@@ -1045,31 +1048,18 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
                 debugLog('✅ S3 PUT upload completed:', filename);
                 updateFileStatusByName(filename, 'Upload completed!', 'completed');
                 
-                // Notify server that file was uploaded
                 if (uploadFileId) {
                     try {
-                        const csrfToken = getCsrfToken();
-                        debugLog('🔑 CSRF Token for mark-uploaded:', csrfToken ? 'Found' : 'Missing');
-                        
-                        const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
-                            method: 'POST',
-                            headers: {
-                                'X-CSRFToken': csrfToken,
-                            },
-                            credentials: 'include'
-                        });
-                        
-                        if (response.ok) {
-                            debugLog('✅ Server notified of upload:', filename);
-                        } else {
-                            const errorText = await response.text();
-                            debugError('⚠️ Failed to notify server of upload:', filename, `Status: ${response.status}, Error: ${errorText.substring(0, 200)}`);
-                        }
+                        await notifyServerUploadComplete(uploadFileId, filename);
+                        debugLog('✅ Server notified of upload:', filename);
                     } catch (error) {
                         debugError('⚠️ Error notifying server:', error);
+                        updateFileStatusByName(filename, 'Server verification failed: ' + error.message, error.message);
+                        reject(error);
+                        return;
                     }
                 }
-                
+
                 resolve();
             } else {
                 debugError('❌ PUT upload failed:', xhr.status, xhr.statusText);
@@ -1094,7 +1084,35 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
 
 // Upload verifying helper - shows coordinated loading state
 function showUploadVerifying(fileCount, uploadedFiles) {
-    debugLog('ℹ️ Uploads finished; waiting for storage consistency (no banner shown).');
+    debugLog('ℹ️ Uploads finished; waiting for verification.');
+    const uploadArea = getUploadArea({ autoOpen: true });
+    if (!uploadArea) {
+        return;
+    }
+    if (uploadArea.dataset.emptyState === 'true') {
+        uploadArea.dataset.emptyState = 'false';
+        uploadArea.innerHTML = '';
+    }
+
+    if (!verificationStatusElement) {
+        verificationStatusElement = document.createElement('div');
+        verificationStatusElement.id = 'upload-verification-message';
+        verificationStatusElement.className = 'mt-4 flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 px-4 py-3 text-sm text-info/90';
+        verificationStatusElement.innerHTML = `
+            <span class="loading loading-spinner loading-sm mt-1"></span>
+            <div>
+                <p class="font-medium">Finalizing uploads…</p>
+                <p class="mt-1 opacity-80" data-status-text>Waiting for server verification (${uploadedFiles.length || fileCount} file${fileCount === 1 ? '' : 's'}).</p>
+            </div>
+        `;
+        uploadArea.appendChild(verificationStatusElement);
+    } else {
+        const textEl = verificationStatusElement.querySelector('[data-status-text]');
+        if (textEl) {
+            textEl.textContent = `Waiting for server verification (${uploadedFiles.length || fileCount} file${fileCount === 1 ? '' : 's'}).`;
+        }
+        verificationStatusElement.classList.remove('hidden');
+    }
 }
 
 // Final completion helper - called after files are confirmed in browser
@@ -1105,10 +1123,15 @@ function showUploadComplete(fileCount) {
         debugLog('ℹ️ Skipping completion banner; no upload area available');
         return;
     }
+    if (verificationStatusElement) {
+        verificationStatusElement.remove();
+        verificationStatusElement = null;
+    }
     if (uploadArea.dataset.emptyState === 'true') {
         uploadArea.dataset.emptyState = 'false';
         uploadArea.innerHTML = '';
     }
+    currentUploadSessionId = null;
     const completionMessage = document.createElement('div');
     completionMessage.className = 'mt-4 flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success/90';
     completionMessage.innerHTML = `
@@ -1126,6 +1149,107 @@ function showUploadComplete(fileCount) {
         </button>
     `;
     uploadArea.appendChild(completionMessage);
+}
+
+function updateVerificationBanner(statusInfo) {
+    if (!verificationStatusElement || !statusInfo) {
+        return;
+    }
+
+    const textEl = verificationStatusElement.querySelector('[data-status-text]');
+    if (!textEl) {
+        return;
+    }
+
+    const completed = statusInfo.completed_files ?? statusInfo.completedFiles ?? 0;
+    const total = statusInfo.total_files ?? statusInfo.totalFiles ?? 0;
+    const failed = statusInfo.failed_files ?? statusInfo.failedFiles ?? 0;
+    const status = statusInfo.status || statusInfo.session_status || 'processing';
+
+    if (status === 'completed') {
+        textEl.textContent = `Verification complete (${completed}/${total} files).`;
+    } else if (status === 'failed') {
+        textEl.textContent = `Verification finished with errors (${completed} completed, ${failed} failed).`;
+    } else {
+        const remaining = total - completed - failed;
+        textEl.textContent = `Verifying uploads… ${completed} done, ${remaining > 0 ? `${remaining} remaining` : 'finishing up'}.`;
+    }
+}
+
+async function notifyServerUploadComplete(uploadFileId, filename) {
+    if (!uploadFileId) {
+        return null;
+    }
+
+    const csrfToken = getCsrfToken();
+    const response = await fetch(`/storage/upload/mark-uploaded/${uploadFileId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+        },
+        credentials: 'include'
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server notification failed (${response.status}): ${errorText.substring(0, 200)}`);
+    }
+
+    let data = {};
+    try {
+        data = await response.json();
+    } catch (error) {
+        debugLog('ℹ️ mark-uploaded returned no JSON body; assuming success');
+    }
+
+    if (data && data.success === false) {
+        throw new Error(data.error || 'Server rejected upload notification');
+    }
+
+    updateVerificationBanner(data);
+
+    if (data.session_id) {
+        currentUploadSessionId = data.session_id;
+    }
+
+    return data;
+}
+
+async function waitForUploadVerification(sessionId, options = {}) {
+    const pollInterval = options.pollInterval ?? VERIFICATION_POLL_INTERVAL_MS;
+    const timeout = options.timeout ?? VERIFICATION_TIMEOUT_MS;
+    const start = Date.now();
+
+    while (true) {
+        if (Date.now() - start > timeout) {
+            throw new Error('Upload verification timed out');
+        }
+
+        try {
+            const response = await fetch(`/storage/upload/session-status/${sessionId}/`, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                updateVerificationBanner(data);
+
+                if (data.status === 'completed' || data.status === 'failed') {
+                    return data;
+                }
+            } else {
+                debugError('⚠️ Failed to poll session status', response.status, response.statusText);
+            }
+        } catch (error) {
+            debugError('⚠️ Error polling session status:', error);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
 }
 
 // Optimistic Updates: Show files immediately with verification badges
@@ -2467,8 +2591,7 @@ async function handleMultipartUpload(uploadInfo, file) {
                 progress: pct,
                 loaded: Math.min(uploadedCount * chunkSize, file.size),
                 total: file.size,
-                speed: 0,
-                remainingTime: 0
+                speed: 0
             });
             updateFileStatusByName(uploadInfo.filename, 'Uploading multipart...', 'uploading');
         }

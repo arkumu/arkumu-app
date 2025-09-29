@@ -60,7 +60,10 @@ urlpatterns = [
     
     # Upload completion OOB refresh
     path("upload/oob-refresh/<str:organization>/", upload_views.upload_complete_oob_refresh, name="upload_complete_oob_refresh"),
-    
+
+    # Async upload session polling
+    path("upload/session-status/<uuid:session_id>/", upload_views.upload_session_status, name="upload_session_status"),
+
     # Mark file as uploaded
     path("upload/mark-uploaded/<str:file_id>/", upload_views.mark_file_uploaded, name="mark_file_uploaded"),
     
