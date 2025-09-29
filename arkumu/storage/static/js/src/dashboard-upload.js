@@ -96,14 +96,6 @@ const uploadTracker = {
                 if (speedElement) {
                     speedElement.textContent = formatSpeed(speed);
                 }
-                
-                // Calculate ETA
-                const remainingBytes = this.totalBytes - this.uploadedBytes;
-                const eta = remainingBytes / speed;
-                const etaElement = document.getElementById('folder-upload-eta');
-                if (etaElement) {
-                    etaElement.textContent = `ETA: ${formatTime(eta)}`;
-                }
             }
         }
     },
@@ -570,9 +562,8 @@ function createFolderUploadSummary(uploads, uploadArea) {
                         </span>
                     </div>
                     <progress id="folder-overall-progress" class="progress progress-primary w-full" value="0" max="100"></progress>
-                    <div class="flex justify-between text-xs text-base-content/60 mt-1">
+                    <div class="flex items-center justify-start gap-2 text-xs text-base-content/60 mt-1">
                         <span id="folder-upload-speed"></span>
-                        <span id="folder-upload-eta"></span>
                     </div>
                 </div>
                 
@@ -724,9 +715,8 @@ function createIndividualFilesList(uploads, uploadArea) {
             <!-- Full-width progress bar (hidden by default) -->
             <div class="upload-progress list-col-wrap hidden mt-2">
                 <progress class="progress progress-primary w-full" value="0" max="100"></progress>
-                <div class="flex justify-between text-xs text-base-content/60 mt-1">
+                <div class="flex justify-start gap-2 text-xs text-base-content/60 mt-1">
                     <span class="upload-details"></span>
-                    <span class="upload-eta"></span>
                 </div>
             </div>
         `;
@@ -791,7 +781,6 @@ async function uploadFileDirectly(uploadInfo, file) {
     const progressBar = container?.querySelector('progress');
     const statusText = container?.querySelector('.status-text');
     const uploadDetails = container?.querySelector('.upload-details');
-    const uploadEta = container?.querySelector('.upload-eta');
     const uploadSpeed = container?.querySelector('.upload-speed');
     
     debugLog('📤 Uploading to S3:', uploadInfo.filename);
@@ -1398,7 +1387,6 @@ function updateFolderUploadProgress(sessionStatus) {
     const overallProgress = document.getElementById('folder-overall-progress');
     const uploadStatus = document.getElementById('folder-upload-status');
     const uploadSpeed = document.getElementById('folder-upload-speed');
-    const uploadEta = document.getElementById('folder-upload-eta');
     
     const completedFiles = sessionStatus.completed_files || 0;
     const failedFiles = sessionStatus.failed_files || 0;
@@ -1934,14 +1922,13 @@ function showUploadProgress(container) {
     }
 }
 
-// Update upload metrics (speed, ETA, etc.)
+// Update upload metrics (speed, totals)
 function updateUploadMetrics(filename, metrics) {
     const container = document.querySelector(`[data-filename="${filename}"]`);
     if (!container) return;
-    
+
     const uploadSpeed = container.querySelector('.upload-speed');
     const uploadDetails = container.querySelector('.upload-details');
-    const uploadEta = container.querySelector('.upload-eta');
     
     // Format speed
     if (uploadSpeed && metrics.speed) {
@@ -1957,11 +1944,6 @@ function updateUploadMetrics(filename, metrics) {
         uploadDetails.textContent = `${loadedStr} / ${totalStr}`;
     }
     
-    // Format ETA
-    if (uploadEta && metrics.remainingTime) {
-        const etaStr = formatTime(metrics.remainingTime);
-        uploadEta.textContent = `ETA: ${etaStr}`;
-    }
 }
 
 // Format upload speed
@@ -1973,25 +1955,6 @@ function formatSpeed(bytesPerSecond) {
     const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
     
     return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Format time remaining
-function formatTime(seconds) {
-    if (!isFinite(seconds) || seconds < 0) return 'calculating...';
-    
-    seconds = Math.round(seconds);
-    
-    if (seconds < 60) {
-        return `${seconds}s`;
-    } else if (seconds < 3600) {
-        const minutes = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
-    } else {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-    }
 }
 
 // Format file size
