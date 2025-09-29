@@ -139,7 +139,7 @@ class Command(BaseCommand):
         
         # Read CSV with Polars
         try:
-            df = pl.read_csv(csv_file)
+            df = pl.read_csv(csv_file).with_row_count("csv_row", offset=2)
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error reading CSV: {e}"))
             return
@@ -153,54 +153,26 @@ class Command(BaseCommand):
             return
         
         # Analyze with Polars
+        valid_rows = df.filter(pl.col('Name').is_not_null() & (pl.col('Name') != ''))
+
         csv_stats = {
             'total_rows': len(df),
-            'rows_with_names': 0,
+            'rows_with_names': len(valid_rows),
             'total_names': 0,
             'split_count': 0,
             'single_count': 0
         }
-        
-        # Process and display sample rows
-        self.stdout.write("\nSample rows from CSV (showing how names will be split):")
-        self.stdout.write("-" * 80)
-        
-        sample_rows = []
-        for row in df.filter(pl.col('Name').is_not_null() & (pl.col('Name') != '')).head(5).iter_rows(named=True):
-            names_str = row['Name'] or ''
-            if names_str:
-                csv_stats['rows_with_names'] += 1
-                names = [n.strip() for n in names_str.split(',') if n.strip()]
-                sample_rows.append((row, names))
-        
-        # Calculate full stats
+
         for row in df.iter_rows(named=True):
             names_str = (row.get('Name') or '').strip()
-            if names_str:
-                names = [n.strip() for n in names_str.split(',') if n.strip()]
-                csv_stats['total_names'] += len(names)
-                if len(names) > 1:
-                    csv_stats['split_count'] += 1
-                else:
-                    csv_stats['single_count'] += 1
-        
-        # Display sample rows
-        for i, (row, names) in enumerate(sample_rows, 1):
-            self.stdout.write(f"Row {i}:")
-            self.stdout.write(f"  Type: {row.get('Type', 'N/A')}")
-            self.stdout.write(f"  Target: {row.get('Target', 'N/A')[:50]}...")
-            self.stdout.write(f"  Label: {row.get('Label', 'N/A')}")
-            self.stdout.write(f"  Names raw: {row.get('Name', 'N/A')}")
+            if not names_str:
+                continue
+            names = [n.strip() for n in names_str.split(',') if n.strip()]
+            csv_stats['total_names'] += len(names)
             if len(names) > 1:
-                self.stdout.write(f"  → Will split into {len(names)} names:")
-                for j, name in enumerate(names, 1):
-                    self.stdout.write(f"      {j}. {name}")
+                csv_stats['split_count'] += 1
             else:
-                self.stdout.write(f"  → Single name: {names[0] if names else 'N/A'}")
-            self.stdout.write("")
-        
-        # Recount rows with names properly
-        csv_stats['rows_with_names'] = len(df.filter(pl.col('Name').is_not_null() & (pl.col('Name') != '')))
+                csv_stats['single_count'] += 1
         
         # Show statistics
         self.stdout.write(self.style.SUCCESS("\n📊 CSV Statistics:"))
@@ -229,18 +201,14 @@ class Command(BaseCommand):
         
         valid_rows = df.filter(pl.col('Name').is_not_null() & (pl.col('Name') != ''))
         
-        # Limit to reasonable sample size for validation (first 20 rows)  
-        sample_rows = valid_rows.head(20)
+        sample_rows = valid_rows
         total_sample = len(sample_rows)
         
-        self.stdout.write(f"Analyzing first {total_sample} rows for matching preview...")
+        self.stdout.write(f"Analyzing {total_sample} rows for matching preview...")
         
         processed = 0
         for row in sample_rows.iter_rows(named=True):
             processed += 1
-            if processed % 5 == 0:
-                self.stdout.write(f"  Processing row {processed}/{total_sample}...")
-                self.stdout.flush()
             names_str = row['Name'] or ''
             if not names_str:
                 continue
@@ -335,29 +303,23 @@ class Command(BaseCommand):
                         self.stdout.write(f"        {i}. '{name}' → ❌ NOT FOUND")
                         self.stdout.write(f"           (No resource found with this name)")
         
-        # Overall summary
         total_entries = sum(stats['total'] for stats in type_stats.values())
         total_matched = sum(stats['matched'] for stats in type_stats.values())
         total_not_found = sum(stats['not_found'] for stats in type_stats.values())
         overall_match_rate = (total_matched / total_entries * 100) if total_entries > 0 else 0
-        
-        # Get full CSV stats for context
         total_csv_rows = len(df)
         mappable_rows = len(valid_rows)
-        
-        # Analyze conflicts across ALL rows (not just sample)
-        self.stdout.write(f"\n🔍 Analyzing conflicts across all {mappable_rows} mappable rows...")
-        conflicts = self._analyze_conflicts(valid_rows, service)
-        
-        self.stdout.write(f"\n📈 Sample Summary (from first 20 rows with names):")
-        self.stdout.write(f"  Sample entries analyzed: {total_entries}")
+
+        self.stdout.write(f"\n📊 Matching Summary:")
+        self.stdout.write(f"  Entries analyzed: {total_entries}")
         self.stdout.write(f"  ✅ Will match: {total_matched}")
         self.stdout.write(f"  ❌ Won't match: {total_not_found}")
-        self.stdout.write(f"  📈 Sample match rate: {overall_match_rate:.1f}%")
-        self.stdout.write(f"\n📊 Full CSV Context:")
+        self.stdout.write(f"  📈 Match rate: {overall_match_rate:.1f}%")
         self.stdout.write(f"  Total CSV rows: {total_csv_rows}")
         self.stdout.write(f"  Rows with names to map: {mappable_rows}")
         self.stdout.write(f"  Rows without names: {total_csv_rows - mappable_rows} (target URI definitions only)")
+
+        conflicts = self._analyze_conflicts(valid_rows, service)
         
         # Show conflict warnings
         if conflicts['overwrites'] or conflicts['duplicates'] or conflicts['multiple_targets'] or conflicts['invalid_id_sharing']:
@@ -365,28 +327,41 @@ class Command(BaseCommand):
             
             if conflicts['overwrites']:
                 self.stdout.write(f"\n  📝 Resources with existing canonical URIs that will be OVERWRITTEN:")
-                for resource_name, old_uri, new_uri in conflicts['overwrites'][:10]:  # Show first 10
-                    self.stdout.write(f"    • {resource_name}: {old_uri} → {new_uri}")
-                if len(conflicts['overwrites']) > 10:
-                    self.stdout.write(f"    ... and {len(conflicts['overwrites']) - 10} more")
+                overwrite_rows = [
+                    (name, old_uri, new_uri, csv_row if csv_row is not None else "-")
+                    for name, old_uri, new_uri, csv_row in conflicts['overwrites']
+                ]
+                self._print_table(
+                    rows=overwrite_rows,
+                    headers=("Name", "Existing Canonical", "New Canonical", "CSV Row"),
+                    indent="    "
+                )
             
             if conflicts['duplicates']:
                 self.stdout.write(f"\n  🔄 Multiple resources will get the SAME canonical URI:")
-                for target_uri, resource_names in list(conflicts['duplicates'].items())[:5]:  # Show first 5
-                    self.stdout.write(f"    • {target_uri}")
-                    for name in resource_names[:3]:  # Show first 3 names per URI
-                        self.stdout.write(f"      - {name}")
-                    if len(resource_names) > 3:
-                        self.stdout.write(f"      - ... and {len(resource_names) - 3} more")
-                if len(conflicts['duplicates']) > 5:
-                    self.stdout.write(f"    ... and {len(conflicts['duplicates']) - 5} more target URIs")
+                duplicate_rows = []
+                for target_uri, data in sorted(conflicts['duplicates'].items()):
+                    for name in sorted(data['names']):
+                        rows = ", ".join(str(r) for r in sorted(data['rows'][name])) or "-"
+                        duplicate_rows.append((target_uri, name, rows))
+                self._print_table(
+                    rows=duplicate_rows,
+                    headers=("Canonical URI", "CSV Name", "CSV Rows"),
+                    indent="    "
+                )
             
             if conflicts['multiple_targets']:
                 self.stdout.write(f"\n  ⚡ Same CSV name appears with DIFFERENT target URIs:")
-                for name, targets in conflicts['multiple_targets'].items():
-                    self.stdout.write(f"    • '{name}' maps to:")
-                    for target in targets:
-                        self.stdout.write(f"      - {target}")
+                multi_target_rows = []
+                for name, data in sorted(conflicts['multiple_targets'].items()):
+                    for target in sorted(data['targets']):
+                        rows = ", ".join(str(r) for r in sorted(data['rows'][target])) or "-"
+                        multi_target_rows.append((name, target, rows))
+                self._print_table(
+                    rows=multi_target_rows,
+                    headers=("CSV Name", "Target URI", "CSV Rows"),
+                    indent="    "
+                )
             
             if conflicts['invalid_id_sharing']:
                 self.stdout.write(f"\n  🚫 PROBLEM: Multiple database fields mapped to same ID")
@@ -401,13 +376,16 @@ class Command(BaseCommand):
                 self.stdout.write(f"\n    💡 NOTE: This rule only applies to ID/identifier fields.")
                 self.stdout.write(f"    For descriptions, titles, names - multiple fields can share the same Arkumu URI.")
                 self.stdout.write(f"\n    🔧 CONFLICTING MAPPINGS FOUND:")
-                for target_uri, resource_names in conflicts['invalid_id_sharing'][:3]:
-                    self.stdout.write(f"    • {target_uri}")
-                    self.stdout.write(f"      Database fields: {', '.join(resource_names[:5])}")
-                    if len(resource_names) > 5:
-                        self.stdout.write(f"      ... and {len(resource_names) - 5} more")
-                if len(conflicts['invalid_id_sharing']) > 3:
-                    self.stdout.write(f"    ... and {len(conflicts['invalid_id_sharing']) - 3} more ID conflicts")
+                id_rows = []
+                for target_uri, data in conflicts['invalid_id_sharing']:
+                    for name in sorted(data['names']):
+                        rows = ", ".join(str(r) for r in sorted(data['rows'][name])) or "-"
+                        id_rows.append((target_uri, name, rows))
+                self._print_table(
+                    rows=id_rows,
+                    headers=("Canonical ID URI", "CSV Field", "CSV Rows"),
+                    indent="    "
+                )
                 self.stdout.write(f"\n    🛠️  FIX: Edit your CSV to give each ID field a unique Target URI")
         else:
             self.stdout.write(f"\n✅ No conflicts detected - safe to proceed")
@@ -416,65 +394,89 @@ class Command(BaseCommand):
         """Analyze potential conflicts in the mapping data."""
         from arkumu.metadata.models import Resource
         from collections import defaultdict
-        
+
         conflicts = {
-            'overwrites': [],  # Resources that will lose existing canonical URIs
-            'duplicates': defaultdict(list),  # Multiple resources mapping to same canonical URI
-            'multiple_targets': defaultdict(set),  # Same name mapping to different targets
-            'invalid_id_sharing': []  # Multiple resources mapping to same ID-type canonical URI
+            'overwrites': [],
+            'duplicates': defaultdict(lambda: {'names': set(), 'rows': defaultdict(list)}),
+            'multiple_targets': defaultdict(lambda: {'targets': set(), 'rows': defaultdict(list)}),
+            'invalid_id_sharing': []
         }
-        
-        # Track all name -> target mappings
-        name_target_map = {}
-        target_names_map = defaultdict(list)
-        
+
+        name_target_data = defaultdict(lambda: {'targets': set(), 'rows': defaultdict(list)})
+
         for row in valid_rows.iter_rows(named=True):
             names_str = row['Name'] or ''
             if not names_str:
                 continue
-                
+
             names = [n.strip() for n in names_str.split(',') if n.strip()]
             target = row.get('Target', '')
             row_type = row.get('Type', '')
-            
-            # Parse resource type like the service does
+            csv_row = row.get('csv_row')
+
             resource_type = service._parse_resource_type(row_type)
             if not resource_type or not target:
                 continue
-            
+
             for name in names:
-                # Check for multiple targets for same name
-                if name in name_target_map and name_target_map[name] != target:
-                    conflicts['multiple_targets'][name].add(name_target_map[name])
-                    conflicts['multiple_targets'][name].add(target)
-                else:
-                    name_target_map[name] = target
-                
-                # Track for duplicate detection
-                target_names_map[target].append(name)
-                
-                # Check for existing canonical URIs that will be overwritten
+                name_data = name_target_data[name]
+                name_data['targets'].add(target)
+                name_data['rows'][target].append(csv_row)
+                if len(name_data['targets']) > 1:
+                    conflicts['multiple_targets'][name] = name_data
+
+                dup_data = conflicts['duplicates'][target]
+                dup_data['names'].add(name)
+                dup_data['rows'][name].append(csv_row)
+
                 resources = Resource.objects.filter(
                     organization=service.organization,
                     resource_type=resource_type,
                     name=name,
                     is_placeholder=False
                 )
-                
+
                 for resource in resources:
                     if resource.canonical_uri and resource.canonical_uri != target:
-                        conflicts['overwrites'].append((name, resource.canonical_uri, target))
-        
-        # Find duplicates (multiple names mapping to same target)
-        for target, names in target_names_map.items():
-            if len(names) > 1:
-                conflicts['duplicates'][target] = names
-                
-                # Check if this is an invalid ID sharing scenario
+                        conflicts['overwrites'].append((name, resource.canonical_uri, target, csv_row))
+
+        # Filter duplicates to only those with more than one unique name
+        duplicates_filtered = defaultdict(lambda: {'names': set(), 'rows': defaultdict(list)})
+        invalid_id = []
+        for target, data in conflicts['duplicates'].items():
+            if len(data['names']) > 1:
+                duplicates_filtered[target] = data
                 if self._is_id_type_uri(target):
-                    conflicts['invalid_id_sharing'].append((target, names))
-        
+                    invalid_id.append((target, data))
+
+        conflicts['duplicates'] = duplicates_filtered
+        conflicts['invalid_id_sharing'] = invalid_id
+
         return conflicts
+
+    def _print_table(self, rows, headers, indent=""):
+        """Render a simple ASCII table for CLI output."""
+        if not rows:
+            self.stdout.write(f"{indent}(none)")
+            return
+
+        headers = list(headers)
+        data = [[str(value) for value in row] for row in rows]
+        widths = [len(header) for header in headers]
+
+        for row in data:
+            for idx, value in enumerate(row):
+                widths[idx] = max(widths[idx], len(value))
+
+        header_line = indent + "  ".join(header.ljust(widths[idx]) for idx, header in enumerate(headers))
+        separator = indent + "  ".join("-" * widths[idx] for idx in range(len(headers)))
+
+        self.stdout.write(header_line)
+        self.stdout.write(separator)
+
+        for row in data:
+            line = indent + "  ".join(value.ljust(widths[idx]) for idx, value in enumerate(row))
+            self.stdout.write(line)
     
     def _is_id_type_uri(self, uri):
         """Check if a URI represents an ID/identifier type that should be unique."""
