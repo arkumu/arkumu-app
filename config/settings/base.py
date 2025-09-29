@@ -411,4 +411,5 @@ ENABLE_IMPORT_API = False
 ENABLE_CANONICAL_URI_API = False
 
 # Optional HTTP Basic Auth for OAI endpoint (uses Django users)
-OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=["hbz-dev"])
+OAI_BASIC_AUTH_ENABLED = env.bool("OAI_BASIC_AUTH_ENABLED", default=False)
+OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=[])

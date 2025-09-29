@@ -11,7 +11,7 @@ def _basic_auth_header(username: str, password: str) -> dict[str, str]:
 
 
 @pytest.mark.django_db
-@override_settings(OAI_BASIC_AUTH_ALLOWED_USERS=[])
+@override_settings(OAI_BASIC_AUTH_ENABLED=False, OAI_BASIC_AUTH_ALLOWED_USERS=[])
 def test_oai_endpoint_allows_requests_without_credentials_configured(client):
     url = reverse("oai:endpoint")
     response = client.get(url, {"verb": "Identify"})
@@ -20,7 +20,7 @@ def test_oai_endpoint_allows_requests_without_credentials_configured(client):
 
 
 @pytest.mark.django_db
-@override_settings(OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
+@override_settings(OAI_BASIC_AUTH_ENABLED=True, OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
 def test_oai_endpoint_requires_basic_auth_when_configured(client, django_user_model):
     django_user_model.objects.create_user(username="hbz-dev", password="secret")
 
@@ -32,7 +32,7 @@ def test_oai_endpoint_requires_basic_auth_when_configured(client, django_user_mo
 
 
 @pytest.mark.django_db
-@override_settings(OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
+@override_settings(OAI_BASIC_AUTH_ENABLED=True, OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
 def test_oai_endpoint_accepts_valid_basic_auth_credentials(client, django_user_model):
     django_user_model.objects.create_user(username="hbz-dev", password="secret")
 
@@ -44,7 +44,7 @@ def test_oai_endpoint_accepts_valid_basic_auth_credentials(client, django_user_m
 
 
 @pytest.mark.django_db
-@override_settings(OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
+@override_settings(OAI_BASIC_AUTH_ENABLED=True, OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
 def test_oai_endpoint_rejects_invalid_basic_auth_credentials(client, django_user_model):
     django_user_model.objects.create_user(username="hbz-dev", password="secret")
 
@@ -56,7 +56,7 @@ def test_oai_endpoint_rejects_invalid_basic_auth_credentials(client, django_user
 
 
 @pytest.mark.django_db
-@override_settings(OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
+@override_settings(OAI_BASIC_AUTH_ENABLED=True, OAI_BASIC_AUTH_ALLOWED_USERS=["hbz-dev"])
 def test_oai_endpoint_rejects_user_not_in_allow_list(client, django_user_model):
     django_user_model.objects.create_user(username="other", password="secret")
 

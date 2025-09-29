@@ -147,6 +147,9 @@ logger = logging.getLogger(__name__)
 def _enforce_basic_auth(request: HttpRequest) -> Optional[HttpResponse]:
     """Enforce optional HTTP Basic Auth for the OAI endpoint."""
 
+    if not getattr(settings, "OAI_BASIC_AUTH_ENABLED", False):
+        return None
+
     allowed_users = getattr(settings, "OAI_BASIC_AUTH_ALLOWED_USERS", [])
     if not allowed_users:
         return None
