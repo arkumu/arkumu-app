@@ -263,11 +263,13 @@ function scheduleFileBrowserRetry(detail = {}) {
         return false;
     }
 
-    const retryUrl = detail.retry_url;
+    const retryUrl = detail.url || detail.retry_url;
     if (!retryUrl) {
         debugLog('ℹ️ Retry URL missing');
         return false;
     }
+
+    const method = (detail.method || (detail.retry_url ? 'GET' : 'POST')).toUpperCase();
 
     if (uploadRefreshTimeout) {
         clearTimeout(uploadRefreshTimeout);
@@ -280,11 +282,49 @@ function scheduleFileBrowserRetry(detail = {}) {
         return false;
     }
 
+    const payload = {};
+    if (typeof detail.retry !== 'undefined') {
+        payload.retry = detail.retry;
+    }
+    if (Array.isArray(detail.expected_files) && detail.expected_files.length > 0) {
+        payload.expected_files = detail.expected_files;
+    }
+
     uploadRefreshTimeout = setTimeout(() => {
-        window.htmx.ajax('GET', retryUrl, {
+        const ajaxOptions = {
             target: targetElement,
             swap: 'innerHTML'
-        });
+        };
+
+        if (method === 'POST') {
+            const headers = { 'Content-Type': 'application/json' };
+            const csrfToken = getCsrfToken();
+            if (csrfToken) {
+                headers['X-CSRFToken'] = csrfToken;
+            }
+            ajaxOptions.headers = headers;
+            ajaxOptions.body = JSON.stringify(payload);
+            window.htmx.ajax('POST', retryUrl, ajaxOptions);
+        } else {
+            // Fallback for legacy GET retries
+            let url = retryUrl;
+            if (!detail.retry_url) {
+                const params = new URLSearchParams();
+                if (typeof payload.retry !== 'undefined') {
+                    params.set('retry', payload.retry);
+                }
+                if (Array.isArray(payload.expected_files)) {
+                    payload.expected_files.forEach((name, index) => {
+                        params.append(`expected_${index}`, name);
+                    });
+                }
+                const paramString = params.toString();
+                if (paramString) {
+                    url = `${retryUrl}?${paramString}`;
+                }
+            }
+            window.htmx.ajax('GET', url, ajaxOptions);
+        }
     }, delay);
     return true;
 }
@@ -1141,18 +1181,17 @@ async function refreshFileBrowserOOB(uploadedFiles = []) {
             return;
         }
 
-        // Build refresh URL and include expected file names for verification/retry
-        let url = `/storage/dashboard/refresh/${organization}/`;
-        if (uploadedFiles && uploadedFiles.length > 0) {
-            const qs = new URLSearchParams();
-            uploadedFiles.forEach((f, i) => {
-                // Pass only filename; server will search recursively
-                qs.append(`expected_${i}`, f.filename || f);
-            });
-            url += `?${qs.toString()}`;
+        const url = `/storage/dashboard/refresh/${organization}/`;
+        const filenames = (uploadedFiles || [])
+            .map((file) => (typeof file === 'string' ? file : file?.filename))
+            .filter((name) => typeof name === 'string' && name.length > 0);
+
+        const payload = {};
+        if (filenames.length > 0) {
+            payload.expected_files = filenames;
         }
 
-        debugLog('🔄 REFRESH: Refreshing file browser from:', url);
+        debugLog('🔄 REFRESH: Refreshing file browser via POST', url, payload);
 
         // Use HTMX to refresh the file browser and then refresh bucket size
         if (window.htmx) {
@@ -1172,7 +1211,18 @@ async function refreshFileBrowserOOB(uploadedFiles = []) {
             };
             document.body.addEventListener('htmx:afterSwap', afterSwapHandler, { once: true });
 
-            htmx.ajax('GET', url, { target: '#file-browser-content', swap: 'innerHTML' });
+            const headers = { 'Content-Type': 'application/json' };
+            const csrfToken = getCsrfToken();
+            if (csrfToken) {
+                headers['X-CSRFToken'] = csrfToken;
+            }
+
+            htmx.ajax('POST', url, {
+                target: '#file-browser-content',
+                swap: 'innerHTML',
+                headers,
+                body: JSON.stringify(payload)
+            });
 
             debugLog('✅ REFRESH: File browser refresh initiated');
         } else {

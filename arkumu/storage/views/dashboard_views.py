@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+from typing import Any
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.views import View
@@ -445,7 +446,7 @@ def upload_mode_toggle(request):
     return HttpResponse(upload_input_html)
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 @general_login_required
 def refresh_file_browser(request, organization):
     """
@@ -458,41 +459,110 @@ def refresh_file_browser(request, organization):
     logger.info(f"🔄 REFRESH: Refreshing file browser for organization: {organization}")
     
     # Get retry parameters and expected files
-    retry_count = int(request.GET.get('retry', 0))
     max_retries = 3
-    
-    # Extract expected files from query parameters
-    expected_files = [
-        value for key, value in request.GET.items()
-        if key.startswith('expected_')
-    ]
+
+    def _safe_int(value, default=0):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    body_data: dict[str, Any] = {}
+    expected_files: list[str] = []
+    retry_count = 0
+
+    if request.method == "POST":
+        if request.body:
+            try:
+                body_data = json.loads(request.body)
+            except json.JSONDecodeError:
+                body_data = {}
+        else:
+            body_data = {}
+
+        if not isinstance(body_data, dict):
+            body_data = {}
+
+        raw_expected = body_data.get('expected_files') or []
+        if isinstance(raw_expected, str):
+            raw_expected = [raw_expected]
+        elif not isinstance(raw_expected, list):
+            raw_expected = []
+
+        expected_files.extend(filter(lambda name: isinstance(name, str), raw_expected))
+        retry_count = _safe_int(body_data.get('retry', 0))
+    else:
+        retry_count = _safe_int(request.GET.get('retry', 0))
+        expected_files.extend(
+            value for key, value in request.GET.items()
+            if key.startswith('expected_')
+        )
+
+    # Support hybrid requests where both query params and body might supply values (for backwards compatibility)
+    if request.method == "POST" and request.GET:
+        expected_files.extend(
+            value for key, value in request.GET.items()
+            if key.startswith('expected_')
+        )
+
+    # Normalize expected files list (deduplicate while preserving order)
+    seen = set()
+    normalized_expected: list[str] = []
+    for name in expected_files:
+        if not isinstance(name, str):
+            continue
+        if name not in seen:
+            seen.add(name)
+            normalized_expected.append(name)
+
+    expected_files = normalized_expected
+
     if expected_files:
         logger.debug("📋 REFRESH: Checking %d expected files", len(expected_files))
     
     try:
-        # Clear all possible cache keys for this organization
+        # Clear cache entries for the organization/bucket before listing
         from django.core.cache import cache
-        cache_patterns = [
-            f"bucket_contents_{organization}_",
-            f"bucket_contents_{bucket_name}_" if 'bucket_name' in locals() else None,
-            f"file_count_{organization}_",
-            f"file_count_{organization}_data_",
-            f"file_count_{organization}_metadata_",
-        ]
-        
-        # Clear cache keys that exist
-        for pattern in cache_patterns:
-            if pattern:
-                cache.delete(pattern)
-                logger.info(f"🗑️ REFRESH: Cleared cache key: {pattern}")
-        
         bucket_service = BucketService()
         bucket_name = bucket_service.get_organization_bucket(organization)
-        
-        # Clear bucket-specific cache too
-        cache.delete(f"bucket_contents_{bucket_name}_")
-        logger.info(f"🗑️ REFRESH: Cleared cache key: bucket_contents_{bucket_name}_")
-        
+
+        cache_patterns = [
+            f"bucket_contents_{organization}_*",
+            f"bucket_contents_{bucket_name}_*",
+            f"file_count_{organization}_*",
+            f"file_count_{bucket_name}_*",
+        ]
+
+        manual_cache_keys: set[str] = set()
+
+        # Build manual fallbacks for cache backends without delete_pattern support
+        prefixes_to_clear: set[str] = {''}
+        # Common folders we know about
+        prefixes_to_clear.update({'data/', 'metadata/'})
+        for file_name in expected_files:
+            if not isinstance(file_name, str):
+                continue
+            parts = [segment for segment in file_name.split('/') if segment]
+            if len(parts) <= 1:
+                continue
+            current = ''
+            for segment in parts[:-1]:
+                current = f"{current}{segment}/"
+                prefixes_to_clear.add(current)
+
+        for prefix in prefixes_to_clear:
+            manual_cache_keys.add(bucket_service._cache_key("bucket_contents", bucket_name, prefix))
+            manual_cache_keys.add(bucket_service._cache_key("file_count", bucket_name, prefix))
+
+        if hasattr(cache, 'delete_pattern'):
+            for pattern in cache_patterns:
+                cache.delete_pattern(pattern)
+                logger.info(f"🗑️ REFRESH: Cleared cache pattern: {pattern}")
+        else:
+            for key in manual_cache_keys:
+                cache.delete(key)
+                logger.info(f"🗑️ REFRESH: Cleared cache key: {key}")
+
         # Always use force_fresh to bypass cache
         contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
         
@@ -524,30 +594,26 @@ def refresh_file_browser(request, organization):
                 ]
 
                 if missing_files:
-                    sample = ', '.join(missing_files[:5])
-                    if len(missing_files) > 5:
-                        sample += ', …'
-
                     if retry_count < max_retries:
                         retry_delay = (retry_count + 1) * 1000
+                        sample_preview = ', '.join(missing_files[:3])
+                        if len(missing_files) > 3:
+                            sample_preview += ', …'
                         logger.debug(
-                            "⏳ REFRESH: waiting for %d/%d top-level file(s); retrying in %sms (attempt %s/%s)",
+                            "⏳ REFRESH: waiting for %d/%d top-level file(s); retrying in %sms (attempt %s/%s). Sample: %s",
                             len(missing_files),
                             len(flat_expected),
                             retry_delay,
                             retry_count + 1,
                             max_retries,
+                            sample_preview or 'n/a',
                         )
 
-                        params = request.GET.copy()
-                        params['retry'] = retry_count + 1
-                        retry_url = f"/storage/dashboard/refresh/{organization}/?{params.urlencode()}"
-
                         retry_payload = {
-                            'retry_url': retry_url,
+                            'url': request.path,
+                            'method': 'POST',
+                            'expected_files': expected_files,
                             'delay': retry_delay,
-                            'missing_files': missing_files[:3],
-                            'total_missing': len(missing_files),
                             'retry': retry_count + 1,
                             'max_retries': max_retries + 1,
                         }
@@ -611,16 +677,13 @@ def refresh_file_browser(request, organization):
                 retry_count + 1,
                 max_retries,
             )
-
-            params = request.GET.copy()
-            params['retry'] = retry_count + 1
-            retry_url = f"/storage/dashboard/refresh/{organization}/?{params.urlencode()}"
-
             response = HttpResponse(status=204)
             response['HX-Reswap'] = 'none'
             response['HX-Trigger'] = json.dumps({
                 'upload-refresh-retry': {
-                    'retry_url': retry_url,
+                    'url': request.path,
+                    'method': 'POST',
+                    'expected_files': expected_files,
                     'delay': retry_delay,
                     'missing_files': [],
                     'retry': retry_count + 1,
