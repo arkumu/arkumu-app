@@ -103,6 +103,10 @@ SECURE_SSL_REDIRECT = True
 # Keep S3 but without the deprecated buckets
 USE_MINIO = False
 
+# Disable collectfasta integration locally; Whitenoise handles static files
+INSTALLED_APPS = [app for app in INSTALLED_APPS if app != "collectfasta"]
+COLLECTFASTA_STRATEGY = None
+
 
 # Storage settings for development
 # Option 1: Use local storage
