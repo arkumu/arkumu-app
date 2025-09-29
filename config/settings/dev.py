@@ -114,11 +114,14 @@ STORAGES = {
         },
     },
     "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 MEDIA_URL = "/media/"
 STATIC_URL = "/static/"
+
+# Allow Whitenoise to serve files collected in DEBUG=False
+WHITENOISE_USE_FINDERS = False
 
 # Option 2: Keep S3 but override bucket name (if you have a dev bucket)
 # DJANGO_AWS_STORAGE_BUCKET_NAME = env("DJANGO_AWS_STORAGE_BUCKET_NAME", default="arkumu-dev")

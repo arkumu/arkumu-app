@@ -4,8 +4,8 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# Skip collectstatic for dev - handle static files locally
-echo "Skipping collectstatic for development..."
+# Collect static assets for Whitenoise before launching the server
+python /app/manage.py collectstatic --noinput
 
 # Run migrations
 python /app/manage.py migrate
