@@ -2,7 +2,7 @@
 from .production import *  # noqa: F403
 
 # Override only what's needed for development visibility
-DEBUG = True
+DEBUG = env.bool("DJANGO_DEBUG", default=False)
 
 # Add dev server to allowed hosts
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["arkumu.uni-koeln.de"]) + [
@@ -11,6 +11,10 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["arkumu.uni-koeln.de"]
     "127.0.0.1",
     "0.0.0.0",
 ]
+
+# Ensure Huey tasks run asynchronously even if DEBUG is toggled later.
+HUEY["immediate"] = False
+HUEY["consumer"]["workers"] = env.int("HUEY_DEV_WORKERS", default=2)
 
 # LOGGING
 # ------------------------------------------------------------------------------
