@@ -1,14 +1,5 @@
 from django.urls import path
-from arkumu.metadata.views import dashboard_views, resource_views, triple_views, graph_views, bulk_editor_views, data_discovery_views, data_explorer_views, split_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
-# Temporarily disabled bulk arkumu mapping views
-# from arkumu.metadata.views.bulk_arkumu_mapping_views import (
-#     BulkArkumuMappingView,
-#     BulkArkumuMappingPreviewView, 
-#     BulkArkumuMappingExecutionDetailView,
-#     BulkArkumuMappingSortView,
-#     BulkArkumuMappingRemoveView,
-#     BulkArkumuMappingDeleteView
-# )
+from arkumu.metadata.views import dashboard_views, resource_views, triple_views, bulk_editor_views, data_discovery_views, data_explorer_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 
@@ -66,20 +57,6 @@ urlpatterns = [
     path('mappings/<uuid:mapping_id>/relationships/', resource_relationship_views.MappingRelationshipsHTMXView.as_view(), name='mapping_relationships_htmx'),
     path('organizations/<str:org_code>/relationship-types/', resource_relationship_views.OrganizationRelationshipTypesHTMXView.as_view(), name='org_relationship_types_htmx'),
     
-    # Graph visualization
-    path('dataset-viewer/', graph_views.dataset_viewer_view, name='dataset_viewer'),
-    path('tree/data/', graph_views.tree_data_view, name='tree_data'),
-    path('tree/bucket/<str:bucket_name>/', graph_views.tree_bucket_content_view, name='tree_bucket_content'),
-    path('tree/bucket/<str:bucket_name>/more/', graph_views.tree_bucket_more_view, name='tree_bucket_more'),
-    path('tree/dataset/<uuid:dataset_id>/', graph_views.tree_dataset_view, name='tree_dataset'),
-    path('tree/dataset/<uuid:dataset_id>/details/', graph_views.tree_dataset_details_view, name='tree_dataset_details'),
-    path('tree/dataset/<uuid:dataset_id>/more/', graph_views.tree_dataset_more_view, name='tree_dataset_more'),
-    path('tree/dataset/<uuid:dataset_id>/row/<uuid:row_id>/', graph_views.tree_row_view, name='tree_row'),
-    path('tree/row/<uuid:row_id>/details/', graph_views.tree_row_details_view, name='tree_row_details'),
-    path('tree/cell/<uuid:cell_id>/details/', graph_views.tree_cell_details_view, name='tree_cell_details'),
-    path('graph/', graph_views.full_graph_view, name='full_graph_view'),
-    path('graph/data/', graph_views.graph_data_view, name='graph_data'),
-    
     # Bulk editor - Core functionality
 
     path('bulk-editor/list-s3-csv/', bulk_editor_views.list_s3_csv_files, name='list_s3_csv_files'),
@@ -121,20 +98,6 @@ urlpatterns = [
     path('data-discovery/auto-link-all/', data_discovery_views.auto_link_all, name='auto_link_all'),
     path('data-discovery/rescan-s3/', data_discovery_views.rescan_s3_files, name='rescan_s3_files'),
     path('data-discovery/toggle-select-all/', data_discovery_views.toggle_select_all, name='toggle_select_all'),
-    
-    # Split Table/Graph View (Database-based)
-    path('split-view/', split_views.split_table_graph_view, name='split_table_graph'),
-    path('split-view/load-source-data/', split_views.load_source_data, name='load_source_data'),
-    path('split-view/dataset-card/', split_views.get_dataset_card, name='split_dataset_card'),
-    path('split-view/load-more-rows/', split_views.load_more_dataset_rows, name='load_more_dataset_rows'),
-    path('split-view/graph-data/', split_views.get_graph_data, name='split_graph_data'),
-    path('split-view/debug-database/', split_views.debug_database, name='debug_database'),
-    path('split-view/highlight-column/', split_views.highlight_column_in_graph, name='highlight_column'),
-    path('split-view/highlight-cell/', split_views.highlight_cell_in_graph, name='highlight_cell'),
-    path('split-view/refresh-graph/', split_views.refresh_graph, name='refresh_graph'),
-    path('split-view/toggle-layout/', split_views.toggle_layout, name='toggle_layout'),
-    path('split-view/analyze-relationships/', split_views.analyze_dataset_relationships, name='analyze_dataset_relationships'),
-    path('split-view/clear-all-datasets/', split_views.clear_all_datasets, name='split_clear_all_datasets'),
     
     # Direct Data Analysis (File-based, faster)
     path('direct-analysis/', direct_data_views.direct_split_table_graph_view, name='direct_split_table_graph'),
@@ -321,11 +284,5 @@ urlpatterns = [
     # path('harmonization/executions/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_executions_list'),
     
     # Bulk Arkumu Mapping URLs (Temporarily disabled)
-    # path('bulk-arkumu-mapping/', BulkArkumuMappingView.as_view(), name='bulk_arkumu_mapping'),
-    # path('bulk-arkumu-mapping/preview/', BulkArkumuMappingPreviewView.as_view(), name='bulk_arkumu_mapping_preview'),
-    # path('bulk-arkumu-mapping/execution/<uuid:pk>/', BulkArkumuMappingExecutionDetailView.as_view(), name='bulk_arkumu_mapping_execution'),
-    # path('bulk-arkumu-mapping/sort/', BulkArkumuMappingSortView.as_view(), name='bulk_arkumu_mapping_sort'),
-    # path('bulk-arkumu-mapping/remove/', BulkArkumuMappingRemoveView.as_view(), name='bulk_arkumu_mapping_remove'),
-    # path('bulk-arkumu-mapping/delete/<uuid:pk>/', BulkArkumuMappingDeleteView.as_view(), name='bulk_arkumu_mapping_delete'),
     
     ]

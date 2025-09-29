@@ -32,16 +32,26 @@ Now also loads comprehensive graph with all columns.
 
     
     {% if graph_data and graph_data.nodes %}
-        {% include 'partials/graph_visualization.html' with graph_data=graph_data source=source layout="force" %}
+        <div class="flex h-full flex-col items-center justify-center text-center">
+            <div class="max-w-md">
+                <svg class="w-16 h-16 mx-auto text-base-content/30 mb-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 3v18m0-9h14M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <h3 class="text-lg font-medium">Graph Preview Unavailable</h3>
+                <p class="text-sm text-base-content/70 mt-2">
+                    Interactive graphs have been removed from this workflow. Review the dataset cards for the latest information.
+                </p>
+            </div>
+        </div>
     {% else %}
         <div class="flex h-full flex-col items-center justify-center text-center">
             <div class="max-w-md">
                 <svg class="w-16 h-16 mx-auto text-base-content/30 mb-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M9 6H20M9 12H20M9 18H20M5 6V6.01M5 12V12.01M5 18V18.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                <h3 class="text-lg font-medium">Loading Graph...</h3>
+                <h3 class="text-lg font-medium">No Graph Data Loaded</h3>
                 <p class="text-sm text-base-content/70 mt-2">
-                    Graph visualization will appear here when source data is loaded.
+                    Graph details are displayed once a dataset is selected.
                 </p>
                 {% if error %}
                     <div class="alert alert-error mt-4">
