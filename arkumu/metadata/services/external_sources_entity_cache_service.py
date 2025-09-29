@@ -79,7 +79,7 @@ class ExternalSourcesEntityCacheService:
         # ----------------------------------
         pred = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/ereignisort")
         places = Triple.objects.filter(predicate=pred, object__resource_type=ResourceType.LITERAL)
-        return self.ensure_cached(set([place.object.value for place in places]), ["P625", "P1448"], self.Source.WD, force_refresh=force_refresh)
+        return self.ensure_cached(set([place.object.value for place in places]), ["P625", "label_de"], self.Source.WD, force_refresh=force_refresh)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -96,20 +96,34 @@ class ExternalSourcesEntityCacheService:
             params = {}
             match source.name:
                 case "WD":
-                    params = {
-                        "query":
-                            'SELECT ?subj ?obj '
-                            'WHERE {'
-                            f'   VALUES ?subj {{ {" ".join([f'wd:{i}' for i in subj])} }}'
-                            f'   ?subj wdt:{pred} ?obj .'
-                            '}'
-                    }
+                    if pred == 'label_de':
+                        params = {
+                            "query":
+                                'SELECT ?subj ?obj '
+                                'WHERE {'
+                                f'   VALUES ?subj {{ {" ".join([f'wd:{i}' for i in subj])} }} '
+                                '    SERVICE wikibase:label { '
+                                '       bd:serviceParam wikibase:language "de" . '
+                                '       ?subj rdfs:label ?obj .'
+                                '    }'
+                                '}'
+                        }
+                    else:
+                        params = {
+                            "query":
+                                'SELECT ?subj ?obj '
+                                'WHERE {'
+                                f'   VALUES ?subj {{ {" ".join([f'wd:{i}' for i in subj])} }}'
+                                f'   ?subj wdt:{pred} ?obj .'
+                                '}'
+                        }
 
             try:
+                logger.info(params)
                 response = requests.get(source.value, params=params, headers=headers, timeout=5)
                 response.raise_for_status()
                 data = response.json()
-
+                logger.info(data)
                 result_lines.extend([{ 'data_id': res['subj']['value'].split('/')[-1], 'property': pred, 'datum': res['obj']['value'], 'source': source.name }for res in data['results']['bindings']])
 
             except requests.RequestException as exc:
@@ -121,7 +135,9 @@ class ExternalSourcesEntityCacheService:
     def _normalize_id(value: str) -> Optional[str]:
         if not value:
             return None
-        value = value.strip().upper()
+        value = value.strip()
+        if value[0] == 'q' or value[0] == 'p':
+            value = value.upper()
         if not value:
             return None
         return value
