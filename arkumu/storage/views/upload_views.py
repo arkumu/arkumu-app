@@ -4,6 +4,7 @@ Implements the simplified upload system using presigned URLs.
 """
 import logging
 import json
+from collections import Counter
 
 from django.db.models import Count
 from django.shortcuts import render
@@ -474,15 +475,13 @@ def mark_file_uploaded(request, file_id):
 
         verification_triggered = False
 
-        status_counts = {
-            entry['status']: entry['count']
-            for entry in session.files.values('status').annotate(count=Count('id'))
-        }
+        file_qs = AsyncUploadFile.objects.filter(session=session)
+        status_counts = Counter(file_qs.values_list('status', flat=True))
 
         total_count = sum(status_counts.values())
 
-        remaining_files = status_counts.get('pending', 0) + status_counts.get('uploading', 0)
-        all_uploaded = remaining_files == 0
+        pending_exists = file_qs.exclude(status__in=['uploaded', 'completed', 'failed']).exists()
+        all_uploaded = not pending_exists
 
         if all_uploaded:
             logger.info(f"🚀 Scheduling verification for session {session.id}")
@@ -493,7 +492,7 @@ def mark_file_uploaded(request, file_id):
 
         # Get organization for OOB refresh
         organization = session.organization
-        
+
         # If this is an HTMX request, return OOB refresh instead of JSON
         if request.headers.get('HX-Request'):
             try:
@@ -517,7 +516,8 @@ def mark_file_uploaded(request, file_id):
             except Exception as e:
                 logger.error(f"❌ OOB refresh failed in mark_file_uploaded: {e}")
                 # Fall back to JSON response
-        
+        remaining_files_count = status_counts.get('pending', 0) + status_counts.get('uploading', 0)
+
         response_data = {
             'success': True,
             'session_id': str(session.id),
@@ -527,7 +527,8 @@ def mark_file_uploaded(request, file_id):
             'processing_files': status_counts.get('processing', 0),
             'completed_files': status_counts.get('completed', 0),
             'failed_files': status_counts.get('failed', 0),
-            'remaining_files': remaining_files,
+            'remaining_files': remaining_files_count,
+            'pending_files': status_counts.get('pending', 0),
             'all_uploaded': all_uploaded,
             'verification_triggered': verification_triggered,
         }

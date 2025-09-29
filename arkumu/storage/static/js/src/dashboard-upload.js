@@ -8,11 +8,6 @@ const debugLog = DEBUG_UPLOADS ? console.log.bind(console) : () => {};
 const debugError = DEBUG_UPLOADS ? console.error.bind(console) : () => {};
 
 // Global upload tracker for coordinating multiple uploads
-let currentUploadSessionId = null;
-let verificationStatusElement = null;
-const VERIFICATION_POLL_INTERVAL_MS = 1500;
-const VERIFICATION_TIMEOUT_MS = 60000;
-
 const uploadTracker = {
     activeUploads: new Map(), // filename -> upload state
     totalFiles: 0,
@@ -434,8 +429,6 @@ async function initializeDashboardUpload() {
                 throw new Error('Failed to initialize upload session');
             }
 
-            currentUploadSessionId = sessionResponse.sessionId || sessionResponse.session_id || null;
-
             // Clear previous uploads
             if (uploadArea) {
                 uploadArea.dataset.emptyState = 'false';
@@ -448,10 +441,8 @@ async function initializeDashboardUpload() {
             // Phase 3: Start uploading files to S3 automatically
             await startUploads(
                 sessionResponse.results || sessionResponse.uploads,
-                files,
-                currentUploadSessionId
+                files
             );
-            showFinalUploadSuccess(files.length);
 
         } catch (error) {
             debugError('❌ ASYNC: Upload failed:', error);
@@ -737,7 +728,7 @@ function createIndividualFilesList(uploads, uploadArea) {
     });
 }
 
-async function startUploads(uploads, files, sessionId) {
+async function startUploads(uploads, files) {
     debugLog('🚀 Starting uploads for', uploads.length, 'files');
 
     // Initialize upload tracker
@@ -777,20 +768,6 @@ async function startUploads(uploads, files, sessionId) {
         path: upload.relativePath || upload.filename
     }));
 
-    // Show coordinated "verifying files" message instead of immediate success
-    showUploadVerifying(uploads.length, uploadedFiles);
-
-    if (sessionId) {
-        try {
-            await waitForUploadVerification(sessionId);
-        } catch (error) {
-            debugError('⚠️ Verification wait failed:', error);
-        }
-    } else {
-        debugLog('ℹ️ No session id available; skipping verification wait.');
-    }
-
-    // Refresh file browser with expected files list for verification
     await refreshFileBrowserOOB(uploadedFiles);
 }
 
@@ -898,7 +875,7 @@ async function uploadWithProgress(url, formData, filename, progressBar, statusTe
                         debugLog('✅ Server notified of upload:', filename);
                     } catch (error) {
                         debugError('⚠️ Error notifying server:', error);
-                        updateFileStatusByName(filename, 'Server verification failed: ' + error.message, error.message);
+                        updateFileStatusByName(filename, 'Server notification failed: ' + error.message, error.message);
                         reject(error);
                         return;
                     }
@@ -977,8 +954,8 @@ async function uploadWithHiddenForm(uploadInfo, file, progressBar, statusText) {
 
                     resolve();
                 } catch (e) {
-                    console.error('Form upload verification failed:', e);
-                    updateFileStatusByName(uploadInfo.filename, 'Server verification failed: ' + e.message, e.message);
+                    console.error('Form upload notification failed:', e);
+                    updateFileStatusByName(uploadInfo.filename, 'Server notification failed: ' + e.message, e.message);
                     reject(e);
                 } finally {
                     setTimeout(() => {
@@ -1054,7 +1031,7 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
                         debugLog('✅ Server notified of upload:', filename);
                     } catch (error) {
                         debugError('⚠️ Error notifying server:', error);
-                        updateFileStatusByName(filename, 'Server verification failed: ' + error.message, error.message);
+                        updateFileStatusByName(filename, 'Server notification failed: ' + error.message, error.message);
                         reject(error);
                         return;
                     }
@@ -1082,98 +1059,40 @@ async function uploadWithProgressPUT(url, file, filename, progressBar, statusTex
     });
 }
 
-// Upload verifying helper - shows coordinated loading state
-function showUploadVerifying(fileCount, uploadedFiles) {
-    debugLog('ℹ️ Uploads finished; waiting for verification.');
-    const uploadArea = getUploadArea({ autoOpen: true });
-    if (!uploadArea) {
-        return;
-    }
-    if (uploadArea.dataset.emptyState === 'true') {
-        uploadArea.dataset.emptyState = 'false';
-        uploadArea.innerHTML = '';
-    }
-
-    if (!verificationStatusElement) {
-        verificationStatusElement = document.createElement('div');
-        verificationStatusElement.id = 'upload-verification-message';
-        verificationStatusElement.className = 'mt-4 flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 px-4 py-3 text-sm text-info/90';
-        verificationStatusElement.innerHTML = `
-            <span class="loading loading-spinner loading-sm mt-1"></span>
-            <div>
-                <p class="font-medium">Finalizing uploads…</p>
-                <p class="mt-1 opacity-80" data-status-text>Waiting for server verification (${uploadedFiles.length || fileCount} file${fileCount === 1 ? '' : 's'}).</p>
-            </div>
-        `;
-        uploadArea.appendChild(verificationStatusElement);
-    } else {
-        const textEl = verificationStatusElement.querySelector('[data-status-text]');
-        if (textEl) {
-            textEl.textContent = `Waiting for server verification (${uploadedFiles.length || fileCount} file${fileCount === 1 ? '' : 's'}).`;
-        }
-        verificationStatusElement.classList.remove('hidden');
-    }
-}
-
 // Final completion helper - called after files are confirmed in browser
 function showUploadComplete(fileCount) {
-    // Remove the verifying message if it exists
     const uploadArea = getUploadArea({ autoOpen: true });
     if (!uploadArea) {
         debugLog('ℹ️ Skipping completion banner; no upload area available');
         return;
     }
-    if (verificationStatusElement) {
-        verificationStatusElement.remove();
-        verificationStatusElement = null;
-    }
     if (uploadArea.dataset.emptyState === 'true') {
         uploadArea.dataset.emptyState = 'false';
         uploadArea.innerHTML = '';
     }
-    currentUploadSessionId = null;
+
+    const existingBanner = uploadArea.querySelector('.upload-complete-banner');
+    if (existingBanner) {
+        existingBanner.remove();
+    }
+
     const completionMessage = document.createElement('div');
-    completionMessage.className = 'mt-4 flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success/90';
+    completionMessage.className = 'upload-complete-banner mt-4 flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success/90';
     completionMessage.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
         </svg>
         <div class="flex-1">
             <p class="font-medium">Upload complete.</p>
-            <p class="mt-1 opacity-80">${fileCount} file${fileCount === 1 ? '' : 's'} saved to storage. You can close the activity panel whenever you're ready.</p>
+            <p class="mt-1 opacity-80">${fileCount} file${fileCount === 1 ? '' : 's'} are now available.</p>
         </div>
-        <button class="btn btn-ghost btn-xs" aria-label="Dismiss" onclick="this.closest('div.mt-4').remove()">
+        <button class="btn btn-ghost btn-xs" aria-label="Dismiss" onclick="this.closest('.upload-complete-banner').remove()">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
         </button>
     `;
     uploadArea.appendChild(completionMessage);
-}
-
-function updateVerificationBanner(statusInfo) {
-    if (!verificationStatusElement || !statusInfo) {
-        return;
-    }
-
-    const textEl = verificationStatusElement.querySelector('[data-status-text]');
-    if (!textEl) {
-        return;
-    }
-
-    const completed = statusInfo.completed_files ?? statusInfo.completedFiles ?? 0;
-    const total = statusInfo.total_files ?? statusInfo.totalFiles ?? 0;
-    const failed = statusInfo.failed_files ?? statusInfo.failedFiles ?? 0;
-    const status = statusInfo.status || statusInfo.session_status || 'processing';
-
-    if (status === 'completed') {
-        textEl.textContent = `Verification complete (${completed}/${total} files).`;
-    } else if (status === 'failed') {
-        textEl.textContent = `Verification finished with errors (${completed} completed, ${failed} failed).`;
-    } else {
-        const remaining = total - completed - failed;
-        textEl.textContent = `Verifying uploads… ${completed} done, ${remaining > 0 ? `${remaining} remaining` : 'finishing up'}.`;
-    }
 }
 
 async function notifyServerUploadComplete(uploadFileId, filename) {
@@ -1206,236 +1125,9 @@ async function notifyServerUploadComplete(uploadFileId, filename) {
         throw new Error(data.error || 'Server rejected upload notification');
     }
 
-    updateVerificationBanner(data);
-
-    if (data.session_id) {
-        currentUploadSessionId = data.session_id;
-    }
-
     return data;
 }
 
-async function waitForUploadVerification(sessionId, options = {}) {
-    const pollInterval = options.pollInterval ?? VERIFICATION_POLL_INTERVAL_MS;
-    const timeout = options.timeout ?? VERIFICATION_TIMEOUT_MS;
-    const start = Date.now();
-
-    while (true) {
-        if (Date.now() - start > timeout) {
-            throw new Error('Upload verification timed out');
-        }
-
-        try {
-            const response = await fetch(`/storage/upload/session-status/${sessionId}/`, {
-                method: 'GET',
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                updateVerificationBanner(data);
-
-                if (data.status === 'completed' || data.status === 'failed') {
-                    return data;
-                }
-            } else {
-                debugError('⚠️ Failed to poll session status', response.status, response.statusText);
-            }
-        } catch (error) {
-            debugError('⚠️ Error polling session status:', error);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-    }
-}
-
-// Optimistic Updates: Show files immediately with verification badges
-function showFilesOptimistically(uploadedFiles) {
-    const fileBrowserContent = document.getElementById('file-browser-content');
-    if (!fileBrowserContent) {
-        debugError('❌ File browser content not found');
-        return;
-    }
-    
-    debugLog('📋 OPTIMISTIC: Adding', uploadedFiles.length, 'files to file browser');
-    
-    // Create optimistic file entries
-    uploadedFiles.forEach(file => {
-        const fileElement = createOptimisticFileElement(file);
-        // Find the file list and prepend new files
-        const fileList = fileBrowserContent.querySelector('.file-list, .list, [class*="file"]');
-        if (fileList) {
-            fileList.insertBefore(fileElement, fileList.firstChild);
-        } else {
-            // If no file list exists, create one
-            const listContainer = document.createElement('div');
-            listContainer.className = 'optimistic-file-list space-y-2';
-            listContainer.appendChild(fileElement);
-            fileBrowserContent.insertBefore(listContainer, fileBrowserContent.firstChild);
-        }
-    });
-    
-    debugLog('✅ OPTIMISTIC: Files displayed immediately');
-}
-
-function createOptimisticFileElement(file) {
-    const fileElement = document.createElement('div');
-    fileElement.className = 'file-item optimistic-file p-3 bg-base-100 border border-base-300 rounded-lg';
-    fileElement.dataset.filename = file.filename;
-    fileElement.dataset.optimistic = 'true';
-    
-    const extension = file.filename.split('.').pop().toLowerCase();
-    const icon = getFileIconForType(file.filename);
-    
-    fileElement.innerHTML = `
-        <div class="flex items-center gap-3">
-            <!-- File Icon -->
-            <div class="flex-shrink-0">
-                ${icon}
-            </div>
-            
-            <!-- File Info -->
-            <div class="flex-1 min-w-0">
-                <div class="font-medium text-base-content truncate">${file.filename}</div>
-                <div class="text-sm text-base-content/60">${file.path !== file.filename ? file.path : ''}</div>
-            </div>
-            
-            <!-- Verification Status Badge -->
-            <div class="verification-badge">
-                <div class="badge badge-warning badge-sm gap-1">
-                    <span class="loading loading-spinner loading-xs"></span>
-                    Verifying
-                </div>
-            </div>
-        </div>
-    `;
-    
-    return fileElement;
-}
-
-// Verification polling for real-time updates
-function startVerificationPolling(uploadedFiles) {
-    debugLog('🔄 POLLING: Starting verification status polling');
-    
-    const pollInterval = 2000; // Poll every 2 seconds
-    const maxPolls = 30; // Stop after 60 seconds
-    let pollCount = 0;
-    
-    const polling = setInterval(async () => {
-        pollCount++;
-        debugLog(`📡 POLLING: Check ${pollCount}/${maxPolls}`);
-        
-        try {
-            // Get the organization for API call
-            const orgSelector = document.querySelector('#upload-org-selector select[name="organization"]');
-            const organization = orgSelector ? orgSelector.value : '';
-            
-            if (!organization) {
-                debugLog('⚠️ POLLING: No organization selected, stopping');
-                clearInterval(polling);
-                return;
-            }
-            
-            // Check verification status
-            const response = await fetch(`/storage/api/verification-status/${organization}/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCsrfToken(),
-                },
-                credentials: 'include',
-                body: JSON.stringify({
-                    files: uploadedFiles.map(f => f.filename)
-                })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                updateVerificationStatus(data.files || []);
-                
-                // Check if all files are verified
-                const allVerified = data.files.every(f => f.status === 'verified' || f.status === 'failed');
-                if (allVerified) {
-                    debugLog('✅ POLLING: All files verified, stopping');
-                    clearInterval(polling);
-                    showFinalUploadSuccess(uploadedFiles.length);
-                }
-            }
-            
-        } catch (error) {
-            console.error('POLLING: Error checking status:', error);
-        }
-        
-        // Stop polling after max attempts
-        if (pollCount >= maxPolls) {
-            debugLog('⏰ POLLING: Max attempts reached, stopping');
-            clearInterval(polling);
-        }
-        
-    }, pollInterval);
-}
-
-function updateVerificationStatus(fileStatuses) {
-    fileStatuses.forEach(fileStatus => {
-        const fileElement = document.querySelector(`[data-filename="${fileStatus.filename}"][data-optimistic="true"]`);
-        if (!fileElement) return;
-        
-        const badge = fileElement.querySelector('.verification-badge');
-        if (!badge) return;
-        
-        let badgeHTML = '';
-        switch (fileStatus.status) {
-            case 'verified':
-                badgeHTML = '<div class="badge badge-success badge-sm">✅ Verified</div>';
-                fileElement.classList.add('verified');
-                break;
-            case 'failed':
-                badgeHTML = `<div class="badge badge-error badge-sm">❌ Failed</div>`;
-                fileElement.classList.add('failed');
-                break;
-            case 'verifying':
-            default:
-                badgeHTML = `
-                    <div class="badge badge-warning badge-sm gap-1">
-                        <span class="loading loading-spinner loading-xs"></span>
-                        Verifying
-                    </div>
-                `;
-                break;
-        }
-        
-        badge.innerHTML = badgeHTML;
-    });
-}
-
-function showFinalUploadSuccess(fileCount) {
-    const uploadArea = getUploadArea({ autoOpen: true });
-    if (!uploadArea) return;
-    if (uploadArea.dataset.emptyState === 'true') {
-        uploadArea.dataset.emptyState = 'false';
-        uploadArea.innerHTML = '';
-    }
-    const completionMessage = document.createElement('div');
-    completionMessage.className = 'mt-4 flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success/90';
-    completionMessage.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-        </svg>
-        <div class="flex-1">
-            <p class="font-medium">All files uploaded.</p>
-            <p class="mt-1 opacity-80">Everything is safely stored. You can close this panel or keep browsing.</p>
-        </div>
-        <button class="btn btn-ghost btn-xs" aria-label="Dismiss" onclick="this.closest('div.mt-4').remove()">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
-    `;
-    uploadArea.appendChild(completionMessage);
-}
 
 // Refresh file browser - simple and clean
 async function refreshFileBrowserOOB(uploadedFiles = []) {

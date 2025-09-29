@@ -1,7 +1,7 @@
 """Storage-related background tasks."""
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from huey.contrib.djhuey import db_task
 from django.utils import timezone
@@ -35,43 +35,84 @@ def verify_upload_session(session_id: str) -> None:
 
     failures = 0
 
-    for upload_file in session.files.all():
-        if upload_file.status == 'completed':
-            continue
+    from collections import defaultdict
+    from botocore.exceptions import ClientError
+
+    prefix_groups: dict[str, list[AsyncUploadFile]] = defaultdict(list)
+
+    pending_files = session.files.exclude(status='completed')
+    if not pending_files.exists():
+        logger.info("ℹ️ verify_upload_session: session %s already completed", session_id)
+        session.status = 'completed'
+        session.error_message = ''
+        session.completed_at = timezone.now()
+        session.save(update_fields=['status', 'error_message', 'completed_at', 'updated_at'])
+        trigger_ui_refresh(str(session.id), session.organization)
+        return
+
+    for upload_file in pending_files:
+        prefix = upload_file.s3_key.rpartition('/')[0]
+        prefix_groups[prefix].append(upload_file)
+
+    s3_client = bucket_service.base_s3_service.s3_client
+
+    for prefix, files in prefix_groups.items():
+        s3_prefix = prefix + '/' if prefix else ''
+        objects_by_key: dict[str, dict[str, Any]] = {}
 
         try:
-            file_info = upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
-            if not file_info.get('success'):
-                raise ValueError(f"File {upload_file.s3_key} not found in storage")
-
-            resolved_size = file_info.get('file_size', upload_file.file_size)
-            resolved_completed_at = timezone.now()
-
-            if S3FileObject.objects.filter(s3_key=upload_file.s3_key).exists():
-                logger.info(
-                    "ℹ️ verify_upload_session: creating additional S3FileObject for duplicate key %s",
-                    upload_file.s3_key,
-                )
-
-            s3_file_object = S3FileObject.objects.create(
-                s3_key=upload_file.s3_key,
-                file_name=upload_file.filename,
-                file_size_bytes=resolved_size,
-                content_type=upload_file.content_type,
-                status='completed',
-                upload_completed_at=resolved_completed_at,
+            paginator = s3_client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket_name, Prefix=s3_prefix):
+                for obj in page.get('Contents', []):
+                    objects_by_key[obj['Key']] = obj
+        except ClientError as exc:
+            logger.error(
+                "❌ verify_upload_session: failed to list prefix '%s' in %s: %s",
+                s3_prefix or '<root>',
+                bucket_name,
+                exc,
             )
 
-            upload_file.status = 'completed'
-            upload_file.upload_completed_at = resolved_completed_at
-            upload_file.s3_file_object = s3_file_object
-            upload_file.error_message = ''
-            upload_file.save(update_fields=['status', 'upload_completed_at', 's3_file_object', 'error_message', 'updated_at'])
+        for upload_file in files:
+            try:
+                obj_meta = objects_by_key.get(upload_file.s3_key)
 
-        except Exception as exc:  # noqa: BLE001
-            failures += 1
-            upload_file.mark_failed(str(exc))
-            logger.error("❌ verify_upload_session: %s", exc)
+                if obj_meta is None:
+                    file_info = upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
+                    if not file_info.get('success'):
+                        raise ValueError(f"File {upload_file.s3_key} not found in storage")
+
+                    resolved_size = file_info.get('file_size', upload_file.file_size)
+                    resolved_completed_at = file_info.get('last_modified') or timezone.now()
+                else:
+                    resolved_size = obj_meta.get('Size', upload_file.file_size)
+                    resolved_completed_at = obj_meta.get('LastModified') or timezone.now()
+
+                if S3FileObject.objects.filter(s3_key=upload_file.s3_key).exists():
+                    logger.info(
+                        "ℹ️ verify_upload_session: creating additional S3FileObject for duplicate key %s",
+                        upload_file.s3_key,
+                    )
+
+                s3_file_object = S3FileObject.objects.create(
+                    s3_key=upload_file.s3_key,
+                    file_name=upload_file.filename,
+                    file_size_bytes=resolved_size,
+                    content_type=upload_file.content_type,
+                    status='completed',
+                    upload_completed_at=resolved_completed_at,
+                )
+
+                upload_file.status = 'completed'
+                upload_file.upload_completed_at = resolved_completed_at
+                upload_file.s3_file_object = s3_file_object
+                upload_file.error_message = ''
+                upload_file.save(update_fields=['status', 'upload_completed_at', 's3_file_object', 'error_message', 'updated_at'])
+
+            except Exception as exc:  # noqa: BLE001
+                failures += 1
+                upload_file.mark_failed(str(exc))
+                logger.error("❌ verify_upload_session: %s", exc)
 
     session.completed_files = session.files.filter(status='completed').count()
     session.failed_files = session.files.filter(status='failed').count()
