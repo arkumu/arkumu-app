@@ -159,7 +159,15 @@ class ProjectSnapshotService:
                 org_graph = self._graph_service_factory(org_code=org_code).get_project_graph(
                     dataset_name="Projekt",
                     expand_neighbors=True,
+                    type_canonical_uri=CardURIs.PROJECT_TYPE,
                 )
+            except ValueError as exc:  # Happens when schema is unavailable
+                logger.warning(
+                    "Skipping organization graph for '%s': %s",
+                    org_code,
+                    exc,
+                )
+                continue
             except Exception as exc:  # pragma: no cover - defensive logging
                 logger.exception(
                     "Failed to build organization graph for '%s': %s",
