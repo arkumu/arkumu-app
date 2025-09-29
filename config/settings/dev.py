@@ -97,8 +97,19 @@ CSRF_TRUSTED_ORIGINS = ["https://dev.arkumu.uni-koeln.de"]
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Enable SSL redirect for dev server (exposed to internet)
-SECURE_SSL_REDIRECT = True
+# Allow TLS-terminating proxies in remote dev, but stay HTTP-only locally by default
+SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=False)
+
+# Dev server runs over HTTP, so allow non-secure cookies unless explicitly overridden
+SESSION_COOKIE_SECURE = env.bool("DJANGO_SESSION_COOKIE_SECURE", default=True)
+CSRF_COOKIE_SECURE = env.bool("DJANGO_CSRF_COOKIE_SECURE", default=True)
+CSRF_USE_SESSIONS = env.bool("DJANGO_CSRF_USE_SESSIONS", default=True)
+
+if not SESSION_COOKIE_SECURE:
+    SESSION_COOKIE_NAME = env("DJANGO_SESSION_COOKIE_NAME", default="sessionid")
+
+if not CSRF_COOKIE_SECURE:
+    CSRF_COOKIE_NAME = env("DJANGO_CSRF_COOKIE_NAME", default="csrftoken")
 
 # Keep S3 but without the deprecated buckets
 USE_MINIO = False
