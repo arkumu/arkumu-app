@@ -5,6 +5,7 @@
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 # arkumu/
@@ -178,10 +179,59 @@ MIDDLEWARE = [
 
 ]
 
+def _ensure_dir_writable(directory: Path) -> bool:
+    """Create the directory if needed and confirm we can write inside it."""
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+
+    test_marker = directory / ".write-test"
+    try:
+        test_marker.write_text("", encoding="utf-8")
+        test_marker.unlink(missing_ok=True)
+    except OSError:
+        return False
+
+    return True
+
+
+def _resolve_static_root() -> Path:
+    """Pick a STATIC_ROOT that is guaranteed to be writable in any runtime."""
+    candidate_paths = []
+
+    env_static_root = env("DJANGO_STATIC_ROOT", default=None)
+    if env_static_root:
+        candidate_paths.append(Path(env_static_root))
+
+    # Preserve the historical default first so existing setups continue to work.
+    candidate_paths.append(BASE_DIR / "staticfiles")
+
+    env_fallback_root = env("DJANGO_STATIC_ROOT_FALLBACK", default=None)
+    if env_fallback_root:
+        candidate_paths.append(Path(env_fallback_root))
+
+    # Final safety net lives outside the project tree to avoid host ownership issues.
+    candidate_paths.append(Path("/tmp/arkumu_staticfiles"))
+
+    for candidate in candidate_paths:
+        if not candidate.is_absolute():
+            candidate = BASE_DIR / candidate
+
+        if _ensure_dir_writable(candidate):
+            return candidate
+
+    raise ImproperlyConfigured(
+        "No writable STATIC_ROOT directory is available. "
+        "Set DJANGO_STATIC_ROOT (or DJANGO_STATIC_ROOT_FALLBACK) to a path the "
+        "runtime user can write to."
+    )
+
+
 # STATIC
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#static-root
-STATIC_ROOT = str(BASE_DIR / "staticfiles")
+STATIC_ROOT = str(_resolve_static_root())
 # https://docs.djangoproject.com/en/dev/ref/settings/#static-url
 STATIC_URL = "/static/"
 # https://docs.djangoproject.com/en/dev/ref/contrib/staticfiles/#std:setting-STATICFILES_DIRS
