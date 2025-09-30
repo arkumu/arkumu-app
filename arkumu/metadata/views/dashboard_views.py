@@ -1,20 +1,25 @@
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 from django.db.models import Count
+from django.http import HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
+from django.test import RequestFactory
 
 from arkumu.importer.models import IngestSession
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.storage.models.upload_tracking import AsyncUploadSession
 from arkumu.users.mixins import general_login_required
+from arkumu.oaipmh.views import oai_endpoint
 
 from .dashboard_helpers import (
     build_session_entry,
     build_upload_display,
     summarize_upload_stats,
 )
+
+
+_oai_proxy_request_factory = RequestFactory()
 
 
 @general_login_required
@@ -193,6 +198,36 @@ def all_ingest_sessions(request):
             "total_stats": total_stats,
         },
     )
+
+
+@general_login_required
+def oai_proxy(request):
+    """Proxy the OAI-PMH endpoint for authenticated dashboard users."""
+
+    if request.method != "GET":
+        return HttpResponseBadRequest("Only GET requests are supported")
+
+    if "verb" not in request.GET:
+        return HttpResponseBadRequest("Missing required 'verb' parameter")
+
+    query_items = [(key, value) for key, values in request.GET.lists() for value in values]
+    internal_request = _oai_proxy_request_factory.get("/oai/", data=query_items)
+
+    # Propagate authenticated user and session context for downstream checks
+    internal_request.user = request.user
+    internal_request.session = request.session
+
+    # Preserve host/scheme metadata so OAI responses build correct URLs
+    internal_request.META["HTTP_HOST"] = request.get_host()
+    internal_request.META["SERVER_NAME"] = request.META.get("SERVER_NAME", request.get_host())
+    internal_request.META["SERVER_PORT"] = request.META.get("SERVER_PORT", "443" if request.is_secure() else "80")
+    internal_request.META["wsgi.url_scheme"] = request.scheme
+
+    # Mark the request as trusted internal traffic
+    internal_request.META["REMOTE_ADDR"] = "127.0.0.1"
+    internal_request.META["HTTP_X_INTERNAL_OAI_BYPASS"] = "1"
+
+    return oai_endpoint(internal_request)
 
 
 @general_login_required

@@ -32,6 +32,7 @@ urlpatterns = [
     path('dashboard/all-ingests/', dashboard_views.all_ingest_sessions, name='all_ingest_sessions'),
     path('dashboard/ingest-stats/<uuid:session_id>/', dashboard_views.ingest_session_stats, name='ingest_session_stats'),
     path('dashboard/upload-stats/<uuid:session_id>/', dashboard_views.upload_session_stats, name='upload_session_stats'),
+    path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
     
     # Data Explorer (unified resource and triple browsing)
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
