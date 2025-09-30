@@ -19,7 +19,7 @@ from arkumu.metadata.services.vocabulary_options_service import (
 from arkumu.metadata.models.resources import (
     ClassResource,
     PropertyResource,
-    EntityResource
+    EntityResource,
 )
 from arkumu.users.models import Organization
 
@@ -184,6 +184,89 @@ class ActorEventForm(BaseEntityForm):
         ] + options.get("role", [])
 
 
+class DescriptionForm(BaseEntityForm):
+    beschreibung = forms.CharField(
+        label="Beschreibung",
+        required=True,
+        help_text="Description",
+        widget=forms.Textarea,
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+
+class CatchphraseForm(BaseEntityForm):
+    deutsches_wikidata_label = forms.CharField(
+        label="Wikidata Label",
+        required=True,
+        help_text="German Wikidata label for the catchphrase",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+class ActorForm(BaseEntityForm):
+    deutscher_name = forms.CharField(
+        label="Deutscher Name",
+        required=True,
+        help_text="Deutscher Name des Akteurs",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+class RoleForm(BaseEntityForm):
+    deutscher_name_der_rolle_breadcrumb = forms.CharField(
+        label="Deutscher Name",
+        required=True,
+        help_text="Deutscher Name der Rolle",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+class DigitalObjectForm(BaseEntityForm):
+    dateipfad = forms.CharField(
+        label="Dateipfad",
+        required=True,
+        help_text="Dateipfad des digitalen Objekts",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+class InstitutionForm(BaseEntityForm):
+    deutscher_name_der_einliefernden_hochschule = forms.CharField(
+        label="Deutscher name",
+        required=True,
+        help_text="Deutscher Name der einliefernden Hochschule",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+class ProjectCategoryForm(BaseEntityForm):
+    deutscher_name_der_projektkategorie_breadcrumb = forms.CharField(
+        label="Deutscher name",
+        required=True,
+        help_text="Deutscher Name der Projektkategorie als Breadcrumb",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+class ProjectTypeForm(BaseEntityForm):
+    deutscher_name_der_projektart = forms.CharField(
+        label="Deutscher name",
+        required=True,
+        help_text="Deutscher Name der Projektart",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+
 ActorEventFormSet = formset_factory(ActorEventForm, extra=1, min_num=1, validate_min=True)
 
 
@@ -220,22 +303,22 @@ def create_project(request):
                 # Create property resources
                 title_prop, _ = PropertyResource.get_or_create(
                     uri=f"{base_uri}/properties/bevorzugter-titel",
-                    name="Bevorzugter Titel"
+                    name="Bevorzugter Titel",
                 )
 
                 subtitle_prop, _ = PropertyResource.get_or_create(
                     uri=f"{base_uri}/properties/bevorzugter-untertitel",
-                    name="Bevorzugter Untertitel"
+                    name="Bevorzugter Untertitel",
                 )
 
                 institution_prop, _ = PropertyResource.get_or_create(
                     uri=f"{base_uri}/properties/einliefernde-hochschule",
-                    name="Einliefernde Hochschule"
+                    name="Einliefernde Hochschule",
                 )
 
                 category_prop, _ = PropertyResource.get_or_create(
                     uri=f"{base_uri}/properties/projektkategorie",
-                    name="Projektkategorie"
+                    name="Projektkategorie",
                 )
 
                 description_prop, _ = PropertyResource.get_or_create(
@@ -411,13 +494,13 @@ def create_event(request):
                     # Create Actor-Event class resource
                     actor_event_class, created = ClassResource.get_or_create(
                         uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle",
-                        name="AkteurIn_Ereignis_Kreuztabelle"
+                        name="AkteurIn_Ereignis_Kreuztabelle",
                     )
 
                     # Create property resources
                     actor_event_actor_prop, _ = PropertyResource.get_or_create(
                         uri=f"{base_uri}/properties/akteurin-im-ereignis",
-                        name="AkteurIn im Ereignis"
+                        name="AkteurIn im Ereignis",
                     )
 
                     actor_event_event_prop, _ = PropertyResource.get_or_create(
@@ -427,7 +510,7 @@ def create_event(request):
                     
                     actor_event_actor_role_prop, _ = PropertyResource.get_or_create(
                         uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
-                        name="Rollen der AkteurIn im Ereignis"
+                        name="Rollen der AkteurIn im Ereignis",
                     )
 
                     # Create event entity
@@ -469,5 +552,553 @@ def create_event(request):
                 "entity_type": "event",
                 "title": "Create New Event",
                 "description": "Fill in the details to create a new archival event",
+            },
+        )
+
+
+@login_required
+def create_actor(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            actor_form = ActorForm(request.POST, metadata_options=metadata_options)
+
+            if actor_form.is_valid():
+                # Create RDF resources for the actor
+                # Create Actor class resource
+                actor_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/akteurin", name="Akteurin"
+                )
+
+                # Create property resources
+                german_name_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutscher-name", name="Deutscher Name"
+                )
+
+                # Create actor entity
+                actor_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Akteurin"
+                    )
+                )
+
+                # Set the type of the entity
+                actor_entity.set_type(actor_class)
+
+                # Set properties from form data
+                german_name = actor_form.cleaned_data.get("deutscher_name", "")
+                if german_name:
+                    actor_entity.set_property(german_name_prop, german_name)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            actor_form = ActorForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_actor.html",
+            {
+                "actor_form": actor_form,
+                "entity_type": "actor",
+                "title": "Create New Actor",
+                "description": "Fill in the details to create a new archival actor",
+            },
+        )
+
+
+@login_required
+def create_role(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            role_form = RoleForm(request.POST, metadata_options=metadata_options)
+
+            if role_form.is_valid():
+                # Create RDF resources for the role
+                # Create Role class resource
+                role_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/rolle", name="Rolle"
+                )
+
+                # Create property resources
+                german_name_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutscher-name-der-rolle-breadcrumb",
+                    name="Deutscher Name der Rolle Breadcrumb",
+                )
+
+                # Create role entity
+                role_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Rolle"
+                    )
+                )
+
+                # Set the type of the entity
+                role_entity.set_type(role_class)
+
+                # Set properties from form data
+                german_name = role_form.cleaned_data.get(
+                    "deutscher_name_der_rolle_breadcrumb", ""
+                )
+                if german_name:
+                    role_entity.set_property(german_name_prop, german_name)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            role_form = RoleForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_role.html",
+            {
+                "role_form": role_form,
+                "entity_type": "role",
+                "title": "Create New Role",
+                "description": "Fill in the details to create a new archival role",
+            },
+        )
+
+
+@login_required
+def create_digital_object(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            digital_object_form = DigitalObjectForm(
+                request.POST, metadata_options=metadata_options
+            )
+
+            if digital_object_form.is_valid():
+                # Create RDF resources for the digital object
+                # Create Digital Object class resource
+                digital_object_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/digitales-objekt", name="Digitales Objekt"
+                )
+
+                # Create property resources
+                path_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/dateipfad", name="Dateipfad"
+                )
+
+                # Create digital object entity
+                digital_object_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Digitales Objekt"
+                    )
+                )
+
+                # Set the type of the entity
+                digital_object_entity.set_type(digital_object_class)
+
+                # Set properties from form data
+                path = digital_object_form.cleaned_data.get("dateipfad", "")
+                if path:
+                    digital_object_entity.set_property(path_prop, path)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            digital_object_form = DigitalObjectForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_digital_object.html",
+            {
+                "digital_object_form": digital_object_form,
+                "entity_type": "digital_object",
+                "title": "Create New Digital Object",
+                "description": "Fill in the details to create a new digital object",
+            },
+        )
+
+
+@login_required
+def create_institution(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            institution_form = InstitutionForm(
+                request.POST, metadata_options=metadata_options
+            )
+
+            if institution_form.is_valid():
+                # Create RDF resources for the institution
+                # Create Institution class resource
+                institution_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/einliefernde-hochschule",
+                    name="Einliefernde Hochschule",
+                )
+
+                # Create property resources
+                german_name_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutscher-name-der-einliefernden-hochschule",
+                    name="Deutscher Name der Einliefernden Hochschule",
+                )
+
+                # Create institution entity
+                institution_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization,
+                        dataset_name="Einliefernde Hochschule",
+                    )
+                )
+
+                # Set the type of the entity
+                institution_entity.set_type(institution_class)
+
+                # Set properties from form data
+                german_name = institution_form.cleaned_data.get(
+                    "deutscher_name_der_einliefernden_hochschule", ""
+                )
+                if german_name:
+                    institution_entity.set_property(german_name_prop, german_name)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            institution_form = InstitutionForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_institution.html",
+            {
+                "institution_form": institution_form,
+                "entity_type": "institution",
+                "title": "Create New Institution",
+                "description": "Fill in the details to create a new institutional affiliation",
+            },
+        )
+
+
+@login_required
+def create_project_category(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            project_category_form = ProjectCategoryForm(
+                request.POST, metadata_options=metadata_options
+            )
+
+            if project_category_form.is_valid():
+                # Create RDF resources for the project category
+                # Create Project Category class resource
+                project_category_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/projektkategorie", name="Projektkategorie"
+                )
+
+                # Create property resources
+                german_name_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutscher-name-der-projektkategorie-breadcrumb",
+                    name="Deutscher Name der Projektkategorie Breadcrumb",
+                )
+
+                # Create project category entity
+                project_category_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Projektkategorie"
+                    )
+                )
+
+                # Set the type of the entity
+                project_category_entity.set_type(project_category_class)
+
+                # Set properties from form data
+                german_name = project_category_form.cleaned_data.get(
+                    "deutscher_name_der_projektkategorie_breadcrumb", ""
+                )
+                if german_name:
+                    project_category_entity.set_property(german_name_prop, german_name)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            project_category_form = ProjectCategoryForm(
+                metadata_options=metadata_options
+            )
+
+        return render(
+            request,
+            "metadata/entity_creation/create_project_category.html",
+            {
+                "project_category_form": project_category_form,
+                "entity_type": "project_category",
+                "title": "Create New Project Category",
+                "description": "Fill in the details to create a new project category",
+            },
+        )
+
+
+@login_required
+def create_project_type(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            project_type_form = ProjectTypeForm(
+                request.POST, metadata_options=metadata_options
+            )
+
+            if project_type_form.is_valid():
+                # Create RDF resources for the project type
+                # Create Project Type class resource
+                project_type_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/projektart", name="Projektart"
+                )
+
+                # Create property resources
+                german_name_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutscher-name-der-projektart",
+                    name="Deutscher Name der Projektart",
+                )
+
+                # Create project type entity
+                project_type_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Projektart"
+                    )
+                )
+
+                # Set the type of the entity
+                project_type_entity.set_type(project_type_class)
+
+                # Set properties from form data
+                german_name = project_type_form.cleaned_data.get(
+                    "deutscher_name_der_projektart", ""
+                )
+                if german_name:
+                    project_type_entity.set_property(german_name_prop, german_name)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            project_type_form = ProjectTypeForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_project_type.html",
+            {
+                "project_type_form": project_type_form,
+                "entity_type": "project_type",
+                "title": "Create New Project Type",
+                "description": "Fill in the details to create a new project type",
+            },
+        )
+
+
+@login_required
+def create_alternate_title(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            alternate_title_form = AlternateTitleForm(
+                request.POST, metadata_options=metadata_options
+            )
+
+            if alternate_title_form.is_valid():
+                # Create RDF resources for the alternate title
+                # Create Alternate Title class resource
+                alternate_title_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/alternativer-titel",
+                    name="Alternativer Titel",
+                )
+
+                # Create property resources
+                title_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/alternativer-titel",
+                    name="Alternativer Titel",
+                )
+
+                # Create alternate title entity
+                alternate_title_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Alternativer Titel"
+                    )
+                )
+
+                # Set the type of the entity
+                alternate_title_entity.set_type(alternate_title_class)
+
+                # Set properties from form data
+                title = alternate_title_form.cleaned_data.get("alternativer_titel", "")
+                if title:
+                    alternate_title_entity.set_property(title_prop, title)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            alternate_title_form = AlternateTitleForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_alternate_title.html",
+            {
+                "alternate_title_form": alternate_title_form,
+                "entity_type": "alternate_title",
+                "title": "Create New Alternate Title",
+                "description": "Fill in the details to create a new alternate title",
+            },
+        )
+
+
+@login_required
+def create_description(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            description_form = DescriptionForm(
+                request.POST, metadata_options=metadata_options
+            )
+
+            if description_form.is_valid():
+                # Create RDF resources for the description
+                # Create Description class resource
+                description_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/beschreibung", name="Beschreibung"
+                )
+
+                # Create property resources
+                description_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
+                )
+
+                # Create description entity
+                description_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Beschreibung"
+                    )
+                )
+
+                # Set the type of the entity
+                description_entity.set_type(description_class)
+
+                # Set properties from form data
+                description_text = description_form.cleaned_data.get("beschreibung", "")
+                if description_text:
+                    description_entity.set_property(description_prop, description_text)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            description_form = DescriptionForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_description.html",
+            {
+                "description_form": description_form,
+                "entity_type": "description",
+                "title": "Create New Description",
+                "description": "Fill in the details to create a new description",
+            },
+        )
+
+
+@login_required
+def create_catchphrase(request):
+    organization = getattr(request.user, "organization", None)
+
+    if organization:
+        metadata_options = get_default_metadata_option_map(organization=organization)
+
+        # Initialize base URI for resource creation
+        base_uri = f"http://arkumu.org/data/{organization.code}"
+
+        if request.method == "POST":
+            catchphrase_form = CatchphraseForm(
+                request.POST, metadata_options=metadata_options
+            )
+
+            if catchphrase_form.is_valid():
+                # Create RDF resources for the catchphrase
+                # Create Catchphrase class resource
+                catchphrase_class, created = ClassResource.get_or_create(
+                    uri=f"{base_uri}/types/schlagwort", name="Schlagwort"
+                )
+
+                # Create property resources
+                wikidata_label_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutsches-wikidata-label",
+                    name="Deutsches Wikidata Label",
+                )
+
+                # Create catchphrase entity
+                catchphrase_entity, created = (
+                    EntityResource.create_by_organization_and_dataset_name(
+                        organization=organization, dataset_name="Schlagwort"
+                    )
+                )
+
+                # Set the type of the entity
+                catchphrase_entity.set_type(catchphrase_class)
+
+                # Set properties from form data
+                wikidata_label = catchphrase_form.cleaned_data.get(
+                    "deutsches_wikidata_label", ""
+                )
+                if wikidata_label:
+                    catchphrase_entity.set_property(wikidata_label_prop, wikidata_label)
+
+                # The RDF resources are now created and linked automatically
+                return HttpResponseRedirect("/storage/dashboard/")
+        else:
+            catchphrase_form = CatchphraseForm(metadata_options=metadata_options)
+
+        return render(
+            request,
+            "metadata/entity_creation/create_catchphrase.html",
+            {
+                "catchphrase_form": catchphrase_form,
+                "entity_type": "catchphrase",
+                "title": "Create New Catchphrase",
+                "description": "Fill in the details to create a new catchphrase",
             },
         )
