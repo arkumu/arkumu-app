@@ -72,12 +72,12 @@
     <div class="form-control">
       <label class="label">
         <span class="label-text font-medium">Beschreibung</span>
-        {% if project_form.beschreibung.errors %}
-        <span class="label-text-alt text-error">{{ project_form.beschreibung.errors.0 }}</span>
+        {% if project_form.beschreibung_uri.errors %}
+        <span class="label-text-alt text-error">{{ project_form.beschreibung_uri.errors.0 }}</span>
         {% endif %}
       </label>
-      {{ project_form.beschreibung }}
-      <div class="text-xs text-base-content/60 mt-1">{{ project_form.beschreibung.help_text }}</div>
+      {{ project_form.beschreibung_uri }}
+      <div class="text-xs text-base-content/60 mt-1">{{ project_form.beschreibung_uri.help_text }}</div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

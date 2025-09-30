@@ -29,6 +29,8 @@ _TYPE_LABEL_PREDICATES: Dict[str, str] = {
     "http://arkumu.org/data/types/rolle": "http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb",
     "http://arkumu.org/data/types/schlagwort": "http://arkumu.org/data/properties/deutsches-wikidata-label",
     "http://arkumu.org/data/types/projekt": "http://arkumu.org/data/properties/bevorzugter-titel",
+    "http://arkumu.org/data/types/beschreibung": "http://arkumu.org/data/properties/beschreibung",
+    "http://arkumu.org/data/types/ereignisbeschreibung": "http://arkumu.org/data/properties/ereignisbeschreibung",
 }
 
 
@@ -41,6 +43,8 @@ _DEFAULT_TYPE_URI_KEYS: Dict[str, str] = {
     "role": "http://arkumu.org/data/types/rolle",
     "catchphrase": "http://arkumu.org/data/types/schlagwort",
     "project": "http://arkumu.org/data/types/projekt",
+    "description": "http://arkumu.org/data/types/beschreibung",
+    "event_description": "http://arkumu.org/data/types/ereignisbeschreibung",
 }
 
 

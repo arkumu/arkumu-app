@@ -48,6 +48,27 @@
 
       <div class="form-control">
         <label class="label">
+          <span class="label-text font-medium">Ereignisort</span>
+          {% if event_form.ereignisort.errors %}
+          <span class="label-text-alt text-error">{{ event_form.ereignisort.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ event_form.ereignisort }}
+        <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisort.help_text }}</div>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Ereignisbeschreibung</span>
+          {% if event_form.ereignisbeschreibung_uri.errors %}
+          <span class="label-text-alt text-error">{{ event_form.ereignisbeschreibung_uri.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ event_form.ereignisbeschreibung_uri }}
+      </div>
+
+      <div class="form-control">
+        <label class="label">
           <span class="label-text font-medium">Ereignisbeginn</span>
           {% if event_form.ereignisbeginn.errors %}
           <span class="label-text-alt text-error">{{ event_form.ereignisbeginn.errors.0 }}</span>
