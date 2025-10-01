@@ -13,10 +13,11 @@ import requests
 from django.db import transaction
 from django.utils import timezone
 
+from huey.contrib.djhuey import db_task
+
 from arkumu.metadata.models import ExternalSourcesEntity, Triple, Resource, ResourceType
 
 logger = logging.getLogger(__name__)
-
 
 class ExternalSourcesEntityCacheService:
     """Resolve and persist Wikidata entities in bulk."""
@@ -25,7 +26,6 @@ class ExternalSourcesEntityCacheService:
 
     USER_AGENT = "arkumu/1.0 (https://arkumu.nrw; kontakt@arkumu.nrw)"
 
-    @singledispatchmethod
     def ensure_cached(
         self,
         data_ids: Iterable[str],
@@ -72,8 +72,7 @@ class ExternalSourcesEntityCacheService:
         )
         return fetched
 
-    @ensure_cached.register
-    def _(self, force_refresh: bool = False):
+    def ensure_cached_all(self, force_refresh: bool = False):
         # ----------------------------------
         # Ereignis Orte
         # ----------------------------------
@@ -119,11 +118,9 @@ class ExternalSourcesEntityCacheService:
                         }
 
             try:
-                logger.info(params)
                 response = requests.get(source.value, params=params, headers=headers, timeout=5)
                 response.raise_for_status()
                 data = response.json()
-                logger.info(data)
                 result_lines.extend([{ 'data_id': res['subj']['value'].split('/')[-1], 'property': pred, 'datum': res['obj']['value'], 'source': source.name }for res in data['results']['bindings']])
 
             except requests.RequestException as exc:

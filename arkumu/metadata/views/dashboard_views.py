@@ -265,9 +265,9 @@ def trigger_external_sources_refresh(request):
         messages.error(request, 'Only staff members can trigger external sources refreshes.')
         return redirect('metadata:metadata_dashboard')
 
-    from arkumu.metadata.services.external_sources_entity_cache_service import ExternalSourcesEntityCacheService
+    from arkumu.metadata.tasks import ensure_cached_all_task
 
-    ExternalSourcesEntityCacheService().ensure_cached(True)
+    ensure_cached_all_task.schedule(kwargs={"force_refresh": True}, delay=0)
 
     messages.success(
         request,

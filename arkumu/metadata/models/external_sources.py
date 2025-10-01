@@ -42,4 +42,4 @@ class ExternalSourcesEntity(UUIDModel):
         ]
 
     def __str__(self) -> str:  # pragma: no cover - human readable helper
-        return self.data_id
+        return f"{self.source}:{self.data_id} + {self.property} -> {self.datum}"

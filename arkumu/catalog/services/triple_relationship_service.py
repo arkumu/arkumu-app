@@ -12,6 +12,9 @@ from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models import Resource, ResourceType, ExternalSourcesEntity
 from arkumu.users.models import Organization
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 class TripleRelationshipService:
     """Service for traversing catalog relationships using Triple records."""
@@ -260,17 +263,16 @@ class TripleRelationshipService:
                     if location_ids:
                         location_names: List[str] = []
 
-                        cached_entities = {
-                            entity.data_id: entity
-                            for entity in ExternalSourcesEntity.objects.filter(data_id__in=[loc for loc in location_ids if loc.startswith('Q')])
-                        }
+                        cached_entities = defaultdict(dict)
+                        for entity in ExternalSourcesEntity.objects.filter(data_id__in=[loc for loc in location_ids if loc.startswith('Q')]):
+                            cached_entities[entity.data_id][entity.property] = entity.datum
 
                         for location_id in location_ids:
                             if location_id.startswith('Q'):
-                                cached_entity = cached_entities.get(location_id)
+                                cached_entity = cached_entities[location_id]
                                 display_name = (
-                                    cached_entity.label_de
-                                    or cached_entity.label_en
+                                    cached_entity['label_de']
+                                    # or cached_entity.label_en
                                     if cached_entity
                                     else None
                                 )
