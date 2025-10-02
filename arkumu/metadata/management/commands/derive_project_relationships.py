@@ -1,55 +1,40 @@
-"""Derive direct project relationship triples from canonical junction nodes."""
+"""Derive relationship triples from Kreuz (cross-table) junction datasets."""
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Set
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, Mapping, Optional, Sequence, Set
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Q
 
+from arkumu.metadata.derivations.kreuz_config import (
+    DCTERMS_IS_PART_OF,
+    all_configured_canonical_properties,
+    iter_applicable_patterns,
+)
 from arkumu.metadata.models import Resource, ResourceType, Triple
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class DerivedEdgeSpec:
-    """Definition of a derived edge for a project."""
+class SubjectContext:
+    """Canonical predicate objects collected for a junction subject."""
 
-    predicate_uri: str
-    canonical_property: str
-
-
-DERIVED_EDGE_SPECS: Dict[str, List[DerivedEdgeSpec]] = {
-    "http://arkumu.org/data/properties/projekt": [
-        DerivedEdgeSpec(
-            predicate_uri="http://arkumu.org/data/properties/ereignis",
-            canonical_property="http://arkumu.org/data/properties/ereignis",
-        ),
-        DerivedEdgeSpec(
-            predicate_uri="http://arkumu.org/data/properties/digitales-objekt",
-            canonical_property="http://arkumu.org/data/properties/digitales-objekt",
-        ),
-        DerivedEdgeSpec(
-            predicate_uri="http://arkumu.org/data/properties/schlagwort",
-            canonical_property="http://arkumu.org/data/properties/schlagwort",
-        ),
-        DerivedEdgeSpec(
-            predicate_uri="http://arkumu.org/data/properties/equipment-und-software",
-            canonical_property="http://arkumu.org/data/properties/equipment-und-software",
-        ),
-    ],
-}
-
-PROJECT_CANONICAL_PROPERTY = "http://arkumu.org/data/properties/projekt"
+    dataset_name: Optional[str]
+    canonical_objects: Dict[str, Set[str]] = field(default_factory=dict)
 
 
 class Command(BaseCommand):
-    """Generate derived project relationships from canonical junction triples."""
+    """Generate derived relationship triples based on Kreuz dataset configuration."""
 
-    help = "Derive project relationships (events, digital objects, keywords, etc.) from canonical junction triples"
+    help = (
+        "Derive project/event/digital-object (and related) relationships from canonical Kreuz junction tables"
+    )
 
     def add_arguments(self, parser):  # pragma: no cover - argparse boilerplate
         parser.add_argument(
@@ -66,29 +51,31 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        org_codes = self._resolve_org_codes(options.get("organizations"))
-        if not org_codes:
-            self.stdout.write(self.style.WARNING("No organizations with canonical project junctions found."))
-            return
+        dry_run: bool = options.get("dry_run", False)
+        requested_orgs: Optional[Iterable[str]] = options.get("organizations")
 
-        dry_run = options.get("dry_run")
+        self._canonical_uris: Set[str] = set(all_configured_canonical_properties())
+        self._canonical_filter: Q = self._build_predicate_filter(self._canonical_uris)
+        self._dataset_filter: Q = self._build_predicate_filter({DCTERMS_IS_PART_OF})
+        self._resource_cache: Dict[str, Optional[Resource]] = {}
+        self._predicate_cache: Dict[str, Optional[Resource]] = {}
+
+        org_codes = self._resolve_org_codes(requested_orgs)
+        if not org_codes:
+            self.stdout.write(self.style.WARNING("No organizations with configured Kreuz junctions found."))
+            return
 
         stats = {"processed": 0, "created": 0}
 
         for org_code in sorted(org_codes):
             self.stdout.write(self.style.MIGRATE_HEADING(f"Organization: {org_code}"))
-
-            subject_ids = self._collect_junction_subjects(org_code)
-            if not subject_ids:
-                self.stdout.write("  No canonical junction triples found.")
+            contexts = self._collect_subject_contexts(org_code)
+            if not contexts:
+                self.stdout.write("  No canonical Kreuz junction triples found.")
                 continue
 
-            self.stdout.write(
-                self.style.HTTP_INFO(f"  Processing {len(subject_ids)} junction nodes")
-            )
-            stats["processed"] += len(subject_ids)
-
-            created = self._derive_edges(subject_ids, dry_run=dry_run)
+            stats["processed"] += len(contexts)
+            created = self._derive_for_contexts(org_code, contexts, dry_run=dry_run)
             stats["created"] += created
 
         self.stdout.write(
@@ -97,8 +84,16 @@ class Command(BaseCommand):
             )
         )
 
+    # ------------------------------------------------------------------
+    # Discovery helpers
+    # ------------------------------------------------------------------
+
+    def _build_predicate_filter(self, uris: Iterable[str]) -> Q:
+        uris = tuple(set(uris))
+        return Q(predicate__canonical_uri__in=uris) | Q(predicate__uri__in=uris)
+
     def _resolve_org_codes(self, organizations: Optional[Iterable[str]]) -> Set[str]:
-        qs = Triple.objects.filter(predicate__canonical_uri=PROJECT_CANONICAL_PROPERTY)
+        qs = Triple.objects.filter(self._canonical_filter)
         if organizations:
             qs = qs.filter(subject__organization__code__in=organizations)
         return set(
@@ -106,45 +101,190 @@ class Command(BaseCommand):
             .exclude(subject__organization__code__isnull=True)
         )
 
-    def _collect_junction_subjects(self, org_code: str) -> Set[str]:
-        return set(
-            Triple.objects.filter(
-                predicate__canonical_uri=PROJECT_CANONICAL_PROPERTY,
-                subject__organization__code=org_code,
-            ).values_list("subject_id", flat=True)
+    def _collect_subject_contexts(self, org_code: str) -> Dict[str, SubjectContext]:
+        """Collect canonical predicates and dataset metadata for an organization."""
+
+        junction_subjects = set(
+            Triple.objects.filter(self._canonical_filter, subject__organization__code=org_code)
+            .filter(object__resource_type=ResourceType.ENTITY)
+            .values_list("subject_id", flat=True)
         )
 
-    def _derive_edges(self, subject_ids: Iterable[str], *, dry_run: bool) -> int:
-        created = 0
-        specs = DERIVED_EDGE_SPECS.get(PROJECT_CANONICAL_PROPERTY, [])
+        if not junction_subjects:
+            return {}
 
-        for subject_id in subject_ids:
-            project_id = self._resolve_object_id(subject_id, PROJECT_CANONICAL_PROPERTY)
-            if not project_id:
+        dataset_links = (
+            Triple.objects.filter(subject_id__in=junction_subjects)
+            .filter(self._dataset_filter)
+            .select_related("object")
+        )
+        dataset_map: Dict[str, Optional[str]] = {}
+        for link in dataset_links:
+            dataset_name = link.object.name or link.object.value or link.object.uri
+            dataset_map[str(link.subject_id)] = dataset_name
+
+        property_triples = (
+            Triple.objects.filter(subject_id__in=junction_subjects)
+            .filter(self._canonical_filter)
+            .filter(object__resource_type=ResourceType.ENTITY)
+            .select_related("predicate")
+        )
+
+        contexts: Dict[str, SubjectContext] = {
+            str(subject_id): SubjectContext(dataset_name=dataset_map.get(str(subject_id)))
+            for subject_id in junction_subjects
+        }
+
+        for triple in property_triples:
+            subject_id = str(triple.subject_id)
+            context = contexts.get(subject_id)
+            if not context:
                 continue
+            canonical_uri = triple.predicate.canonical_uri or triple.predicate.uri
+            if canonical_uri not in self._canonical_uris:
+                continue
+            object_id = str(triple.object_id)
+            context.canonical_objects.setdefault(canonical_uri, set()).add(object_id)
 
-            for spec in specs:
-                target_id = self._resolve_object_id(subject_id, spec.canonical_property)
-                if not target_id:
+        # Prune contexts with no useful canonical predicates
+        pruned_contexts = {
+            subject_id: ctx
+            for subject_id, ctx in contexts.items()
+            if ctx.canonical_objects
+        }
+
+        self.stdout.write(
+            self.style.HTTP_INFO(
+                f"  Processing {len(pruned_contexts)} Kreuz junction nodes"
+            )
+        )
+        return pruned_contexts
+
+    # ------------------------------------------------------------------
+    # Derivation logic
+    # ------------------------------------------------------------------
+
+    def _derive_for_contexts(
+        self,
+        org_code: str,
+        contexts: Mapping[str, SubjectContext],
+        *,
+        dry_run: bool,
+    ) -> int:
+        created = 0
+        contexts_by_dataset: Dict[str, list[tuple[str, SubjectContext]]] = defaultdict(list)
+        for subject_id, ctx in contexts.items():
+            dataset_label = ctx.dataset_name or "<unknown dataset>"
+            contexts_by_dataset[dataset_label].append((subject_id, ctx))
+
+        for dataset_label in sorted(contexts_by_dataset):
+            entries = contexts_by_dataset[dataset_label]
+            self.stdout.write(f"  Dataset: {dataset_label} ({len(entries)} junction nodes)")
+            for subject_id, ctx in entries:
+                patterns = iter_applicable_patterns(
+                    org_code, ctx.dataset_name, ctx.canonical_objects.keys()
+                )
+                if not patterns:
+                    logger.debug(
+                        "No derivation patterns matched for subject %s (dataset=%s, predicates=%s)",
+                        subject_id,
+                        ctx.dataset_name,
+                        sorted(ctx.canonical_objects.keys()),
+                    )
                     continue
-
-                created += self._ensure_project_edge(project_id, spec.predicate_uri, target_id, dry_run)
-
+                created += self._apply_patterns(subject_id, ctx, patterns, dry_run=dry_run)
         return created
 
-    def _resolve_object_id(self, subject_id: str, canonical_property: str) -> Optional[str]:
-        triple = (
-            Triple.objects.filter(
-                subject_id=subject_id,
-                predicate__canonical_uri=canonical_property,
-                object__resource_type=ResourceType.ENTITY,
-            )
-            .only("object_id")
-            .first()
-        )
-        return str(triple.object_id) if triple else None
+    def _apply_patterns(
+        self,
+        subject_id: str,
+        context: SubjectContext,
+        patterns: Sequence,
+        *,
+        dry_run: bool,
+    ) -> int:
+        created = 0
+        for pattern in patterns:
+            for recipe in pattern.recipes:
+                subjects = context.canonical_objects.get(recipe.subject_property)
+                targets = context.canonical_objects.get(recipe.object_property)
+                if not subjects or not targets:
+                    continue
+                for derived_subject_id in subjects:
+                    for derived_object_id in targets:
+                        created += self._emit_derived_triple(
+                            derived_subject_id,
+                            recipe.predicate_uri,
+                            derived_object_id,
+                            dry_run=dry_run,
+                            pattern_name=pattern.name,
+                            source_subject=subject_id,
+                        )
+        return created
 
-    def _ensure_project_edge(self, project_id: str, predicate_uri: str, target_id: str, dry_run: bool) -> int:
+    # ------------------------------------------------------------------
+    # Triple emission helpers
+    # ------------------------------------------------------------------
+
+    def _emit_derived_triple(
+        self,
+        subject_resource_id: str,
+        predicate_uri: str,
+        object_resource_id: str,
+        *,
+        dry_run: bool,
+        pattern_name: str,
+        source_subject: str,
+    ) -> int:
+        predicate = self._get_predicate_resource(predicate_uri)
+        if not predicate:
+            logger.warning("Predicate resource missing for %s (pattern=%s)", predicate_uri, pattern_name)
+            return 0
+
+        subject_resource = self._get_resource(subject_resource_id)
+        object_resource = self._get_resource(object_resource_id)
+        if not subject_resource or not object_resource:
+            logger.debug(
+                "Skipping derived triple; missing resources subject=%s object=%s (pattern=%s)",
+                subject_resource_id,
+                object_resource_id,
+                pattern_name,
+            )
+            return 0
+
+        message = (
+            f"{subject_resource_id} --[{predicate_uri}]--> {object_resource_id}"
+            f" (pattern={pattern_name}, junction={source_subject})"
+        )
+
+        if dry_run:
+            self.stdout.write(f"    DRY RUN: {message}")
+            return 0
+
+        with transaction.atomic():
+            triple, created = Triple.objects.get_or_create(
+                subject=subject_resource,
+                predicate=predicate,
+                object=object_resource,
+                defaults={"is_derived": True, "source": None},
+            )
+            if created:
+                self.stdout.write(self.style.SUCCESS(f"    {message}"))
+                return 1
+
+            if not triple.is_derived or triple.source_id is not None:
+                Triple.objects.filter(pk=triple.pk).update(is_derived=True, source=None)
+        return 0
+
+    def _get_resource(self, resource_id: str) -> Optional[Resource]:
+        if resource_id not in self._resource_cache:
+            self._resource_cache[resource_id] = Resource.objects.filter(id=resource_id).first()
+        return self._resource_cache[resource_id]
+
+    def _get_predicate_resource(self, predicate_uri: str) -> Optional[Resource]:
+        if predicate_uri in self._predicate_cache:
+            return self._predicate_cache[predicate_uri]
+
         predicate = Resource.objects.filter(uri=predicate_uri).first()
         if not predicate:
             predicate = Resource.objects.filter(canonical_uri=predicate_uri).first()
@@ -153,28 +293,5 @@ class Command(BaseCommand):
                 uri=predicate_uri,
                 resource_type=ResourceType.PROPERTY,
             )
-        if not predicate:
-            logger.warning("Predicate resource not found for URI %s", predicate_uri)
-            return 0
-
-        if dry_run:
-            self.stdout.write(
-                f"    DRY RUN: project {project_id} -> {predicate_uri} -> {target_id}"
-            )
-            return 0
-
-        with transaction.atomic():
-            triple, created = Triple.objects.get_or_create(
-                subject_id=project_id,
-                predicate=predicate,
-                object_id=target_id,
-                defaults={"is_derived": True},
-            )
-            if created:
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"    Added derived edge project={project_id} predicate={predicate_uri} object={target_id}"
-                    )
-                )
-                return 1
-        return 0
+        self._predicate_cache[predicate_uri] = predicate
+        return predicate

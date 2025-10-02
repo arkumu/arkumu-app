@@ -207,6 +207,13 @@ Example: http://data.arkumu.org/fuk/junctions/PersonOrganization/john_doe_123_ac
 <junction_entity> <context_property> "context_value" .
 ```
 
+## Kreuz Derivation Step
+
+- After canonical URIs are mapped for an organization, run `python manage.py derive_project_relationships --organization <code>` to materialize reusable relationships from Kreuz (cross-table) datasets. The command is idempotent and supports `--dry-run` for import rehearsals.
+- Derivation patterns and dataset inventories live in `arkumu/metadata/derivations/kreuz_config.py`; update this configuration when new Kreuz tables appear or canonical predicates change.
+- The engine emits direct triples for project↔event, event↔digital object, project↔digital object, keywords, equipment, and actor junctions (all marked `is_derived=True`).
+- These derived triples are required for catalog queries, schema manifests, and OAI exports to expose event-level digital objects and contributor metadata without rehydrating junction nodes at read time.
+
 ## Blueprint Integration Points
 
 ### 1. Schema Validation
