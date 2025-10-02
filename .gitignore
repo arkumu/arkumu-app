@@ -337,3 +337,5 @@ AGENTS.md
 !*/README.md
 *.xml
 *.csv
+
+missing_fks/
