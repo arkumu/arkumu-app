@@ -1,5 +1,5 @@
 <!-- Project Card Component with Complete Theme Support -->
-{% load static %}
+{% load catalog_tags %}
 <div class="project-card w-full max-w-md p-4 transition-colors"
      data-rdf-type="http://arkumu.org/data/types/projekt"
      data-uri="{{ uri }}">
@@ -19,8 +19,11 @@
         RDF Property: http://arkumu.org/data/properties/vorschaubild (digital-object)
         Digital object path: http://arkumu.org/data/properties/dateipfad
         {% endcomment %}
-        {% if image %}<img src="{% static image %}" class="w-full h-full object-cover" alt="{{ title }}"
-                           data-rdf-property="http://arkumu.org/data/properties/vorschaubild">{% endif %}
+        {% project_image_url image as image_url %}
+        {% if image_url %}
+          <img src="{{ image_url }}" class="w-full h-full object-cover" alt="{{ title }}"
+               data-rdf-property="http://arkumu.org/data/properties/vorschaubild">
+        {% endif %}
       </div>
     </div>
   </div>
