@@ -8,26 +8,26 @@
       <div class="flex items-center mb-6">
         <div class="p-3 rounded-xl mr-4 bg-primary/10">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
-        <div>
-          <h1 class="card-title text-2xl font-bold">Create New Actor</h1>
-          <p class="text-base-content/70 mt-1">Fill in the details to create a new archival actor</p>
+        <div></div>
+          <h1 class="card-title text-2xl font-bold">Create New Catchphrase</h1>
+          <p class="text-base-content/70 mt-1">Fill in the details to create a new catchphrase</p>
         </div>
       </div>
 
-      <form action="{% url 'metadata:create_actor' %}" method="post" class="space-y-8">
+      <form action="{% url 'metadata:create_catchphrase' %}" method="post" class="space-y-8">
         {% csrf_token %}
 
-        {% if actor_form.non_field_errors %}
+        {% if catchphrase_form.non_field_errors %}
         <div class="alert alert-error shadow-lg">
           <div></div>
             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span></span>
-              {% for error in actor_form.non_field_errors %}
+              {% for error in catchphrase_form.non_field_errors %}
                 {{ error }}<br>
               {% endfor %}
             </span>
@@ -36,24 +36,24 @@
         {% endif %}
 
         <div class="space-y-6">
-          <!-- Actor Details Section -->
+          <!-- Catchphrase Section -->
           <div class="space-y-4">
             <h2 class="text-lg font-semibold flex items-center border-b pb-2">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
               </svg>
-              Actor Details
+              Catchphrase Details
             </h2>
 
             <div class="form-control">
               <label class="label">
-                <span class="label-text font-medium">Deutscher Name</span>
-                {% if actor_form.deutscher_name.errors %}
-                <span class="label-text-alt text-error">{{ actor_form.deutscher_name.errors.0 }}</span>
+                <span class="label-text font-medium">Wikidata Label</span>
+                {% if catchphrase_form.deutsches_wikidata_label.errors %}
+                <span class="label-text-alt text-error">{{ catchphrase_form.deutsches_wikidata_label.errors.0 }}</span>
                 {% endif %}
               </label>
-              {{ actor_form.deutscher_name }}
-              <div class="text-xs text-base-content/60 mt-1">{{ actor_form.deutscher_name.help_text }}</div>
+              {{ catchphrase_form.deutsches_wikidata_label }}
+              <div class="text-xs text-base-content/60 mt-1">{{ catchphrase_form.deutsches_wikidata_label.help_text }}</div>
             </div>
           </div>
         </div>
@@ -69,7 +69,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
             </svg>
-            Create Actor
+            Create Catchphrase
           </button>
         </div>
       </form>
@@ -77,3 +77,7 @@
   </div>
 </div>
 {% endblock content %}
+
+{% block javascript %}
+{{ block.super }}
+{% endblock javascript %}

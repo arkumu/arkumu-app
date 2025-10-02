@@ -28,7 +28,7 @@
       </div>
 
       <form
-        action="{% url 'storage:create_event' %}"
+        action="{% url 'metadata:create_event' %}"
         method="post"
         class="space-y-8"
       >
@@ -36,7 +36,7 @@
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a
-            href="{% url 'storage:archivist_dashboard' %}"
+            href="{% url 'metadata:metadata_entry' %}"
             class="btn btn-outline"
           >
             <svg

@@ -11,7 +11,6 @@ from .views import (
     file_browser_oob_views,
     upload_views,
 )
-from arkumu.metadata.views import entity_creation_views
 
 app_name = "storage"
 
@@ -75,18 +74,5 @@ urlpatterns = [
     
     # Simple test endpoint for debugging OOB updates
     path("test/oob-refresh/<str:organization>/", file_browser_oob_views.test_oob_refresh, name="test_oob_refresh"),
-
-    # Entity creation endpoints
-    path('create/project/', entity_creation_views.create_project, name='create_project'),
-    path('create/event/', entity_creation_views.create_event, name='create_event'),
-    path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
-    path('create/role/', entity_creation_views.create_role, name='create_role'),
-    path('create/digital-object/', entity_creation_views.create_digital_object, name='create_digital_object'),
-    path('create/institution/', entity_creation_views.create_institution, name='create_institution'),
-    path('create/project-category/', entity_creation_views.create_project_category, name='create_project_category'),
-    path('create/project-type/', entity_creation_views.create_project_type, name='create_project_type'),
-    path('create/alternate-title/', entity_creation_views.create_alternate_title, name='create_alternate_title'),
-    path('create/description/', entity_creation_views.create_description, name='create_description'),
-    path('create/catchphrase/', entity_creation_views.create_catchphrase, name='create_catchphrase'),
 
 ] 
