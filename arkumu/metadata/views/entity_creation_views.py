@@ -381,7 +381,7 @@ def create_project(request):
 
                 # The RDF resources are now created and linked automatically
                 # Continue with the rest of the project creation workflow
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             project_form = ProjectForm(metadata_options=metadata_options)
             actor_event_formset = ActorEventFormSet(
@@ -535,7 +535,7 @@ def create_event(request):
                 # The RDF resources are now created and linked automatically
                 # Continue with the rest of the event creation workflow
 
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             event_form = EventForm(metadata_options=metadata_options)
             actor_event_formset = ActorEventFormSet(
@@ -597,7 +597,7 @@ def create_actor(request):
                     actor_entity.set_property(german_name_prop, german_name)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             actor_form = ActorForm(metadata_options=metadata_options)
 
@@ -657,7 +657,7 @@ def create_role(request):
                     role_entity.set_property(german_name_prop, german_name)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             role_form = RoleForm(metadata_options=metadata_options)
 
@@ -716,7 +716,7 @@ def create_digital_object(request):
                     digital_object_entity.set_property(path_prop, path)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             digital_object_form = DigitalObjectForm(metadata_options=metadata_options)
 
@@ -780,7 +780,7 @@ def create_institution(request):
                     institution_entity.set_property(german_name_prop, german_name)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             institution_form = InstitutionForm(metadata_options=metadata_options)
 
@@ -842,7 +842,7 @@ def create_project_category(request):
                     project_category_entity.set_property(german_name_prop, german_name)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             project_category_form = ProjectCategoryForm(
                 metadata_options=metadata_options
@@ -906,7 +906,7 @@ def create_project_type(request):
                     project_type_entity.set_property(german_name_prop, german_name)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             project_type_form = ProjectTypeForm(metadata_options=metadata_options)
 
@@ -967,7 +967,7 @@ def create_alternate_title(request):
                     alternate_title_entity.set_property(title_prop, title)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             alternate_title_form = AlternateTitleForm(metadata_options=metadata_options)
 
@@ -1026,7 +1026,7 @@ def create_description(request):
                     description_entity.set_property(description_prop, description_text)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             description_form = DescriptionForm(metadata_options=metadata_options)
 
@@ -1088,7 +1088,7 @@ def create_catchphrase(request):
                     catchphrase_entity.set_property(wikidata_label_prop, wikidata_label)
 
                 # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/storage/dashboard/")
+                return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             catchphrase_form = CatchphraseForm(metadata_options=metadata_options)
 
