@@ -4,6 +4,7 @@ import pytest
 
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.tests.sample_card_data import create_sample_catalog_triples
+from arkumu.metadata.models import Resource, ResourceType, Triple
 
 
 @pytest.mark.django_db
@@ -71,3 +72,134 @@ def test_triple_relationship_service_returns_expected_relationships():
         path_predicate=digital_section.properties['path'].canonical_uri,
     )
     assert digital_paths == ['path/to/file.jpg']
+
+
+@pytest.mark.django_db
+def test_get_actor_relationships_direct_edges_fallback():
+    project = Resource.objects.create(
+        uri="http://example.org/project/dir-1",
+        resource_type=ResourceType.ENTITY,
+    )
+    actor = Resource.objects.create(
+        uri="http://example.org/actor/1",
+        resource_type=ResourceType.ENTITY,
+    )
+
+    actor_link_predicate = Resource.objects.create(
+        uri="http://example.org/preds/actor-link",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri="http://arkumu.org/data/properties/akteurin-im-ereignis",
+    )
+    actor_name_predicate = Resource.objects.create(
+        uri="http://example.org/preds/actor-name",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri="http://arkumu.org/data/properties/deutscher-name",
+    )
+
+    actor_name_literal = Resource.objects.create(
+        value="Fallback Actor",
+        resource_type=ResourceType.LITERAL,
+    )
+
+    Triple.objects.create(
+        subject=project,
+        predicate=actor_link_predicate,
+        object=actor,
+    )
+
+    Triple.objects.create(
+        subject=actor,
+        predicate=actor_name_predicate,
+        object=actor_name_literal,
+    )
+
+    service = TripleRelationshipService()
+    actors = service.get_actor_relationships(
+        str(project.id),
+        event_predicate=None,
+        actor_link_predicate="http://arkumu.org/data/properties/akteurin-im-ereignis",
+        role_link_predicate=None,
+        actor_name_predicate="http://arkumu.org/data/properties/deutscher-name",
+        role_name_predicate=None,
+    )
+
+    assert actors == [
+        {
+            'id': str(actor.id),
+            'name': 'Fallback Actor',
+            'roles': [],
+            'event_ids': [],
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_get_actor_relationships_event_edge_fallback():
+    project = Resource.objects.create(
+        uri="http://example.org/project/event-1",
+        resource_type=ResourceType.ENTITY,
+    )
+    event = Resource.objects.create(
+        uri="http://example.org/event/1",
+        resource_type=ResourceType.ENTITY,
+    )
+    actor = Resource.objects.create(
+        uri="http://example.org/actor/evt",
+        resource_type=ResourceType.ENTITY,
+    )
+
+    event_predicate = Resource.objects.create(
+        uri="http://example.org/preds/event",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri="http://arkumu.org/data/properties/ereignis",
+    )
+    actor_link_predicate = Resource.objects.create(
+        uri="http://example.org/preds/actor-link",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri="http://arkumu.org/data/properties/akteurin-im-ereignis",
+    )
+    actor_name_predicate = Resource.objects.create(
+        uri="http://example.org/preds/actor-name",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri="http://arkumu.org/data/properties/deutscher-name",
+    )
+
+    actor_name_literal = Resource.objects.create(
+        value="Event Actor",
+        resource_type=ResourceType.LITERAL,
+    )
+
+    Triple.objects.create(
+        subject=project,
+        predicate=event_predicate,
+        object=event,
+    )
+    Triple.objects.create(
+        subject=event,
+        predicate=actor_link_predicate,
+        object=actor,
+    )
+    Triple.objects.create(
+        subject=actor,
+        predicate=actor_name_predicate,
+        object=actor_name_literal,
+    )
+
+    service = TripleRelationshipService()
+    actors = service.get_actor_relationships(
+        str(project.id),
+        event_predicate="http://arkumu.org/data/properties/ereignis",
+        actor_link_predicate="http://arkumu.org/data/properties/akteurin-im-ereignis",
+        role_link_predicate=None,
+        actor_name_predicate="http://arkumu.org/data/properties/deutscher-name",
+        role_name_predicate=None,
+    )
+
+    assert actors == [
+        {
+            'id': str(actor.id),
+            'name': 'Event Actor',
+            'roles': [],
+            'event_ids': [str(event.id)],
+        }
+    ]

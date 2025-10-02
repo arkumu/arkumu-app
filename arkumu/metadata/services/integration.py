@@ -235,32 +235,68 @@ class CanonicalUriMappingService:
         names = [name.strip() for name in names_str.split(',') if name.strip()]
         
         for name in names:
-            # Find resource by exact name match (no slugification)
-            resources = Resource.objects.filter(
-                organization=self.organization,
-                resource_type=resource_type,
-                name=name,
-                is_placeholder=False
-            )
-            
-            if resources.exists():
-                for resource in resources:
+            matched_resources = self._locate_resources_by_name_or_uri(name, resource_type)
+
+            if matched_resources:
+                for resource in matched_resources:
                     if dry_run:
                         print(f"Row {row_num}: Would update {name} ({resource.uri}) → {canonical_uri}")
                     else:
                         old_canonical = resource.canonical_uri
                         resource.canonical_uri = canonical_uri
                         resource.save(update_fields=['canonical_uri'])
-                        
+
                         if old_canonical and old_canonical != canonical_uri:
                             print(f"Row {row_num}: Updated {name} (was: {old_canonical})")
                         else:
                             print(f"Row {row_num}: Updated {name} → {canonical_uri}")
-                    
+
                     stats['updated'] += 1
             else:
                 print(f"Row {row_num}: Resource not found - Type: {resource_type_str}, Name: '{name}'")
                 stats['not_found'].append(f"{resource_type_str}: {name}")
+
+    def _locate_resources_by_name_or_uri(
+        self,
+        name: str,
+        resource_type: ResourceType,
+    ) -> List[Resource]:
+        """Return resources matching the given name or inferred local URI."""
+
+        resources = list(
+            Resource.objects.filter(
+                organization=self.organization,
+                resource_type=resource_type,
+                name=name,
+                is_placeholder=False,
+            )
+        )
+
+        if resources:
+            return resources
+
+        # Fall back to URI matching using slugified representation of the name
+        from arkumu.common.uri_utils import slugify_uri_part
+
+        slug = slugify_uri_part(name)
+        if not slug:
+            return []
+
+        # Build candidate URI endings based on resource type
+        uri_suffixes = [f"/{slug}"]
+        # Allow hyphen/underscore variants commonly seen in historic mappings
+        uri_suffixes.append(f"/{slug.replace('-', '_')}")
+
+        query = Q(organization=self.organization, resource_type=resource_type, is_placeholder=False)
+        uri_match_q = Q()
+        for suffix in uri_suffixes:
+            uri_match_q |= Q(uri__iendswith=suffix)
+
+        if not uri_match_q:
+            return []
+
+        resources = list(Resource.objects.filter(query & uri_match_q))
+        return resources
     
     def _parse_resource_type(self, type_str: str) -> Optional[ResourceType]:
         """Parse resource type string."""

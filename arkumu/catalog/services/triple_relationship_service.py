@@ -554,7 +554,12 @@ class TripleRelationshipService:
             event_ids = event_data['event_ids']
 
         if not event_ids:
-            return []
+            return self._direct_project_actor_edges(
+                project_id,
+                actor_link_predicate=actor_link_predicate,
+                actor_name_predicate=actor_name_predicate,
+                organization_code=organization_code,
+            )
 
         # First find crosstables that link TO these events (reverse lookup)
         im_ereignis_predicate = 'http://arkumu.org/data/properties/im-ereignis'
@@ -573,7 +578,22 @@ class TripleRelationshipService:
             crosstable_to_events[crosstable_id].add(event_id)
 
         if not crosstable_ids:
-            return []
+            event_results = self._actors_from_event_edges(
+                event_ids,
+                actor_link_predicate=actor_link_predicate,
+                role_link_predicate=role_link_predicate,
+                actor_name_predicate=actor_name_predicate,
+                role_name_predicate=role_name_predicate,
+                organization_code=organization_code,
+            )
+            if event_results:
+                return event_results
+            return self._direct_project_actor_edges(
+                project_id,
+                actor_link_predicate=actor_link_predicate,
+                actor_name_predicate=actor_name_predicate,
+                organization_code=organization_code,
+            )
 
         relation_predicates = [p for p in [actor_link_predicate, role_link_predicate] if p]
         actor_role_triples = self._fetch_triples(
@@ -597,7 +617,22 @@ class TripleRelationshipService:
                 crosstable_role_map[subject_key].add(object_id)
 
         if not crosstable_actor_map:
-            return []
+            event_results = self._actors_from_event_edges(
+                event_ids,
+                actor_link_predicate=actor_link_predicate,
+                role_link_predicate=role_link_predicate,
+                actor_name_predicate=actor_name_predicate,
+                role_name_predicate=role_name_predicate,
+                organization_code=organization_code,
+            )
+            if event_results:
+                return event_results
+            return self._direct_project_actor_edges(
+                project_id,
+                actor_link_predicate=actor_link_predicate,
+                actor_name_predicate=actor_name_predicate,
+                organization_code=organization_code,
+            )
 
         actor_ids = list({actor_id for actor_id in crosstable_actor_map.values()})
         role_ids = list({role_id for roles in crosstable_role_map.values() for role_id in roles})
@@ -646,6 +681,231 @@ class TripleRelationshipService:
                     'name': name,
                     'roles': sorted(payload['roles']),
                     'event_ids': sorted(payload['event_ids']),
+                }
+            )
+
+        if results:
+            return sorted(results, key=lambda item: item['name'])
+
+        event_results = self._actors_from_event_edges(
+            event_ids,
+            actor_link_predicate=actor_link_predicate,
+            role_link_predicate=role_link_predicate,
+            actor_name_predicate=actor_name_predicate,
+            role_name_predicate=role_name_predicate,
+            organization_code=organization_code,
+        )
+        if event_results:
+            return event_results
+
+        return self._direct_project_actor_edges(
+            project_id,
+            actor_link_predicate=actor_link_predicate,
+            actor_name_predicate=actor_name_predicate,
+            organization_code=organization_code,
+        )
+
+    def _actors_from_event_edges(
+        self,
+        event_ids: Sequence[str],
+        *,
+        actor_link_predicate: str,
+        role_link_predicate: Optional[str],
+        actor_name_predicate: Optional[str],
+        role_name_predicate: Optional[str],
+        organization_code: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        if not event_ids:
+            return []
+
+        relation_predicates = [actor_link_predicate]
+        if role_link_predicate:
+            relation_predicates.append(role_link_predicate)
+
+        triples = self._fetch_triples(
+            subject_ids=list(event_ids),
+            predicate_uris=relation_predicates,
+            organization_code=organization_code,
+        )
+
+        direct_event_actor_map: Dict[str, set[str]] = defaultdict(set)
+        crosstable_event_map: Dict[str, set[str]] = defaultdict(set)
+
+        object_ids: set[str] = set()
+        for triple in triples:
+            predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
+            obj = triple.object
+            if obj.resource_type == ResourceType.LITERAL:
+                continue
+            if predicate_canonical != actor_link_predicate:
+                continue
+            event_id = str(triple.subject_id)
+            target_id = str(obj.id)
+            object_ids.add(target_id)
+            direct_event_actor_map[event_id].add(target_id)
+
+        actor_names = self._collect_literal_values(
+            subject_ids=list(object_ids),
+            predicate_uri=actor_name_predicate,
+            organization_code=organization_code,
+        ) if object_ids and actor_name_predicate else {}
+
+        for event_id, targets in list(direct_event_actor_map.items()):
+            for target_id in list(targets):
+                if actor_names.get(target_id):
+                    continue
+                # Treat as crosstable candidate
+                targets.remove(target_id)
+                crosstable_event_map[event_id].add(target_id)
+
+        crosstable_ids = {cid for ids in crosstable_event_map.values() for cid in ids}
+        crosstable_actor_map: Dict[str, str] = {}
+        crosstable_role_map: Dict[str, set[str]] = defaultdict(set)
+
+        if crosstable_ids:
+            crosstable_triples = self._fetch_triples(
+                subject_ids=list(crosstable_ids),
+                predicate_uris=relation_predicates,
+                organization_code=organization_code,
+            )
+            for triple in crosstable_triples:
+                predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
+                obj = triple.object
+                if obj.resource_type == ResourceType.LITERAL:
+                    continue
+                crosstable_id = str(triple.subject_id)
+                object_id = str(obj.id)
+                if predicate_canonical == actor_link_predicate:
+                    crosstable_actor_map[crosstable_id] = object_id
+                elif role_link_predicate and predicate_canonical == role_link_predicate:
+                    crosstable_role_map[crosstable_id].add(object_id)
+
+            derived_actor_ids = list(crosstable_actor_map.values())
+            if derived_actor_ids and actor_name_predicate:
+                actor_names.update(
+                    self._collect_literal_values(
+                        subject_ids=derived_actor_ids,
+                        predicate_uri=actor_name_predicate,
+                        organization_code=organization_code,
+                    )
+                )
+
+        role_labels: Dict[str, str] = {}
+        if role_link_predicate and role_name_predicate:
+            role_ids = sorted({
+                role_id
+                for crosstable_roles in crosstable_role_map.values()
+                for role_id in crosstable_roles
+            })
+            if role_ids:
+                role_names = self._collect_literal_values(
+                    subject_ids=role_ids,
+                    predicate_uri=role_name_predicate,
+                    organization_code=organization_code,
+                )
+                role_labels = {
+                    role_id: (value.split('>')[-1].strip() if value and '>' in value else value)
+                    for role_id, value in role_names.items()
+                    if value
+                }
+
+        actor_payload: Dict[str, Dict[str, Any]] = {}
+
+        for event_id, actor_ids in direct_event_actor_map.items():
+            for actor_id in actor_ids:
+                payload = actor_payload.setdefault(
+                    actor_id,
+                    {
+                        'event_ids': set(),
+                        'roles': set(),
+                    },
+                )
+                payload['event_ids'].add(event_id)
+
+        for event_id, crosstables in crosstable_event_map.items():
+            for crosstable_id in crosstables:
+                actor_id = crosstable_actor_map.get(crosstable_id)
+                if not actor_id:
+                    continue
+                payload = actor_payload.setdefault(
+                    actor_id,
+                    {
+                        'event_ids': set(),
+                        'roles': set(),
+                    },
+                )
+                payload['event_ids'].add(event_id)
+                for role_id in crosstable_role_map.get(crosstable_id, set()):
+                    label = role_labels.get(role_id)
+                    if label:
+                        payload['roles'].add(label)
+
+        results: List[Dict[str, Any]] = []
+        for actor_id, payload in actor_payload.items():
+            name = actor_names.get(actor_id)
+            if not name:
+                continue
+            results.append(
+                {
+                    'id': actor_id,
+                    'name': name,
+                    'roles': sorted(payload['roles']),
+                    'event_ids': sorted(payload['event_ids']),
+                }
+            )
+
+        return sorted(results, key=lambda item: item['name'])
+
+    def _direct_project_actor_edges(
+        self,
+        project_id: str,
+        *,
+        actor_link_predicate: str,
+        actor_name_predicate: Optional[str],
+        organization_code: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """Fallback using direct project→actor edges when crosstables are unavailable."""
+
+        triples = self._fetch_triples(
+            subject_ids=[project_id],
+            predicate_uris=[actor_link_predicate],
+            organization_code=organization_code,
+        )
+
+        actor_ids: List[str] = []
+        for triple in triples:
+            obj = triple.object
+            if obj.resource_type == ResourceType.LITERAL:
+                continue
+            actor_ids.append(str(obj.id))
+
+        actor_ids = list(dict.fromkeys(actor_ids))
+        if not actor_ids:
+            return []
+
+        actor_names = self._collect_literal_values(
+            subject_ids=actor_ids,
+            predicate_uri=actor_name_predicate,
+            organization_code=organization_code,
+        ) if actor_name_predicate else {}
+
+        results: List[Dict[str, Any]] = []
+        for actor_id in actor_ids:
+            name = actor_names.get(actor_id)
+            if not name:
+                try:
+                    actor_resource = Resource.objects.only('name', 'value').get(id=actor_id)
+                    name = actor_resource.name or actor_resource.value
+                except Resource.DoesNotExist:  # pragma: no cover - defensive
+                    name = None
+            if not name:
+                continue
+            results.append(
+                {
+                    'id': actor_id,
+                    'name': name,
+                    'roles': [],
+                    'event_ids': [],
                 }
             )
 
