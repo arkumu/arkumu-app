@@ -267,6 +267,17 @@ class ProjectTypeForm(BaseEntityForm):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
 
 
+class AlternateTitleForm(BaseEntityForm):
+    alternativer_titel = forms.CharField(
+        label="Alternativer Titel",
+        required=True,
+        help_text="Alternative title",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+
 ActorEventFormSet = formset_factory(ActorEventForm, extra=1, min_num=1, validate_min=True)
 
 
