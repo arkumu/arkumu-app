@@ -31,6 +31,7 @@ _TYPE_LABEL_PREDICATES: Dict[str, str] = {
     "http://arkumu.org/data/types/projekt": "http://arkumu.org/data/properties/bevorzugter-titel",
     "http://arkumu.org/data/types/beschreibung": "http://arkumu.org/data/properties/beschreibung",
     "http://arkumu.org/data/types/ereignisbeschreibung": "http://arkumu.org/data/properties/ereignisbeschreibung",
+    "http://arkumu.org/data/types/digitales-objekt": "http://arkumu.org/data/properties/dateipfad",
 }
 
 
@@ -45,6 +46,7 @@ _DEFAULT_TYPE_URI_KEYS: Dict[str, str] = {
     "project": "http://arkumu.org/data/types/projekt",
     "description": "http://arkumu.org/data/types/beschreibung",
     "event_description": "http://arkumu.org/data/types/ereignisbeschreibung",
+    "digital_object": "http://arkumu.org/data/types/digitales-objekt",
 }
 
 
