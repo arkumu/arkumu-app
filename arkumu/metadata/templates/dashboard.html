@@ -39,19 +39,54 @@
             {% if request.user.is_staff %}
             <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}" class="inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-warning btn-sm">
+                <input type="hidden" name="cache" value="schema">
+                <button type="submit" class="btn btn-warning btn-sm" title="Refresh explorer class & property listings">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36" />
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
                     </svg>
-                    Warm Project &amp; Schema Cache
+                    Warm Schema Map
+                </button>
+            </form>
+            <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="projects">
+                <button type="submit" class="btn btn-warning btn-sm" title="Rebuild cross-institutional snapshot used by explorer results">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V10a2 2 0 012-2h2" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 8V6a5 5 0 0110 0v2" />
+                    </svg>
+                    Warm Project Snapshot
+                </button>
+            </form>
+            <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="card">
+                <button type="submit" class="btn btn-warning btn-sm" title="Refresh catalog card layouts">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+                    </svg>
+                    Warm Card Schemas
+                </button>
+            </form>
+            <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="all">
+                <button type="submit" class="btn btn-outline btn-warning btn-sm" title="Queue all cache warmers in one go">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36" />
+                    </svg>
+                    Warm All Caches
                 </button>
             </form>
             {% endif %}
             <!-- Bulk Mapping removed - replaced by canonical URI system during import -->
         </div>
         {% if request.user.is_staff %}
-        <p class="mt-3 text-xs text-base-content/60">Triggers Huey tasks that rebuild the cross-institutional snapshot, card schemas, and schema map.</p>
+        <p class="mt-3 text-xs text-base-content/60">
+            Use the buttons above to enqueue individual cache warmers. “All” runs every task (schema map, project snapshot, card schemas).
+        </p>
         {% endif %}
     </div>
 

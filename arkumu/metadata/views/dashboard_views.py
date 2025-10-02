@@ -286,18 +286,34 @@ def trigger_cache_refresh(request):
         messages.error(request, "Only staff members can trigger cache refreshes.")
         return redirect("metadata:metadata_dashboard")
 
+    cache_target = request.POST.get("cache", "all")
+
     from arkumu.cache.tasks import (
         warm_card_schema_cache,
         warm_cross_institutional_projects_cache,
         warm_schema_cache,
     )
 
-    warm_cross_institutional_projects_cache.schedule(delay=0)
-    warm_schema_cache.schedule(delay=0)
-    warm_card_schema_cache.schedule(delay=0)
+    triggered = []
 
-    messages.success(
-        request,
-        "Cache warm-up tasks enqueued. Huey will rebuild snapshots and schema data shortly.",
-    )
+    if cache_target in {"all", "projects"}:
+        warm_cross_institutional_projects_cache.schedule(delay=0)
+        triggered.append("Cross-institutional project snapshot")
+
+    if cache_target in {"all", "schema"}:
+        warm_schema_cache.schedule(delay=0)
+        triggered.append("Schema map (explorer classes & properties)")
+
+    if cache_target in {"all", "card"}:
+        warm_card_schema_cache.schedule(delay=0)
+        triggered.append("Catalog card schemas")
+
+    if not triggered:
+        messages.warning(request, "No cache task was selected.")
+    else:
+        messages.success(
+            request,
+            "Enqueued: " + ", ".join(triggered) + ". Huey will refresh these caches shortly.",
+        )
+
     return redirect("metadata:metadata_dashboard")
