@@ -69,6 +69,7 @@ class ProjectURIs(CardURIs):
     EVENT_NAME = "http://arkumu.org/data/properties/ereignisname"
     EVENT_DESCRIPTION = "http://arkumu.org/data/properties/ereignisbeschreibung"
     EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
+    EVENT_LOCATION_WIKIDATA = "http://arkumu.org/data/properties/wikidata-id"
     EVENT_TYPE = "http://arkumu.org/data/properties/ereignistyp"
 
     # Alternative Title

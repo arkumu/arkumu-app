@@ -513,6 +513,7 @@ class ProjectSnapshotService:
             event_name_predicate=ProjectURIs.EVENT_NAME,
             event_description_predicate=ProjectURIs.EVENT_DESCRIPTION,
             event_location_predicate=ProjectURIs.EVENT_LOCATION,
+            event_location_wikidata_predicate=ProjectURIs.EVENT_LOCATION_WIKIDATA,
             event_type_predicate=ProjectURIs.EVENT_TYPE,
             organization_code=self.relationship_org_code,
         )

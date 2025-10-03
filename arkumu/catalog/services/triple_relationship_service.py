@@ -225,6 +225,7 @@ class TripleRelationshipService:
         event_name_predicate: Optional[str] = None,
         event_description_predicate: Optional[str] = None,
         event_location_predicate: Optional[str] = None,
+        event_location_wikidata_predicate: Optional[str] = None,
         event_type_predicate: Optional[str] = None,
         organization_code: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
@@ -253,6 +254,8 @@ class TripleRelationshipService:
             event_property_predicates.append(event_description_predicate)
         if event_location_predicate:
             event_property_predicates.append(event_location_predicate)
+        if event_location_wikidata_predicate:
+            event_property_predicates.append(event_location_wikidata_predicate)
         if event_type_predicate:
             event_property_predicates.append(event_type_predicate)
 
@@ -294,8 +297,27 @@ class TripleRelationshipService:
                 event_info['name'] = properties[event_name_predicate]
             if event_description_predicate and event_description_predicate in properties:
                 event_info['description'] = properties[event_description_predicate]
+            location_raw = None
+            location_predicate_used = None
             if event_location_predicate and event_location_predicate in properties:
                 location_raw = properties[event_location_predicate]
+                location_predicate_used = event_location_predicate
+
+                # If the canonical location is present but looks like a numeric/id placeholder,
+                # prefer the Wikidata-based predicate when available.
+                if (
+                    event_location_wikidata_predicate
+                    and event_location_wikidata_predicate in properties
+                    and isinstance(location_raw, str)
+                    and not location_raw.strip().upper().startswith('Q')
+                ):
+                    location_raw = properties[event_location_wikidata_predicate]
+                    location_predicate_used = event_location_wikidata_predicate
+            elif event_location_wikidata_predicate and event_location_wikidata_predicate in properties:
+                location_raw = properties[event_location_wikidata_predicate]
+                location_predicate_used = event_location_wikidata_predicate
+
+            if location_raw is not None:
                 event_info['location_id'] = location_raw
 
                 # Handle multiple comma-separated Wikidata IDs
@@ -324,7 +346,9 @@ class TripleRelationshipService:
                                     display_name = self._resolve_location_label(location_id)
                                 location_names.append(display_name or location_id)
                             else:
-                                location_names.append(location_id)
+                                # Try to resolve non-Q identifiers via custom resolver as well
+                                resolved_label = self._resolve_location_label(location_id)
+                                location_names.append(resolved_label or location_id)
 
                         event_info['location'] = (
                             ', '.join(location_names)
@@ -332,7 +356,10 @@ class TripleRelationshipService:
                             else location_raw
                         )
                     else:
-                        event_info['location'] = location_raw
+                        resolved_label = None
+                        if isinstance(location_raw, str):
+                            resolved_label = self._resolve_location_label(location_raw)
+                        event_info['location'] = resolved_label or location_raw
                 else:
                     event_info['location'] = location_raw
 
