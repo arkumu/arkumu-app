@@ -53,6 +53,7 @@
         </div>
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
           <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+          <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog Browse</a></li>
           {% if request.user.is_authenticated %}
             <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2 {% if current_namespace == 'catalog' %}active{% endif %}">
               <i class="fas fa-search"></i>
@@ -78,6 +79,7 @@
     <div class="navbar-center hidden lg:flex">
       <ul class="menu menu-horizontal px-1">
         <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+        <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog Browse</a></li>
         {% if request.user.is_authenticated %}
           <li><a href="{% url 'storage:archivist_dashboard' %}"
                  class="{% if current_url_name == 'archivist_dashboard' or current_url_name == 'uploads_dashboard' or current_url_name == 'upload_session_stats' %}active{% endif %}">
