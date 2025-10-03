@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 import logging
 
+from django.db.models import Q
+
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.resource import Resource, ResourceType
 
@@ -43,6 +45,7 @@ class CardURIs:
 
     # Digital Object
     DIGITAL_OBJECT_TYPE = "http://arkumu.org/data/types/digitales-objekt"
+    DIGITAL_OBJECT_LINK = "http://arkumu.org/data/properties/digitales-objekt"
     DIGITAL_OBJECT_PATH = "http://arkumu.org/data/properties/dateipfad"
 
     # Institution
@@ -137,11 +140,17 @@ class BaseProjectView:
     def _get_literal_value(self, subject_uri: str, predicate_uri: str) -> Optional[str]:
         """Get literal value for a property using canonical URI"""
         try:
-            triple = Triple.objects.filter(
-                subject__uri=subject_uri,
-                predicate__canonical_uri=predicate_uri,
-                object__resource_type=ResourceType.LITERAL
-            ).first()
+            predicate_filter = Q(predicate__canonical_uri=predicate_uri) | Q(
+                predicate__uri=predicate_uri
+            )
+            triple = (
+                Triple.objects.filter(
+                    subject__uri=subject_uri,
+                    object__resource_type=ResourceType.LITERAL,
+                )
+                .filter(predicate_filter)
+                .first()
+            )
 
             if triple and triple.object and hasattr(triple.object, 'literal_value'):
                 logger.info(f"Found literal: {subject_uri} -> {predicate_uri} = '{triple.object.literal_value}'")
@@ -156,11 +165,21 @@ class BaseProjectView:
     def _get_related_resource_uri(self, subject_uri: str, predicate_uri: str) -> Optional[str]:
         """Get URI of related resource using canonical URI"""
         try:
-            triple = Triple.objects.filter(
-                subject__uri=subject_uri,
-                predicate__canonical_uri=predicate_uri,
-                object__resource_type__in=[ResourceType.CLASS, ResourceType.PROPERTY, ResourceType.ENTITY]
-            ).first()
+            predicate_filter = Q(predicate__canonical_uri=predicate_uri) | Q(
+                predicate__uri=predicate_uri
+            )
+            triple = (
+                Triple.objects.filter(
+                    subject__uri=subject_uri,
+                    object__resource_type__in=[
+                        ResourceType.CLASS,
+                        ResourceType.PROPERTY,
+                        ResourceType.ENTITY,
+                    ],
+                )
+                .filter(predicate_filter)
+                .first()
+            )
             return triple.object.uri if triple and triple.object else None
         except Exception as e:
             logger.error(f"Error getting related resource for {subject_uri} -> {predicate_uri}: {e}")
@@ -169,11 +188,13 @@ class BaseProjectView:
     def _get_multiple_literal_values(self, subject_uri: str, predicate_uri: str) -> List[str]:
         """Get multiple literal values for a property using canonical URI"""
         try:
+            predicate_filter = Q(predicate__canonical_uri=predicate_uri) | Q(
+                predicate__uri=predicate_uri
+            )
             triples = Triple.objects.filter(
                 subject__uri=subject_uri,
-                predicate__canonical_uri=predicate_uri,
                 object__resource_type=ResourceType.LITERAL
-            )
+            ).filter(predicate_filter)
             return [t.object.literal_value for t in triples if t.object and hasattr(t.object, 'literal_value') and t.object.literal_value]
         except Exception as e:
             logger.error(f"Error getting multiple literals for {subject_uri} -> {predicate_uri}: {e}")
@@ -182,11 +203,17 @@ class BaseProjectView:
     def _get_multiple_related_resource_uris(self, subject_uri: str, predicate_uri: str) -> List[str]:
         """Get URIs of multiple related resources using canonical URI"""
         try:
+            predicate_filter = Q(predicate__canonical_uri=predicate_uri) | Q(
+                predicate__uri=predicate_uri
+            )
             triples = Triple.objects.filter(
                 subject__uri=subject_uri,
-                predicate__canonical_uri=predicate_uri,
-                object__resource_type__in=[ResourceType.CLASS, ResourceType.PROPERTY, ResourceType.ENTITY]
-            )
+                object__resource_type__in=[
+                    ResourceType.CLASS,
+                    ResourceType.PROPERTY,
+                    ResourceType.ENTITY,
+                ],
+            ).filter(predicate_filter)
             return [t.object.uri for t in triples if t.object]
         except Exception as e:
             logger.error(f"Error getting multiple related resources for {subject_uri} -> {predicate_uri}: {e}")
@@ -334,7 +361,10 @@ class ProjectView(CardView):
                 project_data.catchphrases.append(wikidata_label)
 
         # Digital objects
-        digital_object_uris = self._get_multiple_related_resource_uris(self.project_uri, ProjectURIs.DIGITAL_OBJECT_PATH)
+        digital_object_uris = self._get_multiple_related_resource_uris(
+            self.project_uri,
+            ProjectURIs.DIGITAL_OBJECT_LINK,
+        )
         for obj_uri in digital_object_uris:
             file_path = self._get_literal_value(obj_uri, ProjectURIs.DIGITAL_OBJECT_PATH)
             if file_path:

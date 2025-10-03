@@ -223,6 +223,12 @@ DERIVATION_PATTERNS: Dict[str, DerivationPattern] = {
 
 KREUZ_DATASET_PROFILES: Dict[str, Dict[str, DatasetProfile]] = {
     "khm": {
+        "01_grundereignis": DatasetProfile(
+            name="01_Grundereignis",
+            canonical_predicates=(PROJECT, EVENT, DIGITAL_OBJECT),
+            pattern_names=("project_digital_object",),
+            notes=("Derive project↔digital links directly from event rows",),
+        ),
         "02_kreuz_projekte_personen": DatasetProfile(
             name="02_Kreuz_Projekte_Personen",
             canonical_predicates=(PROJECT, ACTOR),
