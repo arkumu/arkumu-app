@@ -390,11 +390,11 @@ class ProjectSnapshotService:
         try:  # pragma: no cover - storage optional during tests
             from arkumu.storage.models.s3_file_objects import S3FileObject
 
-            if subjects:
-                normalized_subjects = {str(subject_id) for subject_id in subjects}
+            node_ids = {str(node_id) for node_id in nodes.keys()}
+            if node_ids:
                 files_qs = (
                     S3FileObject.objects
-                    .filter(related_resource_id__in=normalized_subjects)
+                    .filter(related_resource_id__in=node_ids)
                     .order_by('created_at')
                 )
                 for file_obj in files_qs:
@@ -412,7 +412,7 @@ class ProjectSnapshotService:
                 edges_by_subject,
                 card_schema,
                 triple_service,
-                storage_files_map.get(str(subject_id), []),
+                storage_files_map,
             )
             if record:
                 records.append(record)
@@ -427,7 +427,7 @@ class ProjectSnapshotService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         card_schema: CardSchema,
         triple_service: TripleRelationshipService,
-        storage_files: Sequence[Any],
+        storage_files_map: Dict[str, Sequence[Any]],
     ) -> Optional[ProjectRecord]:
         node = nodes.get(subject_id)
         if not node:
@@ -647,6 +647,7 @@ class ProjectSnapshotService:
             organization_code=self.relationship_org_code,
         )
 
+        storage_files: List[Any] = list(storage_files_map.get(subject_id, []))
         digital_objects = [ProjectDigitalObject(path=path) for path in digital_paths if path]
 
         if not digital_objects:
@@ -675,6 +676,9 @@ class ProjectSnapshotService:
                         uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
                     )
                 )
+
+        for event_id in event_ids:
+            storage_files.extend(storage_files_map.get(str(event_id), []))
 
         if storage_files:
             digital_objects = self._merge_storage_metadata(digital_objects, storage_files)

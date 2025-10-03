@@ -7,6 +7,7 @@ specifically for linking S3FileObjects to project entities instead of literals.
 
 from typing import Optional, List
 import logging
+import re
 from django.db.models import Q
 
 from arkumu.metadata.models.resource import Resource, ResourceType
@@ -64,8 +65,18 @@ class ResourceTraversalService:
         if not resource or not resource.uri:
             return False
 
-        import re
         return bool(re.search(r'/entities/projekt/[0-9]+$', resource.uri))
+
+    def _is_event_entity(self, resource: Resource) -> bool:
+        """Check if a resource is an event entity."""
+        if not resource or not resource.uri:
+            return False
+
+        uri = resource.uri.lower()
+        if '/entities/' not in uri:
+            return False
+
+        return 'ereignis' in uri or 'event' in uri
 
     def _traverse_to_project_recursive(self, resource: Resource, visited: set, max_depth: int = 3) -> Optional[Resource]:
         """
@@ -144,6 +155,85 @@ class ResourceTraversalService:
 
         # For other resource types, use recursive traversal
         return self._traverse_to_project_recursive(resource, set())
+
+    def find_parent_event_from_literal(self, literal_resource: Resource) -> Optional[Resource]:
+        """Locate the parent event entity for a literal resource."""
+
+        if not literal_resource or literal_resource.resource_type != ResourceType.LITERAL:
+            logger.warning("Resource %s is not a literal, cannot traverse to parent event", literal_resource)
+            return None
+
+        incoming_triples = Triple.objects.filter(
+            object=literal_resource
+        ).select_related('subject', 'subject__organization')
+
+        for triple in incoming_triples:
+            subject = triple.subject
+            if self._is_event_entity(subject):
+                logger.info("Found parent event %s for literal %s", subject.uri, literal_resource.value)
+                return subject
+
+            if subject.resource_type != ResourceType.LITERAL:
+                parent_event = self._traverse_to_event_recursive(subject, visited={literal_resource.id})
+                if parent_event:
+                    logger.info(
+                        "Found parent event %s via recursive traversal from literal %s",
+                        parent_event.uri,
+                        literal_resource.value,
+                    )
+                    return parent_event
+
+        logger.debug("No parent event found for literal resource %s", literal_resource.value)
+        return None
+
+    def _traverse_to_event_recursive(
+        self,
+        resource: Resource,
+        visited: set,
+        max_depth: int = 3,
+    ) -> Optional[Resource]:
+        """Recursively traverse upwards to locate an event entity."""
+
+        if max_depth <= 0 or not resource or resource.id in visited:
+            return None
+
+        visited.add(resource.id)
+
+        if self._is_event_entity(resource):
+            return resource
+
+        incoming_triples = Triple.objects.filter(
+            object=resource
+        ).select_related('subject', 'subject__organization')
+
+        for triple in incoming_triples:
+            subject = triple.subject
+
+            if subject.resource_type == ResourceType.LITERAL or subject.id in visited:
+                continue
+
+            if self._is_event_entity(subject):
+                return subject
+
+            parent_event = self._traverse_to_event_recursive(subject, visited.copy(), max_depth - 1)
+            if parent_event:
+                return parent_event
+
+        return None
+
+    def get_event_entity_for_resource(self, resource: Resource) -> Optional[Resource]:
+        """Return the event entity associated with the given resource, if any."""
+
+        if not resource:
+            return None
+
+        if self._is_event_entity(resource):
+            return resource
+
+        if resource.resource_type == ResourceType.LITERAL:
+            return self.find_parent_event_from_literal(resource)
+
+        return self._traverse_to_event_recursive(resource, set())
 
     def bulk_find_project_entities_for_literals(self, literal_resources: List[Resource]) -> dict:
         """

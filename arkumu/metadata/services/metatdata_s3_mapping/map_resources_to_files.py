@@ -83,7 +83,12 @@ class FileResourceMatcherService:
         self._log(f"METRICS [{operation}]: {metrics_str}", "info")
 
     @transaction.atomic
-    def match_and_link_by_filename_to_resource_value(self, s3_file_queryset=None) -> Tuple[int, int, int, int]:
+    def match_and_link_by_filename_to_resource_value(
+        self,
+        s3_file_queryset=None,
+        *,
+        link_target: str = "project",
+    ) -> Tuple[int, int, int, int]:
         """
         Matches S3FileObjects to Resources by comparing the S3FileObject's file_name
         (stripping the extension) to the Resource's value.
@@ -91,6 +96,9 @@ class FileResourceMatcherService:
         
         Returns: (processed_count, linked_count, ambiguous_count, error_count)
         """
+        if link_target not in {"project", "event"}:
+            raise ValueError("link_target must be either 'project' or 'event'")
+
         start_time = time.time()
         
         if s3_file_queryset is None:
@@ -159,51 +167,67 @@ class FileResourceMatcherService:
                 if match_count == 1:
                     matched_resource = matching_resources[0]
 
-                    # Find the project entity associated with this resource
-                    project_entity = self.traversal_service.get_project_entity_for_resource(matched_resource)
+                    target_entity = (
+                        self.traversal_service.get_event_entity_for_resource(matched_resource)
+                        if link_target == "event"
+                        else self.traversal_service.get_project_entity_for_resource(matched_resource)
+                    )
 
-                    if project_entity:
-                        # Link to the project entity instead of the literal/intermediate resource
-                        s3_file.related_resource = project_entity
+                    if not target_entity and link_target == "project":
+                        target_entity = matched_resource
+
+                    if target_entity:
+                        s3_file.related_resource = target_entity
                         files_to_update.append(s3_file)
                         linked_count += 1
 
-                        if project_entity.id != matched_resource.id:
-                            self._log(f"Linked S3FileObject ID {s3_file.id} ({s3_file.s3_key}) to Project Entity ID {project_entity.id} ('{project_entity.uri}') "
-                                    f"via matched resource ID {matched_resource.id} ('{matched_resource.value}').")
+                        entity_label = "Event" if link_target == "event" else "Project"
+                        if target_entity.id != matched_resource.id:
+                            self._log(
+                                f"Linked S3FileObject ID {s3_file.id} ({s3_file.s3_key}) to {entity_label} Entity ID {target_entity.id} ('{target_entity.uri}') "
+                                f"via matched resource ID {matched_resource.id} ('{matched_resource.value}')."
+                            )
                         else:
-                            self._log(f"Linked S3FileObject ID {s3_file.id} ({s3_file.s3_key}) to Project Entity ID {project_entity.id} ('{project_entity.uri}').")
+                            self._log(
+                                f"Linked S3FileObject ID {s3_file.id} ({s3_file.s3_key}) to {entity_label} Entity ID {target_entity.id} ('{target_entity.uri}')."
+                            )
                     else:
-                        # No project entity found, log but don't link
-                        self._log(f"No project entity found for matched resource ID {matched_resource.id} ('{matched_resource.value}') "
-                                f"for S3FileObject ID {s3_file.id} ({s3_file.s3_key}). Skipping link.")
-                        # Note: We don't increment linked_count here
+                        self._log(
+                            f"No {link_target} entity found for matched resource ID {matched_resource.id} ('{matched_resource.value}') "
+                            f"for S3FileObject ID {s3_file.id} ({s3_file.s3_key}). Skipping link."
+                        )
                 elif match_count > 1:
-                    # Handle ambiguous matches by trying to find project entities
-                    project_entities = []
-                    for matched_resource in matching_resources:
-                        project_entity = self.traversal_service.get_project_entity_for_resource(matched_resource)
-                        if project_entity:
-                            project_entities.append(project_entity)
+                    if link_target == "event":
+                        target_entities = [
+                            self.traversal_service.get_event_entity_for_resource(res)
+                            for res in matching_resources
+                        ]
+                    else:
+                        target_entities = [
+                            self.traversal_service.get_project_entity_for_resource(res)
+                            for res in matching_resources
+                        ]
 
-                    # Deduplicate project entities (multiple literals might point to same project)
-                    unique_projects = list({p.id: p for p in project_entities}.values())
+                    target_entities = [entity for entity in target_entities if entity]
+                    unique_targets = list({entity.id: entity for entity in target_entities}.values())
 
-                    if len(unique_projects) == 1:
-                        # All matched resources point to the same project - link it!
-                        project_entity = unique_projects[0]
-                        s3_file.related_resource = project_entity
+                    if len(unique_targets) == 1:
+                        target_entity = unique_targets[0]
+                        s3_file.related_resource = target_entity
                         files_to_update.append(s3_file)
                         linked_count += 1
-                        self._log(f"Resolved ambiguous match for S3FileObject ID {s3_file.id} ({s3_file.s3_key}): "
-                                f"Found {match_count} matching resources but all point to same project {project_entity.uri}. Linked successfully.")
+                        self._log(
+                            f"Resolved ambiguous match for S3FileObject ID {s3_file.id} ({s3_file.s3_key}): "
+                            f"Found {match_count} matching resources but all point to same {link_target} {target_entity.uri}. Linked successfully."
+                        )
                     else:
-                        # Still ambiguous at project level
                         ambiguous_count += 1
                         resource_ids = [r.id for r in matching_resources]
-                        project_ids = [p.id for p in unique_projects] if unique_projects else []
-                        self._log(f"Ambiguous match for S3FileObject ID {s3_file.id} ({s3_file.s3_key}): "
-                                f"Found {match_count} Resources (IDs: {resource_ids}) leading to {len(unique_projects)} different projects (IDs: {project_ids}). No link made.")
+                        target_ids = [t.id for t in unique_targets] if unique_targets else []
+                        self._log(
+                            f"Ambiguous match for S3FileObject ID {s3_file.id} ({s3_file.s3_key}): "
+                            f"Found {match_count} Resources (IDs: {resource_ids}) leading to {len(unique_targets)} different {link_target}s (IDs: {target_ids}). No link made."
+                        )
                 else:
                     self._log(f"No Resource found with value '{file_name_without_extension}' for S3FileObject ID {s3_file.id} ({s3_file.s3_key}).")
 

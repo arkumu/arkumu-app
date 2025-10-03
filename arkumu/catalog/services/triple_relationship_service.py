@@ -13,6 +13,25 @@ from arkumu.metadata.models import Resource, ResourceType, WikidataEntity
 from arkumu.users.models import Organization
 
 
+def _looks_placeholder(value: Optional[str]) -> bool:
+    """Return True when a literal looks like an opaque identifier rather than a label."""
+
+    if not value:
+        return False
+
+    stripped = value.strip()
+    if not stripped:
+        return False
+
+    if stripped.isdigit():
+        return True
+
+    if stripped.upper().startswith('Q') and stripped[1:].isdigit():
+        return True
+
+    return False
+
+
 class TripleRelationshipService:
     """Service for traversing catalog relationships using Triple records."""
 
@@ -43,19 +62,23 @@ class TripleRelationshipService:
             .select_related("subject")
         )
 
+        label_predicates = (
+            "http://arkumu.org/data/properties/deutscher-name-des-ortes",
+            "http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule",
+            "http://arkumu.org/data/properties/deutscher-name",
+        )
+
         for match in matching_triples:
             subject_id = match.subject_id
 
-            label_triple = Triple.objects.filter(
-                subject_id=subject_id,
-                predicate__canonical_uri="http://arkumu.org/data/properties/deutscher-name-des-ortes",
-            ).first()
-
-            if not label_triple:
+            label_triple = None
+            for predicate_uri in label_predicates:
                 label_triple = Triple.objects.filter(
                     subject_id=subject_id,
-                    predicate__canonical_uri="http://arkumu.org/data/properties/deutscher-name",
+                    predicate__canonical_uri=predicate_uri,
                 ).first()
+                if label_triple:
+                    break
 
             if label_triple and label_triple.object and label_triple.object.value:
                 label = label_triple.object.value
@@ -68,6 +91,44 @@ class TripleRelationshipService:
 
         self._location_label_cache[location_id] = label
         return label
+
+    def _resolve_entity_labels(
+        self,
+        entity_ids: Iterable[str],
+        label_predicates: Sequence[str],
+        *,
+        organization_code: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Resolve labels for referenced entity IDs using preferred predicates."""
+
+        entity_ids = [entity_id for entity_id in entity_ids if entity_id]
+        if not entity_ids:
+            return {}
+
+        labels: Dict[str, str] = {}
+
+        for predicate_uri in label_predicates:
+            literal_map = self._collect_literal_values(
+                subject_ids=entity_ids,
+                predicate_uri=predicate_uri,
+                organization_code=organization_code,
+            )
+            for entity_id, value in literal_map.items():
+                if entity_id not in labels and value:
+                    labels[entity_id] = value
+
+            if len(labels) == len(set(entity_ids)):
+                break
+
+        missing_ids = [entity_id for entity_id in entity_ids if entity_id not in labels]
+        if missing_ids:
+            resources = Resource.objects.filter(id__in=missing_ids)
+            for resource in resources:
+                fallback = resource.name or resource.value or resource.uri
+                if fallback:
+                    labels.setdefault(str(resource.id), fallback)
+
+        return labels
 
     def get_related_entities(
         self,
@@ -260,7 +321,8 @@ class TripleRelationshipService:
             event_property_predicates.append(event_type_predicate)
 
         # Get additional event properties
-        event_properties = {}
+        event_properties: Dict[str, Dict[str, Dict[str, Optional[str]]]] = {}
+        entity_reference_map: Dict[str, set[str]] = defaultdict(set)
         if event_property_predicates:
             property_triples = self._fetch_triples(
                 subject_ids=event_ids,
@@ -275,15 +337,82 @@ class TripleRelationshipService:
                 if event_id not in event_properties:
                     event_properties[event_id] = {}
 
-                # Store the property value
+                entry = event_properties[event_id].get(predicate_canonical)
+                if not entry:
+                    entry = {
+                        'value': None,
+                        'entity_id': None,
+                    }
+
                 if triple.object.resource_type == ResourceType.LITERAL:
-                    event_properties[event_id][predicate_canonical] = triple.object.value
+                    literal_value = triple.object.value
+                    if literal_value:
+                        if not entry.get('value') or entry['value'] == entry.get('entity_id'):
+                            entry['value'] = literal_value
+                        elif literal_value and _looks_placeholder(entry['value']):
+                            entry['value'] = literal_value
                 else:
-                    # For entities, store the object ID so we can resolve it properly later
-                    event_properties[event_id][predicate_canonical] = str(triple.object_id)
+                    entity_id = str(triple.object_id)
+                    entry['entity_id'] = entity_id
+                    entity_reference_map[predicate_canonical].add(entity_id)
+
+                event_properties[event_id][predicate_canonical] = entry
+
+        if entity_reference_map:
+            label_predicates_map: Dict[str, Sequence[str]] = {}
+            if event_description_predicate:
+                label_predicates_map[event_description_predicate] = (
+                    "http://arkumu.org/data/properties/ereignisbeschreibung",
+                    "http://arkumu.org/data/properties/beschreibung",
+                    "http://arkumu.org/data/properties/deutscher-name",
+                )
+            if event_location_predicate:
+                label_predicates_map[event_location_predicate] = (
+                    "http://arkumu.org/data/properties/deutscher-name-des-ortes",
+                    "http://arkumu.org/data/properties/deutscher-name",
+                    "http://arkumu.org/data/properties/name",
+                )
+            if event_type_predicate:
+                label_predicates_map[event_type_predicate] = (
+                    "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps",
+                    "http://arkumu.org/data/properties/deutscher-name",
+                )
+
+            for predicate_uri, entity_ids in entity_reference_map.items():
+                label_predicates = label_predicates_map.get(predicate_uri, ())
+                resolved_labels = self._resolve_entity_labels(
+                    entity_ids,
+                    label_predicates,
+                    organization_code=organization_code,
+                )
+
+                if not resolved_labels:
+                    continue
+
+                for event_id, props in event_properties.items():
+                    entry = props.get(predicate_uri)
+                    if not entry or not entry.get('entity_id'):
+                        continue
+                    if entry.get('value') and not _looks_placeholder(entry.get('value')):
+                        continue
+                    label = resolved_labels.get(entry['entity_id'])
+                    if label:
+                        entry['value'] = label
 
         # Build detailed event list
         detailed_events = []
+        def _extract_property(
+            properties: Dict[str, Dict[str, Optional[str]]],
+            predicate_uri: Optional[str],
+        ) -> tuple[Optional[str], Optional[str]]:
+            if not predicate_uri or predicate_uri not in properties:
+                return None, None
+            entry = properties[predicate_uri]
+            if isinstance(entry, dict):
+                return entry.get('value'), entry.get('entity_id')
+            # Backward compatibility: handle legacy str storage
+            return entry, None
+
         for event_id in event_ids:
             event_info = {
                 'id': event_id,
@@ -293,105 +422,81 @@ class TripleRelationshipService:
 
             # Add additional properties
             properties = event_properties.get(event_id, {})
-            if event_name_predicate and event_name_predicate in properties:
-                event_info['name'] = properties[event_name_predicate]
-            if event_description_predicate and event_description_predicate in properties:
-                event_info['description'] = properties[event_description_predicate]
-            location_raw = None
-            location_predicate_used = None
-            if event_location_predicate and event_location_predicate in properties:
-                location_raw = properties[event_location_predicate]
-                location_predicate_used = event_location_predicate
+            name_value, _ = _extract_property(properties, event_name_predicate)
+            if name_value:
+                event_info['name'] = name_value
 
-                # If the canonical location is present but looks like a numeric/id placeholder,
-                # prefer the Wikidata-based predicate when available.
-                if (
-                    event_location_wikidata_predicate
-                    and event_location_wikidata_predicate in properties
-                    and isinstance(location_raw, str)
-                    and not location_raw.strip().upper().startswith('Q')
-                ):
-                    location_raw = properties[event_location_wikidata_predicate]
-                    location_predicate_used = event_location_wikidata_predicate
-            elif event_location_wikidata_predicate and event_location_wikidata_predicate in properties:
-                location_raw = properties[event_location_wikidata_predicate]
-                location_predicate_used = event_location_wikidata_predicate
+            description_value, description_entity_id = _extract_property(properties, event_description_predicate)
+            if description_value:
+                event_info['description'] = description_value
+            elif description_entity_id:
+                event_info['description'] = description_entity_id
 
-            if location_raw is not None:
-                event_info['location_id'] = location_raw
+            location_value, location_entity_id = _extract_property(properties, event_location_predicate)
+            wikidata_value, _ = _extract_property(properties, event_location_wikidata_predicate)
 
-                # Handle multiple comma-separated Wikidata IDs
-                if location_raw and isinstance(location_raw, str):
-                    # Split on comma and clean each ID
-                    location_ids = [loc_id.strip() for loc_id in location_raw.split(',') if loc_id.strip()]
+            location_identifier = location_entity_id or wikidata_value
+            if location_identifier:
+                event_info['location_id'] = location_identifier
+            elif location_value and location_value.strip().upper().startswith('Q'):
+                event_info['location_id'] = location_value.strip()
 
-                    if location_ids:
-                        location_names: List[str] = []
-
-                        cached_entities = {
-                            entity.wikidata_id: entity
-                            for entity in WikidataEntity.objects.filter(wikidata_id__in=[loc for loc in location_ids if loc.startswith('Q')])
-                        }
-
-                        for location_id in location_ids:
-                            if location_id.startswith('Q'):
-                                cached_entity = cached_entities.get(location_id)
-                                display_name = (
-                                    cached_entity.label_de
-                                    or cached_entity.label_en
-                                    if cached_entity
-                                    else None
-                                )
-                                if not display_name:
-                                    display_name = self._resolve_location_label(location_id)
-                                location_names.append(display_name or location_id)
-                            else:
-                                # Try to resolve non-Q identifiers via custom resolver as well
-                                resolved_label = self._resolve_location_label(location_id)
-                                location_names.append(resolved_label or location_id)
-
-                        event_info['location'] = (
-                            ', '.join(location_names)
-                            if location_names
-                            else location_raw
+            location_display = location_value
+            if not location_display and wikidata_value:
+                location_ids = [loc_id.strip() for loc_id in str(wikidata_value).split(',') if loc_id.strip()]
+                if location_ids:
+                    cached_entities = {
+                        entity.wikidata_id: entity
+                        for entity in WikidataEntity.objects.filter(
+                            wikidata_id__in=[loc for loc in location_ids if loc.startswith('Q')]
                         )
-                    else:
-                        resolved_label = None
-                        if isinstance(location_raw, str):
-                            resolved_label = self._resolve_location_label(location_raw)
-                        event_info['location'] = resolved_label or location_raw
-                else:
-                    event_info['location'] = location_raw
+                    }
 
-            if event_type_predicate and event_type_predicate in properties:
-                event_type_value = properties[event_type_predicate]
-                # The value is an entity ID (UUID string) - we need to resolve it
-                if event_type_value:
-                    try:
-                        # Check if it looks like a UUID (entity reference)
-                        try:
-                            uuid.UUID(event_type_value)
-                            is_entity_ref = True
-                        except ValueError:
-                            is_entity_ref = False
+                    location_names: List[str] = []
+                    for loc_id in location_ids:
+                        if loc_id.startswith('Q'):
+                            cached_entity = cached_entities.get(loc_id)
+                            display_name = (
+                                cached_entity.label_de
+                                or cached_entity.label_en
+                                if cached_entity
+                                else None
+                            )
+                            if not display_name:
+                                display_name = self._resolve_location_label(loc_id)
+                            location_names.append(display_name or loc_id)
+                        else:
+                            resolved_label = self._resolve_location_label(loc_id)
+                            location_names.append(resolved_label or loc_id)
 
-                        if is_entity_ref:
-                            # Look for German name property for this event type entity
-                            german_name_triple = Triple.objects.filter(
-                                subject_id=event_type_value,
-                                predicate__canonical_uri='http://arkumu.org/data/properties/deutscher-name-des-ereignistyps'
-                            ).first()
-                            if german_name_triple and german_name_triple.object.value:
-                                event_type_value = german_name_triple.object.value
-                            else:
-                                # Fallback to the resource name if no German name found
-                                type_resource = Resource.objects.filter(id=event_type_value).first()
-                                if type_resource and type_resource.name:
-                                    event_type_value = type_resource.name
-                    except Exception:
-                        # Keep original value if resolution fails
-                        pass
-                event_info['type'] = event_type_value
+                    if location_names:
+                        location_display = ', '.join(location_names)
+                    elif wikidata_value:
+                        location_display = str(wikidata_value)
+
+            if not location_display and location_entity_id:
+                location_display = self._resolve_location_label(location_entity_id) or location_entity_id
+
+            if location_display and _looks_placeholder(location_display):
+                resolved = self._resolve_location_label(location_display)
+                if resolved:
+                    location_display = resolved
+
+            if location_display:
+                event_info['location'] = location_display
+
+            event_type_value, event_type_entity_id = _extract_property(properties, event_type_predicate)
+            if not event_type_value and event_type_entity_id:
+                event_type_value = self._resolve_entity_labels(
+                    [event_type_entity_id],
+                    (
+                        "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps",
+                        "http://arkumu.org/data/properties/deutscher-name",
+                    ),
+                    organization_code=organization_code,
+                ).get(event_type_entity_id)
+
+            event_info['type'] = event_type_value
 
             detailed_events.append(event_info)
 

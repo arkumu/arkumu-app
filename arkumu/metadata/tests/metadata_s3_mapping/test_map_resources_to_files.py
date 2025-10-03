@@ -9,6 +9,8 @@ from django.conf import settings
 
 from arkumu.storage.models import S3FileObject, UploadSession
 from arkumu.metadata.models import Resource
+from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.metatdata_s3_mapping.map_resources_to_files import (
     FileResourceMatcherService,
     MatchingConfig,
@@ -300,6 +302,35 @@ def test_match_and_link_single_match(service):
 
 
 @pytest.mark.django_db
+def test_match_and_link_to_event(service):
+    """Test linking files directly to event entities when requested."""
+    literal = create_test_resource("eventfile")
+    event = Resource.objects.create(
+        resource_type=ResourceType.ENTITY,
+        uri="http://example.com/entities/ereignis/1",
+    )
+    predicate = Resource.objects.create(
+        resource_type=ResourceType.PROPERTY,
+        uri="http://example.com/properties/has-file",
+    )
+    Triple.objects.create(subject=event, predicate=predicate, object=literal)
+
+    s3_file = create_test_s3_file("eventfile.mov", "bucket/eventfile.mov")
+
+    processed, linked, ambiguous, errors = service.match_and_link_by_filename_to_resource_value(
+        link_target="event"
+    )
+
+    assert processed == 1
+    assert linked == 1
+    assert ambiguous == 0
+    assert errors == 0
+
+    s3_file.refresh_from_db()
+    assert s3_file.related_resource == event
+
+
+@pytest.mark.django_db
 def test_match_and_link_case_insensitive(service):
     """Test case-insensitive matching."""
     # Create test data with different cases
@@ -344,14 +375,14 @@ def test_match_and_link_ambiguous_match(service):
     # Create test data with multiple matching resources that have different sources
     # to avoid the unique constraint but same values for matching
     resource1 = Resource.objects.create(
-        resource_type='LITERAL',
+        resource_type=ResourceType.LITERAL,
         value='testfile',
-        source='source1'
+        language='en'
     )
     resource2 = Resource.objects.create(
-        resource_type='LITERAL',
+        resource_type=ResourceType.LITERAL,
         value='testfile',
-        source='source2'
+        language='de'
     )
     s3_file = create_test_s3_file("testfile.pdf", "bucket/testfile.pdf")
     

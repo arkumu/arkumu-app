@@ -1,3 +1,7 @@
+from collections import defaultdict
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 from arkumu.catalog.services.schema_manifest_service import (
     CardProperty,
     CardSchema,
@@ -230,13 +234,15 @@ def test_build_project_record_collects_all_institution_codes():
         ],
     }
 
+    storage_files_map = defaultdict(list)
+
     record = service._build_project_record(
         subject_id=subject_id,
         nodes=nodes,
         edges_by_subject=edges_by_subject,
         card_schema=card_schema,
         triple_service=triple_service,
-        storage_files=[],
+        storage_files_map=storage_files_map,
     )
 
     assert record is not None
@@ -244,3 +250,71 @@ def test_build_project_record_collects_all_institution_codes():
     assert record.institution_codes == ["fuk", "rsh"]
     assert record.category_slugs == ["performing-arts"]
     assert [category.label for category in record.categories] == ["Q123"]
+
+
+def test_build_project_record_merges_event_storage_files():
+    service = ProjectSnapshotService()
+    card_schema = minimal_card_schema()
+
+    subject_id = "proj-1"
+    event_id = "event-1"
+
+    nodes = {
+        subject_id: {"uri": "http://example.org/project/proj-1"},
+        event_id: {"uri": "http://example.org/event/event-1"},
+    }
+
+    edges_by_subject = {
+        subject_id: [
+            {"predicate_canonical": CardURIs.TITLE, "object_value": "Event Project"},
+        ],
+    }
+
+    class EventTripleService(DummyTripleService):
+        def get_detailed_event_data(self, *_, **__):
+            return [
+                {
+                    "id": event_id,
+                    "name": "Event Name",
+                    "description": None,
+                    "location": None,
+                    "location_id": None,
+                    "type": None,
+                    "start": None,
+                    "end": None,
+                }
+            ]
+
+    triple_service = EventTripleService()
+
+    event_file = SimpleNamespace(
+        s3_key="events/file.mov",
+        original_path="/events/file.mov",
+        file_name="file.mov",
+        content_type="video/mp4",
+        file_size_bytes=1234,
+        sha256_checksum="checksum",
+        s3_url="https://example.org/events/file.mov",
+        status="available",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    storage_files_map = defaultdict(list)
+    storage_files_map[event_id].append(event_file)
+
+    record = service._build_project_record(
+        subject_id=subject_id,
+        nodes=nodes,
+        edges_by_subject=edges_by_subject,
+        card_schema=card_schema,
+        triple_service=triple_service,
+        storage_files_map=storage_files_map,
+    )
+
+    assert record is not None
+    assert record.events and record.events[0].id == event_id
+    assert record.digital_objects
+    digital_object = record.digital_objects[0]
+    assert digital_object.storage_key == "events/file.mov"
+    assert digital_object.file_name == "file.mov"
