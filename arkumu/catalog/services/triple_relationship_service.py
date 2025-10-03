@@ -20,8 +20,54 @@ class TripleRelationshipService:
         self.organization_code = organization_code
         self._organization: Optional[Organization] = None
         self._org_cache: Dict[str, Optional[Organization]] = {}
+        self._location_label_cache: Dict[str, Optional[str]] = {}
         if organization_code:
             self._organization = self._get_org_by_code(organization_code)
+
+    def _resolve_location_label(self, location_id: str) -> Optional[str]:
+        """Try to resolve a human-readable label for a Wikidata QID."""
+
+        if not location_id:
+            return None
+
+        if location_id in self._location_label_cache:
+            return self._location_label_cache[location_id]
+
+        label: Optional[str] = None
+
+        matching_triples = (
+            Triple.objects.filter(
+                predicate__canonical_uri="http://arkumu.org/data/properties/wikidata-id",
+                object__value=location_id,
+            )
+            .select_related("subject")
+        )
+
+        for match in matching_triples:
+            subject_id = match.subject_id
+
+            label_triple = Triple.objects.filter(
+                subject_id=subject_id,
+                predicate__canonical_uri="http://arkumu.org/data/properties/deutscher-name-des-ortes",
+            ).first()
+
+            if not label_triple:
+                label_triple = Triple.objects.filter(
+                    subject_id=subject_id,
+                    predicate__canonical_uri="http://arkumu.org/data/properties/deutscher-name",
+                ).first()
+
+            if label_triple and label_triple.object and label_triple.object.value:
+                label = label_triple.object.value
+                break
+
+            subject_resource = match.subject
+            if subject_resource and subject_resource.name:
+                label = subject_resource.name
+                break
+
+        self._location_label_cache[location_id] = label
+        return label
 
     def get_related_entities(
         self,
@@ -274,6 +320,8 @@ class TripleRelationshipService:
                                     if cached_entity
                                     else None
                                 )
+                                if not display_name:
+                                    display_name = self._resolve_location_label(location_id)
                                 location_names.append(display_name or location_id)
                             else:
                                 location_names.append(location_id)
