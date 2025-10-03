@@ -462,14 +462,21 @@ class TestOAIViewFunctions:
         assert epicur is not None
 
         resources = epicur.findall(f".//{{{DNX_NS}}}resource")
-        assert len(resources) >= len(record.digital_objects)
 
-        # File groups and structural maps should mirror digital objects
+        preservation_count = sum(
+            1
+            for obj in record.digital_objects
+            if views._infer_representation_type(obj) == "PRESERVATION_MASTER"
+        ) or len(record.digital_objects)
+
+        assert len(resources) >= preservation_count
+
+        # File groups and structural maps should mirror preservation master files
         file_grps = mets_root.findall(f".//{{{METS_NS}}}fileGrp")
-        assert len(file_grps) == len(record.digital_objects)
+        assert len(file_grps) == preservation_count
 
         struct_maps = mets_root.findall(f".//{{{METS_NS}}}structMap")
-        assert len(struct_maps) == len(record.digital_objects)
+        assert len(struct_maps) == preservation_count
 
         # Each structMap should point to a file
         for struct_map in struct_maps:

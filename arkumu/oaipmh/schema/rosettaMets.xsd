@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:mets="http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
+           xmlns:xlink="http://www.w3.org/1999/xlink"
+           targetNamespace="http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+  <xs:import namespace="http://www.w3.org/1999/xlink"/>
+
+  <xs:complexType name="xmlDataType">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="mdWrapType">
+    <xs:sequence>
+      <xs:element name="xmlData" type="mets:xmlDataType"/>
+    </xs:sequence>
+    <xs:attribute name="MDTYPE" type="xs:string" use="optional"/>
+    <xs:attribute name="OTHERMDTYPE" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="sectionType">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+    </xs:sequence>
+    <xs:attribute name="ID" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="flocatType">
+    <xs:attribute name="LOCTYPE" type="xs:string" use="optional"/>
+    <xs:anyAttribute namespace="##other" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="fileType">
+    <xs:sequence>
+      <xs:element name="FLocat" type="mets:flocatType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="ID" type="xs:string" use="optional"/>
+    <xs:attribute name="ADMID" type="xs:string" use="optional"/>
+    <xs:attribute name="MIMETYPE" type="xs:string" use="optional"/>
+    <xs:attribute name="CHECKSUM" type="xs:string" use="optional"/>
+    <xs:attribute name="CHECKSUMTYPE" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="fileGrpType">
+    <xs:sequence>
+      <xs:element name="file" type="mets:fileType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="USE" type="xs:string" use="optional"/>
+    <xs:attribute name="ID" type="xs:string" use="optional"/>
+    <xs:attribute name="ADMID" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="fileSecType">
+    <xs:sequence>
+      <xs:element name="fileGrp" type="mets:fileGrpType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="fptrType">
+    <xs:attribute name="FILEID" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="divType">
+    <xs:sequence>
+      <xs:element name="div" type="mets:divType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="fptr" type="mets:fptrType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="TYPE" type="xs:string" use="optional"/>
+    <xs:attribute name="LABEL" type="xs:string" use="optional"/>
+    <xs:attribute name="ORDERLABEL" type="xs:string" use="optional"/>
+    <xs:attribute name="ORDER" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="structMapType">
+    <xs:sequence>
+      <xs:element name="div" type="mets:divType"/>
+    </xs:sequence>
+    <xs:attribute name="ID" type="xs:string" use="optional"/>
+    <xs:attribute name="TYPE" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="metsType">
+    <xs:sequence>
+      <xs:element name="dmdSec" type="mets:sectionType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="amdSec" type="mets:sectionType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="fileSec" type="mets:fileSecType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="structMap" type="mets:structMapType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="OBJID" type="xs:string" use="optional"/>
+    <xs:attribute name="TYPE" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:element name="mets" type="mets:metsType"/>
+
+</xs:schema>

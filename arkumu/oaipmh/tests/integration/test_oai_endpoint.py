@@ -729,6 +729,97 @@ class TestOAIEndpoint:
             for f in flocats
         )
 
+    @pytest.mark.django_db
+    def test_get_record_mets_only_includes_preservation_master_files(self, oai_client, sample_resources):
+        """Ensure METS payload exposes only preservation master representations."""
+
+        resource = sample_resources[0]
+
+        with patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
+             patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:
+            mock_oai_cache.get_cached_record.return_value = None
+            mock_oai_cache.get_cached_page.return_value = None
+
+            mock_record = ProjectRecord(
+                subject_id=resource.uri,
+                uri=resource.uri,
+                digital_objects=[
+                    ProjectDigitalObject(
+                        path='objects/preservation/master.tif',
+                        storage_key='org/preservation/master.tif',
+                        file_name='master.tif',
+                        content_type='image/tiff',
+                    ),
+                    ProjectDigitalObject(
+                        path='objects/preview/preview.jpg',
+                        storage_key='org/preview/preview.jpg',
+                        file_name='preview.jpg',
+                        content_type='image/jpeg',
+                    ),
+                ],
+            )
+
+            mock_snapshot_service.get_record_by_uri.return_value = mock_record
+
+            identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
+            response = oai_client.get(
+                "/oai/",
+                {"verb": "GetRecord", "identifier": identifier, "metadataPrefix": "mets"},
+            )
+
+        assert response.status_code == 200
+        root = ET.fromstring(response.content)
+        file_groups = root.findall(f'.//{{{views.METS_NS}}}fileGrp')
+        assert len(file_groups) == 1
+        assert file_groups[0].get('USE') == 'PRESERVATION_MASTER'
+
+        flocat_hrefs = {
+            flocat.get('{http://www.w3.org/1999/xlink}href')
+            for flocat in root.findall(f'.//{{{views.METS_NS}}}FLocat')
+        }
+        assert 'org/preservation/master.tif' in flocat_hrefs
+        assert all('preview' not in (href or '') for href in flocat_hrefs)
+
+    @pytest.mark.django_db
+    def test_get_record_mets_returns_error_when_validation_fails(self, oai_client, sample_resources, xml_validator):
+        """When DNX validation fails the METS record is not disseminated."""
+
+        resource = sample_resources[0]
+
+        with patch('arkumu.oaipmh.views._validate_mets_against_dnx_schema', return_value=False) as mock_validate, \
+             patch('arkumu.oaipmh.views._fallback_record_from_storage', return_value=None), \
+             patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
+             patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:
+            mock_oai_cache.get_cached_record.return_value = None
+            mock_oai_cache.get_cached_page.return_value = None
+
+            mock_record = ProjectRecord(
+                subject_id=resource.uri,
+                uri=resource.uri,
+                digital_objects=[
+                    ProjectDigitalObject(
+                        path='objects/preservation/master.tif',
+                        storage_key='org/preservation/master.tif',
+                        file_name='master.tif',
+                        content_type='image/tiff',
+                    ),
+                ],
+            )
+
+            mock_snapshot_service.get_record_by_uri.return_value = mock_record
+
+            identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
+            response = oai_client.get(
+                "/oai/",
+                {"verb": "GetRecord", "identifier": identifier, "metadataPrefix": "mets"},
+            )
+
+        assert response.status_code == 200
+        code, message = xml_validator.extract_error(response.content.decode())
+        assert code == "idDoesNotExist"
+        assert "METS dissemination" in message
+        mock_validate.assert_called()
+
     # ============================================================================
     # GENERAL ERROR TESTS
     # ============================================================================

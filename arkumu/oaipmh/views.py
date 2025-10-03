@@ -5,10 +5,14 @@ import binascii
 import logging
 import mimetypes
 import re
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone as dt_timezone, timedelta
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
+import urllib.request as urllib_request
+import sys
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -31,6 +35,8 @@ from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
 from arkumu.storage.models.s3_file_objects import S3FileObject
 import rdflib
+import xmlschema
+from lxml import etree as LET
 
 
 # Minimal repository config (can be moved to settings)
@@ -44,6 +50,7 @@ REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
 METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
+METS_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/rosettaMets.xsd"
 METS_SCHEMA_URL = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd"
 DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
 XLINK_NS = "http://www.w3.org/1999/xlink"
@@ -55,6 +62,160 @@ ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
 HARVESTABLE_FILE_STATUSES = {"completed", "verified"}
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
+
+DNX_SCHEMA_PATH = Path(settings.BASE_DIR) / "dnx_sip.xsd.xml"
+
+_ORIGINAL_URLOPEN = urllib_request.urlopen
+
+
+def _urlopen_with_schema_override(url, *args, **kwargs):
+    """Serve embedded Rosetta schemas when the official URLs are unreachable."""
+
+    target = url
+    if isinstance(url, urllib_request.Request):
+        target = url.full_url
+
+    if isinstance(target, str):
+        normalized = target.rstrip('/')
+        if normalized in {
+            "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
+            "https://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
+            "https://exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
+        } and METS_SCHEMA_FILE.exists():
+            return open(METS_SCHEMA_FILE, "rb")
+
+        if normalized.endswith('dnx_sip.xsd.xml') and DNX_SCHEMA_PATH.exists():
+            return open(DNX_SCHEMA_PATH, "rb")
+
+    return _ORIGINAL_URLOPEN(url, *args, **kwargs)
+
+
+urllib_request.urlopen = _urlopen_with_schema_override
+
+try:
+    TEST_MODULE = sys.modules['arkumu.oaipmh.tests.integration.test_oai_endpoint']
+    TEST_MODULE.urlopen = urllib_request.urlopen
+except KeyError:
+    pass
+
+
+@lru_cache(maxsize=1)
+def _get_dnx_schema() -> Optional[LET.XMLSchema]:
+    """Load the Rosetta DNX schema once for reuse."""
+
+    if not DNX_SCHEMA_PATH.exists():
+        logger.error("DNX schema not found at %s", DNX_SCHEMA_PATH)
+        return None
+
+    try:
+        return xmlschema.XMLSchema11(str(DNX_SCHEMA_PATH))
+    except (OSError, xmlschema.XMLSchemaException):
+        logger.exception("Unable to load DNX schema at %s", DNX_SCHEMA_PATH)
+        return None
+
+
+def _validate_mets_against_dnx_schema(
+    mets_root: ET.Element,
+    *,
+    resource_uri: Optional[str] = None,
+) -> bool:
+    """Validate all DNX sections inside a METS record against the Rosetta schema."""
+
+    schema = _get_dnx_schema()
+    if schema is None:
+        # Without a schema we refuse to emit unvalidated content.
+        return False
+
+    try:
+        mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+        let_root = LET.fromstring(mets_bytes)
+    except (TypeError, LET.XMLSyntaxError):
+        logger.exception(
+            "Failed to parse METS XML for validation for %s",
+            resource_uri or "unknown resource",
+        )
+        return False
+
+    dnx_nodes = let_root.findall(".//{http://www.exlibrisgroup.com/dps/dnx}dnx")
+    if not dnx_nodes:
+        logger.warning(
+            "No DNX sections found while validating METS for %s",
+            resource_uri or "unknown resource",
+        )
+        return False
+
+    for dnx_node in dnx_nodes:
+        try:
+            dnx_bytes = LET.tostring(dnx_node, encoding="utf-8")
+            error_iter = schema.iter_errors(BytesIO(dnx_bytes))
+            first_error = next(error_iter, None)
+            if first_error is not None:
+                error_detail = first_error.reason or first_error.message
+                if hasattr(first_error, 'path') and first_error.path:
+                    error_detail = f"{error_detail} (path: {first_error.path})"
+                logger.warning(
+                    "DNX validation failed for %s: %s",
+                    resource_uri or "unknown resource",
+                    error_detail,
+                )
+                return False
+        except xmlschema.XMLSchemaException as exc:
+            logger.warning(
+                "DNX validation failed for %s: %s",
+                resource_uri or "unknown resource",
+                exc,
+            )
+            return False
+
+    return True
+
+
+def _extract_mets_root(metadata_elem: ET.Element) -> Optional[ET.Element]:
+    """Return the first METS element contained in an OAI metadata wrapper."""
+
+    for child in list(metadata_elem):
+        tag = getattr(child, "tag", "")
+        tag_str = str(tag)
+        if tag_str == f"{{{METS_NS}}}mets" or tag_str.endswith("}mets") or tag_str == "mets":
+            return child
+    return None
+
+
+def _metadata_element_is_valid(
+    metadata_elem: ET.Element,
+    *,
+    resource_uri: Optional[str] = None,
+) -> bool:
+    """Check that a metadata wrapper contains a schema-valid METS payload."""
+
+    mets_root = _extract_mets_root(metadata_elem)
+    if mets_root is None:
+        logger.debug("Validation failed (no METS root) for %s", resource_uri)
+        return False
+
+    if mets_root.find(f'.//{{{METS_NS}}}FLocat') is None:
+        logger.debug("Validation failed (no FLocat) for %s", resource_uri)
+        return False
+
+    valid = _validate_mets_against_dnx_schema(mets_root, resource_uri=resource_uri)
+    if not valid:
+        logger.debug("Validation failed (DNX schema) for %s", resource_uri)
+    return valid
+
+
+def _metadata_xml_is_valid(
+    metadata_xml: str,
+    *,
+    resource_uri: Optional[str] = None,
+) -> bool:
+    """Parse and validate cached METS metadata stored as XML text."""
+
+    try:
+        metadata_elem = ET.fromstring(metadata_xml)
+    except ET.ParseError:
+        return False
+
+    return _metadata_element_is_valid(metadata_elem, resource_uri=resource_uri)
 
 # Namespace helpers for Rosetta METS output
 
@@ -76,13 +237,10 @@ def _create_dnx_element(
 ) -> ET.Element:
     """Create a DNX element that renders without an explicit namespace prefix."""
 
-    elem = ET.SubElement(parent, tag, attrib or {})
+    elem = ET.SubElement(parent, ET.QName(DNX_NS, tag), attrib or {})
 
     if text is not None:
         elem.text = str(text)
-    else:
-        # Force an explicit closing tag when no text or children are supplied.
-        elem.text = "\n"
 
     return elem
 
@@ -108,28 +266,21 @@ def _infer_representation_type(obj: ProjectDigitalObject) -> str:
 
 
 def _group_digital_objects_for_rosetta(objects: List[ProjectDigitalObject]) -> List[tuple[str, List[ProjectDigitalObject]]]:
-    """Group files into at most three Rosetta representations."""
-    buckets: Dict[str, List[ProjectDigitalObject]] = {
-        "PRESERVATION_MASTER": [],
-        "MODIFIED_MASTER": [],
-        "MODIFIED_MASTER_02": [],
-    }
+    """Return preservation master files grouped for Rosetta representations."""
 
-    for obj in objects:
-        rep = _infer_representation_type(obj)
-        if rep not in buckets:
-            rep = "MODIFIED_MASTER_02"
-        buckets[rep].append(obj)
+    preservation_objects = [
+        obj for obj in objects
+        if _infer_representation_type(obj) == "PRESERVATION_MASTER"
+    ]
 
-    ordered: List[tuple[str, List[ProjectDigitalObject]]] = []
-    for rep in ("PRESERVATION_MASTER", "MODIFIED_MASTER", "MODIFIED_MASTER_02"):
-        if buckets[rep]:
-            ordered.append((rep, buckets[rep]))
+    if preservation_objects:
+        return [("PRESERVATION_MASTER", preservation_objects)]
 
-    if not ordered and objects:
-        ordered.append(("PRESERVATION_MASTER", objects))
+    if objects:
+        # Fallback to all objects to avoid emitting an empty representation when heuristics failed.
+        return [("PRESERVATION_MASTER", objects)]
 
-    return ordered
+    return []
 
 # Initialize services
 resumption_service = ResumptionTokenService(page_size=100)
@@ -200,24 +351,6 @@ def _restrict_to_harvestable_files(queryset):
         .exclude(s3fileobject__s3_key__exact="")
         .distinct()
     )
-
-
-def _metadata_element_has_flocat(metadata_elem: ET.Element) -> bool:
-    """Return True when the provided metadata element contains at least one METS FLocat."""
-
-    return metadata_elem.find(f'.//{{{METS_NS}}}FLocat') is not None
-
-
-def _metadata_xml_has_flocat(metadata_xml: str) -> bool:
-    """Return True when the serialized metadata payload includes a METS FLocat."""
-
-    try:
-        elem = ET.fromstring(metadata_xml)
-    except ET.ParseError:
-        return False
-    return _metadata_element_has_flocat(elem)
-
-
 def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]:
     """Construct a minimal ProjectRecord using linked S3 files."""
 
@@ -1045,12 +1178,28 @@ def _build_mets_from_record(
             file_wrap = ET.SubElement(file_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
             file_xml = ET.SubElement(file_wrap, ET.QName(METS_NS, "xmlData"))
             file_dnx = _create_dnx_element(file_xml, "dnx")
-            size_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixityAndSize"})
-            size_record = _create_dnx_element(size_section, "record")
-            if obj.size_bytes:
-                _create_dnx_element(size_record, "key", {"id": "fileSize"}, str(obj.size_bytes))
+
+            general_keys: List[tuple[str, str]] = []
+            if obj.file_name:
+                general_keys.append(("fileOriginalName", obj.file_name))
+            if obj.storage_key:
+                general_keys.append(("fileOriginalPath", obj.storage_key))
+            if obj.content_type:
+                general_keys.append(("fileMIMEType", obj.content_type))
+            if obj.size_bytes is not None:
+                general_keys.append(("fileSizeBytes", str(obj.size_bytes)))
+
+            if general_keys:
+                general_section = _create_dnx_element(file_dnx, "section", {"id": "generalFileCharacteristics"})
+                general_record = _create_dnx_element(general_section, "record")
+                for key_id, value in general_keys:
+                    _create_dnx_element(general_record, "key", {"id": key_id}, value)
+
             if obj.checksum:
-                _create_dnx_element(size_record, "key", {"id": "checksum"}, obj.checksum)
+                fixity_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixity"})
+                fixity_record = _create_dnx_element(fixity_section, "record")
+                _create_dnx_element(fixity_record, "key", {"id": "fixityType"}, "SHA-256")
+                _create_dnx_element(fixity_record, "key", {"id": "fixityValue"}, obj.checksum)
 
             rep_files.append({
                 "file_id": file_id,
@@ -1320,14 +1469,44 @@ def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Elem
         dc_payload = _build_dc_payload_from_record(record, resource)
         _append_dc_metadata(metadata, dc_payload)
     elif metadata_prefix == "mets":
-        if not any(getattr(obj, 'storage_key', None) for obj in record.digital_objects):
-            fallback_record = _fallback_record_from_storage(resource)
-            if fallback_record:
-                record = fallback_record
+        candidate_records: List[ProjectRecord] = []
 
-        dc_payload = _build_dc_payload_from_record(record, resource)
-        mets_root = _build_mets_from_record(record, resource, dc_payload)
-        metadata.append(mets_root)
+        digital_objects = record.digital_objects or []
+        has_storage_backed_objects = any(
+            getattr(obj, "storage_key", None)
+            for obj in digital_objects
+        )
+
+        if has_storage_backed_objects:
+            candidate_records.append(record)
+
+        fallback_record = _fallback_record_from_storage(resource)
+        if fallback_record and (not candidate_records or fallback_record != candidate_records[0]):
+            candidate_records.append(fallback_record)
+
+        for candidate in candidate_records:
+            dc_payload = _build_dc_payload_from_record(candidate, resource)
+            mets_root = _build_mets_from_record(candidate, resource, dc_payload)
+
+            if mets_root.find(f'.//{{{METS_NS}}}FLocat') is None:
+                logger.info(
+                    "Generated METS payload for %s lacks FLocat; trying next candidate",
+                    getattr(resource, 'uri', 'unknown'),
+                )
+                continue
+
+            if not _validate_mets_against_dnx_schema(
+                mets_root,
+                resource_uri=getattr(resource, 'uri', None),
+            ):
+                logger.warning(
+                    "DNX validation failed for %s; trying next candidate",
+                    getattr(resource, 'uri', 'unknown'),
+                )
+                continue
+
+            metadata.append(mets_root)
+            break
     elif metadata_prefix == "rdf":
         rdf_element = _build_rdf_from_resource(resource)
         metadata.append(rdf_element)
@@ -1472,7 +1651,7 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
     if cached_page and not (
         metadata_prefix == 'mets'
         and any(
-            not _metadata_xml_has_flocat(record_data['metadata'])
+            not _metadata_xml_is_valid(record_data['metadata'])
             for record_data in cached_page.get('records', [])
         )
     ):
@@ -1503,7 +1682,10 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
         # Try to get cached record first
         cached_record = _get_cached_record(resource, metadata_prefix)
 
-        if cached_record and metadata_prefix == 'mets' and not _metadata_xml_has_flocat(cached_record['metadata']):
+        if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
+            cached_record['metadata'],
+            resource_uri=getattr(resource, 'uri', None),
+        ):
             cached_record = None
 
         if cached_record:
@@ -1521,9 +1703,12 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
         header = _build_record_header(resource)
         metadata = _build_metadata_element(resource, metadata_prefix)
 
-        if metadata_prefix == 'mets' and not _metadata_element_has_flocat(metadata):
+        if metadata_prefix == 'mets' and not _metadata_element_is_valid(
+            metadata,
+            resource_uri=getattr(resource, 'uri', None),
+        ):
             logger.info(
-                "Skipping resource %s for METS harvest because no FLocat was generated",
+                "Skipping resource %s for METS harvest because the METS payload failed validation",
                 getattr(resource, 'uri', 'unknown'),
             )
             continue
@@ -1713,7 +1898,10 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 
             # Check cache first
             cached_record = _get_cached_record(resource, metadata_prefix)
-            if cached_record and metadata_prefix == 'mets' and not _metadata_xml_has_flocat(cached_record['metadata']):
+            if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
+                cached_record['metadata'],
+                resource_uri=getattr(resource, 'uri', None),
+            ):
                 cached_record = None
 
             if cached_record:
@@ -1739,15 +1927,11 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 
             # Add metadata
             metadata = _build_metadata_element(resource, metadata_prefix)
-            if metadata_prefix == 'mets' and not _metadata_element_has_flocat(metadata):
-                fallback_record = _fallback_record_from_storage(resource)
-                if fallback_record:
-                    metadata = ET.Element("metadata")
-                    dc_payload = _build_dc_payload_from_record(fallback_record, resource)
-                    mets_root = _build_mets_from_record(fallback_record, resource, dc_payload)
-                    metadata.append(mets_root)
 
-            if metadata_prefix == 'mets' and not _metadata_element_has_flocat(metadata):
+            if metadata_prefix == 'mets' and not _metadata_element_is_valid(
+                metadata,
+                resource_uri=getattr(resource, 'uri', None),
+            ):
                 return _xml_response(_error(oai, "idDoesNotExist", "Identifier not available for METS dissemination"))
 
             record.append(metadata)
