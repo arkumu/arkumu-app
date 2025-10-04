@@ -13,13 +13,18 @@ from django.urls import reverse
 from django.utils import timezone
 from urllib.parse import quote
 from urllib.request import urlopen
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from arkumu.projects.models import ProjectRecord, ProjectDigitalObject
+from arkumu.projects.models import (
+    ProjectRecord,
+    ProjectDigitalObject,
+    ProjectInstitution,
+    ProjectSnapshot,
+)
 
 from arkumu.oaipmh import views
 
-from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, XSI_NS
+from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, XSI_NS, XLINK_NS
 
 
 SIMPLE_DC_TERMS = {
@@ -651,6 +656,10 @@ class TestOAIEndpoint:
             )
 
             mock_snapshot_service.get_record_by_uri.return_value = mock_record
+            mock_snapshot_service.get_cross_institutional_snapshot.return_value = Mock(
+                projects=[mock_record],
+                generated_at=timezone.now(),
+            )
 
             identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
             response = oai_client.get(
@@ -711,6 +720,10 @@ class TestOAIEndpoint:
             )
 
             mock_snapshot_service.get_record_by_uri.return_value = mock_record
+            mock_snapshot_service.get_cross_institutional_snapshot.return_value = Mock(
+                projects=[mock_record],
+                generated_at=timezone.now(),
+            )
 
             identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
             response = oai_client.get(
@@ -760,6 +773,10 @@ class TestOAIEndpoint:
             )
 
             mock_snapshot_service.get_record_by_uri.return_value = mock_record
+            mock_snapshot_service.get_cross_institutional_snapshot.return_value = Mock(
+                projects=[mock_record],
+                generated_at=timezone.now(),
+            )
 
             identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
             response = oai_client.get(
@@ -807,6 +824,10 @@ class TestOAIEndpoint:
             )
 
             mock_snapshot_service.get_record_by_uri.return_value = mock_record
+            mock_snapshot_service.get_cross_institutional_snapshot.return_value = Mock(
+                projects=[mock_record],
+                generated_at=timezone.now(),
+            )
 
             identifier = f"oai:arkumu:resource:{quote(resource.uri)}"
             response = oai_client.get(
@@ -819,6 +840,227 @@ class TestOAIEndpoint:
         assert code == "idDoesNotExist"
         assert "METS dissemination" in message
         mock_validate.assert_called()
+
+    @pytest.mark.django_db
+    def _setup_rosetta_project(
+        self,
+        *,
+        org_code: str,
+        rosetta_path: str,
+        resource_uri: str,
+        title: str,
+        settings,
+        tmp_path,
+    ):
+        from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+        from arkumu.users.models import Organization
+        from arkumu.oaipmh import path_mapping
+
+        org = Organization.objects.create(
+            name=org_code.upper(),
+            code=org_code,
+            domain=f"{org_code}.example",
+            is_active=True,
+        )
+        resource = Resource.objects.create(
+            uri=resource_uri,
+            organization=org,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=timezone.now(),
+        )
+
+        mapping_file = tmp_path / f"{org_code}_paths.txt"
+        mapping_file.write_text(f"{rosetta_path}\n", encoding="utf-8")
+
+        files_config = dict(getattr(settings, 'OAI_EXTERNAL_PATH_FILES', {}))
+        files_config[org_code] = str(mapping_file)
+        settings.OAI_EXTERNAL_PATH_FILES = files_config
+
+        roots_config = dict(getattr(settings, 'OAI_EXTERNAL_ROSETTA_ROOTS', {}))
+        if org_code == 'khm':
+            roots_config['khm'] = '/rosetta/khm/sandbox/input/arkumu/daten'
+        if org_code == 'hmt':
+            roots_config['hmt'] = '/rosetta/hfmt/sandbox/input/arkumu'
+        settings.OAI_EXTERNAL_ROSETTA_ROOTS = roots_config
+
+        prefixes_config = dict(getattr(settings, 'OAI_EXTERNAL_PATH_PREFIXES', {}))
+        prefixes_config.setdefault('hmt', ['/Volumes/18TB1'])
+        settings.OAI_EXTERNAL_PATH_PREFIXES = prefixes_config
+
+        path_mapping._load_index.cache_clear()
+
+        record = ProjectRecord(
+            subject_id=f"snapshot-{org_code}-1",
+            uri=resource_uri,
+            title=title,
+            institution=ProjectInstitution(label=org_code.upper(), code=org_code),
+            digital_objects=[
+                ProjectDigitalObject(
+                    path=rosetta_path,
+                    file_name=rosetta_path.split('/')[-1],
+                    content_type='image/tiff',
+                )
+            ],
+        )
+
+        return resource, record
+
+    @pytest.mark.django_db
+    def test_list_records_khm_uses_rosetta_paths(
+        self,
+        oai_client,
+        mock_canonical_graph_service,
+        settings,
+        tmp_path,
+    ):
+        settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('khm',)
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk', 'det', 'rsh')
+
+        rosetta_path = "/rosetta/khm/sandbox/input/arkumu/daten/object_master.tif"
+        resource, record = self._setup_rosetta_project(
+            org_code='khm',
+            rosetta_path=rosetta_path,
+            resource_uri="https://arkumu.org/entities/projekt/9001",
+            title="KHM Rosetta Project",
+            settings=settings,
+            tmp_path=tmp_path,
+        )
+        snapshot = ProjectSnapshot(projects=[record])
+
+        with patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
+             patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:
+            mock_oai_cache.get_cached_record.return_value = None
+            mock_oai_cache.get_cached_page.return_value = None
+            mock_oai_cache.cache_page.return_value = None
+            mock_oai_cache.cache_record.return_value = None
+
+            mock_snapshot_service.get_cross_institutional_snapshot.return_value = snapshot
+            mock_snapshot_service.get_record_by_uri.side_effect = lambda uri: record if uri == resource.uri else None
+            mock_snapshot_service.refresh_cross_institutional_snapshot.return_value = snapshot
+
+            response = oai_client.get(
+                self.oai_url,
+                {"verb": "ListRecords", "metadataPrefix": "mets", "set": "khm"},
+            )
+
+        assert response.status_code == 200
+        root = ET.fromstring(response.content)
+        ns = {"mets": METS_NS, "xlink": XLINK_NS}
+        hrefs = {
+            flocat.get(f"{{{XLINK_NS}}}href")
+            for flocat in root.findall('.//mets:FLocat', ns)
+        }
+        assert rosetta_path in hrefs, hrefs
+        set_specs = {header.text for header in root.findall('.//{http://www.openarchives.org/OAI/2.0/}setSpec')}
+        assert set_specs == {'khm'}
+
+    @pytest.mark.django_db
+    def test_list_records_hmt_uses_rosetta_paths(
+        self,
+        oai_client,
+        mock_canonical_graph_service,
+        settings,
+        tmp_path,
+    ):
+        settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('hmt',)
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk', 'det', 'rsh')
+
+        rosetta_path = "/rosetta/hfmt/sandbox/input/arkumu/object_master.wav"
+        resource, record = self._setup_rosetta_project(
+            org_code='hmt',
+            rosetta_path=rosetta_path,
+            resource_uri="https://arkumu.org/entities/projekt/9002",
+            title="HMT Audio Project",
+            settings=settings,
+            tmp_path=tmp_path,
+        )
+        snapshot = ProjectSnapshot(projects=[record])
+
+        with patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
+             patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:
+            mock_oai_cache.get_cached_record.return_value = None
+            mock_oai_cache.get_cached_page.return_value = None
+            mock_oai_cache.cache_page.return_value = None
+            mock_oai_cache.cache_record.return_value = None
+
+            mock_snapshot_service.get_cross_institutional_snapshot.return_value = snapshot
+            mock_snapshot_service.get_record_by_uri.side_effect = lambda uri: record if uri == resource.uri else None
+            mock_snapshot_service.refresh_cross_institutional_snapshot.return_value = snapshot
+
+            response = oai_client.get(
+                self.oai_url,
+                {"verb": "ListRecords", "metadataPrefix": "mets", "set": "hmt"},
+            )
+
+        assert response.status_code == 200
+        root = ET.fromstring(response.content)
+        ns = {"mets": METS_NS, "xlink": XLINK_NS}
+        hrefs = {
+            flocat.get(f"{{{XLINK_NS}}}href")
+            for flocat in root.findall('.//mets:FLocat', ns)
+        }
+        assert rosetta_path in hrefs, hrefs
+        set_specs = {header.text for header in root.findall('.//{http://www.openarchives.org/OAI/2.0/}setSpec')}
+        assert set_specs == {'hmt'}
+
+    @pytest.mark.django_db
+    def test_list_records_set_without_matching_resources_returns_empty(
+        self,
+        oai_client,
+        mock_canonical_graph_service,
+        settings,
+        tmp_path,
+    ):
+        settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('khm',)
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+
+        rosetta_path = "/rosetta/khm/sandbox/input/arkumu/daten/object_master.tif"
+        _, khm_record = self._setup_rosetta_project(
+            org_code='khm',
+            rosetta_path=rosetta_path,
+            resource_uri="https://arkumu.org/entities/projekt/9001",
+            title="KHM Rosetta Project",
+            settings=settings,
+            tmp_path=tmp_path,
+        )
+
+        fuk_resource, fuk_record = self._setup_rosetta_project(
+            org_code='fuk',
+            rosetta_path='s3://fuk/object_master.tif',
+            resource_uri="https://arkumu.org/entities/projekt/1001",
+            title="FUK Project",
+            settings=settings,
+            tmp_path=tmp_path,
+        )
+
+        # KHM resource removed from DB to simulate missing metadata entry
+        from arkumu.metadata.models.resource import Resource
+        Resource.objects.filter(uri=khm_record.uri).delete()
+
+        snapshot = ProjectSnapshot(projects=[khm_record, fuk_record])
+
+        with patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
+             patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:
+            mock_oai_cache.get_cached_record.return_value = None
+            mock_oai_cache.get_cached_page.return_value = None
+
+            mock_snapshot_service.get_cross_institutional_snapshot.return_value = snapshot
+            mock_snapshot_service.get_record_by_uri.side_effect = lambda uri: (
+                khm_record if uri == khm_record.uri else fuk_record if uri == fuk_record.uri else None
+            )
+            mock_snapshot_service.refresh_cross_institutional_snapshot.return_value = snapshot
+
+            response = oai_client.get(
+                self.oai_url,
+                {"verb": "ListRecords", "metadataPrefix": "mets", "set": "khm"},
+            )
+
+        assert response.status_code == 200
+        root = ET.fromstring(response.content)
+        error = root.find('{http://www.openarchives.org/OAI/2.0/}error')
+        assert error is not None
+        assert error.get('code') == 'noRecordsMatch'
 
     # ============================================================================
     # GENERAL ERROR TESTS

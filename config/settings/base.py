@@ -464,3 +464,67 @@ ENABLE_CANONICAL_URI_API = False
 # Optional HTTP Basic Auth for OAI endpoint (uses Django users)
 OAI_BASIC_AUTH_ENABLED = env.bool("OAI_BASIC_AUTH_ENABLED", default=False)
 OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=[])
+
+# Path mapping configuration for Rosetta-backed institutions
+OAI_EXTERNAL_PATH_FILES = {
+    "hmt": env(
+        "OAI_EXTERNAL_PATH_FILE_HMT",
+        default=str(BASE_DIR / "_hmt_paths.txt"),
+    ),
+    "khm": env(
+        "OAI_EXTERNAL_PATH_FILE_KHM",
+        default=str(BASE_DIR / "_khm_paths.txt"),
+    ),
+}
+
+OAI_EXTERNAL_ROSETTA_ROOTS = {
+    "hmt": env(
+        "OAI_EXTERNAL_ROSETTA_ROOT_HMT",
+        default="/rosetta/hfmt/sandbox/input/arkumu",
+    ),
+    "khm": env(
+        "OAI_EXTERNAL_ROSETTA_ROOT_KHM",
+        default="/rosetta/khm/sandbox/input/arkumu/daten",
+    ),
+}
+
+_default_hmt_prefixes = env(
+    "OAI_EXTERNAL_PATH_PREFIXES_HMT",
+    default="/Volumes/18TB1,/rosetta/hfmt/sandbox/input/arkumu",
+)
+OAI_EXTERNAL_PATH_PREFIXES = {
+    "hmt": [
+        prefix.strip()
+        for prefix in _default_hmt_prefixes.split(",")
+        if prefix.strip()
+    ]
+}
+
+OAI_S3_HARVESTABLE_ORGS = tuple(
+    org.strip()
+    for org in env.list(
+        "OAI_S3_HARVESTABLE_ORGS",
+        default=["fuk", "det", "rsh"],
+    )
+    if org.strip()
+)
+
+OAI_ROSETTA_HARVESTABLE_ORGS = tuple(
+    org.strip()
+    for org in env.list(
+        "OAI_ROSETTA_HARVESTABLE_ORGS",
+        default=["khm", "hmt"],
+    )
+    if org.strip()
+)
+
+OAI_INSTITUTION_CODE_ALIASES = {
+    # Canonical code -> alias mapping for snapshot hash identifiers
+    "ff8f3b0306bebf6d": "hmt",  # Hochschule für Musik und Tanz Köln
+    "aa5f824e167db5e1": "khm",  # Kunsthochschule für Medien Köln
+}
+
+OAI_INSTITUTION_LABEL_ALIASES = {
+    "hochschule für musik und tanz köln": "hmt",
+    "kunsthochschule für medien köln": "khm",
+}

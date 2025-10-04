@@ -9,7 +9,7 @@ from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone as dt_timezone, timedelta
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import unquote, urlparse
 import urllib.request as urllib_request
 import sys
@@ -26,7 +26,7 @@ from django.db.models import Q
 
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.users.models import Organization
-from arkumu.projects import ProjectDigitalObject, ProjectRecord
+from arkumu.projects import ProjectDigitalObject, ProjectRecord, ProjectSnapshot
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
@@ -34,6 +34,12 @@ from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.oaipmh.oai_project import (
+    HARVESTABLE_STORAGE_STATUSES,
+    NormalizedDigitalObject,
+    OAIProject,
+    OAIProjectBuilder,
+)
 import rdflib
 import xmlschema
 from lxml import etree as LET
@@ -59,7 +65,7 @@ RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
 ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
-HARVESTABLE_FILE_STATUSES = {"completed", "verified"}
+HARVESTABLE_FILE_STATUSES = HARVESTABLE_STORAGE_STATUSES
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
@@ -245,9 +251,14 @@ def _create_dnx_element(
     return elem
 
 
-def _infer_representation_type(obj: ProjectDigitalObject) -> str:
+def _infer_representation_type(obj: NormalizedDigitalObject) -> str:
     """Heuristically map digital objects onto Rosetta representation buckets."""
-    hint_parts = [obj.storage_key or '', obj.path or '', obj.file_name or '']
+    hint_parts = [
+        obj.storage_key or '',
+        obj.original_path or '',
+        obj.file_name or '',
+        obj.rosetta_path or '',
+    ]
     hint = " ".join(hint_parts).lower()
 
     if any(token in hint for token in ("preservation", "master")):
@@ -265,7 +276,7 @@ def _infer_representation_type(obj: ProjectDigitalObject) -> str:
     return "PRESERVATION_MASTER"
 
 
-def _group_digital_objects_for_rosetta(objects: List[ProjectDigitalObject]) -> List[tuple[str, List[ProjectDigitalObject]]]:
+def _group_digital_objects_for_rosetta(objects: List[NormalizedDigitalObject]) -> List[tuple[str, List[NormalizedDigitalObject]]]:
     """Return preservation master files grouped for Rosetta representations."""
 
     preservation_objects = [
@@ -283,9 +294,10 @@ def _group_digital_objects_for_rosetta(objects: List[ProjectDigitalObject]) -> L
     return []
 
 # Initialize services
-resumption_service = ResumptionTokenService(page_size=100)
+resumption_service = ResumptionTokenService(page_size=20)
 oai_cache = OAICacheService()
 snapshot_service = ProjectSnapshotService()
+project_builder = OAIProjectBuilder()
 
 # Register stable namespace prefixes so ElementTree uses human-friendly tags
 ET.register_namespace("oai_dc", OAI_DC_NS)
@@ -328,29 +340,67 @@ def _enforce_basic_auth(request: HttpRequest) -> Optional[HttpResponse]:
     return response
 
 
-def _get_cached_record(resource: Resource, metadata_prefix: str) -> Optional[Dict[str, Any]]:
+def _get_cached_record(
+    resource: Resource,
+    metadata_prefix: str,
+    *,
+    snapshot_marker: str = "",
+) -> Optional[Dict[str, Any]]:
     """Get cached OAI-PMH record if available."""
     profile_version = ROSETTA_METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
-    return oai_cache.get_cached_record(resource, metadata_prefix, profile_version=profile_version)
+    return oai_cache.get_cached_record(
+        resource,
+        metadata_prefix,
+        profile_version=profile_version,
+        snapshot_marker=snapshot_marker,
+    )
 
 
-def _cache_record(resource: Resource, metadata_prefix: str, header_xml: str, metadata_xml: str):
+def _cache_record(
+    resource: Resource,
+    metadata_prefix: str,
+    header_xml: str,
+    metadata_xml: str,
+    *,
+    snapshot_marker: str = "",
+):
     """Cache OAI-PMH record data."""
     profile_version = ROSETTA_METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
-    oai_cache.cache_record(resource, metadata_prefix, header_xml, metadata_xml, profile_version=profile_version)
+    oai_cache.cache_record(
+        resource,
+        metadata_prefix,
+        header_xml,
+        metadata_xml,
+        profile_version=profile_version,
+        snapshot_marker=snapshot_marker,
+    )
 
 
 def _restrict_to_harvestable_files(queryset):
     """Limit queryset to resources with at least one linked S3 object ready for harvest."""
 
-    return (
-        queryset.filter(
-            s3fileobject__status__in=HARVESTABLE_FILE_STATUSES,
-            s3fileobject__s3_key__isnull=False,
-        )
-        .exclude(s3fileobject__s3_key__exact="")
-        .distinct()
+    s3_condition = (
+        Q(s3fileobject__status__in=HARVESTABLE_FILE_STATUSES)
+        & Q(s3fileobject__s3_key__isnull=False)
+        & ~Q(s3fileobject__s3_key__exact="")
     )
+
+    rosetta_orgs = {
+        code.lower().strip()
+        for code in getattr(settings, "OAI_ROSETTA_HARVESTABLE_ORGS", ())
+        if code
+    }
+
+    rosetta_condition = Q()
+    for code in rosetta_orgs:
+        rosetta_condition |= Q(organization__code__iexact=code)
+
+    if rosetta_condition:
+        queryset = queryset.filter(rosetta_condition | s3_condition)
+    else:
+        queryset = queryset.filter(s3_condition)
+
+    return queryset.distinct()
 def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]:
     """Construct a minimal ProjectRecord using linked S3 files."""
 
@@ -617,6 +667,7 @@ def _list_identifiers(oai: ET.Element, params) -> ET.Element:
 
     # Handle resumption token
     offset = 0
+    snapshot_marker_from_token: Optional[str] = None
     if has_resumption_param:
         if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
@@ -631,9 +682,21 @@ def _list_identifiers(oai: ET.Element, params) -> ET.Element:
         set_spec = token_data.get("set")
         from_date = token_data.get("from")
         until_date = token_data.get("until")
+        snapshot_marker_from_token = token_data.get("snapshot")
+
+    snapshot, harvestable_projects = _harvestable_snapshot_projects()
+    snapshot_version = snapshot.generated_at.isoformat()
+
+    if snapshot_marker_from_token and snapshot_marker_from_token != snapshot_version:
+        return _error(oai, "badResumptionToken", "Snapshot has changed; restart harvesting")
+
+    allowed_uris = list(harvestable_projects.keys())
+
+    if not allowed_uris:
+        return _error(oai, "noRecordsMatch", "No harvestable projects available")
 
     # Build resource queryset
-    queryset = _get_resources_queryset(set_spec, from_date, until_date, metadata_prefix)
+    queryset = _get_resources_queryset(set_spec, from_date, until_date, metadata_prefix, allowed_uris=allowed_uris)
 
     # Get page of resources
     page_size = resumption_service.page_size
@@ -653,7 +716,8 @@ def _list_identifiers(oai: ET.Element, params) -> ET.Element:
         set_spec=set_spec or '',
         from_date=from_date or '',
         until_date=until_date or '',
-        offset=offset
+        offset=offset,
+        snapshot_marker=snapshot_version,
     )
     if cached_page:
         # Rebuild from cached data
@@ -692,7 +756,8 @@ def _list_identifiers(oai: ET.Element, params) -> ET.Element:
             metadata_prefix=metadata_prefix,
             set_spec=set_spec,
             from_date=from_date,
-            until_date=until_date
+            until_date=until_date,
+            snapshot_marker=snapshot_version,
         )
         resumption_elem = ET.SubElement(list_identifiers, "resumptionToken")
         resumption_elem.text = resumption_token
@@ -712,7 +777,8 @@ def _list_identifiers(oai: ET.Element, params) -> ET.Element:
         set_spec=set_spec or '',
         from_date=from_date or '',
         until_date=until_date or '',
-        offset=offset
+        offset=offset,
+        snapshot_marker=snapshot_version,
     )
 
     return oai
@@ -763,6 +829,7 @@ def _get_resources_queryset(
     from_date: Optional[str] = None,
     until_date: Optional[str] = None,
     metadata_prefix: Optional[str] = None,
+    allowed_uris: Optional[Sequence[str]] = None,
 ):
     """Build a filtered queryset for harvestable resources."""
     # For both Dublin Core and METS: expose only project entities as primary records
@@ -771,17 +838,21 @@ def _get_resources_queryset(
         Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
     )
 
-    queryset = (
-        Resource.objects.filter(
-            Q(uri__regex=r'/entities/projekt/[0-9]+$') & access_clause
-        )
-        .select_related('organization')
-        .order_by('updated_at', 'id')
-    )
-
-    if not queryset.exists():
+    if allowed_uris is not None:
+        uris = list(dict.fromkeys(allowed_uris))
+        if not uris:
+            return Resource.objects.none()
         queryset = (
-            Resource.objects.filter(access_clause)
+            Resource.objects.filter(uri__in=uris)
+            .filter(access_clause)
+            .select_related('organization')
+            .order_by('updated_at', 'id')
+        )
+    else:
+        queryset = (
+            Resource.objects.filter(
+                Q(uri__regex=r'/entities/projekt/[0-9]+$') & access_clause
+            )
             .select_related('organization')
             .order_by('updated_at', 'id')
         )
@@ -790,7 +861,7 @@ def _get_resources_queryset(
 
     # Filter by set (organization)
     if set_spec:
-        queryset = queryset.filter(organization__code=set_spec, organization__is_active=True)
+        queryset = queryset.filter(organization__code__iexact=set_spec, organization__is_active=True)
 
     # Temporal filtering with proper OAI-PMH date validation
     if from_date:
@@ -883,6 +954,48 @@ def _get_snapshot_record(resource: Resource) -> Optional[ProjectRecord]:
     return snapshot_service.get_record_by_uri(project_uri)
 
 
+def _candidate_projects_for_resource(
+    resource: Resource,
+    primary_project: Optional[OAIProject] = None,
+) -> List[OAIProject]:
+    """Return snapshot and fallback OAI projects in priority order."""
+
+    candidates: List[OAIProject] = []
+    seen: set[str] = set()
+
+    if primary_project is not None:
+        candidates.append(primary_project)
+        seen.add(primary_project.uri)
+    else:
+        record = _get_snapshot_record(resource)
+        if record:
+            project = project_builder.from_project_record(record)
+            candidates.append(project)
+            seen.add(project.uri)
+
+    fallback_record = _fallback_record_from_storage(resource)
+    if fallback_record:
+        fallback_project = project_builder.from_project_record(fallback_record)
+        if fallback_project.uri not in seen:
+            candidates.append(fallback_project)
+
+    return candidates
+
+
+def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProject]]:
+    """Build a mapping of harvestable projects keyed by project URI."""
+
+    snapshot = snapshot_service.get_cross_institutional_snapshot()
+    harvestable: Dict[str, OAIProject] = {}
+
+    for record in snapshot.projects:
+        project = project_builder.from_project_record(record)
+        if project.harvestable:
+            harvestable[project.uri] = project
+
+    return snapshot, harvestable
+
+
 def _add_dc_value(
     payload: Dict[str, List[str]],
     term: str,
@@ -905,11 +1018,18 @@ def _normalize_reference(value: Optional[str]) -> Optional[str]:
     return value
 
 
-def _guess_mime_type(obj: ProjectDigitalObject) -> Optional[str]:
+def _guess_mime_type(obj: Any) -> Optional[str]:
     """Derive a MIME type from explicit metadata or file extension."""
-    if obj.content_type:
-        return obj.content_type
-    candidates = [obj.file_name, obj.access_url, obj.path, obj.storage_key]
+    content_type = getattr(obj, 'content_type', None)
+    if content_type:
+        return content_type
+
+    candidates = [
+        getattr(obj, 'file_name', None),
+        getattr(obj, 'access_url', None),
+        getattr(obj, 'path', None),
+        getattr(obj, 'storage_key', None),
+    ]
     for candidate in candidates:
         if not candidate:
             continue
@@ -962,8 +1082,10 @@ def _collect_collection_labels(resource: Resource, record: ProjectRecord) -> Lis
     return labels
 
 
-def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> Dict[str, List[str]]:
+def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> Dict[str, List[str]]:
     payload: Dict[str, List[str]] = {}
+
+    record = project.record
 
     _add_dc_value(payload, 'title', record.title)
     for alt in record.alternative_titles:
@@ -1018,16 +1140,16 @@ def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> 
 
     formats_before = set(payload.get('dc:format', []))
 
-    if record.digital_objects:
+    if project.digital_objects:
         formats_added: set[str] = set(payload.get('dc:format', []))
-        for obj in record.digital_objects:
+        for obj in project.digital_objects:
             if obj.content_type:
                 if obj.content_type not in formats_added:
                     _add_dc_value(payload, 'format', obj.content_type)
                     formats_added.add(obj.content_type)
 
         if not payload.get('dc:format'):
-            for obj in record.digital_objects:
+            for obj in project.digital_objects:
                 guess = _guess_mime_type(obj)
                 if guess and guess not in formats_added:
                     _add_dc_value(payload, 'format', guess)
@@ -1073,12 +1195,14 @@ def _append_dc_metadata(metadata: ET.Element, dc_payload: Dict[str, List[str]]) 
             ET.SubElement(dc_root, f"{{{ns_uri}}}{term}").text = value
 
 
-def _build_mets_from_record(
-    record: ProjectRecord,
+def _build_mets_from_project(
+    project: OAIProject,
     resource: Resource,
     dc_payload: Dict[str, List[str]],
 ) -> ET.Element:
     _register_rosetta_namespaces()
+
+    record = project.record
 
     mets_root = ET.Element(ET.QName(METS_NS, "mets"))
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
@@ -1126,15 +1250,22 @@ def _build_mets_from_record(
     digiprov_xml = ET.SubElement(digiprov_wrap, ET.QName(METS_NS, "xmlData"))
     _create_dnx_element(digiprov_xml, "dnx")
 
-    digital_objects = record.digital_objects or []
-    filtered_objects = [obj for obj in digital_objects if getattr(obj, 'storage_key', None)]
-    rep_groups = _group_digital_objects_for_rosetta(filtered_objects)
+    harvestable_objects = [
+        obj for obj in project.digital_objects
+        if obj.harvestable and obj.preferred_location
+    ]
+    rep_groups = _group_digital_objects_for_rosetta(harvestable_objects)
 
     file_sec_entries: List[Dict[str, Any]] = []
 
-    def _append_epicur_resource(obj: ProjectDigitalObject, *, role: str = "secondary",
-                                type_attr: Optional[str] = None, target: Optional[str] = None) -> None:
-        href = obj.storage_key
+    def _append_epicur_resource(
+        obj: NormalizedDigitalObject,
+        *,
+        role: str = "secondary",
+        type_attr: Optional[str] = None,
+        target: Optional[str] = None,
+    ) -> None:
+        href = obj.preferred_location
         if not href:
             return
         normalized = _normalize_reference(href)
@@ -1169,7 +1300,8 @@ def _build_mets_from_record(
 
         for file_index, obj in enumerate(objects, start=1):
             file_id = f"{rep_id}-fid{file_index}"
-            file_label_source = obj.file_name or obj.storage_key or obj.path or f"Digital Object {file_index}"
+            preferred_location = obj.preferred_location or ""
+            file_label_source = obj.file_name or preferred_location or obj.original_path or f"Digital Object {file_index}"
             label_normalized = _normalize_reference(file_label_source)
             file_label = label_normalized or file_label_source
 
@@ -1182,8 +1314,12 @@ def _build_mets_from_record(
             general_keys: List[tuple[str, str]] = []
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
-            if obj.storage_key:
+            if preferred_location:
+                general_keys.append(("fileOriginalPath", preferred_location))
+            elif obj.storage_key:
                 general_keys.append(("fileOriginalPath", obj.storage_key))
+            elif obj.original_path:
+                general_keys.append(("fileOriginalPath", obj.original_path))
             if obj.content_type:
                 general_keys.append(("fileMIMEType", obj.content_type))
             if obj.size_bytes is not None:
@@ -1248,7 +1384,7 @@ def _build_mets_from_record(
                 attrs["CHECKSUMTYPE"] = "SHA-256"
 
             file_elem = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), attrs)
-            href = obj.storage_key or obj.path or obj.access_url or ""
+            href = obj.preferred_location or obj.access_url or ""
             normalized_href = _normalize_reference(href)
             if normalized_href:
                 href = normalized_href
@@ -1451,42 +1587,31 @@ def _build_rdf_from_resource(resource: Resource) -> ET.Element:
     return rdf_element
 
 
-def _build_metadata_element(resource: Resource, metadata_prefix: str) -> ET.Element:
+def _build_metadata_element(
+    resource: Resource,
+    metadata_prefix: str,
+    project_hint: Optional[OAIProject] = None,
+) -> ET.Element:
     """Build metadata element for different formats."""
     metadata = ET.Element("metadata")
 
-    record = _get_snapshot_record(resource)
-    if not record:
-        record = _fallback_record_from_storage(resource)
-        if record:
-            logger.info("Using storage-backed fallback record for %s", getattr(resource, 'uri', 'unknown'))
+    projects = _candidate_projects_for_resource(resource, primary_project=project_hint)
 
-    if not record:
+    if not projects:
         logger.warning("No snapshot record found for %s", getattr(resource, 'uri', 'unknown'))
         return metadata
 
     if metadata_prefix == "oai_dc":
-        dc_payload = _build_dc_payload_from_record(record, resource)
+        project = projects[0]
+        dc_payload = _build_dc_payload_from_project(project, resource)
         _append_dc_metadata(metadata, dc_payload)
     elif metadata_prefix == "mets":
-        candidate_records: List[ProjectRecord] = []
+        for project in projects:
+            if not project.harvestable:
+                continue
 
-        digital_objects = record.digital_objects or []
-        has_storage_backed_objects = any(
-            getattr(obj, "storage_key", None)
-            for obj in digital_objects
-        )
-
-        if has_storage_backed_objects:
-            candidate_records.append(record)
-
-        fallback_record = _fallback_record_from_storage(resource)
-        if fallback_record and (not candidate_records or fallback_record != candidate_records[0]):
-            candidate_records.append(fallback_record)
-
-        for candidate in candidate_records:
-            dc_payload = _build_dc_payload_from_record(candidate, resource)
-            mets_root = _build_mets_from_record(candidate, resource, dc_payload)
+            dc_payload = _build_dc_payload_from_project(project, resource)
+            mets_root = _build_mets_from_project(project, resource, dc_payload)
 
             if mets_root.find(f'.//{{{METS_NS}}}FLocat') is None:
                 logger.info(
@@ -1610,6 +1735,7 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
 
     # Handle resumption token
     offset = 0
+    snapshot_marker_from_token: Optional[str] = None
     if has_resumption_param:
         if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
@@ -1624,9 +1750,27 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
         set_spec = token_data.get("set")
         from_date = token_data.get("from")
         until_date = token_data.get("until")
+        snapshot_marker_from_token = token_data.get("snapshot")
+
+    snapshot, harvestable_projects = _harvestable_snapshot_projects()
+    snapshot_version = snapshot.generated_at.isoformat()
+
+    if snapshot_marker_from_token and snapshot_marker_from_token != snapshot_version:
+        return _error(oai, "badResumptionToken", "Snapshot has changed; restart harvesting")
+
+    allowed_uris = list(harvestable_projects.keys())
+
+    if not allowed_uris:
+        return _error(oai, "noRecordsMatch", "No harvestable projects available")
 
     # Build resource queryset
-    queryset = _get_resources_queryset(set_spec, from_date, until_date, metadata_prefix)
+    queryset = _get_resources_queryset(
+        set_spec,
+        from_date,
+        until_date,
+        metadata_prefix,
+        allowed_uris=allowed_uris,
+    )
 
     # Get page of resources
     page_size = resumption_service.page_size
@@ -1646,7 +1790,8 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
         set_spec=set_spec or '',
         from_date=from_date or '',
         until_date=until_date or '',
-        offset=offset
+        offset=offset,
+        snapshot_marker=snapshot_version,
     )
     if cached_page and not (
         metadata_prefix == 'mets'
@@ -1680,7 +1825,11 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
 
     for resource in resources:
         # Try to get cached record first
-        cached_record = _get_cached_record(resource, metadata_prefix)
+        cached_record = _get_cached_record(
+            resource,
+            metadata_prefix,
+            snapshot_marker=snapshot_version,
+        )
 
         if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
             cached_record['metadata'],
@@ -1699,9 +1848,21 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
             records_added += 1
             continue
 
+        project_hint = harvestable_projects.get(resource.uri)
+        if not project_hint:
+            logger.debug(
+                "Skipping resource %s because no harvestable project was resolved",
+                getattr(resource, 'uri', 'unknown'),
+            )
+            continue
+
         # Build record and cache it
         header = _build_record_header(resource)
-        metadata = _build_metadata_element(resource, metadata_prefix)
+        metadata = _build_metadata_element(
+            resource,
+            metadata_prefix,
+            project_hint=project_hint,
+        )
 
         if metadata_prefix == 'mets' and not _metadata_element_is_valid(
             metadata,
@@ -1720,7 +1881,13 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
         # Cache individual record
         header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
         metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
-        _cache_record(resource, metadata_prefix, header_xml, metadata_xml)
+        _cache_record(
+            resource,
+            metadata_prefix,
+            header_xml,
+            metadata_xml,
+            snapshot_marker=snapshot_version,
+        )
 
         records_data.append({
             'header': header_xml,
@@ -1742,7 +1909,8 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
             metadata_prefix=metadata_prefix,
             set_spec=set_spec,
             from_date=from_date,
-            until_date=until_date
+            until_date=until_date,
+            snapshot_marker=snapshot_version,
         )
         resumption_elem = ET.SubElement(list_records, "resumptionToken")
         resumption_elem.text = resumption_token
@@ -1762,7 +1930,8 @@ def _list_records(oai: ET.Element, params) -> ET.Element:
         set_spec=set_spec or '',
         from_date=from_date or '',
         until_date=until_date or '',
-        offset=offset
+        offset=offset,
+        snapshot_marker=snapshot_version,
     )
 
     return oai
@@ -1896,8 +2065,19 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             if not resource.organization:
                 return _xml_response(_error(oai, "idDoesNotExist", "Resource has no organization"))
 
+            snapshot = snapshot_service.get_cross_institutional_snapshot()
+            snapshot_marker = snapshot.generated_at.isoformat()
+            project_hint: Optional[OAIProject] = None
+            snapshot_record = snapshot_service.get_record_by_uri(resource.uri)
+            if snapshot_record:
+                project_hint = project_builder.from_project_record(snapshot_record)
+
             # Check cache first
-            cached_record = _get_cached_record(resource, metadata_prefix)
+            cached_record = _get_cached_record(
+                resource,
+                metadata_prefix,
+                snapshot_marker=snapshot_marker,
+            )
             if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
                 cached_record['metadata'],
                 resource_uri=getattr(resource, 'uri', None),
@@ -1926,7 +2106,11 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             record.append(header)
 
             # Add metadata
-            metadata = _build_metadata_element(resource, metadata_prefix)
+            metadata = _build_metadata_element(
+                resource,
+                metadata_prefix,
+                project_hint=project_hint,
+            )
 
             if metadata_prefix == 'mets' and not _metadata_element_is_valid(
                 metadata,
@@ -1941,7 +2125,8 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 resource,
                 metadata_prefix,
                 ET.tostring(header, encoding="unicode"),
-                ET.tostring(metadata, encoding="unicode")
+                ET.tostring(metadata, encoding="unicode"),
+                snapshot_marker=snapshot_marker,
             )
 
             return _xml_response(oai)

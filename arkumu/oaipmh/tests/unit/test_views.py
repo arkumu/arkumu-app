@@ -13,10 +13,12 @@ from urllib.parse import quote
 
 from django.http import HttpRequest
 from django.test import RequestFactory
+from django.utils import timezone as django_timezone
 
 from arkumu.oaipmh import views
 from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.users.models import Organization
 from arkumu.projects import (
     ProjectRecord,
     ProjectDigitalObject,
@@ -160,6 +162,50 @@ class TestOAIViewFunctions:
         assert relations == []
         formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
         assert any(elem.text == 'text/plain' for elem in formats)
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_includes_rosetta_without_s3(self, settings):
+        """Rosetta institutions remain harvestable even without S3 file objects."""
+
+        settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('khm',)
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+
+        khm_org = Organization.objects.create(
+            name="KHM",
+            code="khm",
+            domain="khm.example",
+            is_active=True,
+        )
+        rosetta_resource = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/1001",
+            organization=khm_org,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        queryset = Resource.objects.filter(pk=rosetta_resource.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert list(filtered) == [rosetta_resource]
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+        non_s3_resource = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/1002",
+            organization=fuk_org,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        filtered_non_s3 = views._restrict_to_harvestable_files(
+            Resource.objects.filter(pk=non_s3_resource.pk)
+        )
+        assert not filtered_non_s3.exists()
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS
