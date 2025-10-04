@@ -304,10 +304,19 @@
                                 <td class="text-sm">{{ upload.institution|default:"Not specified" }}</td>
                                 <td class="font-mono text-xs">{{ upload.folder_name|truncatechars:20|default:"No folder" }}</td>
                                 <td>{{ upload.total_files }}</td>
-                                <td>
-                                    <span class="badge {% if upload.status == 'completed' %}badge-success{% elif upload.status == 'failed' %}badge-error{% else %}badge-info{% endif %}">
-                                        {{ upload.status }}
+                                <td class="space-y-2">
+                                    <span class="badge {% if upload.status == 'completed' %}badge-success{% elif upload.status == 'failed' %}badge-error{% elif upload.status == 'awaiting_verification' %}badge-warning{% else %}badge-info{% endif %}">
+                                        {{ upload.status_display|default:upload.status }}
                                     </span>
+                                    {% if upload.status == 'awaiting_verification' and request.user.is_staff %}
+                                        <form method="post" action="{% url 'metadata:upload_session_verify' upload.id %}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <button type="submit" class="btn btn-xs btn-warning w-full">
+                                                Verify files
+                                            </button>
+                                        </form>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% empty %}

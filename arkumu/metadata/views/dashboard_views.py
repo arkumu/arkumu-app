@@ -1,7 +1,8 @@
 from django.contrib import messages
 from django.db.models import Count
-from django.http import HttpResponseBadRequest
-from django.shortcuts import redirect, render
+from django.http import HttpResponseBadRequest, HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.test import RequestFactory
 
@@ -9,6 +10,7 @@ from arkumu.importer.models import IngestSession
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.storage.models.upload_tracking import AsyncUploadSession
+from arkumu.storage.tasks import verify_upload_session
 from arkumu.users.mixins import general_login_required
 from arkumu.oaipmh.views import oai_endpoint
 
@@ -275,6 +277,27 @@ def upload_session_stats(request, session_id):
             "failed_files": entry["failed_files"],
         },
     )
+
+
+@general_login_required
+@require_POST
+def trigger_upload_verification(request, session_id):
+    """Manually trigger verification for an async upload session."""
+
+    session = get_object_or_404(AsyncUploadSession, pk=session_id)
+
+    if not request.user.is_staff:
+        return HttpResponseForbidden("Only staff members can verify uploads.")
+
+    if session.status in {"processing", "completed"}:
+        messages.info(request, "Verification already in progress or completed for this session.")
+    else:
+        session.mark_processing()
+        verify_upload_session.schedule(args=(str(session.id),), delay=0)
+        messages.success(request, "Upload verification has been queued.")
+
+    redirect_to = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("metadata:all_upload_sessions")
+    return redirect(redirect_to)
 
 
 @general_login_required

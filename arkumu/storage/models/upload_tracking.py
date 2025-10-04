@@ -17,6 +17,7 @@ class AsyncUploadSession(models.Model):
         ('initialized', 'Initialized'),
         ('presigned_generated', 'Presigned URLs Generated'),
         ('uploading', 'Uploading to S3'),
+        ('awaiting_verification', 'Awaiting verification'),
         ('processing', 'Processing Files'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),

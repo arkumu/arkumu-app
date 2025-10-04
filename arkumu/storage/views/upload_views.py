@@ -15,7 +15,6 @@ from django.views.decorators.http import require_http_methods
 
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.async_upload_manager import AsyncUploadManager
-from arkumu.storage.tasks import verify_upload_session
 from arkumu.users.mixins import general_login_required
 from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
 from arkumu.metadata.views.dashboard_helpers import (
@@ -470,7 +469,7 @@ def mark_file_uploaded(request, file_id):
         logger.info(f"✅ Marked file {upload_file.filename} as uploaded")
 
         session = upload_file.session
-        if session.status not in ('uploading', 'processing', 'completed', 'failed'):
+        if session.status not in ('uploading', 'processing', 'completed', 'failed', 'awaiting_verification'):
             session.mark_uploading()
 
         verification_triggered = False
@@ -483,12 +482,17 @@ def mark_file_uploaded(request, file_id):
         pending_exists = file_qs.exclude(status__in=['uploaded', 'completed', 'failed']).exists()
         all_uploaded = not pending_exists
 
+        session.completed_files = status_counts.get('completed', 0)
+        session.failed_files = status_counts.get('failed', 0)
+
+        fields_to_update = ['completed_files', 'failed_files']
+
         if all_uploaded:
-            logger.info(f"🚀 Scheduling verification for session {session.id}")
-            if session.status != 'processing':
-                session.mark_processing()
-            verification_triggered = True
-            verify_upload_session(str(session.id))
+            logger.info("🟡 Upload session %s awaiting manual verification", session.id)
+            session.status = 'awaiting_verification'
+            fields_to_update.append('status')
+
+        session.save(update_fields=fields_to_update)
 
         # Get organization for OOB refresh
         organization = session.organization

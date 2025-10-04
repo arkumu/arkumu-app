@@ -2,7 +2,13 @@
 # This package contains all view modules for the metadata application
 
 # Dashboard views
-from .dashboard_views import metadata_dashboard, all_upload_sessions, all_ingest_sessions, upload_session_stats
+from .dashboard_views import (
+    metadata_dashboard,
+    all_upload_sessions,
+    all_ingest_sessions,
+    upload_session_stats,
+    trigger_upload_verification,
+)
 
 # Resource views  
 from .resource_views import resource_list, resource_detail, resource_graph
@@ -22,6 +28,7 @@ __all__ = [
     'all_upload_sessions',
     'all_ingest_sessions',
     'upload_session_stats',
+    'trigger_upload_verification',
     
     # Resources
     'resource_list', 
