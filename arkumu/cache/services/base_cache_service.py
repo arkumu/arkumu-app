@@ -87,7 +87,7 @@ class BaseCacheService:
         ttl = CACHE_TTL.get(ttl_key, 3600)  # Default 1 hour
 
         # Check memory usage before caching large objects
-        if self._should_skip_cache(data):
+        if ttl_key != 'project_snapshot' and self._should_skip_cache(data):
             self.logger.warning(f"Skipping cache for {cache_key} - memory pressure")
             return
 
