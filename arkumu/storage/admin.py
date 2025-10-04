@@ -59,6 +59,7 @@ class S3FileObjectAdmin(admin.ModelAdmin):
         'file_size_bytes',
         's3_key',
         'session_bucket',
+        'created_at',
         'related_resource_link',
     )
     search_fields = (
@@ -82,6 +83,8 @@ class S3FileObjectAdmin(admin.ModelAdmin):
         'size_display',
         'url_preview',
     )
+
+    date_hierarchy = 'created_at'
 
     fieldsets = (
         (None, {
