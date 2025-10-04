@@ -30,7 +30,14 @@ class SessionBucketFilter(admin.SimpleListFilter):
             .values_list("session__s3_bucket", flat=True)
             .distinct()
         )
-        return tuple((b, b or _("(unset)")) for b in buckets if b is not None) or ((),)
+
+        choices = [
+            (bucket, bucket)
+            for bucket in buckets
+            if bucket
+        ]
+
+        return tuple(choices)
 
     def queryset(self, request, queryset):
         if self.value():
