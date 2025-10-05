@@ -227,6 +227,96 @@
             <div id="clear-uploads-result"></div>
             <div id="clear-ingests-result"></div>
         </div>
+        {% if request.user.is_staff %}
+        <div class="mt-6">
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4 space-y-3">
+                    <h4 class="card-title text-sm">Storage Maintenance</h4>
+                    <p class="text-xs text-base-content/70">Use these tools to keep S3 metadata in sync with the database.</p>
+
+                    <div class="flex flex-col gap-2">
+                        <form hx-post="{% url 'metadata:metadata_dashboard_mark_missing' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Mark Missing Files</button>
+                        </form>
+
+                        <form hx-post="{% url 'metadata:metadata_dashboard_deduplicate' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Deduplicate S3 Rows</button>
+                        </form>
+
+                        <form hx-post="{% url 'metadata:metadata_dashboard_link_events' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Link Event Files</button>
+                        </form>
+
+                        <form hx-post="{% url 'metadata:metadata_dashboard_link_projects' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Link Project Files</button>
+                        </form>
+                    </div>
+
+                    <div id="storage-maintenance-results" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Stats Cards -->

@@ -1,10 +1,14 @@
 from django.contrib import messages
+from django.core.management import call_command
+from django.db import models
 from django.db.models import Count
-from django.http import HttpResponseBadRequest, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.html import escape
 from django.views.decorators.http import require_POST
 from django.test import RequestFactory
+from io import StringIO
 
 from arkumu.importer.models import IngestSession
 from arkumu.metadata.models.resource import Resource, ResourceType
@@ -23,6 +27,23 @@ from .dashboard_helpers import (
 
 
 _oai_proxy_request_factory = RequestFactory()
+
+
+def _maintenance_response(request, message: str, *, level: str = "info", details: str | None = None):
+    if request.headers.get("HX-Request"):
+        alert_classes = {
+            "success": "alert alert-success",
+            "warning": "alert alert-warning",
+            "error": "alert alert-error",
+            "info": "alert alert-info",
+        }
+        css_class = alert_classes.get(level, "alert alert-info")
+        detail_html = f"<pre class=\"mt-2 whitespace-pre-wrap text-xs\">{escape(details)}</pre>" if details else ""
+        html = f"<div class=\"{css_class}\">{escape(message)}{detail_html}</div>"
+        return HttpResponse(html)
+
+    getattr(messages, level)(request, message)
+    return redirect("metadata:metadata_dashboard")
 
 
 @general_login_required
@@ -391,3 +412,87 @@ def trigger_checksum_refresh(request):
 
     messages.success(request, f"Queued checksum recalculation for {scope}: {mode_label}.")
     return redirect("metadata:metadata_dashboard")
+
+
+@general_login_required
+@require_POST
+def trigger_mark_missing(request):
+    if not request.user.is_staff:
+        return _maintenance_response(request, "Only staff members can run maintenance tasks.", level="error")
+
+    bucket = request.POST.get("bucket")
+    dry_run = request.POST.get("mode") == "dry"
+
+    out = StringIO()
+    cmd_kwargs = {}
+    if bucket:
+        cmd_kwargs["bucket"] = bucket
+    if dry_run:
+        cmd_kwargs["dry_run"] = True
+
+    call_command("mark_missing_s3_files", stdout=out, **cmd_kwargs)
+    output = out.getvalue().strip()
+    message = f"Mark missing: bucket {bucket or 'all'}, mode={'dry-run' if dry_run else 'apply'}"
+    return _maintenance_response(request, message, level="success", details=output)
+
+
+@general_login_required
+@require_POST
+def trigger_deduplicate(request):
+    if not request.user.is_staff:
+        return _maintenance_response(request, "Only staff members can run maintenance tasks.", level="error")
+
+    bucket = request.POST.get("bucket")
+    dry_run = request.POST.get("mode") == "dry"
+
+    out = StringIO()
+    cmd_kwargs = {}
+    if bucket:
+        cmd_kwargs["organization"] = bucket
+    if dry_run:
+        cmd_kwargs["dry_run"] = True
+
+    call_command("deduplicate_s3_files", stdout=out, **cmd_kwargs)
+    output = out.getvalue().strip()
+    message = f"Deduplicate: bucket {bucket or 'all'}, mode={'dry-run' if dry_run else 'apply'}"
+    return _maintenance_response(request, message, level="success", details=output)
+
+
+def _link_command(request, command_name: str, bucket: str | None, dry_run: bool):
+    out = StringIO()
+    cmd_kwargs = {}
+    if bucket:
+        cmd_kwargs["bucket"] = bucket
+    if dry_run:
+        cmd_kwargs["dry_run"] = True
+
+    call_command(command_name, stdout=out, **cmd_kwargs)
+    return out.getvalue().strip()
+
+
+@general_login_required
+@require_POST
+def trigger_link_events(request):
+    if not request.user.is_staff:
+        return _maintenance_response(request, "Only staff members can run maintenance tasks.", level="error")
+
+    bucket = request.POST.get("bucket")
+    dry_run = request.POST.get("mode") == "dry"
+
+    output = _link_command(request, "link_s3_files_to_events", bucket, dry_run)
+    message = f"Link events: bucket {bucket or 'all'}, mode={'dry-run' if dry_run else 'apply'}"
+    return _maintenance_response(request, message, level="success", details=output)
+
+
+@general_login_required
+@require_POST
+def trigger_link_projects(request):
+    if not request.user.is_staff:
+        return _maintenance_response(request, "Only staff members can run maintenance tasks.", level="error")
+
+    bucket = request.POST.get("bucket")
+    dry_run = request.POST.get("mode") == "dry"
+
+    output = _link_command(request, "link_s3_files_to_projects", bucket, dry_run)
+    message = f"Link projects: bucket {bucket or 'all'}, mode={'dry-run' if dry_run else 'apply'}"
+    return _maintenance_response(request, message, level="success", details=output)
