@@ -16,6 +16,8 @@ class S3FileObject(models.Model):
     s3_key = models.CharField(max_length=1024)
     file_size_bytes = models.BigIntegerField(default=0)
     content_type = models.CharField(max_length=255, blank=True)
+    base_folder = models.CharField(max_length=50, blank=True)
+    organization = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     upload_completed_at = models.DateTimeField(null=True, blank=True)
@@ -55,6 +57,8 @@ class S3FileObject(models.Model):
             models.Index(fields=['session']),
             models.Index(fields=['status']),
             models.Index(fields=['s3_key']),
+            models.Index(fields=['base_folder']),
+            models.Index(fields=['organization']),
             models.Index(fields=['source_csv_file', 'source_row_number']),
             models.Index(fields=['related_resource']),
         ]
@@ -131,6 +135,12 @@ class S3FileObject(models.Model):
             return storage_service.s3_client.head_object(Bucket=bucket, Key=key)
         except Exception:
             return False
+        finally:
+            if storage_service and hasattr(storage_service, "close"):
+                try:
+                    storage_service.close()  # type: ignore[attr-defined]
+                except Exception:  # noqa: BLE001
+                    pass
     
     @classmethod
     def create_from_upload(cls, session, file_name, original_path, s3_key, 
@@ -147,6 +157,8 @@ class S3FileObject(models.Model):
             s3_key=s3_key,
             file_size_bytes=file_size,
             content_type=content_type,
+            base_folder=getattr(session, 'base_folder', ''),
+            organization=getattr(session, 'organization', ''),
             source_csv_file=source_csv_file,
             source_row_number=source_row_number,
             source_column_name=source_column_name,

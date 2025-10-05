@@ -99,6 +99,8 @@ def verify_upload_session(session_id: str) -> None:
                     file_name=upload_file.filename,
                     file_size_bytes=resolved_size,
                     content_type=upload_file.content_type,
+                    base_folder=session.base_folder,
+                    organization=session.organization,
                     status='completed',
                     upload_completed_at=resolved_completed_at,
                 )
@@ -139,13 +141,57 @@ def trigger_ui_refresh(session_id: str, organization: str) -> None:
 if HUEY_PERIODIC_AVAILABLE:
     @db_periodic_task(crontab(minute='*/5'))
     def verify_pending_sessions():
-        """Ensure sessions that finished uploading still get verified."""
+        """Flag completed uploads so staff can manually trigger verification."""
         from arkumu.storage.models.upload_tracking import AsyncUploadSession
 
         pending_sessions = AsyncUploadSession.objects.filter(status='uploading')
         for session in pending_sessions:
             remaining = session.files.exclude(status__in=['uploaded', 'completed', 'failed']).exists()
-            if not remaining:
-                logger.info("⏱️ Scheduling verification for session %s", session.id)
-                session.mark_processing()
-                verify_upload_session(str(session.id))
+            if remaining:
+                continue
+
+            if session.status != 'awaiting_verification':
+                session.status = 'awaiting_verification'
+                session.completed_files = session.files.filter(status='completed').count()
+                session.failed_files = session.files.filter(status='failed').count()
+                session.save(update_fields=['status', 'completed_files', 'failed_files', 'updated_at'])
+                logger.info(
+                    "🟡 verify_pending_sessions: session %s awaiting manual verification",
+                    session.id,
+                )
+                trigger_ui_refresh(str(session.id), session.organization)
+
+    @db_periodic_task(crontab(hour='*/6'))
+    def flag_missing_s3_files():
+        """Mark linked S3FileObjects as failed if they no longer exist in S3."""
+
+        qs = (
+            S3FileObject.objects
+            .filter(related_resource__isnull=False)
+            .exclude(status__in=['failed'])
+            .order_by('-updated_at')
+        )
+
+        reviewed = 0
+        missing = 0
+
+        for obj in qs.iterator():
+            reviewed += 1
+            if obj.exists_in_s3():
+                continue
+
+            missing += 1
+            obj.status = 'failed'
+            obj.error_message = 'File missing in S3'
+            obj.save(update_fields=['status', 'error_message', 'updated_at'])
+            logger.warning("❌ Missing in S3: %s (resource=%s)", obj.s3_key, obj.related_resource_id)
+
+            if missing >= 100:
+                break
+
+        if reviewed:
+            logger.info(
+                "🔍 flag_missing_s3_files: reviewed %s file(s), marked %s missing",
+                reviewed,
+                missing,
+            )

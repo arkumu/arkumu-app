@@ -1,151 +1,261 @@
+"""Admin registrations for storage models."""
+
+from __future__ import annotations
+
 from django.contrib import admin
-from django.utils.html import format_html
-from django.utils.translation import gettext_lazy as _
+from django.template.defaultfilters import filesizeformat
 
-from .models import S3ResourceLocation, S3FileObject, UploadSession, ACLPermissions
-
-
-class RelatedResourceFilter(admin.SimpleListFilter):
-    title = _("Has related resource")
-    parameter_name = "has_related_resource"
-
-    def lookups(self, request, model_admin):
-        return (("yes", _("Yes")), ("no", _("No")))
-
-    def queryset(self, request, queryset):
-        if self.value() == "yes":
-            return queryset.exclude(related_resource__isnull=True)
-        if self.value() == "no":
-            return queryset.filter(related_resource__isnull=True)
-        return queryset
+from .models import S3FileObject
+from .models.upload_tracking import AsyncUploadSession, AsyncUploadFile
 
 
-class SessionBucketFilter(admin.SimpleListFilter):
-    title = _("Upload bucket")
-    parameter_name = "session_bucket"
+@admin.register(AsyncUploadSession)
+class AsyncUploadSessionAdmin(admin.ModelAdmin):
+    search_fields = ["id", "organization", "user__username", "user__email"]
+    list_display = (
+        "short_id",
+        "user",
+        "organization",
+        "base_folder",
+        "status",
+        "file_progress",
+        "created_at",
+        "updated_at",
+    )
+    list_filter = (
+        "status",
+        "base_folder",
+        "organization",
+        "created_at",
+        "user",
+    )
+    date_hierarchy = "created_at"
+    ordering = ("-created_at",)
+    readonly_fields = (
+        "id",
+        "user",
+        "organization",
+        "base_folder",
+        "status",
+        "total_files",
+        "completed_files",
+        "failed_files",
+        "created_at",
+        "updated_at",
+        "started_at",
+        "completed_at",
+        "error_message",
+    )
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "id",
+                    "user",
+                    "organization",
+                    "base_folder",
+                    "status",
+                    "total_files",
+                    "completed_files",
+                    "failed_files",
+                    "error_message",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at", "started_at", "completed_at")},
+        ),
+    )
 
-    def lookups(self, request, model_admin):
-        buckets = (
-            S3FileObject.objects.filter(session__isnull=False)
-            .values_list("session__s3_bucket", flat=True)
-            .distinct()
-        )
+    @admin.display(description="ID")
+    def short_id(self, obj: AsyncUploadSession) -> str:
+        return str(obj.id)[:8]
 
-        choices = [
-            (bucket, bucket)
-            for bucket in buckets
-            if bucket
-        ]
+    @admin.display(description="Progress")
+    def file_progress(self, obj: AsyncUploadSession) -> str:
+        total = obj.total_files or 0
+        completed = obj.completed_files or 0
+        failed = obj.failed_files or 0
+        if not total:
+            total = obj.files.count()
+        return f"{completed}/{total} (+{failed} failed)" if failed else f"{completed}/{total}"
 
-        return tuple(choices)
 
-    def queryset(self, request, queryset):
-        if self.value():
-            return queryset.filter(session__s3_bucket=self.value())
-        return queryset
+@admin.register(AsyncUploadFile)
+class AsyncUploadFileAdmin(admin.ModelAdmin):
+    search_fields = ["filename", "session__id", "session__user__username", "s3_key"]
+    list_display = (
+        "filename",
+        "session_short_id",
+        "status",
+        "content_type",
+        "file_size",
+        "created_at",
+    )
+    list_filter = (
+        "status",
+        "content_type",
+        "session__organization",
+        "session__base_folder",
+        "created_at",
+    )
+    ordering = ("-created_at",)
+    autocomplete_fields = ["session", "s3_file_object"]
+    readonly_fields = (
+        "session",
+        "filename",
+        "s3_key",
+        "file_size",
+        "content_type",
+        "relative_path",
+        "status",
+        "presigned_url",
+        "presigned_fields",
+        "upload_started_at",
+        "upload_completed_at",
+        "error_message",
+        "s3_file_object",
+        "created_at",
+        "updated_at",
+    )
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "session",
+                    "filename",
+                    "s3_key",
+                    "relative_path",
+                    "status",
+                    "content_type",
+                    "file_size",
+                    "error_message",
+                    "s3_file_object",
+                )
+            },
+        ),
+        (
+            "Upload State",
+            {
+                "fields": (
+                    "presigned_url",
+                    "presigned_fields",
+                    "upload_started_at",
+                    "upload_completed_at",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
 
-@admin.register(S3ResourceLocation)
-class S3ResourceLocationAdmin(admin.ModelAdmin):
-    list_display = ('resource_pid', 's3_bucket', 's3_key', 'content_type', 'object_id')
-    search_fields = ('resource_pid', 's3_bucket', 's3_key')
-    list_filter = ('s3_bucket',)
+    @admin.display(description="Session")
+    def session_short_id(self, obj: AsyncUploadFile) -> str:
+        return str(obj.session_id)[:8]
+
 
 @admin.register(S3FileObject)
 class S3FileObjectAdmin(admin.ModelAdmin):
+    search_fields = [
+        "file_name",
+        "s3_key",
+        "session__organization",
+        "session__user__username",
+    ]
     list_display = (
-        'file_name',
-        'status',
-        'content_type',
-        'file_size_bytes',
-        's3_key',
-        'session_bucket',
-        'created_at',
-        'related_resource_link',
-    )
-    search_fields = (
-        'file_name',
-        's3_key',
-        'session__s3_bucket',
-        'related_resource__uri',
-        'related_resource__value',
+        "file_name",
+        "short_key",
+        "organization",
+        "base_folder",
+        "status",
+        "file_size",
+        "upload_completed_at",
     )
     list_filter = (
-        'status',
-        'content_type',
-        SessionBucketFilter,
-        RelatedResourceFilter,
+        "status",
+        "organization",
+        "base_folder",
+        "created_at",
+        "upload_completed_at",
     )
+    ordering = ("-created_at",)
     readonly_fields = (
-        'id',
-        'created_at',
-        'updated_at',
-        'upload_completed_at',
-        'size_display',
-        'url_preview',
+        "id",
+        "session",
+        "file_name",
+        "original_path",
+        "s3_key",
+        "status",
+        "file_size_bytes",
+        "content_type",
+        "etag",
+        "sha256_checksum",
+        "checksum_calculated_at",
+        "error_message",
+        "source_csv_file",
+        "source_row_number",
+        "source_column_name",
+        "related_resource",
+        "s3_url",
+        "upload_completed_at",
+        "created_at",
+        "updated_at",
     )
-
-    date_hierarchy = 'created_at'
-
     fieldsets = (
-        (None, {
-            'fields': (
-                'file_name',
-                'content_type',
-                'status',
-                'size_display',
-                's3_key',
-                'related_resource',
-                'session',
-                'url_preview',
-            )
-        }),
-        (_('Timestamps'), {
-            'classes': ('collapse',),
-            'fields': ('created_at', 'updated_at', 'upload_completed_at'),
-        }),
+        (
+            None,
+            {
+                "fields": (
+                    "id",
+                    "session",
+                    "file_name",
+                    "original_path",
+                    "s3_key",
+                    "base_folder",
+                    "organization",
+                    "status",
+                    "file_size_bytes",
+                    "content_type",
+                )
+            },
+        ),
+        (
+            "Checksums & Metadata",
+            {
+                "fields": (
+                    "etag",
+                    "sha256_checksum",
+                    "checksum_calculated_at",
+                    "error_message",
+                    "source_csv_file",
+                    "source_row_number",
+                    "source_column_name",
+                    "related_resource",
+                    "s3_url",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": (
+                    "upload_completed_at",
+                    "created_at",
+                    "updated_at",
+                )
+            },
+        ),
     )
 
-    def size_display(self, obj):
-        if obj.file_size_bytes is None:
-            return '-'
-        value = obj.file_size_bytes
-        for unit in ['bytes', 'KB', 'MB', 'GB', 'TB']:
-            if value < 1024 or unit == 'TB':
-                break
-            value /= 1024
-        return f"{value:.1f} {unit}"
-    size_display.short_description = _('Size')
+    @admin.display(description="S3 key")
+    def short_key(self, obj: S3FileObject) -> str:
+        return obj.s3_key[:48] + ("…" if len(obj.s3_key) > 48 else "")
 
-    def session_bucket(self, obj):
-        return getattr(obj.session, 's3_bucket', None) or _('(unset)')
-    session_bucket.short_description = _('Bucket')
-
-    def related_resource_link(self, obj):
-        resource = obj.related_resource
-        if not resource:
-            return _('(none)')
-        url = f"/metadata/resource/{resource.id}/"
-        label = resource.uri or resource.value or resource.id
-        return format_html('<a href="{}">{}</a>', url, label)
-    related_resource_link.short_description = _('Related resource')
-
-    def url_preview(self, obj):
-        if not obj.s3_key:
-            return _('(no key)')
-        if obj.session and obj.session.s3_bucket:
-            bucket = obj.session.s3_bucket
-        else:
-            bucket = _('(unknown bucket)')
-        return format_html('<code>{}/{}</code>', bucket, obj.s3_key)
-    url_preview.short_description = _('S3 object')
-
-@admin.register(UploadSession)
-class UploadSessionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'created_at', 'user', 'status')
-    search_fields = ('id', 'user__username')
-    list_filter = ('status',)
-
-@admin.register(ACLPermissions)
-class ACLPermissionsAdmin(admin.ModelAdmin):
-    list_display = ('id', 'content_type', 'object_id')
-    list_filter = ('content_type',)
+    @admin.display(description="Size")
+    def file_size(self, obj: S3FileObject) -> str:
+        return filesizeformat(obj.file_size_bytes or 0)
