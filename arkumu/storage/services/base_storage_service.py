@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import threading
 import boto3
 from botocore.exceptions import ClientError
@@ -310,20 +310,19 @@ class BaseStorageService:
         logger.warning("No AWS_INGEST_BUCKET_NAME found")
         return 'arkumu-ingest' # Default
 
-    def _get_production_bucket_name(self) -> str:
+    def _get_production_bucket_name(self) -> Optional[str]:
         bucket_name = getattr(settings, 'AWS_PRODUCTION_BUCKET_NAME', None)
-        if bucket_name: 
+        if bucket_name:
             logger.info(f"Using AWS_PRODUCTION_BUCKET_NAME from settings: {bucket_name}")
             return bucket_name
-        bucket_name_env = os.environ.get('AWS_PRODUCTION_BUCKET_NAME', '')
-        if bucket_name_env: 
+
+        bucket_name_env = os.environ.get('AWS_PRODUCTION_BUCKET_NAME', '').strip()
+        if bucket_name_env:
             logger.info(f"Using AWS_PRODUCTION_BUCKET_NAME from env: {bucket_name_env}")
             return bucket_name_env
-        if self._is_minio_environment(): 
-            logger.error("FALLBACK: No AWS_PRODUCTION_BUCKET_NAME found, using arkumu-production - THIS IS WRONG")
-            return 'arkumu-production'
-        logger.error("FALLBACK: No AWS_PRODUCTION_BUCKET_NAME found - THIS IS WRONG")
-        return 'arkumu-production' # This should never be reached
+
+        logger.info("No global AWS_PRODUCTION_BUCKET_NAME configured; relying on per-organization buckets")
+        return None
 
     def _is_running_in_container(self):
         if os.environ.get('RUNNING_IN_CONTAINER'): return True
