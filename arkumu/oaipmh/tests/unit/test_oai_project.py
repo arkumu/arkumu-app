@@ -52,6 +52,8 @@ def test_builder_resolves_khm_rosetta_path(tmp_path, settings):
     rosetta_path = '/rosetta/khm/test/input/object_master.tif'
     mapping.write_text(f"{rosetta_path}\n", encoding='utf-8')
 
+    checksum_value = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+
     settings.OAI_EXTERNAL_PATH_FILES = {'khm': str(mapping)}
     settings.OAI_EXTERNAL_ROSETTA_ROOTS = {'khm': '/rosetta/khm/test/input'}
     settings.OAI_S3_HARVESTABLE_ORGS = ()
@@ -65,6 +67,8 @@ def test_builder_resolves_khm_rosetta_path(tmp_path, settings):
                 path='khm/object_master.tif',
                 file_name='object_master.tif',
                 content_type='image/tiff',
+                checksum=checksum_value,
+                checksum_algorithm='sha256',
             )
         ],
     )
@@ -76,12 +80,16 @@ def test_builder_resolves_khm_rosetta_path(tmp_path, settings):
     assert obj.rosetta_path == rosetta_path
     assert obj.preferred_location == rosetta_path
     assert obj.source == 'rosetta'
+    assert obj.checksum == checksum_value
+    assert obj.checksum_algorithm == 'sha256'
 
 
 def test_builder_resolves_hmt_prefix(tmp_path, settings):
     mapping = tmp_path / 'hmt_paths.txt'
     rosetta_path = '/rosetta/hfmt/sandbox/input/arkumu/object_master.wav'
     mapping.write_text(f"{rosetta_path}\n", encoding='utf-8')
+
+    checksum_value = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
 
     settings.OAI_EXTERNAL_PATH_FILES = {'hmt': str(mapping)}
     settings.OAI_EXTERNAL_ROSETTA_ROOTS = {'hmt': '/rosetta/hfmt/sandbox/input/arkumu'}
@@ -96,6 +104,8 @@ def test_builder_resolves_hmt_prefix(tmp_path, settings):
             ProjectDigitalObject(
                 path='/Volumes/18TB1/source/object_master.wav',
                 file_name='object_master.wav',
+                checksum=checksum_value,
+                checksum_algorithm='sha256',
             )
         ],
     )
@@ -107,6 +117,8 @@ def test_builder_resolves_hmt_prefix(tmp_path, settings):
     assert obj.rosetta_path == rosetta_path
     assert obj.preferred_location == rosetta_path
     assert obj.source == 'rosetta'
+    assert obj.checksum == checksum_value
+    assert obj.checksum_algorithm == 'sha256'
 
 
 def test_builder_applies_code_alias(settings):
@@ -123,6 +135,8 @@ def test_builder_applies_code_alias(settings):
             ProjectDigitalObject(
                 path=rosetta_path,
                 file_name='object_master.wav',
+                checksum='b' * 64,
+                checksum_algorithm='sha256',
             )
         ],
     )
@@ -170,6 +184,8 @@ def test_builder_accepts_existing_rosetta_path(settings):
                 path=rosetta_path,
                 file_name='object_master.tif',
                 content_type='image/tiff',
+                checksum='c' * 64,
+                checksum_algorithm='sha256',
             )
         ],
     )

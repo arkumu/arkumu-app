@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+from urllib.parse import urlparse
 
 from django.utils import timezone
 
@@ -34,8 +35,10 @@ from arkumu.projects import (
     ProjectSnapshot,
     ProjectType,
 )
+from arkumu.projects.fixity import parse_fixity
 
 logger = logging.getLogger(__name__)
+
 
 
 class ProjectSnapshotService:
@@ -50,6 +53,10 @@ class ProjectSnapshotService:
         "hmt",
     )
     DIGITAL_OBJECT_LINK_URI = "http://arkumu.org/data/properties/digitales-objekt"
+    ROSETTA_CHECKSUM_PREDICATES: Dict[str, str] = {
+        'khm': 'http://arkumu.org/data/khm/properties/pruefsumme-sha256',
+        'hmt': 'http://arkumu.org/data/hmt/properties/pruefsumme-sha256',
+    }
 
     def __init__(self, relationship_org_code: Optional[str] = None) -> None:
         self.relationship_org_code = relationship_org_code
@@ -639,16 +646,81 @@ class ProjectSnapshotService:
                     return fk.get('source_property')
             return None
 
-        digital_link_predicate = _fk_source_for_target('project', digital_object_path_prop.canonical_uri if digital_object_path_prop else None)
-        digital_paths = triple_service.get_digital_object_paths(
-            subject_id,
-            link_predicate=digital_link_predicate,
-            path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
-            organization_code=self.relationship_org_code,
+        primary_institution_code: Optional[str] = None
+        if institution and institution.code:
+            primary_institution_code = institution.code.lower().strip()
+        elif institution_codes:
+            first_code = (institution_codes[0] or "") if institution_codes else ""
+            primary_institution_code = first_code.lower().strip() or None
+
+        checksum_org_code = self._resolve_org_code_for_checksums(
+            primary_institution_code,
+            institution_codes,
+            project_uri,
         )
 
         storage_files: List[Any] = list(storage_files_map.get(subject_id, []))
-        digital_objects = [ProjectDigitalObject(path=path) for path in digital_paths if path]
+        digital_link_predicate = _fk_source_for_target('project', digital_object_path_prop.canonical_uri if digital_object_path_prop else None)
+
+        digital_entries = []
+        if digital_link_predicate:
+            digital_entries = triple_service.get_related_entities(
+                subject_id,
+                digital_link_predicate,
+                organization_code=self.relationship_org_code,
+            )
+
+        digital_object_ids: List[str] = []
+        digital_entry_by_id: Dict[str, Dict[str, Any]] = {}
+        for entry in digital_entries:
+            object_id = entry.get('id')
+            if not object_id or entry.get('resource_type') == ResourceType.LITERAL:
+                continue
+            digital_object_ids.append(object_id)
+            digital_entry_by_id[object_id] = entry
+
+        path_map: Dict[str, str] = {}
+        if digital_object_ids and digital_object_path_prop:
+            path_map = triple_service.get_literal_map(
+                subject_ids=digital_object_ids,
+                predicate_uri=digital_object_path_prop.canonical_uri,
+                organization_code=self.relationship_org_code,
+            )
+
+        checksum_predicate = self._checksum_predicate_for_org(checksum_org_code)
+        checksum_map: Dict[str, str] = {}
+        if checksum_predicate and digital_object_ids:
+            checksum_map.update(
+                triple_service.get_literal_map(
+                    subject_ids=digital_object_ids,
+                    predicate_uri=checksum_predicate,
+                    organization_code=self.relationship_org_code,
+                )
+            )
+
+        digital_objects: List[ProjectDigitalObject] = []
+        seen_paths: set[str] = set()
+        for object_id in digital_object_ids:
+            raw_path = path_map.get(object_id)
+            if not raw_path:
+                continue
+            normalized_path = raw_path.strip()
+            if not normalized_path or normalized_path in seen_paths:
+                continue
+            seen_paths.add(normalized_path)
+            digital_entry = digital_entry_by_id.get(object_id, {})
+            project_object = ProjectDigitalObject(
+                path=normalized_path,
+                uri=digital_entry.get('uri') or digital_entry.get('canonical_uri'),
+            )
+            digital_objects.append(project_object)
+
+            checksum_value = (checksum_map.get(object_id) or "").strip()
+            if checksum_value:
+                fixity_info = parse_fixity(checksum_value)
+                project_object.checksum = fixity_info.digest or checksum_value
+                project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
+                project_object.checksum_provenance = fixity_info.provenance or 'metadata'
 
         if not digital_objects:
             collected_ids: set[str] = set()
@@ -670,12 +742,26 @@ class ProjectSnapshotService:
                 if not path_literal:
                     continue
                 digital_node = nodes.get(digital_id, {})
-                digital_objects.append(
-                    ProjectDigitalObject(
-                        path=path_literal,
-                        uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
-                    )
+                project_object = ProjectDigitalObject(
+                    path=path_literal,
+                    uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
                 )
+                digital_objects.append(project_object)
+
+                if checksum_predicate:
+                    checksum_map.update(
+                        triple_service.get_literal_map(
+                            subject_ids=[str(digital_id)],
+                            predicate_uri=checksum_predicate,
+                            organization_code=self.relationship_org_code,
+                        )
+                    )
+                    checksum_value = (checksum_map.get(str(digital_id)) or "").strip()
+                    if checksum_value:
+                        fixity_info = parse_fixity(checksum_value)
+                        project_object.checksum = fixity_info.digest or checksum_value
+                        project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
+                        project_object.checksum_provenance = fixity_info.provenance or 'metadata'
 
         for event_id in event_ids:
             storage_files.extend(storage_files_map.get(str(event_id), []))
@@ -763,7 +849,20 @@ class ProjectSnapshotService:
             matched.file_name = getattr(file_obj, 'file_name', None) or matched.file_name
             matched.content_type = getattr(file_obj, 'content_type', None) or matched.content_type
             matched.size_bytes = getattr(file_obj, 'file_size_bytes', None) or matched.size_bytes
-            matched.checksum = getattr(file_obj, 'sha256_checksum', None) or matched.checksum
+
+            raw_checksum = getattr(file_obj, 'sha256_checksum', None)
+            fixity = parse_fixity(raw_checksum)
+            if fixity.digest:
+                matched.checksum = fixity.digest
+            if fixity.algorithm:
+                matched.checksum_algorithm = fixity.algorithm
+            elif matched.checksum and not matched.checksum_algorithm:
+                inferred = parse_fixity(matched.checksum)
+                if inferred.algorithm:
+                    matched.checksum_algorithm = inferred.algorithm
+            if fixity.digest and not matched.checksum_provenance:
+                matched.checksum_provenance = 's3'
+
             matched.access_url = getattr(file_obj, 's3_url', None) or matched.access_url
             matched.storage_status = getattr(file_obj, 'status', None) or matched.storage_status
 
@@ -776,6 +875,57 @@ class ProjectSnapshotService:
                 matched.updated_at = updated_at.isoformat()
 
         return digital_objects
+
+    def _checksum_predicate_for_org(self, institution_code: Optional[str]) -> Optional[str]:
+        if not institution_code:
+            scoped = self.relationship_org_code.lower() if self.relationship_org_code else None
+            return self.ROSETTA_CHECKSUM_PREDICATES.get(scoped) if scoped else None
+        return self.ROSETTA_CHECKSUM_PREDICATES.get(institution_code.lower())
+
+    def _resolve_org_code_for_checksums(
+        self,
+        primary_code: Optional[str],
+        institution_codes: Sequence[str],
+        project_uri: Optional[str],
+    ) -> Optional[str]:
+        """Return best-guess organization code for checksum lookups."""
+
+        candidates: List[str] = []
+
+        def _push(value: Optional[str]) -> None:
+            if not value:
+                return
+            normalized = value.strip().lower()
+            if normalized:
+                candidates.append(normalized)
+
+        _push(primary_code)
+        for code in institution_codes:
+            _push(code)
+
+        _push(self._extract_org_code_from_uri(project_uri))
+        _push(self.relationship_org_code)
+
+        for code in candidates:
+            if code in self.ROSETTA_CHECKSUM_PREDICATES:
+                return code
+
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def _extract_org_code_from_uri(project_uri: Optional[str]) -> Optional[str]:
+        if not project_uri:
+            return None
+
+        parsed = urlparse(project_uri)
+        segments = [segment for segment in parsed.path.split('/') if segment]
+        if not segments:
+            return None
+
+        if segments[0] == 'data' and len(segments) > 1:
+            return segments[1].lower()
+
+        return segments[0].lower()
 
     @staticmethod
     def _canonical(edge: Dict[str, Any]) -> Optional[str]:

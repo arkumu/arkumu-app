@@ -28,6 +28,8 @@ class ProjectDigitalObject:
     content_type: Optional[str] = None
     size_bytes: Optional[int] = None
     checksum: Optional[str] = None
+    checksum_algorithm: Optional[str] = None
+    checksum_provenance: Optional[str] = None
     access_url: Optional[str] = None
     storage_status: Optional[str] = None
     created_at: Optional[str] = None

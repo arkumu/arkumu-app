@@ -870,6 +870,9 @@ class TestOAIEndpoint:
             updated_at=timezone.now(),
         )
 
+        import hashlib
+        checksum_value = hashlib.sha256(rosetta_path.encode("utf-8")).hexdigest()
+
         mapping_file = tmp_path / f"{org_code}_paths.txt"
         mapping_file.write_text(f"{rosetta_path}\n", encoding="utf-8")
 
@@ -900,11 +903,14 @@ class TestOAIEndpoint:
                     path=rosetta_path,
                     file_name=rosetta_path.split('/')[-1],
                     content_type='image/tiff',
+                    checksum=checksum_value,
+                    checksum_algorithm='sha256',
+                    checksum_provenance='metadata',
                 )
             ],
         )
 
-        return resource, record
+        return resource, record, checksum_value
 
     @pytest.mark.django_db
     def test_list_records_khm_uses_rosetta_paths(
@@ -918,7 +924,7 @@ class TestOAIEndpoint:
         settings.OAI_S3_HARVESTABLE_ORGS = ('fuk', 'det', 'rsh')
 
         rosetta_path = "/rosetta/khm/sandbox/input/arkumu/daten/object_master.tif"
-        resource, record = self._setup_rosetta_project(
+        resource, record, checksum = self._setup_rosetta_project(
             org_code='khm',
             rosetta_path=rosetta_path,
             resource_uri="https://arkumu.org/entities/projekt/9001",
@@ -952,6 +958,50 @@ class TestOAIEndpoint:
             for flocat in root.findall('.//mets:FLocat', ns)
         }
         assert rosetta_path in hrefs, hrefs
+
+        target_file = None
+        for mets_file in root.findall('.//mets:file', ns):
+            flocat = mets_file.find('mets:FLocat', ns)
+            if flocat is None:
+                continue
+            href = flocat.get(f"{{{XLINK_NS}}}href")
+            if href == rosetta_path:
+                target_file = mets_file
+                break
+
+        assert target_file is not None
+        assert target_file.get('CHECKSUMTYPE') == 'SHA-256'
+        assert target_file.get('CHECKSUM') == checksum
+
+        dnx_ns = {"dnx": "http://www.exlibrisgroup.com/dps/dnx"}
+        amd_id = target_file.get('ID')
+        amd_sec = root.find(f".//mets:amdSec[@ID='{amd_id}-amd']", ns)
+        assert amd_sec is not None
+        fixity_value = amd_sec.find(".//dnx:key[@id='fixityValue']", {**ns, **dnx_ns})
+        assert fixity_value is not None
+        assert fixity_value.text == checksum
+
+        target_file = None
+        for mets_file in root.findall('.//mets:file', ns):
+            flocat = mets_file.find('mets:FLocat', ns)
+            if flocat is None:
+                continue
+            href = flocat.get(f"{{{XLINK_NS}}}href")
+            if href == rosetta_path:
+                target_file = mets_file
+                break
+
+        assert target_file is not None
+        assert target_file.get('CHECKSUMTYPE') == 'SHA-256'
+        assert target_file.get('CHECKSUM') == checksum
+
+        dnx_ns = {"dnx": "http://www.exlibrisgroup.com/dps/dnx"}
+        amd_id = target_file.get('ID')
+        amd_sec = root.find(f".//mets:amdSec[@ID='{amd_id}-amd']", ns)
+        assert amd_sec is not None
+        fixity_value = amd_sec.find(".//dnx:key[@id='fixityValue']", {**ns, **dnx_ns})
+        assert fixity_value is not None
+        assert fixity_value.text == checksum
         set_specs = {header.text for header in root.findall('.//{http://www.openarchives.org/OAI/2.0/}setSpec')}
         assert set_specs == {'khm'}
 
@@ -967,7 +1017,7 @@ class TestOAIEndpoint:
         settings.OAI_S3_HARVESTABLE_ORGS = ('fuk', 'det', 'rsh')
 
         rosetta_path = "/rosetta/hfmt/sandbox/input/arkumu/object_master.wav"
-        resource, record = self._setup_rosetta_project(
+        resource, record, checksum = self._setup_rosetta_project(
             org_code='hmt',
             rosetta_path=rosetta_path,
             resource_uri="https://arkumu.org/entities/projekt/9002",
@@ -1016,7 +1066,7 @@ class TestOAIEndpoint:
         settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
 
         rosetta_path = "/rosetta/khm/sandbox/input/arkumu/daten/object_master.tif"
-        _, khm_record = self._setup_rosetta_project(
+        _, khm_record, _ = self._setup_rosetta_project(
             org_code='khm',
             rosetta_path=rosetta_path,
             resource_uri="https://arkumu.org/entities/projekt/9001",
@@ -1025,7 +1075,7 @@ class TestOAIEndpoint:
             tmp_path=tmp_path,
         )
 
-        fuk_resource, fuk_record = self._setup_rosetta_project(
+        fuk_resource, fuk_record, _ = self._setup_rosetta_project(
             org_code='fuk',
             rosetta_path='s3://fuk/object_master.tif',
             resource_uri="https://arkumu.org/entities/projekt/1001",

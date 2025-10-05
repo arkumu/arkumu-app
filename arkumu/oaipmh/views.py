@@ -28,6 +28,7 @@ from arkumu.metadata.models.resource import Resource, PublicAccessLevel, Resourc
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, ProjectSnapshot
+from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
@@ -455,6 +456,7 @@ def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]
 
     digital_objects: List[ProjectDigitalObject] = []
     for file_obj in files:
+        fixity = parse_fixity(getattr(file_obj, 'sha256_checksum', None))
         digital_objects.append(
             ProjectDigitalObject(
                 path=file_obj.s3_key,
@@ -462,7 +464,9 @@ def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]
                 file_name=file_obj.file_name,
                 content_type=file_obj.content_type,
                 size_bytes=file_obj.file_size_bytes,
-                checksum=file_obj.sha256_checksum,
+                checksum=fixity.digest,
+                checksum_algorithm=fixity.algorithm,
+                checksum_provenance='s3' if fixity.digest else None,
                 access_url=file_obj.s3_url,
             )
         )
@@ -1471,11 +1475,31 @@ def _build_mets_from_project(
                 for key_id, value in general_keys:
                     _create_dnx_element(general_record, "key", {"id": key_id}, value)
 
-            if obj.checksum:
+            checksum_algorithm, checksum_value = obj.checksum_tuple()
+            checksum_label = obj.checksum_label() if checksum_algorithm else None
+            fallback_label = checksum_label or ("MD5" if obj.source == "s3" else "SHA-256")
+            if checksum_value:
                 fixity_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixity"})
                 fixity_record = _create_dnx_element(fixity_section, "record")
-                _create_dnx_element(fixity_record, "key", {"id": "fixityType"}, "SHA-256")
-                _create_dnx_element(fixity_record, "key", {"id": "fixityValue"}, obj.checksum)
+                _create_dnx_element(
+                    fixity_record,
+                    "key",
+                    {"id": "fixityType"},
+                    fallback_label,
+                )
+                _create_dnx_element(
+                    fixity_record,
+                    "key",
+                    {"id": "fixityValue"},
+                    checksum_value,
+                )
+                if checksum_label and checksum_label != fallback_label:
+                    _create_dnx_element(
+                        fixity_record,
+                        "key",
+                        {"id": "fixityAlgorithm"},
+                        checksum_label,
+                    )
 
             raw_path = (
                 obj.storage_key
@@ -1535,9 +1559,11 @@ def _build_mets_from_project(
             }
             if obj.content_type:
                 attrs["MIMETYPE"] = obj.content_type
-            if obj.checksum:
-                attrs["CHECKSUM"] = obj.checksum
-                attrs["CHECKSUMTYPE"] = "SHA-256"
+            checksum_algorithm, checksum_value = obj.checksum_tuple()
+            checksum_label = obj.checksum_label() if checksum_algorithm else None
+            if checksum_value:
+                attrs["CHECKSUM"] = checksum_value
+                attrs["CHECKSUMTYPE"] = checksum_label or ("MD5" if obj.source == "s3" else "SHA-256")
 
             file_elem = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), attrs)
             href = obj.preferred_location or obj.access_url or ""

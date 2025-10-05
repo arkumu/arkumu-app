@@ -11,6 +11,7 @@ import mimetypes
 from django.conf import settings
 
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
+from arkumu.projects.fixity import FixityInfo, parse_fixity
 
 from .path_mapping import resolve_external_paths
 
@@ -82,6 +83,8 @@ class NormalizedDigitalObject:
     content_type: Optional[str]
     size_bytes: Optional[int]
     checksum: Optional[str]
+    checksum_algorithm: Optional[str]
+    checksum_provenance: Optional[str]
     access_url: Optional[str]
     storage_status: Optional[str]
     source: str
@@ -111,6 +114,21 @@ class NormalizedDigitalObject:
         if self.storage_key:
             return self.storage_key
         return self.original_path or self.access_url
+
+    def checksum_tuple(self) -> Tuple[Optional[str], Optional[str]]:
+        return self.checksum_algorithm, self.checksum
+
+    def checksum_label(self) -> Optional[str]:
+        if not self.checksum_algorithm:
+            return None
+        normalized = self.checksum_algorithm.lower().replace('-', '')
+        mapping = {
+            'sha256': 'SHA-256',
+            'sha1': 'SHA-1',
+            'sha512': 'SHA-512',
+            'md5': 'MD5',
+        }
+        return mapping.get(normalized, self.checksum_algorithm.upper())
 
 
 @dataclass(frozen=True)
@@ -259,7 +277,20 @@ class OAIProjectBuilder:
         access_url = _clean(getattr(obj, "access_url", None))
         file_name = _infer_file_name(obj)
         content_type = _guess_mime_type(obj)
-        checksum = _clean(getattr(obj, "checksum", None))
+        checksum_value = _clean(getattr(obj, "checksum", None))
+        checksum_algorithm_attr = _clean(getattr(obj, "checksum_algorithm", None))
+        provenance = _clean(getattr(obj, "checksum_provenance", None))
+        fixity = parse_fixity(checksum_value)
+        if checksum_algorithm_attr:
+            normalized_algorithm = checksum_algorithm_attr.lower().replace('-', '')
+            fixity = FixityInfo(
+                normalized_algorithm,
+                fixity.digest or checksum_value,
+                provenance,
+            )
+        else:
+            fixity = fixity.with_provenance(provenance)
+
         storage_status = _clean(getattr(obj, "storage_status", None))
 
         rosetta_candidates: Tuple[str, ...] = ()
@@ -297,7 +328,9 @@ class OAIProjectBuilder:
             file_name=file_name,
             content_type=content_type,
             size_bytes=size_bytes,
-            checksum=checksum,
+            checksum=fixity.digest,
+            checksum_algorithm=fixity.algorithm,
+            checksum_provenance=fixity.provenance or (source if source in {"rosetta", "s3"} else None),
             access_url=access_url,
             storage_status=storage_status,
             source=source,

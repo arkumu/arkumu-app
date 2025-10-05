@@ -8,7 +8,9 @@ from arkumu.catalog.services.schema_manifest_service import (
     CardSection,
     CanonicalPropertyBinding,
 )
-from arkumu.catalog.services.project_views import CardURIs
+from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
+from arkumu.metadata.models.resource import ResourceType
+from arkumu.projects import ProjectDigitalObject
 from arkumu.projects.services.snapshot_service import ProjectSnapshotService
 
 
@@ -89,8 +91,11 @@ class DummyTripleService:
     def get_actor_relationships(self, *_, **__):
         return []
 
-    def get_digital_object_paths(self, *_, **__):
+    def get_related_entities(self, *_, **__):
         return []
+
+    def get_literal_map(self, *_, **__):
+        return {}
 
 
 def minimal_card_schema() -> CardSchema:
@@ -105,6 +110,28 @@ def minimal_card_schema() -> CardSchema:
                     "image": CardProperty(name="image", canonical_uri=CardURIs.IMAGE, bindings=[]),
                     "institution": CardProperty(name="institution", canonical_uri=CardURIs.INSTITUTION, bindings=[]),
                     "category": CardProperty(name="category", canonical_uri=CardURIs.CATEGORY, bindings=[]),
+                },
+                fk_relationships=[
+                    {
+                        "source_property": ProjectURIs.DIGITAL_OBJECT_LINK,
+                        "target_property": ProjectURIs.DIGITAL_OBJECT_PATH,
+                    }
+                ],
+            ),
+            "digital_object": CardSection(
+                label="digital_object",
+                canonical_class_uri=ProjectURIs.DIGITAL_OBJECT_TYPE,
+                properties={
+                    "path": CardProperty(
+                        name="path",
+                        canonical_uri=ProjectURIs.DIGITAL_OBJECT_PATH,
+                        bindings=[],
+                    ),
+                    "Pruefsumme_SHA256": CardProperty(
+                        name="Pruefsumme_SHA256",
+                        canonical_uri='http://arkumu.org/data/khm/properties/pruefsumme-sha256',
+                        bindings=[],
+                    ),
                 },
                 fk_relationships=[],
             ),
@@ -189,7 +216,7 @@ def minimal_card_schema() -> CardSchema:
 
 
 def test_build_project_record_collects_all_institution_codes():
-    service = ProjectSnapshotService()
+    service = ProjectSnapshotService(relationship_org_code='khm')
     triple_service = DummyTripleService()
     card_schema = minimal_card_schema()
 
@@ -253,7 +280,7 @@ def test_build_project_record_collects_all_institution_codes():
 
 
 def test_build_project_record_merges_event_storage_files():
-    service = ProjectSnapshotService()
+    service = ProjectSnapshotService(relationship_org_code='khm')
     card_schema = minimal_card_schema()
 
     subject_id = "proj-1"
@@ -318,3 +345,117 @@ def test_build_project_record_merges_event_storage_files():
     digital_object = record.digital_objects[0]
     assert digital_object.storage_key == "events/file.mov"
     assert digital_object.file_name == "file.mov"
+    assert digital_object.checksum == "checksum"
+    assert digital_object.checksum_algorithm is None
+    assert digital_object.checksum_provenance == "s3"
+
+
+def test_build_project_record_uses_rosetta_checksum():
+    class RosettaTripleService(DummyTripleService):
+        def get_related_entities(self, *_, **__):
+            return [
+                {
+                    'id': 'obj-1',
+                    'uri': 'http://arkumu.org/data/khm/entities/digital-object/1',
+                    'resource_type': ResourceType.ENTITY,
+                }
+            ]
+
+        def get_literal_map(self, subject_ids, predicate_uri, *, organization_code=None):
+            if predicate_uri == ProjectURIs.DIGITAL_OBJECT_PATH:
+                return {'obj-1': '/rosetta/khm/test/input/object_master.tif'}
+            if predicate_uri == 'http://arkumu.org/data/khm/properties/pruefsumme-sha256':
+                return {'obj-1': 'a' * 64}
+            return {}
+
+    service = ProjectSnapshotService(relationship_org_code='khm')
+    card_schema = minimal_card_schema()
+    triple_service = RosettaTripleService()
+
+    edges = defaultdict(list)
+    edges['proj-1'].append({"predicate_canonical": CardURIs.TITLE, "object_value": "Rosetta Project"})
+
+    record = service._build_project_record(
+        subject_id='proj-1',
+        nodes={'proj-1': {'uri': 'http://example.org/project/1'}},
+        edges_by_subject=edges,
+        card_schema=card_schema,
+        triple_service=triple_service,
+        storage_files_map=defaultdict(list),
+    )
+
+    assert record is not None
+    assert record.digital_objects
+    obj = record.digital_objects[0]
+    assert obj.checksum == 'a' * 64
+    assert obj.checksum_algorithm == 'sha256'
+    assert obj.checksum_provenance == 'metadata'
+
+
+def test_build_project_record_infers_checksum_org_from_uri():
+    class ChecksumTripleService(DummyTripleService):
+        def get_related_entities(self, subject_id, predicate_uri, *, organization_code=None):
+            if predicate_uri == ProjectURIs.DIGITAL_OBJECT_LINK:
+                return [
+                    {
+                        'id': 'obj-1',
+                        'uri': 'http://arkumu.org/data/khm/entities/digital-object/1',
+                        'canonical_uri': None,
+                        'name': 'digital-object',
+                        'value': None,
+                        'resource_type': ResourceType.ENTITY,
+                    }
+                ]
+            return []
+
+        def get_literal_map(self, subject_ids, predicate_uri, *, organization_code=None):
+            if predicate_uri == ProjectURIs.DIGITAL_OBJECT_PATH:
+                return {'obj-1': '/rosetta/khm/test/input/object_master.tif'}
+            if predicate_uri == ProjectSnapshotService.ROSETTA_CHECKSUM_PREDICATES['khm']:
+                return {'obj-1': 'b' * 64}
+            return {}
+
+    service = ProjectSnapshotService()
+    card_schema = minimal_card_schema()
+    triple_service = ChecksumTripleService()
+
+    subject_id = 'proj-1'
+    institution_id = 'inst-1'
+
+    nodes = {
+        subject_id: {'uri': 'http://arkumu.org/data/khm/entities/00-projekte/200'},
+        institution_id: {
+            'uri': 'http://arkumu.org/data/literals/aa5f824e167db5e1',
+            'name': 'KHM',
+        },
+    }
+
+    edges_by_subject = defaultdict(list)
+    edges_by_subject[subject_id].append({
+        'predicate_canonical': CardURIs.TITLE,
+        'object_value': 'Rosetta Project',
+    })
+    edges_by_subject[subject_id].append({
+        'predicate_canonical': CardURIs.INSTITUTION,
+        'object_id': institution_id,
+    })
+    edges_by_subject[institution_id].append({
+        'predicate_canonical': CardURIs.INSTITUTION_GERMAN_NAME,
+        'object_value': 'Kunsthochschule für Medien Köln',
+    })
+
+    record = service._build_project_record(
+        subject_id=subject_id,
+        nodes=nodes,
+        edges_by_subject=edges_by_subject,
+        card_schema=card_schema,
+        triple_service=triple_service,
+        storage_files_map=defaultdict(list),
+    )
+
+    assert record is not None
+    assert record.digital_objects
+    obj = record.digital_objects[0]
+    assert obj.checksum == 'b' * 64
+    assert obj.checksum_algorithm == 'sha256'
+    assert obj.checksum_provenance == 'metadata'

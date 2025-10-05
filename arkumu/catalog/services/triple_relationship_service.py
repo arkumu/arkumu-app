@@ -1126,6 +1126,21 @@ class TripleRelationshipService:
                 results.append(normalized)
         return results
 
+    def get_literal_map(
+        self,
+        subject_ids: Sequence[str],
+        predicate_uri: Optional[str],
+        *,
+        organization_code: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Return a mapping of subject ID to literal value for the predicate."""
+
+        return self._collect_literal_values(
+            subject_ids=subject_ids,
+            predicate_uri=predicate_uri,
+            organization_code=organization_code,
+        )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
