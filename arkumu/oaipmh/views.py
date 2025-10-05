@@ -70,7 +70,7 @@ HARVESTABLE_FILE_STATUSES = HARVESTABLE_STORAGE_STATUSES
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
-DNX_SCHEMA_PATH = Path(settings.BASE_DIR) / "dnx_sip.xsd.xml"
+DNX_SCHEMA_PATH = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/dnx_sip.xsd"
 
 _ORIGINAL_URLOPEN = urllib_request.urlopen
 
@@ -91,7 +91,7 @@ def _urlopen_with_schema_override(url, *args, **kwargs):
         } and METS_SCHEMA_FILE.exists():
             return open(METS_SCHEMA_FILE, "rb")
 
-        if normalized.endswith('dnx_sip.xsd.xml') and DNX_SCHEMA_PATH.exists():
+        if normalized.endswith('dnx_sip.xsd') and DNX_SCHEMA_PATH.exists():
             return open(DNX_SCHEMA_PATH, "rb")
 
     return _ORIGINAL_URLOPEN(url, *args, **kwargs)
