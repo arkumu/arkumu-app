@@ -4,6 +4,7 @@ import logging
 from typing import Any, Optional
 
 from huey.contrib.djhuey import db_task
+from django.apps import apps
 from django.db import models
 from django.utils import timezone
 
@@ -171,6 +172,8 @@ if HUEY_PERIODIC_AVAILABLE:
     def flag_missing_s3_files():
         """Mark linked S3FileObjects as failed if they no longer exist in S3."""
 
+        S3FileObject = apps.get_model('storage', 'S3FileObject')
+
         qs = (
             S3FileObject.objects
             .filter(related_resource__isnull=False)
@@ -206,6 +209,8 @@ if HUEY_PERIODIC_AVAILABLE:
 @db_task(retries=1, retry_delay=30)
 def recalculate_s3_checksums(organization: str | None = None, missing_only: bool = True, limit: int | None = None) -> None:
     """Recalculate SHA256 checksums for S3 files, optionally scoped to an organization."""
+
+    S3FileObject = apps.get_model('storage', 'S3FileObject')
 
     queryset = S3FileObject.objects.filter(status='completed')
 
