@@ -1,6 +1,5 @@
 from django.urls import path
 from django.views.generic import TemplateView
-from django.contrib.auth.decorators import login_required
 
 from .views.cards import GraphSearchView
 from .views.catalog_view import CatalogView
@@ -10,6 +9,7 @@ from .views.explorer import (
     CatalogExplorerPropertiesView,
     CatalogExplorerLiteralsView
 )
+from arkumu.users.mixins import general_login_required
 
 app_name = 'catalog'
 
@@ -24,7 +24,7 @@ urlpatterns = [
     path('search_cards/', login_required(GraphSearchView.as_view()), name='search_cards'),
     path('projekt/', login_required(ProjectView.as_view()), name='projekt'),
     path('projekt/tab/', login_required(ProjectTabView.as_view()), name='projekt_tab'),
-    path('browse/', login_required(CatalogView.as_view()), name='browse'),
+    path('browse/', general_login_required(CatalogView.as_view()), name='browse'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
 ]

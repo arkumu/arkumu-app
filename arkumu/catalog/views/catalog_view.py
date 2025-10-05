@@ -4,7 +4,6 @@ Catalog view with pagination and caching.
 
 from django.views.generic import View
 from django.shortcuts import render
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.middleware.csrf import get_token
 import logging
@@ -13,11 +12,12 @@ from typing import Any, Dict, List, Optional
 from arkumu.cache.services import CacheManager
 from arkumu.projects.services import ProjectSnapshotService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
+from arkumu.users.mixins import GeneralLoginRequiredMixin
 
 logger = logging.getLogger(__name__)
 
 
-class CatalogView(LoginRequiredMixin, View, CatalogTemplateHelperMixin):
+class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
     """
     Catalog view with pagination and caching.
     """
