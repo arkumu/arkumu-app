@@ -308,24 +308,6 @@
                             <button type="submit" class="btn btn-outline btn-sm">Link Event Files</button>
                         </form>
 
-                        <form hx-post="{% url 'metadata:metadata_dashboard_link_projects' %}"
-                              hx-target="#storage-maintenance-results"
-                              hx-swap="afterbegin"
-                              class="flex flex-wrap gap-2 items-center">
-                            {% csrf_token %}
-                            <label class="text-xs">Bucket:</label>
-                            <select name="bucket" class="select select-bordered select-xs">
-                                <option value="">All</option>
-                                {% for bucket in checksum_buckets %}
-                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
-                                {% endfor %}
-                            </select>
-                            <select name="mode" class="select select-bordered select-xs">
-                                <option value="apply">Run now</option>
-                                <option value="dry">Dry run</option>
-                            </select>
-                            <button type="submit" class="btn btn-outline btn-sm">Link Project Files</button>
-                        </form>
                     </div>
 
                     <div id="storage-maintenance-results" class="space-y-2"></div>
