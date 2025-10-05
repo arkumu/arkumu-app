@@ -289,12 +289,19 @@ def trigger_upload_verification(request, session_id):
     if not request.user.is_staff:
         return HttpResponseForbidden("Only staff members can verify uploads.")
 
-    if session.status in {"processing", "completed"}:
-        messages.info(request, "Verification already in progress or completed for this session.")
-    else:
-        session.mark_processing()
-        verify_upload_session.schedule(args=(str(session.id),), delay=0)
-        messages.success(request, "Upload verification has been queued.")
+    if session.status == "completed":
+        messages.info(request, "Verification already completed for this session.")
+        redirect_to = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("metadata:all_upload_sessions")
+        return redirect(redirect_to)
+
+    if session.status == "processing":
+        messages.info(request, "Verification already running in the background.")
+        redirect_to = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("metadata:all_upload_sessions")
+        return redirect(redirect_to)
+
+    session.mark_processing()
+    verify_upload_session.schedule(args=(str(session.id),), delay=0)
+    messages.success(request, "Upload verification was queued in the background.")
 
     redirect_to = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("metadata:all_upload_sessions")
     return redirect(redirect_to)

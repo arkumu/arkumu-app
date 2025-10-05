@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import models, transaction
 
 from arkumu.storage.models import S3FileObject
 from arkumu.metadata.models import Resource
@@ -64,7 +64,10 @@ class Command(BaseCommand):
         queryset = S3FileObject.objects.filter(related_resource__isnull=True)
 
         if bucket:
-            queryset = queryset.filter(session__s3_bucket=bucket)
+            queryset = queryset.filter(
+                models.Q(session__s3_bucket=bucket)
+                | models.Q(organization=bucket)
+            )
 
         queryset = queryset.order_by("created_at", "id")
 
