@@ -29,8 +29,7 @@ def _clean_path(value: Optional[str]) -> Optional[str]:
 
 
 @lru_cache(maxsize=None)
-def _load_index(org_code: str) -> PathIndex:
-    configured = getattr(settings, "OAI_EXTERNAL_PATH_FILES", {}).get(org_code)
+def _load_index_cached(org_code: str, configured: Optional[str]) -> PathIndex:
     if not configured:
         return PathIndex(full_paths=frozenset(), by_basename={})
 
@@ -62,6 +61,16 @@ def _load_index(org_code: str) -> PathIndex:
 
     frozen_map = {key: tuple(values) for key, values in by_basename.items()}
     return PathIndex(full_paths=frozenset(full_paths), by_basename=frozen_map)
+
+
+def _load_index(org_code: str) -> PathIndex:
+    configured = getattr(settings, "OAI_EXTERNAL_PATH_FILES", {}).get(org_code)
+    return _load_index_cached(org_code, configured)
+
+
+# Expose cache management helpers for test stability
+_load_index.cache_clear = _load_index_cached.cache_clear  # type: ignore[attr-defined]
+_load_index.cache_info = _load_index_cached.cache_info  # type: ignore[attr-defined]
 
 
 def _rosetta_root(org_code: str) -> Optional[str]:

@@ -788,7 +788,7 @@ class TestOAIEndpoint:
         root = ET.fromstring(response.content)
         file_groups = root.findall(f'.//{{{views.METS_NS}}}fileGrp')
         assert len(file_groups) == 1
-        assert file_groups[0].get('USE') == 'PRESERVATION_MASTER'
+        assert file_groups[0].get('USE') == 'VIEW'
 
         flocat_hrefs = {
             flocat.get('{http://www.w3.org/1999/xlink}href')

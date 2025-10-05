@@ -85,7 +85,7 @@ def sample_resources(db, sample_organizations):
 
     for i in range(5):
         resource = Resource.objects.create(
-            uri=f"https://test.example.com/resource/{i+1}",
+            uri=f"https://arkumu.org/entities/projekt/{i+1}",
             organization=sample_organizations[0],  # test_univ
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,
@@ -104,7 +104,7 @@ def sample_resources(db, sample_organizations):
 
     # Resource from second organization
     resource = Resource.objects.create(
-        uri="https://research.example.com/item/1",
+        uri="https://arkumu.org/entities/projekt/600",
         organization=sample_organizations[1],  # research_inst
         public_access_level=PublicAccessLevel.PUBLIC,
         is_public_approved=True,
@@ -362,7 +362,7 @@ def large_dataset(db, sample_organizations):
     # Create 250 resources for pagination testing
     for i in range(250):
         resource = Resource.objects.create(
-            uri=f"https://test.example.com/large/{i+1:03d}",
+            uri=f"https://arkumu.org/entities/projekt/large/{i+1:03d}",
             organization=sample_organizations[0],
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,

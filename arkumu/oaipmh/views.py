@@ -27,7 +27,7 @@ from django.db.models import Q
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
-from arkumu.projects import ProjectDigitalObject, ProjectRecord, ProjectSnapshot
+from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, ProjectSnapshot
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
@@ -58,6 +58,7 @@ REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
 METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
 METS_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/rosettaMets.xsd"
+METS_LEGACY_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/rosettaMets_legacy.xsd"
 METS_SCHEMA_URL = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd"
 DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
 XLINK_NS = "http://www.w3.org/1999/xlink"
@@ -88,8 +89,11 @@ def _urlopen_with_schema_override(url, *args, **kwargs):
             "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
             "https://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
             "https://exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
-        } and METS_SCHEMA_FILE.exists():
-            return open(METS_SCHEMA_FILE, "rb")
+        }:
+            if METS_LEGACY_SCHEMA_FILE.exists():
+                return open(METS_LEGACY_SCHEMA_FILE, "rb")
+            if METS_SCHEMA_FILE.exists():
+                return open(METS_SCHEMA_FILE, "rb")
 
         if normalized.endswith('dnx_sip.xsd') and DNX_SCHEMA_PATH.exists():
             return open(DNX_SCHEMA_PATH, "rb")
@@ -255,10 +259,10 @@ def _create_dnx_element(
 def _infer_representation_type(obj: NormalizedDigitalObject) -> str:
     """Heuristically map digital objects onto Rosetta representation buckets."""
     hint_parts = [
-        obj.storage_key or '',
-        obj.original_path or '',
-        obj.file_name or '',
-        obj.rosetta_path or '',
+        getattr(obj, 'storage_key', None) or getattr(obj, 'path', None) or '',
+        getattr(obj, 'original_path', None) or getattr(obj, 'path', None) or '',
+        getattr(obj, 'file_name', None) or '',
+        getattr(obj, 'rosetta_path', None) or '',
     ]
     hint = " ".join(hint_parts).lower()
 
@@ -295,7 +299,7 @@ def _group_digital_objects_for_rosetta(objects: List[NormalizedDigitalObject]) -
     return []
 
 # Initialize services
-resumption_service = ResumptionTokenService(page_size=20)
+resumption_service = ResumptionTokenService(page_size=100)
 oai_cache = OAICacheService()
 snapshot_service = ProjectSnapshotService()
 project_builder = OAIProjectBuilder()
@@ -1025,6 +1029,34 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
         if project.harvestable:
             harvestable[project.uri] = project
 
+    if not harvestable:
+        fallback_records: List[ProjectRecord] = []
+        fallback_resources = (
+            Resource.objects.filter(
+                s3fileobject__status__in=HARVESTABLE_FILE_STATUSES,
+                s3fileobject__s3_key__isnull=False,
+            )
+            .exclude(s3fileobject__s3_key="")
+            .distinct()
+        )
+
+        for resource in fallback_resources:
+            record = _fallback_record_from_storage(resource)
+            if not record:
+                continue
+            project = project_builder.from_project_record(record)
+            if not project.harvestable:
+                continue
+            harvestable[project.uri] = project
+            fallback_records.append(record)
+
+        if fallback_records:
+            snapshot = ProjectSnapshot(
+                projects=list(snapshot.projects) + fallback_records,
+                counts=snapshot.counts,
+                generated_at=snapshot.generated_at,
+            )
+
     return snapshot, harvestable
 
 
@@ -1204,6 +1236,13 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
     return payload
 
 
+def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> Dict[str, List[str]]:
+    """Compatibility wrapper to build DC payloads from legacy ProjectRecord inputs."""
+
+    project = project_builder.from_project_record(record)
+    return _build_dc_payload_from_project(project, resource)
+
+
 def _append_dc_metadata(metadata: ET.Element, dc_payload: Dict[str, List[str]]) -> None:
     dc_root = ET.SubElement(
         metadata,
@@ -1290,6 +1329,72 @@ def _build_mets_from_project(
 
     file_sec_entries: List[Dict[str, Any]] = []
 
+    events_by_uri: Dict[str, ProjectEvent] = {}
+    for event in record.events:
+        if event.uri:
+            events_by_uri[event.uri] = event
+
+    event_file_map: Dict[str, ProjectEvent] = {}
+
+    def _remember_event_mapping(key: Optional[str], event_obj: ProjectEvent) -> None:
+        if not key:
+            return
+        normalized = key.strip()
+        event_file_map.setdefault(normalized, event_obj)
+        if normalized != key:
+            event_file_map.setdefault(key, event_obj)
+
+    if events_by_uri:
+        event_files_qs = (
+            S3FileObject.objects.filter(
+                related_resource__uri__in=list(events_by_uri.keys()),
+                status__in=HARVESTABLE_FILE_STATUSES,
+            )
+            .select_related('related_resource')
+        )
+        for file_obj in event_files_qs:
+            related = getattr(file_obj, 'related_resource', None)
+            related_uri = getattr(related, 'uri', None)
+            if not related_uri:
+                continue
+            event_obj = events_by_uri.get(related_uri)
+            if not event_obj:
+                continue
+            candidates = [
+                getattr(file_obj, 's3_key', None),
+                getattr(file_obj, 'original_path', None),
+                getattr(file_obj, 'file_name', None),
+            ]
+            for candidate in candidates:
+                _remember_event_mapping(candidate, event_obj)
+
+    def _object_keys(obj: NormalizedDigitalObject) -> List[str]:
+        keys: List[str] = []
+        sources = [
+            obj.storage_key,
+            obj.original_path,
+            obj.rosetta_path,
+            obj.preferred_location,
+            obj.file_name,
+        ]
+        for source in sources:
+            if not source:
+                continue
+            stripped = source.strip()
+            keys.append(stripped)
+            if stripped != source:
+                keys.append(source)
+        return keys
+
+    def _event_for_object(obj: NormalizedDigitalObject) -> Optional[ProjectEvent]:
+        for candidate in _object_keys(obj):
+            event_obj = event_file_map.get(candidate)
+            if event_obj:
+                return event_obj
+        return None
+
+    file_counter = 1
+
     def _append_epicur_resource(
         obj: NormalizedDigitalObject,
         *,
@@ -1316,7 +1421,7 @@ def _build_mets_from_project(
             _create_dnx_element(resource_elem, "format", {"scheme": "imt"}, obj.content_type)
 
     for rep_index, (rep_type, objects) in enumerate(rep_groups, start=1):
-        rep_id = f"rep{rep_index}"
+        rep_id = f"REP{rep_index}"
 
         rep_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{rep_id}-amd"})
         rep_tech = ET.SubElement(rep_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{rep_id}-amd-tech"})
@@ -1331,11 +1436,14 @@ def _build_mets_from_project(
         rep_files: List[Dict[str, Any]] = []
 
         for file_index, obj in enumerate(objects, start=1):
-            file_id = f"{rep_id}-fid{file_index}"
+            file_id = f"FL{file_counter}"
+            file_counter += 1
             preferred_location = obj.preferred_location or ""
             file_label_source = obj.file_name or preferred_location or obj.original_path or f"Digital Object {file_index}"
             label_normalized = _normalize_reference(file_label_source)
             file_label = label_normalized or file_label_source
+            if obj.file_name:
+                file_label = obj.file_name
 
             file_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
             file_tech = ET.SubElement(file_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
@@ -1369,12 +1477,26 @@ def _build_mets_from_project(
                 _create_dnx_element(fixity_record, "key", {"id": "fixityType"}, "SHA-256")
                 _create_dnx_element(fixity_record, "key", {"id": "fixityValue"}, obj.checksum)
 
+            raw_path = (
+                obj.storage_key
+                or obj.original_path
+                or obj.rosetta_path
+                or preferred_location
+            )
+            path_parts: List[str] = []
+            if raw_path:
+                path_parts = [part for part in raw_path.strip('/').split('/') if part]
+            folder_segments = path_parts[:-1] if len(path_parts) > 1 else []
+
             rep_files.append({
                 "file_id": file_id,
                 "label": file_label,
                 "object": obj,
                 "rep_id": rep_id,
                 "rep_type": rep_type,
+                "event": _event_for_object(obj),
+                "folders": folder_segments,
+                "order": file_index,
             })
 
             if rep_index == 1 and file_index == 1:
@@ -1389,6 +1511,8 @@ def _build_mets_from_project(
 
     file_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "fileSec"))
 
+    project_title = record.title or record.subtitle or record.uri or "Project"
+
     for entry in file_sec_entries:
         rep_id = entry["rep_id"]
         rep_type = entry["rep_type"]
@@ -1396,7 +1520,7 @@ def _build_mets_from_project(
             file_sec,
             ET.QName(METS_NS, "fileGrp"),
             {
-                "USE": rep_type,
+                "USE": "VIEW",
                 "ID": rep_id,
                 "ADMID": f"{rep_id}-amd",
             },
@@ -1433,23 +1557,117 @@ def _build_mets_from_project(
             ET.QName(METS_NS, "structMap"),
             {"ID": f"{rep_id}-1", "TYPE": "LOGICAL"},
         )
-        rep_div = ET.SubElement(
+
+        project_div = ET.SubElement(
             struct_map,
             ET.QName(METS_NS, "div"),
-            {"TYPE": rep_type, "LABEL": rep_type, "ORDERLABEL": rep_type},
+            {
+                "TYPE": "PROJECT",
+                "LABEL": project_title,
+                "ORDER": "1",
+                "ORDERLABEL": project_title,
+            },
         )
-        for order, file_info in enumerate(entry["files"], start=1):
-            file_div = ET.SubElement(
+
+        rep_label = rep_type.replace("_", " ").title() if rep_type else "Representation"
+        rep_div = ET.SubElement(
+            project_div,
+            ET.QName(METS_NS, "div"),
+            {
+                "TYPE": "REPRESENTATION",
+                "LABEL": rep_label,
+                "ORDER": "1",
+                "ORDERLABEL": rep_label,
+            },
+        )
+
+        def _event_key(event_obj: Optional[ProjectEvent]) -> str:
+            if event_obj is None:
+                return "__project__"
+            if event_obj.uri:
+                return f"uri:{event_obj.uri}"
+            if event_obj.id:
+                return f"id:{event_obj.id}"
+            if event_obj.name:
+                return f"name:{event_obj.name}"
+            return f"event:{id(event_obj)}"
+
+        event_order: List[str] = []
+        files_by_event: Dict[str, List[Dict[str, Any]]] = {}
+        event_meta: Dict[str, Optional[ProjectEvent]] = {}
+
+        for event in record.events:
+            key = _event_key(event)
+            event_order.append(key)
+            files_by_event.setdefault(key, [])
+            event_meta[key] = event
+
+        for file_info in entry["files"]:
+            event_obj = file_info.get("event")
+            key = _event_key(event_obj)
+            if key not in files_by_event:
+                event_order.append(key)
+            files_by_event.setdefault(key, []).append(file_info)
+            event_meta.setdefault(key, event_obj)
+
+        folder_nodes: Dict[str, Dict[tuple[str, ...], ET.Element]] = {}
+
+        def _event_label(event_obj: Optional[ProjectEvent]) -> str:
+            if event_obj is None:
+                return "Projektdateien"
+            return event_obj.name or event_obj.location or event_obj.uri or "Ereignis"
+
+        event_position = 1
+        for key in event_order:
+            event_files = files_by_event.get(key)
+            if not event_files:
+                continue
+            event_obj = event_meta.get(key)
+            event_label = _event_label(event_obj)
+            event_div = ET.SubElement(
                 rep_div,
                 ET.QName(METS_NS, "div"),
                 {
-                    "TYPE": "FILE",
-                    "LABEL": file_info["label"],
-                    "ORDERLABEL": file_info["label"],
-                    "ORDER": str(order),
+                    "TYPE": "EVENT",
+                    "LABEL": event_label,
+                    "ORDER": str(event_position),
+                    "ORDERLABEL": event_label,
                 },
             )
-            ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
+            folder_nodes[key] = {}
+            event_position += 1
+
+            for file_info in event_files:
+                parent = event_div
+                folder_key_prefix: List[str] = []
+                for segment in file_info.get("folders", []):
+                    folder_key_prefix.append(segment)
+                    folder_key = tuple(folder_key_prefix)
+                    existing = folder_nodes[key].get(folder_key)
+                    if not existing:
+                        existing = ET.SubElement(
+                            parent,
+                            ET.QName(METS_NS, "div"),
+                            {
+                                "TYPE": "FOLDER",
+                                "LABEL": segment,
+                                "ORDERLABEL": segment,
+                            },
+                        )
+                        folder_nodes[key][folder_key] = existing
+                    parent = existing
+
+                file_div = ET.SubElement(
+                    parent,
+                    ET.QName(METS_NS, "div"),
+                    {
+                        "TYPE": "FILE",
+                        "LABEL": file_info["label"],
+                        "ORDERLABEL": file_info["label"],
+                        "ORDER": str(file_info.get("order", 0)),
+                    },
+                )
+                ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
     return mets_root
 
 

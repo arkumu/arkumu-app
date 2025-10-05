@@ -16,7 +16,7 @@ from django.test import RequestFactory
 from django.utils import timezone as django_timezone
 
 from arkumu.oaipmh import views
-from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS
+from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS, XLINK_NS
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.users.models import Organization
 from arkumu.projects import (
@@ -29,6 +29,7 @@ from arkumu.projects import (
     ProjectEvent,
     ProjectType,
 )
+from arkumu.storage.models.s3_file_objects import S3FileObject
 
 
 class TestOAIViewFunctions:
@@ -38,13 +39,37 @@ class TestOAIViewFunctions:
         """Set up test method."""
         self.factory = RequestFactory()
 
+    def _ensure_event_storage(self, resource: Resource) -> None:
+        """Create S3 metadata for the synthetic event file used in tests."""
+
+        event_uri = f"{resource.uri}/event/launch"
+        event_resource, _created = Resource.objects.get_or_create(
+            uri=event_uri,
+            defaults={
+                "organization": resource.organization,
+                "public_access_level": resource.public_access_level,
+                "is_public_approved": resource.is_public_approved,
+            },
+        )
+
+        S3FileObject.objects.get_or_create(
+            related_resource=event_resource,
+            s3_key="streams/launch/test1.txt",
+            defaults={
+                "file_name": "test1.txt",
+                "file_size_bytes": 123,
+                "content_type": "text/plain",
+                "status": "completed",
+            },
+        )
+
     def _build_snapshot_record(self, resource: Resource, include_files: bool = False) -> ProjectRecord:
         digital_objects = []
         if include_files:
             digital_objects.append(
                 ProjectDigitalObject(
-                    path="org/test1.txt",
-                    storage_key="org/test1.txt",
+                    path="streams/launch/test1.txt",
+                    storage_key="streams/launch/test1.txt",
                     file_name="test1.txt",
                     content_type="text/plain",
                     size_bytes=123,
@@ -53,8 +78,8 @@ class TestOAIViewFunctions:
             )
             digital_objects.append(
                 ProjectDigitalObject(
-                    path="org/test2.pdf",
-                    storage_key="org/test2.pdf",
+                    path="streams/project/test2.pdf",
+                    storage_key="streams/project/test2.pdf",
                     file_name="test2.pdf",
                     content_type="application/pdf",
                     size_bytes=456,
@@ -71,7 +96,13 @@ class TestOAIViewFunctions:
             categories=[ProjectCategory(label="Category One", slug="category-one")],
             catchphrases=[ProjectCatchphrase(label="Keyword")],
             actors=[ProjectActor(name="Jane Doe", roles=["Creator"])],
-            events=[ProjectEvent(name="Launch", start="2020-01-01", location="Berlin")],
+            events=[ProjectEvent(
+                id="event-1",
+                uri=f"{resource.uri}/event/launch",
+                name="Launch",
+                start="2020-01-01",
+                location="Berlin",
+            )],
             project_type=ProjectType(label="Type A"),
             digital_objects=digital_objects,
             institution_codes=["ti"],
@@ -442,6 +473,7 @@ class TestOAIViewFunctions:
     def test_build_dc_payload_from_record(self, sample_resources):
         """_build_dc_payload_from_record assembles title, identifiers, and relations."""
         resource = sample_resources[0]
+        self._ensure_event_storage(resource)
         record = self._build_snapshot_record(resource, include_files=True)
 
         payload = views._build_dc_payload_from_record(record, resource)
@@ -477,6 +509,7 @@ class TestOAIViewFunctions:
     def test_build_metadata_element_mets(self, mock_get_record, sample_resources):
         """Test _build_metadata_element with METS format."""
         resource = sample_resources[0]
+        self._ensure_event_storage(resource)
         record = self._build_snapshot_record(resource, include_files=True)
         mock_get_record.return_value = record
 
@@ -492,6 +525,7 @@ class TestOAIViewFunctions:
     def test_rosetta_mets_structure(self, mock_get_record, sample_resources):
         """Ensure Rosetta METS output matches expected structural profile."""
         resource = sample_resources[0]
+        self._ensure_event_storage(resource)
         record = self._build_snapshot_record(resource, include_files=True)
         mock_get_record.return_value = record
 
@@ -528,6 +562,41 @@ class TestOAIViewFunctions:
         for struct_map in struct_maps:
             fptr = struct_map.find(f".//{{{METS_NS}}}fptr")
             assert fptr is not None
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_struct_map_groups_event_files(self, mock_get_record, sample_resources):
+        """Event files appear under dedicated event divs with folder structure."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        struct_map = mets_root.find(f".//{{{METS_NS}}}structMap")
+        assert struct_map is not None
+
+        event_div = struct_map.find(f".//{{{METS_NS}}}div[@TYPE='EVENT'][@LABEL='Launch']")
+        assert event_div is not None
+
+        folder_div = event_div.find(f"./{{{METS_NS}}}div[@TYPE='FOLDER'][@LABEL='streams']")
+        assert folder_div is not None
+        nested_folder = folder_div.find(f"./{{{METS_NS}}}div[@TYPE='FOLDER'][@LABEL='launch']")
+        assert nested_folder is not None
+
+        file_div = nested_folder.find(f"./{{{METS_NS}}}div[@TYPE='FILE'][@LABEL='test1.txt']")
+        assert file_div is not None
+        fptr = file_div.find(f"./{{{METS_NS}}}fptr")
+        assert fptr is not None
+
+        file_id = fptr.get("FILEID")
+        assert file_id is not None
+
+        flocat = mets_root.find(f".//{{{METS_NS}}}file[@ID='{file_id}']/{{{METS_NS}}}FLocat")
+        assert flocat is not None
+        assert flocat.get(f"{{{XLINK_NS}}}href") == "streams/launch/test1.txt"
 
     def test_build_metadata_element_no_organization(self):
         """Test _build_metadata_element with resource without organization."""
