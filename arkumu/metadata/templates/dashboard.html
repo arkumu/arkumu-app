@@ -80,6 +80,28 @@
                     Warm All Caches
                 </button>
             </form>
+            <form method="post" action="{% url 'metadata:metadata_dashboard_checksum_refresh' %}" class="inline-flex items-center gap-2">
+                {% csrf_token %}
+                <div class="flex items-center gap-2">
+                    <select name="checksum_bucket" class="select select-bordered select-xs">
+                        <option value="">All buckets</option>
+                        {% for bucket in checksum_buckets %}
+                        <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                        {% endfor %}
+                    </select>
+                    <select name="checksum_mode" class="select select-bordered select-xs">
+                        <option value="missing">Missing checksums</option>
+                        <option value="all">Recalculate all</option>
+                    </select>
+                    <input type="number" name="checksum_limit" class="input input-bordered input-xs w-20" placeholder="Limit" min="1">
+                </div>
+                <button type="submit" class="btn btn-outline btn-secondary btn-sm" title="Queue checksum recalculation via Huey">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9H4m0 0V4m0 5a8 8 0 1015.358 3H20" />
+                    </svg>
+                    Recalculate Checksums
+                </button>
+            </form>
             {% endif %}
             <!-- Bulk Mapping removed - replaced by canonical URI system during import -->
         </div>

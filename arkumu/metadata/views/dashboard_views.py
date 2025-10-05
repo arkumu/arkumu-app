@@ -10,7 +10,8 @@ from arkumu.importer.models import IngestSession
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.storage.models.upload_tracking import AsyncUploadSession
-from arkumu.storage.tasks import verify_upload_session
+from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
+from arkumu.storage.services.bucket_service import BucketService
 from arkumu.users.mixins import general_login_required
 from arkumu.oaipmh.views import oai_endpoint
 
@@ -38,6 +39,9 @@ def metadata_dashboard(request):
         "uploads": AsyncUploadSession.objects.count(),
         "ingests": IngestSession.objects.count(),
     }
+
+    bucket_service = BucketService()
+    checksum_buckets = bucket_service.get_predefined_organizations()
 
     recent_uploads = [
         build_upload_display(session)
@@ -78,6 +82,7 @@ def metadata_dashboard(request):
             "recent_ingests": recent_ingests,
             "institutions": institutions,
             "organizations_with_data": organizations_with_data,
+            "checksum_buckets": checksum_buckets,
         },
     )
 
@@ -346,4 +351,43 @@ def trigger_cache_refresh(request):
             "Enqueued: " + ", ".join(triggered) + ". Huey will refresh these caches shortly.",
         )
 
+    return redirect("metadata:metadata_dashboard")
+
+
+@general_login_required
+@require_POST
+def trigger_checksum_refresh(request):
+    """Queue checksum recalculation for S3 files via Huey."""
+
+    if not request.user.is_staff:
+        messages.error(request, "Only staff members can trigger checksum refreshes.")
+        return redirect("metadata:metadata_dashboard")
+
+    bucket = request.POST.get("checksum_bucket") or None
+    mode = request.POST.get("checksum_mode", "missing")
+    limit_raw = request.POST.get("checksum_limit")
+
+    missing_only = mode != "all"
+    limit = None
+
+    if limit_raw:
+        try:
+            limit = int(limit_raw)
+            if limit <= 0:
+                limit = None
+        except ValueError:
+            messages.warning(request, "Invalid limit provided; ignoring.")
+
+    recalculate_s3_checksums.schedule(
+        args=(bucket,),
+        kwargs={"missing_only": missing_only, "limit": limit},
+        delay=0,
+    )
+
+    scope = bucket or "all buckets"
+    mode_label = "missing checksums" if missing_only else "all files"
+    if limit:
+        mode_label = f"{mode_label} (limit {limit})"
+
+    messages.success(request, f"Queued checksum recalculation for {scope}: {mode_label}.")
     return redirect("metadata:metadata_dashboard")

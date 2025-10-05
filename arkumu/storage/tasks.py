@@ -4,6 +4,7 @@ import logging
 from typing import Any, Optional
 
 from huey.contrib.djhuey import db_task
+from django.db import models
 from django.utils import timezone
 
 try:
@@ -195,3 +196,42 @@ if HUEY_PERIODIC_AVAILABLE:
                 reviewed,
                 missing,
             )
+
+
+@db_task(retries=1, retry_delay=30)
+def recalculate_s3_checksums(organization: str | None = None, missing_only: bool = True, limit: int | None = None) -> None:
+    """Recalculate SHA256 checksums for S3 files, optionally scoped to an organization."""
+
+    queryset = S3FileObject.objects.filter(status='completed')
+
+    if organization:
+        queryset = queryset.filter(organization=organization)
+
+    if missing_only:
+        queryset = queryset.filter(models.Q(sha256_checksum="") | models.Q(sha256_checksum__isnull=True))
+
+    queryset = queryset.order_by('-updated_at')
+
+    if limit is not None:
+        queryset = queryset[:limit]
+
+    total = queryset.count()
+    logger.info(
+        "🔁 checksum: recalculating for %s file(s) %s",
+        total,
+        f"in {organization}" if organization else "(all orgs)",
+    )
+
+    processed = 0
+    updated = 0
+
+    for obj in queryset.iterator():
+        processed += 1
+        checksum = obj.calculate_checksum()
+        if checksum:
+            updated += 1
+            logger.debug("✅ checksum: %s => %s", obj.s3_key, checksum[:16])
+        else:
+            logger.warning("⚠️ checksum: failed to calculate for %s", obj.s3_key)
+
+    logger.info("🔁 checksum: processed %s file(s); updated %s checksum(s)", processed, updated)
