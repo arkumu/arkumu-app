@@ -4,6 +4,7 @@ import logging
 from django.utils import timezone
 from .upload_sessions import UploadSession
 from arkumu.metadata.models.resource import Resource
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -87,33 +88,78 @@ class S3FileObject(models.Model):
         self.status = 'verified'
         self.save()
     
-    def calculate_checksum(self, storage_service=None):
-        """Calculate SHA256 checksum for this file in S3"""
+    def get_checksum(self) -> tuple[str | None, str | None]:
+        if not self.sha256_checksum:
+            return None, None
+
+        value = self.sha256_checksum
+        if ':' in value:
+            algorithm, digest = value.split(':', 1)
+            return algorithm or None, digest or None
+        return 'sha256', value
+
+    def _store_checksum(self, algorithm: str | None, digest: str | None) -> None:
+        if not digest:
+            return
+
+        stored = digest
+        if algorithm:
+            stored = f"{algorithm}:{digest}"
+
+        self.sha256_checksum = stored
+        self.checksum_calculated_at = timezone.now()
+        self.save(update_fields=['sha256_checksum', 'checksum_calculated_at', 'updated_at'])
+
+    def is_multipart_upload(self, etag: str | None = None) -> bool:
+        etag = etag or self.etag
+        if not etag:
+            return False
+        return '-' in etag.strip('"')
+
+    def _refresh_etag(self, storage_service=None) -> str | None:
+        if self.etag:
+            return self.etag
+
         if not storage_service:
             from arkumu.storage.services.base_storage_service import BaseStorageService
             storage_service = BaseStorageService()
-        
+
+        bucket = self.organization or getattr(self.session, 'organization', None) or 'fuk'
+        key = self.s3_key
+
         try:
-            # Extract bucket and key from s3_key
+            head = storage_service.s3_client.head_object(Bucket=bucket, Key=key)
+            etag = head.get('ETag')
+            if etag and etag != self.etag:
+                self.etag = etag
+                self.save(update_fields=['etag', 'updated_at'])
+            return etag
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to fetch ETag for %s: %s", key, exc)
+            return None
+
+    def calculate_checksum(self, storage_service=None, *, algorithm: str = 'sha256'):
+        """Calculate checksum for this file in S3 using the given algorithm."""
+        if not storage_service:
+            from arkumu.storage.services.base_storage_service import BaseStorageService
+            storage_service = BaseStorageService()
+
+        try:
             if self.s3_key.startswith('s3://'):
-                # Handle full S3 URL
                 parts = self.s3_key[5:].split('/', 1)
                 bucket = parts[0]
                 key = parts[1] if len(parts) > 1 else ''
             else:
-                # Assume it's just the key and use default bucket logic
-                bucket = self.session.organization if hasattr(self.session, 'organization') else 'fuk'  # fallback
+                bucket = self.organization or getattr(self.session, 'organization', None) or 'fuk'
                 key = self.s3_key
-            
-            checksum = storage_service._calculate_file_checksum(bucket, key)
+
+            checksum = storage_service._calculate_file_checksum(bucket, key, algorithm=algorithm)
             if checksum:
-                self.sha256_checksum = checksum
-                self.checksum_calculated_at = timezone.now()
-                self.save()
+                self._store_checksum(algorithm, checksum)
                 return checksum
         except Exception as e:
             logger.error(f"Failed to calculate checksum for {self.s3_key}: {e}")
-        
+
         return None
     
     def exists_in_s3(self, storage_service=None):
@@ -129,7 +175,7 @@ class S3FileObject(models.Model):
                 bucket = parts[0]
                 key = parts[1] if len(parts) > 1 else ''
             else:
-                bucket = self.session.organization if hasattr(self.session, 'organization') else 'fuk'
+                bucket = self.organization or getattr(self.session, 'organization', None) or 'fuk'
                 key = self.s3_key
             
             return storage_service.s3_client.head_object(Bucket=bucket, Key=key)

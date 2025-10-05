@@ -78,6 +78,8 @@ def verify_upload_session(session_id: str) -> None:
             try:
                 obj_meta = objects_by_key.get(upload_file.s3_key)
 
+                etag = None
+
                 if obj_meta is None:
                     file_info = upload_service.get_file_info(upload_file.s3_key, bucket_name=bucket_name)
                     if not file_info.get('success'):
@@ -85,9 +87,11 @@ def verify_upload_session(session_id: str) -> None:
 
                     resolved_size = file_info.get('file_size', upload_file.file_size)
                     resolved_completed_at = file_info.get('last_modified') or timezone.now()
+                    etag = file_info.get('etag')
                 else:
                     resolved_size = obj_meta.get('Size', upload_file.file_size)
                     resolved_completed_at = obj_meta.get('LastModified') or timezone.now()
+                    etag = obj_meta.get('ETag')
 
                 if S3FileObject.objects.filter(s3_key=upload_file.s3_key).exists():
                     logger.info(
@@ -102,6 +106,7 @@ def verify_upload_session(session_id: str) -> None:
                     content_type=upload_file.content_type,
                     base_folder=session.base_folder,
                     organization=session.organization,
+                    etag=etag,
                     status='completed',
                     upload_completed_at=resolved_completed_at,
                 )
@@ -225,13 +230,34 @@ def recalculate_s3_checksums(organization: str | None = None, missing_only: bool
     processed = 0
     updated = 0
 
+    from arkumu.storage.services.base_storage_service import BaseStorageService
+
+    storage_service = BaseStorageService()
+
     for obj in queryset.iterator():
         processed += 1
-        checksum = obj.calculate_checksum()
-        if checksum:
-            updated += 1
-            logger.debug("✅ checksum: %s => %s", obj.s3_key, checksum[:16])
-        else:
-            logger.warning("⚠️ checksum: failed to calculate for %s", obj.s3_key)
 
-    logger.info("🔁 checksum: processed %s file(s); updated %s checksum(s)", processed, updated)
+        etag = obj._refresh_etag(storage_service)
+        if not etag:
+            logger.warning("⚠️ checksum: no ETag available for %s", obj.s3_key)
+            continue
+
+        stripped_etag = etag.strip('"')
+
+        if obj.is_multipart_upload(etag):
+            checksum = obj.calculate_checksum(storage_service, algorithm='sha256')
+            if checksum:
+                updated += 1
+                logger.debug("✅ checksum: sha256 %s => %s", obj.s3_key, checksum[:16])
+            else:
+                logger.warning("⚠️ checksum: failed to calculate sha256 for %s", obj.s3_key)
+        else:
+            obj._store_checksum('md5', stripped_etag)
+            updated += 1
+            logger.debug("✅ checksum: md5 %s => %s", obj.s3_key, stripped_etag)
+
+    logger.info(
+        "🔁 checksum: processed %s file(s); updated %s checksum(s)",
+        processed,
+        updated,
+    )
