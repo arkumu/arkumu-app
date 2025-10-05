@@ -300,7 +300,7 @@ def _group_digital_objects_for_rosetta(objects: List[NormalizedDigitalObject]) -
     return []
 
 # Initialize services
-resumption_service = ResumptionTokenService(page_size=100)
+resumption_service = ResumptionTokenService(page_size=20)
 oai_cache = OAICacheService()
 snapshot_service = ProjectSnapshotService()
 project_builder = OAIProjectBuilder()
