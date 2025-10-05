@@ -25,6 +25,7 @@ import xml.etree.ElementTree as ET
 from django.db.models import Q
 
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.projects import ProjectDigitalObject, ProjectRecord, ProjectSnapshot
 from arkumu.projects.services import ProjectSnapshotService
@@ -395,10 +396,22 @@ def _restrict_to_harvestable_files(queryset):
     for code in rosetta_orgs:
         rosetta_condition |= Q(organization__code__iexact=code)
 
+    event_file_event_ids = S3FileObject.objects.filter(
+        status__in=HARVESTABLE_FILE_STATUSES,
+        related_resource__uri__regex=r'/entities/ereignis/[0-9]+$',
+    ).values('related_resource_id')
+
+    project_ids_via_events = Triple.objects.filter(
+        predicate__uri__endswith='/properties/ereignis',
+        object_id__in=event_file_event_ids,
+    ).values('subject_id')
+
+    project_event_condition = Q(pk__in=project_ids_via_events)
+
     if rosetta_condition:
-        queryset = queryset.filter(rosetta_condition | s3_condition)
+        queryset = queryset.filter(rosetta_condition | s3_condition | project_event_condition)
     else:
-        queryset = queryset.filter(s3_condition)
+        queryset = queryset.filter(s3_condition | project_event_condition)
 
     return queryset.distinct()
 def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]:
@@ -407,13 +420,32 @@ def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]
     if not isinstance(resource, Resource) or getattr(resource, 'pk', None) is None:
         return None
 
-    files = list(
-        S3FileObject.objects.filter(
-            related_resource=resource,
-            status__in=HARVESTABLE_FILE_STATUSES,
-            s3_key__isnull=False,
-        ).exclude(s3_key="")
+    direct_files = S3FileObject.objects.filter(
+        related_resource=resource,
+        status__in=HARVESTABLE_FILE_STATUSES,
+        s3_key__isnull=False,
+    ).exclude(s3_key="")
+
+    event_ids = Triple.objects.filter(
+        subject=resource,
+        predicate__uri__endswith='/properties/ereignis',
+    ).values_list('object_id', flat=True)
+
+    event_files = S3FileObject.objects.filter(
+        related_resource_id__in=event_ids,
+        status__in=HARVESTABLE_FILE_STATUSES,
+        s3_key__isnull=False,
+    ).exclude(s3_key="")
+
+    files = list(direct_files)
+    files.extend(
+        list(
+            event_files.exclude(
+                id__in=direct_files.values('id')
+            )
+        )
     )
+
     if not files:
         return None
 
