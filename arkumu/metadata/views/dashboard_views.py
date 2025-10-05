@@ -62,7 +62,11 @@ def metadata_dashboard(request):
     }
 
     bucket_service = BucketService()
-    checksum_buckets = bucket_service.get_predefined_organizations()
+    checksum_buckets = [
+        org
+        for org in bucket_service.get_predefined_organizations()
+        if org.lower() in {"khm", "hmt"}
+    ]
 
     recent_uploads = [
         build_upload_display(session)
