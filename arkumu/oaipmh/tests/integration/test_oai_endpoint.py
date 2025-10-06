@@ -970,30 +970,8 @@ class TestOAIEndpoint:
                 break
 
         assert target_file is not None
-        assert target_file.get('CHECKSUMTYPE') == 'SHA-256'
-        assert target_file.get('CHECKSUM') == checksum
-
-        dnx_ns = {"dnx": "http://www.exlibrisgroup.com/dps/dnx"}
-        amd_id = target_file.get('ID')
-        amd_sec = root.find(f".//mets:amdSec[@ID='{amd_id}-amd']", ns)
-        assert amd_sec is not None
-        fixity_value = amd_sec.find(".//dnx:key[@id='fixityValue']", {**ns, **dnx_ns})
-        assert fixity_value is not None
-        assert fixity_value.text == checksum
-
-        target_file = None
-        for mets_file in root.findall('.//mets:file', ns):
-            flocat = mets_file.find('mets:FLocat', ns)
-            if flocat is None:
-                continue
-            href = flocat.get(f"{{{XLINK_NS}}}href")
-            if href == rosetta_path:
-                target_file = mets_file
-                break
-
-        assert target_file is not None
-        assert target_file.get('CHECKSUMTYPE') == 'SHA-256'
-        assert target_file.get('CHECKSUM') == checksum
+        assert target_file.get('CHECKSUMTYPE') is None
+        assert target_file.get('CHECKSUM') is None
 
         dnx_ns = {"dnx": "http://www.exlibrisgroup.com/dps/dnx"}
         amd_id = target_file.get('ID')

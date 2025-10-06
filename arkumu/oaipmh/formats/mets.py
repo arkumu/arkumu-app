@@ -224,10 +224,7 @@ class METSSerializer:
                         attrs["SIZE"] = str(int(f.file_size_bytes))
                     except Exception:
                         pass
-                if getattr(f, "sha256_checksum", None):
-                    if f.sha256_checksum:
-                        attrs["CHECKSUM"] = f.sha256_checksum
-                        attrs["CHECKSUMTYPE"] = "SHA-256"
+                # Rosetta profile forbids CHECKSUM attributes on mets:file; fixity stays in DNX metadata
 
                 file_elem = ET.SubElement(content_grp, f"{{{METS_NS}}}file", attrs)
 

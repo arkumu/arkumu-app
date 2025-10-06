@@ -1717,11 +1717,7 @@ def _build_mets_from_project(
             }
             if obj.content_type:
                 attrs["MIMETYPE"] = obj.content_type
-            checksum_algorithm, checksum_value = obj.checksum_tuple()
-            checksum_label = obj.checksum_label() if checksum_algorithm else None
-            if checksum_value:
-                attrs["CHECKSUM"] = checksum_value
-                attrs["CHECKSUMTYPE"] = checksum_label or ("MD5" if obj.source == "s3" else "SHA-256")
+            # Rosetta profile forbids CHECKSUM attributes on mets:file; fixity lives in DNX
 
             file_elem = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), attrs)
             href = obj.preferred_location or obj.access_url or ""
