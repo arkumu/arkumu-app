@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from django.contrib import admin
 from django.template.defaultfilters import filesizeformat
+from django.urls import reverse
+from django.utils.html import format_html
 
 from .models import S3FileObject
 from .models.upload_tracking import AsyncUploadSession, AsyncUploadFile
@@ -166,12 +168,16 @@ class S3FileObjectAdmin(admin.ModelAdmin):
         "s3_key",
         "session__organization",
         "session__user__username",
+        "related_resource__uri",
+        "related_resource__name",
     ]
     list_display = (
         "file_name",
         "short_key",
-        "organization",
+        "storage_org",
         "base_folder",
+        "linked_resource",
+        "resource_org",
         "status",
         "file_size",
         "upload_completed_at",
@@ -182,8 +188,10 @@ class S3FileObjectAdmin(admin.ModelAdmin):
         "base_folder",
         "created_at",
         "upload_completed_at",
+        ("related_resource__organization", admin.RelatedOnlyFieldListFilter),
     )
     ordering = ("-created_at",)
+    list_select_related = ("related_resource", "related_resource__organization", "session",)
     readonly_fields = (
         "id",
         "session",
@@ -259,3 +267,30 @@ class S3FileObjectAdmin(admin.ModelAdmin):
     @admin.display(description="Size")
     def file_size(self, obj: S3FileObject) -> str:
         return filesizeformat(obj.file_size_bytes or 0)
+
+    @admin.display(description="Storage Org")
+    def storage_org(self, obj: S3FileObject) -> str:
+        if obj.organization:
+            return obj.organization
+        if obj.session_id:
+            session_org = getattr(obj.session, "organization", None) or getattr(obj.session, "institution", None)
+            if session_org:
+                return str(session_org)
+        return "—"
+
+    @admin.display(description="Linked Resource", ordering="related_resource__name")
+    def linked_resource(self, obj: S3FileObject) -> str:
+        resource = obj.related_resource
+        if not resource:
+            return "—"
+        display_name = resource.name or resource.uri or resource.value or str(resource.pk)
+        url = reverse("admin:metadata_resource_change", args=[resource.pk])
+        return format_html('<a href="{}">{}</a>', url, display_name)
+
+    @admin.display(description="Resource Org", ordering="related_resource__organization__name")
+    def resource_org(self, obj: S3FileObject) -> str:
+        resource = obj.related_resource
+        if not resource or not resource.organization:
+            return "—"
+        organization = resource.organization
+        return getattr(organization, "name", None) or getattr(organization, "code", None) or str(organization)
