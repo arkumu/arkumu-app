@@ -11,7 +11,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
           </svg>
         </div>
-        <div></div>
+        <div>
           <h1 class="card-title text-2xl font-bold">Create New Institution</h1>
           <p class="text-base-content/70 mt-1">Fill in the details to create a new institutional affiliation</p>
         </div>
@@ -20,43 +20,7 @@
       <form action="{% url 'metadata:create_institution' %}" method="post" class="space-y-8">
         {% csrf_token %}
 
-        {% if institution_form.non_field_errors %}
-        <div class="alert alert-error shadow-lg">
-          <div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span></span>
-              {% for error in institution_form.non_field_errors %}
-                {{ error }}<br>
-              {% endfor %}
-            </span>
-          </div>
-        </div>
-        {% endif %}
-
-        <div class="space-y-6">
-          <!-- Institution Details Section -->
-          <div class="space-y-4">
-            <h2 class="text-lg font-semibold flex items-center border-b pb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
-              </svg>
-              Institution Details
-            </h2>
-
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medium">Deutscher Name der Einliefernden Hochschule</span>
-                {% if institution_form.deutscher_name_der_einliefernden_hochschule.errors %}
-                <span class="label-text-alt text-error">{{ institution_form.deutscher_name_der_einliefernden_hochschule.errors.0 }}</span>
-                {% endif %}
-              </label>
-              {{ institution_form.deutscher_name_der_einliefernden_hochschule }}
-              <div class="text-xs text-base-content/60 mt-1">{{ institution_form.deutscher_name_der_einliefernden_hochschule.help_text }}</div>
-            </div>
-          </div>
-        </div>
+        {% include "metadata/entity_creation/partials/_institution_form_fields.html" %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
