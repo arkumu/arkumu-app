@@ -337,5 +337,7 @@ AGENTS.md
 !*/README.md
 *.xml
 *.csv
+!data/mappings/khm_labels.csv
+!data/mappings/hmt_tonband_labels.csv
 
 missing_fks/

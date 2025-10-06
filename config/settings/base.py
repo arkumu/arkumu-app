@@ -466,14 +466,16 @@ OAI_BASIC_AUTH_ENABLED = env.bool("OAI_BASIC_AUTH_ENABLED", default=False)
 OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=[])
 
 # Path mapping configuration for Rosetta-backed institutions
+ROSETTA_MAPPING_DIR = BASE_DIR / "data" / "mappings"
+
 OAI_EXTERNAL_PATH_FILES = {
     "hmt": env(
         "OAI_EXTERNAL_PATH_FILE_HMT",
-        default=str(BASE_DIR / "_hmt_paths.txt"),
+        default=str(ROSETTA_MAPPING_DIR / "_hmt_paths.txt"),
     ),
     "khm": env(
         "OAI_EXTERNAL_PATH_FILE_KHM",
-        default=str(BASE_DIR / "_khm_paths.txt"),
+        default=str(ROSETTA_MAPPING_DIR / "_khm_paths.txt"),
     ),
 }
 
