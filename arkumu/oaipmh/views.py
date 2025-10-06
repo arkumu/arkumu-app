@@ -1188,6 +1188,12 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
         if project.harvestable:
             harvestable[project.uri] = project
 
+    org_counts = {}
+    for proj in harvestable.values():
+        org = proj.institution_code or 'unknown'
+        org_counts[org] = org_counts.get(org, 0) + 1
+    logger.info("OAI harvestable projects: %d total from snapshot, by org: %s", len(harvestable), dict(sorted(org_counts.items())))
+
     if not harvestable:
         fallback_records: List[ProjectRecord] = []
         fallback_resources = (

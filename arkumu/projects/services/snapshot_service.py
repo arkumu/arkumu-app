@@ -161,7 +161,24 @@ class ProjectSnapshotService:
         edges: List[Dict[str, Any]] = []
         edge_signatures: set[tuple] = set()
 
-        for org_code in self.DEFAULT_ORGANIZATION_CODES:
+        from arkumu.users.models import Organization
+
+        available_codes = set(
+            Organization.objects.filter(code__in=self.DEFAULT_ORGANIZATION_CODES)
+            .values_list('code', flat=True)
+        )
+        missing_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code not in available_codes]
+        if missing_codes:
+            logger.warning(
+                "Organizations missing from database (skipped for snapshot): %s",
+                missing_codes,
+            )
+
+        included_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code in available_codes]
+        if included_codes:
+            logger.info("Organizations included in snapshot: %s", included_codes)
+
+        for org_code in included_codes:
             try:
                 org_graph = self._graph_service_factory(org_code=org_code).get_project_graph(
                     dataset_name="Projekt",
@@ -265,6 +282,11 @@ class ProjectSnapshotService:
             .filter(organization_id__in=self.DEFAULT_ORGANIZATION_CODES)
             .values_list('organization_id', flat=True)
         )
+
+        missing_orgs = set(self.DEFAULT_ORGANIZATION_CODES) - available_orgs
+        if missing_orgs:
+            logger.warning("Orgs without Mappings (excluded from snapshot): %s", sorted(missing_orgs))
+        logger.info("Orgs with Mappings (included in snapshot): %s", sorted(available_orgs))
 
         schemas = [
             self.schema_service.get_card_schema(code)
