@@ -212,6 +212,12 @@ class OAIProjectBuilder:
             for label, code in label_cfg.items()
             if label and code
         }
+        base_cfg = getattr(settings, 'OAI_S3_ROSETTA_BASE_PATHS', {})
+        self._s3_rosetta_bases = {
+            str(code).lower().strip(): str(path).rstrip('/')
+            for code, path in base_cfg.items()
+            if code and path
+        }
 
     def from_project_record(self, record: ProjectRecord) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
@@ -325,6 +331,12 @@ class OAIProjectBuilder:
                     storage_key,
                     file_name,
                 )
+
+        if not rosetta_path and institution_code and institution_code in self._s3_rosetta_bases and storage_key:
+            base = self._s3_rosetta_bases[institution_code]
+            candidate = f"{base}/{storage_key.lstrip('/')}"
+            rosetta_path = candidate
+            rosetta_candidates = (candidate,)
 
         if not rosetta_path and original_path and original_path.startswith("/rosetta/"):
             rosetta_candidates = (original_path,)

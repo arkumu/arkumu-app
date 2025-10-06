@@ -518,6 +518,16 @@ OAI_ROSETTA_HARVESTABLE_ORGS = tuple(
     if org.strip()
 )
 
+OAI_S3_ROSETTA_BASE_PATHS = {
+    key.strip().lower(): value.rstrip("/")
+    for key, value in {
+        "fuk": env("OAI_S3_ROSETTA_BASE_FUK", default="/rosetta/fudk/sandbox/input/arkumu/daten"),
+        "rsh": env("OAI_S3_ROSETTA_BASE_RSH", default="/rosetta/rsh/sandbox/input/arkumu/daten"),
+        "det": env("OAI_S3_ROSETTA_BASE_DET", default="/rosetta/hfmdt/sandbox/input/arkumu/daten"),
+    }.items()
+    if key and value
+}
+
 OAI_INSTITUTION_CODE_ALIASES = {
     # Canonical code -> alias mapping for snapshot hash identifiers
     "ff8f3b0306bebf6d": "hmt",  # Hochschule für Musik und Tanz Köln
