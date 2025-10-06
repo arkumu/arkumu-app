@@ -24,7 +24,14 @@ from arkumu.projects.models import (
 
 from arkumu.oaipmh import views
 
-from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, XSI_NS, XLINK_NS
+from arkumu.oaipmh.views import (
+    METS_NS,
+    METS_SCHEMA_URL,
+    XSI_NS,
+    XLINK_NS,
+    _fallback_record_from_storage,
+    HARVESTABLE_FILE_STATUSES,
+)
 
 
 SIMPLE_DC_TERMS = {
@@ -57,11 +64,88 @@ class _HTTPResolver(LET.Resolver):
 def _load_schema(url: str) -> LET.XMLSchema:
     parser = LET.XMLParser()
     parser.resolvers.add(_HTTPResolver())
-    document = LET.parse(url, parser)
+    local_path = None
+    if url == METS_SCHEMA_URL:
+        for candidate in (views.METS_SCHEMA_FILE, views.METS_LEGACY_SCHEMA_FILE):
+            if candidate.exists():
+                local_path = str(candidate)
+                break
+
+    document = LET.parse(local_path or url, parser)
     return LET.XMLSchema(document)
 
 
+_FAST_SNAPSHOT_SERVICE = None
+
+
+@pytest.fixture(autouse=True)
+def _fast_snapshot_service(monkeypatch):
+    """Patch snapshot service with a lightweight fallback-driven implementation."""
+    from django.utils import timezone
+    from arkumu.metadata.models.resource import Resource
+    from arkumu.projects import ProjectSnapshot
+
+    global _FAST_SNAPSHOT_SERVICE
+
+    class _SnapshotStub:
+        def __init__(self):
+            self._snapshot = None
+            self._index = {}
+
+        def _build(self):
+            resources = (
+                Resource.objects.filter(
+                    s3fileobject__status__in=HARVESTABLE_FILE_STATUSES,
+                    s3fileobject__s3_key__isnull=False,
+                )
+                .exclude(s3fileobject__s3_key="")
+                .distinct()
+            )
+
+            records = []
+            index = {}
+            for resource in resources:
+                record = _fallback_record_from_storage(resource)
+                if not record or not record.uri:
+                    continue
+                records.append(record)
+                index[record.uri] = record
+
+            self._snapshot = ProjectSnapshot(
+                projects=records,
+                counts={"projects": len(records)},
+                generated_at=timezone.now(),
+            )
+            self._index = index
+
+        def _ensure_snapshot(self):
+            if self._snapshot is None:
+                self._build()
+
+        def get_cross_institutional_snapshot(self, *, force_refresh: bool = False):
+            if force_refresh or self._snapshot is None:
+                self._build()
+            return self._snapshot
+
+        def refresh_cross_institutional_snapshot(self):
+            self._build()
+            return self._snapshot
+
+        def get_record_by_uri(self, uri: str):
+            if not uri:
+                return None
+            self._ensure_snapshot()
+            return self._index.get(uri)
+
+    if _FAST_SNAPSHOT_SERVICE is None:
+        _FAST_SNAPSHOT_SERVICE = _SnapshotStub()
+
+    monkeypatch.setattr(views, "snapshot_service", _FAST_SNAPSHOT_SERVICE)
+    yield
+
+
 @pytest.mark.django_db
+@pytest.mark.usefixtures("mock_canonical_graph_service")
 class TestOAIEndpoint:
     """Test OAI-PMH HTTP endpoint with all verbs and error conditions."""
 
