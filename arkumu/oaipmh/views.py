@@ -126,6 +126,28 @@ def _get_dnx_schema() -> Optional[LET.XMLSchema]:
         return None
 
 
+@lru_cache(maxsize=1)
+def _get_rosetta_mets_schema() -> Optional[xmlschema.XMLSchema]:
+    """Load the Rosetta METS schema once for reuse (supports XSD 1.1)."""
+
+    schema_file = METS_SCHEMA_FILE if METS_SCHEMA_FILE.exists() else METS_LEGACY_SCHEMA_FILE
+
+    if not schema_file.exists():
+        logger.error("Rosetta METS schema not found at %s or %s", METS_SCHEMA_FILE, METS_LEGACY_SCHEMA_FILE)
+        return None
+
+    try:
+        # Use allow='local' to only allow local files
+        # xmlschema has built-in xlink.xsd that will be used automatically
+        return xmlschema.XMLSchema11(
+            str(schema_file),
+            allow='local',  # Only local files - xmlschema will use its built-in xlink
+        )
+    except (OSError, xmlschema.XMLSchemaException) as exc:
+        logger.exception("Unable to load Rosetta METS schema at %s: %s", schema_file, exc)
+        return None
+
+
 def _validate_mets_against_dnx_schema(
     mets_root: ET.Element,
     *,
@@ -182,6 +204,44 @@ def _validate_mets_against_dnx_schema(
     return True
 
 
+def _validate_mets_against_rosetta_schema(
+    mets_root: ET.Element,
+    *,
+    resource_uri: Optional[str] = None,
+) -> bool:
+    """Validate the entire METS document against the Rosetta METS XSD."""
+
+    schema = _get_rosetta_mets_schema()
+    if schema is None:
+        # Without a schema we refuse to emit unvalidated content.
+        return False
+
+    try:
+        mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+        # Use xmlschema to validate (supports XSD 1.1)
+        error_iter = schema.iter_errors(BytesIO(mets_bytes))
+        first_error = next(error_iter, None)
+        if first_error is not None:
+            error_detail = first_error.reason or first_error.message
+            if hasattr(first_error, 'path') and first_error.path:
+                error_detail = f"{error_detail} (path: {first_error.path})"
+            logger.warning(
+                "Rosetta METS validation failed for %s: %s",
+                resource_uri or "unknown resource",
+                error_detail,
+            )
+            return False
+    except (TypeError, xmlschema.XMLSchemaException) as exc:
+        logger.warning(
+            "Rosetta METS validation failed for %s: %s",
+            resource_uri or "unknown resource",
+            exc,
+        )
+        return False
+
+    return True
+
+
 def _extract_mets_root(metadata_elem: ET.Element) -> Optional[ET.Element]:
     """Return the first METS element contained in an OAI metadata wrapper."""
 
@@ -191,6 +251,89 @@ def _extract_mets_root(metadata_elem: ET.Element) -> Optional[ET.Element]:
         if tag_str == f"{{{METS_NS}}}mets" or tag_str.endswith("}mets") or tag_str == "mets":
             return child
     return None
+
+
+def _validate_rosetta_semantic_rules(
+    mets_root: ET.Element,
+    *,
+    resource_uri: Optional[str] = None,
+) -> bool:
+    """Validate Rosetta-specific semantic requirements not covered by XSD."""
+
+    try:
+        mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+        let_root = LET.fromstring(mets_bytes)
+    except (TypeError, LET.XMLSyntaxError):
+        logger.exception(
+            "Failed to parse METS XML for semantic validation for %s",
+            resource_uri or "unknown resource",
+        )
+        return False
+
+    # Validate xlink:href patterns in FLocat elements
+    flocat_elements = let_root.findall(f'.//{{{METS_NS}}}FLocat')
+    for flocat in flocat_elements:
+        href = flocat.get(f'{{{XLINK_NS}}}href')
+        if not href:
+            logger.warning(
+                "FLocat missing xlink:href for %s",
+                resource_uri or "unknown resource",
+            )
+            return False
+
+        # Check that href is a valid URL or path (not empty, not just whitespace)
+        if not href.strip():
+            logger.warning(
+                "FLocat has empty xlink:href for %s",
+                resource_uri or "unknown resource",
+            )
+            return False
+
+        # For Rosetta, href should typically be a file path or URL
+        # Basic validation: must contain some path-like structure
+        if not ('/' in href or '\\' in href or href.startswith('http')):
+            logger.warning(
+                "FLocat xlink:href does not appear to be a valid path or URL: %s for %s",
+                href,
+                resource_uri or "unknown resource",
+            )
+            return False
+
+    # Validate critical DNX field values
+    dnx_nodes = let_root.findall(".//{http://www.exlibrisgroup.com/dps/dnx}dnx")
+    for dnx_node in dnx_nodes:
+        # Check usageType in generalRepCharacteristics
+        usage_types = dnx_node.findall(
+            ".//{http://www.exlibrisgroup.com/dps/dnx}section[@id='generalRepCharacteristics']"
+            "//{http://www.exlibrisgroup.com/dps/dnx}key[@id='usageType']"
+        )
+        for usage_type in usage_types:
+            if usage_type.text:
+                # Rosetta expects specific usage types: VIEW, EDIT, etc.
+                # We'll just check it's not empty if present
+                if not usage_type.text.strip():
+                    logger.warning(
+                        "Empty usageType in generalRepCharacteristics for %s",
+                        resource_uri or "unknown resource",
+                    )
+                    return False
+
+        # Check policyId in accessRightsPolicy
+        policy_ids = dnx_node.findall(
+            ".//{http://www.exlibrisgroup.com/dps/dnx}section[@id='accessRightsPolicy']"
+            "//{http://www.exlibrisgroup.com/dps/dnx}key[@id='policyId']"
+        )
+        for policy_id in policy_ids:
+            if policy_id.text:
+                # Policy ID should not be empty if present
+                if not policy_id.text.strip():
+                    logger.warning(
+                        "Empty policyId in accessRightsPolicy for %s",
+                        resource_uri or "unknown resource",
+                    )
+                    return False
+
+    return True
 
 
 def _metadata_element_is_valid(
@@ -209,10 +352,22 @@ def _metadata_element_is_valid(
         logger.debug("Validation failed (no FLocat) for %s", resource_uri)
         return False
 
-    valid = _validate_mets_against_dnx_schema(mets_root, resource_uri=resource_uri)
-    if not valid:
+    # Validate against full Rosetta METS XSD
+    if not _validate_mets_against_rosetta_schema(mets_root, resource_uri=resource_uri):
+        logger.debug("Validation failed (Rosetta METS schema) for %s", resource_uri)
+        return False
+
+    # Validate DNX sections
+    if not _validate_mets_against_dnx_schema(mets_root, resource_uri=resource_uri):
         logger.debug("Validation failed (DNX schema) for %s", resource_uri)
-    return valid
+        return False
+
+    # Validate Rosetta-specific semantic rules
+    if not _validate_rosetta_semantic_rules(mets_root, resource_uri=resource_uri):
+        logger.debug("Validation failed (Rosetta semantic rules) for %s", resource_uri)
+        return False
+
+    return True
 
 
 def _metadata_xml_is_valid(
@@ -1282,8 +1437,6 @@ def _build_mets_from_project(
     mets_root = ET.Element(ET.QName(METS_NS, "mets"))
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
     mets_root.set("xmlns", DNX_NS)
-    mets_root.set("OBJID", resource.uri)
-    mets_root.set("TYPE", "ARKUMU_IE")
 
     dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
     md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
@@ -1299,7 +1452,12 @@ def _build_mets_from_project(
     tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
     tech_wrap = ET.SubElement(tech_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
     tech_xml = ET.SubElement(tech_wrap, ET.QName(METS_NS, "xmlData"))
-    _create_dnx_element(tech_xml, "dnx")
+    tech_dnx = _create_dnx_element(tech_xml, "dnx")
+    # Add objectIdentifier section (required by Rosetta)
+    obj_id_section = _create_dnx_element(tech_dnx, "section", {"id": "objectIdentifier"})
+    obj_id_record = _create_dnx_element(obj_id_section, "record")
+    _create_dnx_element(obj_id_record, "key", {"id": "objectIdentifierType"}, " ")
+    _create_dnx_element(obj_id_record, "key", {"id": "objectIdentifierValue"}, " ")
 
     rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
     rights_wrap = ET.SubElement(rights_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
@@ -1425,7 +1583,7 @@ def _build_mets_from_project(
             _create_dnx_element(resource_elem, "format", {"scheme": "imt"}, obj.content_type)
 
     for rep_index, (rep_type, objects) in enumerate(rep_groups, start=1):
-        rep_id = f"REP{rep_index}"
+        rep_id = f"rep{rep_index}"
 
         rep_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{rep_id}-amd"})
         rep_tech = ET.SubElement(rep_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{rep_id}-amd-tech"})
@@ -1440,7 +1598,7 @@ def _build_mets_from_project(
         rep_files: List[Dict[str, Any]] = []
 
         for file_index, obj in enumerate(objects, start=1):
-            file_id = f"FL{file_counter}"
+            file_id = f"fid-{rep_index}-{file_index}"
             file_counter += 1
             preferred_location = obj.preferred_location or ""
             file_label_source = obj.file_name or preferred_location or obj.original_path or f"Digital Object {file_index}"
@@ -1584,28 +1742,14 @@ def _build_mets_from_project(
             {"ID": f"{rep_id}-1", "TYPE": "LOGICAL"},
         )
 
+        # Root div has no attributes per Rosetta example
         project_div = ET.SubElement(
             struct_map,
             ET.QName(METS_NS, "div"),
-            {
-                "TYPE": "PROJECT",
-                "LABEL": project_title,
-                "ORDER": "1",
-                "ORDERLABEL": project_title,
-            },
         )
 
-        rep_label = rep_type.replace("_", " ").title() if rep_type else "Representation"
-        rep_div = ET.SubElement(
-            project_div,
-            ET.QName(METS_NS, "div"),
-            {
-                "TYPE": "REPRESENTATION",
-                "LABEL": rep_label,
-                "ORDER": "1",
-                "ORDERLABEL": rep_label,
-            },
-        )
+        # Representation div also simplified per Rosetta example
+        rep_div = project_div
 
         def _event_key(event_obj: Optional[ProjectEvent]) -> str:
             if event_obj is None:
@@ -1650,13 +1794,12 @@ def _build_mets_from_project(
                 continue
             event_obj = event_meta.get(key)
             event_label = _event_label(event_obj)
+            # Event div - simplified per Rosetta example (no ORDER on intermediate divs)
             event_div = ET.SubElement(
                 rep_div,
                 ET.QName(METS_NS, "div"),
                 {
-                    "TYPE": "EVENT",
                     "LABEL": event_label,
-                    "ORDER": str(event_position),
                     "ORDERLABEL": event_label,
                 },
             )
@@ -1675,7 +1818,6 @@ def _build_mets_from_project(
                             parent,
                             ET.QName(METS_NS, "div"),
                             {
-                                "TYPE": "FOLDER",
                                 "LABEL": segment,
                                 "ORDERLABEL": segment,
                             },
@@ -1683,6 +1825,7 @@ def _build_mets_from_project(
                         folder_nodes[key][folder_key] = existing
                     parent = existing
 
+                # File div per Rosetta example - TYPE="FILE", LABEL, ORDERLABEL (no ORDER)
                 file_div = ET.SubElement(
                     parent,
                     ET.QName(METS_NS, "div"),
@@ -1690,7 +1833,6 @@ def _build_mets_from_project(
                         "TYPE": "FILE",
                         "LABEL": file_info["label"],
                         "ORDERLABEL": file_info["label"],
-                        "ORDER": str(file_info.get("order", 0)),
                     },
                 )
                 ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
