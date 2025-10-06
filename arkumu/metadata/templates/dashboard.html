@@ -380,7 +380,7 @@
                     {% if oai_snapshot.total_projects %}
                         {% for summary in oai_snapshot.institution_summaries|slice:":4" %}
                         <div class="flex justify-between gap-2">
-                            <span class="truncate w-28 uppercase">{{ summary.label|default:summary.code }}</span>
+                            <span class="truncate w-28 uppercase">{{ summary.code }}</span>
                             <span class="font-semibold">{{ summary.project_count }}</span>
                         </div>
                         {% endfor %}
@@ -427,42 +427,6 @@
             </div>
         </div>
     </div>
-
-    {% if oai_snapshot %}
-    <div class="card bg-base-100 shadow-xl mb-8">
-        <div class="card-body">
-            <h2 class="card-title">OAI Project Availability</h2>
-            <p class="text-sm text-base-content/70">
-                Dashboard snapshot built from the cross-institutional project cache. Counts reflect
-                harvestable projects exposed via the OAI-PMH endpoint without hitting the live API.
-            </p>
-            <div class="overflow-x-auto mt-4">
-                <table class="table table-zebra">
-                    <thead>
-                        <tr>
-                            <th>Institution</th>
-                            <th>Code</th>
-                            <th>Harvestable Projects</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for summary in oai_snapshot.institution_summaries %}
-                        <tr>
-                            <td>{{ summary.label|default:"Unspecified" }}</td>
-                            <td class="uppercase">{{ summary.code }}</td>
-                            <td>{{ summary.project_count }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="3" class="text-center py-4">No harvestable projects found</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Recent Uploads -->
