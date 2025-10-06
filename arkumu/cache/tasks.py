@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 
 from django.conf import settings
+from django.core.cache import cache
 from huey import crontab
 from huey.contrib.djhuey import db_task, periodic_task
 
@@ -41,22 +42,38 @@ def warm_schema_cache():
         raise
 
 
-@db_task()
-def warm_cross_institutional_projects_cache():
-    """Warm the cross-institutional projects cache for fast catalog searches."""
+_PROJECT_WARM_LOCK_KEY = "arkumu:cache:projects:warming"
+_PROJECT_WARM_TIMEOUT = 60 * 5  # 5 minutes safety window
+
+
+def _warm_projects_cache(*, force_refresh: bool) -> str:
     from arkumu.projects.services import ProjectSnapshotService
 
+    if not cache.add(_PROJECT_WARM_LOCK_KEY, 1, timeout=_PROJECT_WARM_TIMEOUT):
+        logger.info("Cross-institutional projects cache warm-up skipped (already in progress)")
+        return "Skipped: already warming"
+
     try:
-        logger.info("Starting cross-institutional projects cache warming...")
+        logger.info(
+            "Starting cross-institutional projects cache warming%s...",
+            " (forced refresh)" if force_refresh else "",
+        )
         snapshot_service = ProjectSnapshotService()
-        snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=True)
+        snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=force_refresh)
         project_count = len(snapshot.projects)
         logger.info("Cross-institutional projects cache warmed: %d projects", project_count)
         return f"Success: {project_count} projects cached"
-
-    except Exception as e:
-        logger.error(f"Failed to warm cross-institutional projects cache: {e}")
+    except Exception as exc:
+        logger.error("Failed to warm cross-institutional projects cache: %s", exc)
         raise
+    finally:
+        cache.delete(_PROJECT_WARM_LOCK_KEY)
+
+
+@db_task()
+def warm_cross_institutional_projects_cache(force_refresh: bool = False):
+    """Warm the cross-institutional projects cache for fast catalog searches."""
+    return _warm_projects_cache(force_refresh=force_refresh)
 
 
 @db_task()
@@ -128,18 +145,7 @@ if HUEY_PERIODIC_AVAILABLE:
         """Periodically refresh the cross-institutional projects cache."""
         try:
             logger.info("Running periodic projects cache refresh...")
-            from arkumu.projects.services import ProjectSnapshotService
-
-            snapshot_service = ProjectSnapshotService()
-            snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=True)
-            project_count = len(snapshot.projects)
-            edge_count = snapshot.counts.get('edges')
-            logger.info(
-                "Periodic projects cache refresh completed: %d projects, %s edges",
-                project_count,
-                edge_count,
-            )
-
+            _warm_projects_cache(force_refresh=True)
         except Exception as e:
             logger.error(f"Periodic projects cache refresh failed: {e}")
             # Don't re-raise to avoid task retry loops
