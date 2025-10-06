@@ -60,6 +60,7 @@ def _load_index_cached(org_code: str, configured: Optional[str]) -> PathIndex:
         return PathIndex(full_paths=frozenset(), by_basename={})
 
     frozen_map = {key: tuple(values) for key, values in by_basename.items()}
+    logger.info("OAI path index loaded for %s: %d paths, %d unique basenames", org_code, len(full_paths), len(frozen_map))
     return PathIndex(full_paths=frozenset(full_paths), by_basename=frozen_map)
 
 
@@ -132,6 +133,15 @@ def _resolve_hmt(path: Optional[str], file_name: Optional[str]) -> List[str]:
         if matches:
             candidates.extend(matches)
 
+    if not candidates and (path or file_name):
+        logger.info(
+            "Rosetta resolver (HMT) could not resolve path=%s file=%s (index paths=%d, basenames=%d)",
+            path,
+            file_name,
+            len(index.full_paths),
+            len(index.by_basename),
+        )
+
     return candidates
 
 
@@ -153,6 +163,15 @@ def _resolve_khm(path: Optional[str], file_name: Optional[str]) -> List[str]:
         derived = str(Path(rosetta_root) / file_name)
         if not index.full_paths or derived in index.full_paths:
             candidates.append(derived)
+
+    if not candidates and (path or file_name):
+        logger.info(
+            "Rosetta resolver (KHM) could not resolve path=%s file=%s (index paths=%d, basenames=%d)",
+            path,
+            file_name,
+            len(index.full_paths),
+            len(index.by_basename),
+        )
 
     # Final dedupe while preserving order
     seen: set[str] = set()
