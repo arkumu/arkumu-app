@@ -9,7 +9,7 @@ from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone as dt_timezone, timedelta
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 from urllib.parse import unquote, urlparse
 import urllib.request as urllib_request
 import sys
@@ -69,6 +69,15 @@ RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
 ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
 HARVESTABLE_FILE_STATUSES = HARVESTABLE_STORAGE_STATUSES
+
+METS_NSMAP = {
+    'mets': METS_NS,
+    'dc': DC_NS,
+    'dcterms': DCTERMS_NS,
+    'xlink': XLINK_NS,
+    'xsi': XSI_NS,
+    None: DNX_NS
+}
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
@@ -163,7 +172,7 @@ def _get_rosetta_mets_schema() -> Optional[xmlschema.XMLSchema]:
 
 
 def _validate_mets_against_dnx_schema(
-    mets_root: ET.Element,
+    mets_root: Union[ET.Element, LET.Element],
     *,
     resource_uri: Optional[str] = None,
 ) -> bool:
@@ -175,8 +184,12 @@ def _validate_mets_against_dnx_schema(
         return False
 
     try:
-        mets_bytes = ET.tostring(mets_root, encoding="utf-8")
-        let_root = LET.fromstring(mets_bytes)
+        # Handle both ET and LET elements
+        if isinstance(mets_root, LET._Element):
+            let_root = mets_root
+        else:
+            mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+            let_root = LET.fromstring(mets_bytes)
     except (TypeError, LET.XMLSyntaxError):
         logger.exception(
             "Failed to parse METS XML for validation for %s",
@@ -219,7 +232,7 @@ def _validate_mets_against_dnx_schema(
 
 
 def _validate_mets_against_rosetta_schema(
-    mets_root: ET.Element,
+    mets_root: Union[ET.Element, LET.Element],
     *,
     resource_uri: Optional[str] = None,
 ) -> bool:
@@ -231,7 +244,11 @@ def _validate_mets_against_rosetta_schema(
         return False
 
     try:
-        mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+        # Handle both ET and LET elements
+        if isinstance(mets_root, LET._Element):
+            mets_bytes = LET.tostring(mets_root, encoding="utf-8")
+        else:
+            mets_bytes = ET.tostring(mets_root, encoding="utf-8")
         # Use xmlschema to validate (supports XSD 1.1)
         error_iter = schema.iter_errors(BytesIO(mets_bytes))
         first_error = next(error_iter, None)
@@ -411,14 +428,19 @@ def _register_rosetta_namespaces() -> None:
 
 
 def _create_dnx_element(
-    parent: ET.Element,
+    parent: Union[ET.Element, LET.Element],
     tag: str,
     attrib: Optional[Dict[str, str]] = None,
     text: Optional[str] = None,
-) -> ET.Element:
+) -> Union[ET.Element, LET.Element]:
     """Create a DNX element that renders without an explicit namespace prefix."""
 
-    elem = ET.SubElement(parent, ET.QName(DNX_NS, tag), attrib or {})
+    # Use the same library as the parent element
+    # Check if parent has the lxml-specific nsmap attribute
+    if hasattr(parent, 'nsmap'):
+        elem = LET.SubElement(parent, LET.QName(DNX_NS, tag), attrib or {})
+    else:
+        elem = ET.SubElement(parent, ET.QName(DNX_NS, tag), attrib or {})
 
     if text is not None:
         elem.text = str(text)
@@ -742,6 +764,30 @@ def _xml_response(elem: ET.Element) -> HttpResponse:
     default_declaration = f'xmlns="{DNX_NS}"'
     if '<mets:mets' in xml_str and default_declaration not in xml_str:
         xml_str = xml_str.replace('<mets:mets', f'<mets:mets {default_declaration}', 1)
+
+    # Add explicit namespace declarations to mets:mets element
+    # These are required for the METS document to be valid standalone
+    mets_ns_declarations = [
+        f'xmlns:mets="{METS_NS}"',
+        f'xmlns:dc="{DC_NS}"',
+        f'xmlns:dcterms="{DCTERMS_NS}"',
+        f'xmlns:xlink="{XLINK_NS}"',
+        f'xmlns:xsi="{XSI_NS}"',
+    ]
+
+    if '<mets:mets' in xml_str:
+        # Find all mets:mets opening tags
+        mets_pattern = r'<mets:mets\s+'
+
+        def add_mets_namespaces(match):
+            opening = match.group(0)
+            # Add declarations that aren't already present in this specific tag
+            for ns_decl in mets_ns_declarations:
+                if ns_decl not in opening:
+                    opening = opening.rstrip() + ' ' + ns_decl + ' '
+            return opening
+
+        xml_str = re.sub(mets_pattern, add_mets_namespaces, xml_str)
 
 # ElementTree naturally uses single quotes, keep them
 
@@ -1449,29 +1495,28 @@ def _build_mets_from_project(
     project: OAIProject,
     resource: Resource,
     dc_payload: Dict[str, List[str]],
-) -> ET.Element:
+) -> LET.Element:
     _register_rosetta_namespaces()
 
     record = project.record
 
-    mets_root = ET.Element(ET.QName(METS_NS, "mets"))
-    mets_root.set("xmlns", DNX_NS)
+    mets_root = LET.Element(LET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
 
-    dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
-    md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
-    xml_data = ET.SubElement(md_wrap, ET.QName(METS_NS, "xmlData"))
-    dc_record = ET.SubElement(xml_data, ET.QName(DC_NS, "record"))
+    dmd_sec = LET.SubElement(mets_root, LET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
+    md_wrap = LET.SubElement(dmd_sec, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+    xml_data = LET.SubElement(md_wrap, LET.QName(METS_NS, "xmlData"))
+    dc_record = LET.SubElement(xml_data, LET.QName(DC_NS, "record"))
     for key, values in dc_payload.items():
         namespace, term = key.split(":", 1)
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
         for value in values:
-            ET.SubElement(dc_record, ET.QName(ns_uri, term)).text = value
+            LET.SubElement(dc_record, LET.QName(ns_uri, term)).text = value
 
-    ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
-    tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
-    tech_wrap = ET.SubElement(tech_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-    tech_xml = ET.SubElement(tech_wrap, ET.QName(METS_NS, "xmlData"))
+    ie_amd = LET.SubElement(mets_root, LET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
+    tech_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
+    tech_wrap = LET.SubElement(tech_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    tech_xml = LET.SubElement(tech_wrap, LET.QName(METS_NS, "xmlData"))
     tech_dnx = _create_dnx_element(tech_xml, "dnx")
     # Add objectIdentifier section (required by Rosetta)
     obj_id_section = _create_dnx_element(tech_dnx, "section", {"id": "objectIdentifier"})
@@ -1479,15 +1524,15 @@ def _build_mets_from_project(
     _create_dnx_element(obj_id_record, "key", {"id": "objectIdentifierType"}, " ")
     _create_dnx_element(obj_id_record, "key", {"id": "objectIdentifierValue"}, " ")
 
-    rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
-    rights_wrap = ET.SubElement(rights_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-    rights_xml = ET.SubElement(rights_wrap, ET.QName(METS_NS, "xmlData"))
+    rights_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
+    rights_wrap = LET.SubElement(rights_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    rights_xml = LET.SubElement(rights_wrap, LET.QName(METS_NS, "xmlData"))
     rights_dnx = _create_dnx_element(rights_xml, "dnx")
     _create_dnx_element(rights_dnx, "section", {"id": "accessRightsPolicy"})
 
-    source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
-    source_wrap = ET.SubElement(source_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"})
-    source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+    source_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
+    source_wrap = LET.SubElement(source_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"})
+    source_xml = LET.SubElement(source_wrap, LET.QName(METS_NS, "xmlData"))
     epicur = _create_dnx_element(
         source_xml,
         "epicur",
@@ -1498,9 +1543,9 @@ def _build_mets_from_project(
     _create_dnx_element(delivery, "update_status", {"type": "urn_new"})
     epicur_record = _create_dnx_element(epicur, "record")
 
-    digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
-    digiprov_wrap = ET.SubElement(digiprov_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-    digiprov_xml = ET.SubElement(digiprov_wrap, ET.QName(METS_NS, "xmlData"))
+    digiprov_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
+    digiprov_wrap = LET.SubElement(digiprov_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    digiprov_xml = LET.SubElement(digiprov_wrap, LET.QName(METS_NS, "xmlData"))
     _create_dnx_element(digiprov_xml, "dnx")
 
     harvestable_objects = [
@@ -1605,10 +1650,10 @@ def _build_mets_from_project(
     for rep_index, (rep_type, objects) in enumerate(rep_groups, start=1):
         rep_id = f"rep{rep_index}"
 
-        rep_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{rep_id}-amd"})
-        rep_tech = ET.SubElement(rep_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{rep_id}-amd-tech"})
-        rep_wrap = ET.SubElement(rep_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-        rep_xml = ET.SubElement(rep_wrap, ET.QName(METS_NS, "xmlData"))
+        rep_amd = LET.SubElement(mets_root, LET.QName(METS_NS, "amdSec"), {"ID": f"{rep_id}-amd"})
+        rep_tech = LET.SubElement(rep_amd, LET.QName(METS_NS, "techMD"), {"ID": f"{rep_id}-amd-tech"})
+        rep_wrap = LET.SubElement(rep_tech, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+        rep_xml = LET.SubElement(rep_wrap, LET.QName(METS_NS, "xmlData"))
         rep_dnx = _create_dnx_element(rep_xml, "dnx")
         section = _create_dnx_element(rep_dnx, "section", {"id": "generalRepCharacteristics"})
         rec = _create_dnx_element(section, "record")
@@ -1627,10 +1672,10 @@ def _build_mets_from_project(
             if obj.file_name:
                 file_label = obj.file_name
 
-            file_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
-            file_tech = ET.SubElement(file_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
-            file_wrap = ET.SubElement(file_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-            file_xml = ET.SubElement(file_wrap, ET.QName(METS_NS, "xmlData"))
+            file_amd = LET.SubElement(mets_root, LET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
+            file_tech = LET.SubElement(file_amd, LET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
+            file_wrap = LET.SubElement(file_tech, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+            file_xml = LET.SubElement(file_wrap, LET.QName(METS_NS, "xmlData"))
             file_dnx = _create_dnx_element(file_xml, "dnx")
 
             general_keys: List[tuple[str, str]] = []
@@ -1711,16 +1756,16 @@ def _build_mets_from_project(
             "files": rep_files,
         })
 
-    file_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "fileSec"))
+    file_sec = LET.SubElement(mets_root, LET.QName(METS_NS, "fileSec"))
 
     project_title = record.title or record.subtitle or record.uri or "Project"
 
     for entry in file_sec_entries:
         rep_id = entry["rep_id"]
         rep_type = entry["rep_type"]
-        file_grp = ET.SubElement(
+        file_grp = LET.SubElement(
             file_sec,
-            ET.QName(METS_NS, "fileGrp"),
+            LET.QName(METS_NS, "fileGrp"),
             {
                 "USE": "VIEW",
                 "ID": rep_id,
@@ -1739,7 +1784,7 @@ def _build_mets_from_project(
                 attrs["MIMETYPE"] = obj.content_type
             # Rosetta profile forbids CHECKSUM attributes on mets:file; fixity lives in DNX
 
-            file_elem = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), attrs)
+            file_elem = LET.SubElement(file_grp, LET.QName(METS_NS, "file"), attrs)
             href = obj.preferred_location or obj.access_url or ""
             normalized_href = _normalize_reference(href)
             if normalized_href:
@@ -1750,18 +1795,18 @@ def _build_mets_from_project(
                     f"{{{XLINK_NS}}}href": href,
                     f"{{{XLINK_NS}}}type": "simple",
                 }
-                ET.SubElement(file_elem, ET.QName(METS_NS, "FLocat"), flocat_attrs)
+                LET.SubElement(file_elem, LET.QName(METS_NS, "FLocat"), flocat_attrs)
 
-        struct_map = ET.SubElement(
+        struct_map = LET.SubElement(
             mets_root,
-            ET.QName(METS_NS, "structMap"),
+            LET.QName(METS_NS, "structMap"),
             {"ID": f"{rep_id}-1", "TYPE": "LOGICAL"},
         )
 
         # Root div has no attributes per Rosetta example
-        project_div = ET.SubElement(
+        project_div = LET.SubElement(
             struct_map,
-            ET.QName(METS_NS, "div"),
+            LET.QName(METS_NS, "div"),
         )
 
         # Representation div also simplified per Rosetta example
@@ -1811,9 +1856,9 @@ def _build_mets_from_project(
             event_obj = event_meta.get(key)
             event_label = _event_label(event_obj)
             # Event div - simplified per Rosetta example (no ORDER on intermediate divs)
-            event_div = ET.SubElement(
+            event_div = LET.SubElement(
                 rep_div,
-                ET.QName(METS_NS, "div"),
+                LET.QName(METS_NS, "div"),
                 {
                     "LABEL": event_label,
                     "ORDERLABEL": event_label,
@@ -1830,9 +1875,9 @@ def _build_mets_from_project(
                     folder_key = tuple(folder_key_prefix)
                     existing = folder_nodes[key].get(folder_key)
                     if not existing:
-                        existing = ET.SubElement(
+                        existing = LET.SubElement(
                             parent,
-                            ET.QName(METS_NS, "div"),
+                            LET.QName(METS_NS, "div"),
                             {
                                 "LABEL": segment,
                                 "ORDERLABEL": segment,
@@ -1842,16 +1887,16 @@ def _build_mets_from_project(
                     parent = existing
 
                 # File div per Rosetta example - TYPE="FILE", LABEL, ORDERLABEL (no ORDER)
-                file_div = ET.SubElement(
+                file_div = LET.SubElement(
                     parent,
-                    ET.QName(METS_NS, "div"),
+                    LET.QName(METS_NS, "div"),
                     {
                         "TYPE": "FILE",
                         "LABEL": file_info["label"],
                         "ORDERLABEL": file_info["label"],
                     },
                 )
-                ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
+                LET.SubElement(file_div, LET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
     return mets_root
 
 
@@ -2064,7 +2109,11 @@ def _build_metadata_element(
                 )
                 continue
 
-            metadata.append(mets_root)
+            # Convert LET.Element to ET.Element for compatibility
+            # Namespace declarations will be added in _xml_response via regex
+            mets_bytes = LET.tostring(mets_root, encoding="utf-8")
+            mets_et = ET.fromstring(mets_bytes)
+            metadata.append(mets_et)
             break
     elif metadata_prefix == "rdf":
         rdf_element = _build_rdf_from_resource(resource)
