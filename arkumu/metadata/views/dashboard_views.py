@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib import messages
 from django.core.management import call_command
 from django.db import models
@@ -18,6 +20,7 @@ from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.users.mixins import general_login_required
 from arkumu.oaipmh.views import oai_endpoint
+from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
 
 from .dashboard_helpers import (
     build_session_entry,
@@ -25,6 +28,8 @@ from .dashboard_helpers import (
     summarize_upload_stats,
 )
 
+
+logger = logging.getLogger(__name__)
 
 _oai_proxy_request_factory = RequestFactory()
 
@@ -60,6 +65,12 @@ def metadata_dashboard(request):
         "uploads": AsyncUploadSession.objects.count(),
         "ingests": IngestSession.objects.count(),
     }
+
+    oai_snapshot = None
+    try:
+        oai_snapshot = build_oai_dashboard_snapshot()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
 
     bucket_service = BucketService()
     checksum_buckets = bucket_service.get_predefined_organizations()
@@ -104,6 +115,7 @@ def metadata_dashboard(request):
             "institutions": institutions,
             "organizations_with_data": organizations_with_data,
             "checksum_buckets": checksum_buckets,
+            "oai_snapshot": oai_snapshot,
         },
     )
 

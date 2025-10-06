@@ -370,7 +370,44 @@
                 </div>
             </div>
         </div>
-        
+
+        {% if oai_snapshot %}
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+                <p class="text-4xl font-bold">{{ oai_snapshot.total_projects }}</p>
+                <div class="text-xs text-base-content/70 space-y-1">
+                    {% if oai_snapshot.total_projects %}
+                        {% for summary in oai_snapshot.institution_summaries|slice:":4" %}
+                        <div class="flex justify-between gap-2">
+                            <span class="truncate w-28 uppercase">{{ summary.label|default:summary.code }}</span>
+                            <span class="font-semibold">{{ summary.project_count }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if oai_snapshot.institution_summaries|length > 4 %}
+                        <div class="text-xs text-base-content/50">
+                            +{{ oai_snapshot.institution_summaries|length|add:"-4" }} more institutions
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-xs text-base-content/60">No harvestable projects detected</div>
+                    {% endif %}
+                </div>
+                <div class="text-xs text-base-content/50 mt-3">
+                    {{ oai_snapshot.total_harvestable_objects }} harvestable files ready
+                </div>
+                <div class="text-xs text-base-content/50">Snapshot: {{ oai_snapshot.generated_at|date:"Y-m-d H:i" }}</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+                <p class="text-xs text-base-content/70">Snapshot unavailable. Check OAI services.</p>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title text-sm">Data Sources</h2>
@@ -390,7 +427,43 @@
             </div>
         </div>
     </div>
-    
+
+    {% if oai_snapshot %}
+    <div class="card bg-base-100 shadow-xl mb-8">
+        <div class="card-body">
+            <h2 class="card-title">OAI Project Availability</h2>
+            <p class="text-sm text-base-content/70">
+                Dashboard snapshot built from the cross-institutional project cache. Counts reflect
+                harvestable projects exposed via the OAI-PMH endpoint without hitting the live API.
+            </p>
+            <div class="overflow-x-auto mt-4">
+                <table class="table table-zebra">
+                    <thead>
+                        <tr>
+                            <th>Institution</th>
+                            <th>Code</th>
+                            <th>Harvestable Projects</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for summary in oai_snapshot.institution_summaries %}
+                        <tr>
+                            <td>{{ summary.label|default:"Unspecified" }}</td>
+                            <td class="uppercase">{{ summary.code }}</td>
+                            <td>{{ summary.project_count }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="3" class="text-center py-4">No harvestable projects found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Recent Uploads -->
         <div class="card bg-base-100 shadow-xl">
