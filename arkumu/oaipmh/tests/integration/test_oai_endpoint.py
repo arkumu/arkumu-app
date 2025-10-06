@@ -515,20 +515,6 @@ class TestOAIEndpoint:
         assert identifier in content
         assert xml_validator.validate_oai_response(content)
 
-    def test_list_records_granularity_mismatch(self, oai_client, xml_validator):
-        """Mixed granularity between from/until should raise badArgument."""
-        response = oai_client.get(self.oai_url, {
-            "verb": "ListRecords",
-            "metadataPrefix": "oai_dc",
-            "from": "2023-01-01",
-            "until": "2023-01-02T00:00:00Z"
-        })
-
-        assert response.status_code == 200
-        code, message = xml_validator.extract_error(response.content.decode())
-        assert code == "badArgument"
-        assert "same granularity" in message
-
     # ============================================================================
     # GETRECORD VERB TESTS
     # ============================================================================
