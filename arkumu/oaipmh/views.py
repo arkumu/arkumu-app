@@ -1519,10 +1519,8 @@ def _build_mets_from_project(
     tech_xml = LET.SubElement(tech_wrap, LET.QName(METS_NS, "xmlData"))
     tech_dnx = _create_dnx_element(tech_xml, "dnx")
     # Add objectIdentifier section (required by Rosetta)
-    obj_id_section = _create_dnx_element(tech_dnx, "section", {"id": "objectIdentifier"})
-    obj_id_record = _create_dnx_element(obj_id_section, "record")
-    _create_dnx_element(obj_id_record, "key", {"id": "objectIdentifierType"}, " ")
-    _create_dnx_element(obj_id_record, "key", {"id": "objectIdentifierValue"}, " ")
+    # Rosetta does not expect placeholder keys when no identifier is available.
+    _create_dnx_element(tech_dnx, "section", {"id": "objectIdentifier"})
 
     rights_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
     rights_wrap = LET.SubElement(rights_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
