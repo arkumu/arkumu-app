@@ -107,44 +107,7 @@
 
       <div class="actor-event-container space-y-4">
         {% for form in actor_event_formset %}
-          <div class="actor-event-form p-4 bg-base-100 rounded-lg border border-base-200">
-            {% if form.non_field_errors %}
-            <div class="alert alert-error shadow-lg mb-4">
-              <div>
-                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>
-                  {% for error in form.non_field_errors %}
-                    {{ error }}<br>
-                  {% endfor %}
-                </span>
-              </div>
-            </div>
-            {% endif %}
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="form-control">
-                <label class="label">
-                  <span class="label-text font-medium">Akteurin</span>
-                  {% if form.akteurin_uri.errors %}
-                  <span class="label-text-alt text-error">{{ form.akteurin_uri.errors.0 }}</span>
-                  {% endif %}
-                </label>
-                {{ form.akteurin_uri }}
-              </div>
-
-              <div class="form-control">
-                <label class="label">
-                  <span class="label-text font-medium">Rolle</span>
-                  {% if form.rollen_uri.errors %}
-                  <span class="label-text-alt text-error">{{ form.rollen_uri.errors.0 }}</span>
-                  {% endif %}
-                </label>
-                {{ form.rollen_uri }}
-              </div>
-            </div>
-          </div>
+          {% include "metadata/entity_creation/partials/_actor_event_form_fields.html" %}
         {% endfor %}
       </div>
 
