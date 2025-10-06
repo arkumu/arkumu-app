@@ -113,7 +113,7 @@
 
       <template id="actor-event-template">
         <div class="actor-event-form">
-          {{ actor_event_formset.empty_form.as_p }}
+          {% include "metadata/entity_creation/partials/_actor_event_form_fields.html" with form=actor_event_formset.empty_form %}
         </div>
       </template>
     </div>

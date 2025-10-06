@@ -278,7 +278,7 @@ class AlternateTitleForm(BaseEntityForm):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
 
 
-ActorEventFormSet = formset_factory(ActorEventForm, extra=1, min_num=1, validate_min=True)
+ActorEventFormSet = formset_factory(ActorEventForm, extra=0, min_num=0, validate_min=False)
 
 
 @login_required
