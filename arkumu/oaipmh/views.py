@@ -85,6 +85,12 @@ def _urlopen_with_schema_override(url, *args, **kwargs):
         target = url.full_url
 
     if isinstance(target, str):
+        if target.startswith('/'):
+            return open(target, "rb")
+
+        if target.startswith('file://'):
+            return open(target[len('file://'):], "rb")
+
         normalized = target.rstrip('/')
         if normalized in {
             "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
@@ -95,6 +101,14 @@ def _urlopen_with_schema_override(url, *args, **kwargs):
                 return open(METS_LEGACY_SCHEMA_FILE, "rb")
             if METS_SCHEMA_FILE.exists():
                 return open(METS_SCHEMA_FILE, "rb")
+
+        if normalized in {
+            "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+            "https://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+        }:
+            local_dc = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/oai_dc.xsd"
+            if local_dc.exists():
+                return open(local_dc, "rb")
 
         if normalized.endswith('dnx_sip.xsd') and DNX_SCHEMA_PATH.exists():
             return open(DNX_SCHEMA_PATH, "rb")

@@ -7,6 +7,7 @@ following the OAI-PMH 2.0 specification.
 
 import pytest
 from functools import lru_cache
+from pathlib import Path
 from lxml import etree as LET
 import xml.etree.ElementTree as ET
 from django.urls import reverse
@@ -32,6 +33,9 @@ from arkumu.oaipmh.views import (
     _fallback_record_from_storage,
     HARVESTABLE_FILE_STATUSES,
 )
+
+SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schema"
+OAI_DC_SCHEMA_FILE = SCHEMA_DIR / "oai_dc.xsd"
 
 
 SIMPLE_DC_TERMS = {
@@ -70,6 +74,11 @@ def _load_schema(url: str) -> LET.XMLSchema:
             if candidate.exists():
                 local_path = str(candidate)
                 break
+    elif url in {
+        "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+        "https://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+    } and OAI_DC_SCHEMA_FILE.exists():
+        local_path = str(OAI_DC_SCHEMA_FILE)
 
     document = LET.parse(local_path or url, parser)
     return LET.XMLSchema(document)

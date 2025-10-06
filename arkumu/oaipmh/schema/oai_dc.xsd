@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.openarchives.org/OAI/2.0/oai_dc/"
+    xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+    elementFormDefault="qualified"
+    attributeFormDefault="unqualified">
+
+    <xsd:annotation>
+        <xsd:documentation>
+            Local copy of the OAI Dublin Core schema used for offline testing.
+            This lightweight schema models the outer oai_dc:dc container and
+            allows any Dublin Core or DCTERMS elements within it.
+        </xsd:documentation>
+    </xsd:annotation>
+
+    <xsd:element name="dc" type="oai_dc:dcType"/>
+
+    <xsd:complexType name="dcType">
+        <xsd:sequence>
+            <xsd:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+        <xsd:anyAttribute namespace="##any" processContents="lax"/>
+    </xsd:complexType>
+</xsd:schema>
