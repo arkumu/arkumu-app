@@ -1456,11 +1456,6 @@ def _build_mets_from_project(
 
     mets_root = ET.Element(ET.QName(METS_NS, "mets"))
     mets_root.set("xmlns", DNX_NS)
-    mets_root.set("xmlns:mets", METS_NS)
-    mets_root.set("xmlns:dc", DC_NS)
-    mets_root.set("xmlns:dcterms", DCTERMS_NS)
-    mets_root.set("xmlns:xlink", XLINK_NS)
-    mets_root.set("xmlns:xsi", XSI_NS)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
 
     dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
