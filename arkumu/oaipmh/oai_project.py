@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
+import logging
 import mimetypes
 
 from django.conf import settings
@@ -17,6 +18,9 @@ from .path_mapping import resolve_external_paths
 
 
 HARVESTABLE_STORAGE_STATUSES = {"completed", "verified"}
+
+
+logger = logging.getLogger(__name__)
 
 
 def _clean(value: Optional[str]) -> Optional[str]:
@@ -256,6 +260,14 @@ class OAIProjectBuilder:
             if not normalized:
                 continue
             if not self._is_harvestable(normalized):
+                logger.info(
+                    "OAI digital object dropped: not harvestable (org=%s source=%s status=%s storage_key=%s rosetta_path=%s)",
+                    institution_code,
+                    normalized.source,
+                    normalized.storage_status,
+                    normalized.storage_key,
+                    normalized.rosetta_path,
+                )
                 continue
             identity = normalized.preferred_location
             if identity:
@@ -305,6 +317,14 @@ class OAIProjectBuilder:
             if resolved:
                 rosetta_candidates = tuple(resolved)
                 rosetta_path = resolved[0]
+            else:
+                logger.info(
+                    "OAI Rosetta object skipped: no candidate path (org=%s path=%s storage_key=%s file=%s)",
+                    institution_code,
+                    original_path,
+                    storage_key,
+                    file_name,
+                )
 
         if not rosetta_path and original_path and original_path.startswith("/rosetta/"):
             rosetta_candidates = (original_path,)
