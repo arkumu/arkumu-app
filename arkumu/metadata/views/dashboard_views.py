@@ -1,4 +1,7 @@
 import logging
+from collections import defaultdict
+
+from django.conf import settings
 
 from django.contrib import messages
 from django.core.management import call_command
@@ -19,8 +22,10 @@ from arkumu.storage.models.upload_tracking import AsyncUploadSession
 from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.users.mixins import general_login_required
+from arkumu.users.models import Organization
 from arkumu.oaipmh.views import oai_endpoint
 from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
+from arkumu.cache.services.project_cache_service import ProjectCacheService
 
 from .dashboard_helpers import (
     build_session_entry,
@@ -508,3 +513,108 @@ def trigger_link_projects(request):
     output = _link_command(request, "link_s3_files_to_projects", bucket, dry_run)
     message = f"Link projects: bucket {bucket or 'all'}, mode={'dry-run' if dry_run else 'apply'}"
     return _maintenance_response(request, message, level="success", details=output)
+
+
+@general_login_required
+def project_snapshot_stats(request):
+    """Display cached project snapshot summaries without triggering rebuilds."""
+
+    cache_service = ProjectCacheService()
+    snapshot = cache_service.get_cross_institutional_snapshot()
+
+    alias_map = {
+        str(src).lower(): str(target).lower()
+        for src, target in getattr(settings, "OAI_INSTITUTION_CODE_ALIASES", {}).items()
+    }
+
+    stats_rows = []
+    totals = {
+        "projects": 0,
+        "events": 0,
+        "actors": 0,
+        "digital_objects": 0,
+        "rosetta_objects": 0,
+    }
+
+    if snapshot and snapshot.projects:
+        stats_map = defaultdict(
+            lambda: {
+                "code": "",
+                "label": "",
+                "projects": 0,
+                "events": 0,
+                "actors": 0,
+                "digital_objects": 0,
+                "rosetta_objects": 0,
+            }
+        )
+
+        for record in snapshot.projects:
+            raw_code = (
+                record.institution.code
+                if record.institution and record.institution.code
+                else "unknown"
+            ).lower()
+            normalized_code = alias_map.get(raw_code, raw_code)
+            stats = stats_map[normalized_code]
+            if not stats["code"]:
+                stats["code"] = normalized_code
+
+            stats["projects"] += 1
+            stats["events"] += len(record.events or [])
+            stats["actors"] += len(record.actors or [])
+
+            digital_objects = record.digital_objects or []
+            stats["digital_objects"] += sum(
+                1 for obj in digital_objects if obj.path or obj.storage_key or obj.access_url
+            )
+            stats["rosetta_objects"] += sum(
+                1 for obj in digital_objects if obj.path and obj.path.startswith("/rosetta/")
+            )
+
+        known_codes = [
+            entry["code"]
+            for entry in stats_map.values()
+            if entry["code"] not in {"", "unknown"}
+        ]
+        label_lookup = {
+            org.code.lower(): org.name
+            for org in Organization.objects.filter(code__in=known_codes)
+        }
+
+        for entry in stats_map.values():
+            code = entry["code"] or "unknown"
+            if code == "unknown" and entry["projects"] == 0:
+                continue
+            entry["label"] = label_lookup.get(
+                code,
+                code.upper() if code != "unknown" else "Unknown",
+            )
+            stats_rows.append(entry)
+
+        stats_rows.sort(key=lambda item: item["label"].lower())
+
+        totals = {
+            "projects": sum(item["projects"] for item in stats_rows),
+            "events": sum(item["events"] for item in stats_rows),
+            "actors": sum(item["actors"] for item in stats_rows),
+            "digital_objects": sum(item["digital_objects"] for item in stats_rows),
+            "rosetta_objects": sum(item["rosetta_objects"] for item in stats_rows),
+        }
+
+    template_name = (
+        "partials/project_snapshot_stats.html"
+        if request.headers.get("HX-Request")
+        else "dashboard_project_snapshot.html"
+    )
+
+    return render(
+        request,
+        template_name,
+        {
+            "snapshot_stats": stats_rows,
+            "snapshot_totals": totals,
+            "snapshot_generated": snapshot.generated_at if snapshot else None,
+            "snapshot_available": bool(snapshot),
+        },
+    )

@@ -115,6 +115,17 @@ class Command(BaseCommand):
             if len(parts) >= 1:
                 base_folder = parts[0]
             if len(parts) >= 2:
-                organization = parts[1]
+                organization_candidate = parts[1].lower()
+                known_orgs = getattr(self, "_known_org_codes", None)
+                if known_orgs is None:
+                    from arkumu.users.models import Organization
+                    known_orgs = {
+                        code.lower() for code in Organization.objects.values_list("code", flat=True)
+                    }
+                    self._known_org_codes = known_orgs
+                if organization_candidate in known_orgs:
+                    organization = organization_candidate
+                else:
+                    organization = None
 
         return base_folder, organization

@@ -1,0 +1,71 @@
+<div id="snapshot-stats-panel" class="bg-base-100 rounded-lg shadow-sm">
+    <div class="p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+                <h4 class="text-sm font-semibold">Project Snapshot Overview</h4>
+                {% if snapshot_generated %}
+                    <p class="text-xs text-base-content/60">Generated {{ snapshot_generated|date:"Y-m-d H:i" }} ({{ snapshot_generated|date:"T" }})</p>
+                {% else %}
+                    <p class="text-xs text-base-content/60">Snapshot generation time unavailable</p>
+                {% endif %}
+            </div>
+            <button type="button"
+                    class="btn btn-outline btn-sm"
+                    hx-get="{% url 'metadata:metadata_dashboard_snapshot_stats' %}"
+                    hx-target="#snapshot-stats-panel"
+                    hx-swap="outerHTML">
+                Refresh
+            </button>
+        </div>
+
+        {% if snapshot_stats %}
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th class="text-left">Organization</th>
+                            <th class="text-right">Projects</th>
+                            <th class="text-right">Events</th>
+                            <th class="text-right">Actors</th>
+                            <th class="text-right">Digital Objects</th>
+                            <th class="text-right">Rosetta Objects</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in snapshot_stats %}
+                            <tr>
+                                <td>
+                                    <span class="font-medium">{{ row.label }}</span>
+                                    {% if row.code and row.code != 'unknown' %}
+                                        <span class="text-xs text-base-content/50">({{ row.code|upper }})</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-right">{{ row.projects }}</td>
+                                <td class="text-right">{{ row.events }}</td>
+                                <td class="text-right">{{ row.actors }}</td>
+                                <td class="text-right">{{ row.digital_objects }}</td>
+                                <td class="text-right">{{ row.rosetta_objects }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="font-semibold">
+                            <td>Total</td>
+                            <td class="text-right">{{ snapshot_totals.projects }}</td>
+                            <td class="text-right">{{ snapshot_totals.events }}</td>
+                            <td class="text-right">{{ snapshot_totals.actors }}</td>
+                            <td class="text-right">{{ snapshot_totals.digital_objects }}</td>
+                            <td class="text-right">{{ snapshot_totals.rosetta_objects }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        {% elif snapshot_available %}
+            <div class="alert alert-info text-sm">Project snapshot is empty. Run a snapshot rebuild to populate these metrics.</div>
+        {% else %}
+            <div class="alert alert-warning text-sm">
+                Snapshot cache is empty. Use the dashboard cache warmers to build the cross-institutional project snapshot before viewing metrics.
+            </div>
+        {% endif %}
+    </div>
+</div>

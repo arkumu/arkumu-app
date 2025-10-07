@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">Project Snapshot Overview</h1>
+            <p class="text-sm text-base-content/70 mt-2 max-w-2xl">
+                Cached cross-institutional project metrics. Snapshot data only refreshes when the
+                "Warm cross-institutional project snapshot" task runs, so the dashboard stays responsive.
+            </p>
+        </div>
+        <a href="{% url 'metadata:metadata_dashboard' %}" class="btn btn-outline btn-sm">Back to Dashboard</a>
+    </div>
+
+    {% include "partials/project_snapshot_stats.html" %}
+
+    <p class="text-xs text-base-content/60 mt-6">
+        Need fresher data? Trigger the cache warmers from the dashboard or importer workflows.
+    </p>
+</div>
+{% endblock %}

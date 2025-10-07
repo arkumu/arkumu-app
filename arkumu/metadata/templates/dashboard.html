@@ -45,6 +45,25 @@
         </div>
     </div>
 
+    <!-- Snapshot Overview -->
+    <div class="mb-8 p-4 bg-base-200 rounded-lg">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Project Snapshot</h3>
+                <p class="text-sm text-base-content/70">
+                    View cached cross-institutional project metrics without slowing down the main dashboard.
+                </p>
+            </div>
+            <a href="{% url 'metadata:metadata_dashboard_snapshot_stats' %}"
+               class="btn btn-outline btn-primary btn-sm">
+                View Snapshot Metrics
+            </a>
+        </div>
+        <p class="text-xs text-base-content/60 mt-3">
+            Snapshot data loads from cache only. Use the cache warmers below when you need to rebuild it.
+        </p>
+    </div>
+
     {% if request.user.is_staff %}
     <!-- Cache Warmers -->
     <div class="mb-8 p-4 bg-base-200 rounded-lg">

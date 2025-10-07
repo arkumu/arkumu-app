@@ -19,6 +19,14 @@ class _FakeSnapshotService:
         return self._snapshot
 
 
+class _FakeCacheService:
+    def __init__(self, snapshot: ProjectSnapshot | None) -> None:
+        self._snapshot = snapshot
+
+    def get_cross_institutional_snapshot(self):  # pragma: no cover - simple delegate
+        return self._snapshot
+
+
 def _make_project(
     *,
     uri: str,
@@ -114,3 +122,11 @@ def test_build_snapshot_counts_harvestable_projects(settings):
     assert labels["fuk"] == "FUK"
     assert labels["khm"] == "KHM"
     assert labels["unknown"] is None
+
+
+def test_build_snapshot_without_cached_data():
+    dashboard_snapshot = build_oai_dashboard_snapshot(cache_service=_FakeCacheService(None))
+
+    assert dashboard_snapshot.total_projects == 0
+    assert dashboard_snapshot.total_harvestable_objects == 0
+    assert dashboard_snapshot.institution_summaries == []

@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, List, Optional
 
+from django.utils import timezone
+
+from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.oaipmh.oai_project import OAIProject, OAIProjectBuilder
 from arkumu.projects.services import ProjectSnapshotService
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -45,13 +52,29 @@ def build_oai_dashboard_snapshot(
     *,
     snapshot_service: Optional[ProjectSnapshotService] = None,
     project_builder: Optional[OAIProjectBuilder] = None,
+    cache_service: Optional[ProjectCacheService] = None,
 ) -> OAIDashboardSnapshot:
     """Return aggregated harvestable project metrics for dashboard display."""
 
-    snapshot_service = snapshot_service or ProjectSnapshotService()
     project_builder = project_builder or OAIProjectBuilder()
+    snapshot = None
 
-    snapshot = snapshot_service.get_cross_institutional_snapshot()
+    if snapshot_service is not None:
+        snapshot = snapshot_service.get_cross_institutional_snapshot()
+    else:
+        cache_service = cache_service or ProjectCacheService()
+        snapshot = cache_service.get_cross_institutional_snapshot()
+
+    if snapshot is None:
+        logger.info(
+            "OAI dashboard snapshot: cache is empty; returning zeroed metrics until warmers run."
+        )
+        return OAIDashboardSnapshot(
+            generated_at=timezone.now(),
+            total_projects=0,
+            institution_summaries=[],
+            total_harvestable_objects=0,
+        )
 
     harvestable_projects: List[OAIProject] = []
     total_objects = 0
@@ -94,4 +117,3 @@ def _summarize_by_institution(projects: Iterable[OAIProject]) -> List[Institutio
 
     summaries.sort(key=lambda summary: summary.project_count, reverse=True)
     return summaries
-
