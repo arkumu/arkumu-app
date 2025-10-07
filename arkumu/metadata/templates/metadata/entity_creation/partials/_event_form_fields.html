@@ -103,16 +103,15 @@
       </div>
 
       <!-- This renders the management form fields that Django needs -->
-      {{ actor_event_formset.management_form }}
+      {{ actor_formset.management_form }}
+      {{ role_formset.management_form }}
 
       <div class="actor-event-container space-y-4">
-        {% for form in actor_event_formset %}
-          {% include "metadata/entity_creation/partials/_actor_event_form_fields.html" %}
-        {% endfor %}
       </div>
 
       <template id="actor-event-template">
-        {% include "metadata/entity_creation/partials/_actor_event_form_fields.html" with form=actor_event_formset.empty_form %}
+          {% include "metadata/entity_creation/partials/_actor_form_fields.html" with actor_form=actor_formset.empty_form %}
+          {% include "metadata/entity_creation/partials/_role_form_fields.html" with role_form=role_formset.empty_form %}
       </template>
     </div>
   </div>

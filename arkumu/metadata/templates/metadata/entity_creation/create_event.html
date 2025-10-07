@@ -92,11 +92,14 @@
           .content.cloneNode(true);
 
         // Find the management form fields
-        const managementFormTotal = document.querySelector(
+        const actors_managementFormTotal = document.querySelector(
           '[name="actors-TOTAL_FORMS"]',
         );
+        const roles_managementFormTotal = document.querySelector(
+          '[name="roles-TOTAL_FORMS"]',
+        );
 
-        if (!managementFormTotal) {
+        if (!actors_managementFormTotal) {
           console.error(
             "Management form not found. Make sure it's properly rendered in the template.",
           );
@@ -104,25 +107,31 @@
         }
 
         // Get current form count
-        let formCount = parseInt(managementFormTotal.value);
+        let formCount = parseInt(actors_managementFormTotal.value);
 
         // Update the new form HTML to replace __prefix__ with the new index
-        const newFormHTML = template
-          .querySelector(".actor-event-form")
+        const actor_newFormHTML = template
+          .querySelector(".actor-form")
           .innerHTML.replace(/actors-__prefix__-/g, `actors-${formCount}-`)
           .replace(/actors__prefix__/g, `actors][${formCount}][`);
 
+        const role_newFormHTML = template
+          .querySelector(".role-form")
+          .innerHTML.replace(/roles-__prefix__-/g, `roles-${formCount}-`)
+          .replace(/roles__prefix__/g, `roles][${formCount}][`);
+
         // Create a new div for the form
-        const newFormDiv = document.createElement("div");
-        newFormDiv.className =
-          "actor-event-form p-4 bg-base-100 rounded-lg border border-base-200";
-        newFormDiv.innerHTML = newFormHTML;
+        const actor_newFormDiv = document.createElement("div");
+        actor_newFormDiv.className =
+          `actor-event-${formCount}-form p-4 bg-base-100 rounded-lg border border-base-200`;
+        actor_newFormDiv.innerHTML = `<h4 class="text-base font-medium">Akteur ${formCount}</h4> \n` + actor_newFormHTML + '\n' + role_newFormHTML;
 
         // Add the new form to the container
-        container.appendChild(newFormDiv);
+        container.appendChild(actor_newFormDiv);
 
         // Update the total form count
-        managementFormTotal.value = formCount + 1;
+        actors_managementFormTotal.value = formCount + 1;
+        roles_managementFormTotal.value = formCount + 1;
       });
     });
   });
