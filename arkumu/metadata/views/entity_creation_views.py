@@ -298,13 +298,6 @@ def form_init_resources(base_uri, dataset_name, organization):
             "begin_date_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/ereignisbeginn", name="Ereignisbeginn")[0],
             "end_date_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/ereignisende", name="Ereignisende")[0],}
             return (entity, cls, properties)
-        case "AkteurIn_Ereignis_Kreuztabelle":
-            entity, _ =EntityResource.create_by_organization_and_dataset_name(dataset_name=dataset_name, organization=organization)
-            cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle", name=dataset_name)
-            properties, _ = {"actor_event_actor_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")[0],
-            "actor_event_event_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")[0],
-            "actor_event_actor_role_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")[0],}
-            return (entity, cls, properties)
 
 def entity_set_values_from_form(form:BaseEntityForm, dataset_name, organization, entity, **kwargs):
     match dataset_name:
@@ -321,10 +314,6 @@ def entity_set_values_from_form(form:BaseEntityForm, dataset_name, organization,
             from_form_set_property_literal(form, entity, 'ereignisort', kwargs["event_place_prop"])
             from_form_set_property_literal(form, entity, 'ereignisbeginn', kwargs["begin_date_prop"])
             from_form_set_property_literal(form, entity, 'ereignisende', kwargs["end_date_prop"])
-        case "AkteurIn_Ereignis_Kreuztabelle":
-            from_form_set_property_literal(form, entity, 'akteurin_uri', kwargs["actor_event_actor_prop"])
-            from_form_set_property_literal(form, entity, 'ereignisort', kwargs["actor_event_event_prop"])
-            from_form_set_property_literal(form, entity, 'rollen_uri', kwargs["actor_event_actor_role_prop"])
 
 def form_to_entity(form:BaseEntityForm, dataset_name, organization):
     base_uri = f"http://arkumu.org/data/{organization.code}"
@@ -404,7 +393,7 @@ def create_event(request):
                 
                 actor_event_entity, _ =EntityResource.create_by_organization_and_dataset_name(dataset_name="AkteurIn_Ereignis_Kreuztabelle", organization=organization)
                 cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle", name="AkteurIn_Ereignis_Kreuztabelle")
-                properties, _ = {"actor_event_actor_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")[0],
+                properties = {"actor_event_actor_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")[0],
                 "actor_event_event_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")[0],
                 "actor_event_actor_role_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")[0],}
 
