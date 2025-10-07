@@ -389,20 +389,19 @@ def create_event(request):
                 project_entity, _ = EntityResource.get_or_create(uri=project_uri)
                 project_entity.set_property(event_prop, event_entity)
 
-            for actor_form, role_form in zip(actor_formset, role_formset):
-                
-                actor_event_entity, _ =EntityResource.create_by_organization_and_dataset_name(dataset_name="AkteurIn_Ereignis_Kreuztabelle", organization=organization)
-                cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle", name="AkteurIn_Ereignis_Kreuztabelle")
-                properties = {"actor_event_actor_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")[0],
-                "actor_event_event_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")[0],
-                "actor_event_actor_role_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")[0],}
+            for actor_form, role_form in zip(actor_formset, role_formset): 
+                if actor_form.is_valid() and role_form.is_valid():
+                    actor_event_entity, _ =EntityResource.create_by_organization_and_dataset_name(dataset_name="AkteurIn_Ereignis_Kreuztabelle", organization=organization)
+                    cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle", name="AkteurIn_Ereignis_Kreuztabelle")
+                    properties = {"actor_event_actor_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")[0],
+                    "actor_event_event_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")[0],
+                    "actor_event_actor_role_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")[0],}
 
-
-                actor_event_entity.set_type(cls)
-                from_form_set_property_literal(actor_form, actor_event_entity, 'akteurin_uri', properties["actor_event_actor_prop"])
-                from_form_set_property_literal(role_form, actor_event_entity, 'rollen_uri', properties["actor_event_actor_role_prop"])
-                actor_event_event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
-                actor_event_entity.set_property(actor_event_event_prop, event_entity)
+                    actor_event_entity.set_type(cls)
+                    from_form_set_property_literal(actor_form, actor_event_entity, 'akteurin_uri', properties["actor_event_actor_prop"])
+                    from_form_set_property_literal(role_form, actor_event_entity, 'rollen_uri', properties["actor_event_actor_role_prop"])
+                    actor_event_event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
+                    actor_event_entity.set_property(actor_event_event_prop, event_entity)
 
             # The RDF resources are now created and linked automatically
             # Continue with the rest of the event creation workflow
