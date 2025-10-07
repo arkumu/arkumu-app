@@ -408,6 +408,8 @@ def create_event(request):
                 "actor_event_event_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")[0],
                 "actor_event_actor_role_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")[0],}
 
+
+                actor_event_entity.set_type(cls)
                 from_form_set_property_literal(actor_form, actor_event_entity, 'akteurin_uri', properties["actor_event_actor_prop"])
                 from_form_set_property_literal(role_form, actor_event_entity, 'rollen_uri', properties["actor_event_actor_role_prop"])
                 actor_event_event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
