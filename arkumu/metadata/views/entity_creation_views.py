@@ -5,7 +5,7 @@ from __future__ import annotations
 from django import forms
 from django.db import models
 from django.contrib.auth.decorators import login_required
-from django.forms import formset_factory
+from django.forms import formset_factory, inlineformset_factory
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 import logging
@@ -161,6 +161,17 @@ class EventForm(BaseEntityForm):
         ] + options.get("event_description", [])
 
 
+class ActorForm(BaseEntityForm):
+    deutscher_name = forms.CharField(
+        label="Deutscher Name",
+        required=True,
+        help_text="Deutscher Name des Akteurs",
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+
+
 class ActorEventForm(BaseEntityForm):
     akteurin_uri = forms.ChoiceField(
         label="Akteurin",
@@ -172,6 +183,7 @@ class ActorEventForm(BaseEntityForm):
         required=True,
         choices=[],
     )
+    akteurin = ActorForm()
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
@@ -201,16 +213,6 @@ class CatchphraseForm(BaseEntityForm):
         label="Wikidata Label",
         required=True,
         help_text="German Wikidata label for the catchphrase",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-
-class ActorForm(BaseEntityForm):
-    deutscher_name = forms.CharField(
-        label="Deutscher Name",
-        required=True,
-        help_text="Deutscher Name des Akteurs",
     )
 
     def __init__(self, *args, metadata_options=None, **kwargs):

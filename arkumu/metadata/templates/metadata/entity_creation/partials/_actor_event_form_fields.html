@@ -17,12 +17,23 @@
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="form-control">
       <label class="label">
-        <span class="label-text font-medium">Akteurin</span>
+        <span class="label-text font-medium">Akteurin (uri)</span>
         {% if form.akteurin_uri.errors %}
         <span class="label-text-alt text-error">{{ form.akteurin_uri.errors.0 }}</span>
         {% endif %}
       </label>
       {{ form.akteurin_uri }}
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="form-control">
+      <label class="label">
+        <span class="label-text font-medium">Akteurin</span>
+        {% if form.akteurin.errors %}
+        <span class="label-text-alt text-error">{{ form.akteurin.errors.0 }}</span>
+        {% endif %}
+      </label>
+      {{ form.akteurin }}
     </div>
 
     <div class="form-control">
