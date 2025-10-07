@@ -321,7 +321,7 @@ def form_to_entity(form:BaseEntityForm, dataset_name, organization):
         entity, cls, properties = form_init_resources(base_uri, dataset_name, organization)
         entity.set_type(cls)
         entity_set_values_from_form(form, dataset_name, organization, entity, **properties)
-        return (entity, cls, properties)
+        return entity
 
 @login_required
 def create_project(request):
@@ -398,8 +398,8 @@ def create_event(request):
                     "actor_event_actor_role_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")[0],}
 
                     actor_event_entity.set_type(cls)
-                    from_form_set_property_literal(actor_form, actor_event_entity, 'akteurin_uri', properties["actor_event_actor_prop"])
-                    from_form_set_property_literal(role_form, actor_event_entity, 'rollen_uri', properties["actor_event_actor_role_prop"])
+                    from_form_set_property_entity(actor_form, actor_event_entity, 'akteurin_uri', properties["actor_event_actor_prop"])
+                    from_form_set_property_entity(role_form, actor_event_entity, 'rollen_uri', properties["actor_event_actor_role_prop"])
                     actor_event_event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
                     actor_event_entity.set_property(actor_event_event_prop, event_entity)
 
