@@ -7,7 +7,7 @@ declarations, and protocol-specific requirements.
 """
 
 import pytest
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from datetime import datetime
 import re
 

@@ -5,14 +5,10 @@ import binascii
 import logging
 import mimetypes
 import re
-from io import BytesIO
-from pathlib import Path
 from datetime import datetime, timezone as dt_timezone, timedelta
-from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 from urllib.parse import unquote, urlparse
-import urllib.request as urllib_request
-import sys
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -20,7 +16,7 @@ from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 from django.db.models import Q
 
@@ -31,6 +27,14 @@ from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, P
 from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.oaipmh.constants import (
+    DNX_NS,
+    METS_NS as DEFAULT_METS_NS,
+    METS_SCHEMA_URL as DEFAULT_METS_SCHEMA_URL,
+    XLINK_NS,
+    XSI_NS,
+)
+from arkumu.oaipmh.validation import rosetta_mets_validator
 from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
 from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
@@ -43,8 +47,6 @@ from arkumu.oaipmh.oai_project import (
     OAIProjectBuilder,
 )
 import rdflib
-import xmlschema
-from lxml import etree as LET
 
 
 # Minimal repository config (can be moved to settings)
@@ -57,17 +59,15 @@ REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
-METS_NS = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets"
-METS_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/rosettaMets.xsd"
-METS_LEGACY_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/rosettaMets_legacy.xsd"
-METS_SCHEMA_URL = "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd"
-DNX_NS = "http://www.exlibrisgroup.com/dps/dnx"
-XLINK_NS = "http://www.w3.org/1999/xlink"
-XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+METS_NS = DEFAULT_METS_NS
+OAI_NS = "http://www.openarchives.org/OAI/2.0/"
+METS_SCHEMA_URL = DEFAULT_METS_SCHEMA_URL
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
-ROSETTA_METS_PROFILE_VERSION = "2025-09-23"
+METS_PROFILE_VERSION = "LOC-METS"
+METS_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/mets.xsd"
+METS_LEGACY_SCHEMA_FILE = METS_SCHEMA_FILE
 HARVESTABLE_FILE_STATUSES = HARVESTABLE_STORAGE_STATUSES
 
 METS_NSMAP = {
@@ -81,324 +81,18 @@ METS_NSMAP = {
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
-DNX_SCHEMA_PATH = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/dnx_sip.xsd"
-
-_ORIGINAL_URLOPEN = urllib_request.urlopen
-
-
-def _urlopen_with_schema_override(url, *args, **kwargs):
-    """Serve embedded Rosetta schemas when the official URLs are unreachable."""
-
-    target = url
-    if isinstance(url, urllib_request.Request):
-        target = url.full_url
-
-    if isinstance(target, str):
-        if target.startswith('/'):
-            return open(target, "rb")
-
-        if target.startswith('file://'):
-            return open(target[len('file://'):], "rb")
-
-        normalized = target.rstrip('/')
-        if normalized in {
-            "http://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
-            "https://www.exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
-            "https://exlibrisgroup.com/xsd/dps/rosettaMets.xsd",
-        }:
-            if METS_LEGACY_SCHEMA_FILE.exists():
-                return open(METS_LEGACY_SCHEMA_FILE, "rb")
-            if METS_SCHEMA_FILE.exists():
-                return open(METS_SCHEMA_FILE, "rb")
-
-        if normalized in {
-            "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
-            "https://www.openarchives.org/OAI/2.0/oai_dc.xsd",
-        }:
-            local_dc = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/oai_dc.xsd"
-            if local_dc.exists():
-                return open(local_dc, "rb")
-
-        if normalized.endswith('dnx_sip.xsd') and DNX_SCHEMA_PATH.exists():
-            return open(DNX_SCHEMA_PATH, "rb")
-
-    return _ORIGINAL_URLOPEN(url, *args, **kwargs)
-
-
-urllib_request.urlopen = _urlopen_with_schema_override
-
-try:
-    TEST_MODULE = sys.modules['arkumu.oaipmh.tests.integration.test_oai_endpoint']
-    TEST_MODULE.urlopen = urllib_request.urlopen
-except KeyError:
-    pass
-
-
-@lru_cache(maxsize=1)
-def _get_dnx_schema() -> Optional[LET.XMLSchema]:
-    """Load the Rosetta DNX schema once for reuse."""
-
-    if not DNX_SCHEMA_PATH.exists():
-        logger.error("DNX schema not found at %s", DNX_SCHEMA_PATH)
-        return None
-
-    try:
-        return xmlschema.XMLSchema11(str(DNX_SCHEMA_PATH))
-    except (OSError, xmlschema.XMLSchemaException):
-        logger.exception("Unable to load DNX schema at %s", DNX_SCHEMA_PATH)
-        return None
-
-
-@lru_cache(maxsize=1)
-def _get_rosetta_mets_schema() -> Optional[xmlschema.XMLSchema]:
-    """Load the Rosetta METS schema once for reuse (supports XSD 1.1)."""
-
-    schema_file = METS_SCHEMA_FILE if METS_SCHEMA_FILE.exists() else METS_LEGACY_SCHEMA_FILE
-
-    if not schema_file.exists():
-        logger.error("Rosetta METS schema not found at %s or %s", METS_SCHEMA_FILE, METS_LEGACY_SCHEMA_FILE)
-        return None
-
-    try:
-        # Use allow='local' to only allow local files
-        # xmlschema has built-in xlink.xsd that will be used automatically
-        return xmlschema.XMLSchema11(
-            str(schema_file),
-            allow='local',  # Only local files - xmlschema will use its built-in xlink
-        )
-    except (OSError, xmlschema.XMLSchemaException) as exc:
-        logger.exception("Unable to load Rosetta METS schema at %s: %s", schema_file, exc)
-        return None
-
-
-def _validate_mets_against_dnx_schema(
-    mets_root: Union[ET.Element, LET.Element],
-    *,
-    resource_uri: Optional[str] = None,
-) -> bool:
-    """Validate all DNX sections inside a METS record against the Rosetta schema."""
-
-    schema = _get_dnx_schema()
-    if schema is None:
-        # Without a schema we refuse to emit unvalidated content.
-        return False
-
-    try:
-        # Handle both ET and LET elements
-        if isinstance(mets_root, LET._Element):
-            let_root = mets_root
-        else:
-            mets_bytes = ET.tostring(mets_root, encoding="utf-8")
-            let_root = LET.fromstring(mets_bytes)
-    except (TypeError, LET.XMLSyntaxError):
-        logger.exception(
-            "Failed to parse METS XML for validation for %s",
-            resource_uri or "unknown resource",
-        )
-        return False
-
-    dnx_nodes = let_root.findall(".//{http://www.exlibrisgroup.com/dps/dnx}dnx")
-    if not dnx_nodes:
-        logger.warning(
-            "No DNX sections found while validating METS for %s",
-            resource_uri or "unknown resource",
-        )
-        return False
-
-    for dnx_node in dnx_nodes:
-        try:
-            dnx_bytes = LET.tostring(dnx_node, encoding="utf-8")
-            error_iter = schema.iter_errors(BytesIO(dnx_bytes))
-            first_error = next(error_iter, None)
-            if first_error is not None:
-                error_detail = first_error.reason or first_error.message
-                if hasattr(first_error, 'path') and first_error.path:
-                    error_detail = f"{error_detail} (path: {first_error.path})"
-                logger.warning(
-                    "DNX validation failed for %s: %s",
-                    resource_uri or "unknown resource",
-                    error_detail,
-                )
-                return False
-        except xmlschema.XMLSchemaException as exc:
-            logger.warning(
-                "DNX validation failed for %s: %s",
-                resource_uri or "unknown resource",
-                exc,
-            )
-            return False
-
-    return True
-
-
-def _validate_mets_against_rosetta_schema(
-    mets_root: Union[ET.Element, LET.Element],
-    *,
-    resource_uri: Optional[str] = None,
-) -> bool:
-    """Validate the entire METS document against the Rosetta METS XSD."""
-
-    schema = _get_rosetta_mets_schema()
-    if schema is None:
-        # Without a schema we refuse to emit unvalidated content.
-        return False
-
-    try:
-        # Handle both ET and LET elements
-        if isinstance(mets_root, LET._Element):
-            mets_bytes = LET.tostring(mets_root, encoding="utf-8")
-        else:
-            mets_bytes = ET.tostring(mets_root, encoding="utf-8")
-        # Use xmlschema to validate (supports XSD 1.1)
-        error_iter = schema.iter_errors(BytesIO(mets_bytes))
-        first_error = next(error_iter, None)
-        if first_error is not None:
-            error_detail = first_error.reason or first_error.message
-            if hasattr(first_error, 'path') and first_error.path:
-                error_detail = f"{error_detail} (path: {first_error.path})"
-            logger.warning(
-                "Rosetta METS validation failed for %s: %s",
-                resource_uri or "unknown resource",
-                error_detail,
-            )
-            return False
-    except (TypeError, xmlschema.XMLSchemaException) as exc:
-        logger.warning(
-            "Rosetta METS validation failed for %s: %s",
-            resource_uri or "unknown resource",
-            exc,
-        )
-        return False
-
-    return True
-
-
-def _extract_mets_root(metadata_elem: ET.Element) -> Optional[ET.Element]:
-    """Return the first METS element contained in an OAI metadata wrapper."""
-
-    for child in list(metadata_elem):
-        tag = getattr(child, "tag", "")
-        tag_str = str(tag)
-        if tag_str == f"{{{METS_NS}}}mets" or tag_str.endswith("}mets") or tag_str == "mets":
-            return child
-    return None
-
-
-def _validate_rosetta_semantic_rules(
-    mets_root: ET.Element,
-    *,
-    resource_uri: Optional[str] = None,
-) -> bool:
-    """Validate Rosetta-specific semantic requirements not covered by XSD."""
-
-    try:
-        mets_bytes = ET.tostring(mets_root, encoding="utf-8")
-        let_root = LET.fromstring(mets_bytes)
-    except (TypeError, LET.XMLSyntaxError):
-        logger.exception(
-            "Failed to parse METS XML for semantic validation for %s",
-            resource_uri or "unknown resource",
-        )
-        return False
-
-    # Validate xlink:href patterns in FLocat elements
-    flocat_elements = let_root.findall(f'.//{{{METS_NS}}}FLocat')
-    for flocat in flocat_elements:
-        href = flocat.get(f'{{{XLINK_NS}}}href')
-        if not href:
-            logger.warning(
-                "FLocat missing xlink:href for %s",
-                resource_uri or "unknown resource",
-            )
-            return False
-
-        # Check that href is a valid URL or path (not empty, not just whitespace)
-        if not href.strip():
-            logger.warning(
-                "FLocat has empty xlink:href for %s",
-                resource_uri or "unknown resource",
-            )
-            return False
-
-        # For Rosetta, href should typically be a file path or URL
-        # Basic validation: must contain some path-like structure
-        if not ('/' in href or '\\' in href or href.startswith('http')):
-            logger.warning(
-                "FLocat xlink:href does not appear to be a valid path or URL: %s for %s",
-                href,
-                resource_uri or "unknown resource",
-            )
-            return False
-
-    # Validate critical DNX field values
-    dnx_nodes = let_root.findall(".//{http://www.exlibrisgroup.com/dps/dnx}dnx")
-    for dnx_node in dnx_nodes:
-        # Check usageType in generalRepCharacteristics
-        usage_types = dnx_node.findall(
-            ".//{http://www.exlibrisgroup.com/dps/dnx}section[@id='generalRepCharacteristics']"
-            "//{http://www.exlibrisgroup.com/dps/dnx}key[@id='usageType']"
-        )
-        for usage_type in usage_types:
-            if usage_type.text:
-                # Rosetta expects specific usage types: VIEW, EDIT, etc.
-                # We'll just check it's not empty if present
-                if not usage_type.text.strip():
-                    logger.warning(
-                        "Empty usageType in generalRepCharacteristics for %s",
-                        resource_uri or "unknown resource",
-                    )
-                    return False
-
-        # Check policyId in accessRightsPolicy
-        policy_ids = dnx_node.findall(
-            ".//{http://www.exlibrisgroup.com/dps/dnx}section[@id='accessRightsPolicy']"
-            "//{http://www.exlibrisgroup.com/dps/dnx}key[@id='policyId']"
-        )
-        for policy_id in policy_ids:
-            if policy_id.text:
-                # Policy ID should not be empty if present
-                if not policy_id.text.strip():
-                    logger.warning(
-                        "Empty policyId in accessRightsPolicy for %s",
-                        resource_uri or "unknown resource",
-                    )
-                    return False
-
-    return True
-
-
 def _metadata_element_is_valid(
-    metadata_elem: ET.Element,
+    metadata_elem: ET._Element,
     *,
     resource_uri: Optional[str] = None,
 ) -> bool:
     """Check that a metadata wrapper contains a schema-valid METS payload."""
 
-    mets_root = _extract_mets_root(metadata_elem)
-    if mets_root is None:
-        logger.debug("Validation failed (no METS root) for %s", resource_uri)
-        return False
-
-    if mets_root.find(f'.//{{{METS_NS}}}FLocat') is None:
-        logger.debug("Validation failed (no FLocat) for %s", resource_uri)
-        return False
-
-    # Validate against full Rosetta METS XSD
-    if not _validate_mets_against_rosetta_schema(mets_root, resource_uri=resource_uri):
-        logger.debug("Validation failed (Rosetta METS schema) for %s", resource_uri)
-        return False
-
-    # Validate DNX sections
-    if not _validate_mets_against_dnx_schema(mets_root, resource_uri=resource_uri):
-        logger.debug("Validation failed (DNX schema) for %s", resource_uri)
-        return False
-
-    # Validate Rosetta-specific semantic rules
-    if not _validate_rosetta_semantic_rules(mets_root, resource_uri=resource_uri):
-        logger.debug("Validation failed (Rosetta semantic rules) for %s", resource_uri)
-        return False
-
-    return True
+    result = rosetta_mets_validator.validate_metadata_element(
+        metadata_elem,
+        resource_uri=resource_uri,
+    )
+    return result.is_valid
 
 
 def _metadata_xml_is_valid(
@@ -408,12 +102,11 @@ def _metadata_xml_is_valid(
 ) -> bool:
     """Parse and validate cached METS metadata stored as XML text."""
 
-    try:
-        metadata_elem = ET.fromstring(metadata_xml)
-    except ET.ParseError:
-        return False
-
-    return _metadata_element_is_valid(metadata_elem, resource_uri=resource_uri)
+    result = rosetta_mets_validator.validate_metadata_xml(
+        metadata_xml,
+        resource_uri=resource_uri,
+    )
+    return result.is_valid
 
 # Namespace helpers for Rosetta METS output
 
@@ -428,19 +121,16 @@ def _register_rosetta_namespaces() -> None:
 
 
 def _create_dnx_element(
-    parent: Union[ET.Element, LET.Element],
+    parent: ET._Element,
     tag: str,
     attrib: Optional[Dict[str, str]] = None,
     text: Optional[str] = None,
-) -> Union[ET.Element, LET.Element]:
+) -> ET._Element:
     """Create a DNX element that renders without an explicit namespace prefix."""
 
     # Use the same library as the parent element
     # Check if parent has the lxml-specific nsmap attribute
-    if hasattr(parent, 'nsmap'):
-        elem = LET.SubElement(parent, LET.QName(DNX_NS, tag), attrib or {})
-    else:
-        elem = ET.SubElement(parent, ET.QName(DNX_NS, tag), attrib or {})
+    elem = ET.SubElement(parent, ET.QName(DNX_NS, tag), attrib or {})
 
     if text is not None:
         elem.text = str(text)
@@ -544,7 +234,7 @@ def _get_cached_record(
     snapshot_marker: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Get cached OAI-PMH record if available."""
-    profile_version = ROSETTA_METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
+    profile_version = METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
     return oai_cache.get_cached_record(
         resource,
         metadata_prefix,
@@ -562,7 +252,7 @@ def _cache_record(
     snapshot_marker: str = "",
 ):
     """Cache OAI-PMH record data."""
-    profile_version = ROSETTA_METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
+    profile_version = METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
     oai_cache.cache_record(
         resource,
         metadata_prefix,
@@ -673,128 +363,40 @@ def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]
     )
 
 
-def _oai_envelope(request: HttpRequest) -> ET.Element:
-    # Register namespaces to control prefixes consistently
-    ET.register_namespace("", "http://www.openarchives.org/OAI/2.0/")
-    ET.register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
-    ET.register_namespace("oai-identifier", "http://www.openarchives.org/OAI/2.0/oai-identifier")
+def _oai_envelope(request: HttpRequest) -> ET._Element:
+    nsmap = {
+        None: OAI_NS,
+        "xsi": XSI_NS,
+    }
 
-    oai = ET.Element(
-        "OAI-PMH",
-            {
-                "xmlns": "http://www.openarchives.org/OAI/2.0/",
-                "xmlns:oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
-                "xmlns:dc": "http://purl.org/dc/elements/1.1/",
-                "xmlns:dcterms": DCTERMS_NS,
-                "xmlns:mets": METS_NS,
-                "xmlns:xlink": XLINK_NS,
-                "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
-            "xsi:schemaLocation": " ".join(
-                [
-                    "http://www.openarchives.org/OAI/2.0/",
-                    "http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd",
-                ]
-            ),
-        },
+    oai = ET.Element(ET.QName(nsmap[None], "OAI-PMH"), nsmap=nsmap)
+    oai.set(f"{{{XSI_NS}}}schemaLocation", " ".join(
+            [
+                "http://www.openarchives.org/OAI/2.0/",
+                "http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd",
+            ]
+        ),
     )
-    responseDate = ET.SubElement(oai, "responseDate")
-    responseDate.text = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    req = ET.SubElement(oai, "request")
+    response_date = ET.SubElement(oai, ET.QName(OAI_NS, "responseDate"))
+    response_date.text = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    req = ET.SubElement(oai, ET.QName(OAI_NS, "request"))
     req.text = request.build_absolute_uri(REPO_BASEURL)
     return oai
 
 
-def _error(oai: ET.Element, code: str, message: str) -> ET.Element:
+def _error(oai: ET._Element, code: str, message: str) -> ET._Element:
     e = ET.SubElement(oai, "error", {"code": code})
     e.text = message
     return oai
 
 
-def _xml_response(elem: ET.Element) -> HttpResponse:
+def _xml_response(elem: ET._Element) -> HttpResponse:
     data = ET.tostring(elem, encoding="utf-8", xml_declaration=True)
+    return HttpResponse(data, content_type="text/xml")
 
-    # Clean up duplicate namespace declarations in XML string
-    # This is needed because ElementTree can create duplicates when embedding
-    # elements with conflicting namespace declarations
-    xml_str = data.decode("utf-8")
-
-    # Remove duplicate xmlns:xsi declarations
-    # Find all xmlns:xsi declarations and keep only the first one
-    xsi_pattern = r'xmlns:xsi="[^"]*"'
-    matches = list(re.finditer(xsi_pattern, xml_str))
-    if len(matches) > 1:
-        # Remove all but the first occurrence
-        for match in reversed(matches[1:]):  # Reverse to avoid index issues
-            xml_str = xml_str[:match.start()] + xml_str[match.end():]
-
-    # Do the same for other commonly duplicated namespaces
-    for ns_prefix in ['xmlns:oai_dc', 'xmlns:dc', 'xmlns:dcterms', 'xmlns:mets', 'xmlns:xlink']:
-        pattern = rf'{re.escape(ns_prefix)}="[^"]*"'
-        matches = list(re.finditer(pattern, xml_str))
-        if len(matches) > 1:
-            for match in reversed(matches[1:]):
-                xml_str = xml_str[:match.start()] + xml_str[match.end():]
-
-    canonical_ns_map = {
-        METS_NS: 'mets',
-        DC_NS: 'dc',
-        DCTERMS_NS: 'dcterms',
-        XLINK_NS: 'xlink',
-        DNX_NS: '',
-    }
-
-    alias_pattern = re.compile(r'\s+xmlns:(ns\d+)="([^"]+)"')
-    alias_matches = list(alias_pattern.finditer(xml_str))
-    for match in reversed(alias_matches):
-        alias, uri = match.groups()
-        if uri not in canonical_ns_map:
-            continue
-
-        xml_str = xml_str[:match.start()] + xml_str[match.end():]
-        replacement_prefix = canonical_ns_map[uri]
-        if replacement_prefix:
-            xml_str = re.sub(rf'\b{alias}:', f'{replacement_prefix}:', xml_str)
-        else:
-            xml_str = re.sub(rf'\b{alias}:', '', xml_str)
-            default_declaration = f'xmlns="{uri}"'
-            if default_declaration not in xml_str:
-                xml_str = xml_str.replace('<mets:mets', f'<mets:mets {default_declaration}', 1)
-
-    default_declaration = f'xmlns="{DNX_NS}"'
-    if '<mets:mets' in xml_str and default_declaration not in xml_str:
-        xml_str = xml_str.replace('<mets:mets', f'<mets:mets {default_declaration}', 1)
-
-    # Add explicit namespace declarations to mets:mets element
-    # These are required for the METS document to be valid standalone
-    mets_ns_declarations = [
-        f'xmlns:mets="{METS_NS}"',
-        f'xmlns:dc="{DC_NS}"',
-        f'xmlns:dcterms="{DCTERMS_NS}"',
-        f'xmlns:xlink="{XLINK_NS}"',
-        f'xmlns:xsi="{XSI_NS}"',
-    ]
-
-    if '<mets:mets' in xml_str:
-        # Find all mets:mets opening tags
-        mets_pattern = r'<mets:mets\s+'
-
-        def add_mets_namespaces(match):
-            opening = match.group(0)
-            # Add declarations that aren't already present in this specific tag
-            for ns_decl in mets_ns_declarations:
-                if ns_decl not in opening:
-                    opening = opening.rstrip() + ' ' + ns_decl + ' '
-            return opening
-
-        xml_str = re.sub(mets_pattern, add_mets_namespaces, xml_str)
-
-# ElementTree naturally uses single quotes, keep them
-
-    return HttpResponse(xml_str.encode("utf-8"), content_type="text/xml")
-
-
-def _identify(oai: ET.Element, request: HttpRequest) -> ET.Element:
+def _identify(oai: ET._Element, request: HttpRequest) -> ET._Element:
     identify = ET.SubElement(oai, "Identify")
     ET.SubElement(identify, "repositoryName").text = REPO_NAME
     # Absolute baseURL per spec
@@ -827,7 +429,7 @@ def _identify(oai: ET.Element, request: HttpRequest) -> ET.Element:
     return oai
 
 
-def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) -> ET.Element:
+def _list_metadata_formats(oai: ET._Element, identifier: Optional[str] = None) -> ET._Element:
     # If identifier is provided, validate it exists
     if identifier:
         resource_uri = _parse_identifier(identifier)
@@ -855,7 +457,7 @@ def _list_metadata_formats(oai: ET.Element, identifier: Optional[str] = None) ->
     return oai
 
 
-def _list_sets(oai: ET.Element) -> ET.Element:
+def _list_sets(oai: ET._Element) -> ET._Element:
     list_sets = ET.SubElement(oai, "ListSets")
 
     # Use organizations as sets - show all organizations
@@ -869,19 +471,25 @@ def _list_sets(oai: ET.Element) -> ET.Element:
             set_description = ET.SubElement(set_elem, "setDescription")
             oai_dc = ET.SubElement(
                 set_description,
-                "{http://www.openarchives.org/OAI/2.0/oai_dc/}dc",
-                {
-                    "xmlns:oai_dc": OAI_DC_NS,
-                    "xmlns:dc": DC_NS,
-                    "xsi:schemaLocation": f"{OAI_DC_NS} http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+                ET.QName(OAI_DC_NS, "dc"),
+                nsmap={
+                    "oai_dc": OAI_DC_NS,
+                    "dc": DC_NS,
+                    "xsi": XSI_NS,
                 },
             )
-            ET.SubElement(oai_dc, f"{{{DC_NS}}}description").text = f"Resources from {org.name} (domain: {org.domain})"
+            oai_dc.set(
+                ET.QName(XSI_NS, "schemaLocation"),
+                f"{OAI_DC_NS} http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+            )
+            ET.SubElement(oai_dc, ET.QName(DC_NS, "description")).text = (
+                f"Resources from {org.name} (domain: {org.domain})"
+            )
 
     return oai
 
 
-def _list_identifiers(oai: ET.Element, params) -> ET.Element:
+def _list_identifiers(oai: ET._Element, params) -> ET._Element:
     """Implement ListIdentifiers verb with pagination."""
     metadata_prefix = params.get("metadataPrefix")
     set_spec = params.get("set")
@@ -1179,7 +787,7 @@ def _build_identifier(resource_uri: str) -> str:
     return f"oai:arkumu:resource:{quote(resource_uri)}"
 
 
-def _build_record_header(resource: Resource) -> ET.Element:
+def _build_record_header(resource: Resource) -> ET._Element:
     """Build OAI record header."""
     header = ET.Element("header")
     ET.SubElement(header, "identifier").text = _build_identifier(resource.uri)
@@ -1468,69 +1076,72 @@ def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> 
     return _build_dc_payload_from_project(project, resource)
 
 
-def _append_dc_metadata(metadata: ET.Element, dc_payload: Dict[str, List[str]]) -> None:
+def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]]) -> None:
     dc_root = ET.SubElement(
         metadata,
-        "{http://www.openarchives.org/OAI/2.0/oai_dc/}dc",
-        {
-            "xmlns:oai_dc": OAI_DC_NS,
-            "xmlns:dc": DC_NS,
-            "xmlns:dcterms": DCTERMS_NS,
-            "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
-            "xsi:schemaLocation": " ".join([
-                OAI_DC_NS,
-                "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
-            ]),
+        ET.QName(OAI_DC_NS, "dc"),
+        nsmap={
+            "oai_dc": OAI_DC_NS,
+            "dc": DC_NS,
+            "dcterms": DCTERMS_NS,
+            "xsi": XSI_NS,
         },
+    )
+    dc_root.set(
+        ET.QName(XSI_NS, "schemaLocation"),
+        " ".join([
+            OAI_DC_NS,
+            "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
+        ]),
     )
 
     for key, values in dc_payload.items():
         namespace, term = key.split(":", 1)
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
         for value in values:
-            ET.SubElement(dc_root, f"{{{ns_uri}}}{term}").text = value
+            ET.SubElement(dc_root, ET.QName(ns_uri, term)).text = value
 
 
 def _build_mets_from_project(
     project: OAIProject,
     resource: Resource,
     dc_payload: Dict[str, List[str]],
-) -> LET.Element:
+) -> ET._Element:
     _register_rosetta_namespaces()
 
     record = project.record
 
-    mets_root = LET.Element(LET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
+    mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
 
-    dmd_sec = LET.SubElement(mets_root, LET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
-    md_wrap = LET.SubElement(dmd_sec, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
-    xml_data = LET.SubElement(md_wrap, LET.QName(METS_NS, "xmlData"))
-    dc_record = LET.SubElement(xml_data, LET.QName(DC_NS, "record"))
+    dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
+    md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+    xml_data = ET.SubElement(md_wrap, ET.QName(METS_NS, "xmlData"))
+    dc_record = ET.SubElement(xml_data, ET.QName(DC_NS, "record"))
     for key, values in dc_payload.items():
         namespace, term = key.split(":", 1)
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
         for value in values:
-            LET.SubElement(dc_record, LET.QName(ns_uri, term)).text = value
+            ET.SubElement(dc_record, ET.QName(ns_uri, term)).text = value
 
-    ie_amd = LET.SubElement(mets_root, LET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
-    tech_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
-    tech_wrap = LET.SubElement(tech_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-    tech_xml = LET.SubElement(tech_wrap, LET.QName(METS_NS, "xmlData"))
+    ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
+    tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
+    tech_wrap = ET.SubElement(tech_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    tech_xml = ET.SubElement(tech_wrap, ET.QName(METS_NS, "xmlData"))
     tech_dnx = _create_dnx_element(tech_xml, "dnx")
     # Add objectIdentifier section (required by Rosetta)
     # Rosetta does not expect placeholder keys when no identifier is available.
     _create_dnx_element(tech_dnx, "section", {"id": "objectIdentifier"})
 
-    rights_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
-    rights_wrap = LET.SubElement(rights_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-    rights_xml = LET.SubElement(rights_wrap, LET.QName(METS_NS, "xmlData"))
+    rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
+    rights_wrap = ET.SubElement(rights_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    rights_xml = ET.SubElement(rights_wrap, ET.QName(METS_NS, "xmlData"))
     rights_dnx = _create_dnx_element(rights_xml, "dnx")
     _create_dnx_element(rights_dnx, "section", {"id": "accessRightsPolicy"})
 
-    source_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
-    source_wrap = LET.SubElement(source_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"})
-    source_xml = LET.SubElement(source_wrap, LET.QName(METS_NS, "xmlData"))
+    source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
+    source_wrap = ET.SubElement(source_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"})
+    source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
     epicur = _create_dnx_element(
         source_xml,
         "epicur",
@@ -1541,9 +1152,9 @@ def _build_mets_from_project(
     _create_dnx_element(delivery, "update_status", {"type": "urn_new"})
     epicur_record = _create_dnx_element(epicur, "record")
 
-    digiprov_md = LET.SubElement(ie_amd, LET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
-    digiprov_wrap = LET.SubElement(digiprov_md, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-    digiprov_xml = LET.SubElement(digiprov_wrap, LET.QName(METS_NS, "xmlData"))
+    digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
+    digiprov_wrap = ET.SubElement(digiprov_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    digiprov_xml = ET.SubElement(digiprov_wrap, ET.QName(METS_NS, "xmlData"))
     _create_dnx_element(digiprov_xml, "dnx")
 
     harvestable_objects = [
@@ -1648,10 +1259,10 @@ def _build_mets_from_project(
     for rep_index, (rep_type, objects) in enumerate(rep_groups, start=1):
         rep_id = f"rep{rep_index}"
 
-        rep_amd = LET.SubElement(mets_root, LET.QName(METS_NS, "amdSec"), {"ID": f"{rep_id}-amd"})
-        rep_tech = LET.SubElement(rep_amd, LET.QName(METS_NS, "techMD"), {"ID": f"{rep_id}-amd-tech"})
-        rep_wrap = LET.SubElement(rep_tech, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-        rep_xml = LET.SubElement(rep_wrap, LET.QName(METS_NS, "xmlData"))
+        rep_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{rep_id}-amd"})
+        rep_tech = ET.SubElement(rep_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{rep_id}-amd-tech"})
+        rep_wrap = ET.SubElement(rep_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+        rep_xml = ET.SubElement(rep_wrap, ET.QName(METS_NS, "xmlData"))
         rep_dnx = _create_dnx_element(rep_xml, "dnx")
         section = _create_dnx_element(rep_dnx, "section", {"id": "generalRepCharacteristics"})
         rec = _create_dnx_element(section, "record")
@@ -1670,10 +1281,10 @@ def _build_mets_from_project(
             if obj.file_name:
                 file_label = obj.file_name
 
-            file_amd = LET.SubElement(mets_root, LET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
-            file_tech = LET.SubElement(file_amd, LET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
-            file_wrap = LET.SubElement(file_tech, LET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-            file_xml = LET.SubElement(file_wrap, LET.QName(METS_NS, "xmlData"))
+            file_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
+            file_tech = ET.SubElement(file_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
+            file_wrap = ET.SubElement(file_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+            file_xml = ET.SubElement(file_wrap, ET.QName(METS_NS, "xmlData"))
             file_dnx = _create_dnx_element(file_xml, "dnx")
 
             general_keys: List[tuple[str, str]] = []
@@ -1754,16 +1365,16 @@ def _build_mets_from_project(
             "files": rep_files,
         })
 
-    file_sec = LET.SubElement(mets_root, LET.QName(METS_NS, "fileSec"))
+    file_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "fileSec"))
 
     project_title = record.title or record.subtitle or record.uri or "Project"
 
     for entry in file_sec_entries:
         rep_id = entry["rep_id"]
         rep_type = entry["rep_type"]
-        file_grp = LET.SubElement(
+        file_grp = ET.SubElement(
             file_sec,
-            LET.QName(METS_NS, "fileGrp"),
+            ET.QName(METS_NS, "fileGrp"),
             {
                 "USE": "VIEW",
                 "ID": rep_id,
@@ -1782,7 +1393,7 @@ def _build_mets_from_project(
                 attrs["MIMETYPE"] = obj.content_type
             # Rosetta profile forbids CHECKSUM attributes on mets:file; fixity lives in DNX
 
-            file_elem = LET.SubElement(file_grp, LET.QName(METS_NS, "file"), attrs)
+            file_elem = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), attrs)
             href = obj.preferred_location or obj.access_url or ""
             normalized_href = _normalize_reference(href)
             if normalized_href:
@@ -1793,18 +1404,18 @@ def _build_mets_from_project(
                     f"{{{XLINK_NS}}}href": href,
                     f"{{{XLINK_NS}}}type": "simple",
                 }
-                LET.SubElement(file_elem, LET.QName(METS_NS, "FLocat"), flocat_attrs)
+                ET.SubElement(file_elem, ET.QName(METS_NS, "FLocat"), flocat_attrs)
 
-        struct_map = LET.SubElement(
+        struct_map = ET.SubElement(
             mets_root,
-            LET.QName(METS_NS, "structMap"),
+            ET.QName(METS_NS, "structMap"),
             {"ID": f"{rep_id}-1", "TYPE": "LOGICAL"},
         )
 
         # Root div has no attributes per Rosetta example
-        project_div = LET.SubElement(
+        project_div = ET.SubElement(
             struct_map,
-            LET.QName(METS_NS, "div"),
+            ET.QName(METS_NS, "div"),
         )
 
         # Representation div also simplified per Rosetta example
@@ -1839,7 +1450,7 @@ def _build_mets_from_project(
             files_by_event.setdefault(key, []).append(file_info)
             event_meta.setdefault(key, event_obj)
 
-        folder_nodes: Dict[str, Dict[tuple[str, ...], ET.Element]] = {}
+        folder_nodes: Dict[str, Dict[tuple[str, ...], ET._Element]] = {}
 
         def _event_label(event_obj: Optional[ProjectEvent]) -> str:
             if event_obj is None:
@@ -1854,9 +1465,9 @@ def _build_mets_from_project(
             event_obj = event_meta.get(key)
             event_label = _event_label(event_obj)
             # Event div - simplified per Rosetta example (no ORDER on intermediate divs)
-            event_div = LET.SubElement(
+            event_div = ET.SubElement(
                 rep_div,
-                LET.QName(METS_NS, "div"),
+                ET.QName(METS_NS, "div"),
                 {
                     "LABEL": event_label,
                     "ORDERLABEL": event_label,
@@ -1873,9 +1484,9 @@ def _build_mets_from_project(
                     folder_key = tuple(folder_key_prefix)
                     existing = folder_nodes[key].get(folder_key)
                     if not existing:
-                        existing = LET.SubElement(
+                        existing = ET.SubElement(
                             parent,
-                            LET.QName(METS_NS, "div"),
+                            ET.QName(METS_NS, "div"),
                             {
                                 "LABEL": segment,
                                 "ORDERLABEL": segment,
@@ -1885,20 +1496,20 @@ def _build_mets_from_project(
                     parent = existing
 
                 # File div per Rosetta example - TYPE="FILE", LABEL, ORDERLABEL (no ORDER)
-                file_div = LET.SubElement(
+                file_div = ET.SubElement(
                     parent,
-                    LET.QName(METS_NS, "div"),
+                    ET.QName(METS_NS, "div"),
                     {
                         "TYPE": "FILE",
                         "LABEL": file_info["label"],
                         "ORDERLABEL": file_info["label"],
                     },
                 )
-                LET.SubElement(file_div, LET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
+                ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
     return mets_root
 
 
-def _build_rdf_from_resource(resource: Resource) -> ET.Element:
+def _build_rdf_from_resource(resource: Resource) -> ET._Element:
     """Generate RDF/XML metadata element for a resource graph."""
 
     org_code = resource.organization.code if resource.organization else None
@@ -2068,7 +1679,7 @@ def _build_metadata_element(
     resource: Resource,
     metadata_prefix: str,
     project_hint: Optional[OAIProject] = None,
-) -> ET.Element:
+) -> ET._Element:
     """Build metadata element for different formats."""
     metadata = ET.Element("metadata")
 
@@ -2090,28 +1701,25 @@ def _build_metadata_element(
             dc_payload = _build_dc_payload_from_project(project, resource)
             mets_root = _build_mets_from_project(project, resource, dc_payload)
 
-            if mets_root.find(f'.//{{{METS_NS}}}FLocat') is None:
-                logger.info(
-                    "Generated METS payload for %s lacks FLocat; trying next candidate",
-                    getattr(resource, 'uri', 'unknown'),
-                )
-                continue
+            candidate_wrapper = ET.Element("metadata")
+            candidate_wrapper.append(ET.fromstring(ET.tostring(mets_root)))
 
-            if not _validate_mets_against_dnx_schema(
-                mets_root,
-                resource_uri=getattr(resource, 'uri', None),
-            ):
+            validation = rosetta_mets_validator.validate_metadata_element(
+                candidate_wrapper,
+                resource_uri=getattr(resource, "uri", None),
+            )
+
+            if not validation.is_valid:
+                issue_summary = "; ".join(issue.message for issue in validation.issues) or "unknown reason"
                 logger.warning(
-                    "DNX validation failed for %s; trying next candidate",
-                    getattr(resource, 'uri', 'unknown'),
+                    "Generated METS payload failed validation for %s: %s; trying next candidate",
+                    getattr(resource, "uri", "unknown"),
+                    issue_summary,
                 )
                 continue
 
-            # Convert LET.Element to ET.Element for compatibility
-            # Namespace declarations will be added in _xml_response via regex
-            mets_bytes = LET.tostring(mets_root, encoding="utf-8")
-            mets_et = ET.fromstring(mets_bytes)
-            metadata.append(mets_et)
+            mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+            metadata.append(ET.fromstring(mets_bytes))
             break
     elif metadata_prefix == "rdf":
         rdf_element = _build_rdf_from_resource(resource)
@@ -2175,7 +1783,7 @@ def _mint_arkumu_pid(resource: Resource) -> Optional[str]:
         return None
 
 
-def _list_records(oai: ET.Element, params) -> ET.Element:
+def _list_records(oai: ET._Element, params) -> ET._Element:
     """Implement ListRecords verb with complete metadata and pagination."""
     metadata_prefix = params.get("metadataPrefix")
     set_spec = params.get("set")

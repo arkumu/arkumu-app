@@ -7,7 +7,7 @@ Provides common test data, mock services, and utility functions.
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Dict, Any, List
 
 from django.test import Client, TransactionTestCase

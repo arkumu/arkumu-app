@@ -7,10 +7,11 @@ into METS format, embedding the full graph as RDF/XML for semantic completeness.
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+import json
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
-import json
+
+from lxml import etree as ET
 
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 

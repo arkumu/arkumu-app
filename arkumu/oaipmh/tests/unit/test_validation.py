@@ -363,7 +363,7 @@ class TestXMLUtilities:
 
     def test_xml_response_creation(self):
         """Test _xml_response creates proper HttpResponse."""
-        import xml.etree.ElementTree as ET
+        from lxml import etree as ET
 
         # Create a simple XML element
         root = ET.Element("test")
@@ -383,7 +383,7 @@ class TestXMLUtilities:
 
     def test_xml_response_encoding(self):
         """Test XML response handles Unicode content correctly."""
-        import xml.etree.ElementTree as ET
+        from lxml import etree as ET
 
         root = ET.Element("test")
         child = ET.SubElement(root, "content")
@@ -406,7 +406,7 @@ class TestXMLUtilities:
         error_oai = views._error(oai, "badArgument", "Test error message")
 
         # Convert to string to check content
-        import xml.etree.ElementTree as ET
+        from lxml import etree as ET
         xml_str = ET.tostring(error_oai, encoding="unicode")
 
         assert 'code="badArgument"' in xml_str

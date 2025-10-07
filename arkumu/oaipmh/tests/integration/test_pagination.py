@@ -365,7 +365,7 @@ class TestOAIPagination:
 
         # Extract identifiers from first page
         content = response.content.decode()
-        import xml.etree.ElementTree as ET
+        from lxml import etree as ET
         root = ET.fromstring(content)
 
         # Find all identifier elements
@@ -435,7 +435,7 @@ class TestOAIPagination:
         content2 = response2.content.decode()
 
         # Extract first few identifiers from each response
-        import xml.etree.ElementTree as ET
+        from lxml import etree as ET
 
         root1 = ET.fromstring(content1)
         root2 = ET.fromstring(content2)

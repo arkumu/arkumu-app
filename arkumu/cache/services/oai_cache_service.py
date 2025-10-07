@@ -6,7 +6,8 @@ Specialized caching service for OAI-PMH responses, building on the centralized c
 
 import logging
 from typing import Dict, Optional, Any
-import xml.etree.ElementTree as ET
+
+from lxml import etree as ET
 from django.utils import timezone
 from .base_cache_service import BaseCacheService
 from .graph_cache_service import GraphCacheService

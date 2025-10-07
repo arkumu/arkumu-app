@@ -9,7 +9,7 @@ import pytest
 from functools import lru_cache
 from pathlib import Path
 from lxml import etree as LET
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from django.urls import reverse
 from django.utils import timezone
 from urllib.parse import quote
@@ -50,6 +50,7 @@ class _HTTPResolver(LET.Resolver):
 
     def resolve(self, system_url, public_id, context):  # noqa: D401
         from urllib.parse import urljoin
+        from pathlib import Path
 
         target = system_url
         if target and not target.startswith("http"):
@@ -58,6 +59,15 @@ class _HTTPResolver(LET.Resolver):
 
         if not target:
             return None
+
+        if target.startswith("file://"):
+            local_path = Path(target[len("file://"):])
+            if local_path.exists():
+                return self.resolve_filename(str(local_path), context)
+
+        local_file = Path(target)
+        if local_file.exists():
+            return self.resolve_filename(str(local_file), context)
 
         with urlopen(target) as response:
             data = response.read()
@@ -757,7 +767,7 @@ class TestOAIEndpoint:
         """GetRecord mets should include FLocat xlink:href for content files when present."""
         from arkumu.storage.models.s3_file_objects import S3FileObject
         from unittest.mock import patch, Mock
-        import xml.etree.ElementTree as ET
+        from lxml import etree as ET
 
         resource = sample_resources[0]
         # Create related file
@@ -882,7 +892,7 @@ class TestOAIEndpoint:
 
         resource = sample_resources[0]
 
-        with patch('arkumu.oaipmh.views._validate_mets_against_dnx_schema', return_value=False) as mock_validate, \
+        with patch('arkumu.oaipmh.validation.mets_validator.rosetta_mets_validator.validate_metadata_element', return_value=Mock(is_valid=False)) as mock_validate, \
              patch('arkumu.oaipmh.views._fallback_record_from_storage', return_value=None), \
              patch('arkumu.oaipmh.views.snapshot_service') as mock_snapshot_service, \
              patch('arkumu.oaipmh.views.oai_cache') as mock_oai_cache:

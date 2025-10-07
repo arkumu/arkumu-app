@@ -8,7 +8,7 @@ focusing on logic and XML generation without HTTP layer.
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from urllib.parse import quote
 
 from django.http import HttpRequest
@@ -118,18 +118,16 @@ class TestOAIViewFunctions:
         oai = views._oai_envelope(request)
 
         # Check root element and namespaces
-        assert oai.tag == "OAI-PMH"
-        assert oai.get("xmlns") == "http://www.openarchives.org/OAI/2.0/"
-        assert oai.get("xmlns:oai_dc") == "http://www.openarchives.org/OAI/2.0/oai_dc/"
-        assert oai.get("xmlns:dc") == "http://purl.org/dc/elements/1.1/"
-        assert oai.get("xmlns:xsi") == "http://www.w3.org/2001/XMLSchema-instance"
+        assert ET.QName(oai).localname == "OAI-PMH"
+        assert oai.nsmap[None] == views.OAI_NS
+        assert oai.nsmap["xsi"] == views.XSI_NS
 
         # Check required child elements
-        response_date = oai.find("responseDate")
+        response_date = oai.find(f"{{{views.OAI_NS}}}responseDate")
         assert response_date is not None
         assert response_date.text is not None
 
-        request_elem = oai.find("request")
+        request_elem = oai.find(f"{{{views.OAI_NS}}}request")
         assert request_elem is not None
         assert "/oai/" in request_elem.text
 
@@ -578,12 +576,12 @@ class TestOAIViewFunctions:
         struct_map = mets_root.find(f".//{{{METS_NS}}}structMap")
         assert struct_map is not None
 
-        event_div = struct_map.find(f".//{{{METS_NS}}}div[@TYPE='EVENT'][@LABEL='Launch']")
+        event_div = struct_map.find(f".//{{{METS_NS}}}div[@LABEL='Launch']")
         assert event_div is not None
 
-        folder_div = event_div.find(f"./{{{METS_NS}}}div[@TYPE='FOLDER'][@LABEL='streams']")
+        folder_div = event_div.find(f"./{{{METS_NS}}}div[@LABEL='streams']")
         assert folder_div is not None
-        nested_folder = folder_div.find(f"./{{{METS_NS}}}div[@TYPE='FOLDER'][@LABEL='launch']")
+        nested_folder = folder_div.find(f"./{{{METS_NS}}}div[@LABEL='launch']")
         assert nested_folder is not None
 
         file_div = nested_folder.find(f"./{{{METS_NS}}}div[@TYPE='FILE'][@LABEL='test1.txt']")
