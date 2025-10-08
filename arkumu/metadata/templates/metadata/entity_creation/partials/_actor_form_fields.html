@@ -26,6 +26,17 @@
 
       <div class="form-control">
         <label class="label">
+          <span class="label-text font-medium">Wähle oder erstelle eine AkteurIn</span>
+          {% if actor_form.uri.errors %}
+          <span class="label-text-alt text-error">{{ actor_form.uri.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ actor_form.uri }}
+        <div class="text-xs text-base-content/60 mt-1">{{ actor_form.uri.help_text }}</div>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
           <span class="label-text font-medium">Deutscher Name</span>
           {% if actor_form.deutscher_name.errors %}
           <span class="label-text-alt text-error">{{ actor_form.deutscher_name.errors.0 }}</span>

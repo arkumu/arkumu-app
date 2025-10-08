@@ -23,6 +23,17 @@
       Event Details
     </h2>
 
+    <div class="form-control">
+      <label class="label">
+        <span class="label-text font-medium">Wähle oder erstelle ein Ereignis</span>
+        {% if event_form.uri.errors %}
+        <span class="label-text-alt text-error">{{ event_form.uri.errors.0 }}</span>
+        {% endif %}
+      </label>
+      {{ event_form.uri }}
+      <div class="text-xs text-base-content/60 mt-1">{{ event_form.uri.help_text }}</div>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="form-control">
         <label class="label">

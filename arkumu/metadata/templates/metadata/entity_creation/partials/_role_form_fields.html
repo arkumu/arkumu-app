@@ -26,6 +26,17 @@
 
       <div class="form-control">
         <label class="label">
+          <span class="label-text font-medium">Wähle oder erstelle eine Rolle</span>
+          {% if role_form.uri.errors %}
+          <span class="label-text-alt text-error">{{ role_form.uri.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ role_form.uri }}
+        <div class="text-xs text-base-content/60 mt-1">{{ role_form.uri.help_text }}</div>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
           <span class="label-text font-medium">Deutscher Name der Rolle</span>
           {% if role_form.deutscher_name_der_rolle_breadcrumb.errors %}
           <span class="label-text-alt text-error">{{ role_form.deutscher_name_der_rolle_breadcrumb.errors.0 }}</span>

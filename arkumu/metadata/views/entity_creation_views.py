@@ -52,6 +52,11 @@ class BaseEntityForm(forms.Form):
 
 
 class ProjectForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing project, or create one",
+        required=False,
+        choices=[],
+    )
     bevorzugter_titel = forms.CharField(
         label="Bevorzugter Titel",
         required=True,
@@ -98,6 +103,9 @@ class ProjectForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select a project")
+        ] + options.get("project", [])
         self.fields["einliefernde_hochschule_uri"].choices = [
             ("", "Select an institution")
         ] + options.get("institution", [])
@@ -117,6 +125,11 @@ class ProjectForm(BaseEntityForm):
 
 
 class EventForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing event, or create one",
+        required=False,
+        choices=[],
+    )
     ereignisname = forms.CharField(
         label="Ereignisname",
         required=True,
@@ -153,6 +166,9 @@ class EventForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select an event")
+        ] + options.get("event", [])
         self.fields["project_uri"].choices = [
             ("", "Select a project")
         ] + options.get("project", [])
@@ -162,6 +178,11 @@ class EventForm(BaseEntityForm):
 
 
 class ActorForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing actor, or create one",
+        required=False,
+        choices=[],
+    )
     deutscher_name = forms.CharField(
         label="Deutscher Name",
         required=True,
@@ -170,6 +191,10 @@ class ActorForm(BaseEntityForm):
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select an actor")
+        ] + options.get("actor", [])
 
 class DescriptionForm(BaseEntityForm):
     beschreibung = forms.CharField(
@@ -184,6 +209,11 @@ class DescriptionForm(BaseEntityForm):
 
 
 class CatchphraseForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing catchphrase, or create one",
+        required=False,
+        choices=[],
+    )
     deutsches_wikidata_label = forms.CharField(
         label="Wikidata Label",
         required=True,
@@ -192,8 +222,17 @@ class CatchphraseForm(BaseEntityForm):
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select a catchphrase")
+        ] + options.get("catchphrase", [])
 
 class RoleForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing role, or create one",
+        required=False,
+        choices=[],
+    )
     deutscher_name_der_rolle_breadcrumb = forms.CharField(
         label="Deutscher Name",
         required=True,
@@ -202,8 +241,17 @@ class RoleForm(BaseEntityForm):
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select a role")
+        ] + options.get("role", [])
 
 class DigitalObjectForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing digital object, or create one",
+        required=False,
+        choices=[],
+    )
     dateipfad = forms.CharField(
         label="Dateipfad",
         required=True,
@@ -212,8 +260,17 @@ class DigitalObjectForm(BaseEntityForm):
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select a digital object")
+        ] + options.get("digital_object", [])
 
 class InstitutionForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing institution, or create one",
+        required=False,
+        choices=[],
+    )
     deutscher_name_der_einliefernden_hochschule = forms.CharField(
         label="Deutscher name",
         required=True,
@@ -222,8 +279,17 @@ class InstitutionForm(BaseEntityForm):
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select an institution")
+        ] + options.get("institution", [])
 
 class ProjectCategoryForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing project category, or create one",
+        required=False,
+        choices=[],
+    )
     deutscher_name_der_projektkategorie_breadcrumb = forms.CharField(
         label="Deutscher name",
         required=True,
@@ -232,8 +298,17 @@ class ProjectCategoryForm(BaseEntityForm):
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select a project category")
+        ] + options.get("project_category", [])
 
 class ProjectTypeForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="choose an existing project type, or create one",
+        required=False,
+        choices=[],
+    )
     deutscher_name_der_projektart = forms.CharField(
         label="Deutscher name",
         required=True,
@@ -242,6 +317,10 @@ class ProjectTypeForm(BaseEntityForm):
 
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [
+            ("", "Select a project type")
+        ] + options.get("project_type", [])
 
 
 class AlternateTitleForm(BaseEntityForm):

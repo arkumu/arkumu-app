@@ -25,6 +25,17 @@
 
             <div class="form-control">
               <label class="label">
+                <span class="label-text font-medium">Wähle oder erstelle ein Schlagwort</span>
+                {% if catchphrase_form.uri.errors %}
+                <span class="label-text-alt text-error">{{ catchphrase_form.uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ catchphrase_form.uri }}
+              <div class="text-xs text-base-content/60 mt-1">{{ catchphrase_form.uri.help_text }}</div>
+            </div>
+
+            <div class="form-control">
+              <label class="label">
                 <span class="label-text font-medium">Wikidata Label</span>
                 {% if catchphrase_form.deutsches_wikidata_label.errors %}
                 <span class="label-text-alt text-error">{{ catchphrase_form.deutsches_wikidata_label.errors.0 }}</span>
