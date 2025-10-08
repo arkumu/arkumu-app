@@ -397,6 +397,10 @@ def entity_set_values_from_form(form:BaseEntityForm, dataset_name, organization,
 def form_to_entity(form:BaseEntityForm, dataset_name, organization):
     base_uri = f"http://arkumu.org/data/{organization.code}"
     if form.is_valid():
+        if uri := form.cleaned_data.get('uri', ''):
+            logger.info(f"🔄✅✅✅ {uri=} truesy")
+            return EntityResource.get_or_create(uri)
+        logger.info(f"🔄❌❌❌ {uri=} falsy")
         entity, cls, properties = form_init_resources(base_uri, dataset_name, organization)
         entity.set_type(cls)
         entity_set_values_from_form(form, dataset_name, organization, entity, **properties)
@@ -470,17 +474,22 @@ def create_event(request):
 
             for actor_form, role_form in zip(actor_formset, role_formset): 
                 if actor_form.is_valid() and role_form.is_valid():
+                    actor_entity = form_to_entity(actor_form)
+                    role_entity = form_to_entity(role_form)
                     actor_event_entity, _ =EntityResource.create_by_organization_and_dataset_name(dataset_name="AkteurIn_Ereignis_Kreuztabelle", organization=organization)
+                    
                     cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle", name="AkteurIn_Ereignis_Kreuztabelle")
-                    properties = {"actor_event_actor_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")[0],
-                    "actor_event_event_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")[0],
-                    "actor_event_actor_role_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")[0],}
+                    
+                    actor_event_actor_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")
+                    actor_event_event_prop, _ =PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
+                    actor_event_actor_role_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")
+                    actor_event_event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
 
                     actor_event_entity.set_type(cls)
-                    from_form_set_property_entity(actor_form, actor_event_entity, 'akteurin_uri', properties["actor_event_actor_prop"])
-                    from_form_set_property_entity(role_form, actor_event_entity, 'rollen_uri', properties["actor_event_actor_role_prop"])
-                    actor_event_event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
+                    
+                    actor_event_entity.set_property(actor_event_actor_prop, actor_entity)
                     actor_event_entity.set_property(actor_event_event_prop, event_entity)
+                    actor_event_entity.set_property(actor_event_actor_role_prop, role_entity)
 
             # The RDF resources are now created and linked automatically
             # Continue with the rest of the event creation workflow
