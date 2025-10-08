@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_CARD_SCHEMA_ORGS = getattr(settings, 'CACHE_CARD_SCHEMA_ORGS', ['fuk'])
+_PROJECT_TYPE_CANONICAL_URI = "http://arkumu.org/data/types/projekt"
 
 
 @db_task()
@@ -39,6 +40,25 @@ def warm_schema_cache():
 
     except Exception as e:
         logger.error(f"Failed to warm schema cache: {e}")
+        raise
+
+
+@db_task()
+def refresh_schema_cache():
+    """Force a rebuild of the schema map cache."""
+    from arkumu.cache.services import SchemaMapCacheService
+
+    try:
+        logger.info("Refreshing schema cache (forced rebuild)...")
+        schema_cache = SchemaMapCacheService()
+        schema_map = schema_cache.refresh_cache()
+        return (
+            "Refreshed schema cache: "
+            f"{schema_map['meta']['total_classes']} classes / "
+            f"{schema_map['meta']['total_properties']} properties"
+        )
+    except Exception as exc:
+        logger.error("Failed to refresh schema cache: %s", exc)
         raise
 
 
@@ -74,6 +94,45 @@ def _warm_projects_cache(*, force_refresh: bool) -> str:
 def warm_cross_institutional_projects_cache(force_refresh: bool = False):
     """Warm the cross-institutional projects cache for fast catalog searches."""
     return _warm_projects_cache(force_refresh=force_refresh)
+
+
+@db_task()
+def warm_canonical_graph_cache():
+    """Prime the canonical project graph in cache."""
+    from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+
+    try:
+        logger.info("Warming canonical graph cache (cross-institutional)...")
+        service = CanonicalGraphService()
+        graph = service.get_project_graph(
+            dataset_name="Projekt",
+            type_canonical_uri=_PROJECT_TYPE_CANONICAL_URI,
+            expand_neighbors=True,
+        )
+        subject_count = len(graph.get("subjects", [])) if graph else 0
+        logger.info(
+            "Canonical graph warm complete: %d project subjects in snapshot",
+            subject_count,
+        )
+        return f"Success: canonical graph loaded with {subject_count} project subjects"
+    except Exception as exc:
+        logger.error("Failed to warm canonical graph cache: %s", exc)
+        raise
+
+
+@db_task()
+def refresh_canonical_graph_cache():
+    """Clear canonical graph cache entries to force regeneration on next access."""
+    from arkumu.cache.services import CacheManager
+
+    try:
+        logger.info("Refreshing canonical graph cache (clearing cached entries)...")
+        cache_manager = CacheManager()
+        cache_manager.graph.clear_cache()
+        return "Canonical graph cache cleared"
+    except Exception as exc:
+        logger.error("Failed to refresh canonical graph cache: %s", exc)
+        raise
 
 
 @db_task()
@@ -118,6 +177,55 @@ def warm_card_schema_cache(organization_code: Optional[str] = None):
             logger.error("Card schema warm-up failed for org '%s': %s", org, exc)
 
     return f"Warmed {warmed} schema(s)" if warmed else "No schemas warmed"
+
+
+@db_task()
+def refresh_card_schema_cache(organization_code: Optional[str] = None):
+    """Force a rebuild of cached card schemas."""
+    from django.core.cache import cache
+    from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
+    from arkumu.metadata.models import Mapping
+
+    target_orgs = [organization_code] if organization_code else _DEFAULT_CARD_SCHEMA_ORGS
+    if not target_orgs:
+        logger.info("Card schema refresh skipped: no target organizations configured")
+        return "No schemas refreshed"
+
+    existing_orgs = set(
+        Mapping.objects
+        .filter(organization_id__in=target_orgs)
+        .values_list('organization_id', flat=True)
+    )
+
+    schema_service = SchemaManifestService()
+    refreshed = 0
+
+    for org in target_orgs:
+        if org not in existing_orgs:
+            logger.info(
+                "Card schema refresh skipped for org '%s': no mapping configuration found",
+                org,
+            )
+            continue
+        try:
+            cache_key = f"card_schema_manifest:{org}"
+            cache.delete(cache_key)
+            logger.info("Deleted cached card schema for org '%s' before refresh", org)
+            schema = schema_service.get_card_schema(org)
+            available_sections = [
+                section for section in schema.sections.values() if section.available
+            ] if schema else []
+            logger.info(
+                "Card schema refresh complete for org '%s': %d total sections, %d available",
+                org,
+                len(schema.sections) if schema else 0,
+                len(available_sections),
+            )
+            refreshed += 1
+        except Exception as exc:
+            logger.error("Card schema refresh failed for org '%s': %s", org, exc)
+
+    return f"Refreshed {refreshed} schema(s)" if refreshed else "No schemas refreshed"
 
 
 if HUEY_PERIODIC_AVAILABLE:

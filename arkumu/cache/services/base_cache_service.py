@@ -134,6 +134,23 @@ class BaseCacheService:
                 "Cache delete failed for %s: %s", cache_key, exc, exc_info=True
             )
 
+    def clear_cache(self) -> None:
+        """Remove all cache entries for this service prefix."""
+        pattern = f"{self.prefix}:*"
+        try:
+            if hasattr(cache, "delete_pattern"):
+                cache.delete_pattern(pattern)
+                self.logger.info("Cleared cache for prefix %s", self.prefix)
+            else:
+                self.logger.warning(
+                    "Cache backend lacks delete_pattern; cannot bulk-clear prefix %s",
+                    self.prefix,
+                )
+        except Exception as exc:
+            self.logger.warning(
+                "Cache clear failed for prefix %s: %s", self.prefix, exc, exc_info=True
+            )
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics for monitoring."""
         return {

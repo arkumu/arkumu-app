@@ -360,26 +360,44 @@ def trigger_cache_refresh(request):
         return redirect("metadata:metadata_dashboard")
 
     cache_target = request.POST.get("cache", "all")
+    action = request.POST.get("action", "warm").lower()
+    action = "refresh" if action == "refresh" else "warm"
+    is_refresh = action == "refresh"
 
     from arkumu.cache.tasks import (
         warm_card_schema_cache,
         warm_cross_institutional_projects_cache,
         warm_schema_cache,
+        refresh_card_schema_cache,
+        refresh_schema_cache,
+        warm_canonical_graph_cache,
+        refresh_canonical_graph_cache,
     )
 
     triggered = []
+    action_label = "Refreshed" if is_refresh else "Warmed"
 
     if cache_target in {"all", "projects"}:
-        warm_cross_institutional_projects_cache.schedule(delay=0)
-        triggered.append("Cross-institutional project snapshot")
+        schedule_kwargs = {"delay": 0}
+        if is_refresh:
+            schedule_kwargs["kwargs"] = {"force_refresh": True}
+        warm_cross_institutional_projects_cache.schedule(**schedule_kwargs)
+        triggered.append(f"{action_label} cross-institutional project snapshot")
 
     if cache_target in {"all", "schema"}:
-        warm_schema_cache.schedule(delay=0)
-        triggered.append("Schema map (explorer classes & properties)")
+        task = refresh_schema_cache if is_refresh else warm_schema_cache
+        task.schedule(delay=0)
+        triggered.append(f"{action_label} schema map (explorer classes & properties)")
 
     if cache_target in {"all", "card"}:
-        warm_card_schema_cache.schedule(delay=0)
-        triggered.append("Catalog card schemas")
+        task = refresh_card_schema_cache if is_refresh else warm_card_schema_cache
+        task.schedule(delay=0)
+        triggered.append(f"{action_label} catalog card schemas")
+
+    if cache_target in {"all", "canonical_graph"}:
+        task = refresh_canonical_graph_cache if is_refresh else warm_canonical_graph_cache
+        task.schedule(delay=0)
+        triggered.append(f"{action_label} canonical graph cache")
 
     if not triggered:
         messages.warning(request, "No cache task was selected.")
