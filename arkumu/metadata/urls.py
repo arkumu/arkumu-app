@@ -341,6 +341,7 @@ urlpatterns = [
     path('create/project/', entity_creation_views.create_project, name='create_project'),
     path('create/event/', entity_creation_views.create_event, name='create_event'),
     path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
+    path('actor/details/', entity_creation_views.get_actor_details, name='actor_details'),
     path('create/role/', entity_creation_views.create_role, name='create_role'),
     path('create/digital-object/', entity_creation_views.create_digital_object, name='create_digital_object'),
     path('create/institution/', entity_creation_views.create_institution, name='create_institution'),

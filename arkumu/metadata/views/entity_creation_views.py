@@ -6,7 +6,7 @@ from django import forms
 from django.db import models
 from django.contrib.auth.decorators import login_required
 from django.forms import formset_factory, inlineformset_factory
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 import logging
 
@@ -103,9 +103,9 @@ class ProjectForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select a project")
-        ] + options.get("project", [])
+        self.fields["uri"].choices = [("", "Select a project")] + options.get(
+            "project", []
+        )
         self.fields["einliefernde_hochschule_uri"].choices = [
             ("", "Select an institution")
         ] + options.get("institution", [])
@@ -166,12 +166,12 @@ class EventForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select an event")
-        ] + options.get("event", [])
-        self.fields["project_uri"].choices = [
-            ("", "Select a project")
-        ] + options.get("project", [])
+        self.fields["uri"].choices = [("", "Select an event")] + options.get(
+            "event", []
+        )
+        self.fields["project_uri"].choices = [("", "Select a project")] + options.get(
+            "project", []
+        )
         self.fields["ereignisbeschreibung_uri"].choices = [
             ("", "Select the description of the event")
         ] + options.get("event_description", [])
@@ -192,9 +192,10 @@ class ActorForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select an actor")
-        ] + options.get("actor", [])
+        self.fields["uri"].choices = [("", "Select an actor")] + options.get(
+            "actor", []
+        )
+
 
 class DescriptionForm(BaseEntityForm):
     beschreibung = forms.CharField(
@@ -223,9 +224,10 @@ class CatchphraseForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select a catchphrase")
-        ] + options.get("catchphrase", [])
+        self.fields["uri"].choices = [("", "Select a catchphrase")] + options.get(
+            "catchphrase", []
+        )
+
 
 class RoleForm(BaseEntityForm):
     uri = forms.ChoiceField(
@@ -242,9 +244,8 @@ class RoleForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select a role")
-        ] + options.get("role", [])
+        self.fields["uri"].choices = [("", "Select a role")] + options.get("role", [])
+
 
 class DigitalObjectForm(BaseEntityForm):
     uri = forms.ChoiceField(
@@ -261,9 +262,10 @@ class DigitalObjectForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select a digital object")
-        ] + options.get("digital_object", [])
+        self.fields["uri"].choices = [("", "Select a digital object")] + options.get(
+            "digital_object", []
+        )
+
 
 class InstitutionForm(BaseEntityForm):
     uri = forms.ChoiceField(
@@ -280,9 +282,10 @@ class InstitutionForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select an institution")
-        ] + options.get("institution", [])
+        self.fields["uri"].choices = [("", "Select an institution")] + options.get(
+            "institution", []
+        )
+
 
 class ProjectCategoryForm(BaseEntityForm):
     uri = forms.ChoiceField(
@@ -299,9 +302,10 @@ class ProjectCategoryForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select a project category")
-        ] + options.get("project_category", [])
+        self.fields["uri"].choices = [("", "Select a project category")] + options.get(
+            "project_category", []
+        )
+
 
 class ProjectTypeForm(BaseEntityForm):
     uri = forms.ChoiceField(
@@ -318,9 +322,9 @@ class ProjectTypeForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
-        self.fields["uri"].choices = [
-            ("", "Select a project type")
-        ] + options.get("project_type", [])
+        self.fields["uri"].choices = [("", "Select a project type")] + options.get(
+            "project_type", []
+        )
 
 
 class AlternateTitleForm(BaseEntityForm):
@@ -333,78 +337,168 @@ class AlternateTitleForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
 
+
 ActorFormSet = formset_factory(ActorForm, extra=0, min_num=1, validate_min=False)
 RoleFormSet = formset_factory(RoleForm, extra=0, min_num=1, validate_min=False)
 
-def from_form_set_property_literal(form:BaseEntityForm, form_entity:EntityResource, property_str:str, property_entity:PropertyResource):
-    property_value = form.cleaned_data.get(property_str, '')
+
+def from_form_set_property_literal(
+    form: BaseEntityForm,
+    form_entity: EntityResource,
+    property_str: str,
+    property_entity: PropertyResource,
+):
+    property_value = form.cleaned_data.get(property_str, "")
     if property_value:
         form_entity.set_property(property_entity, property_value)
 
-def from_form_set_property_entity(form:BaseEntityForm, form_entity:EntityResource, property_str:str, property_entity:PropertyResource):
-    property_uri = form.cleaned_data.get(property_str, '')
+
+def from_form_set_property_entity(
+    form: BaseEntityForm,
+    form_entity: EntityResource,
+    property_str: str,
+    property_entity: PropertyResource,
+):
+    property_uri = form.cleaned_data.get(property_str, "")
     if property_uri:
         prop, _ = EntityResource.get_or_create(property_uri)
         form_entity.set_property(property_entity, prop)
-    
-def from_form_set_property_entity_multi_value(form:BaseEntityForm, form_entity:EntityResource, property_str:str, property_entity:PropertyResource):
-    property_uris = form.cleaned_data.get(property_str, '')
+
+
+def from_form_set_property_entity_multi_value(
+    form: BaseEntityForm,
+    form_entity: EntityResource,
+    property_str: str,
+    property_entity: PropertyResource,
+):
+    property_uris = form.cleaned_data.get(property_str, "")
     if property_uris:
         for property_uri in property_uris:
             prop, _ = EntityResource.get_or_create(property_uri)
             form_entity.set_property(property_entity, prop)
 
+
 def form_init_resources(base_uri, dataset_name, organization):
     match dataset_name:
         case "Projekt":
-            entity, _ = EntityResource.create_by_organization_and_dataset_name(dataset_name=dataset_name, organization=organization)
-            cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/projekt", name=dataset_name)
-            properties = {"title_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/bevorzugter-titel", name="Bevorzugter Titel")[0],
-            "subtitle_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/bevorzugter-untertitel", name="Bevorzugter Untertitel")[0],
-            "institution_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/einliefernde-hochschule", name="Einliefernde Hochschule")[0],
-            "category_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/projektkategorie", name="Projektkategorie")[0],
-            "description_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/beschreibung", name="Beschreibung")[0],
-            "catchphrase_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/schlagwort", name="Schlagwort")[0],
-            "project_type_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/projektart", name="Projektart")[0],}
+            entity, _ = EntityResource.create_by_organization_and_dataset_name(
+                dataset_name=dataset_name, organization=organization
+            )
+            cls, _ = ClassResource.get_or_create(
+                uri=f"{base_uri}/types/projekt", name=dataset_name
+            )
+            properties = {
+                "title_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/bevorzugter-titel",
+                    name="Bevorzugter Titel",
+                )[0],
+                "subtitle_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/bevorzugter-untertitel",
+                    name="Bevorzugter Untertitel",
+                )[0],
+                "institution_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/einliefernde-hochschule",
+                    name="Einliefernde Hochschule",
+                )[0],
+                "category_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/projektkategorie",
+                    name="Projektkategorie",
+                )[0],
+                "description_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
+                )[0],
+                "catchphrase_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/schlagwort", name="Schlagwort"
+                )[0],
+                "project_type_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/projektart", name="Projektart"
+                )[0],
+            }
             return (entity, cls, properties)
         case "Ereignis":
-
-            entity, _ = EntityResource.create_by_organization_and_dataset_name(dataset_name=dataset_name, organization=organization)
-            cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/ereignis", name=dataset_name)
-            properties = {"event_name_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/ereignisname", name="Ereignisname")[0],
-            "event_place_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/ereignisort", name="Ereignisort")[0],
-            "description_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/beschreibung", name="Beschreibung")[0],
-            "begin_date_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/ereignisbeginn", name="Ereignisbeginn")[0],
-            "end_date_prop": PropertyResource.get_or_create(uri=f"{base_uri}/properties/ereignisende", name="Ereignisende")[0],}
+            entity, _ = EntityResource.create_by_organization_and_dataset_name(
+                dataset_name=dataset_name, organization=organization
+            )
+            cls, _ = ClassResource.get_or_create(
+                uri=f"{base_uri}/types/ereignis", name=dataset_name
+            )
+            properties = {
+                "event_name_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignisname", name="Ereignisname"
+                )[0],
+                "event_place_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignisort", name="Ereignisort"
+                )[0],
+                "description_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
+                )[0],
+                "begin_date_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignisbeginn", name="Ereignisbeginn"
+                )[0],
+                "end_date_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignisende", name="Ereignisende"
+                )[0],
+            }
             return (entity, cls, properties)
 
-def entity_set_values_from_form(form:BaseEntityForm, dataset_name, organization, entity, **kwargs):
+
+def entity_set_values_from_form(
+    form: BaseEntityForm, dataset_name, organization, entity, **kwargs
+):
     match dataset_name:
         case "Projekt":
-            from_form_set_property_literal(form, entity, 'bevorzugter_titel', kwargs["title_prop"])
-            from_form_set_property_literal(form, entity, 'bevorzugter_untertitel', kwargs["subtitle_prop"])
-            from_form_set_property_entity(form, entity, 'einliefernde_hochschule_uri', kwargs["institution_prop"])
-            from_form_set_property_entity(form, entity, 'projektkategorie_uri', kwargs["category_prop"])
-            from_form_set_property_entity(form, entity, 'beschreibung_uri', kwargs["description_prop"])
-            from_form_set_property_entity(form, entity, 'projektart_uri', kwargs["project_type_prop"])
-            from_form_set_property_entity_multi_value(form, kwargs["entity"], 'schlagwort_uris', kwargs["catchphrase_prop"])
+            from_form_set_property_literal(
+                form, entity, "bevorzugter_titel", kwargs["title_prop"]
+            )
+            from_form_set_property_literal(
+                form, entity, "bevorzugter_untertitel", kwargs["subtitle_prop"]
+            )
+            from_form_set_property_entity(
+                form, entity, "einliefernde_hochschule_uri", kwargs["institution_prop"]
+            )
+            from_form_set_property_entity(
+                form, entity, "projektkategorie_uri", kwargs["category_prop"]
+            )
+            from_form_set_property_entity(
+                form, entity, "beschreibung_uri", kwargs["description_prop"]
+            )
+            from_form_set_property_entity(
+                form, entity, "projektart_uri", kwargs["project_type_prop"]
+            )
+            from_form_set_property_entity_multi_value(
+                form, kwargs["entity"], "schlagwort_uris", kwargs["catchphrase_prop"]
+            )
         case "Ereignis":
-            from_form_set_property_literal(form, entity, 'ereignisname', kwargs["event_name_prop"])
-            from_form_set_property_literal(form, entity, 'ereignisort', kwargs["event_place_prop"])
-            from_form_set_property_literal(form, entity, 'ereignisbeginn', kwargs["begin_date_prop"])
-            from_form_set_property_literal(form, entity, 'ereignisende', kwargs["end_date_prop"])
+            from_form_set_property_literal(
+                form, entity, "ereignisname", kwargs["event_name_prop"]
+            )
+            from_form_set_property_literal(
+                form, entity, "ereignisort", kwargs["event_place_prop"]
+            )
+            from_form_set_property_literal(
+                form, entity, "ereignisbeginn", kwargs["begin_date_prop"]
+            )
+            from_form_set_property_literal(
+                form, entity, "ereignisende", kwargs["end_date_prop"]
+            )
 
-def form_to_entity(form:BaseEntityForm, dataset_name, organization):
+
+def form_to_entity(form: BaseEntityForm, dataset_name, organization):
     base_uri = f"http://arkumu.org/data/{organization.code}"
     if form.is_valid():
-        if uri := form.cleaned_data.get('uri', ''):
+        if uri := form.cleaned_data.get("uri", ""):
             logger.info(f"🔄✅✅✅ {uri=} truesy")
             return EntityResource.get_or_create(uri)
         logger.info(f"🔄❌❌❌ {uri=} falsy")
-        entity, cls, properties = form_init_resources(base_uri, dataset_name, organization)
+        entity, cls, properties = form_init_resources(
+            base_uri, dataset_name, organization
+        )
         entity.set_type(cls)
-        entity_set_values_from_form(form, dataset_name, organization, entity, **properties)
+        entity_set_values_from_form(
+            form, dataset_name, organization, entity, **properties
+        )
         return entity
+
 
 @login_required
 def create_project(request):
@@ -435,7 +529,7 @@ def create_project(request):
                 "project_form": project_form,
                 "entity_type": "project",
                 "title": "Create New Project",
-                "description": "Fill in the details to create a new archival project"
+                "description": "Fill in the details to create a new archival project",
             },
         )
 
@@ -465,31 +559,56 @@ def create_event(request):
             )
             event_entity = form_to_entity(event_form, "Ereignis", organization)
 
-
-            event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/ereignis", name="Ereignis")
-            project_uri = event_form.cleaned_data.get('project_uri', '')
+            event_prop, _ = PropertyResource.get_or_create(
+                uri=f"{base_uri}/properties/ereignis", name="Ereignis"
+            )
+            project_uri = event_form.cleaned_data.get("project_uri", "")
             if project_uri:
                 project_entity, _ = EntityResource.get_or_create(uri=project_uri)
                 project_entity.set_property(event_prop, event_entity)
 
-            for actor_form, role_form in zip(actor_formset, role_formset): 
+            for actor_form, role_form in zip(actor_formset, role_formset):
                 if actor_form.is_valid() and role_form.is_valid():
                     actor_entity = form_to_entity(actor_form)
                     role_entity = form_to_entity(role_form)
-                    actor_event_entity, _ =EntityResource.create_by_organization_and_dataset_name(dataset_name="AkteurIn_Ereignis_Kreuztabelle", organization=organization)
-                    
-                    cls, _ = ClassResource.get_or_create(uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle", name="AkteurIn_Ereignis_Kreuztabelle")
-                    
-                    actor_event_actor_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/akteurin-im-ereignis", name="AkteurIn im Ereignis")
-                    actor_event_event_prop, _ =PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
-                    actor_event_actor_role_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis", name="Rollen der AkteurIn im Ereignis")
-                    actor_event_event_prop, _ = PropertyResource.get_or_create(uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis")
+                    actor_event_entity, _ = (
+                        EntityResource.create_by_organization_and_dataset_name(
+                            dataset_name="AkteurIn_Ereignis_Kreuztabelle",
+                            organization=organization,
+                        )
+                    )
+
+                    cls, _ = ClassResource.get_or_create(
+                        uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle",
+                        name="AkteurIn_Ereignis_Kreuztabelle",
+                    )
+
+                    actor_event_actor_prop, _ = PropertyResource.get_or_create(
+                        uri=f"{base_uri}/properties/akteurin-im-ereignis",
+                        name="AkteurIn im Ereignis",
+                    )
+                    actor_event_event_prop, _ = PropertyResource.get_or_create(
+                        uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
+                    )
+                    actor_event_actor_role_prop, _ = PropertyResource.get_or_create(
+                        uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
+                        name="Rollen der AkteurIn im Ereignis",
+                    )
+                    actor_event_event_prop, _ = PropertyResource.get_or_create(
+                        uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
+                    )
 
                     actor_event_entity.set_type(cls)
-                    
-                    actor_event_entity.set_property(actor_event_actor_prop, actor_entity)
-                    actor_event_entity.set_property(actor_event_event_prop, event_entity)
-                    actor_event_entity.set_property(actor_event_actor_role_prop, role_entity)
+
+                    actor_event_entity.set_property(
+                        actor_event_actor_prop, actor_entity
+                    )
+                    actor_event_entity.set_property(
+                        actor_event_event_prop, event_entity
+                    )
+                    actor_event_entity.set_property(
+                        actor_event_actor_role_prop, role_entity
+                    )
 
             # The RDF resources are now created and linked automatically
             # Continue with the rest of the event creation workflow
@@ -1066,3 +1185,31 @@ def create_catchphrase(request):
                 "description": "Fill in the details to create a new catchphrase",
             },
         )
+
+
+@login_required
+def get_actor_details(request):
+    """
+    Returns actor details as JSON for auto-filling form fields.
+    """
+    actor_uri = request.GET.get("uri","")
+    try:
+
+        # Find the resource with this URI
+        try:
+            actor, _ = EntityResource.get_or_create(uri=actor_uri)
+            organization = getattr(request.user, "organization", None)
+            base_uri = f"http://arkumu.org/data/{organization.code}"
+            german_name_prop, _ = PropertyResource.get_or_create(
+                uri=f"{base_uri}/properties/deutscher-name", name="Deutscher Name"
+            )
+            deutscher_name = actor.get_property(german_name_prop)[0]
+
+            return JsonResponse({"deutscher_name": deutscher_name})
+
+        except Resource.DoesNotExist:
+            return JsonResponse({"error": "Actor not found"}, status=404)
+
+    except Exception as e:
+        logger.error(f"Error retrieving actor details for {actor_uri}: {str(e)}")
+        return JsonResponse({"error": "Internal server error"}, status=500)
