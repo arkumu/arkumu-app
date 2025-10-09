@@ -1034,7 +1034,9 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
         _add_dc_value(payload, 'dateSubmitted', _format_datestamp(resource.updated_at), namespace='dcterms')
 
     for code in record.institution_codes:
-        _add_dc_value(payload, 'isPartOf', code.upper())
+        _add_dc_value(payload, 'isPartOf', code.upper(), namespace='dcterms')
+    for label in _collect_collection_labels(resource, record):
+        _add_dc_value(payload, 'isPartOf', label, namespace='dcterms')
 
     if project.digital_objects:
         formats_added: set[str] = set(payload.get('dc:format', []))
@@ -1070,10 +1072,6 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
         rights = _rights_label_for_resource(resource)
         if rights:
             _add_dc_value(payload, 'rights', rights)
-
-    if not payload.get('dc:collection'):
-        for label in _collect_collection_labels(resource, record):
-            _add_dc_value(payload, 'collection', label)
 
     return payload
 

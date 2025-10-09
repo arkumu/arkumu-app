@@ -515,6 +515,10 @@ class TestOAIViewFunctions:
         rights_values = payload.get("dc:rights", [])
         assert self.primary_rights_statement in rights_values
         assert self.secondary_rights_statement in rights_values
+        assert "dc:collection" not in payload
+        is_part_of_values = payload.get("dcterms:isPartOf", [])
+        assert "TI" in is_part_of_values
+        assert "Test Institution" in is_part_of_values
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
@@ -606,9 +610,17 @@ class TestOAIViewFunctions:
         assert mets_root is not None
 
         file_elements = mets_root.findall(f".//{{{METS_NS}}}file")
-        assert len(file_elements) == len(record.digital_objects)
+        normalized_project = views.project_builder.from_project_record(record)
+        harvestable_objects = [
+            obj for obj in normalized_project.digital_objects
+            if obj.harvestable and obj.preferred_location
+        ]
+        expected_objects: list = []
+        for _rep_type, rep_objects in views._group_digital_objects_for_rosetta(list(harvestable_objects)):
+            expected_objects.extend(rep_objects)
+        assert len(file_elements) == len(expected_objects)
 
-        for file_elem, digital_obj in zip(file_elements, record.digital_objects):
+        for file_elem, digital_obj in zip(file_elements, expected_objects):
             adm_id = file_elem.get("ADMID")
             assert adm_id
             amd_sec = mets_root.find(f".//{{{METS_NS}}}amdSec[@ID='{adm_id}']")
