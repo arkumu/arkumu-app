@@ -28,6 +28,7 @@ from arkumu.projects import (
     ProjectCategory,
     ProjectCatchphrase,
     ProjectDigitalObject,
+    ProjectDigitalObjectLicense,
     ProjectEvent,
     ProjectEventActor,
     ProjectInstitution,
@@ -53,6 +54,29 @@ class ProjectSnapshotService:
         "hmt",
     )
     DIGITAL_OBJECT_LINK_URI = "http://arkumu.org/data/properties/digitales-objekt"
+    DIGITAL_OBJECT_LICENSE_LINK_URI = "http://arkumu.org/data/properties/lizenzstatus"
+    DIGITAL_OBJECT_LICENSE_URI_PROPERTY = "http://arkumu.org/data/properties/uri"
+    DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
+    DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY = "http://arkumu.org/data/properties/englischer-name-der-lizenz"
+    DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY = "http://arkumu.org/data/properties/zugehoeriges-rechtestatement"
+    DIGITAL_OBJECT_UUID_PROPERTY = "http://arkumu.org/data/properties/uuid"
+    DIGITAL_OBJECT_GENESIS_PROPERTIES = (
+        "http://arkumu.org/data/properties/entstehung",
+    )
+    DIGITAL_OBJECT_MEDIA_TYPE_PROPERTY = "http://arkumu.org/data/properties/medientyp"
+    DIGITAL_OBJECT_SIGNIFICANT_DE_PROPERTIES = (
+        "http://arkumu.org/data/properties/wesentliche-eigenschaften-deutsch",
+        "http://arkumu.org/data/properties/description-de-verkettet",
+    )
+    DIGITAL_OBJECT_SIGNIFICANT_EN_PROPERTIES = (
+        "http://arkumu.org/data/properties/wesentliche-eigenschaften-englisch",
+        "http://arkumu.org/data/properties/description-en-verkettet",
+    )
+    RESOURCE_LABEL_PREDICATES = (
+        "http://arkumu.org/data/properties/deutscher-name",
+        "http://arkumu.org/data/properties/name",
+        "http://arkumu.org/data/properties/deutscher-name-der-medientyp",
+    )
     ROSETTA_CHECKSUM_PREDICATES: Dict[str, str] = {
         'khm': 'http://arkumu.org/data/khm/properties/pruefsumme-sha256',
         'hmt': 'http://arkumu.org/data/hmt/properties/pruefsumme-sha256',
@@ -735,6 +759,12 @@ class ProjectSnapshotService:
                 path=normalized_path,
                 uri=digital_entry.get('uri') or digital_entry.get('canonical_uri'),
             )
+            self._populate_digital_object_metadata(
+                project_object,
+                object_id,
+                nodes,
+                edges_by_subject,
+            )
             digital_objects.append(project_object)
 
             checksum_value = (checksum_map.get(object_id) or "").strip()
@@ -767,6 +797,12 @@ class ProjectSnapshotService:
                 project_object = ProjectDigitalObject(
                     path=path_literal,
                     uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
+                )
+                self._populate_digital_object_metadata(
+                    project_object,
+                    str(digital_id),
+                    nodes,
+                    edges_by_subject,
                 )
                 digital_objects.append(project_object)
 
@@ -981,6 +1017,26 @@ class ProjectSnapshotService:
                 ids.append(str(edge['object_id']))
         return ids
 
+    def _first_literal_any(
+        self,
+        edges: Iterable[Dict[str, Any]],
+        predicates: Sequence[str],
+    ) -> Optional[str]:
+        for predicate in predicates:
+            value = self._first_literal(edges, predicate)
+            if value:
+                normalized = self._normalize_text_value(value)
+                if normalized:
+                    return normalized
+        return None
+
+    @staticmethod
+    def _normalize_text_value(value: Optional[Any]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
     @staticmethod
     def _resource_slug(uri: Optional[str]) -> Optional[str]:
         if not uri:
@@ -1039,6 +1095,128 @@ class ProjectSnapshotService:
         if not tokens:
             return None
         return tokens[0]
+
+    def _populate_digital_object_metadata(
+        self,
+        project_object: ProjectDigitalObject,
+        object_id: str,
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> None:
+        edges_for_digital = edges_by_subject.get(str(object_id), [])
+        if not edges_for_digital:
+            return
+
+        uuid_value = self._normalize_text_value(
+            self._first_literal(edges_for_digital, self.DIGITAL_OBJECT_UUID_PROPERTY)
+        )
+        if uuid_value:
+            project_object.uuid = uuid_value
+
+        genesis_value = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_GENESIS_PROPERTIES,
+        )
+        if genesis_value:
+            project_object.genesis_type = genesis_value
+
+        media_value = self._resolve_media_type(
+            edges_for_digital,
+            nodes,
+            edges_by_subject,
+        )
+        if media_value:
+            project_object.media_type = media_value
+
+        significant_de = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_SIGNIFICANT_DE_PROPERTIES,
+        )
+        if significant_de:
+            project_object.significant_properties_de = significant_de
+
+        significant_en = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_SIGNIFICANT_EN_PROPERTIES,
+        )
+        if significant_en:
+            project_object.significant_properties_en = significant_en
+
+        license_info = self._build_digital_object_license(
+            edges_for_digital,
+            nodes,
+            edges_by_subject,
+        )
+        if license_info:
+            project_object.license = license_info
+
+    def _resolve_media_type(
+        self,
+        edges_for_digital: Iterable[Dict[str, Any]],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Optional[str]:
+        literal_value = self._normalize_text_value(
+            self._first_literal(edges_for_digital, self.DIGITAL_OBJECT_MEDIA_TYPE_PROPERTY)
+        )
+        if literal_value:
+            return literal_value
+
+        media_ids = self._related_ids(edges_for_digital, self.DIGITAL_OBJECT_MEDIA_TYPE_PROPERTY)
+        for media_id in media_ids:
+            media_node = nodes.get(str(media_id), {})
+            candidate = self._normalize_text_value(media_node.get('name') or media_node.get('value'))
+            if candidate:
+                return candidate
+            media_edges = edges_by_subject.get(str(media_id), [])
+            label = self._first_literal_any(media_edges, self.RESOURCE_LABEL_PREDICATES)
+            if label:
+                return label
+        return None
+
+    def _build_digital_object_license(
+        self,
+        edges_for_digital: Iterable[Dict[str, Any]],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Optional[ProjectDigitalObjectLicense]:
+        license_ids = self._related_ids(edges_for_digital, self.DIGITAL_OBJECT_LICENSE_LINK_URI)
+        if not license_ids:
+            return None
+
+        license_id = license_ids[0]
+        license_edges = edges_by_subject.get(str(license_id), [])
+        license_node = nodes.get(str(license_id), {})
+
+        uri = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTY)
+        )
+        if not uri:
+            uri = self._normalize_text_value(license_node.get('uri') or license_node.get('value'))
+
+        label_de = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY)
+        )
+        if not label_de:
+            label_de = self._normalize_text_value(license_node.get('name'))
+
+        label_en = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY)
+        )
+
+        rights_statement = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY)
+        )
+
+        if not any([uri, label_de, label_en, rights_statement]):
+            return None
+
+        return ProjectDigitalObjectLicense(
+            uri=uri,
+            label_de=label_de,
+            label_en=label_en,
+            rights_statement=rights_statement,
+        )
 
     @staticmethod
     def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:

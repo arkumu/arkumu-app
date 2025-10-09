@@ -64,6 +64,7 @@ OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 METS_SCHEMA_URL = DEFAULT_METS_SCHEMA_URL
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
+XML_NS = "http://www.w3.org/XML/1998/namespace"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
 METS_PROFILE_VERSION = "LOC-METS"
 METS_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/mets.xsd"
@@ -1035,8 +1036,6 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
     for code in record.institution_codes:
         _add_dc_value(payload, 'isPartOf', code.upper())
 
-    formats_before = set(payload.get('dc:format', []))
-
     if project.digital_objects:
         formats_added: set[str] = set(payload.get('dc:format', []))
         for obj in project.digital_objects:
@@ -1056,6 +1055,16 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
         language = _default_language_for_resource(resource, record)
         if language:
             _add_dc_value(payload, 'language', language)
+
+    license_rights: set[str] = set()
+    for obj in project.digital_objects:
+        license_info = getattr(obj, "license", None)
+        if license_info and getattr(license_info, "rights_statement", None):
+            normalized = str(license_info.rights_statement).strip()
+            if normalized:
+                license_rights.add(normalized)
+    for rights_value in sorted(license_rights):
+        _add_dc_value(payload, 'rights', rights_value)
 
     if not payload.get('dc:rights'):
         rights = _rights_label_for_resource(resource)
@@ -1286,8 +1295,14 @@ def _build_mets_from_project(
             file_wrap = ET.SubElement(file_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
             file_xml = ET.SubElement(file_wrap, ET.QName(METS_NS, "xmlData"))
             file_dnx = _create_dnx_element(file_xml, "dnx")
+            characteristics_section = _create_dnx_element(file_dnx, "section", {"id": "objectCharacteristics"})
+            characteristics_record = _create_dnx_element(characteristics_section, "record")
+            _create_dnx_element(characteristics_record, "key", {"id": "objectType"}, "FILE")
 
             general_keys: List[tuple[str, str]] = []
+            label_value = obj.file_name or file_label
+            if label_value:
+                general_keys.append(("label", label_value))
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
             if preferred_location:
@@ -1332,6 +1347,84 @@ def _build_mets_from_project(
                         {"id": "fixityAlgorithm"},
                         checksum_label,
                     )
+
+            license_info = getattr(obj, "license", None)
+
+            file_rights = ET.SubElement(file_amd, ET.QName(METS_NS, "rightsMD"), {"ID": f"{file_id}-amd-rights"})
+            file_rights_wrap = ET.SubElement(file_rights, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+            file_rights_xml = ET.SubElement(file_rights_wrap, ET.QName(METS_NS, "xmlData"))
+            file_rights_dnx = _create_dnx_element(file_rights_xml, "dnx")
+            rights_section = _create_dnx_element(file_rights_dnx, "section", {"id": "linkingRightsStatementIdentifier"})
+            rights_record = _create_dnx_element(rights_section, "record")
+            _create_dnx_element(
+                rights_record,
+                "key",
+                {"id": "linkingRightsStatementIdentifierType"},
+                "URI",
+            )
+            rights_identifier_value = license_info.uri if license_info and license_info.uri else ""
+            _create_dnx_element(
+                rights_record,
+                "key",
+                {"id": "linkingRightsStatementIdentifierValue"},
+                rights_identifier_value,
+            )
+
+            file_source = ET.SubElement(file_amd, ET.QName(METS_NS, "sourceMD"), {"ID": f"{file_id}-amd-source-dc"})
+            file_source_wrap = ET.SubElement(file_source, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+            file_source_xml = ET.SubElement(file_source_wrap, ET.QName(METS_NS, "xmlData"))
+            file_source_record = ET.SubElement(file_source_xml, ET.QName(DC_NS, "record"))
+
+            if obj.uuid:
+                identifier_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "identifier"))
+                identifier_elem.text = obj.uuid
+                identifier_elem.set(ET.QName(XML_NS, "type"), "Digital-Object-ID")
+
+            file_title = obj.file_name or file_label
+            if file_title:
+                title_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "title"))
+                title_elem.text = file_title
+                title_elem.set(ET.QName(XML_NS, "type"), "file-name")
+
+            if obj.genesis_type:
+                genesis_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "type"))
+                genesis_elem.text = obj.genesis_type
+                genesis_elem.set(ET.QName(XML_NS, "type"), "genesis-type")
+
+            if obj.media_type:
+                media_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "type"))
+                media_elem.text = obj.media_type
+                media_elem.set(ET.QName(XML_NS, "type"), "media-type")
+
+            if obj.content_type:
+                mimetype_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "type"))
+                mimetype_elem.text = obj.content_type
+                mimetype_elem.set(ET.QName(XML_NS, "type"), "mimetype")
+
+            if obj.significant_properties_de:
+                sig_de_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "description"))
+                sig_de_elem.text = obj.significant_properties_de
+                sig_de_elem.set(ET.QName(XML_NS, "type"), "significant-properties-german")
+
+            if obj.significant_properties_en:
+                sig_en_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "description"))
+                sig_en_elem.text = obj.significant_properties_en
+                sig_en_elem.set(ET.QName(XML_NS, "type"), "significant-properties-english")
+
+            if license_info and license_info.label_de:
+                lic_de_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
+                lic_de_elem.text = license_info.label_de
+                lic_de_elem.set(ET.QName(XML_NS, "lang"), "ger")
+
+            if license_info and license_info.label_en:
+                lic_en_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
+                lic_en_elem.text = license_info.label_en
+                lic_en_elem.set(ET.QName(XML_NS, "lang"), "eng")
+
+            if license_info and license_info.uri:
+                lic_uri_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
+                lic_uri_elem.text = license_info.uri
+                lic_uri_elem.set(ET.QName(XML_NS, "type"), "dcterms:URI")
 
             raw_path = (
                 obj.storage_key

@@ -20,6 +20,14 @@ class ProjectCatchphrase:
 
 
 @dataclass
+class ProjectDigitalObjectLicense:
+    uri: Optional[str] = None
+    label_de: Optional[str] = None
+    label_en: Optional[str] = None
+    rights_statement: Optional[str] = None
+
+
+@dataclass
 class ProjectDigitalObject:
     path: str
     uri: Optional[str] = None
@@ -34,6 +42,16 @@ class ProjectDigitalObject:
     storage_status: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    license: Optional[ProjectDigitalObjectLicense] = None
+    uuid: Optional[str] = None
+    genesis_type: Optional[str] = None
+    media_type: Optional[str] = None
+    significant_properties_de: Optional[str] = None
+    significant_properties_en: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.license and isinstance(self.license, dict):
+            self.license = ProjectDigitalObjectLicense(**self.license)
 
 
 @dataclass

@@ -11,7 +11,7 @@ import mimetypes
 
 from django.conf import settings
 
-from arkumu.projects import ProjectDigitalObject, ProjectRecord
+from arkumu.projects import ProjectDigitalObject, ProjectDigitalObjectLicense, ProjectRecord
 from arkumu.projects.fixity import FixityInfo, parse_fixity
 
 from .path_mapping import resolve_external_paths
@@ -92,6 +92,12 @@ class NormalizedDigitalObject:
     access_url: Optional[str]
     storage_status: Optional[str]
     source: str
+    uuid: Optional[str] = None
+    genesis_type: Optional[str] = None
+    media_type: Optional[str] = None
+    significant_properties_de: Optional[str] = None
+    significant_properties_en: Optional[str] = None
+    license: Optional[ProjectDigitalObjectLicense] = None
 
     @property
     def harvestable(self) -> bool:
@@ -352,6 +358,18 @@ class OAIProjectBuilder:
         if isinstance(size_bytes, str) and size_bytes.isdigit():
             size_bytes = int(size_bytes)
 
+        uuid_value = _clean(getattr(obj, "uuid", None))
+        genesis_type = _clean(getattr(obj, "genesis_type", None))
+        media_type = _clean(getattr(obj, "media_type", None))
+        significant_de = _clean(getattr(obj, "significant_properties_de", None))
+        significant_en = _clean(getattr(obj, "significant_properties_en", None))
+        license_info = getattr(obj, "license", None)
+        if license_info and not isinstance(license_info, ProjectDigitalObjectLicense):
+            try:
+                license_info = ProjectDigitalObjectLicense(**license_info)  # type: ignore[call-arg]
+            except TypeError:
+                license_info = None
+
         return NormalizedDigitalObject(
             original_path=original_path,
             storage_key=storage_key,
@@ -366,6 +384,12 @@ class OAIProjectBuilder:
             access_url=access_url,
             storage_status=storage_status,
             source=source,
+            uuid=uuid_value,
+            genesis_type=genesis_type,
+            media_type=media_type,
+            significant_properties_de=significant_de,
+            significant_properties_en=significant_en,
+            license=license_info,
         )
 
     @staticmethod

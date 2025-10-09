@@ -16,12 +16,13 @@ from django.test import RequestFactory
 from django.utils import timezone as django_timezone
 
 from arkumu.oaipmh import views
-from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS, XLINK_NS
+from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS, XLINK_NS, DC_NS, DCTERMS_NS, XML_NS
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.users.models import Organization
 from arkumu.projects import (
     ProjectRecord,
     ProjectDigitalObject,
+    ProjectDigitalObjectLicense,
     ProjectInstitution,
     ProjectCategory,
     ProjectCatchphrase,
@@ -38,6 +39,12 @@ class TestOAIViewFunctions:
     def setup_method(self):
         """Set up test method."""
         self.factory = RequestFactory()
+        self.primary_license_uri = "http://rights.example/licenses/primary"
+        self.secondary_license_uri = "http://rights.example/licenses/secondary"
+        self.primary_rights_statement = "© 2024 Example Archive – All rights reserved"
+        self.secondary_rights_statement = "CC BY 4.0"
+        self.primary_uuid = "uuid-test-1"
+        self.secondary_uuid = "uuid-test-2"
 
     def _ensure_event_storage(self, resource: Resource) -> None:
         """Create S3 metadata for the synthetic event file used in tests."""
@@ -74,6 +81,17 @@ class TestOAIViewFunctions:
                     content_type="text/plain",
                     size_bytes=123,
                     access_url="https://download.example/test1.txt",
+                    uuid=self.primary_uuid,
+                    genesis_type="born-digital",
+                    media_type="Audio",
+                    significant_properties_de="Wesentliche Eigenschaften (DE)",
+                    significant_properties_en="Significant properties (EN)",
+                    license=ProjectDigitalObjectLicense(
+                        uri=self.primary_license_uri,
+                        label_de="Lizenz Eins",
+                        label_en="License One",
+                        rights_statement=self.primary_rights_statement,
+                    ),
                 )
             )
             digital_objects.append(
@@ -84,6 +102,17 @@ class TestOAIViewFunctions:
                     content_type="application/pdf",
                     size_bytes=456,
                     access_url="https://download.example/test2.pdf",
+                    uuid=self.secondary_uuid,
+                    genesis_type="digitized",
+                    media_type="Text",
+                    significant_properties_de="Weitere Eigenschaften (DE)",
+                    significant_properties_en="Additional properties (EN)",
+                    license=ProjectDigitalObjectLicense(
+                        uri=self.secondary_license_uri,
+                        label_de="Lizenz Zwei",
+                        label_en="License Two",
+                        rights_statement=self.secondary_rights_statement,
+                    ),
                 )
             )
 
@@ -483,6 +512,9 @@ class TestOAIViewFunctions:
         assert not payload.get("dc:relation")
         assert 'dc:format' in payload
         assert 'text/plain' in payload['dc:format']
+        rights_values = payload.get("dc:rights", [])
+        assert self.primary_rights_statement in rights_values
+        assert self.secondary_rights_statement in rights_values
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
@@ -560,6 +592,76 @@ class TestOAIViewFunctions:
         for struct_map in struct_maps:
             fptr = struct_map.find(f".//{{{METS_NS}}}fptr")
             assert fptr is not None
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_mets_file_sections_include_license_metadata(self, mock_get_record, sample_resources):
+        """File-level AMD sections include object characteristics, rights, and DC licence metadata."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        file_elements = mets_root.findall(f".//{{{METS_NS}}}file")
+        assert len(file_elements) == len(record.digital_objects)
+
+        for file_elem, digital_obj in zip(file_elements, record.digital_objects):
+            adm_id = file_elem.get("ADMID")
+            assert adm_id
+            amd_sec = mets_root.find(f".//{{{METS_NS}}}amdSec[@ID='{adm_id}']")
+            assert amd_sec is not None
+
+            object_type_key = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='objectCharacteristics']//{{{DNX_NS}}}key[@id='objectType']"
+            )
+            assert object_type_key is not None
+            assert object_type_key.text == "FILE"
+
+            rights_value = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='linkingRightsStatementIdentifier']//{{{DNX_NS}}}key[@id='linkingRightsStatementIdentifierValue']"
+            )
+            assert rights_value is not None
+            assert rights_value.text == digital_obj.license.uri
+
+            source_record = amd_sec.find(f".//{{{DC_NS}}}record")
+            assert source_record is not None
+
+            identifier_elem = source_record.find(f"./{{{DC_NS}}}identifier[@{{{XML_NS}}}type='Digital-Object-ID']")
+            assert identifier_elem is not None
+            assert identifier_elem.text == digital_obj.uuid
+
+            filename_elem = source_record.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='file-name']")
+            assert filename_elem is not None
+            assert filename_elem.text == digital_obj.file_name
+
+            genesis_elem = source_record.find(f"./{{{DC_NS}}}type[@{{{XML_NS}}}type='genesis-type']")
+            assert genesis_elem is not None
+            assert genesis_elem.text == digital_obj.genesis_type
+
+            media_elem = source_record.find(f"./{{{DC_NS}}}type[@{{{XML_NS}}}type='media-type']")
+            assert media_elem is not None
+            assert media_elem.text == digital_obj.media_type
+
+            mimetype_elem = source_record.find(f"./{{{DC_NS}}}type[@{{{XML_NS}}}type='mimetype']")
+            assert mimetype_elem is not None
+            assert mimetype_elem.text == digital_obj.content_type
+
+            sig_de_elem = source_record.find(f"./{{{DC_NS}}}description[@{{{XML_NS}}}type='significant-properties-german']")
+            assert sig_de_elem is not None
+            assert sig_de_elem.text == digital_obj.significant_properties_de
+
+            sig_en_elem = source_record.find(f"./{{{DC_NS}}}description[@{{{XML_NS}}}type='significant-properties-english']")
+            assert sig_en_elem is not None
+            assert sig_en_elem.text == digital_obj.significant_properties_en
+
+            license_elements = source_record.findall(f"./{{{DCTERMS_NS}}}license")
+            license_values = {elem.text for elem in license_elements}
+            assert digital_obj.license.label_de in license_values
+            assert digital_obj.license.label_en in license_values
+            assert digital_obj.license.uri in license_values
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_struct_map_groups_event_files(self, mock_get_record, sample_resources):
