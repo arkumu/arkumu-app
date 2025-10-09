@@ -41,3 +41,13 @@
   </div>
 </div>
 {% endblock content %}
+
+{% block javascript %} {{ block.super }}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+
+      // Handle dynamic addition of actor-event forms
+      document.querySelector("#id_uri").closest(".form-control").style.display = 'none';
+    });
+  </script>
+{% endblock javascript %}

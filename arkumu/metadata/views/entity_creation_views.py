@@ -338,8 +338,8 @@ class AlternateTitleForm(BaseEntityForm):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
 
 
-ActorFormSet = formset_factory(ActorForm, extra=0, min_num=1, validate_min=False)
-RoleFormSet = formset_factory(RoleForm, extra=0, min_num=1, validate_min=False)
+ActorFormSet = formset_factory(ActorForm, extra=0, min_num=0, validate_min=False)
+RoleFormSet = formset_factory(RoleForm, extra=0, min_num=0, validate_min=False)
 
 
 def from_form_set_property_literal(
