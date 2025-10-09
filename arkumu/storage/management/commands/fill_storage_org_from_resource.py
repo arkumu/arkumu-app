@@ -9,8 +9,8 @@ from arkumu.storage.models import S3FileObject
 
 class Command(BaseCommand):
     help = (
-        "Copy the organization code from the linked Resource to S3FileObject rows "
-        "that are missing their storage organization."
+        "Copy the organization code from the linked Resource to S3FileObject rows. "
+        "By default only rows missing an organization are updated; pass --all to overwrite existing values."
     )
 
     def add_arguments(self, parser) -> None:  # type: ignore[override]
@@ -34,15 +34,24 @@ class Command(BaseCommand):
         filter_org: str | None = options.get("filter_org")
         limit: int | None = options.get("limit")
         dry_run: bool = options.get("dry_run", False)
+        update_all: bool = options.get("update_all", False)
 
-        queryset = (
-            S3FileObject.objects.filter(
-                Q(organization__isnull=True) | Q(organization=""),
+        base_filter = Q(related_resource__organization__isnull=False)
+        if update_all:
+            queryset = (
+                S3FileObject.objects.filter(base_filter)
+                .select_related("related_resource__organization")
+                .order_by("created_at")
             )
-            .filter(related_resource__organization__isnull=False)
-            .select_related("related_resource__organization")
-            .order_by("created_at")
-        )
+        else:
+            queryset = (
+                S3FileObject.objects.filter(
+                    base_filter
+                    & (Q(organization__isnull=True) | Q(organization="")),
+                )
+                .select_related("related_resource__organization")
+                .order_by("created_at")
+            )
 
         if filter_org:
             queryset = queryset.filter(
@@ -90,3 +99,9 @@ class Command(BaseCommand):
         if dry_run:
             summary += " (dry-run)"
         self.stdout.write(self.style.SUCCESS(summary))
+        parser.add_argument(
+            "--all",
+            dest="update_all",
+            action="store_true",
+            help="Overwrite the organization even when it already has a value.",
+        )
