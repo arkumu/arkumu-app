@@ -208,11 +208,11 @@ if HUEY_PERIODIC_AVAILABLE:
 
 @db_task(retries=1, retry_delay=30)
 def recalculate_s3_checksums(organization: str | None = None, missing_only: bool = True, limit: int | None = None) -> None:
-    """Recalculate SHA256 checksums for S3 files, optionally scoped to an organization."""
+    """Recalculate checksums for S3 files, optionally scoped to an organization."""
 
     S3FileObject = apps.get_model('storage', 'S3FileObject')
 
-    queryset = S3FileObject.objects.filter(status='completed')
+    queryset = S3FileObject.objects.filter(status__in=['completed', 'verified'])
 
     if organization:
         queryset = queryset.filter(organization=organization)
