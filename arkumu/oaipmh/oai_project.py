@@ -298,6 +298,8 @@ class OAIProjectBuilder:
     ) -> Optional[NormalizedDigitalObject]:
         original_path = _clean(getattr(obj, "path", None))
         storage_key = _clean(getattr(obj, "storage_key", None))
+        if not storage_key and original_path:
+            storage_key = original_path
         access_url = _clean(getattr(obj, "access_url", None))
         file_name = _infer_file_name(obj)
         content_type = _guess_mime_type(obj)
@@ -406,6 +408,8 @@ class OAIProjectBuilder:
             if key_normalized.startswith("metadata/"):
                 return False
             status = _status_token(obj.storage_status)
+            if status is None:
+                return True
             return status in HARVESTABLE_STORAGE_STATUSES
 
         if obj.storage_key or obj.rosetta_path:
