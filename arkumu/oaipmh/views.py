@@ -1021,6 +1021,17 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
             _add_dc_value(payload, 'coverage', event.location)
         if event.country:
             _add_dc_value(payload, 'coverage', event.country)
+        for actor in getattr(event, "actors", []) or []:
+            actor_name = getattr(actor, "name", None)
+            roles = [role for role in getattr(actor, "roles", []) or [] if role]
+            if actor_name:
+                if roles:
+                    role_label = ", ".join(sorted(set(roles)))
+                    _add_dc_value(payload, 'contributor', f"{actor_name} ({role_label})")
+                else:
+                    _add_dc_value(payload, 'contributor', actor_name)
+            elif roles:
+                _add_dc_value(payload, 'contributor', ", ".join(sorted(set(roles))))
 
     if record.year_range:
         _add_dc_value(payload, 'date', record.year_range)

@@ -28,6 +28,7 @@ from arkumu.projects import (
     ProjectCatchphrase,
     ProjectActor,
     ProjectEvent,
+    ProjectEventActor,
     ProjectType,
 )
 from arkumu.storage.models.s3_file_objects import S3FileObject
@@ -45,6 +46,8 @@ class TestOAIViewFunctions:
         self.secondary_rights_statement = "CC BY 4.0"
         self.primary_uuid = "uuid-test-1"
         self.secondary_uuid = "uuid-test-2"
+        self.event_actor_name = "Event Specialist"
+        self.event_actor_roles = ["Moderator", "Curator"]
 
     def _ensure_event_storage(self, resource: Resource) -> None:
         """Create S3 metadata for the synthetic event file used in tests."""
@@ -131,6 +134,7 @@ class TestOAIViewFunctions:
                 name="Launch",
                 start="2020-01-01",
                 location="Berlin",
+                actors=[ProjectEventActor(name=self.event_actor_name, roles=self.event_actor_roles)],
             )],
             project_type=ProjectType(label="Type A"),
             digital_objects=digital_objects,
@@ -519,6 +523,11 @@ class TestOAIViewFunctions:
         is_part_of_values = payload.get("dcterms:isPartOf", [])
         assert "TI" in is_part_of_values
         assert "Test Institution" in is_part_of_values
+        contributor_values = payload.get("dc:contributor", [])
+        assert any(self.event_actor_name in value for value in contributor_values)
+        expected_role_fragment = ", ".join(sorted(set(self.event_actor_roles)))
+        event_contributor = f"{self.event_actor_name} ({expected_role_fragment})"
+        assert event_contributor in contributor_values
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
