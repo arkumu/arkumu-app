@@ -41,3 +41,11 @@
   </div>
 </div>
 {% endblock content %}
+
+{% block javascript %} {{ block.super }}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      document.querySelector("#id_uri").closest(".form-control").style.display = 'none';
+    });
+  </script>
+{% endblock javascript %}

@@ -1,129 +1,132 @@
-{% if project_form.non_field_errors %}
-<div class="alert alert-error shadow-lg">
-  <div></div>
-    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-    <span></span>
-      {% for error in project_form.non_field_errors %}
-        {{ error }}<br>
-      {% endfor %}
-    </span>
-  </div>
-</div>
-{% endif %}
-
-<div class="space-y-6">
-  <!-- Project Details Section -->
-  <div class="space-y-4">
-    <h2 class="text-lg font-semibold flex items-center border-b pb-2">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
-      </svg>
-      Project Details
-    </h2>
-
-
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text font-medium">Wähle oder erstelle ein Projekt</span>
-        {% if project_form.uri.errors %}
+<div class="project-form">
+  <div class="form-control">
+    <label class="label">
+      <span class="label-text font-medium">Wähle oder erstelle ein Projekt</span>
+      {% if project_form.uri.errors %}
         <span class="label-text-alt text-error">{{ project_form.uri.errors.0 }}</span>
-        {% endif %}
-      </label>
-      {{ project_form.uri }}
-      <div class="text-xs text-base-content/60 mt-1">{{ project_form.uri.help_text }}</div>
-    </div>
+      {% endif %}
+    </label>
+    {{ project_form.uri }}
+    <div class="text-xs text-base-content/60 mt-1">{{ project_form.uri.help_text }}</div>
+  </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Bevorzugter Titel</span>
-          {% if project_form.bevorzugter_titel.errors %}
-          <span class="label-text-alt text-error">{{ project_form.bevorzugter_titel.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ project_form.bevorzugter_titel }}
-        <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_titel.help_text }}</div>
+  <div id="{{prefix}}fields">
+    {% if project_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div></div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span></span>
+            {% for error in project_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
       </div>
+    {% endif %}
 
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Bevorzugter Untertitel</span>
-          {% if project_form.bevorzugter_untertitel.errors %}
-          <span class="label-text-alt text-error">{{ project_form.bevorzugter_untertitel.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ project_form.bevorzugter_untertitel }}
-        <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_untertitel.help_text }}</div>
+    <div class="space-y-6">
+      <!-- Project Details Section -->
+      <div class="space-y-4">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Project Details
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bevorzugter Titel</span>
+              {% if project_form.bevorzugter_titel.errors %}
+              <span class="label-text-alt text-error">{{ project_form.bevorzugter_titel.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.bevorzugter_titel }}
+            <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_titel.help_text }}</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bevorzugter Untertitel</span>
+              {% if project_form.bevorzugter_untertitel.errors %}
+              <span class="label-text-alt text-error">{{ project_form.bevorzugter_untertitel.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.bevorzugter_untertitel }}
+            <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_untertitel.help_text }}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Einliefernde Hochschule</span>
+              {% if project_form.einliefernde_hochschule_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.einliefernde_hochschule_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.einliefernde_hochschule_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Projektkategorie</span>
+              {% if project_form.projektkategorie_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.projektkategorie_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.projektkategorie_uri }}
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Beschreibung</span>
+            {% if project_form.beschreibung_uri.errors %}
+            <span class="label-text-alt text-error">{{ project_form.beschreibung_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ project_form.beschreibung_uri }}
+          <div class="text-xs text-base-content/60 mt-1">{{ project_form.beschreibung_uri.help_text }}</div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Schlagwörter</span>
+              {% if project_form.schlagwort_uris.errors %}
+              <span class="label-text-alt text-error">{{ project_form.schlagwort_uris.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.schlagwort_uris }}
+            <div class="text-xs text-base-content/60 mt-1">Select one or more keywords</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Projektart</span>
+              {% if project_form.projektart_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.projektart_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.projektart_uri }}
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Vorschaubild</span>
+            {% if project_form.vorschaubild_uri.errors %}
+            <span class="label-text-alt text-error">{{ project_form.vorschaubild_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ project_form.vorschaubild_uri }}
+          <div class="text-xs text-base-content/60 mt-1">{{ project_form.vorschaubild_uri.help_text }}</div>
+        </div>
       </div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Einliefernde Hochschule</span>
-          {% if project_form.einliefernde_hochschule_uri.errors %}
-          <span class="label-text-alt text-error">{{ project_form.einliefernde_hochschule_uri.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ project_form.einliefernde_hochschule_uri }}
-      </div>
-
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Projektkategorie</span>
-          {% if project_form.projektkategorie_uri.errors %}
-          <span class="label-text-alt text-error">{{ project_form.projektkategorie_uri.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ project_form.projektkategorie_uri }}
-      </div>
-    </div>
-
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text font-medium">Beschreibung</span>
-        {% if project_form.beschreibung_uri.errors %}
-        <span class="label-text-alt text-error">{{ project_form.beschreibung_uri.errors.0 }}</span>
-        {% endif %}
-      </label>
-      {{ project_form.beschreibung_uri }}
-      <div class="text-xs text-base-content/60 mt-1">{{ project_form.beschreibung_uri.help_text }}</div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Schlagwörter</span>
-          {% if project_form.schlagwort_uris.errors %}
-          <span class="label-text-alt text-error">{{ project_form.schlagwort_uris.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ project_form.schlagwort_uris }}
-        <div class="text-xs text-base-content/60 mt-1">Select one or more keywords</div>
-      </div>
-
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Projektart</span>
-          {% if project_form.projektart_uri.errors %}
-          <span class="label-text-alt text-error">{{ project_form.projektart_uri.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ project_form.projektart_uri }}
-      </div>
-    </div>
-
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text font-medium">Vorschaubild</span>
-        {% if project_form.vorschaubild_uri.errors %}
-        <span class="label-text-alt text-error">{{ project_form.vorschaubild_uri.errors.0 }}</span>
-        {% endif %}
-      </label>
-      {{ project_form.vorschaubild_uri }}
-      <div class="text-xs text-base-content/60 mt-1">{{ project_form.vorschaubild_uri.help_text }}</div>
     </div>
   </div>
 </div>

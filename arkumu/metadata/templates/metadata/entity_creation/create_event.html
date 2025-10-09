@@ -81,6 +81,8 @@
   <script>
     document.addEventListener("DOMContentLoaded", function () {
 
+      document.querySelector("#id_uri").closest(".form-control").style.display = 'none';
+
       // Handle dynamic addition of actor-event forms
       document.querySelectorAll(".add-actor-event").forEach(function (button) {
         button.addEventListener("click", function (e) {

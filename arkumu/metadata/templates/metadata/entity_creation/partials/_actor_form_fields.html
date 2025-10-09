@@ -1,9 +1,8 @@
 <div class="actor-form">
-
   <div class="form-control">
     <label class="label">
       <span class="label-text font-medium">Wähle oder erstelle eine AkteurIn</span>
-      {% if actor_form.uri.errors %}
+        {% if actor_form.uri.errors %}
       <span class="label-text-alt text-error">{{ actor_form.uri.errors.0 }}</span>
       {% endif %}
     </label>
