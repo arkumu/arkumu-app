@@ -1359,25 +1359,25 @@ def _build_mets_from_project(
 
             license_info = getattr(obj, "license", None)
 
-            file_rights = ET.SubElement(file_amd, ET.QName(METS_NS, "rightsMD"), {"ID": f"{file_id}-amd-rights"})
-            file_rights_wrap = ET.SubElement(file_rights, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
-            file_rights_xml = ET.SubElement(file_rights_wrap, ET.QName(METS_NS, "xmlData"))
-            file_rights_dnx = _create_dnx_element(file_rights_xml, "dnx")
-            rights_section = _create_dnx_element(file_rights_dnx, "section", {"id": "linkingRightsStatementIdentifier"})
-            rights_record = _create_dnx_element(rights_section, "record")
-            _create_dnx_element(
-                rights_record,
-                "key",
-                {"id": "linkingRightsStatementIdentifierType"},
-                "URI",
-            )
-            rights_identifier_value = license_info.uri if license_info and license_info.uri else ""
-            _create_dnx_element(
-                rights_record,
-                "key",
-                {"id": "linkingRightsStatementIdentifierValue"},
-                rights_identifier_value,
-            )
+            if license_info and license_info.uri:
+                file_rights = ET.SubElement(file_amd, ET.QName(METS_NS, "rightsMD"), {"ID": f"{file_id}-amd-rights"})
+                file_rights_wrap = ET.SubElement(file_rights, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+                file_rights_xml = ET.SubElement(file_rights_wrap, ET.QName(METS_NS, "xmlData"))
+                file_rights_dnx = _create_dnx_element(file_rights_xml, "dnx")
+                rights_section = _create_dnx_element(file_rights_dnx, "section", {"id": "linkingRightsStatementIdentifier"})
+                rights_record = _create_dnx_element(rights_section, "record")
+                _create_dnx_element(
+                    rights_record,
+                    "key",
+                    {"id": "linkingRightsStatementIdentifierType"},
+                    "URI",
+                )
+                _create_dnx_element(
+                    rights_record,
+                    "key",
+                    {"id": "linkingRightsStatementIdentifierValue"},
+                    license_info.uri,
+                )
 
             file_source = ET.SubElement(file_amd, ET.QName(METS_NS, "sourceMD"), {"ID": f"{file_id}-amd-source-dc"})
             file_source_wrap = ET.SubElement(file_source, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
