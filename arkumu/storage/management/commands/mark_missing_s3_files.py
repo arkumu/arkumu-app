@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 
 from arkumu.storage.models import S3FileObject
+
+VALID_STATUSES = ["pending", "uploading", "completed", "failed", "verified"]
 
 
 class Command(BaseCommand):
@@ -25,6 +28,12 @@ class Command(BaseCommand):
             help="Maximum number of files to scan (ordered by -created_at).",
         )
         parser.add_argument(
+            "--status",
+            dest="status",
+            choices=VALID_STATUSES,
+            help="Only inspect files currently in this status.",
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Report missing objects without updating the database.",
@@ -34,13 +43,19 @@ class Command(BaseCommand):
         bucket = options["bucket"]
         limit = options["limit"]
         dry_run = options["dry_run"]
+        status_filter = options.get("status")
 
         queryset = S3FileObject.objects.filter(
             related_resource__isnull=False,
         ).exclude(status="failed")
 
         if bucket:
-            queryset = queryset.filter(organization=bucket)
+            queryset = queryset.filter(
+                Q(session__s3_bucket=bucket) | Q(organization=bucket)
+            )
+
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
 
         queryset = queryset.order_by("-created_at")
 
@@ -83,4 +98,3 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f"Marked {missing} file(s) as missing in S3{suffix}"),
             )
-
