@@ -20,6 +20,12 @@ class Command(BaseCommand):
             help="Restrict updates to rows whose resource organization matches this code.",
         )
         parser.add_argument(
+            "--all",
+            dest="update_all",
+            action="store_true",
+            help="Overwrite the organization even when it already has a value.",
+        )
+        parser.add_argument(
             "--limit",
             type=int,
             help="Limit the number of rows updated (ordered by created_at).",
@@ -99,9 +105,3 @@ class Command(BaseCommand):
         if dry_run:
             summary += " (dry-run)"
         self.stdout.write(self.style.SUCCESS(summary))
-        parser.add_argument(
-            "--all",
-            dest="update_all",
-            action="store_true",
-            help="Overwrite the organization even when it already has a value.",
-        )
