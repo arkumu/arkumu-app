@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from arkumu.metadata.services.metatdata_s3_mapping.map_resources_to_files import (
     FileResourceMatcherService,
@@ -63,11 +64,18 @@ class Command(BaseCommand):
         )
 
         try:
-            synced, created, skipped, errors = service.discover_and_sync_s3_files(
-                bucket_name=bucket,
-                prefix=prefix,
-                dry_run=dry_run,
-            )
+            if dry_run:
+                with transaction.atomic():
+                    synced, created, skipped, errors = service.discover_and_sync_s3_files(
+                        bucket_name=bucket,
+                        prefix=prefix,
+                    )
+                    transaction.set_rollback(True)
+            else:
+                synced, created, skipped, errors = service.discover_and_sync_s3_files(
+                    bucket_name=bucket,
+                    prefix=prefix,
+                )
         except Exception as exc:  # noqa: BLE001
             raise CommandError(f"S3 discovery failed: {exc}") from exc
 
