@@ -1,17 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 
 from arkumu.storage.models import S3FileObject
 from arkumu.storage.services.base_storage_service import BaseStorageService
-
-try:
-    from typing import TypedDict
-except ImportError:  # pragma: no cover - Python <3.8
-    TypedDict = dict  # type: ignore[assignment]
-
 
 VALID_STATUSES = {"pending", "uploading", "completed", "failed", "verified"}
 
@@ -127,17 +123,20 @@ class Command(BaseCommand):
                     updated_checksums += 1
                     continue
 
+                stored = False
                 if etag and not obj.is_multipart_upload(etag):
                     obj._store_checksum("md5", etag)
-                    updated_checksums += 1
+                    stored = True
                 else:
-                    checksum = obj.calculate_checksum(service, algorithm="sha256")
-                    if checksum:
-                        updated_checksums += 1
-
-                if obj.error_message:
-                    obj.error_message = ""
-                    obj.save(update_fields=["error_message", "updated_at"])
+                    digest = _stream_hash(service.s3_client, bucket_name, key, "md5")
+                    if digest:
+                        obj._store_checksum("md5", digest)
+                        stored = True
+                if stored:
+                    updated_checksums += 1
+                    if obj.error_message:
+                        obj.error_message = ""
+                        obj.save(update_fields=["error_message", "updated_at"])
         except Exception as exc:  # noqa: BLE001
             raise CommandError(f"Verification failed: {exc}") from exc
         finally:
@@ -161,3 +160,27 @@ class Command(BaseCommand):
             f"{updated_checksums} checksum(s)."
         )
         self.stdout.write(self.style.SUCCESS(summary))
+
+
+def _stream_hash(client, bucket: str, key: str, algorithm: str) -> str:
+    """Download an object and return the hex digest for the requested algorithm."""
+    try:
+        response = client.get_object(Bucket=bucket, Key=key)
+    except Exception:  # noqa: BLE001
+        return ""
+
+    body = response.get("Body")
+    if body is None:
+        return ""
+
+    try:
+        hasher = hashlib.new(algorithm)
+    except ValueError:
+        return ""
+
+    while True:
+        chunk = body.read(8192)
+        if not chunk:
+            break
+        hasher.update(chunk)
+    return hasher.hexdigest()

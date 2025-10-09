@@ -1,4 +1,5 @@
 import io
+import hashlib
 
 import pytest
 from django.core.management import call_command
@@ -14,9 +15,15 @@ class DummyS3Client:
 
     def head_object(self, Bucket, Key):  # noqa: N803
         result = self.responses.get((Bucket, Key))
-        if result is None:
+        if not result or result.get("head") is None:
             raise RuntimeError("Missing")
-        return result
+        return result["head"]
+
+    def get_object(self, Bucket, Key):  # noqa: N803
+        result = self.responses.get((Bucket, Key))
+        if not result or result.get("body") is None:
+            raise RuntimeError("Missing body")
+        return {"Body": io.BytesIO(result["body"])}
 
 
 class DummyBaseStorageService:
@@ -47,7 +54,7 @@ def _resource(org_code: str = "rsh") -> Resource:
 @pytest.mark.django_db
 def test_verify_s3_files_updates_checksum(monkeypatch):
     responses = {
-        ("rsh", "data/file.txt"): {"ETag": '"abc123"'},
+        ("rsh", "data/file.txt"): {"head": {"ETag": '"abc123"'}},
     }
 
     monkeypatch.setattr(
@@ -102,10 +109,43 @@ def test_verify_s3_files_marks_missing(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_verify_s3_files_streams_multipart(monkeypatch):
+    body = b"multipart data for checksum"
+    responses = {
+        ("rsh", "data/file.bin"): {
+            "head": {"ETag": '"abc-2"'},
+            "body": body,
+        }
+    }
+
+    monkeypatch.setattr(
+        "arkumu.storage.management.commands.verify_s3_files.BaseStorageService",
+        lambda: DummyBaseStorageService(responses),
+    )
+
+    obj = S3FileObject.objects.create(
+        file_name="file.bin",
+        s3_key="data/file.bin",
+        organization="rsh",
+        status="verified",
+        related_resource=_resource(),
+    )
+
+    call_command(
+        "verify_s3_files",
+        "--bucket",
+        "rsh",
+    )
+
+    obj.refresh_from_db()
+    expected = hashlib.md5(body).hexdigest()
+    assert obj.sha256_checksum == f"md5:{expected}"
+
+
+@pytest.mark.django_db
 def test_verify_s3_files_dry_run(monkeypatch):
     responses = {
-        ("rsh", "data/file.txt"): {"ETag": '"abc123"'},
-        ("rsh", "data/missing.txt"): None,
+        ("rsh", "data/file.txt"): {"head": {"ETag": '"abc123"'}},
     }
 
     class MixedService(DummyBaseStorageService):
