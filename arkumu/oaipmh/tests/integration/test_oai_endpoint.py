@@ -273,7 +273,8 @@ class TestOAIEndpoint:
 
         assert response.status_code == 200
         code, message = xml_validator.extract_error(response.content.decode())
-        assert code == "idDoesNotExist"
+        if code != "idDoesNotExist":
+            pytest.fail(f"Unexpected OAI error {code}: {message}")
 
     # ============================================================================
     # LISTSETS VERB TESTS
@@ -887,7 +888,7 @@ class TestOAIEndpoint:
         assert all('preview' not in (href or '') for href in flocat_hrefs)
 
     @pytest.mark.django_db
-    def test_get_record_mets_returns_error_when_validation_fails(self, oai_client, sample_resources, xml_validator):
+    def test_get_record_mets_returns_error_when_validation_fails(self, oai_client, sample_resources, xml_validator, mock_canonical_graph_service):
         """When DNX validation fails the METS record is not disseminated."""
 
         resource = sample_resources[0]
@@ -926,7 +927,8 @@ class TestOAIEndpoint:
 
         assert response.status_code == 200
         code, message = xml_validator.extract_error(response.content.decode())
-        assert code == "idDoesNotExist"
+        if code != "idDoesNotExist":
+            pytest.fail(f"Unexpected OAI error {code}: {message}")
         assert "METS dissemination" in message
         mock_validate.assert_called()
 
@@ -1219,7 +1221,7 @@ class TestOAIEndpoint:
 
         assert response.status_code == 200
         content = response.content.decode()
-        root = ET.fromstring(content)
+        root = ET.fromstring(response.content)
         ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
         request_elem = root.find("oai:request", ns)
         assert request_elem is not None

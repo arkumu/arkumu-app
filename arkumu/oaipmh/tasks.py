@@ -83,7 +83,7 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
 
         # Get resources for this page
         queryset = _get_resources_queryset(set_spec, from_date, until_date, metadata_prefix)
-        page_size = 20
+        page_size = 10
         resources = list(queryset[offset:offset + page_size + 1])
 
         has_more = len(resources) > page_size
@@ -111,7 +111,7 @@ def warm_page_cache(metadata_prefix: str = 'oai_dc', set_spec: str = '',
         # Build resumption token if needed
         resumption_token = None
         if has_more:
-            resumption_service = ResumptionTokenService(page_size=20)
+            resumption_service = ResumptionTokenService(page_size=10)
             next_offset = offset + page_size
             resumption_token = resumption_service.create_token(
                 offset=next_offset,

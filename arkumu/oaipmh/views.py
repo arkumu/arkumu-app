@@ -22,6 +22,7 @@ from django.db.models import Q
 
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
+from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.users.models import Organization
 from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, ProjectSnapshot
 from arkumu.projects.fixity import parse_fixity
@@ -177,7 +178,7 @@ def _group_digital_objects_for_rosetta(objects: List[NormalizedDigitalObject]) -
     return []
 
 # Initialize services
-resumption_service = ResumptionTokenService(page_size=20)
+resumption_service = ResumptionTokenService(page_size=10)
 oai_cache = OAICacheService()
 snapshot_service = ProjectSnapshotService()
 project_builder = OAIProjectBuilder()
@@ -393,6 +394,9 @@ def _xml_response(elem: ET._Element) -> HttpResponse:
     return HttpResponse(data, content_type="text/xml")
 
 def _identify(oai: ET._Element, request: HttpRequest) -> ET._Element:
+    request_elem = oai.find(f"{{{OAI_NS}}}request")
+    if request_elem is not None and not request_elem.get("verb"):
+        request_elem.set("verb", "Identify")
     identify = ET.SubElement(oai, "Identify")
     ET.SubElement(identify, "repositoryName").text = REPO_NAME
     # Absolute baseURL per spec
@@ -1163,8 +1167,10 @@ def _build_mets_from_project(
         },
     )
     source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+    org_code = resource.organization.code if resource.organization else None
     try:
-        rdf_element = build_rdf_graph(resource)
+        rdf_service = CanonicalGraphService(org_code=org_code)
+        rdf_element = build_rdf_graph(resource, graph_service=rdf_service)
         source_xml.append(rdf_element)
     except Exception:
         logger.exception("Failed to build RDF metadata for %s", getattr(resource, "uri", "unknown"))
@@ -1615,7 +1621,16 @@ def _build_metadata_element(
             )
 
             if not validation.is_valid:
-                issue_summary = "; ".join(issue.message for issue in validation.issues) or "unknown reason"
+                issues = getattr(validation, "issues", [])
+                if not isinstance(issues, (list, tuple)):
+                    issues = [issues] if issues else []
+                messages: List[str] = []
+                for issue in issues:
+                    if issue is None:
+                        continue
+                    message = getattr(issue, "message", None)
+                    messages.append(str(message) if message is not None else str(issue))
+                issue_summary = "; ".join(messages) or "unknown reason"
                 logger.warning(
                     "Generated METS payload failed validation for %s: %s; trying next candidate",
                     getattr(resource, "uri", "unknown"),
@@ -1627,7 +1642,10 @@ def _build_metadata_element(
             metadata.append(ET.fromstring(mets_bytes))
             break
     elif metadata_prefix == "rdf":
-        rdf_element = build_rdf_graph(resource)
+        rdf_service = CanonicalGraphService(
+            org_code=resource.organization.code if resource.organization else None
+        )
+        rdf_element = build_rdf_graph(resource, graph_service=rdf_service)
         metadata.append(rdf_element)
 
     return metadata
@@ -2130,5 +2148,6 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 
     except Exception as e:
         # Global exception handler for any unexpected errors
+        logger.exception("Unhandled error in OAI endpoint", exc_info=e)
         oai = _oai_envelope(request)
         return _xml_response(_error(oai, "internalError", f"Internal server error: {str(e)}"))
