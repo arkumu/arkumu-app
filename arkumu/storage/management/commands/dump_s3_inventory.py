@@ -10,13 +10,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from arkumu.storage.models import S3FileObject
-
-try:
-    import boto3  # type: ignore
-    from botocore.exceptions import ClientError  # type: ignore
-except Exception:  # noqa: BLE001
-    boto3 = None  # type: ignore[assignment]
-    ClientError = Exception  # type: ignore
+from arkumu.storage.services.base_storage_service import BaseStorageService
+from botocore.exceptions import ClientError
 
 
 class Command(BaseCommand):
@@ -75,11 +70,12 @@ class Command(BaseCommand):
         if not bucket_list:
             raise CommandError("No buckets specified or inferred.")
 
+        self.storage_service = BaseStorageService()
+
         inventory = self._collect_inventory(bucket_list, prefixes or [])
         if not inventory:
             self.stdout.write(self.style.WARNING("Inventory is empty; nothing to reconcile."))
             return
-
         if output_path:
             path = Path(output_path)
             if output_format == "json":
@@ -102,10 +98,7 @@ class Command(BaseCommand):
         buckets: Sequence[str],
         prefixes: Sequence[str],
     ) -> List[Tuple[str, str]]:
-        if boto3 is None:
-            raise CommandError("boto3 is required to collect inventory. Install boto3 and configure credentials.")
-
-        client = boto3.client("s3")  # type: ignore[call-arg]
+        client = self.storage_service.s3_client
         entries: List[Tuple[str, str]] = []
         seen = set()
 
