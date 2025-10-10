@@ -1,0 +1,25 @@
+<div class="flex flex-wrap items-center justify-end gap-2 lg:gap-3">
+    <button type="button"
+            id="open-upload-panel-top-btn"
+            class="btn btn-primary btn-sm gap-2"
+            title="Open the live upload activity panel">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Panel
+    </button>
+    <a href="{% url 'storage:uploads_dashboard' %}"
+       class="btn btn-secondary btn-sm gap-2"
+       title="Open the uploads dashboard">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+        History
+    </a>
+    <div id="refresh-button-container">
+        {% include 'dashboard/partials/file_browser_refresh_button.html' %}
+    </div>
+    <div id="bucket-size-action-container">
+        {% include 'dashboard/partials/bucket_size_action.html' %}
+    </div>
+</div>

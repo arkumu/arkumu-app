@@ -331,10 +331,13 @@ AGENTS.md
 .claude/
 .cursor/
 
-
-# Markdown tracking policy
+# Markdown tracking policy: keep only README variants under version control
 *.md
 !README.md
 !*/README.md
-# XML exports and samples
 *.xml
+*.csv
+!data/mappings/khm_labels.csv
+!data/mappings/hmt_tonband_labels.csv
+
+missing_fks/

@@ -43,6 +43,8 @@ urlpatterns = [
     
     # Archivist dashboard
     path("dashboard/", dashboard_views.archivist_dashboard, name="archivist_dashboard"),
+    path("dashboard/uploads/", upload_views.uploads_dashboard, name="uploads_dashboard"),
+    path("dashboard/uploads/session-stats/<uuid:session_id>/", upload_views.upload_session_stats, name="upload_session_stats"),
     path("dashboard/upload-mode/", dashboard_views.upload_mode_toggle, name="upload_mode_toggle"),
     path("dashboard/refresh/<str:organization>/", dashboard_views.refresh_file_browser, name="refresh_file_browser"),
     path("dashboard/bucket-size/<str:organization>/", dashboard_views.bucket_size_info, name="bucket_size_info"),
@@ -68,7 +70,10 @@ urlpatterns = [
     
     # Upload completion OOB refresh
     path("upload/oob-refresh/<str:organization>/", upload_views.upload_complete_oob_refresh, name="upload_complete_oob_refresh"),
-    
+
+    # Async upload session polling
+    path("upload/session-status/<uuid:session_id>/", upload_views.upload_session_status, name="upload_session_status"),
+
     # Mark file as uploaded
     path("upload/mark-uploaded/<str:file_id>/", upload_views.mark_file_uploaded, name="mark_file_uploaded"),
     

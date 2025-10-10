@@ -20,9 +20,38 @@ class ProjectCatchphrase:
 
 
 @dataclass
+class ProjectDigitalObjectLicense:
+    uri: Optional[str] = None
+    label_de: Optional[str] = None
+    label_en: Optional[str] = None
+    rights_statement: Optional[str] = None
+
+
+@dataclass
 class ProjectDigitalObject:
     path: str
     uri: Optional[str] = None
+    storage_key: Optional[str] = None
+    file_name: Optional[str] = None
+    content_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    checksum: Optional[str] = None
+    checksum_algorithm: Optional[str] = None
+    checksum_provenance: Optional[str] = None
+    access_url: Optional[str] = None
+    storage_status: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    license: Optional[ProjectDigitalObjectLicense] = None
+    uuid: Optional[str] = None
+    genesis_type: Optional[str] = None
+    media_type: Optional[str] = None
+    significant_properties_de: Optional[str] = None
+    significant_properties_en: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.license and isinstance(self.license, dict):
+            self.license = ProjectDigitalObjectLicense(**self.license)
 
 
 @dataclass
@@ -138,6 +167,9 @@ class ProjectRecord:
         return record
 
     def to_card_dict(self) -> Dict[str, Any]:
+        def _object_display_path(obj: ProjectDigitalObject) -> Optional[str]:
+            return obj.access_url or obj.path or obj.storage_key
+
         card: Dict[str, Any] = {
             "uri": self.uri,
             "title": self.title or "",
@@ -146,11 +178,16 @@ class ProjectRecord:
             "institution": (self.institution.label if self.institution and self.institution.label else ""),
             "categories": [cat.label for cat in self.categories if cat.label],
             "year_range": self.year_range or "",
-            "digital_objects": [obj.path for obj in self.digital_objects if obj.path],
+            "digital_objects": [
+                path for path in (_object_display_path(obj) for obj in self.digital_objects)
+                if path
+            ],
         }
 
         if self.digital_objects and not self.image:
-            card["image"] = self.digital_objects[0].path
+            fallback_path = _object_display_path(self.digital_objects[0])
+            if fallback_path:
+                card["image"] = fallback_path
 
         for idx, actor in enumerate(self.actors[:4]):
             if actor.name:

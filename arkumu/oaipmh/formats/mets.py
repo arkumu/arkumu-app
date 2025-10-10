@@ -7,16 +7,18 @@ into METS format, embedding the full graph as RDF/XML for semantic completeness.
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+import json
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
-import json
+
+from lxml import etree as ET
 
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 
 
 # METS namespaces
 METS_NS = "http://www.loc.gov/METS/"
+METS_SCHEMA_URL = "http://www.loc.gov/standards/mets/mets.xsd"
 XLINK_NS = "http://www.w3.org/1999/xlink"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 DC_NS = "http://purl.org/dc/elements/1.1/"
@@ -92,7 +94,7 @@ class METSSerializer:
         mets = ET.Element(
             f"{{{METS_NS}}}mets",
             {
-                f"{{{XSI_NS}}}schemaLocation": f"{METS_NS} http://www.loc.gov/standards/mets/mets.xsd",
+                f"{{{XSI_NS}}}schemaLocation": f"{METS_NS} {METS_SCHEMA_URL}",
                 "OBJID": resource_uri,
                 "TYPE": "Arkumu Project Graph",
                 "PROFILE": "arkumu-complete-graph-v1.0"
@@ -223,10 +225,7 @@ class METSSerializer:
                         attrs["SIZE"] = str(int(f.file_size_bytes))
                     except Exception:
                         pass
-                if getattr(f, "sha256_checksum", None):
-                    if f.sha256_checksum:
-                        attrs["CHECKSUM"] = f.sha256_checksum
-                        attrs["CHECKSUMTYPE"] = "SHA-256"
+                # Rosetta profile forbids CHECKSUM attributes on mets:file; fixity stays in DNX metadata
 
                 file_elem = ET.SubElement(content_grp, f"{{{METS_NS}}}file", attrs)
 

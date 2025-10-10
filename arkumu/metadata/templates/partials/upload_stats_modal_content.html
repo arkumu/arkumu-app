@@ -1,5 +1,23 @@
 <h3 class="font-bold text-lg mb-4">Upload Statistics - {{ session.folder_name|default:"Upload Session" }}</h3>
 
+{% if session.status == 'awaiting_verification' %}
+<div class="alert alert-warning flex items-start gap-3 mb-4">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+    </svg>
+    <div class="flex-1 space-y-2">
+        <p class="font-semibold text-sm">Verification pending</p>
+        <p class="text-xs text-base-content/80">All files have been uploaded. Trigger verification to create S3 file records and complete the session.</p>
+        {% if request.user.is_staff %}
+        <form method="post" action="{% url 'metadata:upload_session_verify' session.id %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning btn-xs">Verify files now</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Session Info -->
 <div class="grid grid-cols-2 gap-4 mb-6">
     <div class="stat bg-base-200 rounded-lg p-4">
@@ -51,18 +69,34 @@
     {% endif %}
 
     <!-- File Summary -->
-    <div class="grid grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {% if completed_files %}
         <div class="stat bg-success/10 border border-success/20 rounded-lg p-3">
             <div class="stat-title text-success">Completed Files</div>
             <div class="stat-value text-success text-2xl">{{ completed_files }}</div>
         </div>
+        {% endif %}
+        {% if failed_files %}
         <div class="stat bg-error/10 border border-error/20 rounded-lg p-3">
             <div class="stat-title text-error">Failed Files</div>
             <div class="stat-value text-error text-2xl">{{ failed_files }}</div>
         </div>
+        {% endif %}
+        {% if session.uploaded_files %}
         <div class="stat bg-info/10 border border-info/20 rounded-lg p-3">
-            <div class="stat-title text-info">Total Files</div>
-            <div class="stat-value text-info text-2xl">{{ file_count }}</div>
+            <div class="stat-title text-info">Uploaded to S3</div>
+            <div class="stat-value text-info text-2xl">{{ session.uploaded_files }}</div>
+        </div>
+        {% endif %}
+        {% if session.pending_files %}
+        <div class="stat bg-base-200 border rounded-lg p-3">
+            <div class="stat-title text-base-content/70">Pending Upload</div>
+            <div class="stat-value text-base-content text-2xl">{{ session.pending_files }}</div>
+        </div>
+        {% endif %}
+        <div class="stat bg-base-100 border rounded-lg p-3">
+            <div class="stat-title text-base-content/70">Total Files</div>
+            <div class="stat-value text-base-content text-2xl">{{ file_count }}</div>
         </div>
     </div>
 

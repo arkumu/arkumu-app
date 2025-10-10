@@ -204,7 +204,7 @@ class SchemaFirstProcessor:
                 # Check if column has FK configuration (not all ColumnConfig implementations may have this)
                 if hasattr(column, 'fk_config') and column.fk_config:
                     fk_relationship = self._create_fk_relationship_definition(
-                        column, dataset_config.dataset_name
+                        column, dataset_config.dataset_name, blueprint
                     )
                     blueprint.fk_relationships.append(fk_relationship)
                     total_fk_relationships += 1
@@ -214,14 +214,44 @@ class SchemaFirstProcessor:
         
         logger.info(f"   🔗 Total FK relationships mapped: {total_fk_relationships}")
     
-    def _create_fk_relationship_definition(self, column: ColumnConfig, source_dataset: str) -> Dict[str, Any]:
+    def _create_fk_relationship_definition(
+        self,
+        column: ColumnConfig,
+        source_dataset: str,
+        blueprint: SchemaBlueprint,
+    ) -> Dict[str, Any]:
         """Create FK relationship definition."""
+        def _extract_uris(resource):
+            if not resource:
+                return None, None
+            if hasattr(resource, 'uri'):
+                return getattr(resource, 'uri', None), getattr(resource, 'canonical_uri', None)
+            if isinstance(resource, dict):
+                return resource.get('uri'), resource.get('canonical_uri') or resource.get('uri')
+            return None, None
+
+        source_property_resource = None
+        if blueprint:
+            source_property_resource = blueprint.property_resources.get(column.column_name)
+        source_property_uri, source_canonical_uri = _extract_uris(source_property_resource)
+
+        target_dataset = column.fk_config.target_dataset
+        target_property_resource = None
+        if target_dataset and target_dataset in self.blueprints:
+            target_blueprint = self.blueprints[target_dataset]
+            target_property_resource = target_blueprint.property_resources.get(column.fk_config.target_column)
+        target_property_uri, target_canonical_uri = _extract_uris(target_property_resource)
+
         return {
             'source_dataset': source_dataset,
             'source_column': column.column_name,
             'source_property': column.arkumu_type,
-            'target_dataset': column.fk_config.target_dataset,
+            'source_property_uri': source_property_uri,
+            'source_canonical_property': source_canonical_uri,
+            'target_dataset': target_dataset,
             'target_column': column.fk_config.target_column,
+            'target_property_uri': target_property_uri,
+            'target_canonical_property': target_canonical_uri,
             'relationship_type': column.arkumu_type,
             'is_multi_value': column.column_type.value == 'multi_value',
             'fk_config': column.fk_config

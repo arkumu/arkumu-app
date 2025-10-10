@@ -414,3 +414,9 @@ class GraphCacheService(BaseCacheService):
 
         return base_stats
 
+    def clear_cache(self) -> None:
+        """Clear cached graph data and reset canonical service cache."""
+        super().clear_cache()
+        self._canonical_service = None
+        self._org_scoped_services = {}
+        logger.info("GraphCacheService canonical services reset")

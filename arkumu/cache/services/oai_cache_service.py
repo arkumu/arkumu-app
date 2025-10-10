@@ -6,7 +6,8 @@ Specialized caching service for OAI-PMH responses, building on the centralized c
 
 import logging
 from typing import Dict, Optional, Any
-import xml.etree.ElementTree as ET
+
+from lxml import etree as ET
 from django.utils import timezone
 from .base_cache_service import BaseCacheService
 from .graph_cache_service import GraphCacheService
@@ -28,21 +29,39 @@ class OAICacheService(BaseCacheService):
         super().__init__('oai')
         self.graph_cache = GraphCacheService()
 
-    def get_cached_record(self, resource, metadata_prefix: str) -> Optional[Dict]:
+    def get_cached_record(
+        self,
+        resource,
+        metadata_prefix: str,
+        profile_version: str = "",
+        snapshot_marker: str = "",
+    ) -> Optional[Dict]:
         """Get cached record data if available."""
         cache_params = {
             'uri': resource.uri,
             'metadata_prefix': metadata_prefix,
-            'timestamp': int(resource.updated_at.timestamp())
+            'timestamp': int(resource.updated_at.timestamp()),
+            'profile_version': profile_version,
+            'snapshot_marker': snapshot_marker,
         }
         return self.get_cached('record', **cache_params)
 
-    def cache_record(self, resource, metadata_prefix: str, header_xml: str, metadata_xml: str):
+    def cache_record(
+        self,
+        resource,
+        metadata_prefix: str,
+        header_xml: str,
+        metadata_xml: str,
+        profile_version: str = "",
+        snapshot_marker: str = "",
+    ):
         """Cache individual record data."""
         cache_params = {
             'uri': resource.uri,
             'metadata_prefix': metadata_prefix,
-            'timestamp': int(resource.updated_at.timestamp())
+            'timestamp': int(resource.updated_at.timestamp()),
+            'profile_version': profile_version,
+            'snapshot_marker': snapshot_marker,
         }
 
         cached_record = {
@@ -55,8 +74,16 @@ class OAICacheService(BaseCacheService):
         self.set_cached('record', cached_record, 'oai_record', **cache_params)
         logger.debug(f"Cached {metadata_prefix} record for {resource.uri}")
 
-    def get_cached_page(self, verb: str, metadata_prefix: str, set_spec: str = '',
-                       from_date: str = '', until_date: str = '', offset: int = 0) -> Optional[Dict]:
+    def get_cached_page(
+        self,
+        verb: str,
+        metadata_prefix: str,
+        set_spec: str = '',
+        from_date: str = '',
+        until_date: str = '',
+        offset: int = 0,
+        snapshot_marker: str = '',
+    ) -> Optional[Dict]:
         """Get cached page data if available."""
         cache_params = {
             'verb': verb,
@@ -64,12 +91,22 @@ class OAICacheService(BaseCacheService):
             'set_spec': set_spec,
             'from_date': from_date,
             'until_date': until_date,
-            'offset': offset
+            'offset': offset,
+            'snapshot_marker': snapshot_marker,
         }
         return self.get_cached('page', **cache_params)
 
-    def cache_page(self, verb: str, metadata_prefix: str, page_data: Dict,
-                  set_spec: str = '', from_date: str = '', until_date: str = '', offset: int = 0):
+    def cache_page(
+        self,
+        verb: str,
+        metadata_prefix: str,
+        page_data: Dict,
+        set_spec: str = '',
+        from_date: str = '',
+        until_date: str = '',
+        offset: int = 0,
+        snapshot_marker: str = '',
+    ):
         """Cache page data."""
         cache_params = {
             'verb': verb,
@@ -77,7 +114,8 @@ class OAICacheService(BaseCacheService):
             'set_spec': set_spec,
             'from_date': from_date,
             'until_date': until_date,
-            'offset': offset
+            'offset': offset,
+            'snapshot_marker': snapshot_marker,
         }
 
         enriched_data = {
@@ -94,25 +132,52 @@ class OAICacheService(BaseCacheService):
 
         This integrates with the graph cache service to avoid duplicate work.
         """
-        # Check if already cached
-        if self.get_cached_record(resource, metadata_prefix):
-            logger.debug(f"Record already cached: {resource.uri} ({metadata_prefix})")
-            return
-
         # Import here to avoid circular imports
-        from arkumu.oaipmh.views import _build_record_header, _build_metadata_element
+        from arkumu.oaipmh.views import (
+            _build_record_header,
+            _build_metadata_element,
+            project_builder,
+            snapshot_service,
+        )
 
         try:
             # Build record components
+            snapshot = snapshot_service.get_cross_institutional_snapshot()
+            snapshot_marker = snapshot.generated_at.isoformat()
+            if self.get_cached_record(
+                resource,
+                metadata_prefix,
+                snapshot_marker=snapshot_marker,
+            ):
+                logger.debug(f"Record already cached: {resource.uri} ({metadata_prefix})")
+                return
+
+            project_record = snapshot_service.get_record_by_uri(resource.uri)
+            project_hint = (
+                project_builder.from_project_record(project_record)
+                if project_record
+                else None
+            )
+
             header = _build_record_header(resource)
-            metadata = _build_metadata_element(resource, metadata_prefix)
+            metadata = _build_metadata_element(
+                resource,
+                metadata_prefix,
+                project_hint=project_hint,
+            )
 
             # Convert to XML strings
             header_xml = ET.tostring(header, encoding='unicode')
             metadata_xml = ET.tostring(metadata, encoding='unicode')
 
             # Cache the record
-            self.cache_record(resource, metadata_prefix, header_xml, metadata_xml)
+            self.cache_record(
+                resource,
+                metadata_prefix,
+                header_xml,
+                metadata_xml,
+                snapshot_marker=snapshot_marker,
+            )
             logger.info(f"Warmed cache for {resource.uri} ({metadata_prefix})")
 
         except Exception as e:

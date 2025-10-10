@@ -5,6 +5,7 @@
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 # arkumu/
@@ -165,6 +166,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/dev/ref/settings/#middleware
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
@@ -177,10 +179,59 @@ MIDDLEWARE = [
 
 ]
 
+def _ensure_dir_writable(directory: Path) -> bool:
+    """Create the directory if needed and confirm we can write inside it."""
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+
+    test_marker = directory / ".write-test"
+    try:
+        test_marker.write_text("", encoding="utf-8")
+        test_marker.unlink(missing_ok=True)
+    except OSError:
+        return False
+
+    return True
+
+
+def _resolve_static_root() -> Path:
+    """Pick a STATIC_ROOT that is guaranteed to be writable in any runtime."""
+    candidate_paths = []
+
+    env_static_root = env("DJANGO_STATIC_ROOT", default=None)
+    if env_static_root:
+        candidate_paths.append(Path(env_static_root))
+
+    # Preserve the historical default first so existing setups continue to work.
+    candidate_paths.append(BASE_DIR / "staticfiles")
+
+    env_fallback_root = env("DJANGO_STATIC_ROOT_FALLBACK", default=None)
+    if env_fallback_root:
+        candidate_paths.append(Path(env_fallback_root))
+
+    # Final safety net lives outside the project tree to avoid host ownership issues.
+    candidate_paths.append(Path("/tmp/arkumu_staticfiles"))
+
+    for candidate in candidate_paths:
+        if not candidate.is_absolute():
+            candidate = BASE_DIR / candidate
+
+        if _ensure_dir_writable(candidate):
+            return candidate
+
+    raise ImproperlyConfigured(
+        "No writable STATIC_ROOT directory is available. "
+        "Set DJANGO_STATIC_ROOT (or DJANGO_STATIC_ROOT_FALLBACK) to a path the "
+        "runtime user can write to."
+    )
+
+
 # STATIC
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#static-root
-STATIC_ROOT = str(BASE_DIR / "staticfiles")
+STATIC_ROOT = str(_resolve_static_root())
 # https://docs.djangoproject.com/en/dev/ref/settings/#static-url
 STATIC_URL = "/static/"
 # https://docs.djangoproject.com/en/dev/ref/contrib/staticfiles/#std:setting-STATICFILES_DIRS
@@ -409,3 +460,83 @@ MULTIPART_UPLOAD_SETTINGS = {
 # Feature flags for optional REST APIs
 ENABLE_IMPORT_API = False
 ENABLE_CANONICAL_URI_API = False
+
+# Optional HTTP Basic Auth for OAI endpoint (uses Django users)
+OAI_BASIC_AUTH_ENABLED = env.bool("OAI_BASIC_AUTH_ENABLED", default=False)
+OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=[])
+
+# Path mapping configuration for Rosetta-backed institutions
+ROSETTA_MAPPING_DIR = BASE_DIR / "data" / "mappings"
+
+OAI_EXTERNAL_PATH_FILES = {
+    "hmt": env(
+        "OAI_EXTERNAL_PATH_FILE_HMT",
+        default=str(ROSETTA_MAPPING_DIR / "_hmt_paths.txt"),
+    ),
+    "khm": env(
+        "OAI_EXTERNAL_PATH_FILE_KHM",
+        default=str(ROSETTA_MAPPING_DIR / "_khm_paths.txt"),
+    ),
+}
+
+OAI_EXTERNAL_ROSETTA_ROOTS = {
+    "hmt": env(
+        "OAI_EXTERNAL_ROSETTA_ROOT_HMT",
+        default="/rosetta/hfmt/sandbox/input/arkumu",
+    ),
+    "khm": env(
+        "OAI_EXTERNAL_ROSETTA_ROOT_KHM",
+        default="/rosetta/khm/sandbox/input/arkumu/daten",
+    ),
+}
+
+_default_hmt_prefixes = env(
+    "OAI_EXTERNAL_PATH_PREFIXES_HMT",
+    default="/Volumes/18TB1,/rosetta/hfmt/sandbox/input/arkumu",
+)
+OAI_EXTERNAL_PATH_PREFIXES = {
+    "hmt": [
+        prefix.strip()
+        for prefix in _default_hmt_prefixes.split(",")
+        if prefix.strip()
+    ]
+}
+
+OAI_S3_HARVESTABLE_ORGS = tuple(
+    org.strip()
+    for org in env.list(
+        "OAI_S3_HARVESTABLE_ORGS",
+        default=["fuk", "det", "rsh"],
+    )
+    if org.strip()
+)
+
+OAI_ROSETTA_HARVESTABLE_ORGS = tuple(
+    org.strip()
+    for org in env.list(
+        "OAI_ROSETTA_HARVESTABLE_ORGS",
+        default=["khm", "hmt"],
+    )
+    if org.strip()
+)
+
+OAI_S3_ROSETTA_BASE_PATHS = {
+    key.strip().lower(): value.rstrip("/")
+    for key, value in {
+        "fuk": env("OAI_S3_ROSETTA_BASE_FUK", default="/rosetta/fudk/sandbox/input/arkumu/daten"),
+        "rsh": env("OAI_S3_ROSETTA_BASE_RSH", default="/rosetta/rsh/sandbox/input/arkumu/daten"),
+        "det": env("OAI_S3_ROSETTA_BASE_DET", default="/rosetta/hfmdt/sandbox/input/arkumu/daten"),
+    }.items()
+    if key and value
+}
+
+OAI_INSTITUTION_CODE_ALIASES = {
+    # Canonical code -> alias mapping for snapshot hash identifiers
+    "ff8f3b0306bebf6d": "hmt",  # Hochschule für Musik und Tanz Köln
+    "aa5f824e167db5e1": "khm",  # Kunsthochschule für Medien Köln
+}
+
+OAI_INSTITUTION_LABEL_ALIASES = {
+    "hochschule für musik und tanz köln": "hmt",
+    "kunsthochschule für medien köln": "khm",
+}

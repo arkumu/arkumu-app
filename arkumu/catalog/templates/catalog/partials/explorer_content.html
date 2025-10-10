@@ -21,7 +21,8 @@
                         <span class="flex-1 truncate text-gray-600">All Organizations</span>
                     </label>
                     {% for org_code, org_info in available_organizations.items %}
-                    <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+                    <label class="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer"
+                           title="{{ org_info.name }}">
                         <input type="radio" name="organization" value="{{ org_code }}"
                                {% if selected_organization == org_code %}checked{% endif %}
                                hx-get="{% url 'catalog:explorer' %}"
@@ -29,7 +30,7 @@
                                hx-vals='{"organization": "{{ org_code }}"}'
                                hx-target="#classes-section"
                                class="mr-2">
-                        <span class="flex-1 truncate">{{ org_info.name }}</span>
+                        <span class="flex-1 truncate uppercase tracking-wide">{{ org_code }}</span>
                         <span class="text-gray-500">({{ org_info.resource_count }})</span>
                     </label>
                     {% endfor %}

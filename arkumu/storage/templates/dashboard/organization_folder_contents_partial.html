@@ -7,7 +7,7 @@ Template for displaying organization folder contents with lazy loading
             {% if item.type == 'folder' %}
                 <li data-folder-path="{{ item.path }}">
                     <details>
-                        <summary class="flex items-center py-3 px-4 hover:bg-base-50 rounded-lg cursor-pointer transition-colors">
+                        <summary class="flex items-center justify-between gap-3 py-3 px-4 hover:bg-base-50 rounded-lg cursor-pointer transition-colors">
                             <span class="flex items-center gap-3 font-medium flex-1">
                                 <svg class="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -15,17 +15,15 @@ Template for displaying organization folder contents with lazy loading
                                 </svg>
                                 <span class="text-base">{{ item.name }}</span>
                             </span>
-                            
-                            <!-- Delete folder button positioned right after the collapse arrow -->
                             <button hx-delete="{% url 'storage:delete_object' bucket_type=bucket_type object_type='folder' object_path=item.path %}"
                                     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                                     hx-target="closest li"
                                     hx-swap="outerHTML"
                                     hx-confirm="Are you sure you want to delete this folder and all its contents? This cannot be undone."
-                                    class="btn btn-ghost btn-xs text-error opacity-60 hover:opacity-100 ml-2" 
+                                    class="btn btn-ghost btn-sm btn-square text-error hover:bg-error/10"
                                     title="Delete Folder"
                                     onclick="event.stopPropagation();">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                 </svg>
                             </button>
@@ -42,27 +40,20 @@ Template for displaying organization folder contents with lazy loading
                 </li>
             {% elif item.type == 'file' %}
                 <li data-file-path="{{ item.path }}">
-                    <div class="flex items-center justify-between py-3 px-4 hover:bg-base-50 rounded-lg transition-colors">
-                        <div class="flex items-center gap-4 min-w-0 flex-1">
-                            <svg class="h-5 w-5 text-info flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <div class="flex-1 min-w-0">
-                                <span class="font-medium text-base truncate block" title="{{ item.name }}">{{ item.name }}</span>
-                                {% if item.size %}
-                                    <span class="text-sm opacity-60">{{ item.size|filesizeformat }}</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        
+                    <div class="flex items-center gap-4 py-3 px-4 hover:bg-base-50 rounded-lg transition-colors">
                         <div class="flex items-center gap-2 flex-shrink-0">
+                            <span class="btn btn-ghost btn-sm btn-square pointer-events-none text-info">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </span>
                             <!-- Generic file viewer for multiple file types -->
                             {% load storage_extras %}
                             {% if item.name|is_viewable_file %}
                                 <button hx-get="{% url 'storage:file_viewer' bucket_type=bucket_type file_path=item.path %}"
                                         hx-target="#file-viewer-modal .modal-box"
                                         hx-swap="innerHTML"
-                                        class="btn btn-ghost btn-sm text-info hover:bg-info/10" 
+                                        class="btn btn-ghost btn-sm btn-square text-info hover:bg-info/10" 
                                         title="Preview file"
                                         onclick="document.getElementById('file-viewer-modal').showModal()">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -71,7 +62,7 @@ Template for displaying organization folder contents with lazy loading
                                     </svg>
                                 </button>
                             {% else %}
-                                <button class="btn btn-ghost btn-sm btn-disabled opacity-30" 
+                                <button class="btn btn-ghost btn-sm btn-square btn-disabled opacity-40" 
                                         title="File viewing not available">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
@@ -85,12 +76,18 @@ Template for displaying organization folder contents with lazy loading
                                     hx-target="closest li"
                                     hx-swap="outerHTML"
                                     hx-confirm="Are you sure you want to delete this file? This cannot be undone."
-                                    class="btn btn-ghost btn-sm text-error hover:bg-error/10" 
+                                    class="btn btn-ghost btn-sm btn-square text-error hover:bg-error/10" 
                                     title="Delete File">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                 </svg>
                             </button>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <span class="font-medium text-base truncate block" title="{{ item.name }}">{{ item.name }}</span>
+                            {% if item.size %}
+                                <span class="text-sm opacity-60">{{ item.size|filesizeformat }}</span>
+                            {% endif %}
                         </div>
                     </div>
                 </li>

@@ -39,10 +39,18 @@ urlpatterns = [
     # Dashboard
     path('dashboard/', dashboard_views.metadata_dashboard, name='metadata_dashboard'),
     path('dashboard/cache-refresh/', dashboard_views.trigger_cache_refresh, name='metadata_dashboard_cache_refresh'),
+    path('dashboard/checksum-refresh/', dashboard_views.trigger_checksum_refresh, name='metadata_dashboard_checksum_refresh'),
+    path('dashboard/mark-missing/', dashboard_views.trigger_mark_missing, name='metadata_dashboard_mark_missing'),
+    path('dashboard/deduplicate/', dashboard_views.trigger_deduplicate, name='metadata_dashboard_deduplicate'),
+    path('dashboard/link-events/', dashboard_views.trigger_link_events, name='metadata_dashboard_link_events'),
+    path('dashboard/link-digital-objects/', dashboard_views.trigger_link_digital_objects, name='metadata_dashboard_link_digital_objects'),
+    path('dashboard/snapshot-stats/', dashboard_views.project_snapshot_stats, name='metadata_dashboard_snapshot_stats'),
     path('dashboard/all-uploads/', dashboard_views.all_upload_sessions, name='all_upload_sessions'),
     path('dashboard/all-ingests/', dashboard_views.all_ingest_sessions, name='all_ingest_sessions'),
     path('dashboard/ingest-stats/<uuid:session_id>/', dashboard_views.ingest_session_stats, name='ingest_session_stats'),
     path('dashboard/upload-stats/<uuid:session_id>/', dashboard_views.upload_session_stats, name='upload_session_stats'),
+    path('dashboard/upload-session/<uuid:session_id>/verify/', dashboard_views.trigger_upload_verification, name='upload_session_verify'),
+    path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
     
     # Data Explorer (unified resource and triple browsing)
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
@@ -67,20 +75,6 @@ urlpatterns = [
     path('resources/<uuid:resource_id>/chain/<uuid:target_id>/', resource_relationship_views.RelationshipChainHTMXView.as_view(), name='relationship_chain_htmx'),
     path('mappings/<uuid:mapping_id>/relationships/', resource_relationship_views.MappingRelationshipsHTMXView.as_view(), name='mapping_relationships_htmx'),
     path('organizations/<str:org_code>/relationship-types/', resource_relationship_views.OrganizationRelationshipTypesHTMXView.as_view(), name='org_relationship_types_htmx'),
-    
-    # Graph visualization
-    path('dataset-viewer/', graph_views.dataset_viewer_view, name='dataset_viewer'),
-    path('tree/data/', graph_views.tree_data_view, name='tree_data'),
-    path('tree/bucket/<str:bucket_name>/', graph_views.tree_bucket_content_view, name='tree_bucket_content'),
-    path('tree/bucket/<str:bucket_name>/more/', graph_views.tree_bucket_more_view, name='tree_bucket_more'),
-    path('tree/dataset/<uuid:dataset_id>/', graph_views.tree_dataset_view, name='tree_dataset'),
-    path('tree/dataset/<uuid:dataset_id>/details/', graph_views.tree_dataset_details_view, name='tree_dataset_details'),
-    path('tree/dataset/<uuid:dataset_id>/more/', graph_views.tree_dataset_more_view, name='tree_dataset_more'),
-    path('tree/dataset/<uuid:dataset_id>/row/<uuid:row_id>/', graph_views.tree_row_view, name='tree_row'),
-    path('tree/row/<uuid:row_id>/details/', graph_views.tree_row_details_view, name='tree_row_details'),
-    path('tree/cell/<uuid:cell_id>/details/', graph_views.tree_cell_details_view, name='tree_cell_details'),
-    path('graph/', graph_views.full_graph_view, name='full_graph_view'),
-    path('graph/data/', graph_views.graph_data_view, name='graph_data'),
     
     # Bulk editor - Core functionality
 
@@ -123,20 +117,6 @@ urlpatterns = [
     path('data-discovery/auto-link-all/', data_discovery_views.auto_link_all, name='auto_link_all'),
     path('data-discovery/rescan-s3/', data_discovery_views.rescan_s3_files, name='rescan_s3_files'),
     path('data-discovery/toggle-select-all/', data_discovery_views.toggle_select_all, name='toggle_select_all'),
-    
-    # Split Table/Graph View (Database-based)
-    path('split-view/', split_views.split_table_graph_view, name='split_table_graph'),
-    path('split-view/load-source-data/', split_views.load_source_data, name='load_source_data'),
-    path('split-view/dataset-card/', split_views.get_dataset_card, name='split_dataset_card'),
-    path('split-view/load-more-rows/', split_views.load_more_dataset_rows, name='load_more_dataset_rows'),
-    path('split-view/graph-data/', split_views.get_graph_data, name='split_graph_data'),
-    path('split-view/debug-database/', split_views.debug_database, name='debug_database'),
-    path('split-view/highlight-column/', split_views.highlight_column_in_graph, name='highlight_column'),
-    path('split-view/highlight-cell/', split_views.highlight_cell_in_graph, name='highlight_cell'),
-    path('split-view/refresh-graph/', split_views.refresh_graph, name='refresh_graph'),
-    path('split-view/toggle-layout/', split_views.toggle_layout, name='toggle_layout'),
-    path('split-view/analyze-relationships/', split_views.analyze_dataset_relationships, name='analyze_dataset_relationships'),
-    path('split-view/clear-all-datasets/', split_views.clear_all_datasets, name='split_clear_all_datasets'),
     
     # Direct Data Analysis (File-based, faster)
     path('direct-analysis/', direct_data_views.direct_split_table_graph_view, name='direct_split_table_graph'),

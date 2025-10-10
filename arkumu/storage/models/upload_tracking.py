@@ -17,6 +17,7 @@ class AsyncUploadSession(models.Model):
         ('initialized', 'Initialized'),
         ('presigned_generated', 'Presigned URLs Generated'),
         ('uploading', 'Uploading to S3'),
+        ('awaiting_verification', 'Awaiting verification'),
         ('processing', 'Processing Files'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
@@ -26,7 +27,7 @@ class AsyncUploadSession(models.Model):
     user = models.ForeignKey('users.User', on_delete=models.CASCADE)
     organization = models.CharField(max_length=255)
     base_folder = models.CharField(max_length=50)  # 'data' or 'metadata'
-    status = models.CharField(max_length=20, choices=UPLOAD_STATUS_CHOICES, default='initialized')
+    status = models.CharField(max_length=32, choices=UPLOAD_STATUS_CHOICES, default='initialized')
     total_files = models.IntegerField(default=0)
     completed_files = models.IntegerField(default=0)
     failed_files = models.IntegerField(default=0)

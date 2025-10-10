@@ -41,6 +41,9 @@
 <body class="min-h-screen bg-base-100 flex flex-col" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
   {% block body %}
   
+  {% with request.resolver_match as match %}
+  {% with match.url_name as current_url_name %}
+  {% with match.namespace as current_namespace %}
   <!-- Navbar -->
   <div class="navbar bg-base-100 shadow-md">
     <div class="navbar-start">
@@ -50,18 +53,19 @@
         </div>
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
           <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+          <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog Browse</a></li>
           {% if request.user.is_authenticated %}
-            <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2">
+            <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2 {% if current_namespace == 'catalog' %}active{% endif %}">
               <i class="fas fa-search"></i>
               Catalog Explorer
             </a></li>
-            <li><a href="{% url 'storage:archivist_dashboard' %}">Archivist Dashboard</a></li>
-            <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
-            <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
-            <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
-            <li id="nav-metadata-entry-mobile" class="{% if 'metadata-entry' in request.path %}active{% endif %}">
-              <a href="{% url 'metadata:metadata_entry' %}">Metadata Entry</a>
-            </li>
+            <li><a href="{% url 'storage:archivist_dashboard' %}"
+                   class="{% if current_url_name == 'archivist_dashboard' or current_url_name == 'uploads_dashboard' or current_url_name == 'upload_session_stats' %}active{% endif %}">
+              Archivist Dashboard
+            </a></li>
+            <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
+            <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
+            <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
 
             <li><a href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a></li>
           {% else %}
@@ -75,15 +79,16 @@
     <div class="navbar-center hidden lg:flex">
       <ul class="menu menu-horizontal px-1">
         <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+        <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog Browse</a></li>
         {% if request.user.is_authenticated %}
-          <li><a href="{% url 'storage:archivist_dashboard' %}">Archivist Dashboard</a></li>
-          <li><a href="{% url 'metadata:csv_mapping_editor' %}">CSV Mapping Editor</a></li>
-          <li><a href="{% url 'importer:ingest_data' %}">Metadata Ingestion</a></li>
-          <li><a href="{% url 'metadata:metadata_dashboard' %}">Metadata Dashboard</a></li>
-          <li id="nav-metadata-entry-desktop" class="{% if 'metadata-entry' in request.path %}active{% endif %}">
-            <a href="{% url 'metadata:metadata_entry' %}">Metadata Entry</a>
-          </li>
-          <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2">
+          <li><a href="{% url 'storage:archivist_dashboard' %}"
+                 class="{% if current_url_name == 'archivist_dashboard' or current_url_name == 'uploads_dashboard' or current_url_name == 'upload_session_stats' %}active{% endif %}">
+            Archivist Dashboard
+          </a></li>
+          <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
+          <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
+          <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
+          <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2 {% if current_namespace == 'catalog' %}active{% endif %}">
             <i class="fas fa-search"></i>
             <span>Catalog Explorer</span>
           </a></li>
@@ -249,8 +254,6 @@
   <!-- Footer -->
   {% include 'partials/footer.html' %}
 
-  {% endblock body %}
-  
   <!-- Toast Container for HTMX notifications -->
   <div id="toast-container"></div>
   
@@ -285,5 +288,9 @@
     });
   </script>
   {% endblock inline_javascript %}
+  {% endwith %}
+  {% endwith %}
+  {% endwith %}
+  {% endblock body %}
 </body>
 </html>

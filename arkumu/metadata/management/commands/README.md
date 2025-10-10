@@ -26,6 +26,12 @@ The CSV file must contain these columns:
 docker compose -f docker-compose.local.yml run --rm django \
   python manage.py map_canonical_uris /path/to/mappings.csv --organization hmt
 
+# Use repository-provided Rosetta mappings
+docker compose -f docker-compose.local.yml run --rm django \
+  python manage.py map_canonical_uris data/mappings/khm_labels.csv --organization khm
+docker compose -f docker-compose.local.yml run --rm django \
+  python manage.py map_canonical_uris data/mappings/hmt_tonband_labels.csv --organization hmt
+
 # Dry run (preview changes without applying)
 docker compose -f docker-compose.local.yml run --rm django \
   python manage.py map_canonical_uris /path/to/mappings.csv --organization hmt --dry-run

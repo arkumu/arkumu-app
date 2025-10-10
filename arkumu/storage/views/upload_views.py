@@ -4,14 +4,23 @@ Implements the simplified upload system using presigned URLs.
 """
 import logging
 import json
+from collections import Counter
+
+from django.db.models import Count
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+
 from arkumu.storage.services.upload_service import UploadService
+from arkumu.storage.services.async_upload_manager import AsyncUploadManager
 from arkumu.users.mixins import general_login_required
 from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
+from arkumu.metadata.views.dashboard_helpers import (
+    build_session_entry,
+    summarize_upload_stats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +56,8 @@ def batch_presigned_urls(request):
         files = data.get('files', [])
         folder = data.get('folder', '')
         organization = data.get('organization', '')
+        session_id = data.get('session_id')
+        total_files_override = data.get('total_files')
         
         if not files:
             logger.error("❌ No files provided in batch request")
@@ -57,176 +68,43 @@ def batch_presigned_urls(request):
         
         logger.info(f"📁 Processing {len(files)} files with folder='{folder}' for organization='{organization}'")
         
-        # Get the correct bucket for the organization
-        from arkumu.storage.services.bucket_service import BucketService
-        bucket_service = BucketService()
-        bucket_name = bucket_service.get_organization_bucket(organization) if organization else None
-        
-        # Create upload session for tracking
-        session = AsyncUploadSession.objects.create(
-            user=request.user,
-            total_files=len(files),
-            organization=organization  # Store organization in session
-        )
-        logger.info(f"📝 Created upload session {session.id} for {len(files)} files in bucket {bucket_name}")
-        
-        upload_service = UploadService()
-        results = []
-        errors = []
-        upload_files_created = []
-        
-        for file_info in files:
-            filename = file_info.get('name')
-            # Use relative path if provided (for folder uploads with structure)
-            relative_path = file_info.get('relativePath', filename)
-            filesize = file_info.get('size', 0)
-            filetype = file_info.get('type', 'application/octet-stream')
-            
-            logger.info(f"📄 Processing: {filename} -> {relative_path} ({filesize} bytes, {filetype})")
-            
-            try:
-                # Validate upload request
-                validation = upload_service.validate_upload_request(
-                    file_name=filename,
-                    file_size=filesize,
-                    content_type=filetype,
-                    user_id=request.user.id
-                )
-                
-                if not validation['valid']:
-                    # Allow zero-byte files (like .gitkeep) - they're valid
-                    if filesize == 0 and len(validation['errors']) == 1 and 'File size must be greater than 0' in validation['errors']:
-                        logger.info(f"⚪ Allowing zero-byte file: {filename}")
-                        # Override validation for zero-byte files
-                        validation = {
-                            'valid': True,
-                            'errors': [],
-                            'warnings': validation.get('warnings', []) + ['Zero-byte file allowed'],
-                            'should_use_multipart': False
-                        }
-                    else:
-                        errors.append({
-                            'filename': filename,
-                            'errors': validation['errors']
-                        })
-                        continue
-                
-                # Generate presigned URL (same logic as individual request)
-                if validation['should_use_multipart']:
-                    # For large files, initialize multipart upload
-                    # Create full path: base_folder + relative_path
-                    full_path = f"{folder}/{relative_path}" if folder else relative_path
-                    # Extract directory from full path for multipart
-                    import os
-                    file_dir = os.path.dirname(full_path) if os.path.dirname(full_path) else None
-                    
-                    init_result = upload_service.initiate_multipart_upload(
-                        file_name=os.path.basename(full_path),  # Just filename for multipart
-                        content_type=filetype,
-                        path_prefix=file_dir,  # Directory path
-                        organization=organization  # Pass organization for bucket selection
-                    )
-                    
-                    if init_result['success']:
-                        # Create AsyncUploadFile record so we can mark completed later
-                        upload_file = AsyncUploadFile.objects.create(
-                            session=session,
-                            filename=filename,
-                            s3_key=init_result['s3_key'],
-                            file_size=filesize,
-                            content_type=filetype,
-                            status='pending'
-                        )
-                        upload_files_created.append(upload_file)
-                        logger.info(f"📄 Created multipart upload file record {upload_file.id} for {filename}")
+        manager = AsyncUploadManager()
 
-                        results.append({
-                            'filename': filename,
-                            'type': 'multipart',
-                            'upload_id': init_result['upload_id'],
-                            's3_key': init_result['s3_key'],
-                            'filesize': filesize,
-                            'filetype': filetype,
-                            'folder': file_dir,  # Add folder path for JavaScript
-                            'organization': organization,  # Add organization info
-                            'base_folder': folder,  # Add base folder info
-                            'upload_file_id': str(upload_file.id)
-                        })
-                    else:
-                        error_msg = init_result.get('error', 'Multipart upload initialization failed')
-                        logger.error(f"❌ Multipart init failed for {filename}: {error_msg}")
-                        errors.append({
-                            'filename': filename,
-                            'errors': [f"Large file upload failed: {error_msg}. Try splitting file or contact support."]
-                        })
-                else:
-                    # Single upload
-                    # Create full path: base_folder + relative_path  
-                    full_path = f"{folder}/{relative_path}" if folder else relative_path
-                    # Extract directory and filename
-                    import os
-                    file_dir = os.path.dirname(full_path) if os.path.dirname(full_path) else None
-                    
-                    result = upload_service.generate_presigned_upload_url(
-                        file_name=os.path.basename(full_path),  # Just filename
-                        content_type=filetype,
-                        path_prefix=file_dir,  # Full directory path preserves structure
-                        max_file_size=filesize,
-                        bucket_name=bucket_name  # Use organization bucket
-                    )
-                    
-                    if result['success']:
-                        # Create AsyncUploadFile record for tracking
-                        upload_file = AsyncUploadFile.objects.create(
-                            session=session,
-                            filename=filename,
-                            s3_key=result['key'],
-                            file_size=filesize,
-                            content_type=filetype,
-                            status='pending'
-                        )
-                        upload_files_created.append(upload_file)
-                        logger.info(f"📄 Created upload file record {upload_file.id} for {filename}")
-                        
-                        results.append({
-                            'filename': filename,
-                            'type': 'single',
-                            'url': result['url'],
-                            'method': result.get('method', 'POST'),  # Include method for frontend
-                            'fields': result['fields'],
-                            's3_key': result['key'],
-                            'filesize': filesize,
-                            'filetype': filetype,
-                            'max_file_size': result.get('max_file_size'),
-                            'upload_file_id': str(upload_file.id)
-                        })
-                    else:
-                        errors.append({
-                            'filename': filename,
-                            'errors': [result.get('error', 'Presigned URL generation failed')]
-                        })
-                        
-            except Exception as e:
-                logger.error(f"❌ Error processing file {filename}: {str(e)}")
-                errors.append({
-                    'filename': filename,
-                    'errors': [f"Processing error: {str(e)}"]
-                })
-        
+        try:
+            batch_result = manager.prepare_presigned_uploads(
+                user=request.user,
+                files=files,
+                folder=folder,
+                organization=organization,
+                session_id=session_id,
+                total_files_override=total_files_override,
+            )
+        except ValueError as exc:
+            logger.error(f"❌ Invalid batch upload request: {exc}")
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+
         response_data = {
-            'success': len(errors) == 0,
-            'uploads': results,
-            'session_id': str(session.id)
+            'success': batch_result.success,
+            'uploads': batch_result.uploads,
+            'session_id': str(batch_result.session.id),
         }
-        
-        if errors:
-            response_data['errors'] = errors
-        
-        # Session created - verification will be triggered when files are uploaded
-        if upload_files_created:
-            logger.info(f"🚀 Session {session.id} created with {len(results)} files - waiting for uploads")
-        
-        logger.info(f"✅ BATCH_PRESIGNED_URLS: {len(results)} successful, {len(errors)} errors")
+
+        if batch_result.errors:
+            response_data['errors'] = batch_result.errors
+
+        if batch_result.created_files:
+            logger.info(
+                "🚀 Session %s prepared with %s uploads (%s errors)",
+                batch_result.session.id,
+                len(batch_result.uploads),
+                len(batch_result.errors),
+            )
+
+        logger.info(
+            "✅ BATCH_PRESIGNED_URLS: %s successful, %s errors",
+            len(batch_result.uploads),
+            len(batch_result.errors),
+        )
         return JsonResponse(response_data)
         
     except json.JSONDecodeError:
@@ -589,26 +467,36 @@ def mark_file_uploaded(request, file_id):
         upload_file = AsyncUploadFile.objects.get(id=file_id, session__user=request.user)
         upload_file.mark_uploaded()
         logger.info(f"✅ Marked file {upload_file.filename} as uploaded")
-        
-        # Check if all files in session are uploaded
+
         session = upload_file.session
-        uploaded_count = session.files.filter(status='uploaded').count()
-        total_count = session.total_files
-        
-        logger.info(f"📊 Session {session.id}: {uploaded_count}/{total_count} files uploaded")
-        
-        if uploaded_count == total_count:
-            logger.info(f"🎉 All files in session {session.id} uploaded, starting verification immediately")
-            session.mark_processing()
-            
-            # Trigger verification for all files immediately - no polling needed
-            from arkumu.storage.tasks import verify_and_process_upload
-            for upload_file_obj in session.files.filter(status='uploaded'):
-                verify_and_process_upload(str(upload_file_obj.id))
-        
+        if session.status not in ('uploading', 'processing', 'completed', 'failed', 'awaiting_verification'):
+            session.mark_uploading()
+
+        verification_triggered = False
+
+        file_qs = AsyncUploadFile.objects.filter(session=session)
+        status_counts = Counter(file_qs.values_list('status', flat=True))
+
+        total_count = sum(status_counts.values())
+
+        pending_exists = file_qs.exclude(status__in=['uploaded', 'completed', 'failed']).exists()
+        all_uploaded = not pending_exists
+
+        session.completed_files = status_counts.get('completed', 0)
+        session.failed_files = status_counts.get('failed', 0)
+
+        fields_to_update = ['completed_files', 'failed_files']
+
+        if all_uploaded:
+            logger.info("🟡 Upload session %s awaiting manual verification", session.id)
+            session.status = 'awaiting_verification'
+            fields_to_update.append('status')
+
+        session.save(update_fields=fields_to_update)
+
         # Get organization for OOB refresh
-        organization = upload_file.session.organization
-        
+        organization = session.organization
+
         # If this is an HTMX request, return OOB refresh instead of JSON
         if request.headers.get('HX-Request'):
             try:
@@ -632,8 +520,24 @@ def mark_file_uploaded(request, file_id):
             except Exception as e:
                 logger.error(f"❌ OOB refresh failed in mark_file_uploaded: {e}")
                 # Fall back to JSON response
-        
-        return JsonResponse({'success': True})
+        remaining_files_count = status_counts.get('pending', 0) + status_counts.get('uploading', 0)
+
+        response_data = {
+            'success': True,
+            'session_id': str(session.id),
+            'session_status': session.status,
+            'total_files': session.total_files or total_count,
+            'uploaded_files': status_counts.get('uploaded', 0),
+            'processing_files': status_counts.get('processing', 0),
+            'completed_files': status_counts.get('completed', 0),
+            'failed_files': status_counts.get('failed', 0),
+            'remaining_files': remaining_files_count,
+            'pending_files': status_counts.get('pending', 0),
+            'all_uploaded': all_uploaded,
+            'verification_triggered': verification_triggered,
+        }
+
+        return JsonResponse(response_data)
     except AsyncUploadFile.DoesNotExist:
         logger.error(f"❌ Upload file {file_id} not found")
         return JsonResponse({'success': False, 'error': 'File not found'}, status=404)
@@ -723,3 +627,91 @@ def upload_complete_oob_refresh(request, organization):
             f'<div class="alert alert-error"><span>Error refreshing file browser: {str(e)}</span></div>'
             f'</div>'
         )
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def upload_session_status(request, session_id):
+    """Return JSON status summary for an async upload session."""
+
+    try:
+        session = AsyncUploadSession.objects.get(id=session_id, user=request.user)
+    except AsyncUploadSession.DoesNotExist:
+        logger.warning("⚠️ upload_session_status: session %s not found for user %s", session_id, request.user.id)
+        return JsonResponse({'success': False, 'error': 'Session not found'}, status=404)
+
+    status_counts = {
+        entry['status']: entry['count']
+        for entry in session.files.values('status').annotate(count=Count('id'))
+    }
+
+    total_count = sum(status_counts.values())
+    completed = status_counts.get('completed', 0)
+    failed = status_counts.get('failed', 0)
+    uploaded = status_counts.get('uploaded', 0)
+    processing = status_counts.get('processing', 0)
+    pending = status_counts.get('pending', 0)
+    uploading = status_counts.get('uploading', 0)
+
+    return JsonResponse(
+        {
+            'success': True,
+            'session_id': str(session.id),
+            'status': session.status,
+            'total_files': session.total_files or total_count,
+            'completed_files': completed,
+            'failed_files': failed,
+            'uploaded_files': uploaded,
+            'processing_files': processing,
+            'pending_files': pending + uploading,
+        }
+    )
+
+
+@general_login_required
+def uploads_dashboard(request):
+    """Display consolidated async upload activity."""
+
+    sessions_qs = (
+        AsyncUploadSession.objects.select_related('user')
+        .prefetch_related('files')
+        .order_by('-created_at')
+    )
+    entries = [build_session_entry(session) for session in sessions_qs]
+    stats = summarize_upload_stats(entries)
+
+    return render(
+        request,
+        'dashboard/uploads_dashboard.html',
+        {
+            'sessions': entries,
+            'stats': stats,
+        },
+    )
+
+
+@general_login_required
+def upload_session_stats(request, session_id):
+    """Return upload session statistics for modal display."""
+
+    try:
+        session = AsyncUploadSession.objects.prefetch_related('files').get(pk=session_id)
+    except AsyncUploadSession.DoesNotExist:
+        return HttpResponse(
+            '<div class="alert alert-error"><span>Upload session not found.</span></div>',
+            status=404,
+        )
+
+    entry = build_session_entry(session)
+
+    return render(
+        request,
+        'partials/upload_stats_modal_content.html',
+        {
+            'session': entry['session'],
+            'files': entry['files'],
+            'file_count': entry['file_count'],
+            'completed_files': entry['completed_files'],
+            'failed_files': entry['failed_files'],
+        },
+    )

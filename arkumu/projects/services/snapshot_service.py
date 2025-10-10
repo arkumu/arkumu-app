@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+from urllib.parse import urlparse
 
 from django.utils import timezone
 
@@ -27,6 +28,7 @@ from arkumu.projects import (
     ProjectCategory,
     ProjectCatchphrase,
     ProjectDigitalObject,
+    ProjectDigitalObjectLicense,
     ProjectEvent,
     ProjectEventActor,
     ProjectInstitution,
@@ -34,8 +36,10 @@ from arkumu.projects import (
     ProjectSnapshot,
     ProjectType,
 )
+from arkumu.projects.fixity import parse_fixity
 
 logger = logging.getLogger(__name__)
+
 
 
 class ProjectSnapshotService:
@@ -49,12 +53,52 @@ class ProjectSnapshotService:
         "khm",
         "hmt",
     )
+    DIGITAL_OBJECT_LINK_URI = "http://arkumu.org/data/properties/digitales-objekt"
+    DIGITAL_OBJECT_LICENSE_LINK_URI = "http://arkumu.org/data/properties/lizenzstatus"
+    DIGITAL_OBJECT_LICENSE_URI_PROPERTY = "http://arkumu.org/data/properties/uri"
+    DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
+    DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY = "http://arkumu.org/data/properties/englischer-name-der-lizenz"
+    DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY = "http://arkumu.org/data/properties/zugehoeriges-rechtestatement"
+    DIGITAL_OBJECT_UUID_PROPERTY = "http://arkumu.org/data/properties/uuid"
+    DIGITAL_OBJECT_GENESIS_PROPERTIES = (
+        "http://arkumu.org/data/properties/entstehung",
+    )
+    DIGITAL_OBJECT_MEDIA_TYPE_PROPERTY = "http://arkumu.org/data/properties/medientyp"
+    DIGITAL_OBJECT_SIGNIFICANT_DE_PROPERTIES = (
+        "http://arkumu.org/data/properties/wesentliche-eigenschaften-deutsch",
+        "http://arkumu.org/data/properties/description-de-verkettet",
+    )
+    DIGITAL_OBJECT_SIGNIFICANT_EN_PROPERTIES = (
+        "http://arkumu.org/data/properties/wesentliche-eigenschaften-englisch",
+        "http://arkumu.org/data/properties/description-en-verkettet",
+    )
+    RESOURCE_LABEL_PREDICATES = (
+        "http://arkumu.org/data/properties/deutscher-name",
+        "http://arkumu.org/data/properties/name",
+        "http://arkumu.org/data/properties/deutscher-name-der-medientyp",
+    )
+    ROSETTA_CHECKSUM_PREDICATES: Dict[str, str] = {
+        'khm': 'http://arkumu.org/data/khm/properties/pruefsumme-sha256',
+        'hmt': 'http://arkumu.org/data/hmt/properties/pruefsumme-sha256',
+    }
 
     def __init__(self, relationship_org_code: Optional[str] = None) -> None:
         self.relationship_org_code = relationship_org_code
         self.cache = ProjectCacheService()
         self.schema_service = SchemaManifestService()
         self._graph_service_factory = CanonicalGraphService
+        self._record_index: Dict[str, ProjectRecord] = {}
+        self._record_index_version: Optional[str] = None
+
+    def get_record_by_uri(self, uri: str) -> Optional[ProjectRecord]:
+        """Return cached project record for a given project URI."""
+
+        if not uri:
+            return None
+
+        snapshot = self.get_cross_institutional_snapshot()
+        self._ensure_record_index(snapshot)
+        return self._record_index.get(uri)
 
     def get_cross_institutional_snapshot(self, *, force_refresh: bool = False) -> ProjectSnapshot:
         """Return cached snapshot or rebuild if necessary."""
@@ -62,17 +106,20 @@ class ProjectSnapshotService:
             cached = self.cache.get_cross_institutional_snapshot()
             if cached:
                 logger.info("ProjectSnapshotService: cache hit for cross-institutional snapshot")
+                self._ensure_record_index(cached)
                 return cached
 
         logger.info("ProjectSnapshotService: cache miss – rebuilding cross-institutional snapshot")
         snapshot = self._build_snapshot()
         self.cache.set_cross_institutional_snapshot(snapshot)
+        self._ensure_record_index(snapshot)
         return snapshot
 
     def refresh_cross_institutional_snapshot(self) -> ProjectSnapshot:
         """Force a snapshot rebuild and update cache."""
         snapshot = self._build_snapshot()
         self.cache.set_cross_institutional_snapshot(snapshot)
+        self._ensure_record_index(snapshot)
         return snapshot
 
     def _build_snapshot(self) -> ProjectSnapshot:
@@ -86,11 +133,24 @@ class ProjectSnapshotService:
                 'subjects': len(graph.get('subjects', [])),
                 'edges': len(graph.get('edges', [])),
             }
-        return ProjectSnapshot(
+        snapshot = ProjectSnapshot(
             projects=records,
             counts=counts,
             generated_at=timezone.now(),
         )
+        self._ensure_record_index(snapshot)
+        return snapshot
+
+    def _ensure_record_index(self, snapshot: ProjectSnapshot) -> None:
+        marker = snapshot.generated_at.isoformat()
+        if self._record_index_version == marker and self._record_index:
+            return
+        self._record_index = {
+            record.uri: record
+            for record in snapshot.projects
+            if record.uri
+        }
+        self._record_index_version = marker
 
     def _fetch_cross_institutional_graph(self) -> Dict[str, Any]:
         logger.info("Building cross-institutional project graph via CanonicalGraphService")
@@ -125,12 +185,37 @@ class ProjectSnapshotService:
         edges: List[Dict[str, Any]] = []
         edge_signatures: set[tuple] = set()
 
-        for org_code in self.DEFAULT_ORGANIZATION_CODES:
+        from arkumu.users.models import Organization
+
+        available_codes = set(
+            Organization.objects.filter(code__in=self.DEFAULT_ORGANIZATION_CODES)
+            .values_list('code', flat=True)
+        )
+        missing_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code not in available_codes]
+        if missing_codes:
+            logger.warning(
+                "Organizations missing from database (skipped for snapshot): %s",
+                missing_codes,
+            )
+
+        included_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code in available_codes]
+        if included_codes:
+            logger.info("Organizations included in snapshot: %s", included_codes)
+
+        for org_code in included_codes:
             try:
                 org_graph = self._graph_service_factory(org_code=org_code).get_project_graph(
                     dataset_name="Projekt",
                     expand_neighbors=True,
+                    type_canonical_uri=CardURIs.PROJECT_TYPE,
                 )
+            except ValueError as exc:  # Happens when schema is unavailable
+                logger.warning(
+                    "Skipping organization graph for '%s': %s",
+                    org_code,
+                    exc,
+                )
+                continue
             except Exception as exc:  # pragma: no cover - defensive logging
                 logger.exception(
                     "Failed to build organization graph for '%s': %s",
@@ -221,6 +306,11 @@ class ProjectSnapshotService:
             .filter(organization_id__in=self.DEFAULT_ORGANIZATION_CODES)
             .values_list('organization_id', flat=True)
         )
+
+        missing_orgs = set(self.DEFAULT_ORGANIZATION_CODES) - available_orgs
+        if missing_orgs:
+            logger.warning("Orgs without Mappings (excluded from snapshot): %s", sorted(missing_orgs))
+        logger.info("Orgs with Mappings (included in snapshot): %s", sorted(available_orgs))
 
         schemas = [
             self.schema_service.get_card_schema(code)
@@ -349,6 +439,22 @@ class ProjectSnapshotService:
                 continue
             edges_by_subject[str(subject_id)].append(edge)
 
+        storage_files_map: Dict[str, List[Any]] = defaultdict(list)
+        try:  # pragma: no cover - storage optional during tests
+            from arkumu.storage.models.s3_file_objects import S3FileObject
+
+            node_ids = {str(node_id) for node_id in nodes.keys()}
+            if node_ids:
+                files_qs = (
+                    S3FileObject.objects
+                    .filter(related_resource_id__in=node_ids)
+                    .order_by('created_at')
+                )
+                for file_obj in files_qs:
+                    storage_files_map[str(file_obj.related_resource_id)].append(file_obj)
+        except Exception:
+            storage_files_map = defaultdict(list)
+
         triple_service = TripleRelationshipService(self.relationship_org_code)
         records: List[ProjectRecord] = []
 
@@ -359,6 +465,7 @@ class ProjectSnapshotService:
                 edges_by_subject,
                 card_schema,
                 triple_service,
+                storage_files_map,
             )
             if record:
                 records.append(record)
@@ -373,6 +480,7 @@ class ProjectSnapshotService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         card_schema: CardSchema,
         triple_service: TripleRelationshipService,
+        storage_files_map: Dict[str, Sequence[Any]],
     ) -> Optional[ProjectRecord]:
         node = nodes.get(subject_id)
         if not node:
@@ -458,6 +566,7 @@ class ProjectSnapshotService:
             event_name_predicate=ProjectURIs.EVENT_NAME,
             event_description_predicate=ProjectURIs.EVENT_DESCRIPTION,
             event_location_predicate=ProjectURIs.EVENT_LOCATION,
+            event_location_wikidata_predicate=ProjectURIs.EVENT_LOCATION_WIKIDATA,
             event_type_predicate=ProjectURIs.EVENT_TYPE,
             organization_code=self.relationship_org_code,
         )
@@ -583,17 +692,140 @@ class ProjectSnapshotService:
                     return fk.get('source_property')
             return None
 
+        primary_institution_code: Optional[str] = None
+        if institution and institution.code:
+            primary_institution_code = institution.code.lower().strip()
+        elif institution_codes:
+            first_code = (institution_codes[0] or "") if institution_codes else ""
+            primary_institution_code = first_code.lower().strip() or None
+
+        checksum_org_code = self._resolve_org_code_for_checksums(
+            primary_institution_code,
+            institution_codes,
+            project_uri,
+        )
+
+        storage_files: List[Any] = list(storage_files_map.get(subject_id, []))
         digital_link_predicate = _fk_source_for_target('project', digital_object_path_prop.canonical_uri if digital_object_path_prop else None)
-        digital_objects = [
-            ProjectDigitalObject(path=path)
-            for path in triple_service.get_digital_object_paths(
+
+        digital_entries = []
+        if digital_link_predicate:
+            digital_entries = triple_service.get_related_entities(
                 subject_id,
-                link_predicate=digital_link_predicate,
-                path_predicate=digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+                digital_link_predicate,
                 organization_code=self.relationship_org_code,
             )
-            if path
-        ]
+
+        digital_object_ids: List[str] = []
+        digital_entry_by_id: Dict[str, Dict[str, Any]] = {}
+        for entry in digital_entries:
+            object_id = entry.get('id')
+            if not object_id or entry.get('resource_type') == ResourceType.LITERAL:
+                continue
+            digital_object_ids.append(object_id)
+            digital_entry_by_id[object_id] = entry
+
+        path_map: Dict[str, str] = {}
+        if digital_object_ids and digital_object_path_prop:
+            path_map = triple_service.get_literal_map(
+                subject_ids=digital_object_ids,
+                predicate_uri=digital_object_path_prop.canonical_uri,
+                organization_code=self.relationship_org_code,
+            )
+
+        checksum_predicate = self._checksum_predicate_for_org(checksum_org_code)
+        checksum_map: Dict[str, str] = {}
+        if checksum_predicate and digital_object_ids:
+            checksum_map.update(
+                triple_service.get_literal_map(
+                    subject_ids=digital_object_ids,
+                    predicate_uri=checksum_predicate,
+                    organization_code=self.relationship_org_code,
+                )
+            )
+
+        digital_objects: List[ProjectDigitalObject] = []
+        seen_paths: set[str] = set()
+        for object_id in digital_object_ids:
+            raw_path = path_map.get(object_id)
+            if not raw_path:
+                continue
+            normalized_path = raw_path.strip()
+            if not normalized_path or normalized_path in seen_paths:
+                continue
+            seen_paths.add(normalized_path)
+            digital_entry = digital_entry_by_id.get(object_id, {})
+            project_object = ProjectDigitalObject(
+                path=normalized_path,
+                uri=digital_entry.get('uri') or digital_entry.get('canonical_uri'),
+            )
+            self._populate_digital_object_metadata(
+                project_object,
+                object_id,
+                nodes,
+                edges_by_subject,
+            )
+            digital_objects.append(project_object)
+
+            checksum_value = (checksum_map.get(object_id) or "").strip()
+            if checksum_value:
+                fixity_info = parse_fixity(checksum_value)
+                project_object.checksum = fixity_info.digest or checksum_value
+                project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
+                project_object.checksum_provenance = fixity_info.provenance or 'metadata'
+
+        if not digital_objects:
+            collected_ids: set[str] = set()
+            collected_ids.update(
+                self._related_ids(subject_edges, self.DIGITAL_OBJECT_LINK_URI)
+            )
+            for event_id in event_ids:
+                event_edges = edges_by_subject.get(event_id, [])
+                collected_ids.update(
+                    self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
+                )
+
+            for digital_id in collected_ids:
+                edges_for_digital = edges_by_subject.get(digital_id, [])
+                path_literal = self._first_literal(
+                    edges_for_digital,
+                    digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+                )
+                if not path_literal:
+                    continue
+                digital_node = nodes.get(digital_id, {})
+                project_object = ProjectDigitalObject(
+                    path=path_literal,
+                    uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
+                )
+                self._populate_digital_object_metadata(
+                    project_object,
+                    str(digital_id),
+                    nodes,
+                    edges_by_subject,
+                )
+                digital_objects.append(project_object)
+
+                if checksum_predicate:
+                    checksum_map.update(
+                        triple_service.get_literal_map(
+                            subject_ids=[str(digital_id)],
+                            predicate_uri=checksum_predicate,
+                            organization_code=self.relationship_org_code,
+                        )
+                    )
+                    checksum_value = (checksum_map.get(str(digital_id)) or "").strip()
+                    if checksum_value:
+                        fixity_info = parse_fixity(checksum_value)
+                        project_object.checksum = fixity_info.digest or checksum_value
+                        project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
+                        project_object.checksum_provenance = fixity_info.provenance or 'metadata'
+
+        for event_id in event_ids:
+            storage_files.extend(storage_files_map.get(str(event_id), []))
+
+        if storage_files:
+            digital_objects = self._merge_storage_metadata(digital_objects, storage_files)
 
         if not title:
             return None
@@ -618,6 +850,140 @@ class ProjectSnapshotService:
             category_slugs=category_slugs,
         )
         return record
+
+    def _merge_storage_metadata(
+        self,
+        digital_objects: List[ProjectDigitalObject],
+        storage_files: Sequence[Any],
+    ) -> List[ProjectDigitalObject]:
+        if not storage_files:
+            return digital_objects
+
+        objects_by_path: Dict[str, ProjectDigitalObject] = {}
+        for obj in digital_objects:
+            keys = [obj.path, obj.storage_key, obj.access_url]
+            for key in keys:
+                if not key:
+                    continue
+                stripped = key.strip()
+                objects_by_path.setdefault(stripped, obj)
+                if stripped != key:
+                    objects_by_path.setdefault(key, obj)
+
+        for file_obj in storage_files:
+            candidates = [
+                getattr(file_obj, 's3_key', None),
+                getattr(file_obj, 'original_path', None),
+                getattr(file_obj, 'file_name', None),
+            ]
+            matched: Optional[ProjectDigitalObject] = None
+            search_order = [candidate.strip() for candidate in candidates if candidate]
+            search_order.extend(candidate for candidate in candidates if candidate)
+            for candidate in search_order:
+                if candidate and candidate in objects_by_path:
+                    matched = objects_by_path[candidate]
+                    break
+
+            if not matched:
+                derived_path = next(
+                    (candidate for candidate in candidates if candidate),
+                    None,
+                ) or ""
+                initial_path = derived_path.strip()
+                matched = ProjectDigitalObject(path=initial_path)
+                digital_objects.append(matched)
+                key_for_cache = (matched.path or matched.storage_key or matched.access_url or "").strip()
+                if key_for_cache:
+                    objects_by_path.setdefault(key_for_cache, matched)
+
+            raw_s3_key = getattr(file_obj, 's3_key', None)
+            if raw_s3_key:
+                matched.storage_key = raw_s3_key
+                if not matched.path:
+                    matched.path = raw_s3_key
+                objects_by_path.setdefault(raw_s3_key.strip(), matched)
+                if raw_s3_key.strip() != raw_s3_key:
+                    objects_by_path.setdefault(raw_s3_key, matched)
+            matched.file_name = getattr(file_obj, 'file_name', None) or matched.file_name
+            matched.content_type = getattr(file_obj, 'content_type', None) or matched.content_type
+            matched.size_bytes = getattr(file_obj, 'file_size_bytes', None) or matched.size_bytes
+
+            raw_checksum = getattr(file_obj, 'sha256_checksum', None)
+            fixity = parse_fixity(raw_checksum)
+            if fixity.digest:
+                matched.checksum = fixity.digest
+            if fixity.algorithm:
+                matched.checksum_algorithm = fixity.algorithm
+            elif matched.checksum and not matched.checksum_algorithm:
+                inferred = parse_fixity(matched.checksum)
+                if inferred.algorithm:
+                    matched.checksum_algorithm = inferred.algorithm
+            if fixity.digest and not matched.checksum_provenance:
+                matched.checksum_provenance = 's3'
+
+            matched.access_url = getattr(file_obj, 's3_url', None) or matched.access_url
+            matched.storage_status = getattr(file_obj, 'status', None) or matched.storage_status
+
+            created_at = getattr(file_obj, 'created_at', None)
+            if created_at and not matched.created_at:
+                matched.created_at = created_at.isoformat()
+
+            updated_at = getattr(file_obj, 'updated_at', None)
+            if updated_at:
+                matched.updated_at = updated_at.isoformat()
+
+        return digital_objects
+
+    def _checksum_predicate_for_org(self, institution_code: Optional[str]) -> Optional[str]:
+        if not institution_code:
+            scoped = self.relationship_org_code.lower() if self.relationship_org_code else None
+            return self.ROSETTA_CHECKSUM_PREDICATES.get(scoped) if scoped else None
+        return self.ROSETTA_CHECKSUM_PREDICATES.get(institution_code.lower())
+
+    def _resolve_org_code_for_checksums(
+        self,
+        primary_code: Optional[str],
+        institution_codes: Sequence[str],
+        project_uri: Optional[str],
+    ) -> Optional[str]:
+        """Return best-guess organization code for checksum lookups."""
+
+        candidates: List[str] = []
+
+        def _push(value: Optional[str]) -> None:
+            if not value:
+                return
+            normalized = value.strip().lower()
+            if normalized:
+                candidates.append(normalized)
+
+        _push(primary_code)
+        for code in institution_codes:
+            _push(code)
+
+        _push(self._extract_org_code_from_uri(project_uri))
+        _push(self.relationship_org_code)
+
+        for code in candidates:
+            if code in self.ROSETTA_CHECKSUM_PREDICATES:
+                return code
+
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def _extract_org_code_from_uri(project_uri: Optional[str]) -> Optional[str]:
+        if not project_uri:
+            return None
+
+        parsed = urlparse(project_uri)
+        segments = [segment for segment in parsed.path.split('/') if segment]
+        if not segments:
+            return None
+
+        if segments[0] == 'data' and len(segments) > 1:
+            return segments[1].lower()
+
+        return segments[0].lower()
 
     @staticmethod
     def _canonical(edge: Dict[str, Any]) -> Optional[str]:
@@ -650,6 +1016,26 @@ class ProjectSnapshotService:
             if self._canonical(edge) == predicate and edge.get('object_id'):
                 ids.append(str(edge['object_id']))
         return ids
+
+    def _first_literal_any(
+        self,
+        edges: Iterable[Dict[str, Any]],
+        predicates: Sequence[str],
+    ) -> Optional[str]:
+        for predicate in predicates:
+            value = self._first_literal(edges, predicate)
+            if value:
+                normalized = self._normalize_text_value(value)
+                if normalized:
+                    return normalized
+        return None
+
+    @staticmethod
+    def _normalize_text_value(value: Optional[Any]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     @staticmethod
     def _resource_slug(uri: Optional[str]) -> Optional[str]:
@@ -709,6 +1095,128 @@ class ProjectSnapshotService:
         if not tokens:
             return None
         return tokens[0]
+
+    def _populate_digital_object_metadata(
+        self,
+        project_object: ProjectDigitalObject,
+        object_id: str,
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> None:
+        edges_for_digital = edges_by_subject.get(str(object_id), [])
+        if not edges_for_digital:
+            return
+
+        uuid_value = self._normalize_text_value(
+            self._first_literal(edges_for_digital, self.DIGITAL_OBJECT_UUID_PROPERTY)
+        )
+        if uuid_value:
+            project_object.uuid = uuid_value
+
+        genesis_value = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_GENESIS_PROPERTIES,
+        )
+        if genesis_value:
+            project_object.genesis_type = genesis_value
+
+        media_value = self._resolve_media_type(
+            edges_for_digital,
+            nodes,
+            edges_by_subject,
+        )
+        if media_value:
+            project_object.media_type = media_value
+
+        significant_de = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_SIGNIFICANT_DE_PROPERTIES,
+        )
+        if significant_de:
+            project_object.significant_properties_de = significant_de
+
+        significant_en = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_SIGNIFICANT_EN_PROPERTIES,
+        )
+        if significant_en:
+            project_object.significant_properties_en = significant_en
+
+        license_info = self._build_digital_object_license(
+            edges_for_digital,
+            nodes,
+            edges_by_subject,
+        )
+        if license_info:
+            project_object.license = license_info
+
+    def _resolve_media_type(
+        self,
+        edges_for_digital: Iterable[Dict[str, Any]],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Optional[str]:
+        literal_value = self._normalize_text_value(
+            self._first_literal(edges_for_digital, self.DIGITAL_OBJECT_MEDIA_TYPE_PROPERTY)
+        )
+        if literal_value:
+            return literal_value
+
+        media_ids = self._related_ids(edges_for_digital, self.DIGITAL_OBJECT_MEDIA_TYPE_PROPERTY)
+        for media_id in media_ids:
+            media_node = nodes.get(str(media_id), {})
+            candidate = self._normalize_text_value(media_node.get('name') or media_node.get('value'))
+            if candidate:
+                return candidate
+            media_edges = edges_by_subject.get(str(media_id), [])
+            label = self._first_literal_any(media_edges, self.RESOURCE_LABEL_PREDICATES)
+            if label:
+                return label
+        return None
+
+    def _build_digital_object_license(
+        self,
+        edges_for_digital: Iterable[Dict[str, Any]],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> Optional[ProjectDigitalObjectLicense]:
+        license_ids = self._related_ids(edges_for_digital, self.DIGITAL_OBJECT_LICENSE_LINK_URI)
+        if not license_ids:
+            return None
+
+        license_id = license_ids[0]
+        license_edges = edges_by_subject.get(str(license_id), [])
+        license_node = nodes.get(str(license_id), {})
+
+        uri = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTY)
+        )
+        if not uri:
+            uri = self._normalize_text_value(license_node.get('uri') or license_node.get('value'))
+
+        label_de = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY)
+        )
+        if not label_de:
+            label_de = self._normalize_text_value(license_node.get('name'))
+
+        label_en = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY)
+        )
+
+        rights_statement = self._normalize_text_value(
+            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY)
+        )
+
+        if not any([uri, label_de, label_en, rights_statement]):
+            return None
+
+        return ProjectDigitalObjectLicense(
+            uri=uri,
+            label_de=label_de,
+            label_en=label_en,
+            rights_statement=rights_statement,
+        )
 
     @staticmethod
     def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:

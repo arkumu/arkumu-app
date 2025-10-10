@@ -7,7 +7,10 @@
 
     <!-- Quick Actions - Horizontal Layout -->
     <div class="mb-8 p-4 bg-base-200 rounded-lg">
-        <h3 class="text-lg font-semibold mb-4">Quick Actions</h3>
+        <h3 class="text-lg font-semibold mb-2">Quick Navigation</h3>
+        <p class="text-sm text-base-content/70 mb-4">
+            Jump straight into metadata tools or inspect the live OAI-PMH feeds without touching caches or data.
+        </p>
         <div class="flex flex-wrap gap-3 justify-start">
             <!-- Primary Actions -->
             <a href="{% url 'metadata:data_explorer' %}" class="btn btn-primary btn-sm">
@@ -16,48 +19,216 @@
                 </svg>
                 Metadata Explorer
             </a>
-            <a href="{% url 'metadata:data_discovery' %}" class="btn btn-outline btn-primary btn-sm">
+            <button type="button"
+                    class="btn btn-outline btn-primary btn-sm btn-disabled pointer-events-none"
+                    title="Disabled while the feature is offline"
+                    disabled>
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
                 Data Discovery
-            </a>
+            </button>
 
             <!-- OAI-PMH API Links -->
-            <a href="/oai/?verb=ListRecords&metadataPrefix=oai_dc" target="_blank" class="btn btn-outline btn-secondary btn-sm">
+            <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=oai_dc" target="_blank" class="btn btn-outline btn-secondary btn-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 OAI Dublin Core
             </a>
-            <a href="/oai/?verb=ListRecords&metadataPrefix=mets" target="_blank" class="btn btn-outline btn-secondary btn-sm">
+            <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=mets" target="_blank" class="btn btn-outline btn-secondary btn-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                 </svg>
                 OAI METS
             </a>
-            {% if request.user.is_staff %}
-            <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}" class="inline">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-warning btn-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36" />
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
-                    </svg>
-                    Warm Project &amp; Schema Cache
-                </button>
-            </form>
-            {% endif %}
-            <!-- Bulk Mapping removed - replaced by canonical URI system during import -->
         </div>
-        {% if request.user.is_staff %}
-        <p class="mt-3 text-xs text-base-content/60">Triggers Huey tasks that rebuild the cross-institutional snapshot, card schemas, and schema map.</p>
-        {% endif %}
     </div>
+
+    <!-- Snapshot Overview -->
+    <div class="mb-8 p-4 bg-base-200 rounded-lg">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Project Snapshot</h3>
+                <p class="text-sm text-base-content/70">
+                    View cached cross-institutional project metrics without slowing down the main dashboard.
+                </p>
+            </div>
+            <a href="{% url 'metadata:metadata_dashboard_snapshot_stats' %}"
+               class="btn btn-outline btn-primary btn-sm">
+                View Snapshot Metrics
+            </a>
+        </div>
+        <p class="text-xs text-base-content/60 mt-3">
+            Snapshot data loads from cache only. Use the cache warmers below when you need to rebuild it.
+        </p>
+    </div>
+
+    {% if request.user.is_staff %}
+    <!-- Cache Warmers -->
+    <div class="mb-8 p-4 bg-base-200 rounded-lg">
+        <h3 class="text-lg font-semibold mb-2">Cache &amp; API Warmers</h3>
+        <p class="text-sm text-base-content/70 mb-4">
+            These tasks rebuild derived caches so dashboards stay fast. They never modify source data—only refresh schema, project snapshots, and card layouts.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+                <h4 class="text-sm font-semibold">Schema Map</h4>
+                <p class="text-xs text-base-content/70">Refresh class and property lists used by Metadata Explorer.</p>
+                <div class="flex flex-wrap gap-2 pt-2">
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="schema">
+                        <input type="hidden" name="action" value="warm">
+                        <button type="submit" class="btn btn-warning btn-sm" title="Warm explorer class & property listings">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
+                            </svg>
+                            Warm Schema
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="schema">
+                        <input type="hidden" name="action" value="refresh">
+                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of explorer schema map">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
+                            </svg>
+                            Refresh Schema
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+                <h4 class="text-sm font-semibold">Project Snapshot</h4>
+                <p class="text-xs text-base-content/70">Rebuild the cross-institutional snapshot backing search results.</p>
+                <div class="flex flex-wrap gap-2 pt-2">
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="projects">
+                        <input type="hidden" name="action" value="warm">
+                        <button type="submit" class="btn btn-warning btn-sm" title="Warm cached project snapshot">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V10a2 2 0 012-2h2" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7 8V6a5 5 0 0110 0v2" />
+                            </svg>
+                            Warm Snapshot
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="projects">
+                        <input type="hidden" name="action" value="refresh">
+                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of cross-institutional snapshot">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
+                            </svg>
+                            Refresh Snapshot
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+                <h4 class="text-sm font-semibold">Card Schemas</h4>
+                <p class="text-xs text-base-content/70">Refresh the layout templates used for catalog cards.</p>
+                <div class="flex flex-wrap gap-2 pt-2">
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="card">
+                        <input type="hidden" name="action" value="warm">
+                        <button type="submit" class="btn btn-warning btn-sm" title="Warm catalog card layouts">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+                            </svg>
+                            Warm Schemas
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="card">
+                        <input type="hidden" name="action" value="refresh">
+                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of card schema cache">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
+                            </svg>
+                            Refresh Schemas
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+                <h4 class="text-sm font-semibold">Canonical Graph</h4>
+                <p class="text-xs text-base-content/70">Manage the canonical graph cache used by snapshots and explorer detail views.</p>
+                <div class="flex flex-wrap gap-2 pt-2">
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="canonical_graph">
+                        <input type="hidden" name="action" value="warm">
+                        <button type="submit" class="btn btn-warning btn-sm" title="Warm canonical graph cache">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c1.657 0 3-1.343 3-3S13.657 2 12 2 9 3.343 9 5s1.343 3 3 3zM19 13c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM5 13c1.657 0 3-1.343 3-3S6.657 7 5 7 2 8.343 2 10s1.343 3 3 3z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.59 12.51L12 15l3.41-2.49M12 15v7" />
+                            </svg>
+                            Warm Graph
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="canonical_graph">
+                        <input type="hidden" name="action" value="refresh">
+                        <button type="submit" class="btn btn-primary btn-sm" title="Clear canonical graph cache and reload on demand">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
+                            </svg>
+                            Refresh Graph
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2 md:col-span-1 xl:col-span-2">
+                <h4 class="text-sm font-semibold">Do Everything</h4>
+                <p class="text-xs text-base-content/70">Queue every cache action in one go (schema, snapshot, cards, canonical graph).</p>
+                <div class="flex flex-wrap gap-2 pt-2">
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="all">
+                        <input type="hidden" name="action" value="warm">
+                        <button type="submit" class="btn btn-warning btn-sm" title="Warm all caches without forcing rebuilds">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
+                            </svg>
+                            Warm All
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="cache" value="all">
+                        <input type="hidden" name="action" value="refresh">
+                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of every cache">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
+                            </svg>
+                            Refresh All
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Database Management -->
     <div class="mb-4">
-        <h3 class="text-lg font-semibold mb-4">Database Management</h3>
+        <h3 class="text-lg font-semibold mb-2">Database Management</h3>
+        <p class="text-sm text-base-content/70 mb-4">High-impact actions that write to PostgreSQL. Use these when you need to remove or reset imported data; every button requires confirmation.</p>
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <!-- Delete Organization Data -->
             <div class="card bg-base-100 shadow-md">
@@ -170,6 +341,100 @@
             <div id="clear-uploads-result"></div>
             <div id="clear-ingests-result"></div>
         </div>
+        {% if request.user.is_staff %}
+        <div class="mt-6">
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4 space-y-3">
+                    <h4 class="card-title text-sm">Storage Maintenance</h4>
+                    <p class="text-sm text-base-content/70">These utilities reconcile S3 metadata with the database—fixing missing checksums, deduplicating rows, and re-linking files—without altering project content.</p>
+
+                    <div class="flex flex-col gap-2">
+                        <form method="post" action="{% url 'metadata:metadata_dashboard_checksum_refresh' %}" class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="checksum_bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="checksum_mode" class="select select-bordered select-xs">
+                                <option value="missing">Missing checksums</option>
+                                <option value="all">Recalculate all</option>
+                            </select>
+                            <input type="number" name="checksum_limit" class="input input-bordered input-xs w-20" placeholder="Limit" min="1">
+                            <button type="submit" class="btn btn-outline btn-secondary btn-sm" title="Queue checksum recalculation via Huey">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9H4m0 0V4m0 5a8 8 0 1015.358 3H20" />
+                                </svg>
+                                Recalculate Checksums
+                            </button>
+                        </form>
+
+                        <form hx-post="{% url 'metadata:metadata_dashboard_mark_missing' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Mark Missing Files</button>
+                        </form>
+
+                        <form hx-post="{% url 'metadata:metadata_dashboard_deduplicate' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Deduplicate S3 Rows</button>
+                        </form>
+
+                        <form hx-post="{% url 'metadata:metadata_dashboard_link_events' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Link Event Files</button>
+                        </form>
+
+                    </div>
+
+                    <div id="storage-maintenance-results" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Stats Cards -->
@@ -222,7 +487,44 @@
                 </div>
             </div>
         </div>
-        
+
+        {% if oai_snapshot %}
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+                <p class="text-4xl font-bold">{{ oai_snapshot.total_projects }}</p>
+                <div class="text-xs text-base-content/70 space-y-1">
+                    {% if oai_snapshot.total_projects %}
+                        {% for summary in oai_snapshot.institution_summaries|slice:":4" %}
+                        <div class="flex justify-between gap-2">
+                            <span class="truncate w-28 uppercase">{{ summary.code }}</span>
+                            <span class="font-semibold">{{ summary.project_count }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if oai_snapshot.institution_summaries|length > 4 %}
+                        <div class="text-xs text-base-content/50">
+                            +{{ oai_snapshot.institution_summaries|length|add:"-4" }} more institutions
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-xs text-base-content/60">No harvestable projects detected</div>
+                    {% endif %}
+                </div>
+                <div class="text-xs text-base-content/50 mt-3">
+                    {{ oai_snapshot.total_harvestable_objects }} harvestable files ready
+                </div>
+                <div class="text-xs text-base-content/50">Snapshot: {{ oai_snapshot.generated_at|date:"Y-m-d H:i" }}</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+                <p class="text-xs text-base-content/70">Snapshot unavailable. Check OAI services.</p>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title text-sm">Data Sources</h2>
@@ -242,7 +544,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Recent Uploads -->
         <div class="card bg-base-100 shadow-xl">
@@ -269,10 +571,19 @@
                                 <td class="text-sm">{{ upload.institution|default:"Not specified" }}</td>
                                 <td class="font-mono text-xs">{{ upload.folder_name|truncatechars:20|default:"No folder" }}</td>
                                 <td>{{ upload.total_files }}</td>
-                                <td>
-                                    <span class="badge {% if upload.status == 'completed' %}badge-success{% elif upload.status == 'failed' %}badge-error{% else %}badge-info{% endif %}">
-                                        {{ upload.status }}
+                                <td class="space-y-2">
+                                    <span class="badge {% if upload.status == 'completed' %}badge-success{% elif upload.status == 'failed' %}badge-error{% elif upload.status == 'awaiting_verification' %}badge-warning{% else %}badge-info{% endif %}">
+                                        {{ upload.status_display|default:upload.status }}
                                     </span>
+                                    {% if upload.status == 'awaiting_verification' and request.user.is_staff %}
+                                        <form method="post" action="{% url 'metadata:upload_session_verify' upload.id %}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <button type="submit" class="btn btn-xs btn-warning w-full">
+                                                Verify files
+                                            </button>
+                                        </form>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% empty %}

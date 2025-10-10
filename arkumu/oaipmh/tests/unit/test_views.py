@@ -7,15 +7,31 @@ focusing on logic and XML generation without HTTP layer.
 
 import pytest
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch, MagicMock
-import xml.etree.ElementTree as ET
+from unittest.mock import Mock, patch
+from lxml import etree as ET
 from urllib.parse import quote
 
 from django.http import HttpRequest
 from django.test import RequestFactory
+from django.utils import timezone as django_timezone
 
 from arkumu.oaipmh import views
+from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS, XLINK_NS, DC_NS, DCTERMS_NS, XML_NS
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.users.models import Organization
+from arkumu.projects import (
+    ProjectRecord,
+    ProjectDigitalObject,
+    ProjectDigitalObjectLicense,
+    ProjectInstitution,
+    ProjectCategory,
+    ProjectCatchphrase,
+    ProjectActor,
+    ProjectEvent,
+    ProjectEventActor,
+    ProjectType,
+)
+from arkumu.storage.models.s3_file_objects import S3FileObject
 
 
 class TestOAIViewFunctions:
@@ -24,6 +40,106 @@ class TestOAIViewFunctions:
     def setup_method(self):
         """Set up test method."""
         self.factory = RequestFactory()
+        self.primary_license_uri = "http://rights.example/licenses/primary"
+        self.secondary_license_uri = "http://rights.example/licenses/secondary"
+        self.primary_rights_statement = "© 2024 Example Archive – All rights reserved"
+        self.secondary_rights_statement = "CC BY 4.0"
+        self.primary_uuid = "uuid-test-1"
+        self.secondary_uuid = "uuid-test-2"
+        self.event_actor_name = "Event Specialist"
+        self.event_actor_roles = ["Moderator", "Curator"]
+
+    def _ensure_event_storage(self, resource: Resource) -> None:
+        """Create S3 metadata for the synthetic event file used in tests."""
+
+        event_uri = f"{resource.uri}/event/launch"
+        event_resource, _created = Resource.objects.get_or_create(
+            uri=event_uri,
+            defaults={
+                "organization": resource.organization,
+                "public_access_level": resource.public_access_level,
+                "is_public_approved": resource.is_public_approved,
+            },
+        )
+
+        S3FileObject.objects.get_or_create(
+            related_resource=event_resource,
+            s3_key="streams/launch/test1.txt",
+            defaults={
+                "file_name": "test1.txt",
+                "file_size_bytes": 123,
+                "content_type": "text/plain",
+                "status": "completed",
+            },
+        )
+
+    def _build_snapshot_record(self, resource: Resource, include_files: bool = False) -> ProjectRecord:
+        digital_objects = []
+        if include_files:
+            digital_objects.append(
+                ProjectDigitalObject(
+                    path="streams/launch/test1.txt",
+                    storage_key="streams/launch/test1.txt",
+                    file_name="test1.txt",
+                    content_type="text/plain",
+                    size_bytes=123,
+                    access_url="https://download.example/test1.txt",
+                    uuid=self.primary_uuid,
+                    genesis_type="born-digital",
+                    media_type="Audio",
+                    significant_properties_de="Wesentliche Eigenschaften (DE)",
+                    significant_properties_en="Significant properties (EN)",
+                    license=ProjectDigitalObjectLicense(
+                        uri=self.primary_license_uri,
+                        label_de="Lizenz Eins",
+                        label_en="License One",
+                        rights_statement=self.primary_rights_statement,
+                    ),
+                )
+            )
+            digital_objects.append(
+                ProjectDigitalObject(
+                    path="streams/project/test2.pdf",
+                    storage_key="streams/project/test2.pdf",
+                    file_name="test2.pdf",
+                    content_type="application/pdf",
+                    size_bytes=456,
+                    access_url="https://download.example/test2.pdf",
+                    uuid=self.secondary_uuid,
+                    genesis_type="digitized",
+                    media_type="Text",
+                    significant_properties_de="Weitere Eigenschaften (DE)",
+                    significant_properties_en="Additional properties (EN)",
+                    license=ProjectDigitalObjectLicense(
+                        uri=self.secondary_license_uri,
+                        label_de="Lizenz Zwei",
+                        label_en="License Two",
+                        rights_statement=self.secondary_rights_statement,
+                    ),
+                )
+            )
+
+        return ProjectRecord(
+            subject_id="subj-1",
+            uri=resource.uri,
+            title="Sample Project",
+            description="Sample description",
+            institution=ProjectInstitution(label="Test Institution", code="ti"),
+            categories=[ProjectCategory(label="Category One", slug="category-one")],
+            catchphrases=[ProjectCatchphrase(label="Keyword")],
+            actors=[ProjectActor(name="Jane Doe", roles=["Creator"])],
+            events=[ProjectEvent(
+                id="event-1",
+                uri=f"{resource.uri}/event/launch",
+                name="Launch",
+                start="2020-01-01",
+                location="Berlin",
+                actors=[ProjectEventActor(name=self.event_actor_name, roles=self.event_actor_roles)],
+            )],
+            project_type=ProjectType(label="Type A"),
+            digital_objects=digital_objects,
+            institution_codes=["ti"],
+        )
 
     # ============================================================================
     # XML UTILITY FUNCTION TESTS
@@ -35,18 +151,16 @@ class TestOAIViewFunctions:
         oai = views._oai_envelope(request)
 
         # Check root element and namespaces
-        assert oai.tag == "OAI-PMH"
-        assert oai.get("xmlns") == "http://www.openarchives.org/OAI/2.0/"
-        assert oai.get("xmlns:oai_dc") == "http://www.openarchives.org/OAI/2.0/oai_dc/"
-        assert oai.get("xmlns:dc") == "http://purl.org/dc/elements/1.1/"
-        assert oai.get("xmlns:xsi") == "http://www.w3.org/2001/XMLSchema-instance"
+        assert ET.QName(oai).localname == "OAI-PMH"
+        assert oai.nsmap[None] == views.OAI_NS
+        assert oai.nsmap["xsi"] == views.XSI_NS
 
         # Check required child elements
-        response_date = oai.find("responseDate")
+        response_date = oai.find(f"{{{views.OAI_NS}}}responseDate")
         assert response_date is not None
         assert response_date.text is not None
 
-        request_elem = oai.find("request")
+        request_elem = oai.find(f"{{{views.OAI_NS}}}request")
         assert request_elem is not None
         assert "/oai/" in request_elem.text
 
@@ -89,51 +203,71 @@ class TestOAIViewFunctions:
         # baseURL should be absolute
         assert identify.find("baseURL").text == "http://testserver/oai/"
         assert identify.find("protocolVersion").text == "2.0"
-        assert identify.find("adminEmail").text == "admin@example.org"
+        assert identify.find("adminEmail").text == views.REPO_ADMIN_EMAIL
         assert identify.find("earliestDatestamp").text == "1970-01-01T00:00:00Z"
         assert identify.find("deletedRecord").text == "no"
         assert identify.find("granularity").text == "YYYY-MM-DDThh:mm:ssZ"
 
     @pytest.mark.django_db
-    @patch('arkumu.storage.services.rosetta_export_service.RosettaExportService')
-    def test_dc_includes_file_relations_when_present(self, mock_export_svc, sample_resources):
-        """_build_metadata_element for oai_dc should include dc:relation URLs when files exist."""
-        # Arrange resource with related files
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_dc_excludes_file_relations(self, mock_get_record, sample_resources):
+        """_build_metadata_element for oai_dc should not emit per-file relations/identifiers."""
         resource = sample_resources[0]
-        from arkumu.storage.models.s3_file_objects import S3FileObject
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
 
-        file1 = S3FileObject.objects.create(
-            file_name="test1.txt",
-            s3_key="org/test1.txt",
-            file_size_bytes=123,
-            content_type="text/plain",
-            related_resource=resource,
-            s3_url="https://s3.example/org/test1.txt",
-            status='completed'
-        )
+        metadata = views._build_metadata_element(resource, "oai_dc")
 
-        # Mock presigned URL generation
-        mock_instance = Mock()
-        mock_export_svc.return_value = mock_instance
-        mock_instance.prepare_file_for_harvest.return_value = {
-            'access_method': 'presigned_url',
-            'url': 'https://download.example/test1.txt',
-            'expires_at': datetime.now(timezone.utc)
-        }
-
-        # Also mock canonical graph to keep DC building simple
-        with patch('arkumu.oaipmh.views.CanonicalGraphService') as mock_canon:
-            mock_canon.return_value.get_entity_graph.return_value = {
-                'root_id': resource.uri,
-                'edges': []
-            }
-            metadata = views._build_metadata_element(resource, "oai_dc")
-
-        # Act: parse XML and assert dc:relation present
         dc_root = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_root is not None
         relations = dc_root.findall("{http://purl.org/dc/elements/1.1/}relation")
-        assert any(e.text == 'https://download.example/test1.txt' for e in relations)
+        assert relations == []
+        formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
+        assert any(elem.text == 'text/plain' for elem in formats)
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_includes_rosetta_without_s3(self, settings):
+        """Rosetta institutions remain harvestable even without S3 file objects."""
+
+        settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('khm',)
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+
+        khm_org = Organization.objects.create(
+            name="KHM",
+            code="khm",
+            domain="khm.example",
+            is_active=True,
+        )
+        rosetta_resource = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/1001",
+            organization=khm_org,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        queryset = Resource.objects.filter(pk=rosetta_resource.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert list(filtered) == [rosetta_resource]
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+        non_s3_resource = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/1002",
+            organization=fuk_org,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        filtered_non_s3 = views._restrict_to_harvestable_files(
+            Resource.objects.filter(pk=non_s3_resource.pk)
+        )
+        assert not filtered_non_s3.exists()
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS
@@ -166,8 +300,8 @@ class TestOAIViewFunctions:
         assert dc_format.find("metadataNamespace").text == "http://www.openarchives.org/OAI/2.0/oai_dc/"
 
         assert mets_format is not None
-        assert mets_format.find("schema").text == "http://www.loc.gov/standards/mets/mets.xsd"
-        assert mets_format.find("metadataNamespace").text == "http://www.loc.gov/METS/"
+        assert mets_format.find("schema").text == METS_SCHEMA_URL
+        assert mets_format.find("metadataNamespace").text == METS_NS
 
     # ============================================================================
     # LIST SETS FUNCTION TESTS
@@ -367,42 +501,45 @@ class TestOAIViewFunctions:
     # DUBLIN CORE METADATA BUILDING TESTS
     # ============================================================================
 
-    @patch('arkumu.oaipmh.views.CanonicalGraphService')
-    def test_build_dc_metadata_from_entity_graph(self, mock_service_class, sample_graph_data):
-        """Test _build_dc_metadata_from_entity_graph."""
-        dc_dict = views._build_dc_metadata_from_entity_graph(sample_graph_data)
+    def test_build_dc_payload_from_record(self, sample_resources):
+        """_build_dc_payload_from_record assembles title, identifiers, and relations."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
 
-        assert isinstance(dc_dict, dict)
-        assert "dc:title" in dc_dict
-        assert "dc:creator" in dc_dict
+        payload = views._build_dc_payload_from_record(record, resource)
 
-        # Should have proper values
-        assert "Sample Resource Title" in dc_dict["dc:title"]
-        assert len(dc_dict["dc:creator"]) == 2  # Jane Doe and John Smith
-        assert "Jane Doe" in dc_dict["dc:creator"]
-        assert "John Smith" in dc_dict["dc:creator"]
+        assert "dc:title" in payload
+        assert record.title in payload["dc:title"]
+        assert "dc:identifier" in payload
+        assert resource.uri in payload["dc:identifier"]
+        assert not payload.get("dc:relation")
+        assert 'dc:format' in payload
+        assert 'text/plain' in payload['dc:format']
+        rights_values = payload.get("dc:rights", [])
+        assert self.primary_rights_statement in rights_values
+        assert self.secondary_rights_statement in rights_values
+        assert "dc:collection" not in payload
+        is_part_of_values = payload.get("dcterms:isPartOf", [])
+        assert "TI" in is_part_of_values
+        assert "Test Institution" in is_part_of_values
+        contributor_values = payload.get("dc:contributor", [])
+        assert any(self.event_actor_name in value for value in contributor_values)
+        expected_role_fragment = ", ".join(sorted(set(self.event_actor_roles)))
+        event_contributor = f"{self.event_actor_name} ({expected_role_fragment})"
+        assert event_contributor in contributor_values
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
     # ============================================================================
 
-    @patch('arkumu.oaipmh.views.CanonicalGraphService')
-    def test_build_metadata_element_dublin_core(self, mock_service_class, sample_resources):
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_build_metadata_element_dublin_core(self, mock_get_record, sample_resources):
         """Test _build_metadata_element with Dublin Core format."""
-        mock_instance = Mock()
-        mock_service_class.return_value = mock_instance
-        mock_instance.get_entity_graph.return_value = {
-            "root_id": "test_uri",
-            "edges": [
-                {
-                    "subject_id": "test_uri",
-                    "predicate_canonical": "http://purl.org/dc/terms/title",
-                    "object_value": "Test Title"
-                }
-            ]
-        }
-
         resource = sample_resources[0]
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
         metadata = views._build_metadata_element(resource, "oai_dc")
 
         assert metadata.tag == "metadata"
@@ -411,21 +548,176 @@ class TestOAIViewFunctions:
         dc_element = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_element is not None
 
-    @patch('arkumu.oaipmh.views.METSSerializer')
-    def test_build_metadata_element_mets(self, mock_mets_class, sample_resources):
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_build_metadata_element_mets(self, mock_get_record, sample_resources):
         """Test _build_metadata_element with METS format."""
-        mock_serializer = Mock()
-        mock_mets_class.return_value = mock_serializer
-        mock_serializer.serialize_resource.return_value = '<mets:mets xmlns:mets="http://www.loc.gov/METS/"><mets:metsHdr/></mets:mets>'
-
         resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
         metadata = views._build_metadata_element(resource, "mets")
 
         assert metadata.tag == "metadata"
 
         # Should contain METS element
-        mets_elements = metadata.findall(".//{http://www.loc.gov/METS/}mets")
+        mets_elements = metadata.findall(f".//{{{METS_NS}}}mets")
         assert len(mets_elements) > 0
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_rosetta_mets_structure(self, mock_get_record, sample_resources):
+        """Ensure Rosetta METS output matches expected structural profile."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        # Intellectual entity ADM sections
+        rights_md = mets_root.find(f".//{{{METS_NS}}}rightsMD[@ID='ie-amd-rights']")
+        assert rights_md is not None
+        source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-OTHER']")
+        assert source_md is not None
+        epicur = source_md.find(f".//{{{DNX_NS}}}epicur")
+        assert epicur is not None
+
+        resources = epicur.findall(f".//{{{DNX_NS}}}resource")
+
+        preservation_count = sum(
+            1
+            for obj in record.digital_objects
+            if views._infer_representation_type(obj) == "PRESERVATION_MASTER"
+        ) or len(record.digital_objects)
+
+        assert len(resources) >= preservation_count
+
+        # File groups and structural maps should mirror preservation master files
+        file_grps = mets_root.findall(f".//{{{METS_NS}}}fileGrp")
+        assert len(file_grps) == preservation_count
+
+        struct_maps = mets_root.findall(f".//{{{METS_NS}}}structMap")
+        assert len(struct_maps) == preservation_count
+
+        # Each structMap should point to a file
+        for struct_map in struct_maps:
+            fptr = struct_map.find(f".//{{{METS_NS}}}fptr")
+            assert fptr is not None
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_mets_file_sections_include_license_metadata(self, mock_get_record, sample_resources):
+        """File-level AMD sections include object characteristics, rights, and DC licence metadata."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        file_elements = mets_root.findall(f".//{{{METS_NS}}}file")
+        normalized_project = views.project_builder.from_project_record(record)
+        harvestable_objects = [
+            obj for obj in normalized_project.digital_objects
+            if obj.harvestable and obj.preferred_location
+        ]
+        expected_objects: list = []
+        for _rep_type, rep_objects in views._group_digital_objects_for_rosetta(list(harvestable_objects)):
+            expected_objects.extend(rep_objects)
+        assert len(file_elements) == len(expected_objects)
+
+        for file_elem, digital_obj in zip(file_elements, expected_objects):
+            adm_id = file_elem.get("ADMID")
+            assert adm_id
+            amd_sec = mets_root.find(f".//{{{METS_NS}}}amdSec[@ID='{adm_id}']")
+            assert amd_sec is not None
+
+            object_type_key = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='objectCharacteristics']//{{{DNX_NS}}}key[@id='objectType']"
+            )
+            assert object_type_key is not None
+            assert object_type_key.text == "FILE"
+
+            rights_value = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='linkingRightsStatementIdentifier']//{{{DNX_NS}}}key[@id='linkingRightsStatementIdentifierValue']"
+            )
+            assert rights_value is not None
+            assert rights_value.text == digital_obj.license.uri
+
+            source_record = amd_sec.find(f".//{{{DC_NS}}}record")
+            assert source_record is not None
+
+            identifier_elem = source_record.find(f"./{{{DC_NS}}}identifier[@{{{XML_NS}}}type='Digital-Object-ID']")
+            assert identifier_elem is not None
+            assert identifier_elem.text == digital_obj.uuid
+
+            filename_elem = source_record.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='file-name']")
+            assert filename_elem is not None
+            assert filename_elem.text == digital_obj.file_name
+
+            genesis_elem = source_record.find(f"./{{{DC_NS}}}type[@{{{XML_NS}}}type='genesis-type']")
+            assert genesis_elem is not None
+            assert genesis_elem.text == digital_obj.genesis_type
+
+            media_elem = source_record.find(f"./{{{DC_NS}}}type[@{{{XML_NS}}}type='media-type']")
+            assert media_elem is not None
+            assert media_elem.text == digital_obj.media_type
+
+            mimetype_elem = source_record.find(f"./{{{DC_NS}}}type[@{{{XML_NS}}}type='mimetype']")
+            assert mimetype_elem is not None
+            assert mimetype_elem.text == digital_obj.content_type
+
+            sig_de_elem = source_record.find(f"./{{{DC_NS}}}description[@{{{XML_NS}}}type='significant-properties-german']")
+            assert sig_de_elem is not None
+            assert sig_de_elem.text == digital_obj.significant_properties_de
+
+            sig_en_elem = source_record.find(f"./{{{DC_NS}}}description[@{{{XML_NS}}}type='significant-properties-english']")
+            assert sig_en_elem is not None
+            assert sig_en_elem.text == digital_obj.significant_properties_en
+
+            license_elements = source_record.findall(f"./{{{DCTERMS_NS}}}license")
+            license_values = {elem.text for elem in license_elements}
+            assert digital_obj.license.label_de in license_values
+            assert digital_obj.license.label_en in license_values
+            assert digital_obj.license.uri in license_values
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_struct_map_groups_event_files(self, mock_get_record, sample_resources):
+        """Event files appear under dedicated event divs with folder structure."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        struct_map = mets_root.find(f".//{{{METS_NS}}}structMap")
+        assert struct_map is not None
+
+        event_div = struct_map.find(f".//{{{METS_NS}}}div[@LABEL='Launch']")
+        assert event_div is not None
+
+        folder_div = event_div.find(f"./{{{METS_NS}}}div[@LABEL='streams']")
+        assert folder_div is not None
+        nested_folder = folder_div.find(f"./{{{METS_NS}}}div[@LABEL='launch']")
+        assert nested_folder is not None
+
+        file_div = nested_folder.find(f"./{{{METS_NS}}}div[@TYPE='FILE'][@LABEL='test1.txt']")
+        assert file_div is not None
+        fptr = file_div.find(f"./{{{METS_NS}}}fptr")
+        assert fptr is not None
+
+        file_id = fptr.get("FILEID")
+        assert file_id is not None
+
+        flocat = mets_root.find(f".//{{{METS_NS}}}file[@ID='{file_id}']/{{{METS_NS}}}FLocat")
+        assert flocat is not None
+        assert flocat.get(f"{{{XLINK_NS}}}href") == "streams/launch/test1.txt"
 
     def test_build_metadata_element_no_organization(self):
         """Test _build_metadata_element with resource without organization."""
@@ -433,7 +725,8 @@ class TestOAIViewFunctions:
         mock_resource = Mock()
         mock_resource.organization = None
 
-        metadata = views._build_metadata_element(mock_resource, "oai_dc")
+        with patch('arkumu.oaipmh.views._get_snapshot_record', return_value=None):
+            metadata = views._build_metadata_element(mock_resource, "oai_dc")
 
         assert metadata.tag == "metadata"
         # Should be empty metadata element
@@ -452,7 +745,7 @@ class TestOAIViewFunctions:
             'metadataPrefix': 'oai_dc'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         list_identifiers = result_oai.find("ListIdentifiers")
         assert list_identifiers is not None
@@ -464,7 +757,7 @@ class TestOAIViewFunctions:
         """Test _list_identifiers with missing metadataPrefix."""
         request = self.factory.get('/oai/')  # No metadataPrefix
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None
@@ -476,7 +769,7 @@ class TestOAIViewFunctions:
             'metadataPrefix': 'invalid_format'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None
@@ -491,7 +784,7 @@ class TestOAIViewFunctions:
             'metadataPrefix': 'oai_dc'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_identifiers(oai, request)
+        result_oai = views._list_identifiers(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None
@@ -501,25 +794,18 @@ class TestOAIViewFunctions:
     # LIST RECORDS FUNCTION TESTS
     # ============================================================================
 
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
     @patch('arkumu.oaipmh.views._get_resources_queryset')
-    @patch('arkumu.oaipmh.views.CanonicalGraphService')
-    def test_list_records_basic(self, mock_service_class, mock_queryset, sample_resources):
+    def test_list_records_basic(self, mock_queryset, mock_get_record, sample_resources):
         """Test _list_records function basic functionality."""
         mock_queryset.return_value = sample_resources[:1]  # Return 1 resource
-
-        # Mock the canonical graph service
-        mock_instance = Mock()
-        mock_service_class.return_value = mock_instance
-        mock_instance.get_entity_graph.return_value = {
-            "root_id": "test_uri",
-            "edges": []
-        }
+        mock_get_record.return_value = self._build_snapshot_record(sample_resources[0], include_files=True)
 
         request = self.factory.get('/oai/', {
             'metadataPrefix': 'oai_dc'
         })
         oai = views._oai_envelope(request)
-        result_oai = views._list_records(oai, request)
+        result_oai = views._list_records(oai, request.GET)
 
         list_records = result_oai.find("ListRecords")
         assert list_records is not None
@@ -536,7 +822,7 @@ class TestOAIViewFunctions:
         """Test _list_records with missing metadataPrefix."""
         request = self.factory.get('/oai/')  # No metadataPrefix
         oai = views._oai_envelope(request)
-        result_oai = views._list_records(oai, request)
+        result_oai = views._list_records(oai, request.GET)
 
         error_elem = result_oai.find("error")
         assert error_elem is not None

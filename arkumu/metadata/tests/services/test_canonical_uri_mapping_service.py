@@ -41,6 +41,14 @@ class TestCanonicalUriMappingService(TestCase):
             resource_type=ResourceType.PROPERTY,
             organization=self.organization
         )
+
+        # Resource whose name no longer matches the CSV but whose URI should match via slug fallback
+        self.property_resource_slug = Resource.objects.create(
+            uri="http://test.org/tma/properties/dat-id",
+            name="identifier",
+            resource_type=ResourceType.PROPERTY,
+            organization=self.organization
+        )
         
         # Create resource with existing canonical URI
         self.existing_canonical = Resource.objects.create(
@@ -120,6 +128,30 @@ class TestCanonicalUriMappingService(TestCase):
             self.assertEqual(self.class_resource2.canonical_uri, 'http://arkumu.org/types/ereignis')
             self.assertEqual(self.property_resource.canonical_uri, 'http://arkumu.org/properties/title')
             
+        finally:
+            os.unlink(csv_file)
+
+    def test_process_csv_matches_uri_slug_fallback(self):
+        """Ensure we can match resources by slugified URI when names diverge."""
+        csv_content = [
+            ['Type', 'Target', 'Label', 'Name'],
+            ['Property', 'http://arkumu.org/properties/digitales-objekt', 'Digital Object', 'DAT_ID']
+        ]
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerows(csv_content)
+            csv_file = f.name
+
+        try:
+            stats = self.service.process_canonical_mappings(csv_file, dry_run=False)
+            self.assertEqual(stats['updated'], 1)
+
+            self.property_resource_slug.refresh_from_db()
+            self.assertEqual(
+                self.property_resource_slug.canonical_uri,
+                'http://arkumu.org/properties/digitales-objekt',
+            )
         finally:
             os.unlink(csv_file)
     

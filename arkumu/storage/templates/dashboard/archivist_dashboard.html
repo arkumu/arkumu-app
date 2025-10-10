@@ -1,36 +1,30 @@
 {% extends "base.html" %}
-
-{% block content %}
 {% load static %}
 
-<div class="container mx-auto px-4 py-8">
-    <div class="hero mb-8">
-        <div class="hero-content text-center">
-            <h1 class="text-4xl font-bold">Archivist Dashboard</h1>
-            <p class="py-2 text-base-content/70">Manage organization digital assets in S3 cloud storage</p>
+{% block content %}
+
+<div class="container mx-auto px-4 py-8 space-y-6">
+
+    <div class="rounded-xl border border-base-300/60 bg-base-200/70 px-4 py-3 shadow-sm">
+        <div id="dashboard-action-bar" class="flex flex-wrap items-center justify-end gap-2 lg:gap-3">
+            {% include 'dashboard/partials/action_bar_controls.html' %}
         </div>
     </div>
-    
-    <!-- Main Content Area with Upload Form and Browser -->
+
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <!-- Upload Form (Smaller) -->
         <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
+            <div class="card-body space-y-6">
                 <h2 class="card-title mb-4">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     Upload Files to S3
                 </h2>
-                
-                <!-- Organization and Folder Selection -->
-                <div class="space-y-4 mb-4">
-                    <!-- Organization selection -->
+
+                <div class="space-y-4">
                     <div id="upload-org-selector" class="form-control">
                         {% include 'dashboard/partials/upload_org_selector.html' %}
                     </div>
-                    
-                    <!-- Base folder selection (data or metadata) -->
                     <div class="form-control">
                         <label class="label">
                             <span class="label-text">Base Folder</span>
@@ -40,138 +34,59 @@
                             <option value="data">data</option>
                             <option value="metadata">metadata</option>
                         </select>
-                        <div class="text-xs text-gray-500 mt-1">
-                            Files will be uploaded to S3 within these base folders
-                        </div>
                     </div>
                 </div>
 
-                <!-- Presigned Upload Area -->
-                <div id="presigned-upload-area" class="border-2 border-dashed border-base-300 rounded-lg p-4 text-center">
+                <div id="presigned-upload-area" class="border-2 border-dashed border-base-300 rounded-lg p-4 text-center space-y-3">
                     <label for="dashboard-file-picker" class="cursor-pointer block">
                         <div class="mb-3">
                             <svg class="mx-auto h-8 w-8 text-base-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                                 <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                             </svg>
                         </div>
-                        
-                        <span class="mt-2 block text-sm font-medium text-base-content">
-                            Click to select
-                        </span>
-                        <input id="dashboard-file-picker" 
-                               type="file" 
-                               class="hidden" 
-                               multiple 
-                               accept="*/*">
+                        <span class="mt-2 block text-sm font-medium text-base-content">Select files or folders</span>
+                        <input id="dashboard-file-picker" type="file" class="hidden" multiple accept="*/*">
                     </label>
-                    
-                    <!-- Upload Mode Switcher -->
-                    <div class="mt-3">
-                        <div class="flex gap-2 justify-center">
-                            <button type="button" 
-                                    class="btn btn-outline btn-xs flex-1 max-w-24 btn-active" 
-                                    id="files-mode-btn"
-                                    onclick="switchToFilesMode()">
-                                📄 Files
-                            </button>
-                            <button type="button" 
-                                    class="btn btn-outline btn-xs flex-1 max-w-24" 
-                                    id="folder-mode-btn"
-                                    onclick="switchToFolderMode()">
-                                📁 Folder
-                            </button>
+
+                    <div class="join grid grid-cols-2 max-w-xs mx-auto">
+                        <button type="button" class="btn btn-primary btn-xs join-item" id="files-mode-btn" onclick="switchToFilesMode()">Files</button>
+                        <button type="button" class="btn btn-ghost btn-xs join-item" id="folder-mode-btn" onclick="switchToFolderMode()">Folders</button>
+                    </div>
+                    <div class="text-xs text-base-content/60">Folder mode lets you upload directories via browsers that support it.</div>
+                </div>
+
+                <div class="rounded-lg bg-warning/10 border border-warning/40 p-4 text-sm text-warning/90">
+                    <div class="flex items-start gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        <div>
+                            <p class="font-medium">Keep this page open while uploads run.</p>
+                            <p class="mt-1 text-sm opacity-80">Navigating away or closing the tab stops in-progress uploads. You can minimize the activity panel and continue browsing this dashboard.</p>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Upload Results Area -->
-                <div id="dashboard-upload-area" class="mt-4 space-y-2">
-                    <!-- Upload forms will be inserted here by JavaScript -->
-                </div>
-                
-                <!-- Batch Upload Controls -->
-                <div id="upload-controls" class="mt-4 hidden">
-                    <div class="divider">Upload Actions</div>
-                    <div class="flex justify-center items-center">
-                        <div class="text-sm text-base-content/70">
-                            <span id="files-count">0</span> files ready to upload
-                        </div>
+
+                <div id="upload-toast" class="toast toast-top toast-end hidden">
+                    <div class="alert alert-info">
+                        <span id="upload-toast-message">Upload started; check status in the uploads dashboard.</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Organization Browser (Larger, spans 2 columns) -->
-        <div class="card bg-base-100 shadow-xl md:col-span-2">
-            <div class="p-4 pb-0">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="card-title" id="s3-browser-title">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                        </svg>
-                        {% if selected_org_slug %}
-                            {{ selected_org_slug|upper }} Files Browser
-                        {% else %}
-                            Files Browser
-                        {% endif %}
-                    </h2>
-                    
-                    <!-- Bucket Size Info and Export Button -->
-                    <div class="flex items-center gap-3">
-                        <!-- Bucket Size Info - Updates automatically when organization changes -->
-                        <div id="bucket-size-container" class="flex-shrink-0">
-                            {% if selected_org_slug %}
-                                <div hx-get="{% url 'storage:bucket_size_info' selected_org_slug %}"
-                                     hx-trigger="load"
-                                     hx-swap="innerHTML"
-                                     class="min-h-[60px] flex items-center justify-center">
-                                    <!-- Loading indicator -->
-                                    <div class="flex items-center gap-2 text-base-content/50">
-                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                                        <span class="text-sm">Calculating size...</span>
-                                    </div>
-                                </div>
-                            {% else %}
-                                <div class="stats bg-base-200 shadow-inner opacity-50">
-                                    <div class="stat">
-                                        <div class="stat-figure text-secondary">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V8z" />
-                                            </svg>
-                                        </div>
-                                        <div class="stat-title text-xs">Bucket Size</div>
-                                        <div class="stat-value text-lg">---</div>
-                                        <div class="stat-desc">Select organization</div>
-                                    </div>
-                                </div>
-                            {% endif %}
-                        </div>
-                        
-                        <!-- Export Button (Temporarily Disabled) -->
-                        {% if selected_org_slug %}
-                            <div class="tooltip" data-tip="Export file metadata disabled">
-                                <button class="btn btn-outline btn-sm btn-square btn-disabled" disabled>
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        {% endif %}
-                    </div>
+        <div class="md:col-span-2 card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title mb-2">Organization Files</h2>
+                <div class="text-sm text-base-content/70 mb-4">
+                    Browse current files. Detailed activity and statuses are available via the uploads dashboard.
                 </div>
-            </div>
-                
-
-                <!-- File Browser Content -->
+                <!-- Bucket size card now lives in the header's control bar -->
                 <div id="file-browser-content" class="min-h-[300px] max-h-[600px] overflow-y-auto">
                     {% if selected_org_slug %}
-                        <!-- Load organization files directly when organization is selected -->
                         {% include 'dashboard/organization_files_partial.html' %}
                     {% else %}
                         <div class="alert alert-info">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
                             <span>Select an organization to browse its S3 files and folders</span>
                         </div>
                     {% endif %}
@@ -181,7 +96,6 @@
     </div>
 </div>
 
-<!-- Loading Indicator -->
 <div id="loading-indicator" class="htmx-indicator fixed top-4 right-4 z-50">
     <div class="bg-base-100 shadow-lg rounded-lg p-4 flex items-center gap-3">
         <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
@@ -189,47 +103,47 @@
     </div>
 </div>
 
-<!-- File Viewer Modal -->
+<div id="dashboard-upload-panel" class="hidden fixed bottom-4 right-4 z-40 w-full max-w-xl md:max-w-lg lg:max-w-xl">
+    <div class="card bg-base-100 shadow-2xl border border-base-200">
+        <div class="card-body p-0 flex max-h-[70vh] flex-col">
+            <div class="flex flex-shrink-0 items-center justify-between border-b border-base-200 px-4 py-3">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <h3 class="text-sm font-semibold tracking-wide uppercase">Upload activity</h3>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button type="button" id="collapse-upload-panel-btn" class="btn btn-ghost btn-xs">
+                        Hide
+                    </button>
+                </div>
+            </div>
+            <div id="dashboard-upload-area" class="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-sm text-base-content/70" data-empty-state="true">
+                <div class="flex items-start gap-3 rounded-lg bg-base-200/80 p-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m-2 8a9 9 0 110-18 9 9 0 010 18z" />
+                    </svg>
+                    <div>
+                        <p>No active uploads. Select files on the left to start a new queue.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <dialog id="file-viewer-modal" class="modal">
     <div class="modal-box w-11/12 max-w-7xl h-5/6 max-h-screen">
-        <!-- Content will be loaded via HTMX -->
         <div class="flex items-center justify-center h-full">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
             <p class="text-gray-600">Loading file preview...</p>
         </div>
     </div>
-    <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-    </form>
 </dialog>
+{% endblock %}
 
-
-<!-- Upload client configuration bridge (from settings to JS) -->
-<script>
-    window.UPLOAD_CONFIG = Object.assign({
-        // Safe defaults
-        chunkSize: 8 * 1024 * 1024,
-        maxConcurrent: 6,
-        multipartThreshold: 100 * 1024 * 1024
-    }, {
-        chunkSize: {{ UPLOAD_CLIENT_CONFIG.chunk_size|default:8388608 }},
-        maxConcurrent: {{ UPLOAD_CLIENT_CONFIG.max_concurrency|default:6 }},
-        multipartThreshold: {{ UPLOAD_CLIENT_CONFIG.multipart_threshold|default:104857600 }}
-    });
-    // Cap allowed concurrency for presigned multipart UI to 6
-    window.UPLOAD_CONFIG.maxConcurrent = Math.min(window.UPLOAD_CONFIG.maxConcurrent || 6, 6);
-    // Ensure sensible minimum
-    window.UPLOAD_CONFIG.maxConcurrent = Math.max(window.UPLOAD_CONFIG.maxConcurrent, 4);
-    // Also expose as kebab-case fallbacks if needed by old code
-    window.UploadConfig = window.UPLOAD_CONFIG;
-    window.uploadConfig = window.UPLOAD_CONFIG;
-    window.S3_UPLOAD_MAX_CONCURRENT = window.UPLOAD_CONFIG.maxConcurrent;
-    window.S3_UPLOAD_CHUNK_SIZE = window.UPLOAD_CONFIG.chunkSize;
-    window.S3_MULTIPART_THRESHOLD = window.UPLOAD_CONFIG.multipartThreshold;
-    
-</script>
-
-<!-- File Viewer JavaScript -->
-<script src="{% static 'js/src/dashboard-upload.js' %}"></script>
-
+{% block javascript %}
+{{ block.super }}
+<script defer src="{% static 'js/src/dashboard-upload.js' %}"></script>
 {% endblock %}

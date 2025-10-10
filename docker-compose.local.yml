@@ -30,6 +30,9 @@ services:
     environment:
       # DISABLE_CACHE: 1 = cache disabled (no caching), 0 = cache enabled (with caching)
       - DISABLE_CACHE=0
+      - OAI_S3_ROSETTA_BASE_FUK=/rosetta/fudk/sandbox/input/arkumu/daten
+      - OAI_S3_ROSETTA_BASE_RSH=/rosetta/rsh/sandbox/input/arkumu/daten
+      - OAI_S3_ROSETTA_BASE_DET=/rosetta/hfmdt/sandbox/input/arkumu/daten
     networks:
       - arkumu_network
 
@@ -109,6 +112,10 @@ services:
     env_file:
       - ./.envs/.local/.django
       - ./.envs/.local/.postgres
+    environment:
+      OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
+      OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
+      OAI_S3_ROSETTA_BASE_DET: /rosetta/hfmdt/sandbox/input/arkumu/daten
     command: /bin/sh -c "python manage.py run_huey"
     # No ports exposed - only accessible internally
     networks:

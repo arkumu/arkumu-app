@@ -622,12 +622,22 @@ class BucketService:
                 folder_name = '/'.join(folder_parts[:-1]) if len(folder_parts) > 1 else ""
                 
                 # Use stored checksum or calculate on-demand
-                checksum_sha256 = file_obj.sha256_checksum
-                if not checksum_sha256:
-                    logger.info(f"📊 CHECKSUM: Calculating SHA256 for {file_name} ({self.base_s3_service._format_size(file_obj.file_size_bytes)})...")
-                    checksum_sha256 = file_obj.calculate_checksum(self.base_s3_service)
-                    if checksum_sha256:
-                        logger.info(f"✅ CHECKSUM: SHA256 for {file_name}: {checksum_sha256[:16]}...")
+                checksum_algorithm, checksum_value = file_obj.get_checksum()
+                if not checksum_value:
+                    logger.info(
+                        "📊 CHECKSUM: Calculating checksum for %s (%s)...",
+                        file_name,
+                        self.base_s3_service._format_size(file_obj.file_size_bytes),
+                    )
+                    checksum_value = file_obj.calculate_checksum(self.base_s3_service)
+                    checksum_algorithm, checksum_value = file_obj.get_checksum()
+                    if checksum_value:
+                        logger.info(
+                            "✅ CHECKSUM: %s for %s: %s...",
+                            checksum_algorithm or 'sha256',
+                            file_name,
+                            checksum_value[:16],
+                        )
                 
                 try:
                     # Write CSV row with database information
@@ -637,7 +647,7 @@ class BucketService:
                         file_obj.file_size_bytes,
                         self.base_s3_service._format_size(file_obj.file_size_bytes),
                         file_obj.s3_key,
-                        checksum_sha256 or "",
+                        checksum_value or "",
                         str(file_obj.session.id) if file_obj.session else "",
                         file_obj.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                         file_obj.status
@@ -675,9 +685,9 @@ class BucketService:
             logger.exception("Failed to export S3 bucket scan CSV")
             return {"success": False, "error": str(e)}
 
-    def _calculate_file_checksum(self, bucket_name: str, s3_key: str, max_file_size: int = 50 * 1024 * 1024) -> str:
+    def _calculate_file_checksum(self, bucket_name: str, s3_key: str, *, algorithm: str = 'sha256', max_file_size: int = 50 * 1024 * 1024) -> str:
         """
-        Calculate SHA256 checksum for a file in S3 by downloading and hashing it.
+        Calculate a checksum for a file in S3 by downloading and hashing it.
         
         Args:
             bucket_name: Name of the S3 bucket
@@ -685,11 +695,10 @@ class BucketService:
             max_file_size: Maximum file size to process (default 50MB)
             
         Returns:
-            str: SHA256 checksum in hexadecimal format, or empty string if calculation fails
+            str: Checksum in hexadecimal format, or empty string if calculation fails
         """
         try:
             import hashlib
-            import tempfile
             
             # Check file size first to avoid downloading huge files
             try:
@@ -707,8 +716,11 @@ class BucketService:
                 logger.debug(f"Could not determine file size for {s3_key}: {size_error}")
                 return ""
             
-            # Download file and calculate checksum
-            sha256_hash = hashlib.sha256()
+            try:
+                hasher = hashlib.new(algorithm)
+            except ValueError:
+                logger.error("Unsupported checksum algorithm %s", algorithm)
+                return ""
             
             # Stream the file to avoid loading large files into memory
             try:
@@ -720,9 +732,9 @@ class BucketService:
                 # Read in chunks to manage memory usage
                 chunk_size = 8192  # 8KB chunks
                 for chunk in iter(lambda: response['Body'].read(chunk_size), b''):
-                    sha256_hash.update(chunk)
-                
-                return sha256_hash.hexdigest()
+                    hasher.update(chunk)
+
+                return hasher.hexdigest()
                 
             except Exception as download_error:
                 logger.debug(f"Failed to download file {s3_key} for checksum calculation: {download_error}")

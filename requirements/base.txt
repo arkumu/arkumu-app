@@ -44,3 +44,8 @@ psutil==7.0.0  # https://github.com/giampaolo/psutil
 django-eventstream==5.3.2  # https://github.com/django-eventstream/django-eventstream
 # graphviz for blueprint visualization
 graphviz==0.21  # https://github.com/xflr6/graphviz
+# lxml for XML validation in OAI-PMH tests
+lxml==6.0.2  # https://github.com/lxml/lxml
+xmlschema==4.1.0  # https://github.com/sissaschool/xmlschema
+# whitenoise for static file serving
+whitenoise==6.11.0  # https://github.com/whitenoise/whitenoise
