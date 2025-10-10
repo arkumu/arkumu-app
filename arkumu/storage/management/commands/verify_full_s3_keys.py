@@ -11,13 +11,11 @@ from arkumu.storage.services.base_storage_service import BaseStorageService
 
 def _split_s3_location(
     s3_key: str,
-    fallback_bucket: str | None = None,
 ) -> Tuple[str | None, str | None]:
     """
     Return bucket and key components from a stored S3 key.
 
     We prefer values that explicitly include the bucket, e.g. ``s3://bucket/path``.
-    When the bucket cannot be derived from the key itself we fall back to the provided value.
     """
     if not s3_key:
         return None, None
@@ -27,19 +25,7 @@ def _split_s3_location(
     if s3_key.startswith("s3://"):
         remainder = s3_key[5:]
         bucket, _, key = remainder.partition("/")
-        return (bucket or fallback_bucket), key or ""
-
-    if fallback_bucket:
-        normalized_fallback = fallback_bucket.rstrip("/")
-        prefix = f"{normalized_fallback}/"
-        if s3_key.startswith(prefix):
-            return normalized_fallback, s3_key[len(prefix) :]
-        return normalized_fallback, s3_key
-
-    if ":" not in s3_key and "/" in s3_key:
-        bucket, _, key = s3_key.partition("/")
-        if key:
-            return bucket, key
+        return bucket or None, key or ""
 
     return None, s3_key
 
@@ -66,7 +52,7 @@ class Command(BaseCommand):
         limit: int | None = options.get("limit")
         dry_run: bool = options.get("dry_run", False)
 
-        queryset = S3FileObject.objects.all().order_by("pk")
+        queryset = S3FileObject.objects.select_related("session").all().order_by("pk")
         if limit is not None:
             queryset = queryset[:limit]
 
@@ -84,17 +70,17 @@ class Command(BaseCommand):
 
         try:
             for obj in queryset.iterator():
-                fallback_bucket = (
-                    (obj.organization or "").strip()
-                    or getattr(obj.session, "s3_bucket", None)
-                    or getattr(obj.session, "institution", None)
-                    or "fuk"
-                )
-                bucket, key = _split_s3_location(obj.s3_key, fallback_bucket)
+                bucket, key = _split_s3_location(obj.s3_key or "")
+                if not bucket and obj.session_id:
+                    session_bucket = (getattr(obj.session, "s3_bucket", "") or "").strip()
+                    if session_bucket:
+                        bucket = session_bucket
                 if not bucket or not key:
                     skipped += 1
                     self.stderr.write(
-                        self.style.WARNING(f"Skipping {obj.pk}: unable to determine bucket/key from '{obj.s3_key}'.")
+                        self.style.WARNING(
+                            f"Skipping {obj.pk}: unable to determine bucket for key '{obj.s3_key}'."
+                        )
                     )
                     continue
 
