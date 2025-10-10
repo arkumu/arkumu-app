@@ -72,7 +72,13 @@ class Command(BaseCommand):
 
         self.storage_service = BaseStorageService()
 
-        inventory = self._collect_inventory(bucket_list, prefixes or [])
+        inventory, missing_buckets = self._collect_inventory(bucket_list, prefixes or [])
+        if missing_buckets:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Skipped buckets not found: " + ", ".join(sorted(set(missing_buckets)))
+                )
+            )
         if not inventory:
             self.stdout.write(self.style.WARNING("Inventory is empty; nothing to reconcile."))
             return
@@ -89,6 +95,7 @@ class Command(BaseCommand):
             )
 
         summary = self._reconcile_with_database(inventory, prefixes or [], dry_run=dry_run)
+        summary["missing_buckets"] = missing_buckets
         self._print_summary(summary, sample_size, dry_run=dry_run)
 
     # ---------------- Inventory helpers ---------------- #
@@ -97,10 +104,11 @@ class Command(BaseCommand):
         self,
         buckets: Sequence[str],
         prefixes: Sequence[str],
-    ) -> List[Tuple[str, str]]:
+    ) -> Tuple[List[Tuple[str, str]], List[str]]:
         client = self.storage_service.s3_client
         entries: List[Tuple[str, str]] = []
         seen = set()
+        missing_buckets: List[str] = []
 
         prefix_list = prefixes or [None]
 
@@ -122,9 +130,13 @@ class Command(BaseCommand):
                             seen.add(identifier)
                             entries.append(identifier)
                 except ClientError as exc:  # type: ignore
+                    code = exc.response.get("Error", {}).get("Code", "")  # type: ignore[arg-type]
+                    if code == "NoSuchBucket":
+                        missing_buckets.append(bucket)
+                        break
                     raise CommandError(f"Failed to list objects for bucket '{bucket}': {exc}") from exc
 
-        return entries
+        return entries, missing_buckets
 
     def _infer_buckets(self) -> Iterable[str]:
         queryset = (
@@ -239,6 +251,7 @@ class Command(BaseCommand):
         ambiguous_entries = summary["ambiguous"]
         missing_entries = summary["missing"]
         untracked_objects = summary["orphan_inventory"]
+        missing_buckets = summary.get("missing_buckets", [])
 
         action = "Would mark" if dry_run else "Marked"
 
@@ -247,6 +260,12 @@ class Command(BaseCommand):
         self.stdout.write(f"{action} {failed} row(s) as failed (missing).")
         self.stdout.write(f"Skipped {skipped} row(s) due to ambiguous buckets.")
         self.stdout.write(f"S3 objects without DB entries: {len(untracked_objects)}")
+        if missing_buckets:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Buckets not found and skipped: " + ", ".join(sorted(set(missing_buckets)))
+                )
+            )
 
         if missing_entries:
             self.stdout.write("")
