@@ -105,6 +105,7 @@ Property,http://arkumu.org/data/properties/deutscher-name-des-ereignistyps,Deuts
 Property,http://arkumu.org/data/properties/deutscher-name-des-informationstraegertyps-breadcrumb,Deutscher Name Des Informationstraegertyps Breadcrumb,,
 Property,http://arkumu.org/data/properties/deutscher-name-des-ortes,Deutscher Name Des Ortes,,
 Property,http://arkumu.org/data/properties/deutsches-wikidata-label,Deutsches Wikidata Label,Keyword_deu,
+Property,http://arkumu.org/data/properties/deutscher-name-des-schlagworts,Deutscher Name Des Schlagworts,Keyword_deu,
 Property,http://arkumu.org/data/properties/digitales-objekt,Digitales Objekt,DAT_ID,
 Property,http://arkumu.org/data/properties/digitales-objekt-id,Digitales Objekt Id,
 Property,http://arkumu.org/data/properties/digitales-objekt-lizenz-id,Digitales Objekt Lizenz Id,,
