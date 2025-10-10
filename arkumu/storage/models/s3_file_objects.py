@@ -29,6 +29,7 @@ class S3FileObject(models.Model):
             ('uploading', 'Uploading'),
             ('completed', 'Completed'),
             ('failed', 'Failed'),
+            ('missing', 'Missing'),
             ('verified', 'Verified'),
         ],
         default='pending'

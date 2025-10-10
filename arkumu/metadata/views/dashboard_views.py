@@ -521,15 +521,15 @@ def trigger_link_events(request):
 
 @general_login_required
 @require_POST
-def trigger_link_projects(request):
+def trigger_link_digital_objects(request):
     if not request.user.is_staff:
         return _maintenance_response(request, "Only staff members can run maintenance tasks.", level="error")
 
     bucket = request.POST.get("bucket")
     dry_run = request.POST.get("mode") == "dry"
 
-    output = _link_command(request, "link_s3_files_to_projects", bucket, dry_run)
-    message = f"Link projects: bucket {bucket or 'all'}, mode={'dry-run' if dry_run else 'apply'}"
+    output = _link_command(request, "link_s3_files_to_digital_objects", bucket, dry_run)
+    message = f"Link digital objects: bucket {bucket or 'all'}, mode={'dry-run' if dry_run else 'apply'}"
     return _maintenance_response(request, message, level="success", details=output)
 
 

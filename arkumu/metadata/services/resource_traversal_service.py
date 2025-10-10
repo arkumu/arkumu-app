@@ -235,6 +235,90 @@ class ResourceTraversalService:
 
         return self._traverse_to_event_recursive(resource, set())
 
+    def _is_digital_object_entity(self, resource: Resource) -> bool:
+        """Best-effort detection for digital object entities by URI/name heuristics."""
+        if not resource or resource.resource_type != ResourceType.ENTITY:
+            return False
+
+        def _contains_digital(value: Optional[str]) -> bool:
+            if not value:
+                return False
+            lowered = value.lower()
+            return any(token in lowered for token in ("digital_object", "digital/", "digitale", "digitales", "digitalobject", "digital-"))
+
+        return any(
+            _contains_digital(field)
+            for field in (resource.uri, resource.name, resource.value)
+        )
+
+    def _traverse_to_digital_object_recursive(
+        self,
+        resource: Resource,
+        visited: set,
+        max_depth: int = 3,
+    ) -> Optional[Resource]:
+        """Traverse the graph to locate a digital object entity."""
+        if max_depth <= 0 or not resource or resource.id in visited:
+            return None
+
+        visited.add(resource.id)
+
+        if self._is_digital_object_entity(resource):
+            return resource
+
+        incoming_triples = Triple.objects.filter(
+            object=resource
+        ).select_related('subject', 'subject__organization')
+
+        for triple in incoming_triples:
+            subject = triple.subject
+            if subject.resource_type == ResourceType.LITERAL or subject.id in visited:
+                continue
+
+            if self._is_digital_object_entity(subject):
+                return subject
+
+            target = self._traverse_to_digital_object_recursive(subject, visited.copy(), max_depth - 1)
+            if target:
+                return target
+
+        return None
+
+    def find_parent_digital_object_from_literal(self, literal_resource: Resource) -> Optional[Resource]:
+        """Locate a digital object entity connected to the given literal."""
+        if not literal_resource or literal_resource.resource_type != ResourceType.LITERAL:
+            logger.debug("Resource %s is not a literal; cannot find digital object parent", literal_resource)
+            return None
+
+        incoming_triples = Triple.objects.filter(
+            object=literal_resource
+        ).select_related('subject', 'subject__organization')
+
+        for triple in incoming_triples:
+            subject = triple.subject
+            if self._is_digital_object_entity(subject):
+                return subject
+
+            if subject.resource_type != ResourceType.LITERAL:
+                target = self._traverse_to_digital_object_recursive(subject, visited={literal_resource.id})
+                if target:
+                    return target
+
+        return None
+
+    def get_digital_object_entity_for_resource(self, resource: Resource) -> Optional[Resource]:
+        """Return a digital object entity associated with the resource, when possible."""
+        if not resource:
+            return None
+
+        if self._is_digital_object_entity(resource):
+            return resource
+
+        if resource.resource_type == ResourceType.LITERAL:
+            return self.find_parent_digital_object_from_literal(resource)
+
+        return self._traverse_to_digital_object_recursive(resource, set())
+
     def bulk_find_project_entities_for_literals(self, literal_resources: List[Resource]) -> dict:
         """
         Efficiently find parent project entities for multiple literal resources.

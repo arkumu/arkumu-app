@@ -1,10 +1,10 @@
-"""Link S3 file objects to their owning project resources in bulk."""
+"""Link S3 file objects directly to their digital object resources in bulk."""
 
 from __future__ import annotations
 
 from typing import Iterable
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 from django.db import models, transaction
 
 from arkumu.storage.models import S3FileObject
@@ -18,8 +18,8 @@ from arkumu.cache.services import OAICacheService
 
 class Command(BaseCommand):
     help = (
-        "Link unassigned S3FileObject rows to their project resources using the "
-        "filename-to-resource matching heuristics."
+        "Link unassigned, verified S3FileObject rows to their digital object resources "
+        "using filename-to-resource matching."
     )
 
     def add_arguments(self, parser):
@@ -61,7 +61,10 @@ class Command(BaseCommand):
         case_sensitive = options["case_sensitive"]
         dry_run = options["dry_run"]
 
-        queryset = S3FileObject.objects.filter(related_resource__isnull=True)
+        queryset = S3FileObject.objects.filter(
+            related_resource__isnull=True,
+            status="verified",
+        )
 
         if bucket:
             queryset = queryset.filter(
@@ -78,7 +81,7 @@ class Command(BaseCommand):
         total_candidates = len(candidate_ids)
 
         if total_candidates == 0:
-            self.stdout.write(self.style.WARNING("No unlinked S3 files matched the provided filters."))
+            self.stdout.write(self.style.WARNING("No unlinked verified S3 files matched the provided filters."))
             return
 
         self.stdout.write(
@@ -89,7 +92,6 @@ class Command(BaseCommand):
         )
 
         if dry_run:
-            # Nothing more to do—just report potential work.
             return
 
         config = MatchingConfig(batch_size=batch_size, case_sensitive=case_sensitive)
@@ -101,12 +103,13 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             processed, linked, ambiguous, errors = matcher.match_and_link_by_filename_to_resource_value(
-                S3FileObject.objects.filter(id__in=candidate_ids)
+                S3FileObject.objects.filter(id__in=candidate_ids),
+                link_target="digital_object",
             )
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Linking complete. Processed: {processed}, Linked: {linked}, Ambiguous: {ambiguous}, Errors: {errors}"
+                f"Digital object linking complete. Processed: {processed}, Linked: {linked}, Ambiguous: {ambiguous}, Errors: {errors}"
             )
         )
 

@@ -62,7 +62,10 @@ class Command(BaseCommand):
         case_sensitive = options["case_sensitive"]
         dry_run = options["dry_run"]
 
-        queryset = S3FileObject.objects.filter(related_resource__isnull=True)
+        queryset = S3FileObject.objects.filter(
+            related_resource__isnull=True,
+            status="verified",
+        )
 
         if bucket:
             queryset = queryset.filter(
@@ -79,7 +82,7 @@ class Command(BaseCommand):
         total_candidates = len(candidate_ids)
 
         if total_candidates == 0:
-            self.stdout.write(self.style.WARNING("No unlinked S3 files matched the provided filters."))
+            self.stdout.write(self.style.WARNING("No unlinked verified S3 files matched the provided filters."))
             return
 
         self.stdout.write(

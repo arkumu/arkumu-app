@@ -9,7 +9,7 @@ from arkumu.metadata.services.metatdata_s3_mapping.map_resources_to_files import
 )
 from arkumu.storage.models import S3FileObject
 
-VALID_STATUSES = {"pending", "uploading", "completed", "failed", "verified"}
+VALID_STATUSES = {"pending", "uploading", "completed", "failed", "missing", "verified"}
 
 
 class Command(BaseCommand):

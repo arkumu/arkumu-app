@@ -9,7 +9,7 @@ from django.db.models import Q
 from arkumu.storage.models import S3FileObject
 from arkumu.storage.services.base_storage_service import BaseStorageService
 
-VALID_STATUSES = {"pending", "uploading", "completed", "failed", "verified"}
+VALID_STATUSES = {"pending", "uploading", "completed", "failed", "missing", "verified"}
 
 
 class Command(BaseCommand):

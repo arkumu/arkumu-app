@@ -11,7 +11,7 @@ from django.db import transaction
 
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.storage.models import S3FileObject, UploadSession
-from arkumu.metadata.models import Resource
+from arkumu.metadata.models import Resource, ResourceType
 from arkumu.metadata.services.resource_traversal_service import ResourceTraversalService
 
 logger = logging.getLogger(__name__)
@@ -93,11 +93,11 @@ class FileResourceMatcherService:
         Matches S3FileObjects to Resources by comparing the S3FileObject's file_name
         (stripping the extension) to the Resource's value.
         Considers only S3FileObjects where related_resource is null.
-        
+
         Returns: (processed_count, linked_count, ambiguous_count, error_count)
         """
-        if link_target not in {"project", "event"}:
-            raise ValueError("link_target must be either 'project' or 'event'")
+        if link_target not in {"project", "event", "digital_object"}:
+            raise ValueError("link_target must be either 'project', 'event', or 'digital_object'")
 
         start_time = time.time()
         
@@ -167,21 +167,28 @@ class FileResourceMatcherService:
                 if match_count == 1:
                     matched_resource = matching_resources[0]
 
-                    target_entity = (
-                        self.traversal_service.get_event_entity_for_resource(matched_resource)
-                        if link_target == "event"
-                        else self.traversal_service.get_project_entity_for_resource(matched_resource)
-                    )
-
-                    if not target_entity and link_target == "project":
-                        target_entity = matched_resource
+                    if link_target == "event":
+                        target_entity = self.traversal_service.get_event_entity_for_resource(matched_resource)
+                    elif link_target == "project":
+                        target_entity = self.traversal_service.get_project_entity_for_resource(matched_resource)
+                        if not target_entity and matched_resource.resource_type != ResourceType.LITERAL:
+                            target_entity = matched_resource
+                    else:
+                        target_entity = self.traversal_service.get_digital_object_entity_for_resource(matched_resource)
+                        if not target_entity and matched_resource.resource_type != ResourceType.LITERAL:
+                            target_entity = matched_resource
 
                     if target_entity:
                         s3_file.related_resource = target_entity
                         files_to_update.append(s3_file)
                         linked_count += 1
 
-                        entity_label = "Event" if link_target == "event" else "Project"
+                        if link_target == "event":
+                            entity_label = "Event"
+                        elif link_target == "project":
+                            entity_label = "Project"
+                        else:
+                            entity_label = "Digital object"
                         if target_entity.id != matched_resource.id:
                             self._log(
                                 f"Linked S3FileObject ID {s3_file.id} ({s3_file.s3_key}) to {entity_label} Entity ID {target_entity.id} ('{target_entity.uri}') "
@@ -197,16 +204,21 @@ class FileResourceMatcherService:
                             f"for S3FileObject ID {s3_file.id} ({s3_file.s3_key}). Skipping link."
                         )
                 elif match_count > 1:
-                    if link_target == "event":
-                        target_entities = [
-                            self.traversal_service.get_event_entity_for_resource(res)
-                            for res in matching_resources
-                        ]
-                    else:
-                        target_entities = [
-                            self.traversal_service.get_project_entity_for_resource(res)
-                            for res in matching_resources
-                        ]
+                    target_entities = []
+                    for res in matching_resources:
+                        if link_target == "event":
+                            entity = self.traversal_service.get_event_entity_for_resource(res)
+                        elif link_target == "project":
+                            entity = self.traversal_service.get_project_entity_for_resource(res)
+                            if not entity and res.resource_type != ResourceType.LITERAL:
+                                entity = res
+                        else:
+                            entity = self.traversal_service.get_digital_object_entity_for_resource(res)
+                            if not entity and res.resource_type != ResourceType.LITERAL:
+                                entity = res
+
+                        if entity:
+                            target_entities.append(entity)
 
                     target_entities = [entity for entity in target_entities if entity]
                     unique_targets = list({entity.id: entity for entity in target_entities}.values())

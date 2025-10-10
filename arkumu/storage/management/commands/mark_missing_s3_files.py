@@ -1,4 +1,4 @@
-"""Mark linked S3FileObjects as failed when the object is gone in S3."""
+"""Mark linked S3FileObjects as missing when the object is gone in S3."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from django.db.models import Q
 
 from arkumu.storage.models import S3FileObject
 
-VALID_STATUSES = ["pending", "uploading", "completed", "failed", "verified"]
+VALID_STATUSES = ["pending", "uploading", "completed", "failed", "missing", "verified"]
 
 
 class Command(BaseCommand):
     help = (
         "Check linked S3FileObject rows against the S3 bucket and update their"
-        " status to 'failed' when the object is missing."
+        " status to 'missing' when the object is gone."
     )
 
     def add_arguments(self, parser) -> None:  # type: ignore[override]
@@ -47,7 +47,7 @@ class Command(BaseCommand):
 
         queryset = S3FileObject.objects.filter(
             related_resource__isnull=False,
-        ).exclude(status="failed")
+        ).exclude(status__in={"failed", "missing"})
 
         if bucket:
             queryset = queryset.filter(
@@ -87,7 +87,7 @@ class Command(BaseCommand):
             if dry_run:
                 continue
 
-            obj.status = "failed"
+            obj.status = "missing"
             obj.error_message = "File missing in S3"
             obj.save(update_fields=["status", "error_message", "updated_at"])
 
