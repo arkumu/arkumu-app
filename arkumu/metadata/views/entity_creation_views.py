@@ -413,6 +413,9 @@ def form_init_resources(base_uri, dataset_name, organization):
                 "project_type_prop": PropertyResource.get_or_create(
                     uri=f"{base_uri}/properties/projektart", name="Projektart"
                 )[0],
+                "preview_image_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/vorschaubild", name="Vorschaubild"
+                )[0],
             }
             return (entity, cls, properties)
         case "Ereignis":
@@ -467,6 +470,9 @@ def entity_set_values_from_form(
             )
             from_form_set_property_entity_multi_value(
                 form, kwargs["entity"], "schlagwort_uris", kwargs["catchphrase_prop"]
+            )
+            from_form_set_property_entity(
+                form, kwargs["entity"], "vorschaubild_uri", kwargs["preview_image_prop"]
             )
         case "Ereignis":
             from_form_set_property_literal(
@@ -1212,4 +1218,68 @@ def get_actor_details(request):
 
     except Exception as e:
         logger.error(f"Error retrieving actor details for {actor_uri}: {str(e)}")
+        return JsonResponse({"error": "Internal server error"}, status=500)
+
+@login_required
+def get_project_details(request):
+    """
+    Returns project details as JSON for auto-filling form fields.
+    """
+
+    project_uri = request.GET.get("uri","")
+    try:
+
+        # Find the resource with this URI
+        try:
+            project, _ = EntityResource.get_or_create(uri=project_uri)
+            organization = getattr(request.user, "organization", None)
+            base_uri = f"http://arkumu.org/data/{organization.code}"
+            properties = {
+                "title_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/bevorzugter-titel",
+                    name="Bevorzugter Titel",
+                )[0],
+                "subtitle_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/bevorzugter-untertitel",
+                    name="Bevorzugter Untertitel",
+                )[0],
+                "institution_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/einliefernde-hochschule",
+                    name="Einliefernde Hochschule",
+                )[0],
+                "category_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/projektkategorie",
+                    name="Projektkategorie",
+                )[0],
+                "description_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
+                )[0],
+                "catchphrase_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/schlagwort", name="Schlagwort"
+                )[0],
+                "project_type_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/projektart", name="Projektart"
+                )[0],
+                "preview_image_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/vorschaubild", name="Vorschaubild"
+                )[0],
+            }
+            json = {
+                "bevorzugter_titel" : project.get_property(properties["title_prop"]),
+                "bevorzugter_untertitel" : project.get_property(properties["subtitle_prop"]),
+                "einliefernde_hochschule_uri" : project.get_property(properties["institution_prop"])[0].uri if len(project.get_property(properties["institution_prop"])) > 0 and type(project.get_property(properties["institution_prop"])[0]) == EntityResource else '',
+                "projektkategorie_uri" : project.get_property(properties["category_prop"])[0].uri if len(project.get_property(properties["category_prop"])) > 0 and type(project.get_property(properties["category_prop"])[0]) == EntityResource else '',
+                "beschreibung_uri" : project.get_property(properties["description_prop"])[0].uri if len(project.get_property(properties["description_prop"])) > 0 and type(project.get_property(properties["description_prop"])[0]) == EntityResource else '',
+                "schlagwort_uris" : [catchphrase.uri if type(catchphrase) == EntityResource else '' for catchphrase in project.get_property(properties["catchphrase_prop"])] if len(project.get_property(properties["catchphrase_prop"])) > 0 else '',
+                "projektart_uri" : project.get_property(properties["project_type_prop"])[0].uri if len(project.get_property(properties["project_type_prop"])) > 0 and type(project.get_property(properties["project_type_prop"])[0]) == EntityResource else '',
+                "vorschaubild_uri" : project.get_property(properties["preview_image_prop"])[0].uri if len(project.get_property(properties["preview_image_prop"])) > 0 and type(project.get_property(properties["institution_prop"])[0]) == EntityResource else '',
+            }
+
+            return JsonResponse(json)
+
+        except Resource.DoesNotExist:
+            return JsonResponse({"error": "Actor not found"}, status=404)
+
+    except Exception as e:
+        logger.error(f"Error retrieving actor details for {project_uri}: {str(e)}")
         return JsonResponse({"error": "Internal server error"}, status=500)

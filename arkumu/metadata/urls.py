@@ -339,6 +339,7 @@ urlpatterns = [
 
     # Entity creation endpoints
     path('create/project/', entity_creation_views.create_project, name='create_project'),
+    path('project/details/', entity_creation_views.get_project_details, name='project_details'),
     path('create/event/', entity_creation_views.create_event, name='create_event'),
     path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
     path('actor/details/', entity_creation_views.get_actor_details, name='actor_details'),
