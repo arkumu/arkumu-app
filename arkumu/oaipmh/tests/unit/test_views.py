@@ -5,12 +5,13 @@ Tests individual verb handler functions in isolation,
 focusing on logic and XML generation without HTTP layer.
 """
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 from lxml import etree as ET
 from urllib.parse import quote
 
+import pytest
+import rdflib
 from django.http import HttpRequest
 from django.test import RequestFactory
 from django.utils import timezone as django_timezone
@@ -581,18 +582,29 @@ class TestOAIViewFunctions:
         assert rights_md is not None
         source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-OTHER']")
         assert source_md is not None
-        epicur = source_md.find(f".//{{{DNX_NS}}}epicur")
-        assert epicur is not None
+        source_wrap = source_md.find(f"./{{{METS_NS}}}mdWrap")
+        assert source_wrap is not None
+        assert source_wrap.get("OTHERMDTYPE") == "RDF"
+        assert source_wrap.get("MIMETYPE") == "application/rdf+xml"
 
-        resources = epicur.findall(f".//{{{DNX_NS}}}resource")
+        source_xml = source_wrap.find(f"./{{{METS_NS}}}xmlData")
+        assert source_xml is not None
+
+        rdf_element = source_xml.find("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF")
+        assert rdf_element is not None
+
+        rdf_serialized = ET.tostring(rdf_element, encoding="utf-8")
+        graph = rdflib.Graph()
+        graph.parse(data=rdf_serialized.decode("utf-8"), format="application/rdf+xml")
+
+        validation = views.rosetta_mets_validator.validate_metadata_element(metadata, resource_uri=resource.uri)
+        assert validation.is_valid, f"METS validation failed: {[issue.message for issue in validation.issues]}"
 
         preservation_count = sum(
             1
             for obj in record.digital_objects
             if views._infer_representation_type(obj) == "PRESERVATION_MASTER"
         ) or len(record.digital_objects)
-
-        assert len(resources) >= preservation_count
 
         # File groups and structural maps should mirror preservation master files
         file_grps = mets_root.findall(f".//{{{METS_NS}}}fileGrp")

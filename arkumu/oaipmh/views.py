@@ -20,13 +20,12 @@ from lxml import etree as ET
 
 from django.db.models import Q
 
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, ProjectSnapshot
 from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services import ProjectSnapshotService
-from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.oaipmh.constants import (
     DNX_NS,
     METS_NS as DEFAULT_METS_NS,
@@ -46,7 +45,7 @@ from arkumu.oaipmh.oai_project import (
     OAIProject,
     OAIProjectBuilder,
 )
-import rdflib
+from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
 
 
 # Minimal repository config (can be moved to settings)
@@ -62,8 +61,6 @@ REPO_REPOSITORY_IDENTIFIER = "arkumu"
 METS_NS = DEFAULT_METS_NS
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 METS_SCHEMA_URL = DEFAULT_METS_SCHEMA_URL
-RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 XML_NS = "http://www.w3.org/XML/1998/namespace"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
 METS_PROFILE_VERSION = "LOC-METS"
@@ -79,8 +76,6 @@ METS_NSMAP = {
     'xsi': XSI_NS,
     None: DNX_NS
 }
-
-PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
 def _metadata_element_is_valid(
     metadata_elem: ET._Element,
@@ -1158,17 +1153,21 @@ def _build_mets_from_project(
     _create_dnx_element(rights_dnx, "section", {"id": "accessRightsPolicy"})
 
     source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
-    source_wrap = ET.SubElement(source_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "Text"})
-    source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
-    epicur = _create_dnx_element(
-        source_xml,
-        "epicur",
-        {f"{{{XSI_NS}}}schemaLocation": "urn:nbn:de:1111-2004033116 http://www.persistent-identifier.de/xepicur/version1.0/xepicur.xsd"},
+    source_wrap = ET.SubElement(
+        source_md,
+        ET.QName(METS_NS, "mdWrap"),
+        {
+            "MDTYPE": "OTHER",
+            "OTHERMDTYPE": "RDF",
+            "MIMETYPE": "application/rdf+xml",
+        },
     )
-    administrative = _create_dnx_element(epicur, "administrative_data")
-    delivery = _create_dnx_element(administrative, "delivery")
-    _create_dnx_element(delivery, "update_status", {"type": "urn_new"})
-    epicur_record = _create_dnx_element(epicur, "record")
+    source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+    try:
+        rdf_element = build_rdf_graph(resource)
+        source_xml.append(rdf_element)
+    except Exception:
+        logger.exception("Failed to build RDF metadata for %s", getattr(resource, "uri", "unknown"))
 
     digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
     digiprov_wrap = ET.SubElement(digiprov_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
@@ -1248,31 +1247,6 @@ def _build_mets_from_project(
         return None
 
     file_counter = 1
-
-    def _append_epicur_resource(
-        obj: NormalizedDigitalObject,
-        *,
-        role: str = "secondary",
-        type_attr: Optional[str] = None,
-        target: Optional[str] = None,
-    ) -> None:
-        href = obj.preferred_location
-        if not href:
-            return
-        normalized = _normalize_reference(href)
-        if normalized:
-            href = normalized
-        resource_elem = _create_dnx_element(epicur_record, "resource")
-        identifier_attrs = {"scheme": "url", "origin": "original"}
-        if type_attr:
-            identifier_attrs["type"] = type_attr
-        if role != "secondary":
-            identifier_attrs["role"] = role
-        if target:
-            identifier_attrs["target"] = target
-        _create_dnx_element(resource_elem, "identifier", identifier_attrs, href)
-        if obj.content_type:
-            _create_dnx_element(resource_elem, "format", {"scheme": "imt"}, obj.content_type)
 
     for rep_index, (rep_type, objects) in enumerate(rep_groups, start=1):
         rep_id = f"rep{rep_index}"
@@ -1456,11 +1430,6 @@ def _build_mets_from_project(
                 "folders": folder_segments,
                 "order": file_index,
             })
-
-            if rep_index == 1 and file_index == 1:
-                _append_epicur_resource(obj, role="primary", type_attr="frontpage")
-            _append_epicur_resource(obj, target="transfer")
-
         file_sec_entries.append({
             "rep_id": rep_id,
             "rep_type": rep_type,
@@ -1611,172 +1580,6 @@ def _build_mets_from_project(
     return mets_root
 
 
-def _build_rdf_from_resource(resource: Resource) -> ET._Element:
-    """Generate RDF/XML metadata element for a resource graph."""
-
-    org_code = resource.organization.code if resource.organization else None
-    graph_service = CanonicalGraphService(org_code=org_code)
-    graph_data = graph_service.get_entity_graph(
-        resource_uri=resource.uri,
-        expand_neighbors=True,
-        depth=2,
-        restrict_to_org=bool(org_code),
-    )
-
-    rdf_graph = rdflib.Graph()
-    nodes = graph_data.get("nodes", {})
-
-    namespace_cache: Dict[str, rdflib.Namespace] = {
-        RDF_NS: rdflib.Namespace(RDF_NS),
-        RDFS_NS: rdflib.Namespace(RDFS_NS),
-        DCTERMS_NS: rdflib.Namespace(DCTERMS_NS),
-        DC_NS: rdflib.Namespace(DC_NS),
-        "http://arkumu.org/data/properties/": rdflib.Namespace("http://arkumu.org/data/properties/"),
-    }
-    prefix_map: Dict[str, str] = {
-        RDF_NS: "rdf",
-        RDFS_NS: "rdfs",
-        DCTERMS_NS: "dcterms",
-        DC_NS: "dc",
-        "http://arkumu.org/data/properties/": "ark",
-    }
-    used_prefixes = set(prefix_map.values())
-
-    for ns_uri, prefix in prefix_map.items():
-        rdf_graph.bind(prefix, namespace_cache[ns_uri], override=True)
-
-    def _normalize_predicate_uri(uri: Optional[str]) -> Optional[str]:
-        if not uri:
-            return None
-        return PROPERTY_NAMESPACE_PATTERN.sub(r"\1\3", uri, count=1)
-
-    def _split_namespace(uri: str) -> tuple[str, str]:
-        if "#" in uri:
-            base, local = uri.rsplit("#", 1)
-            return f"{base}#", local
-        if "/" in uri:
-            base, local = uri.rsplit("/", 1)
-            if not local:
-                return uri, ""
-            if not base.endswith("/"):
-                base = f"{base}/"
-            return base, local
-        return uri, ""
-
-    def _resolve_prefix(ns_uri: str) -> str:
-        if ns_uri in prefix_map:
-            return prefix_map[ns_uri]
-
-        if ns_uri.startswith("http://arkumu.org/data/") and ns_uri.endswith("/properties/"):
-            suffix = ns_uri[len("http://arkumu.org/data/"):-len("/properties/")].strip("/")
-            if not suffix:
-                candidate = "ark_prop"
-            else:
-                parts = [part for part in suffix.split("/") if part]
-                candidate = f"{parts[-1]}_prop" if len(parts) >= 1 else "ark_prop"
-        else:
-            parsed = urlparse(ns_uri)
-            host = parsed.netloc.split(":")[0].replace(".", "_")
-            path_parts = [p for p in parsed.path.split("/") if p]
-            candidate_parts = [part for part in (host, path_parts[-1] if path_parts else None) if part]
-            candidate = "_".join(candidate_parts) if candidate_parts else "ns"
-
-        candidate = re.sub(r"[^a-zA-Z0-9_]", "_", candidate).lower()
-        if not candidate or not candidate[0].isalpha():
-            candidate = f"ns_{candidate or 'namespace'}"
-
-        base_candidate = candidate
-        index = 1
-        while candidate in used_prefixes:
-            candidate = f"{base_candidate}{index}"
-            index += 1
-
-        prefix_map[ns_uri] = candidate
-        used_prefixes.add(candidate)
-        return candidate
-
-    def _ensure_namespace(ns_uri: str) -> Optional[rdflib.Namespace]:
-        if not ns_uri:
-            return None
-        if ns_uri in namespace_cache:
-            return namespace_cache[ns_uri]
-
-        prefix = _resolve_prefix(ns_uri)
-        namespace = rdflib.Namespace(ns_uri)
-        rdf_graph.bind(prefix, namespace, override=True)
-        namespace_cache[ns_uri] = namespace
-        return namespace
-
-    def _node_info(node_id: str) -> Optional[Dict[str, Any]]:
-        return nodes.get(node_id)
-
-    def _node_type(node: Dict[str, Any]) -> str:
-        node_type = node.get("resource_type")
-        if isinstance(node_type, ResourceType):
-            return node_type.value
-        return str(node_type).upper() if node_type else ""
-
-    def _is_literal(node: Dict[str, Any]) -> bool:
-        return _node_type(node) == ResourceType.LITERAL.value
-
-    def _is_data_node(node: Dict[str, Any]) -> bool:
-        return _node_type(node) in {ResourceType.IRI.value, ResourceType.ENTITY.value}
-
-    for edge in graph_data.get("edges", []):
-        subj_node = _node_info(edge.get("subject_id"))
-        obj_node = _node_info(edge.get("object_id"))
-        predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")
-        normalized_predicate = _normalize_predicate_uri(predicate_source)
-
-        if not subj_node or not obj_node or not normalized_predicate:
-            continue
-
-        if predicate_source and "defines" in predicate_source.lower():
-            continue
-
-        if not _is_data_node(subj_node):
-            continue
-
-        subj_uri = subj_node.get("uri")
-        if not subj_uri:
-            continue
-
-        namespace_uri, local_name = _split_namespace(normalized_predicate)
-        if not local_name:
-            continue
-
-        namespace = _ensure_namespace(namespace_uri)
-        if not namespace:
-            continue
-
-        predicate_ref = namespace[local_name]
-        subject_ref = rdflib.URIRef(subj_uri)
-
-        if _is_literal(obj_node):
-            literal_value = obj_node.get("value") or ""
-            rdf_graph.add((subject_ref, predicate_ref, rdflib.Literal(literal_value)))
-            continue
-
-        if not _is_data_node(obj_node):
-            continue
-
-        obj_uri = obj_node.get("uri")
-        if not obj_uri:
-            continue
-
-        rdf_graph.add((subject_ref, predicate_ref, rdflib.URIRef(obj_uri)))
-
-    ET.register_namespace("rdf", RDF_NS)
-    ET.register_namespace("rdfs", RDFS_NS)
-    ET.register_namespace("dcterms", DCTERMS_NS)
-    ET.register_namespace("dc", DC_NS)
-    ET.register_namespace("ark", "http://arkumu.org/data/properties/")
-
-    rdf_xml = rdf_graph.serialize(format="application/rdf+xml")
-    rdf_element = ET.fromstring(rdf_xml.encode("utf-8"))
-    return rdf_element
-
-
 def _build_metadata_element(
     resource: Resource,
     metadata_prefix: str,
@@ -1824,7 +1627,7 @@ def _build_metadata_element(
             metadata.append(ET.fromstring(mets_bytes))
             break
     elif metadata_prefix == "rdf":
-        rdf_element = _build_rdf_from_resource(resource)
+        rdf_element = build_rdf_graph(resource)
         metadata.append(rdf_element)
 
     return metadata
