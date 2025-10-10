@@ -1424,7 +1424,14 @@ def _build_mets_from_project(
             path_parts: List[str] = []
             if raw_path:
                 path_parts = [part for part in raw_path.strip('/').split('/') if part]
-            folder_segments = path_parts[:-1] if len(path_parts) > 1 else []
+            if len(path_parts) > 1:
+                folder_segments = [
+                    segment
+                    for segment in path_parts[:-1]
+                    if segment and segment.casefold() != "data"
+                ]
+            else:
+                folder_segments = []
 
             rep_files.append({
                 "file_id": file_id,
