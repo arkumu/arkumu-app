@@ -1046,9 +1046,15 @@ class TripleRelationshipService:
     ) -> List[Dict[str, Any]]:
         """Fallback using direct project→actor edges when crosstables are unavailable."""
 
+        ACTOR_CANONICAL_URI = "http://arkumu.org/data/properties/akteurin"
+
+        predicate_candidates = [actor_link_predicate]
+        if actor_link_predicate != ACTOR_CANONICAL_URI:
+            predicate_candidates.append(ACTOR_CANONICAL_URI)
+
         triples = self._fetch_triples(
             subject_ids=[project_id],
-            predicate_uris=[actor_link_predicate],
+            predicate_uris=predicate_candidates,
             organization_code=organization_code,
         )
 
@@ -1056,6 +1062,9 @@ class TripleRelationshipService:
         for triple in triples:
             obj = triple.object
             if obj.resource_type == ResourceType.LITERAL:
+                continue
+            predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
+            if predicate_canonical not in predicate_candidates:
                 continue
             actor_ids.append(str(obj.id))
 

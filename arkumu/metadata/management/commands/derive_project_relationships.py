@@ -20,6 +20,13 @@ from arkumu.metadata.models import Resource, ResourceType, Triple
 
 logger = logging.getLogger(__name__)
 
+CANONICAL_URIS = {
+    "project": "http://arkumu.org/data/properties/projekt",
+    "event": "http://arkumu.org/data/properties/ereignis",
+    "digital_object": "http://arkumu.org/data/properties/digitales-objekt",
+    "actor_in_event": "http://arkumu.org/data/properties/akteurin-im-ereignis",
+}
+
 
 @dataclass
 class SubjectContext:
@@ -77,6 +84,8 @@ class Command(BaseCommand):
             stats["processed"] += len(contexts)
             created = self._derive_for_contexts(org_code, contexts, dry_run=dry_run)
             stats["created"] += created
+            stats["created"] += self._derive_project_actor_links(contexts, dry_run=dry_run)
+            stats["created"] += self._derive_event_digital_links(org_code, dry_run=dry_run)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -295,3 +304,79 @@ class Command(BaseCommand):
             )
         self._predicate_cache[predicate_uri] = predicate
         return predicate
+
+    def _derive_event_digital_links(self, org_code: str, *, dry_run: bool) -> int:
+        """Bridge events to digital objects via shared projects."""
+
+        digital_predicate = CANONICAL_URIS["digital_object"]
+        project_predicate = CANONICAL_URIS["project"]
+
+        project_to_digitals: Dict[str, Set[str]] = defaultdict(set)
+        project_digital_triples = Triple.objects.filter(
+            predicate__canonical_uri=digital_predicate,
+            subject__organization__code=org_code,
+            object__resource_type=ResourceType.ENTITY,
+        ).values_list("subject_id", "object_id")
+
+        for subject_id, object_id in project_digital_triples:
+            project_to_digitals[str(subject_id)].add(str(object_id))
+
+        if not project_to_digitals:
+            return 0
+
+        event_to_projects: Dict[str, Set[str]] = defaultdict(set)
+        event_project_triples = Triple.objects.filter(
+            predicate__canonical_uri=project_predicate,
+            subject__organization__code=org_code,
+            object__resource_type=ResourceType.ENTITY,
+        ).values_list("subject_id", "object_id")
+
+        for subject_id, object_id in event_project_triples:
+            event_to_projects[str(subject_id)].add(str(object_id))
+
+        created = 0
+        for event_id, project_ids in event_to_projects.items():
+            digital_ids: Set[str] = set()
+            for project_id in project_ids:
+                digital_ids.update(project_to_digitals.get(project_id, set()))
+            if not digital_ids:
+                continue
+            for digital_id in sorted(digital_ids):
+                created += self._emit_derived_triple(
+                    event_id,
+                    digital_predicate,
+                    digital_id,
+                    dry_run=dry_run,
+                    pattern_name="event_digital_bridge",
+                    source_subject=event_id,
+                )
+
+        return created
+
+    def _derive_project_actor_links(
+        self,
+        contexts: Mapping[str, SubjectContext],
+        *,
+        dry_run: bool,
+    ) -> int:
+        """Emit direct project→actor edges from project/person junctions."""
+
+        predicate_uri = CANONICAL_URIS["actor_in_event"]
+        created = 0
+
+        for subject_id, ctx in contexts.items():
+            projects = ctx.canonical_objects.get(CANONICAL_URIS["project"])
+            actors = ctx.canonical_objects.get(predicate_uri)
+            if not projects or not actors:
+                continue
+            for project_id in projects:
+                for actor_id in actors:
+                    created += self._emit_derived_triple(
+                        project_id,
+                        predicate_uri,
+                        actor_id,
+                        dry_run=dry_run,
+                        pattern_name="project_actor_bridge",
+                        source_subject=subject_id,
+                    )
+        return created

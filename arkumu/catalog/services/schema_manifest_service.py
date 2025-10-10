@@ -375,7 +375,14 @@ class SchemaManifestService:
                 if not canonical_prop_uri:
                     continue
 
-                prop_obj = section.properties.get(canonical_prop_uri)
+                prop_obj = None
+
+                # Prefer existing properties with matching canonical URI (template-defined keys)
+                for existing_key, existing_prop in section.properties.items():
+                    if existing_prop.canonical_uri == canonical_prop_uri:
+                        prop_obj = existing_prop
+                        break
+
                 if not prop_obj:
                     prop_lookup_obj = property_lookup.get(canonical_prop_uri)
                     prop_name = prop_lookup_obj.get("name") if prop_lookup_obj else canonical_prop_uri

@@ -11,6 +11,67 @@ from arkumu.metadata.models.mappings import Mapping
 
 DEFAULT_BASE_URI = getattr(settings, "ARKUMU_BASE_URI", "http://arkumu.org/data").rstrip("/")
 
+CANONICAL_URIS = {
+    "project": "http://arkumu.org/data/properties/projekt",
+    "event": "http://arkumu.org/data/properties/ereignis",
+    "digital_object": "http://arkumu.org/data/properties/digitales-objekt",
+    "actor": "http://arkumu.org/data/properties/akteurin",
+    "actor_in_event": "http://arkumu.org/data/properties/akteurin-im-ereignis",
+    "role_in_event": "http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis",
+    "in_event": "http://arkumu.org/data/properties/im-ereignis",
+}
+
+CROSS_TABLE_RULES = {
+    "khm": {
+        "02_kreuz_projekte_personen": {
+            "properties": {
+                "AS_Pers_ID": CANONICAL_URIS["actor_in_event"],
+                "AS_Proj_ID": CANONICAL_URIS["event"],
+                "AS_Taetigkeit_arkumu_Rolle": CANONICAL_URIS["role_in_event"],
+            },
+        },
+        "04_kreuz_betreuende_projekte": {
+            "properties": {
+                "PE_ID_fk": CANONICAL_URIS["actor_in_event"],
+                "Proj_ID_fk": CANONICAL_URIS["event"],
+            },
+        },
+        "16_kreuz_events_projekte": {
+            "properties": {
+                "Kr_Proj_ID": CANONICAL_URIS["project"],
+                "Kr_Event_ID": CANONICAL_URIS["event"],
+            },
+        },
+    },
+    "hmt": {
+        "03_hfm_kreuz_ereignis_akteure": {
+            "properties": {
+                ("HFMT_Akteur_ID_fk", "HFMT_Koerperschaft_ID_fk"): CANONICAL_URIS["actor_in_event"],
+                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
+                "Rolle": CANONICAL_URIS["role_in_event"],
+            },
+        },
+        "05_hfm_kreuz_ereignis_koerperschaften": {
+            "properties": {
+                ("HFMT_Koerperschaft_ID_fk", "HFMT_Akteur_ID_fk"): CANONICAL_URIS["actor_in_event"],
+                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
+            },
+        },
+        "01_hfm_kreuz_projekt_ereignis": {
+            "properties": {
+                ("HFMT_Projekt_ID_fk", "HFMT_Werk_ID", "Werk_ID_fk"): CANONICAL_URIS["project"],
+                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
+            },
+        },
+        "07_hfm_kreuz_ereignis_digitalesobjekt": {
+            "properties": {
+                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
+                ("DigitalesObjekt_ID_fk", "DigitalesObjekt_ID"): CANONICAL_URIS["digital_object"],
+            },
+        },
+    },
+}
+
 
 class Command(BaseCommand):
     help = (
@@ -18,6 +79,10 @@ class Command(BaseCommand):
         "This command looks up each property/entity URI in metadata_resource, falls back "
         "to the canonical URI stored there, and persists the normalized manifest."
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._active_org: Optional[str] = None
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -67,6 +132,7 @@ class Command(BaseCommand):
             if not manifest:
                 skipped += 1
                 continue
+            self._active_org = (mapping.organization_id or "").lower()
 
             updated = self._canonicalize_manifest(manifest)
             if not updated:
@@ -111,6 +177,8 @@ class Command(BaseCommand):
             for context in dataset.get("relationship_contexts") or []:
                 changed |= self._normalize_relationship_context(context)
 
+            changed |= self._apply_dataset_rules(self._active_org, dataset_name, dataset)
+
         return changed
 
     def _normalize_relationship_context(self, entry: dict) -> bool:
@@ -136,13 +204,25 @@ class Command(BaseCommand):
         uri_value = data.get(uri_key)
         canonical_value = data.get(canonical_key)
 
-        # Try canonical first (so we can update canonical even if URI is already normalized)
-        resource_uri = canonical_value or uri_value
-        normalized_uri = self._normalize_uri(resource_uri)
-        if not normalized_uri:
-            return False
+        candidate_uris: list[str] = []
+        if uri_value:
+            candidate_uris.append(uri_value)
+        if canonical_value and canonical_value != uri_value:
+            candidate_uris.append(canonical_value)
 
-        resource = Resource.objects.filter(uri=normalized_uri).only("uri", "canonical_uri").first()
+        resource = None
+        for candidate in candidate_uris:
+            normalized_uri = self._normalize_uri(candidate)
+            if not normalized_uri:
+                continue
+            resource = (
+                Resource.objects.filter(uri=normalized_uri)
+                .only("uri", "canonical_uri")
+                .first()
+            )
+            if resource:
+                break
+
         if not resource:
             return False
 
@@ -169,3 +249,48 @@ class Command(BaseCommand):
         if "://" not in uri:
             return f"{DEFAULT_BASE_URI}/{uri}"
         return uri
+
+    def _apply_dataset_rules(self, organization_code: Optional[str], dataset_name: str, dataset: dict) -> bool:
+        if not organization_code or not dataset_name:
+            return False
+
+        rules_for_org = CROSS_TABLE_RULES.get(organization_code)
+        if not rules_for_org:
+            return False
+
+        normalized_name = self._normalize_dataset_name(dataset_name)
+        dataset_rules = rules_for_org.get(normalized_name)
+        if not dataset_rules:
+            return False
+
+        properties = dataset.get("properties")
+        if not isinstance(properties, dict):
+            return False
+
+        changed = False
+        for column_key, target_canonical in dataset_rules.get("properties", {}).items():
+            column_candidates = column_key if isinstance(column_key, (list, tuple, set)) else [column_key]
+            matched = False
+            for prop_key, snapshot in properties.items():
+                if prop_key in column_candidates or (
+                    isinstance(snapshot, dict) and snapshot.get("name") in column_candidates
+                ):
+                    matched = True
+                    if snapshot.get("canonical_uri") != target_canonical:
+                        snapshot["canonical_uri"] = target_canonical
+                        changed = True
+            if not matched:
+                for snapshot in properties.values():
+                    if isinstance(snapshot, dict) and snapshot.get("uri") in column_candidates:
+                        if snapshot.get("canonical_uri") != target_canonical:
+                            snapshot["canonical_uri"] = target_canonical
+                            changed = True
+                        matched = True
+                        break
+        return changed
+
+    @staticmethod
+    def _normalize_dataset_name(dataset_name: str) -> str:
+        normalized = dataset_name.strip().lower()
+        normalized = normalized.replace(" ", "_")
+        return normalized
