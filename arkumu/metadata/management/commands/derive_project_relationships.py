@@ -11,6 +11,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
 
+from arkumu.metadata.canonical import canonical_uri
 from arkumu.metadata.derivations.kreuz_config import (
     DCTERMS_IS_PART_OF,
     all_configured_canonical_properties,
@@ -20,12 +21,9 @@ from arkumu.metadata.models import Resource, ResourceType, Triple
 
 logger = logging.getLogger(__name__)
 
-CANONICAL_URIS = {
-    "project": "http://arkumu.org/data/properties/projekt",
-    "event": "http://arkumu.org/data/properties/ereignis",
-    "digital_object": "http://arkumu.org/data/properties/digitales-objekt",
-    "actor_in_event": "http://arkumu.org/data/properties/akteurin-im-ereignis",
-}
+PROJECT = canonical_uri("project")
+DIGITAL_OBJECT = canonical_uri("digital_object")
+ACTOR_IN_EVENT = canonical_uri("actor_in_event")
 
 
 @dataclass
@@ -308,8 +306,8 @@ class Command(BaseCommand):
     def _derive_event_digital_links(self, org_code: str, *, dry_run: bool) -> int:
         """Bridge events to digital objects via shared projects."""
 
-        digital_predicate = CANONICAL_URIS["digital_object"]
-        project_predicate = CANONICAL_URIS["project"]
+        digital_predicate = DIGITAL_OBJECT
+        project_predicate = PROJECT
 
         project_to_digitals: Dict[str, Set[str]] = defaultdict(set)
         project_digital_triples = Triple.objects.filter(
@@ -361,11 +359,11 @@ class Command(BaseCommand):
     ) -> int:
         """Emit direct project→actor edges from project/person junctions."""
 
-        predicate_uri = CANONICAL_URIS["actor_in_event"]
+        predicate_uri = ACTOR_IN_EVENT
         created = 0
 
         for subject_id, ctx in contexts.items():
-            projects = ctx.canonical_objects.get(CANONICAL_URIS["project"])
+            projects = ctx.canonical_objects.get(PROJECT)
             actors = ctx.canonical_objects.get(predicate_uri)
             if not projects or not actors:
                 continue

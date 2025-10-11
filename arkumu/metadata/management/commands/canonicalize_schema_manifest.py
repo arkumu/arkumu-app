@@ -2,71 +2,68 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
+from django.conf import settings
 
+from arkumu.metadata.canonical import canonical_uri
 from arkumu.metadata.models import Resource
 from arkumu.metadata.models.mappings import Mapping
 
 
 DEFAULT_BASE_URI = getattr(settings, "ARKUMU_BASE_URI", "http://arkumu.org/data").rstrip("/")
 
-CANONICAL_URIS = {
-    "project": "http://arkumu.org/data/properties/projekt",
-    "event": "http://arkumu.org/data/properties/ereignis",
-    "digital_object": "http://arkumu.org/data/properties/digitales-objekt",
-    "actor": "http://arkumu.org/data/properties/akteurin",
-    "actor_in_event": "http://arkumu.org/data/properties/akteurin-im-ereignis",
-    "role_in_event": "http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis",
-    "in_event": "http://arkumu.org/data/properties/im-ereignis",
-}
+PROJECT = canonical_uri("project")
+EVENT = canonical_uri("event")
+DIGITAL_OBJECT = canonical_uri("digital_object")
+ACTOR_IN_EVENT = canonical_uri("actor_in_event")
+ROLE_IN_EVENT = canonical_uri("role_in_event")
 
 CROSS_TABLE_RULES = {
     "khm": {
         "02_kreuz_projekte_personen": {
             "properties": {
-                "AS_Pers_ID": CANONICAL_URIS["actor_in_event"],
-                "AS_Proj_ID": CANONICAL_URIS["event"],
-                "AS_Taetigkeit_arkumu_Rolle": CANONICAL_URIS["role_in_event"],
+                "AS_Pers_ID": ACTOR_IN_EVENT,
+                "AS_Proj_ID": EVENT,
+                "AS_Taetigkeit_arkumu_Rolle": ROLE_IN_EVENT,
             },
         },
         "04_kreuz_betreuende_projekte": {
             "properties": {
-                "PE_ID_fk": CANONICAL_URIS["actor_in_event"],
-                "Proj_ID_fk": CANONICAL_URIS["event"],
+                "PE_ID_fk": ACTOR_IN_EVENT,
+                "Proj_ID_fk": EVENT,
             },
         },
         "16_kreuz_events_projekte": {
             "properties": {
-                "Kr_Proj_ID": CANONICAL_URIS["project"],
-                "Kr_Event_ID": CANONICAL_URIS["event"],
+                "Kr_Proj_ID": PROJECT,
+                "Kr_Event_ID": EVENT,
             },
         },
     },
     "hmt": {
         "03_hfm_kreuz_ereignis_akteure": {
             "properties": {
-                ("HFMT_Akteur_ID_fk", "HFMT_Koerperschaft_ID_fk"): CANONICAL_URIS["actor_in_event"],
-                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
-                "Rolle": CANONICAL_URIS["role_in_event"],
+                ("HFMT_Akteur_ID_fk", "HFMT_Koerperschaft_ID_fk"): ACTOR_IN_EVENT,
+                ("Ereignis_Nr_fk", "EreignisNr"): EVENT,
+                "Rolle": ROLE_IN_EVENT,
             },
         },
         "05_hfm_kreuz_ereignis_koerperschaften": {
             "properties": {
-                ("HFMT_Koerperschaft_ID_fk", "HFMT_Akteur_ID_fk"): CANONICAL_URIS["actor_in_event"],
-                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
+                ("HFMT_Koerperschaft_ID_fk", "HFMT_Akteur_ID_fk"): ACTOR_IN_EVENT,
+                ("Ereignis_Nr_fk", "EreignisNr"): EVENT,
             },
         },
         "01_hfm_kreuz_projekt_ereignis": {
             "properties": {
-                ("HFMT_Projekt_ID_fk", "HFMT_Werk_ID", "Werk_ID_fk"): CANONICAL_URIS["project"],
-                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
+                ("HFMT_Projekt_ID_fk", "HFMT_Werk_ID", "Werk_ID_fk"): PROJECT,
+                ("Ereignis_Nr_fk", "EreignisNr"): EVENT,
             },
         },
         "07_hfm_kreuz_ereignis_digitalesobjekt": {
             "properties": {
-                ("Ereignis_Nr_fk", "EreignisNr"): CANONICAL_URIS["event"],
-                ("DigitalesObjekt_ID_fk", "DigitalesObjekt_ID"): CANONICAL_URIS["digital_object"],
+                ("Ereignis_Nr_fk", "EreignisNr"): EVENT,
+                ("DigitalesObjekt_ID_fk", "DigitalesObjekt_ID"): DIGITAL_OBJECT,
             },
         },
     },

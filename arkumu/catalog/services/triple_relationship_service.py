@@ -8,6 +8,7 @@ import uuid
 
 from django.db.models import Q
 
+from arkumu.metadata.canonical import predicate_candidates as canonical_predicate_candidates
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models import Resource, ResourceType, WikidataEntity
 from arkumu.users.models import Organization
@@ -1046,15 +1047,11 @@ class TripleRelationshipService:
     ) -> List[Dict[str, Any]]:
         """Fallback using direct project→actor edges when crosstables are unavailable."""
 
-        ACTOR_CANONICAL_URI = "http://arkumu.org/data/properties/akteurin"
-
-        predicate_candidates = [actor_link_predicate]
-        if actor_link_predicate != ACTOR_CANONICAL_URI:
-            predicate_candidates.append(ACTOR_CANONICAL_URI)
+        predicate_uris = canonical_predicate_candidates("project_actor", actor_link_predicate)
 
         triples = self._fetch_triples(
             subject_ids=[project_id],
-            predicate_uris=predicate_candidates,
+            predicate_uris=predicate_uris,
             organization_code=organization_code,
         )
 
@@ -1064,7 +1061,7 @@ class TripleRelationshipService:
             if obj.resource_type == ResourceType.LITERAL:
                 continue
             predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
-            if predicate_canonical not in predicate_candidates:
+            if predicate_canonical not in predicate_uris:
                 continue
             actor_ids.append(str(obj.id))
 
