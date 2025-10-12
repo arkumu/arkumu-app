@@ -1061,16 +1061,15 @@ def _default_language_for_resource(resource: Resource, record: ProjectRecord) ->
     return organization_defaults.get(org_code)
 
 
-_RIGHTS_STATUS_PROTECTED_EN = "Protected by German Urheberrecht and/or Leistungsschutzrecht."
+_RIGHTS_STATUS_PROTECTED_EN = "Protected by German Urheberrecht and/oder Leistungsschutzrecht."
 _RIGHTS_STATUS_FREE_EN = "Free of German Urheberrecht and Leistungsschutzrecht protection."
 
 _RIGHTS_DISCLAIMER_PROTECTED_DE = (
-    "Das Projekt/Werk ist durch das deutsche Urheberrecht und/oder Leistungsschutzrecht geschützt. "
-    "Einige Digitale Objekte können auch noch durch Verwertungsrechte geschützt sein. Überprüfen Sie "
-    "daher bitte alle verknüpften Ereignisse sorgfältig, bevor Sie die bereitgestellten Medien weiterverwenden."
+    "Das Projekt/Werk ist durch das deutsche Urheberrecht und Leistungsschutzrecht geschützt. Einige Digitale Objekte können auch noch "
+    "durch Verwertungsrechte geschützt sein. Überprüfen Sie daher bitte alle verknüpften Ereignisse sorgfältig, bevor Sie die bereitgestellten Medien weiterverwenden."
 )
 _RIGHTS_DISCLAIMER_PROTECTED_EN = (
-    "The Project/Work is protected by German Urheberrecht and/or Leistungsschutzrecht. "
+    "The Project/Work is protected by German Urheberrecht and/oder Leistungsschutzrecht. "
     "Some digital objects may also be protected by exploitation rights. Therefore, please "
     "check all linked events thoroughly before further use of the media provided."
 )
@@ -1127,6 +1126,22 @@ def _rights_label_for_resource(resource: Resource) -> Optional[str]:
     if not level:
         return None
     return mapping.get(level)
+
+
+def _default_rights_metadata(resource: Resource, record: ProjectRecord) -> Optional[Dict[str, Any]]:
+    """Provide organization-specific fallback rights metadata when literals are absent."""
+    org_code = (resource.organization.code or "").lower().strip() if resource.organization and resource.organization.code else None
+
+    if org_code in {"khm", "hmt"}:
+        status_de = getattr(record, "rights_status", None) or "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt"
+        return {
+            "status_de": status_de,
+            "status_en": _RIGHTS_STATUS_PROTECTED_EN,
+            "disclaimers_de": [_RIGHTS_DISCLAIMER_PROTECTED_DE],
+            "disclaimers_en": [_RIGHTS_DISCLAIMER_PROTECTED_EN],
+        }
+
+    return None
 
 
 def _collect_collection_labels(resource: Resource, record: ProjectRecord) -> List[str]:
@@ -1203,13 +1218,6 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
         _add_dc_value(payload, 'date', record.year_range)
 
     rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
-    if rights_meta:
-        _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
-        _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
-        for text in rights_meta.get("disclaimers_de", []):
-            _add_dc_value(payload, 'rights', text)
-        for text in rights_meta.get("disclaimers_en", []):
-            _add_dc_value(payload, 'rights', text)
 
     if resource.canonical_uri:
         _add_dc_value(payload, 'identifier', resource.canonical_uri)
@@ -1254,7 +1262,17 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
     for rights_value in sorted(license_rights):
         _add_dc_value(payload, 'rights', rights_value)
 
-    if not payload.get('dc:rights'):
+    if not rights_meta:
+        rights_meta = _default_rights_metadata(resource, record)
+
+    if rights_meta:
+        _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
+        _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
+        for text in rights_meta.get("disclaimers_de", []):
+            _add_dc_value(payload, 'rights', text)
+        for text in rights_meta.get("disclaimers_en", []):
+            _add_dc_value(payload, 'rights', text)
+    elif not payload.get('dc:rights'):
         rights = _rights_label_for_resource(resource)
         if rights:
             _add_dc_value(payload, 'rights', rights)

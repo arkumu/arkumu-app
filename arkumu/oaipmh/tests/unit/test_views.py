@@ -6,6 +6,7 @@ focusing on logic and XML generation without HTTP layer.
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 from unittest.mock import Mock, patch
 from lxml import etree as ET
 from urllib.parse import quote
@@ -51,14 +52,14 @@ class TestOAIViewFunctions:
         self.event_actor_name = "Event Specialist"
         self.event_actor_roles = ["Moderator", "Curator"]
         self.rights_status_de = "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt"
-        self.rights_status_en = "Protected by German Urheberrecht and/or Leistungsschutzrecht."
+        self.rights_status_en = "Protected by German Urheberrecht and/oder Leistungsschutzrecht."
         self.rights_disclaimer_protected_de = (
-            "Das Projekt/Werk ist durch das deutsche Urheberrecht und/oder Leistungsschutzrecht geschützt. "
-            "Einige Digitale Objekte können auch noch durch Verwertungsrechte geschützt sein. Überprüfen Sie "
-            "daher bitte alle verknüpften Ereignisse sorgfältig, bevor Sie die bereitgestellten Medien weiterverwenden."
+            "Das Projekt/Werk ist durch das deutsche Urheberrecht und Leistungsschutzrecht geschützt. Einige Digitale Objekte können auch noch durch "
+            "Verwertungsrechte geschützt sein. Überprüfen Sie daher bitte alle verknüpften Ereignisse sorgfältig, bevor Sie die bereitgestellten Medien "
+            "weiterverwenden."
         )
         self.rights_disclaimer_protected_en = (
-            "The Project/Work is protected by German Urheberrecht and/or Leistungsschutzrecht. "
+            "The Project/Work is protected by German Urheberrecht and/oder Leistungsschutzrecht. "
             "Some digital objects may also be protected by exploitation rights. Therefore, please "
             "check all linked events thoroughly before further use of the media provided."
         )
@@ -87,7 +88,12 @@ class TestOAIViewFunctions:
             },
         )
 
-    def _build_snapshot_record(self, resource: Resource, include_files: bool = False) -> ProjectRecord:
+    def _build_snapshot_record(
+        self,
+        resource: Resource,
+        include_files: bool = False,
+        rights_status: Optional[str] = None,
+    ) -> ProjectRecord:
         digital_objects = []
         if include_files:
             digital_objects.append(
@@ -153,7 +159,7 @@ class TestOAIViewFunctions:
             project_type=ProjectType(label="Type A"),
             digital_objects=digital_objects,
             institution_codes=["ti"],
-            rights_status=self.rights_status_de,
+            rights_status=self.rights_status_de if rights_status is None else rights_status,
         )
 
     # ============================================================================
@@ -695,6 +701,33 @@ class TestOAIViewFunctions:
         expected_role_fragment = ", ".join(sorted(set(self.event_actor_roles)))
         event_contributor = f"{self.event_actor_name} ({expected_role_fragment})"
         assert event_contributor in contributor_values
+
+    @pytest.mark.django_db
+    def test_build_dc_payload_fallback_for_khm_without_status(self, sample_resources):
+        """KHM projects fall back to protected rights package when status literal is missing."""
+
+        resource = sample_resources[0]
+        khm_org = Organization.objects.create(
+            name="Kunsthochschule für Medien Köln",
+            code="khm",
+            domain="khm.example",
+            is_active=True,
+        )
+        resource.organization = khm_org
+        resource.save(update_fields=["organization"])
+
+        record = self._build_snapshot_record(resource, include_files=True, rights_status=None)
+        record.rights_status = None
+
+        payload = views._build_dc_payload_from_record(record, resource)
+        rights_values = payload.get("dc:rights", [])
+
+        assert self.primary_rights_statement in rights_values
+        assert self.secondary_rights_statement in rights_values
+        assert "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt" in rights_values
+        assert views._RIGHTS_STATUS_PROTECTED_EN in rights_values
+        assert views._RIGHTS_DISCLAIMER_PROTECTED_DE in rights_values
+        assert views._RIGHTS_DISCLAIMER_PROTECTED_EN in rights_values
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
