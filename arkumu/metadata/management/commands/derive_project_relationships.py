@@ -74,6 +74,9 @@ class Command(BaseCommand):
 
         for org_code in sorted(org_codes):
             self.stdout.write(self.style.MIGRATE_HEADING(f"Organization: {org_code}"))
+            created_category_links = self._materialize_literal_categories(org_code, dry_run=dry_run)
+            if created_category_links:
+                stats["created"] += created_category_links
             contexts = self._collect_subject_contexts(org_code)
             if not contexts:
                 self.stdout.write("  No canonical Kreuz junction triples found.")
@@ -200,6 +203,77 @@ class Command(BaseCommand):
                     )
                     continue
                 created += self._apply_patterns(subject_id, ctx, patterns, dry_run=dry_run)
+        return created
+
+    # ------------------------------------------------------------------
+    # Literal normalization helpers
+    # ------------------------------------------------------------------
+
+    def _materialize_literal_categories(self, org_code: str, *, dry_run: bool) -> int:
+        """
+        Some archives (e.g., KHM/HMT) store project categories as literal codes
+        such as \"93,106\" instead of entity references. The importer faithfully
+        persists those literals, which means downstream derivation logic never
+        sees project→category relationships and the snapshot remains empty.
+
+        To keep the mappings untouched, we synthesize lightweight category
+        entities here. This step runs before we collect Kreuz contexts, ensuring
+        the derived triples participate in the normal pattern workflow. The
+        generated resources are flagged as derived by setting `is_derived` on the
+        emitted triples, making it clear they were produced during post-processing.
+        """
+
+        category_literal_predicate = "http://arkumu.org/data/properties/synonyme"
+        category_link_predicate = "http://arkumu.org/data/properties/projektkategorie"
+
+        literal_triples = list(
+            Triple.objects.filter(
+                predicate__canonical_uri=category_literal_predicate,
+                subject__organization__code=org_code,
+                object__resource_type=ResourceType.LITERAL,
+            ).select_related("subject", "object", "subject__organization")
+        )
+        if not literal_triples:
+            return 0
+
+        created = 0
+        for triple in literal_triples:
+            subject = triple.subject
+            organization = subject.organization
+            if not subject or subject.resource_type != ResourceType.ENTITY:
+                continue
+
+            raw_value = (triple.object.value or "").replace(";", ",")
+            tokens = [token.strip() for token in raw_value.split(",") if token.strip()]
+            if not tokens:
+                continue
+
+            for token in tokens:
+                entity_uri = f"http://arkumu.org/data/{org_code}/entities/projektkategorie/{token}"
+                category_resource = Resource.objects.filter(uri=entity_uri).first()
+                if not category_resource and not dry_run:
+                    category_resource = Resource.objects.create(
+                        uri=entity_uri,
+                        resource_type=ResourceType.ENTITY,
+                        organization=organization,
+                        name=token,
+                        is_placeholder=True,
+                    )
+
+                if not category_resource:
+                    # Dry run – emulate behaviour without touching the DB.
+                    continue
+
+                derived_created = self._emit_derived_triple(
+                    str(subject.id),
+                    category_link_predicate,
+                    str(category_resource.id),
+                    dry_run=dry_run,
+                    pattern_name="project_category_literal_bridge",
+                    source_subject=str(triple.subject_id),
+                )
+                created += derived_created
+
         return created
 
     def _apply_patterns(
