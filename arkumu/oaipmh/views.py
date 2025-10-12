@@ -78,6 +78,19 @@ METS_NSMAP = {
     None: DNX_NS
 }
 
+_DIGITAL_OBJECT_ORG_DEFAULT = ("fuk", "det", "rsh")
+_DIGITAL_OBJECT_URI_REGEX = r'/entities/digitales-objekt/[0-9]+$'
+
+
+def _digital_object_orgs() -> set[str]:
+    configured = getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", _DIGITAL_OBJECT_ORG_DEFAULT)
+    return {
+        str(code).lower().strip()
+        for code in configured
+        if code
+    }
+
+
 def _metadata_element_is_valid(
     metadata_elem: ET._Element,
     *,
@@ -291,10 +304,62 @@ def _restrict_to_harvestable_files(queryset):
 
     project_event_condition = Q(pk__in=project_ids_via_events)
 
-    if rosetta_condition:
-        queryset = queryset.filter(rosetta_condition | s3_condition | project_event_condition)
-    else:
-        queryset = queryset.filter(s3_condition | project_event_condition)
+    digital_object_orgs = _digital_object_orgs()
+    has_digital_condition = False
+    digital_object_condition = Q()
+    if digital_object_orgs:
+        digital_object_resource_ids = S3FileObject.objects.filter(
+            status__in=HARVESTABLE_FILE_STATUSES,
+            related_resource__uri__regex=_DIGITAL_OBJECT_URI_REGEX,
+            related_resource__organization__code__in=digital_object_orgs,
+        ).values_list('related_resource_id', flat=True)
+
+        digital_object_ids = list(digital_object_resource_ids)
+        if digital_object_ids:
+            digital_links = Triple.objects.filter(
+                predicate__uri__endswith='/properties/digitales-objekt',
+                object_id__in=digital_object_ids,
+            )
+
+            direct_project_ids = set(
+                digital_links.filter(
+                    subject__uri__contains='/entities/projekt/'
+                ).values_list('subject_id', flat=True)
+            )
+
+            event_link_ids = list(
+                digital_links.filter(
+                    subject__uri__contains='/entities/ereignis/'
+                ).values_list('subject_id', flat=True)
+            )
+
+            project_ids_via_events = set()
+            if event_link_ids:
+                project_ids_via_events.update(
+                    Triple.objects.filter(
+                        predicate__uri__endswith='/properties/ereignis',
+                        object_id__in=event_link_ids,
+                    ).values_list('subject_id', flat=True)
+                )
+
+            all_project_ids = direct_project_ids | project_ids_via_events
+            if all_project_ids:
+                digital_object_condition = Q(pk__in=list(all_project_ids)) & Q(
+                    organization__code__in=digital_object_orgs
+                )
+                has_digital_condition = True
+
+    event_condition = project_event_condition
+    if digital_object_orgs:
+        event_condition = project_event_condition & ~Q(organization__code__in=digital_object_orgs)
+
+    combined_condition = s3_condition | event_condition
+    if rosetta_orgs:
+        combined_condition |= rosetta_condition
+    if has_digital_condition:
+        combined_condition |= digital_object_condition
+
+    queryset = queryset.filter(combined_condition)
 
     return queryset.distinct()
 def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]:
@@ -309,25 +374,72 @@ def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]
         s3_key__isnull=False,
     ).exclude(s3_key="")
 
+    resource_org_code = None
+    if getattr(resource, "organization", None) and getattr(resource.organization, "code", None):
+        resource_org_code = resource.organization.code.lower().strip()
+
+    digital_files = S3FileObject.objects.none()
+    digital_object_ids: set[int] = set(
+        Triple.objects.filter(
+            subject=resource,
+            predicate__uri__endswith='/properties/digitales-objekt',
+        ).values_list('object_id', flat=True)
+    )
+    digital_object_orgs = _digital_object_orgs()
+    is_digital_only = resource_org_code and resource_org_code in digital_object_orgs
+    if is_digital_only:
+        event_ids_linked_to_project = list(
+            Triple.objects.filter(
+                subject=resource,
+                predicate__uri__endswith='/properties/ereignis',
+            ).values_list('object_id', flat=True)
+        )
+        if event_ids_linked_to_project:
+            event_digital_ids = Triple.objects.filter(
+                subject_id__in=event_ids_linked_to_project,
+                predicate__uri__endswith='/properties/digitales-objekt',
+            ).values_list('object_id', flat=True)
+            digital_object_ids.update(event_digital_ids)
+
+    if digital_object_ids:
+        digital_files = S3FileObject.objects.filter(
+            related_resource_id__in=list(digital_object_ids),
+            status__in=HARVESTABLE_FILE_STATUSES,
+            s3_key__isnull=False,
+        ).exclude(s3_key="")
+
     event_ids = Triple.objects.filter(
         subject=resource,
         predicate__uri__endswith='/properties/ereignis',
     ).values_list('object_id', flat=True)
 
-    event_files = S3FileObject.objects.filter(
-        related_resource_id__in=event_ids,
-        status__in=HARVESTABLE_FILE_STATUSES,
-        s3_key__isnull=False,
-    ).exclude(s3_key="")
+    event_files = S3FileObject.objects.none()
+    if not is_digital_only:
+        event_files = S3FileObject.objects.filter(
+            related_resource_id__in=event_ids,
+            status__in=HARVESTABLE_FILE_STATUSES,
+            s3_key__isnull=False,
+        ).exclude(s3_key="")
 
     files = list(direct_files)
-    files.extend(
-        list(
-            event_files.exclude(
-                id__in=direct_files.values('id')
+    if is_digital_only and digital_files.exists():
+        files.extend(
+            list(
+                digital_files.exclude(
+                    id__in=direct_files.values('id')
+                )
             )
         )
-    )
+    if not is_digital_only:
+        files.extend(
+            list(
+                event_files.exclude(
+                    id__in=direct_files.values('id')
+                ).exclude(
+                    id__in=digital_files.values('id')
+                )
+            )
+        )
 
     if not files:
         return None

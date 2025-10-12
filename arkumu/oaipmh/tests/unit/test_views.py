@@ -18,7 +18,8 @@ from django.utils import timezone as django_timezone
 
 from arkumu.oaipmh import views
 from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS, XLINK_NS, DC_NS, DCTERMS_NS, XML_NS
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.projects import (
     ProjectRecord,
@@ -232,6 +233,7 @@ class TestOAIViewFunctions:
 
         settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('khm',)
         settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
 
         khm_org = Organization.objects.create(
             name="KHM",
@@ -269,6 +271,144 @@ class TestOAIViewFunctions:
             Resource.objects.filter(pk=non_s3_resource.pk)
         )
         assert not filtered_non_s3.exists()
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_excludes_event_links_for_digital_only_orgs(self, settings):
+        """Digital-object orgs should not harvest projects via event-linked files."""
+
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/3001",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        event = Resource.objects.create(
+            uri="https://arkumu.org/entities/ereignis/3002",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/ereignis",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        Triple.objects.create(
+            subject=project,
+            predicate=predicate,
+            object=event,
+        )
+
+        S3FileObject.objects.create(
+            file_name="audio.mp3",
+            s3_key="fuk/audio.mp3",
+            organization="fuk",
+            status="verified",
+            related_resource=event,
+        )
+
+        queryset = Resource.objects.filter(pk=project.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert not filtered.exists()
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_includes_event_digital_object_for_digital_only_orgs(self, settings):
+        """Digital-object orgs harvest projects when files attach to event digital objects."""
+
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/4001",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        event = Resource.objects.create(
+            uri="https://arkumu.org/entities/ereignis/4002",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_object = Resource.objects.create(
+            uri="https://arkumu.org/entities/digitales-objekt/5003",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        event_predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/ereignis",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/digitales-objekt",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        Triple.objects.create(
+            subject=project,
+            predicate=event_predicate,
+            object=event,
+        )
+
+        Triple.objects.create(
+            subject=event,
+            predicate=digital_predicate,
+            object=digital_object,
+        )
+
+        S3FileObject.objects.create(
+            file_name="tape.wav",
+            s3_key="fuk/tape.wav",
+            organization="fuk",
+            status="verified",
+            related_resource=digital_object,
+        )
+
+        queryset = Resource.objects.filter(pk=project.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert list(filtered) == [project]
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS
