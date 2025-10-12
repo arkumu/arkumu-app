@@ -7,7 +7,7 @@ import mimetypes
 import re
 from datetime import datetime, timezone as dt_timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from urllib.parse import unquote, urlparse
 
 from django.conf import settings
@@ -1164,6 +1164,33 @@ def _rights_metadata_from_status(status: Optional[str]) -> Optional[Dict[str, An
     return None
 
 
+def _rights_link_uris(status: Optional[str]) -> List[str]:
+    """Return external rights statement URIs appropriate for a rights status literal."""
+    if not status:
+        return []
+
+    normalized = status.strip().lower().replace('ß', 'ss')
+    if not normalized:
+        return []
+
+    links: List[str] = []
+    if 'frei' in normalized:
+        links.append("http://rightsstatements.org/vocab/NoC-OKLR/1.0/")
+
+    if 'gesch' in normalized or 'schutz' in normalized:
+        links.extend([
+            "https://www.gesetze-im-internet.de/urhg/",
+            "https://www.gesetze-im-internet.de/englisch_urhg/",
+        ])
+
+    # Preserve order but remove duplicates
+    deduped: Dict[str, None] = {}
+    for link in links:
+        if link and link not in deduped:
+            deduped[link] = None
+    return list(deduped.keys())
+
+
 def _rights_label_for_resource(resource: Resource) -> Optional[str]:
     """Translate public access configuration to a human readable rights statement."""
     mapping = {
@@ -1210,10 +1237,25 @@ def _collect_collection_labels(resource: Resource, record: ProjectRecord) -> Lis
     return labels
 
 
-def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> Dict[str, List[str]]:
+def _build_dc_payload_from_project(
+    project: OAIProject,
+    resource: Resource,
+    *,
+    include_event_details: bool = True,
+) -> Dict[str, List[str]]:
     payload: Dict[str, List[str]] = {}
 
     record = project.record
+    xml_type_attr = ET.QName(XML_NS, "type")
+
+    project_uri = getattr(resource, "uri", None)
+    if project_uri:
+        _add_dc_value(
+            payload,
+            'identifier',
+            project_uri,
+            attrs={xml_type_attr: 'arkumu-ID'},
+        )
 
     _add_dc_value(payload, 'title', record.title)
     for alt in record.alternative_titles:
@@ -1242,10 +1284,86 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
     for catchphrase in record.catchphrases:
         _add_dc_value(payload, 'subject', getattr(catchphrase, 'label', None))
 
+    if include_event_details:
+        _merge_event_payloads(payload, _build_event_dc_payloads(record))
+
+    if record.year_range:
+        _add_dc_value(payload, 'date', record.year_range)
+
+    rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
+
+    if resource.canonical_uri and resource.canonical_uri != project_uri:
+        _add_dc_value(payload, 'identifier', resource.canonical_uri)
+
+    if getattr(resource, 'updated_at', None):
+        _add_dc_value(payload, 'dateSubmitted', _format_datestamp(resource.updated_at), namespace='dcterms')
+
+    for code in record.institution_codes:
+        _add_dc_value(payload, 'isPartOf', code.upper(), namespace='dcterms')
+    for label in _collect_collection_labels(resource, record):
+        _add_dc_value(payload, 'isPartOf', label, namespace='dcterms')
+
+    if project.digital_objects:
+        formats_added: set[str] = set(payload.get('dc:format', []))
+        for obj in project.digital_objects:
+            if obj.content_type:
+                if obj.content_type not in formats_added:
+                    _add_dc_value(payload, 'format', obj.content_type)
+                    formats_added.add(obj.content_type)
+
+        if not payload.get('dc:format'):
+            for obj in project.digital_objects:
+                guess = _guess_mime_type(obj)
+                if guess and guess not in formats_added:
+                    _add_dc_value(payload, 'format', guess)
+                    formats_added.add(guess)
+
+    if not payload.get('dc:language'):
+        language = _default_language_for_resource(resource, record)
+        if language:
+            _add_dc_value(payload, 'language', language)
+
+    license_rights: set[str] = set()
+    for obj in project.digital_objects:
+        license_info = getattr(obj, "license", None)
+        if license_info and getattr(license_info, "rights_statement", None):
+            normalized = str(license_info.rights_statement).strip()
+            if normalized:
+                license_rights.add(normalized)
+    for rights_value in sorted(license_rights):
+        _add_dc_value(payload, 'rights', rights_value)
+
+    if not rights_meta:
+        rights_meta = _default_rights_metadata(resource, record)
+
+    if rights_meta:
+        _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
+        _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
+        for text in rights_meta.get("disclaimers_de", []):
+            _add_dc_value(payload, 'rights', text)
+        for text in rights_meta.get("disclaimers_en", []):
+            _add_dc_value(payload, 'rights', text)
+    elif not payload.get('dc:rights'):
+        rights = _rights_label_for_resource(resource)
+        if rights:
+            _add_dc_value(payload, 'rights', rights)
+
+    return payload
+
+
+def _merge_event_payloads(base_payload: Dict[str, List[Any]], event_payloads: List[Dict[str, List[Any]]]) -> None:
+    for event_payload in event_payloads:
+        for key, values in event_payload.items():
+            base_payload.setdefault(key, []).extend(values)
+
+
+def _build_event_dc_payloads(record: ProjectRecord) -> List[Dict[str, List[Any]]]:
+    event_payloads: List[Dict[str, List[Any]]] = []
     xml_type_attr = ET.QName(XML_NS, "type")
     xml_lang_attr = ET.QName(XML_NS, "lang")
 
     for event in record.events:
+        payload: Dict[str, List[Any]] = {}
         event_name_de = getattr(event, 'name_de', None) or getattr(event, 'name', None)
         if event_name_de:
             _add_dc_value(
@@ -1253,6 +1371,15 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
                 'title',
                 event_name_de,
                 attrs={xml_type_attr: 'event-name', xml_lang_attr: 'ger'},
+            )
+
+        event_identifier = getattr(event, 'uri', None) or getattr(event, 'id', None)
+        if event_identifier:
+            _add_dc_value(
+                payload,
+                'identifier',
+                str(event_identifier),
+                attrs={xml_type_attr: 'event-id'},
             )
 
         event_name_en = getattr(event, 'name_en', None)
@@ -1333,6 +1460,9 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
             _add_dc_value(payload, 'coverage', event.country)
 
         actor_list = getattr(event, 'actors', []) or []
+        has_copyright_actor = any(getattr(actor, 'is_copyright_holder', False) for actor in actor_list)
+        has_neighbouring_actor = any(getattr(actor, 'is_neighbouring_rights_holder', False) for actor in actor_list)
+
         for actor in actor_list:
             actor_name = getattr(actor, 'name', None)
             if not actor_name:
@@ -1350,85 +1480,58 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
                 attrs={xml_type_attr: 'actor'},
             )
 
-        if any(getattr(actor, 'is_copyright_holder', False) for actor in actor_list):
+        if has_copyright_actor:
             _add_dc_value(payload, 'type', EVENT_COPYRIGHT_TYPE_LABEL, attrs={xml_type_attr: 'actor-rights-type'})
             for uri in EVENT_COPYRIGHT_RIGHTS_URIS:
                 _add_dc_value(payload, 'rights', uri, attrs={xml_type_attr: 'dcterms:URI'})
 
-        if any(getattr(actor, 'is_neighbouring_rights_holder', False) for actor in actor_list):
+        if has_neighbouring_actor:
             _add_dc_value(payload, 'type', EVENT_NEIGHBOURING_TYPE_LABEL, attrs={xml_type_attr: 'actor-rights-type'})
             for uri in EVENT_NEIGHBOURING_RIGHTS_URIS:
                 _add_dc_value(payload, 'rights', uri, attrs={xml_type_attr: 'dcterms:URI'})
 
-    if record.year_range:
-        _add_dc_value(payload, 'date', record.year_range)
+        event_payloads.append(payload)
 
-    rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
-
-    if resource.canonical_uri and resource.canonical_uri != resource.uri:
-        _add_dc_value(payload, 'identifier', resource.canonical_uri)
-
-    if getattr(resource, 'updated_at', None):
-        _add_dc_value(payload, 'dateSubmitted', _format_datestamp(resource.updated_at), namespace='dcterms')
-
-    for code in record.institution_codes:
-        _add_dc_value(payload, 'isPartOf', code.upper(), namespace='dcterms')
-    for label in _collect_collection_labels(resource, record):
-        _add_dc_value(payload, 'isPartOf', label, namespace='dcterms')
-
-    if project.digital_objects:
-        formats_added: set[str] = set(payload.get('dc:format', []))
-        for obj in project.digital_objects:
-            if obj.content_type:
-                if obj.content_type not in formats_added:
-                    _add_dc_value(payload, 'format', obj.content_type)
-                    formats_added.add(obj.content_type)
-
-        if not payload.get('dc:format'):
-            for obj in project.digital_objects:
-                guess = _guess_mime_type(obj)
-                if guess and guess not in formats_added:
-                    _add_dc_value(payload, 'format', guess)
-                    formats_added.add(guess)
-
-    if not payload.get('dc:language'):
-        language = _default_language_for_resource(resource, record)
-        if language:
-            _add_dc_value(payload, 'language', language)
-
-    license_rights: set[str] = set()
-    for obj in project.digital_objects:
-        license_info = getattr(obj, "license", None)
-        if license_info and getattr(license_info, "rights_statement", None):
-            normalized = str(license_info.rights_statement).strip()
-            if normalized:
-                license_rights.add(normalized)
-    for rights_value in sorted(license_rights):
-        _add_dc_value(payload, 'rights', rights_value)
-
-    if not rights_meta:
-        rights_meta = _default_rights_metadata(resource, record)
-
-    if rights_meta:
-        _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
-        _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
-        for text in rights_meta.get("disclaimers_de", []):
-            _add_dc_value(payload, 'rights', text)
-        for text in rights_meta.get("disclaimers_en", []):
-            _add_dc_value(payload, 'rights', text)
-    elif not payload.get('dc:rights'):
-        rights = _rights_label_for_resource(resource)
-        if rights:
-            _add_dc_value(payload, 'rights', rights)
-
-    return payload
+    return event_payloads
 
 
-def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> Dict[str, List[str]]:
+def _build_dc_payload_from_record(
+    record: ProjectRecord,
+    resource: Resource,
+    *,
+    include_event_details: bool = True,
+) -> Dict[str, List[str]]:
     """Compatibility wrapper to build DC payloads from legacy ProjectRecord inputs."""
 
     project = project_builder.from_project_record(record)
-    return _build_dc_payload_from_project(project, resource)
+    return _build_dc_payload_from_project(
+        project,
+        resource,
+        include_event_details=include_event_details,
+    )
+
+
+def _build_event_dc_payload(record: ProjectRecord) -> Dict[str, List[Any]]:
+    aggregated: Dict[str, List[Any]] = {}
+    _merge_event_payloads(aggregated, _build_event_dc_payloads(record))
+    return aggregated
+
+
+def _iter_dc_entries(dc_payload: Dict[str, List[Any]]) -> Iterable[tuple[str, str, Any, Dict[Any, Any]]]:
+    """Yield namespace URI, term, value, and attribute map for each DC payload entry."""
+    for key, values in (dc_payload or {}).items():
+        namespace, term = key.split(":", 1)
+        ns_uri = DC_NS if namespace == "dc" else DCTERMS_NS
+        for item in values:
+            if isinstance(item, dict):
+                text = item.get("value")
+                attrs = item.get("attrs") or {}
+            else:
+                text = item
+                attrs = {}
+            if text is None:
+                continue
+            yield ns_uri, term, text, attrs
 
 
 def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]]) -> ET._Element:
@@ -1450,30 +1553,21 @@ def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]])
         ]),
     )
 
-    for key, values in dc_payload.items():
-        namespace, term = key.split(":", 1)
-        ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
-        for item in values:
-            if isinstance(item, dict):
-                text = item.get('value')
-                attrs = item.get('attrs') or {}
-            else:
-                text = item
-                attrs = {}
-            if text is None:
+    for ns_uri, term, text, attrs in _iter_dc_entries(dc_payload):
+        elem = ET.SubElement(dc_root, ET.QName(ns_uri, term))
+        elem.text = text
+        for attr_name, attr_value in attrs.items():
+            if attr_value is None:
                 continue
-            elem = ET.SubElement(dc_root, ET.QName(ns_uri, term))
-            elem.text = text
-            for attr_name, attr_value in attrs.items():
-                if attr_value is None:
-                    continue
-                elem.set(attr_name, attr_value)
+            elem.set(attr_name, attr_value)
     return dc_root
 
 
 def _append_arkumu_identifier(dc_parent: ET._Element, resource: Resource) -> None:
     """Append Arkumu-specific DC identifier based on project URI."""
-    identifier_value = _build_identifier(resource.uri)
+    identifier_value = getattr(resource, "uri", None)
+    if not identifier_value:
+        return
     existing = [
         elem for elem in dc_parent.findall(ET.QName(DC_NS, "identifier"))
         if elem.text == identifier_value and elem.get(ET.QName(XML_NS, "type")) == "arkumu-ID"
@@ -1491,6 +1585,7 @@ def _build_mets_from_project(
     project: OAIProject,
     resource: Resource,
     dc_payload: Dict[str, List[str]],
+    dc_source_payloads: Optional[List[Dict[str, List[Any]]]] = None,
 ) -> ET._Element:
     _register_rosetta_namespaces()
 
@@ -1503,41 +1598,73 @@ def _build_mets_from_project(
     md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
     xml_data = ET.SubElement(md_wrap, ET.QName(METS_NS, "xmlData"))
     dc_record = ET.SubElement(xml_data, ET.QName(DC_NS, "record"))
-    for key, values in dc_payload.items():
-        namespace, term = key.split(":", 1)
-        ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
-        for item in values:
-            if isinstance(item, dict):
-                text = item.get('value')
-                attrs = item.get('attrs') or {}
-            else:
-                text = item
-                attrs = {}
-            if text is None:
+    for ns_uri, term, text, attrs in _iter_dc_entries(dc_payload):
+        elem = ET.SubElement(dc_record, ET.QName(ns_uri, term))
+        elem.text = text
+        for attr_name, attr_value in attrs.items():
+            if attr_value is None:
                 continue
-            elem = ET.SubElement(dc_record, ET.QName(ns_uri, term))
-            elem.text = text
-            for attr_name, attr_value in attrs.items():
-                if attr_value is None:
-                    continue
-                elem.set(attr_name, attr_value)
+            elem.set(attr_name, attr_value)
     _append_arkumu_identifier(dc_record, resource)
+
+    rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
+    if not rights_meta:
+        rights_meta = _default_rights_metadata(resource, record)
+    rights_status_literal = getattr(record, "rights_status", None) or (
+        rights_meta.get("status_de") if rights_meta else None
+    )
+    rights_links = _rights_link_uris(rights_status_literal)
 
     ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
     tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
     tech_wrap = ET.SubElement(tech_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
     tech_xml = ET.SubElement(tech_wrap, ET.QName(METS_NS, "xmlData"))
     tech_dnx = _create_dnx_element(tech_xml, "dnx")
-    # Add objectIdentifier section (required by Rosetta)
-    # Rosetta does not expect placeholder keys when no identifier is available.
+    _create_dnx_element(tech_dnx, "section", {"id": "objectCharacteristics"})
     _create_dnx_element(tech_dnx, "section", {"id": "objectIdentifier"})
 
     rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
     rights_wrap = ET.SubElement(rights_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
     rights_xml = ET.SubElement(rights_wrap, ET.QName(METS_NS, "xmlData"))
     rights_dnx = _create_dnx_element(rights_xml, "dnx")
-    _create_dnx_element(rights_dnx, "section", {"id": "accessRightsPolicy"})
 
+    if rights_links:
+        rights_section = _create_dnx_element(rights_dnx, "section", {"id": "linkingRightsStatementIdentifier"})
+        for uri in rights_links:
+            record_elem = _create_dnx_element(rights_section, "record")
+            _create_dnx_element(record_elem, "key", {"id": "linkingRightsStatementIdentifierType"}, "URI")
+            _create_dnx_element(record_elem, "key", {"id": "linkingRightsStatementIdentifierValue"}, uri)
+
+    granted_value: Optional[str] = None
+    if rights_meta:
+        for key in ("status_de", "status_en"):
+            candidate = rights_meta.get(key)
+            if candidate:
+                granted_value = candidate
+                break
+    if granted_value is None:
+        granted_value = _rights_label_for_resource(resource)
+
+    if granted_value:
+        granted_section = _create_dnx_element(rights_dnx, "section", {"id": "grantedRightsStatement"})
+        record_elem = _create_dnx_element(granted_section, "record")
+        _create_dnx_element(record_elem, "key", {"id": "grantedRightsStatementValue"}, granted_value)
+
+    source_dc_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-dc"})
+    source_dc_wrap = ET.SubElement(source_dc_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+    source_dc_xml = ET.SubElement(source_dc_wrap, ET.QName(METS_NS, "xmlData"))
+    event_payloads = dc_source_payloads if dc_source_payloads is not None else [_build_event_dc_payload(record)]
+    if not event_payloads:
+        event_payloads = [{}]
+    for event_payload in event_payloads:
+        event_dc_record = ET.SubElement(source_dc_xml, ET.QName(DC_NS, "record"))
+        for ns_uri, term, text, attrs in _iter_dc_entries(event_payload):
+            elem = ET.SubElement(event_dc_record, ET.QName(ns_uri, term))
+            elem.text = text
+            for attr_name, attr_value in attrs.items():
+                if attr_value is None:
+                    continue
+                elem.set(attr_name, attr_value)
     source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
     source_wrap = ET.SubElement(
         source_md,
@@ -2046,7 +2173,11 @@ def _build_metadata_element(
 
     if metadata_prefix == "oai_dc":
         project = projects[0]
-        dc_payload = _build_dc_payload_from_project(project, resource)
+        dc_payload = _build_dc_payload_from_project(
+            project,
+            resource,
+            include_event_details=False,
+        )
         dc_root = _append_dc_metadata(metadata, dc_payload)
         _append_arkumu_identifier(dc_root, resource)
     elif metadata_prefix == "mets":
@@ -2054,8 +2185,18 @@ def _build_metadata_element(
             if not project.harvestable:
                 continue
 
-            dc_payload = _build_dc_payload_from_project(project, resource)
-            mets_root = _build_mets_from_project(project, resource, dc_payload)
+            dc_payload_core = _build_dc_payload_from_project(
+                project,
+                resource,
+                include_event_details=False,
+            )
+            dc_payload_source = _build_event_dc_payloads(project.record)
+            mets_root = _build_mets_from_project(
+                project,
+                resource,
+                dc_payload_core,
+                dc_source_payloads=dc_payload_source,
+            )
 
             candidate_wrapper = ET.Element("metadata")
             candidate_wrapper.append(ET.fromstring(ET.tostring(mets_root)))
