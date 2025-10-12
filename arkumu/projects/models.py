@@ -123,6 +123,7 @@ class ProjectRecord:
     year_range: Optional[str] = None
     institution_codes: List[str] = field(default_factory=list)
     category_slugs: List[str] = field(default_factory=list)
+    rights_status: Optional[str] = None
 
     @property
     def slug(self) -> str:
@@ -163,6 +164,7 @@ class ProjectRecord:
             year_range=payload.get("year_range"),
             institution_codes=payload.get("institution_codes", []),
             category_slugs=payload.get("category_slugs", []),
+            rights_status=payload.get("rights_status"),
         )
         return record
 

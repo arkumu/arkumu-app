@@ -50,6 +50,18 @@ class TestOAIViewFunctions:
         self.secondary_uuid = "uuid-test-2"
         self.event_actor_name = "Event Specialist"
         self.event_actor_roles = ["Moderator", "Curator"]
+        self.rights_status_de = "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt"
+        self.rights_status_en = "Protected by German Urheberrecht and/or Leistungsschutzrecht."
+        self.rights_disclaimer_protected_de = (
+            "Das Projekt/Werk ist durch das deutsche Urheberrecht und/oder Leistungsschutzrecht geschützt. "
+            "Einige Digitale Objekte können auch noch durch Verwertungsrechte geschützt sein. Überprüfen Sie "
+            "daher bitte alle verknüpften Ereignisse sorgfältig, bevor Sie die bereitgestellten Medien weiterverwenden."
+        )
+        self.rights_disclaimer_protected_en = (
+            "The Project/Work is protected by German Urheberrecht and/or Leistungsschutzrecht. "
+            "Some digital objects may also be protected by exploitation rights. Therefore, please "
+            "check all linked events thoroughly before further use of the media provided."
+        )
 
     def _ensure_event_storage(self, resource: Resource) -> None:
         """Create S3 metadata for the synthetic event file used in tests."""
@@ -141,6 +153,7 @@ class TestOAIViewFunctions:
             project_type=ProjectType(label="Type A"),
             digital_objects=digital_objects,
             institution_codes=["ti"],
+            rights_status=self.rights_status_de,
         )
 
     # ============================================================================
@@ -669,6 +682,10 @@ class TestOAIViewFunctions:
         rights_values = payload.get("dc:rights", [])
         assert self.primary_rights_statement in rights_values
         assert self.secondary_rights_statement in rights_values
+        assert self.rights_status_de in rights_values
+        assert self.rights_status_en in rights_values
+        assert self.rights_disclaimer_protected_de in rights_values
+        assert self.rights_disclaimer_protected_en in rights_values
         assert "dc:collection" not in payload
         is_part_of_values = payload.get("dcterms:isPartOf", [])
         assert "TI" in is_part_of_values

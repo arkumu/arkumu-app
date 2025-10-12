@@ -1061,6 +1061,61 @@ def _default_language_for_resource(resource: Resource, record: ProjectRecord) ->
     return organization_defaults.get(org_code)
 
 
+_RIGHTS_STATUS_PROTECTED_EN = "Protected by German Urheberrecht and/or Leistungsschutzrecht."
+_RIGHTS_STATUS_FREE_EN = "Free of German Urheberrecht and Leistungsschutzrecht protection."
+
+_RIGHTS_DISCLAIMER_PROTECTED_DE = (
+    "Das Projekt/Werk ist durch das deutsche Urheberrecht und/oder Leistungsschutzrecht geschützt. "
+    "Einige Digitale Objekte können auch noch durch Verwertungsrechte geschützt sein. Überprüfen Sie "
+    "daher bitte alle verknüpften Ereignisse sorgfältig, bevor Sie die bereitgestellten Medien weiterverwenden."
+)
+_RIGHTS_DISCLAIMER_PROTECTED_EN = (
+    "The Project/Work is protected by German Urheberrecht and/or Leistungsschutzrecht. "
+    "Some digital objects may also be protected by exploitation rights. Therefore, please "
+    "check all linked events thoroughly before further use of the media provided."
+)
+
+_RIGHTS_DISCLAIMER_FREE_DE = (
+    "Das Projekt/Werk ist frei nach dem deutschen Urheberrecht und Leistungsschutzrecht. Dennoch können einige "
+    "Digitale Objekte, referenziert über Ereignisse, immer noch dem urheberrechtlichen, leistungsschutzrechtlichen "
+    "oder verwertungsrechtlichen Schutz unterliegen. Überprüfen Sie daher bitte alle verknüpften Ereignisse "
+    "sorgfältig, bevor Sie die bereitgestellten Medien weiterverwenden."
+)
+_RIGHTS_DISCLAIMER_FREE_EN = (
+    "The Project/Work is free under German Urheberrecht and Leistungsschutzrecht. However, some digital objects, "
+    "referenced via events, may still be subject to German Urheberrecht, German Leistungsschutzrecht or exploitation "
+    "rights protection. Therefore, please check all linked events thoroughly before further use of the media provided."
+)
+
+
+def _rights_metadata_from_status(status: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Return translation and disclaimers derived from a rights status literal."""
+    if not status:
+        return None
+
+    normalized = status.strip()
+    if not normalized:
+        return None
+
+    simplified = normalized.lower().replace('ß', 'ss')
+    if 'frei' in simplified:
+        return {
+            "status_de": normalized,
+            "status_en": _RIGHTS_STATUS_FREE_EN,
+            "disclaimers_de": [_RIGHTS_DISCLAIMER_FREE_DE],
+            "disclaimers_en": [_RIGHTS_DISCLAIMER_FREE_EN],
+        }
+    if 'gesch' in simplified:
+        return {
+            "status_de": normalized,
+            "status_en": _RIGHTS_STATUS_PROTECTED_EN,
+            "disclaimers_de": [_RIGHTS_DISCLAIMER_PROTECTED_DE],
+            "disclaimers_en": [_RIGHTS_DISCLAIMER_PROTECTED_EN],
+        }
+
+    return None
+
+
 def _rights_label_for_resource(resource: Resource) -> Optional[str]:
     """Translate public access configuration to a human readable rights statement."""
     mapping = {
@@ -1146,6 +1201,15 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
 
     if record.year_range:
         _add_dc_value(payload, 'date', record.year_range)
+
+    rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
+    if rights_meta:
+        _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
+        _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
+        for text in rights_meta.get("disclaimers_de", []):
+            _add_dc_value(payload, 'rights', text)
+        for text in rights_meta.get("disclaimers_en", []):
+            _add_dc_value(payload, 'rights', text)
 
     if resource.canonical_uri:
         _add_dc_value(payload, 'identifier', resource.canonical_uri)

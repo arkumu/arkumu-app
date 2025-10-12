@@ -849,6 +849,16 @@ class ProjectSnapshotService:
         if storage_files:
             digital_objects = self._merge_storage_metadata(digital_objects, storage_files)
 
+        rights_status = self._first_literal_from_predicates(
+            subject_edges,
+            (
+                "http://arkumu.org/data/properties/rechtsstatus",
+                "http://arkumu.org/data/fuk/properties/rechtsstatus",
+                "http://arkumu.org/data/hmt/properties/rechtsstatus",
+                "http://arkumu.org/data/khm/properties/rechtsstatus",
+            ),
+        )
+
         if not title:
             return None
 
@@ -870,6 +880,7 @@ class ProjectSnapshotService:
             year_range=year_range or None,
             institution_codes=institution_codes,
             category_slugs=category_slugs,
+            rights_status=rights_status,
         )
         return record
 
@@ -1037,6 +1048,17 @@ class ProjectSnapshotService:
         for edge in edges:
             if self._canonical(edge) == predicate and edge.get('object_value'):
                 return edge['object_value']
+        return None
+
+    def _first_literal_from_predicates(
+        self,
+        edges: Iterable[Dict[str, Any]],
+        predicates: Iterable[Optional[str]],
+    ) -> Optional[str]:
+        for predicate in predicates:
+            value = self._first_literal(edges, predicate)
+            if value:
+                return value
         return None
 
     def _related_ids(self, edges: Iterable[Dict[str, Any]], predicate: Optional[str]) -> List[str]:
