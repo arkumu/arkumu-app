@@ -1219,10 +1219,8 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
 
     rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
 
-    if resource.canonical_uri:
+    if resource.canonical_uri and resource.canonical_uri != resource.uri:
         _add_dc_value(payload, 'identifier', resource.canonical_uri)
-    _add_dc_value(payload, 'identifier', resource.uri)
-    _add_dc_value(payload, 'identifier', record.uri)
 
     if getattr(resource, 'updated_at', None):
         _add_dc_value(payload, 'dateSubmitted', _format_datestamp(resource.updated_at), namespace='dcterms')
@@ -1315,8 +1313,8 @@ def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]])
 
 
 def _append_arkumu_identifier(dc_parent: ET._Element, resource: Resource) -> None:
-    """Append Arkumu-specific DC identifier based on OAI header identifier."""
-    identifier_value = _build_identifier(resource.uri)
+    """Append Arkumu-specific DC identifier based on project URI."""
+    identifier_value = resource.uri
     existing = [
         elem for elem in dc_parent.findall(ET.QName(DC_NS, "identifier"))
         if elem.text == identifier_value and elem.get(ET.QName(XML_NS, "type")) == "arkumu-ID"
@@ -1324,9 +1322,10 @@ def _append_arkumu_identifier(dc_parent: ET._Element, resource: Resource) -> Non
     if existing:
         return
 
-    identifier_elem = ET.SubElement(dc_parent, ET.QName(DC_NS, "identifier"))
+    identifier_elem = ET.Element(ET.QName(DC_NS, "identifier"))
     identifier_elem.text = identifier_value
     identifier_elem.set(ET.QName(XML_NS, "type"), "arkumu-ID")
+    dc_parent.insert(0, identifier_elem)
 
 
 def _build_mets_from_project(

@@ -254,6 +254,7 @@ class TestOAIViewFunctions:
         ]
         assert len(arkumu_nodes) == 1
         assert arkumu_nodes[0].text == arkumu_identifier
+        assert dc_root[0] is arkumu_nodes[0]
 
     @pytest.mark.django_db
     def test_restrict_to_harvestable_files_includes_rosetta_without_s3(self, settings):
@@ -680,8 +681,11 @@ class TestOAIViewFunctions:
 
         assert "dc:title" in payload
         assert record.title in payload["dc:title"]
-        assert "dc:identifier" in payload
-        assert resource.uri in payload["dc:identifier"]
+        identifier_values = payload.get("dc:identifier", [])
+        if resource.canonical_uri:
+            assert identifier_values == [resource.canonical_uri]
+        else:
+            assert identifier_values == []
         assert not payload.get("dc:relation")
         assert 'dc:format' in payload
         assert 'text/plain' in payload['dc:format']
@@ -747,6 +751,9 @@ class TestOAIViewFunctions:
         # Should contain oai_dc element
         dc_element = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_element is not None
+        first_child = dc_element[0]
+        assert first_child.tag == "{http://purl.org/dc/elements/1.1/}identifier"
+        assert first_child.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_build_metadata_element_mets(self, mock_get_record, sample_resources):
