@@ -131,6 +131,24 @@ CARD_SCHEMA_TEMPLATE: CardSchema = CardSchema(
             canonical_class_uri='http://arkumu.org/data/types/digitales-objekt',
             properties={
                 'path': CardProperty('path', 'http://arkumu.org/data/properties/dateipfad'),
+                'license': CardProperty('license', 'http://arkumu.org/data/properties/lizenzstatus'),
+            },
+            fk_relationships=[
+                {
+                    'source_property': 'http://arkumu.org/data/properties/lizenzstatus',
+                    'target_property': 'http://arkumu.org/data/properties/uri',
+                }
+            ],
+        ),
+        'digital_object_license': CardSection(
+            label='digital_object_license',
+            canonical_class_uri='http://arkumu.org/data/types/digitales-objekt-lizenz',
+            properties={
+                'uri': CardProperty('uri', 'http://arkumu.org/data/properties/uri'),
+                'label_de': CardProperty('label_de', 'http://arkumu.org/data/properties/deutscher-anzeigetext'),
+                'label_en': CardProperty('label_en', 'http://arkumu.org/data/properties/englischer-anzeigetext'),
+                'rights_statement': CardProperty('rights_statement', 'http://arkumu.org/data/properties/zugehoeriges-rechtestatement'),
+                'identifier': CardProperty('identifier', 'http://arkumu.org/data/properties/digitales-objekt-lizenz-id'),
             },
         ),
         'institution': CardSection(

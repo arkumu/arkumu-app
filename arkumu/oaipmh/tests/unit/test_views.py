@@ -111,6 +111,7 @@ class TestOAIViewFunctions:
                     significant_properties_en="Significant properties (EN)",
                     license=ProjectDigitalObjectLicense(
                         uri=self.primary_license_uri,
+                        identifier="license-primary",
                         label_de="Lizenz Eins",
                         label_en="License One",
                         rights_statement=self.primary_rights_statement,
@@ -132,6 +133,7 @@ class TestOAIViewFunctions:
                     significant_properties_en="Additional properties (EN)",
                     license=ProjectDigitalObjectLicense(
                         uri=self.secondary_license_uri,
+                        identifier="license-secondary",
                         label_de="Lizenz Zwei",
                         label_en="License Two",
                         rights_statement=self.secondary_rights_statement,
@@ -864,6 +866,23 @@ class TestOAIViewFunctions:
             )
             assert rights_value is not None
             assert rights_value.text == digital_obj.license.uri
+
+            granted_identifier = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='grantedRightsStatement']//{{{DNX_NS}}}key[@id='grantedRightsStatementIdentifier']"
+            )
+            assert granted_identifier is not None
+            assert granted_identifier.text == digital_obj.license.identifier
+
+            granted_value = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='grantedRightsStatement']//{{{DNX_NS}}}key[@id='grantedRightsStatementValue']"
+            )
+            assert granted_value is not None
+            expected_granted_value = (
+                digital_obj.license.rights_statement
+                or digital_obj.license.label_de
+                or digital_obj.license.label_en
+            )
+            assert granted_value.text == expected_granted_value
 
             source_record = amd_sec.find(f".//{{{DC_NS}}}record")
             assert source_record is not None

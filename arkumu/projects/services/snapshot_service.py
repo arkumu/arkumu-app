@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from django.utils import timezone
 from django.conf import settings
+from django.db.models import Q
 
 from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.catalog.services.schema_manifest_service import (
@@ -22,6 +23,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
     ProjectActor,
@@ -56,10 +58,31 @@ class ProjectSnapshotService:
     )
     DIGITAL_OBJECT_LINK_URI = "http://arkumu.org/data/properties/digitales-objekt"
     DIGITAL_OBJECT_LICENSE_LINK_URI = "http://arkumu.org/data/properties/lizenzstatus"
-    DIGITAL_OBJECT_LICENSE_URI_PROPERTY = "http://arkumu.org/data/properties/uri"
-    DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
-    DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY = "http://arkumu.org/data/properties/englischer-name-der-lizenz"
-    DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY = "http://arkumu.org/data/properties/zugehoeriges-rechtestatement"
+    DIGITAL_OBJECT_LICENSE_URI_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/uri",
+    )
+    DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/deutscher-anzeigetext",
+        "http://arkumu.org/data/properties/deutscher-name-der-lizenz",
+    )
+    DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/englischer-anzeigetext",
+        "http://arkumu.org/data/properties/englischer-name-der-lizenz",
+    )
+    DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/zugehoeriges-rechtestatement",
+    )
+    DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/digitales-objekt-lizenz-id",
+    )
+    RIGHTS_STATEMENT_FALLBACK_PREDICATES: Tuple[str, ...] = (
+        "http://purl.org/dc/terms/title",
+        "http://purl.org/dc/elements/1.1/title",
+        "http://purl.org/dc/terms/description",
+        "http://purl.org/dc/elements/1.1/description",
+        "http://www.w3.org/2000/01/rdf-schema#label",
+    )
+    NUMERIC_LICENSE_ORGS: Tuple[str, ...] = ("fuk", "rsh", "det")
     DIGITAL_OBJECT_UUID_PROPERTY = "http://arkumu.org/data/properties/uuid"
     DIGITAL_OBJECT_GENESIS_PROPERTIES = (
         "http://arkumu.org/data/properties/entstehung",
@@ -130,6 +153,7 @@ class ProjectSnapshotService:
 
     def _build_snapshot(self) -> ProjectSnapshot:
         graph = self._fetch_cross_institutional_graph()
+        self._enhance_license_literals(graph)
         card_schema = self._get_card_schema()
         records = self._graph_to_records(graph, card_schema)
         counts = graph.get('counts', {})
@@ -184,6 +208,102 @@ class ProjectSnapshotService:
             len(combined_graph.get('edges', [])),
         )
         return combined_graph
+
+    def _enhance_license_literals(self, graph: Dict[str, Any]) -> None:
+        if not graph:
+            return
+
+        edges: List[Dict[str, Any]] = graph.get('edges', [])
+        nodes: Dict[str, Dict[str, Any]] = graph.get('nodes', {})
+
+        if not edges or not nodes:
+            return
+
+        license_ids: set[str] = {
+            str(edge.get('object_id'))
+            for edge in edges
+            if edge.get('predicate_canonical') == self.DIGITAL_OBJECT_LICENSE_LINK_URI and edge.get('object_id')
+        }
+        if not license_ids:
+            return
+
+        predicate_whitelist: List[str] = [
+            uri
+            for uri in (
+                *self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES,
+            )
+            if uri
+        ]
+        if not predicate_whitelist:
+            return
+
+        triples_qs = (
+            Triple.objects.filter(
+                subject_id__in=list(license_ids),
+                object__resource_type=ResourceType.LITERAL,
+            )
+            .filter(
+                Q(predicate__canonical_uri__in=predicate_whitelist)
+                | Q(predicate__uri__in=predicate_whitelist)
+            )
+            .select_related('predicate', 'object', 'object__organization')
+        )
+
+        triples = list(triples_qs)
+        if not triples:
+            return
+
+        existing_triple_ids: set[str] = {
+            str(edge.get('triple_id'))
+            for edge in edges
+            if edge.get('triple_id')
+        }
+
+        added = False
+        for triple in triples:
+            triple_id = str(triple.id)
+            if triple_id in existing_triple_ids:
+                continue
+
+            predicate = triple.predicate
+            obj = triple.object
+
+            edge_payload = {
+                'triple_id': triple_id,
+                'subject_id': str(triple.subject_id),
+                'predicate_uri': getattr(predicate, 'uri', None),
+                'predicate_canonical': getattr(predicate, 'canonical_uri', None),
+                'object_id': str(obj.id),
+                'object_uri': getattr(obj, 'uri', None),
+                'object_type': obj.resource_type,
+                'object_value': getattr(obj, 'value', None),
+                'object_canonical': getattr(obj, 'canonical_uri', None),
+            }
+            edges.append(edge_payload)
+            existing_triple_ids.add(triple_id)
+            added = True
+
+            literal_node_id = str(obj.id)
+            if literal_node_id not in nodes:
+                nodes[literal_node_id] = {
+                    'id': literal_node_id,
+                    'uri': getattr(obj, 'uri', None),
+                    'name': getattr(obj, 'name', None),
+                    'value': getattr(obj, 'value', None),
+                    'resource_type': obj.resource_type,
+                    'canonical_uri': getattr(obj, 'canonical_uri', None),
+                    'organization': getattr(getattr(obj, 'organization', None), 'code', None),
+                }
+
+        if added:
+            counts = graph.get('counts')
+            if counts is not None:
+                counts['edges'] = len(edges)
+                counts['nodes'] = len(nodes)
 
     def _build_combined_organization_graphs(self) -> Dict[str, Any]:
         subjects: List[str] = []
@@ -1083,12 +1203,58 @@ class ProjectSnapshotService:
                     return normalized
         return None
 
+    def _first_literal_from_related_nodes(
+        self,
+        related_ids: Iterable[str],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        predicates: Sequence[str],
+    ) -> Optional[str]:
+        for related_id in related_ids:
+            related_id_str = str(related_id)
+            node = nodes.get(related_id_str, {})
+            for key in ('name', 'title', 'label', 'value'):
+                candidate = self._normalize_text_value(node.get(key))
+                if candidate:
+                    return candidate
+
+            related_edges = edges_by_subject.get(related_id_str, [])
+            candidate = self._first_literal_any(related_edges, predicates)
+            if candidate:
+                return candidate
+        return None
+
     @staticmethod
     def _normalize_text_value(value: Optional[Any]) -> Optional[str]:
         if value is None:
             return None
         text = str(value).strip()
         return text or None
+
+    def _requires_numeric_license_cleanup(self, license_uri: Optional[str]) -> bool:
+        if not license_uri:
+            return False
+        parsed = urlparse(license_uri)
+        segments = [segment.lower().strip() for segment in parsed.path.split('/') if segment]
+        return any(segment in self.NUMERIC_LICENSE_ORGS for segment in segments)
+
+    def _sanitize_license_text(
+        self,
+        value: Optional[str],
+        identifier: Optional[str],
+        *,
+        enforce_numeric_cleanup: bool,
+    ) -> Optional[str]:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if identifier and text.lower() == identifier.lower():
+            return None
+        if enforce_numeric_cleanup and text.isdigit():
+            return None
+        return text
 
     @staticmethod
     def _resource_slug(uri: Optional[str]) -> Optional[str]:
@@ -1157,8 +1323,6 @@ class ProjectSnapshotService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
     ) -> None:
         edges_for_digital = edges_by_subject.get(str(object_id), [])
-        if not edges_for_digital:
-            return
 
         uuid_value = self._normalize_text_value(
             self._first_literal(edges_for_digital, self.DIGITAL_OBJECT_UUID_PROPERTY)
@@ -1238,30 +1402,58 @@ class ProjectSnapshotService:
             return None
 
         license_id = license_ids[0]
-        license_edges = edges_by_subject.get(str(license_id), [])
-        license_node = nodes.get(str(license_id), {})
+        license_id_str = str(license_id)
+        license_edges = edges_by_subject.get(license_id_str, [])
+        license_node = nodes.get(license_id_str, {})
 
-        uri = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTY)
-        )
+        uri = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES)
         if not uri:
             uri = self._normalize_text_value(license_node.get('uri') or license_node.get('value'))
 
-        label_de = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY)
-        )
+        label_de = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES)
         if not label_de:
             label_de = self._normalize_text_value(license_node.get('name'))
 
-        label_en = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY)
+        label_en = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES)
+
+        rights_statement = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES)
+        if not rights_statement:
+            rights_statement_ids: List[str] = []
+            for predicate in self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES:
+                rights_statement_ids.extend(self._related_ids(license_edges, predicate))
+            if rights_statement_ids:
+                candidate_predicates: List[str] = list(self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES)
+                candidate_predicates.extend(self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES)
+                candidate_predicates.extend(self.RESOURCE_LABEL_PREDICATES)
+                candidate_predicates.extend(self.RIGHTS_STATEMENT_FALLBACK_PREDICATES)
+                rights_statement = self._first_literal_from_related_nodes(
+                    rights_statement_ids,
+                    nodes,
+                    edges_by_subject,
+                    candidate_predicates,
+                )
+
+        identifier = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES)
+
+        enforce_numeric_cleanup = self._requires_numeric_license_cleanup(uri)
+
+        rights_statement = self._sanitize_license_text(
+            rights_statement,
+            identifier,
+            enforce_numeric_cleanup=enforce_numeric_cleanup,
+        )
+        label_de = self._sanitize_license_text(
+            label_de,
+            identifier,
+            enforce_numeric_cleanup=enforce_numeric_cleanup,
+        )
+        label_en = self._sanitize_license_text(
+            label_en,
+            identifier,
+            enforce_numeric_cleanup=enforce_numeric_cleanup,
         )
 
-        rights_statement = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY)
-        )
-
-        if not any([uri, label_de, label_en, rights_statement]):
+        if not any([uri, label_de, label_en, rights_statement, identifier]):
             return None
 
         return ProjectDigitalObjectLicense(
@@ -1269,6 +1461,7 @@ class ProjectSnapshotService:
             label_de=label_de,
             label_en=label_en,
             rights_statement=rights_statement,
+            identifier=identifier,
         )
 
     @staticmethod

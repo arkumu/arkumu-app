@@ -25,6 +25,7 @@ class ProjectDigitalObjectLicense:
     label_de: Optional[str] = None
     label_en: Optional[str] = None
     rights_statement: Optional[str] = None
+    identifier: Optional[str] = None
 
 
 @dataclass

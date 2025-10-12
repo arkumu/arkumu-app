@@ -279,6 +279,100 @@ def test_build_project_record_collects_all_institution_codes():
     assert [category.label for category in record.categories] == ["Q123"]
 
 
+def test_build_digital_object_license_resolves_related_rights_statement():
+    service = ProjectSnapshotService()
+
+    edges_for_digital = [
+        {
+            "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_LINK_URI,
+            "object_id": "license-1",
+        }
+    ]
+
+    nodes = {
+        "license-1": {"uri": "http://example.org/license/1"},
+        "rights-1": {"name": "Rights Statement Text"},
+    }
+
+    edges_by_subject = {
+        "license-1": [
+            {
+                "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES[0],
+                "object_value": "http://example.org/license/1",
+            },
+            {
+                "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES[0],
+                "object_id": "rights-1",
+            },
+            {
+                "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES[0],
+                "object_value": "license-1",
+            },
+        ],
+        "rights-1": [
+            {
+                "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES[0],
+                "object_value": "Rights Statement Text",
+            }
+        ],
+    }
+
+    license_info = service._build_digital_object_license(
+        edges_for_digital,
+        nodes,
+        edges_by_subject,
+    )
+
+    assert license_info is not None
+    assert license_info.rights_statement == "Rights Statement Text"
+    assert license_info.identifier == "license-1"
+
+
+def test_build_digital_object_license_strips_numeric_labels_for_fuk():
+    service = ProjectSnapshotService()
+
+    edges_for_digital = [
+        {
+            "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_LINK_URI,
+            "object_id": "license-2",
+        }
+    ]
+
+    nodes = {
+        "license-2": {"uri": "http://arkumu.org/data/fuk/entities/digitales-objekt-lizenz/2"},
+    }
+
+    edges_by_subject = {
+        "license-2": [
+            {
+                "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES[0],
+                "object_value": "2",
+            },
+            {
+                "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES[0],
+                "object_value": "2",
+            },
+            {
+                "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES[0],
+                "object_value": "2",
+            },
+        ]
+    }
+
+    license_info = service._build_digital_object_license(
+        edges_for_digital,
+        nodes,
+        edges_by_subject,
+    )
+
+    assert license_info is not None
+    assert license_info.uri == "http://arkumu.org/data/fuk/entities/digitales-objekt-lizenz/2"
+    assert license_info.identifier == "2"
+    assert license_info.label_de is None
+    assert license_info.label_en is None
+    assert license_info.rights_statement is None
+
+
 def test_build_project_record_merges_event_storage_files():
     service = ProjectSnapshotService(relationship_org_code='khm')
     card_schema = minimal_card_schema()
