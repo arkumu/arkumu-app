@@ -1205,7 +1205,7 @@ def _build_dc_payload_from_record(record: ProjectRecord, resource: Resource) -> 
     return _build_dc_payload_from_project(project, resource)
 
 
-def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]]) -> None:
+def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]]) -> ET._Element:
     dc_root = ET.SubElement(
         metadata,
         ET.QName(OAI_DC_NS, "dc"),
@@ -1229,6 +1229,22 @@ def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]])
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
         for value in values:
             ET.SubElement(dc_root, ET.QName(ns_uri, term)).text = value
+    return dc_root
+
+
+def _append_arkumu_identifier(dc_parent: ET._Element, resource: Resource) -> None:
+    """Append Arkumu-specific DC identifier based on OAI header identifier."""
+    identifier_value = _build_identifier(resource.uri)
+    existing = [
+        elem for elem in dc_parent.findall(ET.QName(DC_NS, "identifier"))
+        if elem.text == identifier_value and elem.get(ET.QName(XML_NS, "type")) == "arkumu-ID"
+    ]
+    if existing:
+        return
+
+    identifier_elem = ET.SubElement(dc_parent, ET.QName(DC_NS, "identifier"))
+    identifier_elem.text = identifier_value
+    identifier_elem.set(ET.QName(XML_NS, "type"), "arkumu-ID")
 
 
 def _build_mets_from_project(
@@ -1252,6 +1268,7 @@ def _build_mets_from_project(
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
         for value in values:
             ET.SubElement(dc_record, ET.QName(ns_uri, term)).text = value
+    _append_arkumu_identifier(dc_record, resource)
 
     ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
     tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
@@ -1722,7 +1739,8 @@ def _build_metadata_element(
     if metadata_prefix == "oai_dc":
         project = projects[0]
         dc_payload = _build_dc_payload_from_project(project, resource)
-        _append_dc_metadata(metadata, dc_payload)
+        dc_root = _append_dc_metadata(metadata, dc_payload)
+        _append_arkumu_identifier(dc_root, resource)
     elif metadata_prefix == "mets":
         for project in projects:
             if not project.harvestable:

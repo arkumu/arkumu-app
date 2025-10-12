@@ -227,6 +227,15 @@ class TestOAIViewFunctions:
         formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
         assert any(elem.text == 'text/plain' for elem in formats)
 
+        arkumu_identifier = views._build_identifier(resource.uri)
+        arkumu_nodes = [
+            elem
+            for elem in dc_root.findall("{http://purl.org/dc/elements/1.1/}identifier")
+            if elem.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
+        ]
+        assert len(arkumu_nodes) == 1
+        assert arkumu_nodes[0].text == arkumu_identifier
+
     @pytest.mark.django_db
     def test_restrict_to_harvestable_files_includes_rosetta_without_s3(self, settings):
         """Rosetta institutions remain harvestable even without S3 file objects."""
