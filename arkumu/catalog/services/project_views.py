@@ -78,7 +78,7 @@ class ProjectURIs(CardURIs):
 
     # Catchphrase/Keyword
     CATCHPHRASE_TYPE = "http://arkumu.org/data/types/schlagwort"
-    CATCHPHRASE_WIKIDATA = "http://arkumu.org/data/properties/deutsches-wikidata-label"
+    CATCHPHRASE_WIKIDATA = "http://arkumu.org/data/properties/wikidata-id"
 
 
 @dataclass

@@ -260,7 +260,7 @@ Property,http://arkumu.org/data/properties/sprache-des-bevorzugten-untertitels,S
 Property,http://arkumu.org/data/properties/sprache-id,Sprache Id,,
 Property,http://arkumu.org/data/properties/sprachfassung,Sprachfassung,"TR_Sprache,Synchronisationsfassung",
 Property,http://arkumu.org/data/properties/sterbeort,Sterbeort,,
-Property,http://arkumu.org/data/properties/synonyme,Synonyme,,
+Property,http://arkumu.org/data/properties/synonyme,Synonyme,_Projekte_Export_Projektkategorien_arkumu,
 Property,http://arkumu.org/data/properties/systemvoraussetzungen,Systemvoraussetzungen,,
 Property,http://arkumu.org/data/properties/technikschlagwort,Technikschlagwort,,
 Property,http://arkumu.org/data/properties/technikschlagwort-id,Technikschlagwort Id,,

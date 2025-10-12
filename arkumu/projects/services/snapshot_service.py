@@ -1049,15 +1049,18 @@ class ProjectSnapshotService:
         synonyms_literal: Optional[Any],
         breadcrumb_literal: Optional[Any],
     ) -> Optional[str]:
-        wikidata_label = ProjectSnapshotService._normalize_wikidata_id(wikidata_literal)
-        if wikidata_label:
-            return wikidata_label
-        synonym = ProjectSnapshotService._preferred_synonym(synonyms_literal)
-        if synonym:
-            return synonym
-        breadcrumb = ProjectSnapshotService._normalize_breadcrumb(breadcrumb_literal)
-        if breadcrumb:
-            return breadcrumb
+        qid = ProjectSnapshotService._normalize_wikidata_id(wikidata_literal)
+        if qid:
+            return qid
+
+        qid = ProjectSnapshotService._first_qid_from_literal(synonyms_literal)
+        if qid:
+            return qid
+
+        qid = ProjectSnapshotService._first_qid_from_literal(breadcrumb_literal)
+        if qid:
+            return qid
+
         return None
 
     @staticmethod
@@ -1074,18 +1077,15 @@ class ProjectSnapshotService:
         return None
 
     @staticmethod
-    def _normalize_breadcrumb(label: Optional[Any]) -> Optional[str]:
-        if label is None:
+    def _first_qid_from_literal(value: Optional[Any]) -> Optional[str]:
+        if value is None:
             return None
-        text = str(label).strip()
-        if not text:
-            return None
-        if '>' in text:
-            parts = [part.strip() for part in text.split('>') if part.strip()]
-            text = parts[-1] if parts else ''
-        if not text or text.isdigit():
-            return None
-        return text
+        text = str(value).replace(';', ',')
+        for token in text.split(','):
+            normalized = ProjectSnapshotService._normalize_wikidata_id(token)
+            if normalized:
+                return normalized
+        return None
 
     @staticmethod
     def _preferred_synonym(value: Optional[Any]) -> Optional[str]:
