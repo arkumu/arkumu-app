@@ -6,6 +6,7 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 from urllib.parse import urlparse
+import uuid
 
 from django.utils import timezone
 from django.conf import settings
@@ -83,6 +84,41 @@ class ProjectSnapshotService:
         "http://www.w3.org/2000/01/rdf-schema#label",
     )
     NUMERIC_LICENSE_ORGS: Tuple[str, ...] = ("fuk", "rsh", "det")
+    EVENT_NAME_DE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/ereignisname",
+    )
+    EVENT_NAME_EN_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/englischer-name",
+    )
+    EVENT_TYPE_LABEL_DE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps",
+        "http://arkumu.org/data/properties/deutscher-name",
+    )
+    EVENT_TYPE_LABEL_EN_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/englischer-name-des-ereignistyps",
+        "http://arkumu.org/data/properties/englischer-name",
+    )
+    EVENT_TYPE_SYNONYM_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/synonyme",
+    )
+    EVENT_TYPE_WIKIDATA_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/wikidata-id",
+    )
+    EVENT_TYPE_GND_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/gnd-nummer",
+    )
+    EVENT_TYPE_AAT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/aat-id",
+    )
+    EVENT_TYPE_LIDO_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/lido-terminologie-id",
+    )
+    EVENT_START_ESTIMATED_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/ereignisbeginn-geschaetzt",
+    )
+    EVENT_END_ESTIMATED_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/ereignisende-geschaetzt",
+    )
     DIGITAL_OBJECT_UUID_PROPERTY = "http://arkumu.org/data/properties/uuid"
     DIGITAL_OBJECT_GENESIS_PROPERTIES = (
         "http://arkumu.org/data/properties/entstehung",
@@ -699,7 +735,8 @@ class ProjectSnapshotService:
         event_ids: List[str] = []
         events: List[ProjectEvent] = []
         for entry in event_entries:
-            event_id = entry.get('id')
+            event_id_raw = entry.get('id')
+            event_id = str(event_id_raw) if event_id_raw is not None else None
             if event_id:
                 event_ids.append(event_id)
             event_node = nodes.get(event_id, {}) if event_id else {}
@@ -719,6 +756,8 @@ class ProjectSnapshotService:
                     end=entry.get('end'),
                 )
             )
+        for event in events:
+            self._populate_event_metadata(event, nodes, edges_by_subject)
         year_range = self._derive_year_range(events)
 
         actors_payload = triple_service.get_actor_relationships(
@@ -739,9 +778,16 @@ class ProjectSnapshotService:
                 continue
             roles = list(payload.get('roles', []))
             actors.append(ProjectActor(name=name, roles=roles))
+            rights_by_event = payload.get('event_rights', {})
             for event_id in payload.get('event_ids', []):
+                rights_flags = rights_by_event.get(event_id, {})
                 actors_by_event[event_id].append(
-                    ProjectEventActor(name=name, roles=list(roles))
+                    ProjectEventActor(
+                        name=name,
+                        roles=list(roles),
+                        is_copyright_holder=rights_flags.get('is_copyright_holder', False),
+                        is_neighbouring_rights_holder=rights_flags.get('is_neighbouring_rights_holder', False),
+                    )
                 )
 
         for event in events:
@@ -1203,6 +1249,32 @@ class ProjectSnapshotService:
                     return normalized
         return None
 
+    def _literal_list_from_edges(
+        self,
+        edges: Iterable[Dict[str, Any]],
+        predicates: Sequence[str],
+    ) -> List[str]:
+        items: List[str] = []
+        predicate_set = {predicate for predicate in predicates if predicate}
+        if not predicate_set:
+            return items
+        for edge in edges:
+            predicate = self._canonical(edge)
+            if predicate not in predicate_set:
+                continue
+            value = self._normalize_text_value(edge.get('object_value'))
+            if not value:
+                continue
+            tokens = [
+                token.strip()
+                for token in value.replace(';', ',').split(',')
+                if token.strip()
+            ]
+            for token in tokens:
+                if token not in items:
+                    items.append(token)
+        return items
+
     def _first_literal_from_related_nodes(
         self,
         related_ids: Iterable[str],
@@ -1223,6 +1295,35 @@ class ProjectSnapshotService:
             if candidate:
                 return candidate
         return None
+
+    def _first_literal_from_db(
+        self,
+        subject_id: str,
+        predicates: Sequence[str],
+    ) -> Optional[str]:
+        predicate_list = [predicate for predicate in predicates if predicate]
+        if not predicate_list:
+            return None
+
+        try:
+            uuid.UUID(subject_id)
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+        qs = (
+            Triple.objects.filter(
+                subject_id=subject_id,
+                object__resource_type=ResourceType.LITERAL,
+            )
+            .filter(
+                Q(predicate__canonical_uri__in=predicate_list)
+                | Q(predicate__uri__in=predicate_list)
+            )
+            .values_list('object__value', flat=True)
+        )
+
+        value = qs.first()
+        return self._normalize_text_value(value)
 
     @staticmethod
     def _normalize_text_value(value: Optional[Any]) -> Optional[str]:
@@ -1255,6 +1356,19 @@ class ProjectSnapshotService:
         if enforce_numeric_cleanup and text.isdigit():
             return None
         return text
+
+    @staticmethod
+    def _parse_bool_literal(value: Optional[str]) -> Optional[bool]:
+        if value is None:
+            return None
+        token = value.strip().lower()
+        if not token:
+            return None
+        if token in {'1', 'true', 'yes', 'ja'}:
+            return True
+        if token in {'0', 'false', 'no', 'nein'}:
+            return False
+        return None
 
     @staticmethod
     def _resource_slug(uri: Optional[str]) -> Optional[str]:
@@ -1391,6 +1505,60 @@ class ProjectSnapshotService:
                 return label
         return None
 
+    def _populate_event_metadata(
+        self,
+        event: ProjectEvent,
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> None:
+        if not event.id:
+            return
+
+        event_id = str(event.id)
+        event_edges = edges_by_subject.get(event_id, [])
+
+        name_de = self._first_literal_any(event_edges, self.EVENT_NAME_DE_PROPERTIES)
+        name_en = self._first_literal_any(event_edges, self.EVENT_NAME_EN_PROPERTIES)
+
+        if name_de:
+            event.name_de = name_de
+        else:
+            event.name_de = event.name or None
+        event.name_en = name_en
+
+        start_estimated = self._first_literal_any(event_edges, self.EVENT_START_ESTIMATED_PROPERTIES)
+        end_estimated = self._first_literal_any(event_edges, self.EVENT_END_ESTIMATED_PROPERTIES)
+        event.start_estimated = self._parse_bool_literal(start_estimated)
+        event.end_estimated = self._parse_bool_literal(end_estimated)
+
+        type_ids = self._related_ids(event_edges, ProjectURIs.EVENT_TYPE)
+        if type_ids:
+            type_id = type_ids[0]
+            type_id_str = str(type_id)
+            type_node = nodes.get(type_id_str, {})
+            type_edges = edges_by_subject.get(type_id_str, [])
+
+            event.type_uri = type_node.get('uri') or type_node.get('canonical_uri')
+
+            type_label_de = self._first_literal_any(type_edges, self.EVENT_TYPE_LABEL_DE_PROPERTIES)
+            type_label_en = self._first_literal_any(type_edges, self.EVENT_TYPE_LABEL_EN_PROPERTIES)
+            event.type_label_de = type_label_de or event.type
+            event.type_label_en = type_label_en
+
+            synonyms = self._literal_list_from_edges(type_edges, self.EVENT_TYPE_SYNONYM_PROPERTIES)
+            if synonyms:
+                event.type_synonyms_de = synonyms
+
+            event.type_wikidata_id = self._first_literal_any(type_edges, self.EVENT_TYPE_WIKIDATA_PROPERTIES)
+            event.type_gnd_id = self._first_literal_any(type_edges, self.EVENT_TYPE_GND_PROPERTIES)
+            event.type_aat_id = self._first_literal_any(type_edges, self.EVENT_TYPE_AAT_PROPERTIES)
+            event.type_lido_id = self._first_literal_any(type_edges, self.EVENT_TYPE_LIDO_PROPERTIES)
+        else:
+            event.type_label_de = event.type
+
+        if event.name_de and not event.name:
+            event.name = event.name_de
+
     def _build_digital_object_license(
         self,
         edges_for_digital: Iterable[Dict[str, Any]],
@@ -1409,12 +1577,18 @@ class ProjectSnapshotService:
         uri = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES)
         if not uri:
             uri = self._normalize_text_value(license_node.get('uri') or license_node.get('value'))
+        if not uri:
+            uri = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES)
 
         label_de = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES)
         if not label_de:
             label_de = self._normalize_text_value(license_node.get('name'))
+        if not label_de:
+            label_de = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES)
 
         label_en = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES)
+        if not label_en:
+            label_en = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES)
 
         rights_statement = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES)
         if not rights_statement:
@@ -1432,10 +1606,17 @@ class ProjectSnapshotService:
                     edges_by_subject,
                     candidate_predicates,
                 )
+        if not rights_statement:
+            rights_statement = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES)
 
         identifier = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES)
+        if not identifier:
+            identifier = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES)
 
-        enforce_numeric_cleanup = self._requires_numeric_license_cleanup(uri)
+        enforce_numeric_cleanup = (
+            self._requires_numeric_license_cleanup(license_node.get('uri'))
+            or self._requires_numeric_license_cleanup(uri)
+        )
 
         rights_statement = self._sanitize_license_text(
             rights_statement,

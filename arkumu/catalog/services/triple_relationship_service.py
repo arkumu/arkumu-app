@@ -767,7 +767,21 @@ class TripleRelationshipService:
                 organization_code=organization_code,
             )
 
-        relation_predicates = [p for p in [actor_link_predicate, role_link_predicate] if p]
+        rights_predicates = {
+            'copyright': 'http://arkumu.org/data/properties/ist-urheberin',
+            'neighbouring': 'http://arkumu.org/data/properties/besitzt-leistungsschutzrechte',
+        }
+
+        relation_predicates = [
+            predicate
+            for predicate in [
+                actor_link_predicate,
+                role_link_predicate,
+                rights_predicates['copyright'],
+                rights_predicates['neighbouring'],
+            ]
+            if predicate
+        ]
         actor_role_triples = self._fetch_triples(
             subject_ids=list(crosstable_ids),
             predicate_uris=relation_predicates,
@@ -776,17 +790,33 @@ class TripleRelationshipService:
 
         crosstable_actor_map: Dict[str, str] = {}
         crosstable_role_map: Dict[str, set[str]] = defaultdict(set)
+        crosstable_rights_map: Dict[str, Dict[str, bool]] = defaultdict(lambda: {
+            'copyright': False,
+            'neighbouring': False,
+        })
+
+        def _is_truthy(value: Optional[str]) -> bool:
+            if value is None:
+                return False
+            token = str(value).strip().lower()
+            return token in {'1', 'true', 'yes', 'ja'}
+
         for triple in actor_role_triples:
             predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
             obj = triple.object
-            if obj.resource_type == ResourceType.LITERAL:
-                continue
             subject_key = str(triple.subject_id)
-            object_id = str(obj.id)
-            if predicate_canonical == actor_link_predicate:
-                crosstable_actor_map[subject_key] = object_id
-            elif role_link_predicate and predicate_canonical == role_link_predicate:
-                crosstable_role_map[subject_key].add(object_id)
+            if predicate_canonical == actor_link_predicate and obj.resource_type != ResourceType.LITERAL:
+                crosstable_actor_map[subject_key] = str(obj.id)
+                continue
+            if role_link_predicate and predicate_canonical == role_link_predicate and obj.resource_type != ResourceType.LITERAL:
+                crosstable_role_map[subject_key].add(str(obj.id))
+                continue
+            if predicate_canonical == rights_predicates['copyright'] and obj.resource_type == ResourceType.LITERAL:
+                crosstable_rights_map[subject_key]['copyright'] = _is_truthy(obj.value)
+                continue
+            if predicate_canonical == rights_predicates['neighbouring'] and obj.resource_type == ResourceType.LITERAL:
+                crosstable_rights_map[subject_key]['neighbouring'] = _is_truthy(obj.value)
+                continue
 
         if not crosstable_actor_map:
             event_results = self._actors_from_event_edges(
@@ -842,17 +872,44 @@ class TripleRelationshipService:
                 if role_label:
                     entry['roles'].add(role_label)
 
+        rights_by_actor_event: Dict[tuple[str, str], Dict[str, bool]] = defaultdict(lambda: {
+            'copyright': False,
+            'neighbouring': False,
+        })
         results: List[Dict[str, Any]] = []
         for actor_id, payload in actors.items():
             name = actor_names.get(actor_id)
             if not name:
                 continue
+            for crosstable_id, linked_actor_id in crosstable_actor_map.items():
+                if linked_actor_id != actor_id:
+                    continue
+                rights_flags = crosstable_rights_map.get(crosstable_id, {})
+                for event_id in crosstable_to_events.get(crosstable_id, set()):
+                    rights_entry = rights_by_actor_event[(actor_id, event_id)]
+                    if rights_flags.get('copyright'):
+                        rights_entry['copyright'] = True
+                    if rights_flags.get('neighbouring'):
+                        rights_entry['neighbouring'] = True
+
+            event_rights: Dict[str, Dict[str, bool]] = {}
+            for event_id in payload['event_ids']:
+                flags = rights_by_actor_event.get((actor_id, event_id), {
+                    'copyright': False,
+                    'neighbouring': False,
+                })
+                event_rights[event_id] = {
+                    'is_copyright_holder': flags.get('copyright', False),
+                    'is_neighbouring_rights_holder': flags.get('neighbouring', False),
+                }
+
             results.append(
                 {
                     'id': actor_id,
                     'name': name,
                     'roles': sorted(payload['roles']),
                     'event_ids': sorted(payload['event_ids']),
+                    'event_rights': event_rights,
                 }
             )
 
@@ -1023,6 +1080,13 @@ class TripleRelationshipService:
                     'name': name,
                     'roles': sorted(payload['roles']),
                     'event_ids': sorted(payload['event_ids']),
+                    'event_rights': {
+                        event_id: {
+                            'is_copyright_holder': False,
+                            'is_neighbouring_rights_holder': False,
+                        }
+                        for event_id in payload['event_ids']
+                    },
                 }
             )
 
@@ -1083,6 +1147,7 @@ class TripleRelationshipService:
                     'name': name,
                     'roles': [],
                     'event_ids': [],
+                    'event_rights': {},
                 }
             )
 

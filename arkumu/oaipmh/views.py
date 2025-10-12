@@ -69,6 +69,17 @@ METS_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/mets.xsd"
 METS_LEGACY_SCHEMA_FILE = METS_SCHEMA_FILE
 HARVESTABLE_FILE_STATUSES = HARVESTABLE_STORAGE_STATUSES
 
+EVENT_COPYRIGHT_TYPE_LABEL = "ist/is Urheber:in"
+EVENT_NEIGHBOURING_TYPE_LABEL = "ist/is Leistungsschutzinhaber:in"
+EVENT_COPYRIGHT_RIGHTS_URIS: tuple[str, ...] = (
+    "https://www.gesetze-im-internet.de/urhg/",
+    "https://www.gesetze-im-internet.de/englisch_urhg/",
+)
+EVENT_NEIGHBOURING_RIGHTS_URIS: tuple[str, ...] = (
+    "https://www.gesetze-im-internet.de/urhg/BJNR012730965.html#BJNR012730965BJNG001501377",
+    "https://www.gesetze-im-internet.de/englisch_urhg/englisch_urhg.html#p0646",
+)
+
 METS_NSMAP = {
     'mets': METS_NS,
     'dc': DC_NS,
@@ -1006,10 +1017,11 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
 
 
 def _add_dc_value(
-    payload: Dict[str, List[str]],
+    payload: Dict[str, List[Any]],
     term: str,
     value: Optional[str],
     namespace: str = 'dc',
+    attrs: Optional[Dict[ET.QName, str]] = None,
 ) -> None:
     if value is None:
         return
@@ -1018,13 +1030,50 @@ def _add_dc_value(
         return
     key = f"{namespace}:{term}"
     entries = payload.setdefault(key, [])
-    if normalized not in entries:
-        entries.append(normalized)
+    entry = {'value': normalized, 'attrs': attrs or {}} if attrs else normalized
+
+    for existing in entries:
+        if isinstance(existing, dict):
+            if existing.get('value') == normalized and (existing.get('attrs') or {}) == (attrs or {}):
+                return
+        else:
+            if not attrs and existing == normalized:
+                return
+
+    entries.append(entry)
 
 
 def _normalize_reference(value: Optional[str]) -> Optional[str]:
     """Return the reference as-is; S3 keys already encode the desired path."""
     return value
+
+
+def _boolean_token(value: Optional[bool]) -> Optional[str]:
+    if value is None:
+        return None
+    return 'true' if value else 'false'
+
+
+def _normalize_controlled_identifier(kind: str, token: Optional[str]) -> Optional[str]:
+    if not token:
+        return None
+    token = str(token).strip()
+    if not token:
+        return None
+    if token.startswith('http://') or token.startswith('https://'):
+        return token
+    if kind == 'wikidata':
+        cleaned = token.upper()
+        if not cleaned.startswith('Q'):
+            cleaned = f"Q{cleaned}"
+        return f"https://www.wikidata.org/entity/{cleaned}"
+    if kind == 'gnd':
+        return f"https://d-nb.info/gnd/{token}"
+    if kind == 'aat':
+        return f"http://vocab.getty.edu/aat/{token}"
+    if kind == 'lido':
+        return token
+    return token
 
 
 def _guess_mime_type(obj: Any) -> Optional[str]:
@@ -1193,26 +1242,123 @@ def _build_dc_payload_from_project(project: OAIProject, resource: Resource) -> D
     for catchphrase in record.catchphrases:
         _add_dc_value(payload, 'subject', getattr(catchphrase, 'label', None))
 
+    xml_type_attr = ET.QName(XML_NS, "type")
+    xml_lang_attr = ET.QName(XML_NS, "lang")
+
     for event in record.events:
+        event_name_de = getattr(event, 'name_de', None) or getattr(event, 'name', None)
+        if event_name_de:
+            _add_dc_value(
+                payload,
+                'title',
+                event_name_de,
+                attrs={xml_type_attr: 'event-name', xml_lang_attr: 'ger'},
+            )
+
+        event_name_en = getattr(event, 'name_en', None)
+        if event_name_en:
+            _add_dc_value(
+                payload,
+                'title',
+                event_name_en,
+                attrs={xml_type_attr: 'event-name', xml_lang_attr: 'eng'},
+            )
+
+        event_type_de = getattr(event, 'type_label_de', None) or getattr(event, 'type', None)
+        if event_type_de:
+            _add_dc_value(
+                payload,
+                'type',
+                event_type_de,
+                attrs={xml_type_attr: 'event-type', xml_lang_attr: 'ger'},
+            )
+
+        event_type_en = getattr(event, 'type_label_en', None)
+        if event_type_en:
+            _add_dc_value(
+                payload,
+                'type',
+                event_type_en,
+                attrs={xml_type_attr: 'event-type', xml_lang_attr: 'eng'},
+            )
+
+        for synonym in getattr(event, 'type_synonyms_de', []) or []:
+            _add_dc_value(
+                payload,
+                'type',
+                synonym,
+                attrs={xml_type_attr: 'event-type-synonym', xml_lang_attr: 'ger'},
+            )
+
+        for synonym in getattr(event, 'type_synonyms_en', []) or []:
+            _add_dc_value(
+                payload,
+                'type',
+                synonym,
+                attrs={xml_type_attr: 'event-type-synonym', xml_lang_attr: 'eng'},
+            )
+
+        wikidata_uri = _normalize_controlled_identifier('wikidata', getattr(event, 'type_wikidata_id', None))
+        if wikidata_uri:
+            _add_dc_value(payload, 'type', wikidata_uri, attrs={xml_type_attr: 'dcterms:URI'})
+
+        gnd_uri = _normalize_controlled_identifier('gnd', getattr(event, 'type_gnd_id', None))
+        if gnd_uri:
+            _add_dc_value(payload, 'type', gnd_uri, attrs={xml_type_attr: 'dcterms:URI'})
+
+        aat_uri = _normalize_controlled_identifier('aat', getattr(event, 'type_aat_id', None))
+        if aat_uri:
+            _add_dc_value(payload, 'type', aat_uri, attrs={xml_type_attr: 'dcterms:URI'})
+
+        lido_uri = _normalize_controlled_identifier('lido', getattr(event, 'type_lido_id', None))
+        if lido_uri:
+            _add_dc_value(payload, 'type', lido_uri, attrs={xml_type_attr: 'dcterms:URI'})
+
         if event.start:
-            _add_dc_value(payload, 'date', event.start)
+            _add_dc_value(payload, 'date', event.start, attrs={xml_type_attr: 'event-begin'})
         if event.end and event.end != event.start:
-            _add_dc_value(payload, 'date', event.end)
+            _add_dc_value(payload, 'date', event.end, attrs={xml_type_attr: 'event-end'})
+
+        start_estimated = _boolean_token(getattr(event, 'start_estimated', None))
+        if start_estimated is not None:
+            _add_dc_value(payload, 'date', start_estimated, attrs={xml_type_attr: 'event-begin-estimated'})
+
+        end_estimated = _boolean_token(getattr(event, 'end_estimated', None))
+        if end_estimated is not None:
+            _add_dc_value(payload, 'date', end_estimated, attrs={xml_type_attr: 'event-end-estimated'})
+
         if event.location:
             _add_dc_value(payload, 'coverage', event.location)
         if event.country:
             _add_dc_value(payload, 'coverage', event.country)
-        for actor in getattr(event, "actors", []) or []:
-            actor_name = getattr(actor, "name", None)
-            roles = [role for role in getattr(actor, "roles", []) or [] if role]
-            if actor_name:
-                if roles:
-                    role_label = ", ".join(sorted(set(roles)))
-                    _add_dc_value(payload, 'contributor', f"{actor_name} ({role_label})")
-                else:
-                    _add_dc_value(payload, 'contributor', actor_name)
-            elif roles:
-                _add_dc_value(payload, 'contributor', ", ".join(sorted(set(roles))))
+
+        actor_list = getattr(event, 'actors', []) or []
+        for actor in actor_list:
+            actor_name = getattr(actor, 'name', None)
+            if not actor_name:
+                continue
+            roles = [role for role in getattr(actor, 'roles', []) or [] if role]
+            if roles:
+                role_label = ", ".join(sorted(set(roles)))
+                contributor_value = f"{actor_name} ({role_label})"
+            else:
+                contributor_value = actor_name
+            _add_dc_value(
+                payload,
+                'contributor',
+                contributor_value,
+                attrs={xml_type_attr: 'actor'},
+            )
+
+        if any(getattr(actor, 'is_copyright_holder', False) for actor in actor_list):
+            _add_dc_value(payload, 'type', EVENT_COPYRIGHT_TYPE_LABEL, attrs={xml_type_attr: 'actor-rights-type'})
+            for uri in EVENT_COPYRIGHT_RIGHTS_URIS:
+                _add_dc_value(payload, 'rights', uri, attrs={xml_type_attr: 'dcterms:URI'})
+
+        if any(getattr(actor, 'is_neighbouring_rights_holder', False) for actor in actor_list):
+            _add_dc_value(payload, 'type', EVENT_NEIGHBOURING_TYPE_LABEL, attrs={xml_type_attr: 'actor-rights-type'})
+            for uri in EVENT_NEIGHBOURING_RIGHTS_URIS:
+                _add_dc_value(payload, 'rights', uri, attrs={xml_type_attr: 'dcterms:URI'})
 
     if record.year_range:
         _add_dc_value(payload, 'date', record.year_range)
@@ -1307,8 +1453,21 @@ def _append_dc_metadata(metadata: ET._Element, dc_payload: Dict[str, List[str]])
     for key, values in dc_payload.items():
         namespace, term = key.split(":", 1)
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
-        for value in values:
-            ET.SubElement(dc_root, ET.QName(ns_uri, term)).text = value
+        for item in values:
+            if isinstance(item, dict):
+                text = item.get('value')
+                attrs = item.get('attrs') or {}
+            else:
+                text = item
+                attrs = {}
+            if text is None:
+                continue
+            elem = ET.SubElement(dc_root, ET.QName(ns_uri, term))
+            elem.text = text
+            for attr_name, attr_value in attrs.items():
+                if attr_value is None:
+                    continue
+                elem.set(attr_name, attr_value)
     return dc_root
 
 
@@ -1347,8 +1506,21 @@ def _build_mets_from_project(
     for key, values in dc_payload.items():
         namespace, term = key.split(":", 1)
         ns_uri = DC_NS if namespace == 'dc' else DCTERMS_NS
-        for value in values:
-            ET.SubElement(dc_record, ET.QName(ns_uri, term)).text = value
+        for item in values:
+            if isinstance(item, dict):
+                text = item.get('value')
+                attrs = item.get('attrs') or {}
+            else:
+                text = item
+                attrs = {}
+            if text is None:
+                continue
+            elem = ET.SubElement(dc_record, ET.QName(ns_uri, term))
+            elem.text = text
+            for attr_name, attr_value in attrs.items():
+                if attr_value is None:
+                    continue
+                elem.set(attr_name, attr_value)
     _append_arkumu_identifier(dc_record, resource)
 
     ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})

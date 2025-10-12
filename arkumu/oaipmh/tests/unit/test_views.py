@@ -64,6 +64,33 @@ class TestOAIViewFunctions:
             "check all linked events thoroughly before further use of the media provided."
         )
 
+    @staticmethod
+    def _flatten_dc_entries(entries):
+        flattened: list[str] = []
+        for item in entries or []:
+            if isinstance(item, dict):
+                value = item.get('value')
+            else:
+                value = item
+            if value:
+                flattened.append(value)
+        return flattened
+
+    @staticmethod
+    def _find_dc_entry(entries, value, *, attr_key=None, attr_value=None):
+        for item in entries or []:
+            if isinstance(item, dict):
+                if item.get('value') != value:
+                    continue
+                if attr_key is not None:
+                    if (item.get('attrs') or {}).get(attr_key) != attr_value:
+                        continue
+                return item
+            else:
+                if item == value and attr_key is None:
+                    return item
+        return None
+
     def _ensure_event_storage(self, resource: Resource) -> None:
         """Create S3 metadata for the synthetic event file used in tests."""
 
@@ -683,7 +710,14 @@ class TestOAIViewFunctions:
 
         assert "dc:title" in payload
         assert record.title in payload["dc:title"]
-        identifier_values = payload.get("dc:identifier", [])
+        event_name_entry = self._find_dc_entry(
+            payload.get("dc:title", []),
+            "Launch",
+            attr_key=ET.QName(XML_NS, "type"),
+            attr_value='event-name',
+        )
+        assert event_name_entry is not None
+        identifier_values = self._flatten_dc_entries(payload.get("dc:identifier", []))
         if resource.canonical_uri:
             assert identifier_values == [resource.canonical_uri]
         else:
@@ -691,7 +725,8 @@ class TestOAIViewFunctions:
         assert not payload.get("dc:relation")
         assert 'dc:format' in payload
         assert 'text/plain' in payload['dc:format']
-        rights_values = payload.get("dc:rights", [])
+        rights_entries = payload.get("dc:rights", [])
+        rights_values = self._flatten_dc_entries(rights_entries)
         assert self.primary_rights_statement in rights_values
         assert self.secondary_rights_statement in rights_values
         assert self.rights_status_de in rights_values
@@ -699,14 +734,31 @@ class TestOAIViewFunctions:
         assert self.rights_disclaimer_protected_de in rights_values
         assert self.rights_disclaimer_protected_en in rights_values
         assert "dc:collection" not in payload
-        is_part_of_values = payload.get("dcterms:isPartOf", [])
+        is_part_of_values = self._flatten_dc_entries(payload.get("dcterms:isPartOf", []))
         assert "TI" in is_part_of_values
         assert "Test Institution" in is_part_of_values
-        contributor_values = payload.get("dc:contributor", [])
+        contributor_entries = payload.get("dc:contributor", [])
+        contributor_values = self._flatten_dc_entries(contributor_entries)
         assert any(self.event_actor_name in value for value in contributor_values)
         expected_role_fragment = ", ".join(sorted(set(self.event_actor_roles)))
         event_contributor = f"{self.event_actor_name} ({expected_role_fragment})"
         assert event_contributor in contributor_values
+        actor_entry = self._find_dc_entry(
+            contributor_entries,
+            event_contributor,
+            attr_key=ET.QName(XML_NS, "type"),
+            attr_value='actor',
+        )
+        assert actor_entry is not None
+
+        event_date_entries = payload.get("dc:date", [])
+        begin_entry = self._find_dc_entry(
+            event_date_entries,
+            "2020-01-01",
+            attr_key=ET.QName(XML_NS, "type"),
+            attr_value='event-begin',
+        )
+        assert begin_entry is not None
 
     @pytest.mark.django_db
     def test_build_dc_payload_fallback_for_khm_without_status(self, sample_resources):
@@ -726,7 +778,7 @@ class TestOAIViewFunctions:
         record.rights_status = None
 
         payload = views._build_dc_payload_from_record(record, resource)
-        rights_values = payload.get("dc:rights", [])
+        rights_values = self._flatten_dc_entries(payload.get("dc:rights", []))
 
         assert self.primary_rights_statement in rights_values
         assert self.secondary_rights_statement in rights_values
