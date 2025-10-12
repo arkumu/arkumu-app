@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
 from django.utils import timezone
 from django.conf import settings
+from django.db.models import Q
 
 from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.catalog.services.schema_manifest_service import (
@@ -22,6 +23,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
     ProjectActor,
@@ -60,6 +62,32 @@ class ProjectSnapshotService:
     DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
     DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY = "http://arkumu.org/data/properties/englischer-name-der-lizenz"
     DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY = "http://arkumu.org/data/properties/zugehoeriges-rechtestatement"
+    DIGITAL_OBJECT_LICENSE_URI_FALLBACKS: Tuple[str, ...] = (
+        DIGITAL_OBJECT_LICENSE_URI_PROPERTY,
+        "http://arkumu.org/data/fuk/properties/uri",
+        "http://arkumu.org/data/hmt/properties/uri",
+        "http://arkumu.org/data/khm/properties/uri",
+    )
+    DIGITAL_OBJECT_LICENSE_LABEL_DE_FALLBACKS: Tuple[str, ...] = (
+        DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY,
+        "http://arkumu.org/data/fuk/properties/deutscher-name-der-lizenz",
+        "http://arkumu.org/data/fuk/properties/deutscher-anzeigetext",
+        "http://arkumu.org/data/hmt/properties/deutscher-name-der-lizenz",
+        "http://arkumu.org/data/khm/properties/deutscher-name-der-lizenz",
+    )
+    DIGITAL_OBJECT_LICENSE_LABEL_EN_FALLBACKS: Tuple[str, ...] = (
+        DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY,
+        "http://arkumu.org/data/fuk/properties/englischer-name-der-lizenz",
+        "http://arkumu.org/data/fuk/properties/englischer-anzeigetext",
+        "http://arkumu.org/data/hmt/properties/englischer-name-der-lizenz",
+        "http://arkumu.org/data/khm/properties/englischer-name-der-lizenz",
+    )
+    DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_FALLBACKS: Tuple[str, ...] = (
+        DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY,
+        "http://arkumu.org/data/fuk/properties/zugehoeriges-rechtestatement",
+        "http://arkumu.org/data/hmt/properties/zugehoeriges-rechtestatement",
+        "http://arkumu.org/data/khm/properties/zugehoeriges-rechtestatement",
+    )
     DIGITAL_OBJECT_UUID_PROPERTY = "http://arkumu.org/data/properties/uuid"
     DIGITAL_OBJECT_GENESIS_PROPERTIES = (
         "http://arkumu.org/data/properties/entstehung",
@@ -1061,6 +1089,24 @@ class ProjectSnapshotService:
                 return value
         return None
 
+    def _first_literal_from_db(
+        self,
+        resource_id: Optional[str],
+        predicates: Iterable[str],
+    ) -> Optional[str]:
+        if not resource_id:
+            return None
+        predicate_list = [p for p in predicates if p]
+        if not predicate_list:
+            return None
+        q = Triple.objects.filter(
+            subject_id=resource_id,
+            object__resource_type=ResourceType.LITERAL,
+        ).order_by('id')
+        q = q.filter(Q(predicate__uri__in=predicate_list) | Q(predicate__canonical_uri__in=predicate_list))
+        value = q.values_list('object__value', flat=True).first()
+        return value
+
     def _related_ids(self, edges: Iterable[Dict[str, Any]], predicate: Optional[str]) -> List[str]:
         if not predicate:
             return []
@@ -1238,28 +1284,35 @@ class ProjectSnapshotService:
             return None
 
         license_id = license_ids[0]
-        license_edges = edges_by_subject.get(str(license_id), [])
-        license_node = nodes.get(str(license_id), {})
+        resource_id = str(license_id)
+        license_edges = edges_by_subject.get(resource_id, [])
+        license_node = nodes.get(resource_id, {})
 
-        uri = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTY)
-        )
+        uri = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_FALLBACKS)
+        if not uri:
+            uri = self._normalize_text_value(
+                self._first_literal_from_db(resource_id, self.DIGITAL_OBJECT_LICENSE_URI_FALLBACKS)
+            )
         if not uri:
             uri = self._normalize_text_value(license_node.get('uri') or license_node.get('value'))
 
-        label_de = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY)
-        )
+        label_de = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_FALLBACKS)
         if not label_de:
-            label_de = self._normalize_text_value(license_node.get('name'))
+            label_de = self._normalize_text_value(
+                self._first_literal_from_db(resource_id, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_FALLBACKS)
+            )
 
-        label_en = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY)
-        )
+        label_en = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_FALLBACKS)
+        if not label_en:
+            label_en = self._normalize_text_value(
+                self._first_literal_from_db(resource_id, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_FALLBACKS)
+            )
 
-        rights_statement = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY)
-        )
+        rights_statement = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_FALLBACKS)
+        if not rights_statement:
+            rights_statement = self._normalize_text_value(
+                self._first_literal_from_db(resource_id, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_FALLBACKS)
+            )
 
         if not any([uri, label_de, label_en, rights_statement]):
             return None
