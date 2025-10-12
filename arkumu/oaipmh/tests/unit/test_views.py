@@ -707,44 +707,6 @@ class TestOAIViewFunctions:
         assert event_contributor in contributor_values
 
     @pytest.mark.django_db
-    def test_build_dc_payload_fallback_fetches_rights_status_for_fuk(self, sample_resources):
-        """FUK records pull rights status via fallback when snapshot lacks literal."""
-
-        resource = sample_resources[0]
-        org = resource.organization
-        assert org.code == "test_univ"
-        org.code = "fuk"
-        org.save(update_fields=["code"])
-        resource.refresh_from_db()
-
-        rights_literal = Resource.objects.create(
-            resource_type=ResourceType.LITERAL,
-            value=self.rights_status_de,
-        )
-
-        predicate = Resource.objects.create(
-            uri="http://arkumu.org/data/fuk/properties/rechtsstatus",
-            resource_type=ResourceType.PROPERTY,
-        )
-
-        Triple.objects.create(
-            subject=resource,
-            predicate=predicate,
-            object=rights_literal,
-        )
-
-        record = self._build_snapshot_record(resource, include_files=True, rights_status=None)
-        record.rights_status = None
-
-        payload = views._build_dc_payload_from_record(record, resource)
-        rights_values = payload.get("dc:rights", [])
-
-        assert self.rights_status_de in rights_values
-        assert views._RIGHTS_STATUS_PROTECTED_EN in rights_values
-        assert views._RIGHTS_DISCLAIMER_PROTECTED_DE in rights_values
-        assert views._RIGHTS_DISCLAIMER_PROTECTED_EN in rights_values
-
-    @pytest.mark.django_db
     def test_build_dc_payload_fallback_for_khm_without_status(self, sample_resources):
         """KHM projects fall back to protected rights package when status literal is missing."""
 

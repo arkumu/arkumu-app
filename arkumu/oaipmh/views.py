@@ -20,7 +20,7 @@ from lxml import etree as ET
 
 from django.db.models import Q
 
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.users.models import Organization
@@ -1131,28 +1131,11 @@ def _rights_label_for_resource(resource: Resource) -> Optional[str]:
 def _default_rights_metadata(resource: Resource, record: ProjectRecord) -> Optional[Dict[str, Any]]:
     """Provide organization-specific fallback rights metadata when literals are absent."""
     org_code = (resource.organization.code or "").lower().strip() if resource.organization and resource.organization.code else None
-    status_literal = getattr(record, "rights_status", None)
-
-    if not status_literal:
-        status_literal = Triple.objects.filter(
-            subject=resource,
-            predicate__uri__in=[
-                "http://arkumu.org/data/properties/rechtsstatus",
-                "http://arkumu.org/data/fuk/properties/rechtsstatus",
-                "http://arkumu.org/data/hmt/properties/rechtsstatus",
-                "http://arkumu.org/data/khm/properties/rechtsstatus",
-            ],
-            object__resource_type=ResourceType.LITERAL,
-        ).values_list("object__value", flat=True).first()
-
-    if status_literal:
-        meta = _rights_metadata_from_status(status_literal)
-        if meta:
-            return meta
 
     if org_code in {"khm", "hmt"}:
+        status_literal = getattr(record, "rights_status", None) or "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt"
         return {
-            "status_de": status_literal or "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt",
+            "status_de": status_literal,
             "status_en": _RIGHTS_STATUS_PROTECTED_EN,
             "disclaimers_de": [_RIGHTS_DISCLAIMER_PROTECTED_DE],
             "disclaimers_en": [_RIGHTS_DISCLAIMER_PROTECTED_EN],
