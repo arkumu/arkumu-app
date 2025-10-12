@@ -282,20 +282,21 @@ def test_build_project_record_collects_all_institution_codes():
 def test_build_digital_object_license_resolves_related_rights_statement():
     service = ProjectSnapshotService()
 
+    license_uuid = "00000000-0000-0000-0000-000000000001"
     edges_for_digital = [
         {
             "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_LINK_URI,
-            "object_id": "license-1",
+            "object_id": license_uuid,
         }
     ]
 
     nodes = {
-        "license-1": {"uri": "http://example.org/license/1"},
+        license_uuid: {"uri": "http://example.org/license/1"},
         "rights-1": {"name": "Rights Statement Text"},
     }
 
     edges_by_subject = {
-        "license-1": [
+        license_uuid: [
             {
                 "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES[0],
                 "object_value": "http://example.org/license/1",
@@ -331,19 +332,20 @@ def test_build_digital_object_license_resolves_related_rights_statement():
 def test_build_digital_object_license_strips_numeric_labels_for_fuk():
     service = ProjectSnapshotService()
 
+    license_uuid = "00000000-0000-0000-0000-000000000002"
     edges_for_digital = [
         {
             "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_LINK_URI,
-            "object_id": "license-2",
+            "object_id": license_uuid,
         }
     ]
 
     nodes = {
-        "license-2": {"uri": "http://arkumu.org/data/fuk/entities/digitales-objekt-lizenz/2"},
+        license_uuid: {"uri": "http://arkumu.org/data/fuk/entities/digitales-objekt-lizenz/2"},
     }
 
     edges_by_subject = {
-        "license-2": [
+        license_uuid: [
             {
                 "predicate_canonical": service.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES[0],
                 "object_value": "2",

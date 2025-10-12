@@ -1571,8 +1571,22 @@ class ProjectSnapshotService:
 
         license_id = license_ids[0]
         license_id_str = str(license_id)
-        license_edges = edges_by_subject.get(license_id_str, [])
         license_node = nodes.get(license_id_str, {})
+        license_edges = edges_by_subject.get(license_id_str, [])
+
+        if not license_node or not license_edges:
+            if license_id_str.startswith("http://") or license_id_str.startswith("https://"):
+                try:
+                    from arkumu.metadata.models.resource import Resource
+
+                    resource = Resource.objects.filter(uri=license_id_str).only("id").first()
+                except Exception:
+                    resource = None
+                if resource:
+                    resolved_id = str(resource.id)
+                    license_node = nodes.get(resolved_id, {})
+                    license_edges = edges_by_subject.get(resolved_id, [])
+                    license_id_str = resolved_id
 
         uri = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES)
         if not uri:
