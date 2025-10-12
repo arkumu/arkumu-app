@@ -99,7 +99,7 @@ def build_rdf_graph(
         RDFS_NS: "rdfs",
         DCTERMS_NS: "dcterms",
         DC_NS: "dc",
-        "http://arkumu.org/data/properties/": "ark",
+        "http://arkumu.org/data/properties/": "arkumu",
     }
     used_prefixes = set(prefix_map.values())
 
@@ -201,7 +201,7 @@ def build_rdf_graph(
     ET.register_namespace("rdfs", RDFS_NS)
     ET.register_namespace("dcterms", DCTERMS_NS)
     ET.register_namespace("dc", DC_NS)
-    ET.register_namespace("ark", "http://arkumu.org/data/properties/")
+    ET.register_namespace("arkumu", "http://arkumu.org/data/properties/")
 
     rdf_xml = rdf_graph.serialize(format="application/rdf+xml")
     rdf_element = ET.fromstring(rdf_xml.encode("utf-8"))
