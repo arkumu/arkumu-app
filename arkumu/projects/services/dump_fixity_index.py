@@ -6,7 +6,7 @@ import csv
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 from django.conf import settings
 
@@ -76,6 +76,32 @@ def clear_cache() -> None:
     _load_index.cache_clear()
 
 
+def _candidate_keys(value: Optional[str]) -> List[str]:
+    """Return normalized lookup keys derived from a candidate path."""
+
+    if not value:
+        return []
+
+    variants = {value}
+    if "\\" in value:
+        variants.add(value.replace("\\", "/"))
+
+    normalized_values: List[str] = []
+    seen: set[str] = set()
+
+    for variant in variants:
+        normalized = normalize_s3_key(variant)
+        if not normalized:
+            continue
+        if normalized.startswith("data/"):
+            normalized = normalized[5:]
+        if normalized not in seen:
+            normalized_values.append(normalized)
+            seen.add(normalized)
+
+    return normalized_values
+
+
 def find_fixity(org_code: str, candidates: Iterable[str]) -> Optional[FixityRecord]:
     """Return the first fixity record matching any candidate key."""
 
@@ -86,10 +112,8 @@ def find_fixity(org_code: str, candidates: Iterable[str]) -> Optional[FixityReco
     for candidate in candidates:
         if not candidate:
             continue
-        normalized = normalize_s3_key(candidate)
-        if normalized.startswith("data/"):
-            normalized = normalized[5:]
-        record = index.get(normalized)
-        if record:
-            return record
+        for normalized in _candidate_keys(candidate):
+            record = index.get(normalized)
+            if record:
+                return record
     return None

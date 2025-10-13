@@ -2702,6 +2702,12 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
             )
 
+            def _project_from_snapshot(uri: str) -> Optional[OAIProject]:
+                record = snapshot_service.get_record_by_uri(uri)
+                if not record:
+                    return None
+                return project_builder.from_project_record(record)
+
             # Filter to only project entities
             resource_qs = (
                 Resource.objects.filter(
@@ -2711,7 +2717,24 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 .filter(access_clause)
                 .select_related("organization")
             )
-            resource = _restrict_to_harvestable_files(resource_qs).first()
+            resource = resource_qs.first()
+
+            snapshot = snapshot_service.get_cross_institutional_snapshot()
+            snapshot_marker = snapshot.generated_at.isoformat()
+            project_hint: Optional[OAIProject] = None
+
+            if resource:
+                project_candidate = _project_from_snapshot(resource.uri)
+                if project_candidate and project_candidate.harvestable:
+                    project_hint = project_candidate
+                else:
+                    resource = None
+
+            if resource is None:
+                restricted = _restrict_to_harvestable_files(resource_qs)
+                resource = restricted.first()
+                if resource:
+                    project_hint = project_hint or _project_from_snapshot(resource.uri)
 
             if not resource:
                 fallback_qs = (
@@ -2719,7 +2742,16 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                     .filter(access_clause)
                     .select_related("organization")
                 )
-                resource = _restrict_to_harvestable_files(fallback_qs).first()
+                fallback_resource = fallback_qs.first()
+                if fallback_resource:
+                    fallback_project = _project_from_snapshot(fallback_resource.uri)
+                    if fallback_project and fallback_project.harvestable:
+                        resource = fallback_resource
+                        project_hint = fallback_project
+                if not resource:
+                    resource = _restrict_to_harvestable_files(fallback_qs).first()
+                    if resource:
+                        project_hint = project_hint or _project_from_snapshot(resource.uri)
 
             if not resource:
                 return _xml_response(_error(oai, "idDoesNotExist", "Identifier not found"))
@@ -2727,12 +2759,8 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             if not resource.organization:
                 return _xml_response(_error(oai, "idDoesNotExist", "Resource has no organization"))
 
-            snapshot = snapshot_service.get_cross_institutional_snapshot()
-            snapshot_marker = snapshot.generated_at.isoformat()
-            project_hint: Optional[OAIProject] = None
-            snapshot_record = snapshot_service.get_record_by_uri(resource.uri)
-            if snapshot_record:
-                project_hint = project_builder.from_project_record(snapshot_record)
+            if project_hint is None:
+                project_hint = _project_from_snapshot(resource.uri)
 
             # Check cache first
             cached_record = _get_cached_record(
