@@ -376,7 +376,7 @@ class MappingAwareProcessor:
             self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
             
             # Process multi-value columns
-            multi_value_columns = column_groups['multi_value'] + column_groups['multi_value_foreign_key']
+            multi_value_columns = column_groups['multi_value']
             self._process_multi_value_columns(entity_resource, row_data, multi_value_columns, context)
             
             # Queue FK relationships for later resolution (includes multi-value FKs)
@@ -463,7 +463,7 @@ class MappingAwareProcessor:
             self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
             
             # Process multi-value columns
-            multi_value_columns = column_groups['multi_value'] + column_groups['multi_value_foreign_key']
+            multi_value_columns = column_groups['multi_value']
             self._process_multi_value_columns(entity_resource, row_data, multi_value_columns, context)
             
             # Queue FK relationships for later resolution (includes multi-value FKs)
@@ -528,7 +528,7 @@ class MappingAwareProcessor:
             # Process only non-relationship columns
             self._process_regular_columns(entity_resource, row_data, column_groups['regular'], context)
             self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
-            multi_value_columns = column_groups['multi_value'] + column_groups['multi_value_foreign_key']
+            multi_value_columns = column_groups['multi_value']
             self._process_multi_value_columns(entity_resource, row_data, multi_value_columns, context)
             self._process_external_ontology_columns(entity_resource, row_data, column_groups['external_ontology'], context)
             self._process_relationship_context_columns(entity_resource, row_data, column_groups['relationship_context'], context)
@@ -556,9 +556,9 @@ class MappingAwareProcessor:
 
             if column.is_anchor:
                 groups['anchor'].append(column)
-            if is_fk:
+            if is_fk and not is_multi:
                 groups['foreign_key'].append(column)
-            if is_multi:
+            if is_multi and not is_fk:
                 groups['multi_value'].append(column)
             if is_fk and is_multi:
                 groups['multi_value_foreign_key'].append(column)
@@ -1817,7 +1817,7 @@ class MappingAwareProcessor:
         # Try to find if entity was already created in database
         try:
             from arkumu.metadata.models.resource import ResourceType as _RT
-            existing_entity = Resource.objects.get(uri=target_uri, resource_type=_RT.IRI)
+            existing_entity = Resource.objects.get(uri=target_uri, resource_type=_RT.ENTITY)
             logger.debug(f"✅ Found existing target entity in database: {target_uri}")
             context.entity_cache[target_uri] = existing_entity
             return existing_entity
@@ -1834,7 +1834,7 @@ class MappingAwareProcessor:
             from arkumu.metadata.models.resource import ResourceType as _RT
             similar = Resource.objects.filter(
                 uri__icontains=target_value,
-                resource_type=_RT.IRI,
+                resource_type=_RT.ENTITY,
                 organization=self.organization
             ).count()
             logger.debug(f"🔍 Similar entities found for '{target_value}': {similar}")
@@ -1843,7 +1843,7 @@ class MappingAwareProcessor:
             from arkumu.metadata.models.resource import ResourceType as _RT
             dataset_entities = Resource.objects.filter(
                 uri__contains=f"/entities/{target_dataset}/",
-                resource_type=_RT.IRI,
+                resource_type=_RT.ENTITY,
                 organization=self.organization
             ).count()
             logger.debug(f"🔍 Total entities in target dataset '{target_dataset}': {dataset_entities}")
