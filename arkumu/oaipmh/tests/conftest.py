@@ -244,10 +244,17 @@ def xml_validator():
     """XML validation utilities."""
     class XMLValidator:
         @staticmethod
+        def _ensure_bytes(xml_content):
+            if isinstance(xml_content, str):
+                return xml_content.encode("utf-8")
+            return xml_content
+
+        @staticmethod
         def validate_oai_response(xml_content: str) -> bool:
             """Validate XML against basic OAI-PMH structure."""
             try:
-                root = ET.fromstring(xml_content)
+                xml_bytes = XMLValidator._ensure_bytes(xml_content)
+                root = ET.fromstring(xml_bytes)
 
                 # Check root element - need to handle namespace
                 if not (root.tag == "OAI-PMH" or root.tag.endswith("}OAI-PMH")):
@@ -288,7 +295,8 @@ def xml_validator():
         def extract_error(xml_content: str) -> tuple[str, str]:
             """Extract error code and message from OAI-PMH response."""
             try:
-                root = ET.fromstring(xml_content)
+                xml_bytes = XMLValidator._ensure_bytes(xml_content)
+                root = ET.fromstring(xml_bytes)
                 error = root.find("error")
                 if error is None:
                     error = root.find(".//{http://www.openarchives.org/OAI/2.0/}error")
@@ -302,7 +310,8 @@ def xml_validator():
         def count_records(xml_content: str) -> int:
             """Count records in ListIdentifiers or ListRecords response."""
             try:
-                root = ET.fromstring(xml_content)
+                xml_bytes = XMLValidator._ensure_bytes(xml_content)
+                root = ET.fromstring(xml_bytes)
 
                 # Check ListIdentifiers
                 list_identifiers = root.find("ListIdentifiers")
@@ -332,7 +341,8 @@ def xml_validator():
         def get_resumption_token(xml_content: str) -> str:
             """Extract resumption token from response."""
             try:
-                root = ET.fromstring(xml_content)
+                xml_bytes = XMLValidator._ensure_bytes(xml_content)
+                root = ET.fromstring(xml_bytes)
 
                 # Check in ListIdentifiers or ListRecords
                 for verb in ["ListIdentifiers", "ListRecords"]:

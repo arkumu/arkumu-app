@@ -79,7 +79,7 @@ class METSSerializer:
         self._add_structural_map(mets, resource_uri)
 
         # Convert to string
-        return ET.tostring(mets, encoding='unicode', xml_declaration=True)
+        return ET.tostring(mets, encoding='utf-8', xml_declaration=True).decode('utf-8')
 
     def _build_mets_root(self, resource_uri: str) -> ET.Element:
         """Build the root METS element with namespaces."""
@@ -133,19 +133,24 @@ class METSSerializer:
         dc_data = self._extract_dublin_core_from_graph(graph)
 
         # Create Dublin Core container
-        dc_root = ET.SubElement(xml_data, "dublincore", {
-            "xmlns": DC_NS,
-            "xmlns:dcterms": DCTERMS_NS
-        })
+        dc_root = ET.SubElement(
+            xml_data,
+            f"{{{DC_NS}}}record",
+            nsmap={
+                "dc": DC_NS,
+                "dcterms": DCTERMS_NS,
+            },
+        )
 
         for element, values in dc_data.items():
+            if not values:
+                continue
+            prefix, term = element.split(":", 1)
+            ns_uri = DC_NS if prefix == "dc" else DCTERMS_NS
             for value in values:
-                if element.startswith('dcterms:'):
-                    elem_name = element.replace('dcterms:', '')
-                    ET.SubElement(dc_root, f"{{{DCTERMS_NS}}}{elem_name}").text = value
-                else:
-                    elem_name = element.replace('dc:', '')
-                    ET.SubElement(dc_root, f"{{{DC_NS}}}{elem_name}").text = value
+                if value is None:
+                    continue
+                ET.SubElement(dc_root, f"{{{ns_uri}}}{term}").text = value
 
     def _add_technical_metadata(self, mets: ET.Element, graph: Dict[str, Any], complete_graph: bool) -> None:
         """Add technical metadata about the graph."""

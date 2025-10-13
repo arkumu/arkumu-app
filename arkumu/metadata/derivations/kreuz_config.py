@@ -10,16 +10,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, Mapping, Sequence, Tuple
 
+from arkumu.metadata.canonical import canonical_uri
+
 # Canonical predicate URIs used across Kreuz datasets.
-PROJECT = "http://arkumu.org/data/properties/projekt"
-EVENT = "http://arkumu.org/data/properties/ereignis"
-DIGITAL_OBJECT = "http://arkumu.org/data/properties/digitales-objekt"
-INFORMATION_CARRIER = "http://arkumu.org/data/properties/informationstraeger"
-KEYWORD = "http://arkumu.org/data/properties/schlagwort"
-EQUIPMENT = "http://arkumu.org/data/properties/equipment-und-software"
-ACTOR = "http://arkumu.org/data/properties/akteurin"
-ACTOR_IN_EVENT = "http://arkumu.org/data/properties/akteurin-im-ereignis"
-ROLE_IN_EVENT = "http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+PROJECT = canonical_uri("project")
+EVENT = canonical_uri("event")
+DIGITAL_OBJECT = canonical_uri("digital_object")
+INFORMATION_CARRIER = canonical_uri("information_carrier")
+KEYWORD = canonical_uri("keyword")
+EQUIPMENT = canonical_uri("equipment")
+ACTOR = canonical_uri("actor")
+ACTOR_IN_EVENT = canonical_uri("actor_in_event")
+ROLE_IN_EVENT = canonical_uri("role_in_event")
 
 # RDF structural predicate used to associate junction rows with dataset resources.
 DCTERMS_IS_PART_OF = "http://purl.org/dc/terms/isPartOf"
@@ -231,15 +233,15 @@ KREUZ_DATASET_PROFILES: Dict[str, Dict[str, DatasetProfile]] = {
         ),
         "02_kreuz_projekte_personen": DatasetProfile(
             name="02_Kreuz_Projekte_Personen",
-            canonical_predicates=(PROJECT, ACTOR),
-            pattern_names=("project_actor",),
-            notes=("Links KHM projects to persons/actors",),
+            canonical_predicates=(EVENT, ACTOR_IN_EVENT, ROLE_IN_EVENT),
+            pattern_names=("event_actor",),
+            notes=("Event-person assignments (actors participating in events)",),
         ),
         "04_kreuz_betreuende_projekte": DatasetProfile(
             name="04_Kreuz_Betreuende_Projekte",
-            canonical_predicates=(PROJECT, ACTOR),
-            pattern_names=("project_actor",),
-            notes=("Supervisor assignments for projects",),
+            canonical_predicates=(EVENT, ACTOR_IN_EVENT),
+            pattern_names=("event_actor",),
+            notes=("Supervisor/mentor relationships captured as event actors",),
         ),
         "07_kreuz_projekte_keywords": DatasetProfile(
             name="07_Kreuz_Projekte_Keywords",

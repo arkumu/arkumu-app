@@ -131,6 +131,24 @@ CARD_SCHEMA_TEMPLATE: CardSchema = CardSchema(
             canonical_class_uri='http://arkumu.org/data/types/digitales-objekt',
             properties={
                 'path': CardProperty('path', 'http://arkumu.org/data/properties/dateipfad'),
+                'license': CardProperty('license', 'http://arkumu.org/data/properties/lizenzstatus'),
+            },
+            fk_relationships=[
+                {
+                    'source_property': 'http://arkumu.org/data/properties/lizenzstatus',
+                    'target_property': 'http://arkumu.org/data/properties/uri',
+                }
+            ],
+        ),
+        'digital_object_license': CardSection(
+            label='digital_object_license',
+            canonical_class_uri='http://arkumu.org/data/types/digitales-objekt-lizenz',
+            properties={
+                'uri': CardProperty('uri', 'http://arkumu.org/data/properties/uri'),
+                'label_de': CardProperty('label_de', 'http://arkumu.org/data/properties/deutscher-anzeigetext'),
+                'label_en': CardProperty('label_en', 'http://arkumu.org/data/properties/englischer-anzeigetext'),
+                'rights_statement': CardProperty('rights_statement', 'http://arkumu.org/data/properties/zugehoeriges-rechtestatement'),
+                'identifier': CardProperty('identifier', 'http://arkumu.org/data/properties/digitales-objekt-lizenz-id'),
             },
         ),
         'institution': CardSection(
@@ -375,7 +393,14 @@ class SchemaManifestService:
                 if not canonical_prop_uri:
                     continue
 
-                prop_obj = section.properties.get(canonical_prop_uri)
+                prop_obj = None
+
+                # Prefer existing properties with matching canonical URI (template-defined keys)
+                for existing_key, existing_prop in section.properties.items():
+                    if existing_prop.canonical_uri == canonical_prop_uri:
+                        prop_obj = existing_prop
+                        break
+
                 if not prop_obj:
                     prop_lookup_obj = property_lookup.get(canonical_prop_uri)
                     prop_name = prop_lookup_obj.get("name") if prop_lookup_obj else canonical_prop_uri

@@ -6,8 +6,11 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 from urllib.parse import urlparse
+import uuid
 
 from django.utils import timezone
+from django.conf import settings
+from django.db.models import Q
 
 from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.catalog.services.schema_manifest_service import (
@@ -21,6 +24,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
     ProjectActor,
@@ -55,10 +59,66 @@ class ProjectSnapshotService:
     )
     DIGITAL_OBJECT_LINK_URI = "http://arkumu.org/data/properties/digitales-objekt"
     DIGITAL_OBJECT_LICENSE_LINK_URI = "http://arkumu.org/data/properties/lizenzstatus"
-    DIGITAL_OBJECT_LICENSE_URI_PROPERTY = "http://arkumu.org/data/properties/uri"
-    DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
-    DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY = "http://arkumu.org/data/properties/englischer-name-der-lizenz"
-    DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY = "http://arkumu.org/data/properties/zugehoeriges-rechtestatement"
+    DIGITAL_OBJECT_LICENSE_URI_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/uri",
+    )
+    DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/deutscher-anzeigetext",
+        "http://arkumu.org/data/properties/deutscher-name-der-lizenz",
+    )
+    DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/englischer-anzeigetext",
+        "http://arkumu.org/data/properties/englischer-name-der-lizenz",
+    )
+    DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/zugehoeriges-rechtestatement",
+    )
+    DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/digitales-objekt-lizenz-id",
+    )
+    RIGHTS_STATEMENT_FALLBACK_PREDICATES: Tuple[str, ...] = (
+        "http://purl.org/dc/terms/title",
+        "http://purl.org/dc/elements/1.1/title",
+        "http://purl.org/dc/terms/description",
+        "http://purl.org/dc/elements/1.1/description",
+        "http://www.w3.org/2000/01/rdf-schema#label",
+    )
+    NUMERIC_LICENSE_ORGS: Tuple[str, ...] = ("fuk", "rsh", "det")
+    EVENT_NAME_DE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/ereignisname",
+    )
+    EVENT_NAME_EN_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/englischer-name",
+    )
+    EVENT_TYPE_LABEL_DE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps",
+        "http://arkumu.org/data/properties/deutscher-name",
+    )
+    EVENT_TYPE_LABEL_EN_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/englischer-name-des-ereignistyps",
+        "http://arkumu.org/data/properties/englischer-name",
+    )
+    EVENT_TYPE_SYNONYM_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/synonyme",
+    )
+    EVENT_TYPE_WIKIDATA_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/wikidata-id",
+    )
+    EVENT_TYPE_GND_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/gnd-nummer",
+    )
+    EVENT_TYPE_AAT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/aat-id",
+    )
+    EVENT_TYPE_LIDO_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/lido-terminologie-id",
+    )
+    EVENT_START_ESTIMATED_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/ereignisbeginn-geschaetzt",
+    )
+    EVENT_END_ESTIMATED_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/ereignisende-geschaetzt",
+    )
     DIGITAL_OBJECT_UUID_PROPERTY = "http://arkumu.org/data/properties/uuid"
     DIGITAL_OBJECT_GENESIS_PROPERTIES = (
         "http://arkumu.org/data/properties/entstehung",
@@ -89,6 +149,11 @@ class ProjectSnapshotService:
         self._graph_service_factory = CanonicalGraphService
         self._record_index: Dict[str, ProjectRecord] = {}
         self._record_index_version: Optional[str] = None
+        self._digital_object_orgs: set[str] = {
+            str(code).lower().strip()
+            for code in getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", ("fuk", "hmt", "det"))
+            if code
+        }
 
     def get_record_by_uri(self, uri: str) -> Optional[ProjectRecord]:
         """Return cached project record for a given project URI."""
@@ -124,6 +189,7 @@ class ProjectSnapshotService:
 
     def _build_snapshot(self) -> ProjectSnapshot:
         graph = self._fetch_cross_institutional_graph()
+        self._enhance_license_literals(graph)
         card_schema = self._get_card_schema()
         records = self._graph_to_records(graph, card_schema)
         counts = graph.get('counts', {})
@@ -178,6 +244,102 @@ class ProjectSnapshotService:
             len(combined_graph.get('edges', [])),
         )
         return combined_graph
+
+    def _enhance_license_literals(self, graph: Dict[str, Any]) -> None:
+        if not graph:
+            return
+
+        edges: List[Dict[str, Any]] = graph.get('edges', [])
+        nodes: Dict[str, Dict[str, Any]] = graph.get('nodes', {})
+
+        if not edges or not nodes:
+            return
+
+        license_ids: set[str] = {
+            str(edge.get('object_id'))
+            for edge in edges
+            if edge.get('predicate_canonical') == self.DIGITAL_OBJECT_LICENSE_LINK_URI and edge.get('object_id')
+        }
+        if not license_ids:
+            return
+
+        predicate_whitelist: List[str] = [
+            uri
+            for uri in (
+                *self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES,
+                *self.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES,
+            )
+            if uri
+        ]
+        if not predicate_whitelist:
+            return
+
+        triples_qs = (
+            Triple.objects.filter(
+                subject_id__in=list(license_ids),
+                object__resource_type=ResourceType.LITERAL,
+            )
+            .filter(
+                Q(predicate__canonical_uri__in=predicate_whitelist)
+                | Q(predicate__uri__in=predicate_whitelist)
+            )
+            .select_related('predicate', 'object', 'object__organization')
+        )
+
+        triples = list(triples_qs)
+        if not triples:
+            return
+
+        existing_triple_ids: set[str] = {
+            str(edge.get('triple_id'))
+            for edge in edges
+            if edge.get('triple_id')
+        }
+
+        added = False
+        for triple in triples:
+            triple_id = str(triple.id)
+            if triple_id in existing_triple_ids:
+                continue
+
+            predicate = triple.predicate
+            obj = triple.object
+
+            edge_payload = {
+                'triple_id': triple_id,
+                'subject_id': str(triple.subject_id),
+                'predicate_uri': getattr(predicate, 'uri', None),
+                'predicate_canonical': getattr(predicate, 'canonical_uri', None),
+                'object_id': str(obj.id),
+                'object_uri': getattr(obj, 'uri', None),
+                'object_type': obj.resource_type,
+                'object_value': getattr(obj, 'value', None),
+                'object_canonical': getattr(obj, 'canonical_uri', None),
+            }
+            edges.append(edge_payload)
+            existing_triple_ids.add(triple_id)
+            added = True
+
+            literal_node_id = str(obj.id)
+            if literal_node_id not in nodes:
+                nodes[literal_node_id] = {
+                    'id': literal_node_id,
+                    'uri': getattr(obj, 'uri', None),
+                    'name': getattr(obj, 'name', None),
+                    'value': getattr(obj, 'value', None),
+                    'resource_type': obj.resource_type,
+                    'canonical_uri': getattr(obj, 'canonical_uri', None),
+                    'organization': getattr(getattr(obj, 'organization', None), 'code', None),
+                }
+
+        if added:
+            counts = graph.get('counts')
+            if counts is not None:
+                counts['edges'] = len(edges)
+                counts['nodes'] = len(nodes)
 
     def _build_combined_organization_graphs(self) -> Dict[str, Any]:
         subjects: List[str] = []
@@ -573,7 +735,8 @@ class ProjectSnapshotService:
         event_ids: List[str] = []
         events: List[ProjectEvent] = []
         for entry in event_entries:
-            event_id = entry.get('id')
+            event_id_raw = entry.get('id')
+            event_id = str(event_id_raw) if event_id_raw is not None else None
             if event_id:
                 event_ids.append(event_id)
             event_node = nodes.get(event_id, {}) if event_id else {}
@@ -593,6 +756,8 @@ class ProjectSnapshotService:
                     end=entry.get('end'),
                 )
             )
+        for event in events:
+            self._populate_event_metadata(event, nodes, edges_by_subject)
         year_range = self._derive_year_range(events)
 
         actors_payload = triple_service.get_actor_relationships(
@@ -613,9 +778,16 @@ class ProjectSnapshotService:
                 continue
             roles = list(payload.get('roles', []))
             actors.append(ProjectActor(name=name, roles=roles))
+            rights_by_event = payload.get('event_rights', {})
             for event_id in payload.get('event_ids', []):
+                rights_flags = rights_by_event.get(event_id, {})
                 actors_by_event[event_id].append(
-                    ProjectEventActor(name=name, roles=list(roles))
+                    ProjectEventActor(
+                        name=name,
+                        roles=list(roles),
+                        is_copyright_holder=rights_flags.get('is_copyright_holder', False),
+                        is_neighbouring_rights_holder=rights_flags.get('is_neighbouring_rights_holder', False),
+                    )
                 )
 
         for event in events:
@@ -699,6 +871,11 @@ class ProjectSnapshotService:
             first_code = (institution_codes[0] or "") if institution_codes else ""
             primary_institution_code = first_code.lower().strip() or None
 
+        code_candidates: set[str] = set(filter(None, institution_codes))
+        if primary_institution_code:
+            code_candidates.add(primary_institution_code)
+        digital_only_org = self._is_digital_object_org(code_candidates)
+
         checksum_org_code = self._resolve_org_code_for_checksums(
             primary_institution_code,
             institution_codes,
@@ -746,6 +923,7 @@ class ProjectSnapshotService:
 
         digital_objects: List[ProjectDigitalObject] = []
         seen_paths: set[str] = set()
+        linked_digital_ids: set[str] = set()
         for object_id in digital_object_ids:
             raw_path = path_map.get(object_id)
             if not raw_path:
@@ -766,6 +944,7 @@ class ProjectSnapshotService:
                 edges_by_subject,
             )
             digital_objects.append(project_object)
+            linked_digital_ids.add(str(object_id))
 
             checksum_value = (checksum_map.get(object_id) or "").strip()
             if checksum_value:
@@ -774,58 +953,77 @@ class ProjectSnapshotService:
                 project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
                 project_object.checksum_provenance = fixity_info.provenance or 'metadata'
 
-        if not digital_objects:
-            collected_ids: set[str] = set()
-            collected_ids.update(
-                self._related_ids(subject_edges, self.DIGITAL_OBJECT_LINK_URI)
-            )
-            for event_id in event_ids:
-                event_edges = edges_by_subject.get(event_id, [])
-                collected_ids.update(
-                    self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
-                )
-
-            for digital_id in collected_ids:
-                edges_for_digital = edges_by_subject.get(digital_id, [])
-                path_literal = self._first_literal(
-                    edges_for_digital,
-                    digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
-                )
-                if not path_literal:
-                    continue
-                digital_node = nodes.get(digital_id, {})
-                project_object = ProjectDigitalObject(
-                    path=path_literal,
-                    uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
-                )
-                self._populate_digital_object_metadata(
-                    project_object,
-                    str(digital_id),
-                    nodes,
-                    edges_by_subject,
-                )
-                digital_objects.append(project_object)
-
-                if checksum_predicate:
-                    checksum_map.update(
-                        triple_service.get_literal_map(
-                            subject_ids=[str(digital_id)],
-                            predicate_uri=checksum_predicate,
-                            organization_code=self.relationship_org_code,
-                        )
-                    )
-                    checksum_value = (checksum_map.get(str(digital_id)) or "").strip()
-                    if checksum_value:
-                        fixity_info = parse_fixity(checksum_value)
-                        project_object.checksum = fixity_info.digest or checksum_value
-                        project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
-                        project_object.checksum_provenance = fixity_info.provenance or 'metadata'
-
+        collected_ids: set[str] = set()
+        collected_ids.update(
+            self._related_ids(subject_edges, self.DIGITAL_OBJECT_LINK_URI)
+        )
         for event_id in event_ids:
-            storage_files.extend(storage_files_map.get(str(event_id), []))
+            event_edges = edges_by_subject.get(event_id, [])
+            collected_ids.update(
+                self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
+            )
+
+        for digital_id in collected_ids:
+            digital_id_str = str(digital_id)
+            if digital_id_str in linked_digital_ids:
+                continue
+
+            edges_for_digital = edges_by_subject.get(digital_id_str, [])
+            path_literal = self._first_literal(
+                edges_for_digital,
+                digital_object_path_prop.canonical_uri if digital_object_path_prop else None,
+            )
+            if not path_literal:
+                continue
+            digital_node = nodes.get(digital_id_str, {})
+            project_object = ProjectDigitalObject(
+                path=path_literal,
+                uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
+            )
+            self._populate_digital_object_metadata(
+                project_object,
+                digital_id_str,
+                nodes,
+                edges_by_subject,
+            )
+            digital_objects.append(project_object)
+            linked_digital_ids.add(digital_id_str)
+
+            if checksum_predicate:
+                checksum_map.update(
+                    triple_service.get_literal_map(
+                        subject_ids=[digital_id_str],
+                        predicate_uri=checksum_predicate,
+                        organization_code=self.relationship_org_code,
+                    )
+                )
+                checksum_value = (checksum_map.get(digital_id_str) or "").strip()
+                if checksum_value:
+                    fixity_info = parse_fixity(checksum_value)
+                    project_object.checksum = fixity_info.digest or checksum_value
+                    project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
+                    project_object.checksum_provenance = fixity_info.provenance or 'metadata'
+
+        if not digital_only_org:
+            for event_id in event_ids:
+                storage_files.extend(storage_files_map.get(str(event_id), []))
+
+        if linked_digital_ids and digital_only_org:
+            for digital_id in linked_digital_ids:
+                storage_files.extend(storage_files_map.get(str(digital_id), []))
 
         if storage_files:
             digital_objects = self._merge_storage_metadata(digital_objects, storage_files)
+
+        rights_status = self._first_literal_from_predicates(
+            subject_edges,
+            (
+                "http://arkumu.org/data/properties/rechtsstatus",
+                "http://arkumu.org/data/fuk/properties/rechtsstatus",
+                "http://arkumu.org/data/hmt/properties/rechtsstatus",
+                "http://arkumu.org/data/khm/properties/rechtsstatus",
+            ),
+        )
 
         if not title:
             return None
@@ -848,6 +1046,7 @@ class ProjectSnapshotService:
             year_range=year_range or None,
             institution_codes=institution_codes,
             category_slugs=category_slugs,
+            rights_status=rights_status,
         )
         return record
 
@@ -934,6 +1133,15 @@ class ProjectSnapshotService:
 
         return digital_objects
 
+    def _is_digital_object_org(self, codes: Iterable[str]) -> bool:
+        if not self._digital_object_orgs or not codes:
+            return False
+        for code in codes:
+            normalized = (code or "").lower().strip()
+            if normalized in self._digital_object_orgs:
+                return True
+        return False
+
     def _checksum_predicate_for_org(self, institution_code: Optional[str]) -> Optional[str]:
         if not institution_code:
             scoped = self.relationship_org_code.lower() if self.relationship_org_code else None
@@ -1008,6 +1216,17 @@ class ProjectSnapshotService:
                 return edge['object_value']
         return None
 
+    def _first_literal_from_predicates(
+        self,
+        edges: Iterable[Dict[str, Any]],
+        predicates: Iterable[Optional[str]],
+    ) -> Optional[str]:
+        for predicate in predicates:
+            value = self._first_literal(edges, predicate)
+            if value:
+                return value
+        return None
+
     def _related_ids(self, edges: Iterable[Dict[str, Any]], predicate: Optional[str]) -> List[str]:
         if not predicate:
             return []
@@ -1030,12 +1249,126 @@ class ProjectSnapshotService:
                     return normalized
         return None
 
+    def _literal_list_from_edges(
+        self,
+        edges: Iterable[Dict[str, Any]],
+        predicates: Sequence[str],
+    ) -> List[str]:
+        items: List[str] = []
+        predicate_set = {predicate for predicate in predicates if predicate}
+        if not predicate_set:
+            return items
+        for edge in edges:
+            predicate = self._canonical(edge)
+            if predicate not in predicate_set:
+                continue
+            value = self._normalize_text_value(edge.get('object_value'))
+            if not value:
+                continue
+            tokens = [
+                token.strip()
+                for token in value.replace(';', ',').split(',')
+                if token.strip()
+            ]
+            for token in tokens:
+                if token not in items:
+                    items.append(token)
+        return items
+
+    def _first_literal_from_related_nodes(
+        self,
+        related_ids: Iterable[str],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        predicates: Sequence[str],
+    ) -> Optional[str]:
+        for related_id in related_ids:
+            related_id_str = str(related_id)
+            node = nodes.get(related_id_str, {})
+            for key in ('name', 'title', 'label', 'value'):
+                candidate = self._normalize_text_value(node.get(key))
+                if candidate:
+                    return candidate
+
+            related_edges = edges_by_subject.get(related_id_str, [])
+            candidate = self._first_literal_any(related_edges, predicates)
+            if candidate:
+                return candidate
+        return None
+
+    def _first_literal_from_db(
+        self,
+        subject_id: str,
+        predicates: Sequence[str],
+    ) -> Optional[str]:
+        predicate_list = [predicate for predicate in predicates if predicate]
+        if not predicate_list:
+            return None
+
+        try:
+            uuid.UUID(subject_id)
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+        qs = (
+            Triple.objects.filter(
+                subject_id=subject_id,
+                object__resource_type=ResourceType.LITERAL,
+            )
+            .filter(
+                Q(predicate__canonical_uri__in=predicate_list)
+                | Q(predicate__uri__in=predicate_list)
+            )
+            .values_list('object__value', flat=True)
+        )
+
+        value = qs.first()
+        return self._normalize_text_value(value)
+
     @staticmethod
     def _normalize_text_value(value: Optional[Any]) -> Optional[str]:
         if value is None:
             return None
         text = str(value).strip()
         return text or None
+
+    def _requires_numeric_license_cleanup(self, license_uri: Optional[str]) -> bool:
+        if not license_uri:
+            return False
+        parsed = urlparse(license_uri)
+        segments = [segment.lower().strip() for segment in parsed.path.split('/') if segment]
+        return any(segment in self.NUMERIC_LICENSE_ORGS for segment in segments)
+
+    def _sanitize_license_text(
+        self,
+        value: Optional[str],
+        identifier: Optional[str],
+        *,
+        enforce_numeric_cleanup: bool,
+    ) -> Optional[str]:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if identifier and text.lower() == identifier.lower():
+            return None
+        if enforce_numeric_cleanup and text.isdigit():
+            return None
+        return text
+
+    @staticmethod
+    def _parse_bool_literal(value: Optional[str]) -> Optional[bool]:
+        if value is None:
+            return None
+        token = value.strip().lower()
+        if not token:
+            return None
+        if token in {'1', 'true', 'yes', 'ja'}:
+            return True
+        if token in {'0', 'false', 'no', 'nein'}:
+            return False
+        return None
 
     @staticmethod
     def _resource_slug(uri: Optional[str]) -> Optional[str]:
@@ -1049,15 +1382,18 @@ class ProjectSnapshotService:
         synonyms_literal: Optional[Any],
         breadcrumb_literal: Optional[Any],
     ) -> Optional[str]:
-        wikidata_label = ProjectSnapshotService._normalize_wikidata_id(wikidata_literal)
-        if wikidata_label:
-            return wikidata_label
-        synonym = ProjectSnapshotService._preferred_synonym(synonyms_literal)
-        if synonym:
-            return synonym
-        breadcrumb = ProjectSnapshotService._normalize_breadcrumb(breadcrumb_literal)
-        if breadcrumb:
-            return breadcrumb
+        qid = ProjectSnapshotService._normalize_wikidata_id(wikidata_literal)
+        if qid:
+            return qid
+
+        qid = ProjectSnapshotService._first_qid_from_literal(synonyms_literal)
+        if qid:
+            return qid
+
+        qid = ProjectSnapshotService._first_qid_from_literal(breadcrumb_literal)
+        if qid:
+            return qid
+
         return None
 
     @staticmethod
@@ -1074,18 +1410,15 @@ class ProjectSnapshotService:
         return None
 
     @staticmethod
-    def _normalize_breadcrumb(label: Optional[Any]) -> Optional[str]:
-        if label is None:
+    def _first_qid_from_literal(value: Optional[Any]) -> Optional[str]:
+        if value is None:
             return None
-        text = str(label).strip()
-        if not text:
-            return None
-        if '>' in text:
-            parts = [part.strip() for part in text.split('>') if part.strip()]
-            text = parts[-1] if parts else ''
-        if not text or text.isdigit():
-            return None
-        return text
+        text = str(value).replace(';', ',')
+        for token in text.split(','):
+            normalized = ProjectSnapshotService._normalize_wikidata_id(token)
+            if normalized:
+                return normalized
+        return None
 
     @staticmethod
     def _preferred_synonym(value: Optional[Any]) -> Optional[str]:
@@ -1104,8 +1437,6 @@ class ProjectSnapshotService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
     ) -> None:
         edges_for_digital = edges_by_subject.get(str(object_id), [])
-        if not edges_for_digital:
-            return
 
         uuid_value = self._normalize_text_value(
             self._first_literal(edges_for_digital, self.DIGITAL_OBJECT_UUID_PROPERTY)
@@ -1174,6 +1505,60 @@ class ProjectSnapshotService:
                 return label
         return None
 
+    def _populate_event_metadata(
+        self,
+        event: ProjectEvent,
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> None:
+        if not event.id:
+            return
+
+        event_id = str(event.id)
+        event_edges = edges_by_subject.get(event_id, [])
+
+        name_de = self._first_literal_any(event_edges, self.EVENT_NAME_DE_PROPERTIES)
+        name_en = self._first_literal_any(event_edges, self.EVENT_NAME_EN_PROPERTIES)
+
+        if name_de:
+            event.name_de = name_de
+        else:
+            event.name_de = event.name or None
+        event.name_en = name_en
+
+        start_estimated = self._first_literal_any(event_edges, self.EVENT_START_ESTIMATED_PROPERTIES)
+        end_estimated = self._first_literal_any(event_edges, self.EVENT_END_ESTIMATED_PROPERTIES)
+        event.start_estimated = self._parse_bool_literal(start_estimated)
+        event.end_estimated = self._parse_bool_literal(end_estimated)
+
+        type_ids = self._related_ids(event_edges, ProjectURIs.EVENT_TYPE)
+        if type_ids:
+            type_id = type_ids[0]
+            type_id_str = str(type_id)
+            type_node = nodes.get(type_id_str, {})
+            type_edges = edges_by_subject.get(type_id_str, [])
+
+            event.type_uri = type_node.get('uri') or type_node.get('canonical_uri')
+
+            type_label_de = self._first_literal_any(type_edges, self.EVENT_TYPE_LABEL_DE_PROPERTIES)
+            type_label_en = self._first_literal_any(type_edges, self.EVENT_TYPE_LABEL_EN_PROPERTIES)
+            event.type_label_de = type_label_de or event.type
+            event.type_label_en = type_label_en
+
+            synonyms = self._literal_list_from_edges(type_edges, self.EVENT_TYPE_SYNONYM_PROPERTIES)
+            if synonyms:
+                event.type_synonyms_de = synonyms
+
+            event.type_wikidata_id = self._first_literal_any(type_edges, self.EVENT_TYPE_WIKIDATA_PROPERTIES)
+            event.type_gnd_id = self._first_literal_any(type_edges, self.EVENT_TYPE_GND_PROPERTIES)
+            event.type_aat_id = self._first_literal_any(type_edges, self.EVENT_TYPE_AAT_PROPERTIES)
+            event.type_lido_id = self._first_literal_any(type_edges, self.EVENT_TYPE_LIDO_PROPERTIES)
+        else:
+            event.type_label_de = event.type
+
+        if event.name_de and not event.name:
+            event.name = event.name_de
+
     def _build_digital_object_license(
         self,
         edges_for_digital: Iterable[Dict[str, Any]],
@@ -1185,30 +1570,85 @@ class ProjectSnapshotService:
             return None
 
         license_id = license_ids[0]
-        license_edges = edges_by_subject.get(str(license_id), [])
-        license_node = nodes.get(str(license_id), {})
+        license_id_str = str(license_id)
+        license_node = nodes.get(license_id_str, {})
+        license_edges = edges_by_subject.get(license_id_str, [])
 
-        uri = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTY)
-        )
+        if not license_node or not license_edges:
+            if license_id_str.startswith("http://") or license_id_str.startswith("https://"):
+                try:
+                    from arkumu.metadata.models.resource import Resource
+
+                    resource = Resource.objects.filter(uri=license_id_str).only("id").first()
+                except Exception:
+                    resource = None
+                if resource:
+                    resolved_id = str(resource.id)
+                    license_node = nodes.get(resolved_id, {})
+                    license_edges = edges_by_subject.get(resolved_id, [])
+                    license_id_str = resolved_id
+
+        uri = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES)
         if not uri:
             uri = self._normalize_text_value(license_node.get('uri') or license_node.get('value'))
+        if not uri:
+            uri = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_URI_PROPERTIES)
 
-        label_de = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTY)
-        )
+        label_de = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES)
         if not label_de:
             label_de = self._normalize_text_value(license_node.get('name'))
+        if not label_de:
+            label_de = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES)
 
-        label_en = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTY)
+        label_en = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES)
+        if not label_en:
+            label_en = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES)
+
+        rights_statement = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES)
+        if not rights_statement:
+            rights_statement_ids: List[str] = []
+            for predicate in self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES:
+                rights_statement_ids.extend(self._related_ids(license_edges, predicate))
+            if rights_statement_ids:
+                candidate_predicates: List[str] = list(self.DIGITAL_OBJECT_LICENSE_LABEL_DE_PROPERTIES)
+                candidate_predicates.extend(self.DIGITAL_OBJECT_LICENSE_LABEL_EN_PROPERTIES)
+                candidate_predicates.extend(self.RESOURCE_LABEL_PREDICATES)
+                candidate_predicates.extend(self.RIGHTS_STATEMENT_FALLBACK_PREDICATES)
+                rights_statement = self._first_literal_from_related_nodes(
+                    rights_statement_ids,
+                    nodes,
+                    edges_by_subject,
+                    candidate_predicates,
+                )
+        if not rights_statement:
+            rights_statement = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTIES)
+
+        identifier = self._first_literal_any(license_edges, self.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES)
+        if not identifier:
+            identifier = self._first_literal_from_db(license_id_str, self.DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES)
+
+        enforce_numeric_cleanup = (
+            self._requires_numeric_license_cleanup(license_node.get('uri'))
+            or self._requires_numeric_license_cleanup(uri)
         )
 
-        rights_statement = self._normalize_text_value(
-            self._first_literal(license_edges, self.DIGITAL_OBJECT_LICENSE_RIGHTS_STATEMENT_PROPERTY)
+        rights_statement = self._sanitize_license_text(
+            rights_statement,
+            identifier,
+            enforce_numeric_cleanup=enforce_numeric_cleanup,
+        )
+        label_de = self._sanitize_license_text(
+            label_de,
+            identifier,
+            enforce_numeric_cleanup=enforce_numeric_cleanup,
+        )
+        label_en = self._sanitize_license_text(
+            label_en,
+            identifier,
+            enforce_numeric_cleanup=enforce_numeric_cleanup,
         )
 
-        if not any([uri, label_de, label_en, rights_statement]):
+        if not any([uri, label_de, label_en, rights_statement, identifier]):
             return None
 
         return ProjectDigitalObjectLicense(
@@ -1216,6 +1656,7 @@ class ProjectSnapshotService:
             label_de=label_de,
             label_en=label_en,
             rights_statement=rights_statement,
+            identifier=identifier,
         )
 
     @staticmethod

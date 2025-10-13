@@ -104,6 +104,10 @@ Each column shows sample data from your file to help you understand what's in th
 
 - [URL Creation and Import Process](URL_CREATION_AND_IMPORT_PROCESS.md) - Detailed explanation of how URIs are generated and data is imported
 
+## Management Command Notes
+
+- `canonicalize_schema_manifest` normalizes mapping manifests against `metadata_resource` canonical URIs. Tests live in `arkumu/storage/tests/management/test_canonicalize_schema_manifest.py` and can be executed with `docker compose -f docker-compose.local.yml run --rm django pytest arkumu/storage/tests/management/test_canonicalize_schema_manifest.py`.
+
 ## Development
 
 For detailed development instructions, testing, deployment, and other advanced features, see the [Cookiecutter Django documentation](https://cookiecutter-django.readthedocs.io/).

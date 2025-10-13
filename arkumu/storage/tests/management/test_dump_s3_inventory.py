@@ -36,13 +36,9 @@ class DummyS3Client:
         return DummyPaginator(self._pages)
 
 
-class DummyBoto3:
+class DummyBaseStorageService:
     def __init__(self, pages):
-        self._pages = pages
-
-    def client(self, service_name):
-        assert service_name == "s3"
-        return DummyS3Client(self._pages)
+        self.s3_client = DummyS3Client(pages)
 
 
 @pytest.mark.django_db
@@ -53,10 +49,9 @@ def test_dump_s3_inventory_writes_output_and_reports(monkeypatch, tmp_path):
         ]
     }
 
-    dummy_boto3 = DummyBoto3(pages)
     monkeypatch.setattr(
-        "arkumu.storage.management.commands.dump_s3_inventory.boto3",
-        dummy_boto3,
+        "arkumu.storage.management.commands.dump_s3_inventory.BaseStorageService",
+        lambda: DummyBaseStorageService(pages),
     )
     monkeypatch.setattr(
         "arkumu.storage.management.commands.dump_s3_inventory.ClientError",
@@ -111,10 +106,9 @@ def test_dump_s3_inventory_supports_prefix_and_no_compare(monkeypatch, tmp_path)
             {"Contents": [{"Key": "folder/file-one.txt"}, {"Key": "other/file-two.txt"}]},
         ]
     }
-    dummy_boto3 = DummyBoto3(pages)
     monkeypatch.setattr(
-        "arkumu.storage.management.commands.dump_s3_inventory.boto3",
-        dummy_boto3,
+        "arkumu.storage.management.commands.dump_s3_inventory.BaseStorageService",
+        lambda: DummyBaseStorageService(pages),
     )
     monkeypatch.setattr(
         "arkumu.storage.management.commands.dump_s3_inventory.ClientError",
@@ -141,3 +135,43 @@ def test_dump_s3_inventory_supports_prefix_and_no_compare(monkeypatch, tmp_path)
     rows = list(csv.reader(output.read_text().splitlines()))
     assert rows == [["bucket", "key"], ["demo", "folder/file-one.txt"]]
     assert "Would mark" in out.getvalue()
+
+
+class ErrorPaginator:
+    def paginate(self, **kwargs):
+        from botocore.exceptions import ClientError
+
+        raise ClientError({"Error": {"Code": "NoSuchBucket", "Message": "Bucket does not exist"}}, "ListObjectsV2")
+
+
+class ErrorS3Client:
+    def get_paginator(self, name):
+        assert name == "list_objects_v2"
+        return ErrorPaginator()
+
+
+class ErrorStorageService:
+    def __init__(self):
+        self.s3_client = ErrorS3Client()
+
+
+@pytest.mark.django_db
+def test_dump_s3_inventory_handles_missing_buckets(monkeypatch):
+    monkeypatch.setattr(
+        "arkumu.storage.management.commands.dump_s3_inventory.BaseStorageService",
+        lambda: ErrorStorageService(),
+    )
+
+    out = io.StringIO()
+
+    call_command(
+        "dump_s3_inventory",
+        "--bucket",
+        "missing",
+        "--dry-run",
+        stdout=out,
+    )
+
+    summary = out.getvalue()
+    assert "Skipped buckets not found" in summary
+    assert "Inventory is empty" in summary

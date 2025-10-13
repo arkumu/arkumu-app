@@ -81,7 +81,7 @@ class TestMETSSerializer:
         assert result.startswith('<?xml version=\'1.0\' encoding=\'utf-8\'?>')
 
         # Parse and validate XML
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
         assert root.tag.endswith('}mets') or root.tag == 'mets'
 
     def test_serialize_resource_empty_graph(self):
@@ -124,7 +124,7 @@ class TestMETSSerializer:
         serializer = METSSerializer(org_code=self.org_code, graph_service=mock_service)
         result = serializer.serialize_resource("https://test.example.com/resource/1")
 
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
 
         # Check METS namespace
         assert f"xmlns:mets=\"{METS_NS}\"" in result or root.get("xmlns:mets") == METS_NS
@@ -148,7 +148,7 @@ class TestMETSSerializer:
 
         serializer = METSSerializer(org_code=self.org_code, graph_service=mock_service)
         result = serializer.serialize_resource("https://test.example.com/resource/1")
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
 
         # Find metsHdr element (handling namespaces)
         mets_hdr = root.find("metsHdr")
@@ -198,7 +198,7 @@ class TestMETSSerializer:
 
         serializer = METSSerializer(org_code=self.org_code, graph_service=mock_service)
         result = serializer.serialize_resource("https://test.example.com/resource/1")
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
 
         # Find dmdSec element
         dmd_sec = root.find("dmdSec")
@@ -268,7 +268,7 @@ class TestMETSSerializer:
 
         serializer = METSSerializer(org_code=self.org_code, graph_service=mock_service)
         result = serializer.serialize_resource("https://test.example.com/resource/1")
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
 
         # Find fileSec element
         file_sec = root.find("fileSec")
@@ -329,7 +329,7 @@ class TestMETSSerializer:
 
         serializer = METSSerializer(org_code=self.org_code, graph_service=mock_service)
         result = serializer.serialize_resource("https://test.example.com/resource/1")
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
 
         # Find structMap element
         struct_map = root.find("structMap")
@@ -391,7 +391,7 @@ class TestMETSSerializer:
             result = serializer.serialize_resource(resource_uri)
 
         # Parse and validate CONTENT fileGrp and FLocat
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
         ns = {
             'mets': METS_NS,
             'xlink': XLINK_NS,
@@ -438,7 +438,7 @@ class TestMETSSerializer:
         result = serializer.serialize_resource("https://test.example.com/resource/1")
 
         # Should produce valid XML
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
         assert root is not None
 
         # Should contain all major METS sections
@@ -534,7 +534,7 @@ class TestMETSSerializer:
 
         # XML should be parseable
         try:
-            root = ET.fromstring(result)
+            root = ET.fromstring(result.encode("utf-8"))
             assert root is not None
         except ET.ParseError as e:
             pytest.fail(f"Generated XML is not well-formed: {e}")
@@ -569,7 +569,7 @@ class TestMETSSerializer:
         result = serializer.serialize_resource("https://test.example.com/resource/1")
 
         # Should be parseable despite special characters
-        root = ET.fromstring(result)
+        root = ET.fromstring(result.encode("utf-8"))
         assert root is not None
 
         # Special characters should be properly escaped in the XML string

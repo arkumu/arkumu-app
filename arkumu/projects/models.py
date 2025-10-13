@@ -25,6 +25,7 @@ class ProjectDigitalObjectLicense:
     label_de: Optional[str] = None
     label_en: Optional[str] = None
     rights_statement: Optional[str] = None
+    identifier: Optional[str] = None
 
 
 @dataclass
@@ -85,6 +86,8 @@ class ProjectActor:
 class ProjectEventActor:
     name: Optional[str]
     roles: List[str] = field(default_factory=list)
+    is_copyright_holder: bool = False
+    is_neighbouring_rights_holder: bool = False
 
 
 @dataclass
@@ -101,6 +104,19 @@ class ProjectEvent:
     type: Optional[str] = None
     start: Optional[str] = None
     end: Optional[str] = None
+    name_de: Optional[str] = None
+    name_en: Optional[str] = None
+    type_label_de: Optional[str] = None
+    type_label_en: Optional[str] = None
+    type_synonyms_de: List[str] = field(default_factory=list)
+    type_synonyms_en: List[str] = field(default_factory=list)
+    type_wikidata_id: Optional[str] = None
+    type_gnd_id: Optional[str] = None
+    type_aat_id: Optional[str] = None
+    type_lido_id: Optional[str] = None
+    type_uri: Optional[str] = None
+    start_estimated: Optional[bool] = None
+    end_estimated: Optional[bool] = None
     actors: List[ProjectEventActor] = field(default_factory=list)
 
 
@@ -123,6 +139,7 @@ class ProjectRecord:
     year_range: Optional[str] = None
     institution_codes: List[str] = field(default_factory=list)
     category_slugs: List[str] = field(default_factory=list)
+    rights_status: Optional[str] = None
 
     @property
     def slug(self) -> str:
@@ -163,6 +180,7 @@ class ProjectRecord:
             year_range=payload.get("year_range"),
             institution_codes=payload.get("institution_codes", []),
             category_slugs=payload.get("category_slugs", []),
+            rights_status=payload.get("rights_status"),
         )
         return record
 

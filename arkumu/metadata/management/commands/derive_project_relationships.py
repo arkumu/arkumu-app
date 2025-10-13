@@ -11,6 +11,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Q
 
+from arkumu.metadata.canonical import canonical_uri
 from arkumu.metadata.derivations.kreuz_config import (
     DCTERMS_IS_PART_OF,
     all_configured_canonical_properties,
@@ -19,6 +20,10 @@ from arkumu.metadata.derivations.kreuz_config import (
 from arkumu.metadata.models import Resource, ResourceType, Triple
 
 logger = logging.getLogger(__name__)
+
+PROJECT = canonical_uri("project")
+DIGITAL_OBJECT = canonical_uri("digital_object")
+ACTOR_IN_EVENT = canonical_uri("actor_in_event")
 
 
 @dataclass
@@ -69,6 +74,9 @@ class Command(BaseCommand):
 
         for org_code in sorted(org_codes):
             self.stdout.write(self.style.MIGRATE_HEADING(f"Organization: {org_code}"))
+            created_category_links = self._materialize_literal_categories(org_code, dry_run=dry_run)
+            if created_category_links:
+                stats["created"] += created_category_links
             contexts = self._collect_subject_contexts(org_code)
             if not contexts:
                 self.stdout.write("  No canonical Kreuz junction triples found.")
@@ -77,6 +85,8 @@ class Command(BaseCommand):
             stats["processed"] += len(contexts)
             created = self._derive_for_contexts(org_code, contexts, dry_run=dry_run)
             stats["created"] += created
+            stats["created"] += self._derive_project_actor_links(contexts, dry_run=dry_run)
+            stats["created"] += self._derive_event_digital_links(org_code, dry_run=dry_run)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -195,6 +205,77 @@ class Command(BaseCommand):
                 created += self._apply_patterns(subject_id, ctx, patterns, dry_run=dry_run)
         return created
 
+    # ------------------------------------------------------------------
+    # Literal normalization helpers
+    # ------------------------------------------------------------------
+
+    def _materialize_literal_categories(self, org_code: str, *, dry_run: bool) -> int:
+        """
+        Some archives (e.g., KHM/HMT) store project categories as literal codes
+        such as \"93,106\" instead of entity references. The importer faithfully
+        persists those literals, which means downstream derivation logic never
+        sees project→category relationships and the snapshot remains empty.
+
+        To keep the mappings untouched, we synthesize lightweight category
+        entities here. This step runs before we collect Kreuz contexts, ensuring
+        the derived triples participate in the normal pattern workflow. The
+        generated resources are flagged as derived by setting `is_derived` on the
+        emitted triples, making it clear they were produced during post-processing.
+        """
+
+        category_literal_predicate = "http://arkumu.org/data/properties/synonyme"
+        category_link_predicate = "http://arkumu.org/data/properties/projektkategorie"
+
+        literal_triples = list(
+            Triple.objects.filter(
+                predicate__canonical_uri=category_literal_predicate,
+                subject__organization__code=org_code,
+                object__resource_type=ResourceType.LITERAL,
+            ).select_related("subject", "object", "subject__organization")
+        )
+        if not literal_triples:
+            return 0
+
+        created = 0
+        for triple in literal_triples:
+            subject = triple.subject
+            organization = subject.organization
+            if not subject or subject.resource_type != ResourceType.ENTITY:
+                continue
+
+            raw_value = (triple.object.value or "").replace(";", ",")
+            tokens = [token.strip() for token in raw_value.split(",") if token.strip()]
+            if not tokens:
+                continue
+
+            for token in tokens:
+                entity_uri = f"http://arkumu.org/data/{org_code}/entities/projektkategorie/{token}"
+                category_resource = Resource.objects.filter(uri=entity_uri).first()
+                if not category_resource and not dry_run:
+                    category_resource = Resource.objects.create(
+                        uri=entity_uri,
+                        resource_type=ResourceType.ENTITY,
+                        organization=organization,
+                        name=token,
+                        is_placeholder=True,
+                    )
+
+                if not category_resource:
+                    # Dry run – emulate behaviour without touching the DB.
+                    continue
+
+                derived_created = self._emit_derived_triple(
+                    str(subject.id),
+                    category_link_predicate,
+                    str(category_resource.id),
+                    dry_run=dry_run,
+                    pattern_name="project_category_literal_bridge",
+                    source_subject=str(triple.subject_id),
+                )
+                created += derived_created
+
+        return created
+
     def _apply_patterns(
         self,
         subject_id: str,
@@ -295,3 +376,79 @@ class Command(BaseCommand):
             )
         self._predicate_cache[predicate_uri] = predicate
         return predicate
+
+    def _derive_event_digital_links(self, org_code: str, *, dry_run: bool) -> int:
+        """Bridge events to digital objects via shared projects."""
+
+        digital_predicate = DIGITAL_OBJECT
+        project_predicate = PROJECT
+
+        project_to_digitals: Dict[str, Set[str]] = defaultdict(set)
+        project_digital_triples = Triple.objects.filter(
+            predicate__canonical_uri=digital_predicate,
+            subject__organization__code=org_code,
+            object__resource_type=ResourceType.ENTITY,
+        ).values_list("subject_id", "object_id")
+
+        for subject_id, object_id in project_digital_triples:
+            project_to_digitals[str(subject_id)].add(str(object_id))
+
+        if not project_to_digitals:
+            return 0
+
+        event_to_projects: Dict[str, Set[str]] = defaultdict(set)
+        event_project_triples = Triple.objects.filter(
+            predicate__canonical_uri=project_predicate,
+            subject__organization__code=org_code,
+            object__resource_type=ResourceType.ENTITY,
+        ).values_list("subject_id", "object_id")
+
+        for subject_id, object_id in event_project_triples:
+            event_to_projects[str(subject_id)].add(str(object_id))
+
+        created = 0
+        for event_id, project_ids in event_to_projects.items():
+            digital_ids: Set[str] = set()
+            for project_id in project_ids:
+                digital_ids.update(project_to_digitals.get(project_id, set()))
+            if not digital_ids:
+                continue
+            for digital_id in sorted(digital_ids):
+                created += self._emit_derived_triple(
+                    event_id,
+                    digital_predicate,
+                    digital_id,
+                    dry_run=dry_run,
+                    pattern_name="event_digital_bridge",
+                    source_subject=event_id,
+                )
+
+        return created
+
+    def _derive_project_actor_links(
+        self,
+        contexts: Mapping[str, SubjectContext],
+        *,
+        dry_run: bool,
+    ) -> int:
+        """Emit direct project→actor edges from project/person junctions."""
+
+        predicate_uri = ACTOR_IN_EVENT
+        created = 0
+
+        for subject_id, ctx in contexts.items():
+            projects = ctx.canonical_objects.get(PROJECT)
+            actors = ctx.canonical_objects.get(predicate_uri)
+            if not projects or not actors:
+                continue
+            for project_id in projects:
+                for actor_id in actors:
+                    created += self._emit_derived_triple(
+                        project_id,
+                        predicate_uri,
+                        actor_id,
+                        dry_run=dry_run,
+                        pattern_name="project_actor_bridge",
+                        source_subject=subject_id,
+                    )
+        return created

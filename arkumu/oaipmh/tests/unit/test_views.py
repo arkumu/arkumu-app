@@ -5,19 +5,22 @@ Tests individual verb handler functions in isolation,
 focusing on logic and XML generation without HTTP layer.
 """
 
-import pytest
 from datetime import datetime, timezone
+from typing import Optional
 from unittest.mock import Mock, patch
 from lxml import etree as ET
 from urllib.parse import quote
 
+import pytest
+import rdflib
 from django.http import HttpRequest
 from django.test import RequestFactory
 from django.utils import timezone as django_timezone
 
 from arkumu.oaipmh import views
 from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS, XLINK_NS, DC_NS, DCTERMS_NS, XML_NS
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.projects import (
     ProjectRecord,
@@ -48,6 +51,45 @@ class TestOAIViewFunctions:
         self.secondary_uuid = "uuid-test-2"
         self.event_actor_name = "Event Specialist"
         self.event_actor_roles = ["Moderator", "Curator"]
+        self.rights_status_de = "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt"
+        self.rights_status_en = "Protected by German Urheberrecht and/oder Leistungsschutzrecht."
+        self.rights_disclaimer_protected_de = (
+            "Das Projekt/Werk ist durch das deutsche Urheberrecht und Leistungsschutzrecht geschützt. Einige Digitale Objekte können auch noch durch "
+            "Verwertungsrechte geschützt sein. Überprüfen Sie daher bitte alle verknüpften Ereignisse sorgfältig, bevor Sie die bereitgestellten Medien "
+            "weiterverwenden."
+        )
+        self.rights_disclaimer_protected_en = (
+            "The Project/Work is protected by German Urheberrecht and/oder Leistungsschutzrecht. "
+            "Some digital objects may also be protected by exploitation rights. Therefore, please "
+            "check all linked events thoroughly before further use of the media provided."
+        )
+
+    @staticmethod
+    def _flatten_dc_entries(entries):
+        flattened: list[str] = []
+        for item in entries or []:
+            if isinstance(item, dict):
+                value = item.get('value')
+            else:
+                value = item
+            if value:
+                flattened.append(value)
+        return flattened
+
+    @staticmethod
+    def _find_dc_entry(entries, value, *, attr_key=None, attr_value=None):
+        for item in entries or []:
+            if isinstance(item, dict):
+                if item.get('value') != value:
+                    continue
+                if attr_key is not None:
+                    if (item.get('attrs') or {}).get(attr_key) != attr_value:
+                        continue
+                return item
+            else:
+                if item == value and attr_key is None:
+                    return item
+        return None
 
     def _ensure_event_storage(self, resource: Resource) -> None:
         """Create S3 metadata for the synthetic event file used in tests."""
@@ -73,7 +115,12 @@ class TestOAIViewFunctions:
             },
         )
 
-    def _build_snapshot_record(self, resource: Resource, include_files: bool = False) -> ProjectRecord:
+    def _build_snapshot_record(
+        self,
+        resource: Resource,
+        include_files: bool = False,
+        rights_status: Optional[str] = None,
+    ) -> ProjectRecord:
         digital_objects = []
         if include_files:
             digital_objects.append(
@@ -91,6 +138,7 @@ class TestOAIViewFunctions:
                     significant_properties_en="Significant properties (EN)",
                     license=ProjectDigitalObjectLicense(
                         uri=self.primary_license_uri,
+                        identifier="license-primary",
                         label_de="Lizenz Eins",
                         label_en="License One",
                         rights_statement=self.primary_rights_statement,
@@ -112,6 +160,7 @@ class TestOAIViewFunctions:
                     significant_properties_en="Additional properties (EN)",
                     license=ProjectDigitalObjectLicense(
                         uri=self.secondary_license_uri,
+                        identifier="license-secondary",
                         label_de="Lizenz Zwei",
                         label_en="License Two",
                         rights_statement=self.secondary_rights_statement,
@@ -139,6 +188,7 @@ class TestOAIViewFunctions:
             project_type=ProjectType(label="Type A"),
             digital_objects=digital_objects,
             institution_codes=["ti"],
+            rights_status=self.rights_status_de if rights_status is None else rights_status,
         )
 
     # ============================================================================
@@ -225,12 +275,22 @@ class TestOAIViewFunctions:
         formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
         assert any(elem.text == 'text/plain' for elem in formats)
 
+        arkumu_nodes = [
+            elem
+            for elem in dc_root.findall("{http://purl.org/dc/elements/1.1/}identifier")
+            if elem.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
+        ]
+        assert len(arkumu_nodes) == 1
+        assert arkumu_nodes[0].text == resource.uri
+        assert arkumu_nodes[0] in list(dc_root)
+
     @pytest.mark.django_db
     def test_restrict_to_harvestable_files_includes_rosetta_without_s3(self, settings):
         """Rosetta institutions remain harvestable even without S3 file objects."""
 
         settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('khm',)
         settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
 
         khm_org = Organization.objects.create(
             name="KHM",
@@ -268,6 +328,144 @@ class TestOAIViewFunctions:
             Resource.objects.filter(pk=non_s3_resource.pk)
         )
         assert not filtered_non_s3.exists()
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_excludes_event_links_for_digital_only_orgs(self, settings):
+        """Digital-object orgs should not harvest projects via event-linked files."""
+
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/3001",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        event = Resource.objects.create(
+            uri="https://arkumu.org/entities/ereignis/3002",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/ereignis",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        Triple.objects.create(
+            subject=project,
+            predicate=predicate,
+            object=event,
+        )
+
+        S3FileObject.objects.create(
+            file_name="audio.mp3",
+            s3_key="fuk/audio.mp3",
+            organization="fuk",
+            status="verified",
+            related_resource=event,
+        )
+
+        queryset = Resource.objects.filter(pk=project.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert not filtered.exists()
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_includes_event_digital_object_for_digital_only_orgs(self, settings):
+        """Digital-object orgs harvest projects when files attach to event digital objects."""
+
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/4001",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        event = Resource.objects.create(
+            uri="https://arkumu.org/entities/ereignis/4002",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_object = Resource.objects.create(
+            uri="https://arkumu.org/entities/digitales-objekt/5003",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        event_predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/ereignis",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/digitales-objekt",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        Triple.objects.create(
+            subject=project,
+            predicate=event_predicate,
+            object=event,
+        )
+
+        Triple.objects.create(
+            subject=event,
+            predicate=digital_predicate,
+            object=digital_object,
+        )
+
+        S3FileObject.objects.create(
+            file_name="tape.wav",
+            s3_key="fuk/tape.wav",
+            organization="fuk",
+            status="verified",
+            related_resource=digital_object,
+        )
+
+        queryset = Resource.objects.filter(pk=project.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert list(filtered) == [project]
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS
@@ -507,27 +705,123 @@ class TestOAIViewFunctions:
         self._ensure_event_storage(resource)
         record = self._build_snapshot_record(resource, include_files=True)
 
-        payload = views._build_dc_payload_from_record(record, resource)
+        payload = views._build_dc_payload_from_record(record, resource, include_event_details=True)
 
         assert "dc:title" in payload
         assert record.title in payload["dc:title"]
-        assert "dc:identifier" in payload
-        assert resource.uri in payload["dc:identifier"]
+        event_name_entry = self._find_dc_entry(
+            payload.get("dc:title", []),
+            "Launch",
+            attr_key=ET.QName(XML_NS, "type"),
+            attr_value='event-name',
+        )
+        assert event_name_entry is not None
+        identifier_values = self._flatten_dc_entries(payload.get("dc:identifier", []))
+        assert resource.uri in identifier_values
+        if resource.canonical_uri:
+            assert resource.canonical_uri in identifier_values
+        assert f"{resource.uri}/event/launch" in identifier_values
         assert not payload.get("dc:relation")
         assert 'dc:format' in payload
         assert 'text/plain' in payload['dc:format']
-        rights_values = payload.get("dc:rights", [])
+        rights_entries = payload.get("dc:rights", [])
+        rights_values = self._flatten_dc_entries(rights_entries)
         assert self.primary_rights_statement in rights_values
         assert self.secondary_rights_statement in rights_values
+        assert self.rights_status_de in rights_values
+        assert self.rights_status_en in rights_values
+        assert self.rights_disclaimer_protected_de in rights_values
+        assert self.rights_disclaimer_protected_en in rights_values
         assert "dc:collection" not in payload
-        is_part_of_values = payload.get("dcterms:isPartOf", [])
+        is_part_of_values = self._flatten_dc_entries(payload.get("dcterms:isPartOf", []))
         assert "TI" in is_part_of_values
         assert "Test Institution" in is_part_of_values
-        contributor_values = payload.get("dc:contributor", [])
+        contributor_entries = payload.get("dc:contributor", [])
+        contributor_values = self._flatten_dc_entries(contributor_entries)
         assert any(self.event_actor_name in value for value in contributor_values)
         expected_role_fragment = ", ".join(sorted(set(self.event_actor_roles)))
         event_contributor = f"{self.event_actor_name} ({expected_role_fragment})"
         assert event_contributor in contributor_values
+        actor_entry = self._find_dc_entry(
+            contributor_entries,
+            event_contributor,
+            attr_key=ET.QName(XML_NS, "type"),
+            attr_value='actor',
+        )
+        assert actor_entry is not None
+
+        event_date_entries = payload.get("dc:date", [])
+        begin_entry = self._find_dc_entry(
+            event_date_entries,
+            "2020-01-01",
+            attr_key=ET.QName(XML_NS, "type"),
+            attr_value='event-begin',
+        )
+        assert begin_entry is not None
+
+    def test_build_dc_payload_excludes_event_details_when_requested(self, sample_resources):
+        """Event-specific fields are suppressed when include_event_details=False."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+
+        payload = views._build_dc_payload_from_record(
+            record,
+            resource,
+            include_event_details=False,
+        )
+
+        titles = payload.get("dc:title", [])
+        assert record.title in titles
+        assert self._find_dc_entry(
+            titles,
+            "Launch",
+            attr_key=ET.QName(XML_NS, "type"),
+            attr_value="event-name",
+        ) is None
+
+        contributors = payload.get("dc:contributor", [])
+        assert all(
+            (entry.get("attrs") or {}).get(ET.QName(XML_NS, "type")) != "actor"
+            if isinstance(entry, dict) else True
+            for entry in contributors
+        )
+        dates = payload.get("dc:date", [])
+        assert all(
+            (entry.get("attrs") or {}).get(ET.QName(XML_NS, "type")) not in {"event-begin", "event-end"}
+            if isinstance(entry, dict) else True
+            for entry in dates
+        )
+        identifiers = self._flatten_dc_entries(payload.get("dc:identifier", []))
+        assert resource.uri in identifiers
+        assert f"{resource.uri}/event/launch" not in identifiers
+
+    @pytest.mark.django_db
+    def test_build_dc_payload_fallback_for_khm_without_status(self, sample_resources):
+        """KHM projects fall back to protected rights package when status literal is missing."""
+
+        resource = sample_resources[0]
+        khm_org = Organization.objects.create(
+            name="Kunsthochschule für Medien Köln",
+            code="khm",
+            domain="khm.example",
+            is_active=True,
+        )
+        resource.organization = khm_org
+        resource.save(update_fields=["organization"])
+
+        record = self._build_snapshot_record(resource, include_files=True, rights_status=None)
+        record.rights_status = None
+
+        payload = views._build_dc_payload_from_record(record, resource)
+        rights_values = self._flatten_dc_entries(payload.get("dc:rights", []))
+
+        assert self.primary_rights_statement in rights_values
+        assert self.secondary_rights_statement in rights_values
+        assert "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt" in rights_values
+        assert views._RIGHTS_STATUS_PROTECTED_EN in rights_values
+        assert views._RIGHTS_DISCLAIMER_PROTECTED_DE in rights_values
+        assert views._RIGHTS_DISCLAIMER_PROTECTED_EN in rights_values
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
@@ -547,6 +841,17 @@ class TestOAIViewFunctions:
         # Should contain oai_dc element
         dc_element = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_element is not None
+        identifier_nodes = [
+            elem
+            for elem in dc_element.findall("{http://purl.org/dc/elements/1.1/}identifier")
+            if elem.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
+        ]
+        assert len(identifier_nodes) == 1
+        assert identifier_nodes[0].text == resource.uri
+        event_title = dc_element.find("{http://purl.org/dc/elements/1.1/}title[@{http://www.w3.org/XML/1998/namespace}type='event-name']")
+        assert event_title is None
+        actor_contributor = dc_element.find("{http://purl.org/dc/elements/1.1/}contributor[@{http://www.w3.org/XML/1998/namespace}type='actor']")
+        assert actor_contributor is None
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_build_metadata_element_mets(self, mock_get_record, sample_resources):
@@ -564,12 +869,30 @@ class TestOAIViewFunctions:
         mets_elements = metadata.findall(f".//{{{METS_NS}}}mets")
         assert len(mets_elements) > 0
 
+        mets_root = mets_elements[0]
+        ie_dmd = mets_root.find(f".//{{{METS_NS}}}dmdSec[@ID='ie-dmd']//{{{DC_NS}}}record")
+        assert ie_dmd is not None
+        assert ie_dmd.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='event-name']") is None
+
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_rosetta_mets_structure(self, mock_get_record, sample_resources):
         """Ensure Rosetta METS output matches expected structural profile."""
         resource = sample_resources[0]
         self._ensure_event_storage(resource)
         record = self._build_snapshot_record(resource, include_files=True)
+        record.events.append(
+            ProjectEvent(
+                id="event-2",
+                uri=f"{resource.uri}/event/closing",
+                name="Closing",
+                start="2020-06-01",
+                end="2020-06-30",
+                location="Cologne",
+                actors=[
+                    ProjectEventActor(name="Second Actor", roles=["Performer"]),
+                ],
+            )
+        )
         mock_get_record.return_value = record
 
         metadata = views._build_metadata_element(resource, "mets")
@@ -579,20 +902,49 @@ class TestOAIViewFunctions:
         # Intellectual entity ADM sections
         rights_md = mets_root.find(f".//{{{METS_NS}}}rightsMD[@ID='ie-amd-rights']")
         assert rights_md is not None
-        source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-OTHER']")
-        assert source_md is not None
-        epicur = source_md.find(f".//{{{DNX_NS}}}epicur")
-        assert epicur is not None
 
-        resources = epicur.findall(f".//{{{DNX_NS}}}resource")
+        dc_source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-dc']")
+        assert dc_source_md is not None
+        dc_source_wrap = dc_source_md.find(f"./{{{METS_NS}}}mdWrap")
+        assert dc_source_wrap is not None
+        assert dc_source_wrap.get("MDTYPE") == "DC"
+        dc_source_xml = dc_source_wrap.find(f"./{{{METS_NS}}}xmlData")
+        assert dc_source_xml is not None
+        dc_records = dc_source_xml.findall(f"./{{{DC_NS}}}record")
+        assert len(dc_records) == len(record.events)
+        for event, dc_event_record in zip(record.events, dc_records):
+            event_dc_entry = dc_event_record.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='event-name']")
+            assert event_dc_entry is not None
+            assert event_dc_entry.text == event.name
+            identifier_elem = dc_event_record.find(f"./{{{DC_NS}}}identifier[@{{{XML_NS}}}type='event-id']")
+            assert identifier_elem is not None
+            assert identifier_elem.text == event.uri
+
+        rdf_source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-OTHER']")
+        assert rdf_source_md is not None
+        rdf_source_wrap = rdf_source_md.find(f"./{{{METS_NS}}}mdWrap")
+        assert rdf_source_wrap is not None
+        assert rdf_source_wrap.get("OTHERMDTYPE") == "RDF"
+        assert rdf_source_wrap.get("MIMETYPE") == "application/rdf+xml"
+
+        source_xml = rdf_source_wrap.find(f"./{{{METS_NS}}}xmlData")
+        assert source_xml is not None
+
+        rdf_element = source_xml.find("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF")
+        assert rdf_element is not None
+
+        rdf_serialized = ET.tostring(rdf_element, encoding="utf-8")
+        graph = rdflib.Graph()
+        graph.parse(data=rdf_serialized.decode("utf-8"), format="application/rdf+xml")
+
+        validation = views.rosetta_mets_validator.validate_metadata_element(metadata, resource_uri=resource.uri)
+        assert validation.is_valid, f"METS validation failed: {[issue.message for issue in validation.issues]}"
 
         preservation_count = sum(
             1
             for obj in record.digital_objects
             if views._infer_representation_type(obj) == "PRESERVATION_MASTER"
         ) or len(record.digital_objects)
-
-        assert len(resources) >= preservation_count
 
         # File groups and structural maps should mirror preservation master files
         file_grps = mets_root.findall(f".//{{{METS_NS}}}fileGrp")
@@ -647,6 +999,23 @@ class TestOAIViewFunctions:
             assert rights_value is not None
             assert rights_value.text == digital_obj.license.uri
 
+            granted_identifier = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='grantedRightsStatement']//{{{DNX_NS}}}key[@id='grantedRightsStatementIdentifier']"
+            )
+            assert granted_identifier is not None
+            assert granted_identifier.text == digital_obj.license.identifier
+
+            granted_value = amd_sec.find(
+                f".//{{{DNX_NS}}}section[@id='grantedRightsStatement']//{{{DNX_NS}}}key[@id='grantedRightsStatementValue']"
+            )
+            assert granted_value is not None
+            expected_granted_value = (
+                digital_obj.license.rights_statement
+                or digital_obj.license.label_de
+                or digital_obj.license.label_en
+            )
+            assert granted_value.text == expected_granted_value
+
             source_record = amd_sec.find(f".//{{{DC_NS}}}record")
             assert source_record is not None
 
@@ -683,6 +1052,50 @@ class TestOAIViewFunctions:
             assert digital_obj.license.label_de in license_values
             assert digital_obj.license.label_en in license_values
             assert digital_obj.license.uri in license_values
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_ie_admin_metadata_contains_characteristics_and_rights(self, mock_get_record, sample_resources):
+        """IE administrative metadata exposes object characteristics, rights URIs, and status texts."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        ie_amd = mets_root.find(f"./{{{METS_NS}}}amdSec[@ID='ie-amd']")
+        assert ie_amd is not None
+
+        # Technical metadata sections exist but remain empty
+        object_characteristics = ie_amd.find(f".//{{{DNX_NS}}}section[@id='objectCharacteristics']")
+        assert object_characteristics is not None
+        assert not object_characteristics.findall(f".//{{{DNX_NS}}}key")
+
+        identifier_section = ie_amd.find(f".//{{{DNX_NS}}}section[@id='objectIdentifier']")
+        assert identifier_section is not None
+        assert not identifier_section.findall(f".//{{{DNX_NS}}}key")
+
+        rights_section = ie_amd.find(
+            f".//{{{DNX_NS}}}section[@id='linkingRightsStatementIdentifier']"
+        )
+        assert rights_section is not None
+        rights_values = {
+            key.text
+            for key in rights_section.findall(f"./{{{DNX_NS}}}record/{{{DNX_NS}}}key[@id='linkingRightsStatementIdentifierValue']")
+        }
+        assert "https://www.gesetze-im-internet.de/urhg/" in rights_values
+        assert "https://www.gesetze-im-internet.de/englisch_urhg/" in rights_values
+
+        granted_values = [
+            key.text
+            for key in ie_amd.findall(
+                f".//{{{DNX_NS}}}section[@id='grantedRightsStatement']"
+                f"/{{{DNX_NS}}}record/{{{DNX_NS}}}key[@id='grantedRightsStatementValue']"
+            )
+        ]
+        assert granted_values == [record.rights_status]
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_struct_map_groups_event_files(self, mock_get_record, sample_resources):

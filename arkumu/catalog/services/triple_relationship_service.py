@@ -8,8 +8,9 @@ import uuid
 
 from django.db.models import Q
 
+from arkumu.metadata.canonical import predicate_candidates as canonical_predicate_candidates
 from arkumu.metadata.models.triples import Triple
-from arkumu.metadata.models import Resource, ResourceType, WikidataEntity
+from arkumu.metadata.models import Resource, ResourceType
 from arkumu.users.models import Organization
 
 
@@ -435,55 +436,43 @@ class TripleRelationshipService:
             location_value, location_entity_id = _extract_property(properties, event_location_predicate)
             wikidata_value, _ = _extract_property(properties, event_location_wikidata_predicate)
 
-            location_identifier = location_entity_id or wikidata_value
-            if location_identifier:
-                event_info['location_id'] = location_identifier
-            elif location_value and location_value.strip().upper().startswith('Q'):
-                event_info['location_id'] = location_value.strip()
+            def _parse_qids(raw: Optional[str]) -> List[str]:
+                if not raw:
+                    return []
+                tokens = [
+                    token.strip().upper()
+                    for token in str(raw).replace(';', ',').split(',')
+                    if token.strip()
+                ]
+                return [token for token in tokens if token.startswith('Q')]
 
-            location_display = location_value
-            if not location_display and wikidata_value:
-                location_ids = [loc_id.strip() for loc_id in str(wikidata_value).split(',') if loc_id.strip()]
-                if location_ids:
-                    cached_entities = {
-                        entity.wikidata_id: entity
-                        for entity in WikidataEntity.objects.filter(
-                            wikidata_id__in=[loc for loc in location_ids if loc.startswith('Q')]
-                        )
-                    }
+            location_qids: List[str] = []
 
-                    location_names: List[str] = []
-                    for loc_id in location_ids:
-                        if loc_id.startswith('Q'):
-                            cached_entity = cached_entities.get(loc_id)
-                            display_name = (
-                                cached_entity.label_de
-                                or cached_entity.label_en
-                                if cached_entity
-                                else None
-                            )
-                            if not display_name:
-                                display_name = self._resolve_location_label(loc_id)
-                            location_names.append(display_name or loc_id)
-                        else:
-                            resolved_label = self._resolve_location_label(loc_id)
-                            location_names.append(resolved_label or loc_id)
+            if wikidata_value:
+                location_qids.extend(_parse_qids(wikidata_value))
 
-                    if location_names:
-                        location_display = ', '.join(location_names)
-                    elif wikidata_value:
-                        location_display = str(wikidata_value)
+            if location_entity_id and event_location_wikidata_predicate:
+                qid_map = self._collect_literal_values(
+                    subject_ids=[location_entity_id],
+                    predicate_uri=event_location_wikidata_predicate,
+                    organization_code=organization_code,
+                )
+                location_qids.extend(_parse_qids(qid_map.get(location_entity_id)))
 
-            if not location_display and location_entity_id:
-                location_display = self._resolve_location_label(location_entity_id) or location_entity_id
+            if not location_qids and location_value:
+                location_qids.extend(_parse_qids(location_value))
 
-            if location_display and _looks_placeholder(location_display):
-                resolved = self._resolve_location_label(location_display)
-                if resolved:
-                    location_display = resolved
+            # Deduplicate while preserving order
+            seen_qids: set[str] = set()
+            normalized_qids: List[str] = []
+            for qid in location_qids:
+                if qid not in seen_qids:
+                    seen_qids.add(qid)
+                    normalized_qids.append(qid)
 
-            if location_display:
-                event_info['location'] = location_display
+            if normalized_qids:
+                event_info['location_id'] = normalized_qids[0]
+                event_info['location'] = ', '.join(normalized_qids)
 
             event_type_value, event_type_entity_id = _extract_property(properties, event_type_predicate)
             if not event_type_value and event_type_entity_id:
@@ -675,7 +664,7 @@ class TripleRelationshipService:
         catchphrase_label_predicate: Optional[str],
         organization_code: Optional[str] = None,
     ) -> List[str]:
-        """Return catchphrase labels for the project."""
+        """Return Wikidata IDs for the project's catchphrases."""
 
         if not catchphrase_predicate or not catchphrase_label_predicate:
             return []
@@ -691,18 +680,21 @@ class TripleRelationshipService:
         if not catchphrase_ids:
             return []
 
-        # Get catchphrase labels
-        label_map = self._collect_literal_values(
+        # Get catchphrase wikidata identifiers
+        qid_map = self._collect_literal_values(
             subject_ids=catchphrase_ids,
             predicate_uri=catchphrase_label_predicate,
             organization_code=organization_code,
         )
 
-        results = []
+        results: List[str] = []
         for catchphrase_id in catchphrase_ids:
-            label = label_map.get(catchphrase_id)
-            if label and label.strip() and label.strip() not in results:
-                results.append(label.strip())
+            qid = qid_map.get(catchphrase_id)
+            if not qid:
+                continue
+            normalized = qid.strip().upper()
+            if normalized and normalized not in results:
+                results.append(normalized)
 
         return results
 
@@ -775,7 +767,21 @@ class TripleRelationshipService:
                 organization_code=organization_code,
             )
 
-        relation_predicates = [p for p in [actor_link_predicate, role_link_predicate] if p]
+        rights_predicates = {
+            'copyright': 'http://arkumu.org/data/properties/ist-urheberin',
+            'neighbouring': 'http://arkumu.org/data/properties/besitzt-leistungsschutzrechte',
+        }
+
+        relation_predicates = [
+            predicate
+            for predicate in [
+                actor_link_predicate,
+                role_link_predicate,
+                rights_predicates['copyright'],
+                rights_predicates['neighbouring'],
+            ]
+            if predicate
+        ]
         actor_role_triples = self._fetch_triples(
             subject_ids=list(crosstable_ids),
             predicate_uris=relation_predicates,
@@ -784,17 +790,33 @@ class TripleRelationshipService:
 
         crosstable_actor_map: Dict[str, str] = {}
         crosstable_role_map: Dict[str, set[str]] = defaultdict(set)
+        crosstable_rights_map: Dict[str, Dict[str, bool]] = defaultdict(lambda: {
+            'copyright': False,
+            'neighbouring': False,
+        })
+
+        def _is_truthy(value: Optional[str]) -> bool:
+            if value is None:
+                return False
+            token = str(value).strip().lower()
+            return token in {'1', 'true', 'yes', 'ja'}
+
         for triple in actor_role_triples:
             predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
             obj = triple.object
-            if obj.resource_type == ResourceType.LITERAL:
-                continue
             subject_key = str(triple.subject_id)
-            object_id = str(obj.id)
-            if predicate_canonical == actor_link_predicate:
-                crosstable_actor_map[subject_key] = object_id
-            elif role_link_predicate and predicate_canonical == role_link_predicate:
-                crosstable_role_map[subject_key].add(object_id)
+            if predicate_canonical == actor_link_predicate and obj.resource_type != ResourceType.LITERAL:
+                crosstable_actor_map[subject_key] = str(obj.id)
+                continue
+            if role_link_predicate and predicate_canonical == role_link_predicate and obj.resource_type != ResourceType.LITERAL:
+                crosstable_role_map[subject_key].add(str(obj.id))
+                continue
+            if predicate_canonical == rights_predicates['copyright'] and obj.resource_type == ResourceType.LITERAL:
+                crosstable_rights_map[subject_key]['copyright'] = _is_truthy(obj.value)
+                continue
+            if predicate_canonical == rights_predicates['neighbouring'] and obj.resource_type == ResourceType.LITERAL:
+                crosstable_rights_map[subject_key]['neighbouring'] = _is_truthy(obj.value)
+                continue
 
         if not crosstable_actor_map:
             event_results = self._actors_from_event_edges(
@@ -850,17 +872,44 @@ class TripleRelationshipService:
                 if role_label:
                     entry['roles'].add(role_label)
 
+        rights_by_actor_event: Dict[tuple[str, str], Dict[str, bool]] = defaultdict(lambda: {
+            'copyright': False,
+            'neighbouring': False,
+        })
         results: List[Dict[str, Any]] = []
         for actor_id, payload in actors.items():
             name = actor_names.get(actor_id)
             if not name:
                 continue
+            for crosstable_id, linked_actor_id in crosstable_actor_map.items():
+                if linked_actor_id != actor_id:
+                    continue
+                rights_flags = crosstable_rights_map.get(crosstable_id, {})
+                for event_id in crosstable_to_events.get(crosstable_id, set()):
+                    rights_entry = rights_by_actor_event[(actor_id, event_id)]
+                    if rights_flags.get('copyright'):
+                        rights_entry['copyright'] = True
+                    if rights_flags.get('neighbouring'):
+                        rights_entry['neighbouring'] = True
+
+            event_rights: Dict[str, Dict[str, bool]] = {}
+            for event_id in payload['event_ids']:
+                flags = rights_by_actor_event.get((actor_id, event_id), {
+                    'copyright': False,
+                    'neighbouring': False,
+                })
+                event_rights[event_id] = {
+                    'is_copyright_holder': flags.get('copyright', False),
+                    'is_neighbouring_rights_holder': flags.get('neighbouring', False),
+                }
+
             results.append(
                 {
                     'id': actor_id,
                     'name': name,
                     'roles': sorted(payload['roles']),
                     'event_ids': sorted(payload['event_ids']),
+                    'event_rights': event_rights,
                 }
             )
 
@@ -1031,6 +1080,13 @@ class TripleRelationshipService:
                     'name': name,
                     'roles': sorted(payload['roles']),
                     'event_ids': sorted(payload['event_ids']),
+                    'event_rights': {
+                        event_id: {
+                            'is_copyright_holder': False,
+                            'is_neighbouring_rights_holder': False,
+                        }
+                        for event_id in payload['event_ids']
+                    },
                 }
             )
 
@@ -1046,9 +1102,11 @@ class TripleRelationshipService:
     ) -> List[Dict[str, Any]]:
         """Fallback using direct project→actor edges when crosstables are unavailable."""
 
+        predicate_uris = canonical_predicate_candidates("project_actor", actor_link_predicate)
+
         triples = self._fetch_triples(
             subject_ids=[project_id],
-            predicate_uris=[actor_link_predicate],
+            predicate_uris=predicate_uris,
             organization_code=organization_code,
         )
 
@@ -1056,6 +1114,9 @@ class TripleRelationshipService:
         for triple in triples:
             obj = triple.object
             if obj.resource_type == ResourceType.LITERAL:
+                continue
+            predicate_canonical = triple.predicate.canonical_uri or triple.predicate.uri
+            if predicate_canonical not in predicate_uris:
                 continue
             actor_ids.append(str(obj.id))
 
@@ -1086,6 +1147,7 @@ class TripleRelationshipService:
                     'name': name,
                     'roles': [],
                     'event_ids': [],
+                    'event_rights': {},
                 }
             )
 
