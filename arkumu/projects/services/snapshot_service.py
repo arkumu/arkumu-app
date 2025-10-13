@@ -41,6 +41,8 @@ from arkumu.projects import (
     ProjectType,
 )
 from arkumu.projects.fixity import parse_fixity
+from arkumu.projects.services.s3_key_index import lookup_dump_storage_key
+from arkumu.projects.services.dump_fixity_index import find_fixity, FixityRecord
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +160,7 @@ class ProjectSnapshotService:
         self._record_index_version: Optional[str] = None
         self._digital_object_orgs: set[str] = {
             str(code).lower().strip()
-            for code in getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", ("fuk", "hmt", "det"))
+            for code in getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", ("fuk", "det", "rsh"))
             if code
         }
 
@@ -1066,8 +1068,14 @@ class ProjectSnapshotService:
             for digital_id in linked_digital_ids:
                 storage_files.extend(storage_files_map.get(str(digital_id), []))
 
-        if storage_files:
+        if storage_files and not digital_only_org:
             digital_objects = self._merge_storage_metadata(digital_objects, storage_files)
+
+        if digital_only_org and digital_objects:
+            code_scope: List[str] = list(code_candidates)
+            if not code_scope and primary_institution_code:
+                code_scope.append(primary_institution_code)
+            self._apply_dump_storage_matches(digital_objects, code_scope)
 
         rights_status = self._first_literal_from_predicates(
             subject_edges,
@@ -1186,6 +1194,64 @@ class ProjectSnapshotService:
                 matched.updated_at = updated_at.isoformat()
 
         return digital_objects
+
+    def _apply_dump_storage_matches(
+        self,
+        digital_objects: List[ProjectDigitalObject],
+        institution_codes: Iterable[str],
+    ) -> None:
+        codes: List[str] = []
+        for code in institution_codes:
+            normalized = (code or "").strip().lower()
+            if not normalized:
+                continue
+            if normalized not in self._digital_object_orgs:
+                continue
+            codes.append(normalized)
+
+        if not codes:
+            return
+
+        for obj in digital_objects:
+            candidates = [
+                getattr(obj, "path", None),
+                getattr(obj, "storage_key", None),
+                getattr(obj, "access_url", None),
+                getattr(obj, "file_name", None),
+            ]
+            matched_key: Optional[str] = None
+            fixity_record: Optional[FixityRecord] = None
+
+            for code in codes:
+                fixity_record = find_fixity(code, candidates)
+                if fixity_record:
+                    matched_key = fixity_record.storage_key or fixity_record.dump_key
+                    break
+                fallback_key = lookup_dump_storage_key(code, candidates)
+                if fallback_key:
+                    matched_key = fallback_key
+                    break
+
+            if matched_key and not getattr(obj, "storage_key", None):
+                obj.storage_key = matched_key
+
+            if fixity_record:
+                storage_key = fixity_record.storage_key or fixity_record.dump_key
+                if storage_key and not getattr(obj, "storage_key", None):
+                    obj.storage_key = storage_key
+
+                if fixity_record.status and not getattr(obj, "storage_status", None):
+                    obj.storage_status = fixity_record.status
+
+                checksum_value = fixity_record.checksum_or_etag
+                if checksum_value and not getattr(obj, "checksum", None):
+                    fixity = parse_fixity(checksum_value)
+                    if fixity.digest:
+                        obj.checksum = fixity.digest
+                    if fixity.algorithm and not getattr(obj, "checksum_algorithm", None):
+                        obj.checksum_algorithm = fixity.algorithm
+                    if fixity.digest and not getattr(obj, "checksum_provenance", None):
+                        obj.checksum_provenance = "dump"
 
     def _is_digital_object_org(self, codes: Iterable[str]) -> bool:
         if not self._digital_object_orgs or not codes:

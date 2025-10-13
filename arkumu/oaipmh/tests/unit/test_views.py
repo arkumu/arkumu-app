@@ -35,6 +35,7 @@ from arkumu.projects import (
     ProjectType,
 )
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.catalog.services.project_views import ProjectURIs
 
 
 class TestOAIViewFunctions:
@@ -388,10 +389,11 @@ class TestOAIViewFunctions:
         assert not filtered.exists()
 
     @pytest.mark.django_db
-    def test_restrict_to_harvestable_files_includes_event_digital_object_for_digital_only_orgs(self, settings):
+    def test_restrict_to_harvestable_files_includes_event_digital_object_for_digital_only_orgs(self, settings, monkeypatch):
         """Digital-object orgs harvest projects when files attach to event digital objects."""
 
         settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
 
         fuk_org = Organization.objects.create(
             name="FUK",
@@ -427,6 +429,15 @@ class TestOAIViewFunctions:
             updated_at=django_timezone.now(),
         )
 
+        path_literal = Resource.objects.create(
+            value="data/events/fuk/tape.wav",
+            organization=fuk_org,
+            resource_type=ResourceType.LITERAL,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
         event_predicate = Resource.objects.create(
             uri="http://arkumu.org/data/properties/ereignis",
             resource_type=ResourceType.PROPERTY,
@@ -437,6 +448,14 @@ class TestOAIViewFunctions:
 
         digital_predicate = Resource.objects.create(
             uri="http://arkumu.org/data/properties/digitales-objekt",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        path_predicate = Resource.objects.create(
+            uri=ProjectURIs.DIGITAL_OBJECT_PATH,
             resource_type=ResourceType.PROPERTY,
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,
@@ -455,17 +474,132 @@ class TestOAIViewFunctions:
             object=digital_object,
         )
 
-        S3FileObject.objects.create(
-            file_name="tape.wav",
-            s3_key="fuk/tape.wav",
-            organization="fuk",
-            status="verified",
-            related_resource=digital_object,
+        Triple.objects.create(
+            subject=digital_object,
+            predicate=path_predicate,
+            object=path_literal,
         )
+
+        def fake_lookup(org_code, candidates):
+            if org_code == 'fuk' and any("tape.wav" in (candidate or "") for candidate in candidates):
+                return "data/events/fuk/tape.wav"
+            return None
+
+        monkeypatch.setattr(views, "lookup_dump_storage_key", fake_lookup)
 
         queryset = Resource.objects.filter(pk=project.pk)
         filtered = views._restrict_to_harvestable_files(queryset)
         assert list(filtered) == [project]
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_uses_dump_for_digital_only_orgs(self, settings, monkeypatch):
+        """Digital-only orgs use dump lookups instead of S3FileObject matches."""
+
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/5001",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_object = Resource.objects.create(
+            uri="https://arkumu.org/entities/digitales-objekt/5002",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        path_literal = Resource.objects.create(
+            value="data/events/fuk/test_audio.wav",
+            organization=fuk_org,
+            resource_type=ResourceType.LITERAL,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/digitales-objekt",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        path_predicate = Resource.objects.create(
+            uri=ProjectURIs.DIGITAL_OBJECT_PATH,
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        Triple.objects.create(
+            subject=project,
+            predicate=digital_predicate,
+            object=digital_object,
+        )
+
+        Triple.objects.create(
+            subject=digital_object,
+            predicate=path_predicate,
+            object=path_literal,
+        )
+
+        def fake_lookup(org_code, candidates):
+            if org_code == 'fuk' and any("test_audio" in (candidate or "") for candidate in candidates):
+                return "data/events/fuk/test_audio.wav"
+            return None
+
+        monkeypatch.setattr(views, "lookup_dump_storage_key", fake_lookup)
+
+        queryset = Resource.objects.filter(pk=project.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert list(filtered) == [project]
+
+    @pytest.mark.django_db
+    def test_get_resources_queryset_skips_restrict_when_allowed_uris(self):
+        """Allowed URI list bypasses additional harvestable filtering."""
+
+        org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/9001",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        queryset = views._get_resources_queryset(
+            set_spec=None,
+            from_date=None,
+            until_date=None,
+            metadata_prefix="oai_dc",
+            allowed_uris=[project.uri],
+        )
+
+        assert list(queryset) == [project]
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS

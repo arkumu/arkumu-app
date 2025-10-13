@@ -5,6 +5,7 @@ import binascii
 import logging
 import mimetypes
 import re
+from collections import defaultdict
 from datetime import datetime, timezone as dt_timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
@@ -27,6 +28,8 @@ from arkumu.users.models import Organization
 from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, ProjectSnapshot
 from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services import ProjectSnapshotService
+from arkumu.projects.services.s3_key_index import lookup_dump_storage_key
+from arkumu.catalog.services.project_views import ProjectURIs
 from arkumu.oaipmh.constants import (
     DNX_NS,
     METS_NS as DEFAULT_METS_NS,
@@ -316,49 +319,9 @@ def _restrict_to_harvestable_files(queryset):
     project_event_condition = Q(pk__in=project_ids_via_events)
 
     digital_object_orgs = _digital_object_orgs()
-    has_digital_condition = False
-    digital_object_condition = Q()
+    dump_project_ids: set[Any] = set()
     if digital_object_orgs:
-        digital_object_resource_ids = S3FileObject.objects.filter(
-            status__in=HARVESTABLE_FILE_STATUSES,
-            related_resource__uri__regex=_DIGITAL_OBJECT_URI_REGEX,
-            related_resource__organization__code__in=digital_object_orgs,
-        ).values_list('related_resource_id', flat=True)
-
-        digital_object_ids = list(digital_object_resource_ids)
-        if digital_object_ids:
-            digital_links = Triple.objects.filter(
-                predicate__uri__endswith='/properties/digitales-objekt',
-                object_id__in=digital_object_ids,
-            )
-
-            direct_project_ids = set(
-                digital_links.filter(
-                    subject__uri__contains='/entities/projekt/'
-                ).values_list('subject_id', flat=True)
-            )
-
-            event_link_ids = list(
-                digital_links.filter(
-                    subject__uri__contains='/entities/ereignis/'
-                ).values_list('subject_id', flat=True)
-            )
-
-            project_ids_via_events = set()
-            if event_link_ids:
-                project_ids_via_events.update(
-                    Triple.objects.filter(
-                        predicate__uri__endswith='/properties/ereignis',
-                        object_id__in=event_link_ids,
-                    ).values_list('subject_id', flat=True)
-                )
-
-            all_project_ids = direct_project_ids | project_ids_via_events
-            if all_project_ids:
-                digital_object_condition = Q(pk__in=list(all_project_ids)) & Q(
-                    organization__code__in=digital_object_orgs
-                )
-                has_digital_condition = True
+        dump_project_ids = _project_ids_with_dump_digital_objects(digital_object_orgs)
 
     event_condition = project_event_condition
     if digital_object_orgs:
@@ -367,12 +330,112 @@ def _restrict_to_harvestable_files(queryset):
     combined_condition = s3_condition | event_condition
     if rosetta_orgs:
         combined_condition |= rosetta_condition
-    if has_digital_condition:
-        combined_condition |= digital_object_condition
+    if dump_project_ids:
+        combined_condition |= Q(pk__in=list(dump_project_ids))
 
     queryset = queryset.filter(combined_condition)
 
     return queryset.distinct()
+
+
+def _project_ids_with_dump_digital_objects(org_codes: set[str]) -> set[Any]:
+    if not org_codes:
+        return set()
+
+    normalized_codes = {
+        code.strip().lower()
+        for code in org_codes
+        if code and str(code).strip()
+    }
+    if not normalized_codes:
+        return set()
+
+    project_to_digital: dict[Any, set[Any]] = defaultdict(set)
+    project_to_org: dict[Any, str] = {}
+
+    digital_links = Triple.objects.filter(
+        predicate__uri__endswith="/properties/digitales-objekt",
+        subject__uri__contains="/entities/projekt/",
+        subject__organization__code__in=normalized_codes,
+    ).values_list("subject_id", "object_id", "subject__organization__code")
+
+    for project_id, digital_id, org_code in digital_links:
+        project_to_digital[project_id].add(digital_id)
+        if org_code:
+            project_to_org.setdefault(project_id, org_code.lower().strip())
+
+    event_links = Triple.objects.filter(
+        predicate__uri__endswith="/properties/digitales-objekt",
+        subject__uri__contains="/entities/ereignis/",
+        subject__organization__code__in=normalized_codes,
+    ).values_list("subject_id", "object_id")
+
+    event_to_digital: dict[Any, set[Any]] = defaultdict(set)
+    for event_id, digital_id in event_links:
+        event_to_digital[event_id].add(digital_id)
+
+    if event_to_digital:
+        project_event_links = Triple.objects.filter(
+            predicate__uri__endswith="/properties/ereignis",
+            object_id__in=list(event_to_digital.keys()),
+            subject__uri__contains="/entities/projekt/",
+            subject__organization__code__in=normalized_codes,
+        ).values_list("subject_id", "object_id", "subject__organization__code")
+
+        for project_id, event_id, org_code in project_event_links:
+            digital_candidates = event_to_digital.get(event_id)
+            if not digital_candidates:
+                continue
+            project_to_digital[project_id].update(digital_candidates)
+            if org_code:
+                project_to_org.setdefault(project_id, org_code.lower().strip())
+
+    if not project_to_digital:
+        return set()
+
+    digital_ids: set[Any] = set()
+    for values in project_to_digital.values():
+        digital_ids.update(values)
+
+    if not digital_ids:
+        return set()
+
+    digital_paths: dict[Any, List[str]] = defaultdict(list)
+    path_triples = Triple.objects.filter(
+        predicate__uri=ProjectURIs.DIGITAL_OBJECT_PATH,
+        subject_id__in=list(digital_ids),
+    ).values_list("subject_id", "object__value")
+    for digital_id, literal_value in path_triples:
+        if literal_value:
+            digital_paths[digital_id].append(literal_value)
+
+    if not digital_paths:
+        return set()
+
+    project_ids = list(project_to_digital.keys())
+    project_org_lookup = {
+        project_id: (code or "").lower().strip()
+        for project_id, code in Resource.objects.filter(id__in=project_ids).values_list(
+            "id", "organization__code"
+        )
+    }
+
+    matched_projects: set[Any] = set()
+    for project_id, digital_candidates in project_to_digital.items():
+        org_code = project_org_lookup.get(project_id) or project_to_org.get(project_id)
+        normalized_org = (org_code or "").strip().lower()
+        if normalized_org not in normalized_codes:
+            continue
+        for digital_id in digital_candidates:
+            path_values = digital_paths.get(digital_id)
+            if not path_values:
+                continue
+            matched = lookup_dump_storage_key(normalized_org, path_values)
+            if matched:
+                matched_projects.add(project_id)
+                break
+
+    return matched_projects
 def _fallback_record_from_storage(resource: Resource) -> Optional[ProjectRecord]:
     """Construct a minimal ProjectRecord using linked S3 files."""
 
@@ -843,7 +906,8 @@ def _get_resources_queryset(
             .order_by('updated_at', 'id')
         )
 
-    queryset = _restrict_to_harvestable_files(queryset)
+    if allowed_uris is None:
+        queryset = _restrict_to_harvestable_files(queryset)
 
     # Filter by set (organization)
     if set_spec:
