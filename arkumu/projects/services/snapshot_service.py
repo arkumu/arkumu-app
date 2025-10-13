@@ -23,7 +23,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 )
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
@@ -76,6 +76,13 @@ class ProjectSnapshotService:
     DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES: Tuple[str, ...] = (
         "http://arkumu.org/data/properties/digitales-objekt-lizenz-id",
     )
+    DIGITAL_OBJECT_FALLBACK_PREDICATES: Dict[str, Tuple[str, ...]] = {
+        'fuk': (
+            "http://arkumu.org/data/fuk/properties/vorschaubild",
+        ),
+        'hmt': (),
+        'det': (),
+    }
     RIGHTS_STATEMENT_FALLBACK_PREDICATES: Tuple[str, ...] = (
         "http://purl.org/dc/terms/title",
         "http://purl.org/dc/elements/1.1/title",
@@ -893,6 +900,53 @@ class ProjectSnapshotService:
                 organization_code=self.relationship_org_code,
             )
 
+        if digital_only_org and event_ids:
+            for event_id in event_ids:
+                event_objects = triple_service.get_related_entities(
+                    event_id,
+                    self.DIGITAL_OBJECT_LINK_URI,
+                    organization_code=self.relationship_org_code,
+                )
+                if event_objects:
+                    digital_entries.extend(event_objects)
+
+        if not digital_entries and code_candidates:
+            fallback_predicates = self._fallback_digital_predicates_for_org(code_candidates)
+            for predicate_uri in fallback_predicates:
+                literal_map = triple_service.get_literal_map(
+                    subject_ids=[subject_id],
+                    predicate_uri=predicate_uri,
+                    organization_code=self.relationship_org_code,
+                )
+                if not literal_map:
+                    continue
+                candidate_ids = {
+                    literal.strip()
+                    for literal in literal_map.values()
+                    if literal and literal.strip()
+                }
+                if not candidate_ids:
+                    continue
+
+                query = Q()
+                for candidate_id in candidate_ids:
+                    query |= Q(uri__iendswith=f"/{candidate_id}") | Q(value__iexact=candidate_id)
+
+                if not query:
+                    continue
+
+                for resource in Resource.objects.filter(query):
+                    digital_entries.append(
+                        {
+                            'id': str(resource.id),
+                            'uri': resource.uri,
+                            'canonical_uri': resource.canonical_uri,
+                            'name': resource.name,
+                            'value': resource.value,
+                            'resource_type': resource.resource_type,
+                        }
+                    )
+
         digital_object_ids: List[str] = []
         digital_entry_by_id: Dict[str, Dict[str, Any]] = {}
         for entry in digital_entries:
@@ -1142,6 +1196,19 @@ class ProjectSnapshotService:
                 return True
         return False
 
+    def _fallback_digital_predicates_for_org(self, codes: Iterable[str]) -> List[str]:
+        predicates: List[str] = []
+        seen: set[str] = set()
+        for code in codes:
+            normalized = (code or "").lower().strip()
+            if not normalized:
+                continue
+            for predicate in self.DIGITAL_OBJECT_FALLBACK_PREDICATES.get(normalized, ()):
+                if predicate and predicate not in seen:
+                    predicates.append(predicate)
+                    seen.add(predicate)
+        return predicates
+
     def _checksum_predicate_for_org(self, institution_code: Optional[str]) -> Optional[str]:
         if not institution_code:
             scoped = self.relationship_org_code.lower() if self.relationship_org_code else None
@@ -1322,7 +1389,17 @@ class ProjectSnapshotService:
             .values_list('object__value', flat=True)
         )
 
-        value = qs.first()
+        try:
+            value = qs.first()
+        except RuntimeError:
+            return None
+        except Exception:  # pragma: no cover - defensive
+            logger.debug(
+                "Literal lookup skipped for %s (predicates=%s)",
+                subject_id,
+                predicate_list,
+            )
+            return None
         return self._normalize_text_value(value)
 
     @staticmethod

@@ -18,6 +18,7 @@ from arkumu.metadata.services.metatdata_s3_mapping.map_resources_to_files import
     S3SyncError,
     retry_on_failure
 )
+from arkumu.catalog.services.project_views import ProjectURIs
 
 User = get_user_model()
 
@@ -197,6 +198,44 @@ def test_validate_bucket_params_invalid_prefix():
     
     with pytest.raises(ValidationError, match="prefix must be a string"):
         service._validate_bucket_params("bucket", 123)
+
+
+@pytest.mark.django_db
+def test_match_and_link_uses_digital_object_path(service, upload_session):
+    """S3 files fall back to digital-object path literals when resource value is missing."""
+    digital_object = Resource.objects.create(
+        resource_type=ResourceType.ENTITY,
+        uri="http://arkumu.org/data/fuk/entities/digitales-objekt/9999",
+        value=None,
+    )
+    predicate = Resource.objects.create(
+        resource_type=ResourceType.PROPERTY,
+        uri=ProjectURIs.DIGITAL_OBJECT_PATH,
+        value=ProjectURIs.DIGITAL_OBJECT_PATH,
+    )
+    literal = Resource.objects.create(
+        resource_type=ResourceType.LITERAL,
+        value="\\events\\999 - Herstellung - Sample\\preservation master\\sample_image.jpg",
+    )
+    Triple.objects.create(subject=digital_object, predicate=predicate, object=literal)
+
+    s3_file = create_test_s3_file(
+        file_name="sample_image.jpg",
+        s3_key="data/events/999_-_Herstellung_-_Sample/preservation_master/sample_image.jpg",
+        upload_session=upload_session,
+    )
+
+    processed, linked, ambiguous, errors = service.match_and_link_by_filename_to_resource_value(
+        S3FileObject.objects.filter(id=s3_file.id),
+        link_target="digital_object",
+    )
+
+    s3_file.refresh_from_db()
+    assert processed == 1
+    assert linked == 1
+    assert ambiguous == 0
+    assert errors == 0
+    assert s3_file.related_resource_id == digital_object.id
 
 
 # Logging Tests
