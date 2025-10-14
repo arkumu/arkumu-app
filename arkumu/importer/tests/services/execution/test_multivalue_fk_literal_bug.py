@@ -42,7 +42,7 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
         },
     )
 
-    # Create mapping with proper multi-value FK setup following exact format
+    # Create mapping with proper multi-value FK setup
     mapping = Mapping.objects.create(
         name="MultiValueFK-Bug-Test",
         organization_id=org.code,
@@ -61,16 +61,18 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
                     "datatype": "http://www.w3.org/2001/XMLSchema#string",
                 },
                 f"{org.code}::Employee::PrimarySkills": {
-                    "arkumu_type": "PrimarySkills",
-                    "datatype": "http://www.w3.org/2001/XMLSchema#string",
-                    "is_multivalue": True,
-                    "multi_value_separator": ",",
+                    "id": f"{org.code}::Employee::PrimarySkills",
+                    "Name": "Primary-Skills",
+                    "type": "string",
                     "is_fk": True,
+                    "source": "Employee",
+                    "dataset": "Employee",
                     "fk_config": {
                         "target_dataset": "Skill",
                         "target_column": "ID",
-                        "relationship_type": "hasPrimarySkill",
                     },
+                    "is_anchor" : False,
+                    "is_multi_value": True,
                 },
                 f"{org.code}::Skill::ID": {
                     "arkumu_type": "ID",
@@ -82,18 +84,17 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
                     "datatype": "http://www.w3.org/2001/XMLSchema#string",
                 },
             },
-            "fk_relationships": [
-                {
-                    "id": "employee_primary_skills_fk",
+            "fk_relationships": {
+                f"{org.code}::Employee::PrimarySkills": {
                     "source_dataset": "Employee",
                     "source_column": "PrimarySkills",
                     "target_dataset": "Skill",
                     "target_column": "ID",
-                    "relationship_type": "hasPrimarySkill",
-                    "is_multi_value": True,
-                    "multi_value_separator": ",",
-                }
-            ],
+                    "display_column": None,
+                    "relationship_type": "reference",
+                    "direction": "outbound",
+                },
+            },
         },
     )
 
@@ -115,13 +116,13 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
     }
 
     # Clear existing data
-    Triple.objects.filter(source=org).delete()
-    Resource.objects.filter(organization=org).delete()
+    Triple.objects.filter().delete()
+    Resource.objects.filter().delete()
 
     # Process with schema-driven processor
     statistics = ExecutionStatistics()
     processor = MappingAwareProcessor(
-        organization=org, base_uri=f"http://arkumu.org/data/{org.code}", statistics=statistics
+        organization=org, base_uri=f"http://arkumu.org/data/", statistics=statistics
     )
 
     mapping_adapter = MappingAdapter()
@@ -142,30 +143,28 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
         raise
 
     # ANALYZE TRIPLE TYPES TO DETECT BUG
-    total_resources = Resource.objects.filter(organization=org).count()
-    total_triples = Triple.objects.filter(source=org).count()
+    total_resources = Resource.objects.filter().count()
+    total_triples = Triple.objects.filter().count()
 
     # Look for hasPrimarySkill triples specifically
     skill_triples = Triple.objects.filter(
-        source=org, predicate__uri__contains="hasPrimarySkill"
+        predicate__uri__contains="primaryskills"
     ).order_by("subject__uri")
 
     literal_skill_triples = Triple.objects.filter(
-        source=org,
-        predicate__uri__contains="hasPrimarySkill",
+        predicate__uri__contains="primaryskills",
         object__resource_type="LITERAL",
     ).order_by("subject__uri")
 
     entity_skill_triples = Triple.objects.filter(
-        source=org,
-        predicate__uri__contains="hasPrimarySkill",
-        object__resource_type="IRI",
+        predicate__uri__contains="primaryskills",
+        object__resource_type="ENTITY",
         object__uri__contains="/entities/",  # Should identify entity references
     ).order_by("subject__uri")
 
     logger.info(f"📊 MULTI-VALUE FK ANALYSIS:")
-    logger.info(f"  Total resources: {total_resources}")
-    logger.info(f"  Total triples: {total_triples}")
+    logger.info(f"  Total resources: {total_resources} ({[res.uri for res in Resource.objects.filter()]})")
+    logger.info(f"  Total triples: {total_triples} ({[(triple.subject.uri, triple.predicate.uri, triple.object.uri) for triple in Triple.objects.filter()]})")
     logger.info(f"  Skill triples (all): {skill_triples.count()}")
     logger.info(f"  Skill triples with literals: {literal_skill_triples.count()}")
     logger.info(f"  Skill triples with entities: {entity_skill_triples.count()}")
@@ -175,7 +174,7 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
         obj_type = triple.object.resource_type
         obj_uri = triple.object.uri
         logger.info(
-            f"  {triple.subject.uri} -> hasPrimarySkill -> {obj_type}({obj_uri})"
+            f"  {triple.subject.uri} -> primaryskills -> {obj_type}({obj_uri})"
         )
 
     # BUG VALIDATION
@@ -191,7 +190,7 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
         # Show the specific broken triples
         for triple in literal_skill_triples:
             logger.error(
-                f"  ❌ {triple.subject.uri} -> hasPrimarySkill -> LITERAL('{triple.object.uri}')"
+                f"  ❌ {triple.subject.uri} -> primaryskills -> LITERAL('{triple.object.uri}')"
             )
 
         # The test assertion that fails will prove the bug exists
@@ -208,7 +207,7 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
         # Show correct references
         for triple in entity_skill_triples:
             logger.info(
-                f"  ✅ {triple.subject.uri} -> hasPrimarySkill -> ENTITY({triple.object.uri})"
+                f"  ✅ {triple.subject.uri} -> primaryskills -> ENTITY({triple.object.uri})"
             )
 
         # We should have the right number of entity triples
@@ -233,10 +232,10 @@ def test_multivalue_fk_columns_should_create_entities_not_literals():
     # Validate resource creation integrity
     logger.info("\n🔍 RESOURCE INTEGRITY CHECKS:")
     employee_resources = Resource.objects.filter(
-        organization=org, resource_type="Employee"
+        resource_type="ENTITY", uri__contains="employee"
     ).count()
     skill_resources = Resource.objects.filter(
-        organization=org, resource_type="Skill"
+        resource_type="ENTITY", uri__contains="skill"
     ).count()
 
     logger.info(f"  Employee entities created: {employee_resources}")
