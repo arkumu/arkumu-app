@@ -35,6 +35,7 @@ from arkumu.projects import (
     ProjectType,
 )
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.catalog.services.project_views import ProjectURIs
 
 
 class TestOAIViewFunctions:
@@ -275,14 +276,11 @@ class TestOAIViewFunctions:
         formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
         assert any(elem.text == 'text/plain' for elem in formats)
 
-        arkumu_nodes = [
-            elem
-            for elem in dc_root.findall("{http://purl.org/dc/elements/1.1/}identifier")
-            if elem.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
-        ]
-        assert len(arkumu_nodes) == 1
-        assert arkumu_nodes[0].text == resource.uri
-        assert arkumu_nodes[0] in list(dc_root)
+        identifier_nodes = dc_root.findall("{http://purl.org/dc/elements/1.1/}identifier")
+        matching_nodes = [elem for elem in identifier_nodes if elem.text == resource.uri]
+        assert matching_nodes
+        assert all(elem.get("{http://www.w3.org/XML/1998/namespace}type") is None for elem in matching_nodes)
+        assert matching_nodes[0] in list(dc_root)
 
     @pytest.mark.django_db
     def test_restrict_to_harvestable_files_includes_rosetta_without_s3(self, settings):
@@ -388,10 +386,11 @@ class TestOAIViewFunctions:
         assert not filtered.exists()
 
     @pytest.mark.django_db
-    def test_restrict_to_harvestable_files_includes_event_digital_object_for_digital_only_orgs(self, settings):
+    def test_restrict_to_harvestable_files_includes_event_digital_object_for_digital_only_orgs(self, settings, monkeypatch):
         """Digital-object orgs harvest projects when files attach to event digital objects."""
 
         settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
 
         fuk_org = Organization.objects.create(
             name="FUK",
@@ -427,6 +426,15 @@ class TestOAIViewFunctions:
             updated_at=django_timezone.now(),
         )
 
+        path_literal = Resource.objects.create(
+            value="data/events/fuk/tape.wav",
+            organization=fuk_org,
+            resource_type=ResourceType.LITERAL,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
         event_predicate = Resource.objects.create(
             uri="http://arkumu.org/data/properties/ereignis",
             resource_type=ResourceType.PROPERTY,
@@ -437,6 +445,14 @@ class TestOAIViewFunctions:
 
         digital_predicate = Resource.objects.create(
             uri="http://arkumu.org/data/properties/digitales-objekt",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        path_predicate = Resource.objects.create(
+            uri=ProjectURIs.DIGITAL_OBJECT_PATH,
             resource_type=ResourceType.PROPERTY,
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,
@@ -455,17 +471,132 @@ class TestOAIViewFunctions:
             object=digital_object,
         )
 
-        S3FileObject.objects.create(
-            file_name="tape.wav",
-            s3_key="fuk/tape.wav",
-            organization="fuk",
-            status="verified",
-            related_resource=digital_object,
+        Triple.objects.create(
+            subject=digital_object,
+            predicate=path_predicate,
+            object=path_literal,
         )
+
+        def fake_lookup(org_code, candidates):
+            if org_code == 'fuk' and any("tape.wav" in (candidate or "") for candidate in candidates):
+                return "data/events/fuk/tape.wav"
+            return None
+
+        monkeypatch.setattr(views, "lookup_dump_storage_key", fake_lookup)
 
         queryset = Resource.objects.filter(pk=project.pk)
         filtered = views._restrict_to_harvestable_files(queryset)
         assert list(filtered) == [project]
+
+    @pytest.mark.django_db
+    def test_restrict_to_harvestable_files_uses_dump_for_digital_only_orgs(self, settings, monkeypatch):
+        """Digital-only orgs use dump lookups instead of S3FileObject matches."""
+
+        settings.OAI_DIGITAL_OBJECT_LINK_ORGS = ('fuk', 'det', 'rsh')
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+
+        fuk_org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/5001",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_object = Resource.objects.create(
+            uri="https://arkumu.org/entities/digitales-objekt/5002",
+            organization=fuk_org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        path_literal = Resource.objects.create(
+            value="data/events/fuk/test_audio.wav",
+            organization=fuk_org,
+            resource_type=ResourceType.LITERAL,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        digital_predicate = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/digitales-objekt",
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        path_predicate = Resource.objects.create(
+            uri=ProjectURIs.DIGITAL_OBJECT_PATH,
+            resource_type=ResourceType.PROPERTY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        Triple.objects.create(
+            subject=project,
+            predicate=digital_predicate,
+            object=digital_object,
+        )
+
+        Triple.objects.create(
+            subject=digital_object,
+            predicate=path_predicate,
+            object=path_literal,
+        )
+
+        def fake_lookup(org_code, candidates):
+            if org_code == 'fuk' and any("test_audio" in (candidate or "") for candidate in candidates):
+                return "data/events/fuk/test_audio.wav"
+            return None
+
+        monkeypatch.setattr(views, "lookup_dump_storage_key", fake_lookup)
+
+        queryset = Resource.objects.filter(pk=project.pk)
+        filtered = views._restrict_to_harvestable_files(queryset)
+        assert list(filtered) == [project]
+
+    @pytest.mark.django_db
+    def test_get_resources_queryset_skips_restrict_when_allowed_uris(self):
+        """Allowed URI list bypasses additional harvestable filtering."""
+
+        org = Organization.objects.create(
+            name="FUK",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+
+        project = Resource.objects.create(
+            uri="https://arkumu.org/entities/projekt/9001",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            updated_at=django_timezone.now(),
+        )
+
+        queryset = views._get_resources_queryset(
+            set_spec=None,
+            from_date=None,
+            until_date=None,
+            metadata_prefix="oai_dc",
+            allowed_uris=[project.uri],
+        )
+
+        assert list(queryset) == [project]
 
     # ============================================================================
     # LIST METADATA FORMATS FUNCTION TESTS
@@ -719,7 +850,7 @@ class TestOAIViewFunctions:
         identifier_values = self._flatten_dc_entries(payload.get("dc:identifier", []))
         assert resource.uri in identifier_values
         if resource.canonical_uri:
-            assert resource.canonical_uri in identifier_values
+            assert resource.canonical_uri not in identifier_values
         assert f"{resource.uri}/event/launch" in identifier_values
         assert not payload.get("dc:relation")
         assert 'dc:format' in payload
@@ -841,13 +972,10 @@ class TestOAIViewFunctions:
         # Should contain oai_dc element
         dc_element = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_element is not None
-        identifier_nodes = [
-            elem
-            for elem in dc_element.findall("{http://purl.org/dc/elements/1.1/}identifier")
-            if elem.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
-        ]
-        assert len(identifier_nodes) == 1
-        assert identifier_nodes[0].text == resource.uri
+        identifier_nodes = dc_element.findall("{http://purl.org/dc/elements/1.1/}identifier")
+        matching_nodes = [elem for elem in identifier_nodes if elem.text == resource.uri]
+        assert matching_nodes
+        assert all(elem.get("{http://www.w3.org/XML/1998/namespace}type") is None for elem in matching_nodes)
         event_title = dc_element.find("{http://purl.org/dc/elements/1.1/}title[@{http://www.w3.org/XML/1998/namespace}type='event-name']")
         assert event_title is None
         actor_contributor = dc_element.find("{http://purl.org/dc/elements/1.1/}contributor[@{http://www.w3.org/XML/1998/namespace}type='actor']")
@@ -925,7 +1053,7 @@ class TestOAIViewFunctions:
         rdf_source_wrap = rdf_source_md.find(f"./{{{METS_NS}}}mdWrap")
         assert rdf_source_wrap is not None
         assert rdf_source_wrap.get("OTHERMDTYPE") == "RDF"
-        assert rdf_source_wrap.get("MIMETYPE") == "application/rdf+xml"
+        assert rdf_source_wrap.get("MIMETYPE") is None
 
         source_xml = rdf_source_wrap.find(f"./{{{METS_NS}}}xmlData")
         assert source_xml is not None

@@ -298,6 +298,10 @@ class OAIProjectBuilder:
     ) -> Optional[NormalizedDigitalObject]:
         original_path = _clean(getattr(obj, "path", None))
         storage_key = _clean(getattr(obj, "storage_key", None))
+        if original_path:
+            original_path = original_path.replace("\\", "/")
+        if storage_key:
+            storage_key = storage_key.replace("\\", "/")
         if not storage_key and original_path:
             storage_key = original_path
         access_url = _clean(getattr(obj, "access_url", None))
@@ -321,6 +325,20 @@ class OAIProjectBuilder:
 
         rosetta_candidates: Tuple[str, ...] = ()
         rosetta_path: Optional[str] = None
+
+        dump_matched = getattr(obj, "_dump_matched", None)
+        if (
+            institution_code
+            and institution_code in self._s3_orgs
+            and dump_matched is False
+        ):
+            logger.info(
+                "OAI digital object skipped: no dump match (org=%s path=%s storage_key=%s)",
+                institution_code,
+                original_path,
+                storage_key,
+            )
+            return None
 
         if institution_code and institution_code in self._rosetta_orgs:
             resolved = self._path_resolver(

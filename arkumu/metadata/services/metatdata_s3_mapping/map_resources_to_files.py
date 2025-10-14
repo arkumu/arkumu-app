@@ -4,15 +4,18 @@ import logging
 from collections import defaultdict
 from functools import wraps
 from dataclasses import dataclass
-from typing import Dict, Optional, Callable, Tuple
+from typing import Dict, Optional, Callable, Tuple, Iterable, List
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.storage.models import S3FileObject, UploadSession
 from arkumu.metadata.models import Resource, ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.resource_traversal_service import ResourceTraversalService
+from arkumu.catalog.services.project_views import ProjectURIs
+from arkumu.storage.services.upload.upload_utils import normalize_s3_key
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +121,10 @@ class FileResourceMatcherService:
         batch_size = self.config.batch_size
         files_to_update = []
         
-        # Pre-fetch all resources for better performance
+        # Pre-fetch all resources and build lookup tables for performance
         all_resources = defaultdict(list)
+        resources_by_normalized_path: Dict[str, List[Resource]] = defaultdict(list)
+
         for resource in Resource.objects.all():
             # Skip resources with null/empty values
             if not resource.value:
@@ -133,6 +138,10 @@ class FileResourceMatcherService:
                 normalized_base = base_value if self.config.case_sensitive else base_value.lower()
                 all_resources[normalized_base].append(resource)
 
+        resources_by_normalized_path.update(
+            self._build_resource_path_index()
+        )
+
         # Use iterator with chunk_size for better memory efficiency and to avoid slicing issues
         for s3_file in files_to_process.iterator(chunk_size=batch_size):
             processed_count += 1
@@ -145,7 +154,8 @@ class FileResourceMatcherService:
                     continue
 
                 candidate_names = [file_name_without_extension, s3_file.file_name]
-                matching_resources = []
+                matching_resources: List[Resource] = []
+                path_matched_resources: List[Resource] = []
 
                 for name in candidate_names:
                     if not name:
@@ -154,6 +164,15 @@ class FileResourceMatcherService:
                     hits = all_resources.get(search_key)
                     if hits:
                         matching_resources.extend(hits)
+
+                normalized_key_candidates = self._normalized_s3_key_candidates(s3_file)
+                for candidate in normalized_key_candidates:
+                    hits = resources_by_normalized_path.get(candidate, [])
+                    if hits:
+                        path_matched_resources.extend(hits)
+
+                if path_matched_resources:
+                    matching_resources = path_matched_resources
 
                 # Deduplicate while preserving order
                 seen_ids = set()
@@ -286,8 +305,98 @@ class FileResourceMatcherService:
                            ambiguous=ambiguous_count,
                            errors=error_count,
                            execution_time=execution_time)
-        
+       
         return processed_count, linked_count, ambiguous_count, error_count
+
+    def _build_resource_path_index(self) -> Dict[str, List[Resource]]:
+        """Build an index of normalized digital object paths to resources."""
+        resources_by_path: Dict[str, List[Resource]] = defaultdict(list)
+
+        path_predicate = ProjectURIs.DIGITAL_OBJECT_PATH
+        link_predicate = ProjectURIs.DIGITAL_OBJECT_LINK
+
+        linked_qs = Triple.objects.filter(
+            models.Q(predicate__uri=link_predicate)
+            | models.Q(predicate__canonical_uri=link_predicate)
+        )
+        linked_resource_ids = {
+            str(obj_id)
+            for obj_id in linked_qs.values_list('object_id', flat=True)
+            if obj_id
+        }
+
+        path_triples = (
+            Triple.objects
+            .filter(predicate__uri=path_predicate)
+            .select_related('subject', 'object')
+        )
+
+        for triple in path_triples:
+            resource = triple.subject
+            if not resource or resource.resource_type == ResourceType.LITERAL:
+                continue
+
+            if linked_resource_ids and str(resource.id) not in linked_resource_ids:
+                continue
+
+            path_value = None
+            if triple.object:
+                path_value = triple.object.value
+            if not path_value:
+                path_value = getattr(triple, "object_value", None)
+
+            if not path_value:
+                continue
+
+            for normalized in self._normalized_path_variants(path_value):
+                resources_by_path[normalized].append(resource)
+
+        return resources_by_path
+
+    def _normalized_s3_key_candidates(self, s3_file: S3FileObject) -> Iterable[str]:
+        """Return normalized key variants for an S3 file."""
+        candidates = set()
+
+        raw_keys = filter(None, {s3_file.s3_key, s3_file.original_path, s3_file.file_name})
+
+        for key in raw_keys:
+            normalized = normalize_s3_key(key)
+            if not normalized:
+                continue
+
+            candidates.add(normalized)
+
+            # Drop known prefixes like data/
+            if normalized.startswith('data/'):
+                candidates.add(normalized[5:])
+
+            # Consider just the filename
+            filename = normalized.split('/')[-1]
+            if filename:
+                candidates.add(filename)
+
+        return candidates
+
+    def _normalized_path_variants(self, raw_path: str) -> Iterable[str]:
+        """Normalize a digital object path into lookup variants."""
+        if not raw_path:
+            return []
+
+        normalized_path = raw_path.replace('\\', '/')
+        normalized_path = normalized_path.strip()
+        normalized_path = normalized_path.lstrip('/')
+
+        normalized = normalize_s3_key(normalized_path)
+        variants = {normalized}
+
+        if normalized.startswith('data/'):
+            variants.add(normalized[5:])
+
+        filename = normalized.split('/')[-1]
+        if filename:
+            variants.add(filename)
+
+        return variants
 
     def _get_or_create_system_session(self) -> 'UploadSession':
         """Get or create a system upload session for discovered files."""
