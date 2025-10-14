@@ -43,8 +43,7 @@
                 <input type="text"
                        name="anchor__{{ column }}"
                        class="input input-bordered input-sm"
-                       placeholder="Anchor-Wert"
-                       value="{{ form[column].value|default_if_none:'' }}">
+                       placeholder="Anchor-Wert">
               </label>
             {% endfor %}
             <div class="lg:col-span-full">
@@ -85,39 +84,37 @@
       {% endif %}
 
       <div class="grid gap-4">
-        {% for field in form %}
-          {% with meta=field_metadata[field.name] %}
-            <label class="form-control w-full">
-              <div class="label justify-between">
-                <span class="label-text font-medium">{{ field.label }}</span>
-                <span class="flex gap-2">
-                  {% if meta.is_anchor %}
-                    <span class="badge badge-outline badge-sm">Anchor</span>
-                  {% endif %}
-                  {% if meta.is_multi_value %}
-                    <span class="badge badge-outline badge-sm">Multi</span>
-                  {% endif %}
-                  {% if meta.has_fk %}
-                    <span class="badge badge-outline badge-sm">FK</span>
-                  {% endif %}
-                  {% if meta.is_external_ontology %}
-                    <span class="badge badge-outline badge-sm">Extern</span>
-                  {% endif %}
-                </span>
-              </div>
-              {{ field }}
-              {% if field.help_text %}
-                <span class="text-xs text-base-content/70">{{ field.help_text|safe }}</span>
-              {% endif %}
-              {% if field.errors %}
-                <span class="text-xs text-error">
-                  {% for error in field.errors %}
-                    {{ error }}
-                  {% endfor %}
-                </span>
-              {% endif %}
-            </label>
-          {% endwith %}
+        {% for item in fields_with_metadata %}
+          <label class="form-control w-full">
+            <div class="label justify-between">
+              <span class="label-text font-medium">{{ item.field.label }}</span>
+              <span class="flex gap-2">
+                {% if item.meta.is_anchor %}
+                  <span class="badge badge-outline badge-sm">Anchor</span>
+                {% endif %}
+                {% if item.meta.is_multi_value %}
+                  <span class="badge badge-outline badge-sm">Multi</span>
+                {% endif %}
+                {% if item.meta.has_fk %}
+                  <span class="badge badge-outline badge-sm">FK</span>
+                {% endif %}
+                {% if item.meta.is_external_ontology %}
+                  <span class="badge badge-outline badge-sm">Extern</span>
+                {% endif %}
+              </span>
+            </div>
+            {{ item.field }}
+            {% if item.field.help_text %}
+              <span class="text-xs text-base-content/70">{{ item.field.help_text|safe }}</span>
+            {% endif %}
+            {% if item.field.errors %}
+              <span class="text-xs text-error">
+                {% for error in item.field.errors %}
+                  {{ error }}
+                {% endfor %}
+              </span>
+            {% endif %}
+          </label>
         {% endfor %}
       </div>
 

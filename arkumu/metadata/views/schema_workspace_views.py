@@ -26,11 +26,21 @@ def _render_dataset_panel(
     load_error: bool = False,
 ) -> str:
     dataset_summary = service.get_dataset_summary(dataset_name)
+
+    # Pair form fields with their metadata for template access
+    fields_with_metadata = [
+        {
+            "field": field,
+            "meta": field_metadata.get(field.name, {}),
+        }
+        for field in form
+    ]
+
     return render_to_string(
         "metadata/entity_creation/partials/_dataset_panel.html",
         {
             "dataset_summary": dataset_summary,
-            "field_metadata": field_metadata,
+            "fields_with_metadata": fields_with_metadata,
             "form": form,
             "entity_uri": entity_uri,
             "success_message": success_message,

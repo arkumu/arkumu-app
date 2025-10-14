@@ -91,10 +91,10 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
                 value_type="entity",
             ),
             FieldConfig(
-                field_name="beschreibung_uri",
+                field_name="beschreibung",
                 property_path="properties/beschreibung",
                 property_label="Beschreibung",
-                value_type="entity",
+                value_type="literal",
             ),
             FieldConfig(
                 field_name="schlagwort_uris",
@@ -138,10 +138,10 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
                 property_label="Ereignisort",
             ),
             FieldConfig(
-                field_name="ereignisbeschreibung_uri",
-                property_path="properties/beschreibung",
-                property_label="Beschreibung",
-                value_type="entity",
+                field_name="ereignisbeschreibung",
+                property_path="properties/ereignisbeschreibung",
+                property_label="Ereignisbeschreibung",
+                value_type="literal",
             ),
             FieldConfig(
                 field_name="ereignisbeginn",

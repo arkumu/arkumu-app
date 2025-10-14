@@ -89,10 +89,11 @@ class ProjectForm(BaseEntityForm):
         required=True,
         choices=[],
     )
-    beschreibung_uri = forms.ChoiceField(
+    beschreibung = forms.CharField(
         label="Beschreibung",
         required=False,
-        choices=[],
+        widget=forms.Textarea,
+        help_text="Description of the project",
     )
     schlagwort_uris = forms.MultipleChoiceField(
         label="Schlagwörter",
@@ -124,9 +125,6 @@ class ProjectForm(BaseEntityForm):
         self.fields["projektkategorie_uri"].choices = _with_placeholder(
             "Select a category", options.get("project_category", [])
         )
-        self.fields["beschreibung_uri"].choices = _with_placeholder(
-            "Select the description of the project", options.get("description", [])
-        )
         self.fields["schlagwort_uris"].choices = options.get("catchphrase", [])
         self.fields["projektart_uri"].choices = _with_placeholder(
             "Select a project type", options.get("project_type", [])
@@ -152,10 +150,11 @@ class EventForm(BaseEntityForm):
         required=False,
         choices=[],
     )
-    ereignisbeschreibung_uri = forms.ChoiceField(
-        label="Beschreibung",
+    ereignisbeschreibung = forms.CharField(
+        label="Ereignisbeschreibung",
         required=False,
-        choices=[],
+        widget=forms.Textarea,
+        help_text="Description of the event",
     )
     ereignisort = forms.CharField(
         label="Ereignisort",
@@ -183,9 +182,6 @@ class EventForm(BaseEntityForm):
         )
         self.fields["project_uri"].choices = _with_placeholder(
             "Select a project", options.get("project", [])
-        )
-        self.fields["ereignisbeschreibung_uri"].choices = _with_placeholder(
-            "Select the description of the event", options.get("event_description", [])
         )
 
 
