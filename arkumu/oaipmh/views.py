@@ -1310,15 +1310,12 @@ def _build_dc_payload_from_project(
     payload: Dict[str, List[str]] = {}
 
     record = project.record
-    xml_type_attr = ET.QName(XML_NS, "type")
-
     project_uri = getattr(resource, "uri", None)
     if project_uri:
         _add_dc_value(
             payload,
             'identifier',
             project_uri,
-            attrs={xml_type_attr: 'arkumu-ID'},
         )
 
     _add_dc_value(payload, 'title', record.title)
@@ -1634,14 +1631,13 @@ def _append_arkumu_identifier(dc_parent: ET._Element, resource: Resource) -> Non
         return
     existing = [
         elem for elem in dc_parent.findall(ET.QName(DC_NS, "identifier"))
-        if elem.text == identifier_value and elem.get(ET.QName(XML_NS, "type")) == "arkumu-ID"
+        if elem.text == identifier_value
     ]
     if existing:
         return
 
     identifier_elem = ET.Element(ET.QName(DC_NS, "identifier"))
     identifier_elem.text = identifier_value
-    identifier_elem.set(ET.QName(XML_NS, "type"), "arkumu-ID")
     dc_parent.insert(0, identifier_elem)
 
 
@@ -1736,7 +1732,6 @@ def _build_mets_from_project(
         {
             "MDTYPE": "OTHER",
             "OTHERMDTYPE": "RDF",
-            "MIMETYPE": "application/rdf+xml",
         },
     )
     source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))

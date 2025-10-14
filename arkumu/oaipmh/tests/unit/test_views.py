@@ -276,14 +276,11 @@ class TestOAIViewFunctions:
         formats = dc_root.findall("{http://purl.org/dc/elements/1.1/}format")
         assert any(elem.text == 'text/plain' for elem in formats)
 
-        arkumu_nodes = [
-            elem
-            for elem in dc_root.findall("{http://purl.org/dc/elements/1.1/}identifier")
-            if elem.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
-        ]
-        assert len(arkumu_nodes) == 1
-        assert arkumu_nodes[0].text == resource.uri
-        assert arkumu_nodes[0] in list(dc_root)
+        identifier_nodes = dc_root.findall("{http://purl.org/dc/elements/1.1/}identifier")
+        matching_nodes = [elem for elem in identifier_nodes if elem.text == resource.uri]
+        assert matching_nodes
+        assert all(elem.get("{http://www.w3.org/XML/1998/namespace}type") is None for elem in matching_nodes)
+        assert matching_nodes[0] in list(dc_root)
 
     @pytest.mark.django_db
     def test_restrict_to_harvestable_files_includes_rosetta_without_s3(self, settings):
@@ -975,13 +972,10 @@ class TestOAIViewFunctions:
         # Should contain oai_dc element
         dc_element = metadata.find(".//{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
         assert dc_element is not None
-        identifier_nodes = [
-            elem
-            for elem in dc_element.findall("{http://purl.org/dc/elements/1.1/}identifier")
-            if elem.get("{http://www.w3.org/XML/1998/namespace}type") == "arkumu-ID"
-        ]
-        assert len(identifier_nodes) == 1
-        assert identifier_nodes[0].text == resource.uri
+        identifier_nodes = dc_element.findall("{http://purl.org/dc/elements/1.1/}identifier")
+        matching_nodes = [elem for elem in identifier_nodes if elem.text == resource.uri]
+        assert matching_nodes
+        assert all(elem.get("{http://www.w3.org/XML/1998/namespace}type") is None for elem in matching_nodes)
         event_title = dc_element.find("{http://purl.org/dc/elements/1.1/}title[@{http://www.w3.org/XML/1998/namespace}type='event-name']")
         assert event_title is None
         actor_contributor = dc_element.find("{http://purl.org/dc/elements/1.1/}contributor[@{http://www.w3.org/XML/1998/namespace}type='actor']")
@@ -1059,7 +1053,7 @@ class TestOAIViewFunctions:
         rdf_source_wrap = rdf_source_md.find(f"./{{{METS_NS}}}mdWrap")
         assert rdf_source_wrap is not None
         assert rdf_source_wrap.get("OTHERMDTYPE") == "RDF"
-        assert rdf_source_wrap.get("MIMETYPE") == "application/rdf+xml"
+        assert rdf_source_wrap.get("MIMETYPE") is None
 
         source_xml = rdf_source_wrap.find(f"./{{{METS_NS}}}xmlData")
         assert source_xml is not None
