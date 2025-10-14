@@ -318,18 +318,19 @@ urlpatterns = [
     
 
     # Entity creation endpoints
-    path('create/project/', entity_creation_views.create_project, name='create_project'),
-    path('project/details/', entity_creation_views.get_project_details, name='project_details'),
-    path('create/event/', entity_creation_views.create_event, name='create_event'),
-    path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
-    path('actor/details/', entity_creation_views.get_actor_details, name='actor_details'),
-    path('create/role/', entity_creation_views.create_role, name='create_role'),
-    path('create/digital-object/', entity_creation_views.create_digital_object, name='create_digital_object'),
-    path('create/institution/', entity_creation_views.create_institution, name='create_institution'),
-    path('create/project-category/', entity_creation_views.create_project_category, name='create_project_category'),
-    path('create/project-type/', entity_creation_views.create_project_type, name='create_project_type'),
-    path('create/alternate-title/', entity_creation_views.create_alternate_title, name='create_alternate_title'),
-    path('create/description/', entity_creation_views.create_description, name='create_description'),
-    path('create/catchphrase/', entity_creation_views.create_catchphrase, name='create_catchphrase'),
+    path('create/', entity_creation_views.EntityCreationWorkspaceView.as_view(), name='entity_creation_workspace'),
+    path('create/project/', entity_creation_views.ProjectCreationView.as_view(), name='create_project'),
+    path('create/event/', entity_creation_views.EventCreationView.as_view(), name='create_event'),
+    path('create/actor/', entity_creation_views.ActorCreationView.as_view(), name='create_actor'),
+    path('create/role/', entity_creation_views.RoleCreationView.as_view(), name='create_role'),
+    path('create/digital-object/', entity_creation_views.DigitalObjectCreationView.as_view(), name='create_digital_object'),
+    path('create/institution/', entity_creation_views.InstitutionCreationView.as_view(), name='create_institution'),
+    path('create/project-category/', entity_creation_views.ProjectCategoryCreationView.as_view(), name='create_project_category'),
+    path('create/project-type/', entity_creation_views.ProjectTypeCreationView.as_view(), name='create_project_type'),
+    path('create/alternate-title/', entity_creation_views.AlternateTitleCreationView.as_view(), name='create_alternate_title'),
+    path('create/description/', entity_creation_views.DescriptionCreationView.as_view(), name='create_description'),
+    path('create/catchphrase/', entity_creation_views.CatchphraseCreationView.as_view(), name='create_catchphrase'),
+    path('create/<slug:entity_key>/fragment/', entity_creation_views.EntityFormFragmentView.as_view(), name='entity_creation_fragment'),
+    path('create/event/actor-row/', entity_creation_views.EventActorRowView.as_view(), name='event_actor_row'),
 
     ]

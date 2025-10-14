@@ -19,6 +19,29 @@
                 </svg>
                 Metadata Explorer
             </a>
+            <a href="{% url 'metadata:entity_creation_workspace' %}" class="btn btn-success btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Entity Workspace
+            </a>
+            <div class="dropdown dropdown-bottom">
+                <label tabindex="0" class="btn btn-outline btn-success btn-sm">
+                    Quick Create
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg mt-2 p-2 w-48">
+                    <li><a href="{% url 'metadata:create_project' %}">Project</a></li>
+                    <li><a href="{% url 'metadata:create_event' %}">Event</a></li>
+                    <li><a href="{% url 'metadata:create_actor' %}">Actor</a></li>
+                    <li><a href="{% url 'metadata:create_digital_object' %}">Digital Object</a></li>
+                    <li><a href="{% url 'metadata:create_institution' %}">Institution</a></li>
+                    <li><a href="{% url 'metadata:create_project_category' %}">Project Category</a></li>
+                    <li><a href="{% url 'metadata:create_project_type' %}">Project Type</a></li>
+                    <li><a href="{% url 'metadata:create_alternate_title' %}">Alternate Title</a></li>
+                    <li><a href="{% url 'metadata:create_description' %}">Description</a></li>
+                    <li><a href="{% url 'metadata:create_catchphrase' %}">Catchphrase</a></li>
+                </ul>
+            </div>
             <button type="button"
                     class="btn btn-outline btn-primary btn-sm btn-disabled pointer-events-none"
                     title="Disabled while the feature is offline"

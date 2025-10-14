@@ -1,1285 +1,707 @@
-"""Views and forms for creating metadata-backed entities (projects, events)."""
+"""
+HTMX-enabled views for the metadata entity creation workflow.
+"""
 
 from __future__ import annotations
 
-from django import forms
-from django.db import models
-from django.contrib.auth.decorators import login_required
-from django.forms import formset_factory, inlineformset_factory
-from django.http import HttpResponseRedirect, JsonResponse
-from django.shortcuts import render
+import json
 import logging
+from typing import Dict, Optional
 
-from arkumu.metadata.models.resource import Resource, ResourceType
-from arkumu.metadata.models.triples import Triple
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.forms import formset_factory
+from django.http import (
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseRedirect,
+)
+from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.views import View
 
-from arkumu.metadata.services.vocabulary_options_service import (
-    get_default_metadata_option_map,
+from arkumu.metadata.entity_creation import (
+    ENTITY_CREATION_CONFIG,
+    EntityCreationConfig,
+    EntityCreationService,
+    EntityInitialDataBuilder,
+)
+from arkumu.metadata.entity_creation.forms import (
+    ActorForm,
+    EventForm,
+    RoleForm,
 )
 from arkumu.metadata.models.resources import (
     ClassResource,
-    PropertyResource,
     EntityResource,
+    PropertyResource,
 )
-from arkumu.users.models import Organization
+from arkumu.metadata.services.vocabulary_options_service import (
+    get_default_metadata_option_map,
+)
+from arkumu.metadata.views.csv_mapping.mixins.template_helpers import (
+    CSVMappingTemplateHelperMixin,
+)
 
 logger = logging.getLogger(__name__)
-prt = ""
-
-
-class BaseEntityForm(forms.Form):
-    """Base form for both projects and events."""
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        self.metadata_options = metadata_options or {}
-        super().__init__(*args, **kwargs)
-        for field_name, field in self.fields.items():
-            if field_name.endswith("_uri"):
-                field.widget.attrs.update(
-                    {"class": "select select-bordered w-full uri-field"}
-                )
-            elif isinstance(field.widget, forms.Textarea):
-                field.widget.attrs.update(
-                    {"class": "textarea textarea-bordered w-full", "rows": "4"}
-                )
-            elif (
-                isinstance(field.widget, forms.DateTimeInput)
-                and field.widget.attrs.get("type") == "datetime-local"
-            ):
-                field.widget.attrs.update({"class": "input input-bordered w-full"})
-            else:
-                field.widget.attrs.update({"class": "input input-bordered w-full"})
-
-
-class ProjectForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing project, or create one",
-        required=False,
-        choices=[],
-    )
-    bevorzugter_titel = forms.CharField(
-        label="Bevorzugter Titel",
-        required=True,
-        help_text="Primary title of the project",
-    )
-    bevorzugter_untertitel = forms.CharField(
-        label="Bevorzugter Untertitel",
-        required=False,
-        help_text="Optional subtitle for the project",
-    )
-    einliefernde_hochschule_uri = forms.ChoiceField(
-        label="Einliefernde Hochschule",
-        required=True,
-        choices=[],
-    )
-    projektkategorie_uri = forms.ChoiceField(
-        label="Projektkategorie",
-        required=True,
-        choices=[],
-    )
-    beschreibung_uri = forms.ChoiceField(
-        label="Beschreibung",
-        required=False,
-        choices=[],
-    )
-    schlagwort_uris = forms.MultipleChoiceField(
-        label="Schlagwörter",
-        required=False,
-        choices=[],
-        widget=forms.SelectMultiple,
-    )
-    projektart_uri = forms.ChoiceField(
-        label="Projektart",
-        required=True,
-        choices=[],
-    )
-    vorschaubild_uri = forms.ChoiceField(
-        label="Vorschaubild",
-        required=False,
-        choices=[],
-        help_text="URI of the preview image",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select a project")] + options.get(
-            "project", []
-        )
-        self.fields["einliefernde_hochschule_uri"].choices = [
-            ("", "Select an institution")
-        ] + options.get("institution", [])
-        self.fields["projektkategorie_uri"].choices = [
-            ("", "Select a category")
-        ] + options.get("project_category", [])
-        self.fields["schlagwort_uris"].choices = options.get("catchphrase", [])
-        self.fields["projektart_uri"].choices = [
-            ("", "Select a project type")
-        ] + options.get("project_type", [])
-        self.fields["vorschaubild_uri"].choices = [
-            ("", "Select the URI of a preview image")
-        ] + options.get("digital_object", [])
-        self.fields["beschreibung_uri"].choices = [
-            ("", "Select the description of the project")
-        ] + options.get("description", [])
-
-
-class EventForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing event, or create one",
-        required=False,
-        choices=[],
-    )
-    ereignisname = forms.CharField(
-        label="Ereignisname",
-        required=True,
-        help_text="Name of the event",
-    )
-    project_uri = forms.ChoiceField(
-        label="Associated Project",
-        required=True,
-        choices=[],
-    )
-    ereignisbeschreibung_uri = forms.ChoiceField(
-        label="Beschreibung",
-        required=False,
-        choices=[],
-    )
-    ereignisort = forms.CharField(
-        label="Ereignisort",
-        required=False,
-        help_text="WikidataID of the place of the event",
-    )
-    ereignisbeginn = forms.DateField(
-        label="Ereignisbeginn",
-        widget=forms.DateTimeInput(attrs={"type": "date"}),
-        required=False,
-        help_text="Start date of the event",
-    )
-    ereignisende = forms.DateField(
-        label="Ereignisende",
-        widget=forms.DateTimeInput(attrs={"type": "date"}),
-        required=False,
-        help_text="End date of the event (optional)",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select an event")] + options.get(
-            "event", []
-        )
-        self.fields["project_uri"].choices = [("", "Select a project")] + options.get(
-            "project", []
-        )
-        self.fields["ereignisbeschreibung_uri"].choices = [
-            ("", "Select the description of the event")
-        ] + options.get("event_description", [])
-
-
-class ActorForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing actor, or create one",
-        required=False,
-        choices=[],
-    )
-    deutscher_name = forms.CharField(
-        label="Deutscher Name",
-        required=True,
-        help_text="Deutscher Name des Akteurs",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select an actor")] + options.get(
-            "actor", []
-        )
-
-
-class DescriptionForm(BaseEntityForm):
-    beschreibung = forms.CharField(
-        label="Beschreibung",
-        required=True,
-        help_text="Description",
-        widget=forms.Textarea,
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-
-
-class CatchphraseForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing catchphrase, or create one",
-        required=False,
-        choices=[],
-    )
-    deutsches_wikidata_label = forms.CharField(
-        label="Wikidata Label",
-        required=True,
-        help_text="German Wikidata label for the catchphrase",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select a catchphrase")] + options.get(
-            "catchphrase", []
-        )
-
-
-class RoleForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing role, or create one",
-        required=False,
-        choices=[],
-    )
-    deutscher_name_der_rolle_breadcrumb = forms.CharField(
-        label="Deutscher Name",
-        required=True,
-        help_text="Deutscher Name der Rolle",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select a role")] + options.get("role", [])
-
-
-class DigitalObjectForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing digital object, or create one",
-        required=False,
-        choices=[],
-    )
-    dateipfad = forms.CharField(
-        label="Dateipfad",
-        required=True,
-        help_text="Dateipfad des digitalen Objekts",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select a digital object")] + options.get(
-            "digital_object", []
-        )
-
-
-class InstitutionForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing institution, or create one",
-        required=False,
-        choices=[],
-    )
-    deutscher_name_der_einliefernden_hochschule = forms.CharField(
-        label="Deutscher name",
-        required=True,
-        help_text="Deutscher Name der einliefernden Hochschule",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select an institution")] + options.get(
-            "institution", []
-        )
-
-
-class ProjectCategoryForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing project category, or create one",
-        required=False,
-        choices=[],
-    )
-    deutscher_name_der_projektkategorie_breadcrumb = forms.CharField(
-        label="Deutscher name",
-        required=True,
-        help_text="Deutscher Name der Projektkategorie als Breadcrumb",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select a project category")] + options.get(
-            "project_category", []
-        )
-
-
-class ProjectTypeForm(BaseEntityForm):
-    uri = forms.ChoiceField(
-        label="choose an existing project type, or create one",
-        required=False,
-        choices=[],
-    )
-    deutscher_name_der_projektart = forms.CharField(
-        label="Deutscher name",
-        required=True,
-        help_text="Deutscher Name der Projektart",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select a project type")] + options.get(
-            "project_type", []
-        )
-
-
-class AlternateTitleForm(BaseEntityForm):
-    alternativer_titel = forms.CharField(
-        label="Alternativer Titel",
-        required=True,
-        help_text="Alternative title",
-    )
-
-    def __init__(self, *args, metadata_options=None, **kwargs):
-        super().__init__(*args, metadata_options=metadata_options, **kwargs)
 
 
 ActorFormSet = formset_factory(ActorForm, extra=0, min_num=0, validate_min=False)
 RoleFormSet = formset_factory(RoleForm, extra=0, min_num=0, validate_min=False)
 
 
-def from_form_set_property_literal(
-    form: BaseEntityForm,
-    form_entity: EntityResource,
-    property_str: str,
-    property_entity: PropertyResource,
+def configure_uri_widget(form, fragment_url: str) -> None:
+    if "uri" not in form.fields:
+        return
+    widget = form.fields["uri"].widget
+    attrs = widget.attrs
+    attrs["hx-get"] = fragment_url
+    attrs["hx-trigger"] = "change"
+    attrs["hx-target"] = "closest form"
+    attrs["hx-swap"] = "outerHTML"
+    attrs["hx-include"] = "closest form"
+    attrs["data-autocomplete"] = "off"
+
+
+def _render_form_container(
+    request,
+    *,
+    config: EntityCreationConfig,
+    form,
+    fragment_url: str,
+    is_existing: bool,
+    success_message: Optional[str] = None,
+    error_message: Optional[str] = None,
+    submit_label: Optional[str] = None,
+    extra_context: Optional[Dict[str, object]] = None,
 ):
-    property_value = form.cleaned_data.get(property_str, "")
-    if property_value:
-        form_entity.set_property(property_entity, property_value)
+    configure_uri_widget(form, fragment_url)
+    form_action = reverse(f"metadata:create_{config.key}")
+    context = {
+        "form": form,
+        "form_action": form_action,
+        "form_partial": config.form_partial,
+        "entity_type": config.key,
+        "entity_title": config.title,
+        "is_existing": is_existing,
+        "success_message": success_message,
+        "error_message": error_message,
+        "submit_label": submit_label or f"Create {config.dataset_name}",
+    }
+    if extra_context:
+        context.update(extra_context)
+    return render_to_string(
+        "metadata/entity_creation/partials/_form_container.html",
+        context,
+        request=request,
+    )
 
 
-def from_form_set_property_entity(
-    form: BaseEntityForm,
-    form_entity: EntityResource,
-    property_str: str,
-    property_entity: PropertyResource,
-):
-    property_uri = form.cleaned_data.get(property_str, "")
-    if property_uri:
-        prop, _ = EntityResource.get_or_create(property_uri)
-        form_entity.set_property(property_entity, prop)
+def _is_htmx(request) -> bool:
+    return request.headers.get("HX-Request", "").lower() == "true"
 
 
-def from_form_set_property_entity_multi_value(
-    form: BaseEntityForm,
-    form_entity: EntityResource,
-    property_str: str,
-    property_entity: PropertyResource,
-):
-    property_uris = form.cleaned_data.get(property_str, "")
-    if property_uris:
-        for property_uri in property_uris:
-            prop, _ = EntityResource.get_or_create(property_uri)
-            form_entity.set_property(property_entity, prop)
-
-
-def form_init_resources(base_uri, dataset_name, organization):
-    match dataset_name:
-        case "Projekt":
-            entity, _ = EntityResource.create_by_organization_and_dataset_name(
-                dataset_name=dataset_name, organization=organization
-            )
-            cls, _ = ClassResource.get_or_create(
-                uri=f"{base_uri}/types/projekt", name=dataset_name
-            )
-            properties = {
-                "title_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-titel",
-                    name="Bevorzugter Titel",
-                )[0],
-                "subtitle_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-untertitel",
-                    name="Bevorzugter Untertitel",
-                )[0],
-                "institution_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/einliefernde-hochschule",
-                    name="Einliefernde Hochschule",
-                )[0],
-                "category_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektkategorie",
-                    name="Projektkategorie",
-                )[0],
-                "description_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )[0],
-                "catchphrase_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/schlagwort", name="Schlagwort"
-                )[0],
-                "project_type_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektart", name="Projektart"
-                )[0],
-                "preview_image_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/vorschaubild", name="Vorschaubild"
-                )[0],
-            }
-            return (entity, cls, properties)
-        case "Ereignis":
-            entity, _ = EntityResource.create_by_organization_and_dataset_name(
-                dataset_name=dataset_name, organization=organization
-            )
-            cls, _ = ClassResource.get_or_create(
-                uri=f"{base_uri}/types/ereignis", name=dataset_name
-            )
-            properties = {
-                "event_name_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisname", name="Ereignisname"
-                )[0],
-                "event_place_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisort", name="Ereignisort"
-                )[0],
-                "description_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )[0],
-                "begin_date_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisbeginn", name="Ereignisbeginn"
-                )[0],
-                "end_date_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisende", name="Ereignisende"
-                )[0],
-            }
-            return (entity, cls, properties)
-
-
-def entity_set_values_from_form(
-    form: BaseEntityForm, dataset_name, organization, entity, **kwargs
-):
-    match dataset_name:
-        case "Projekt":
-            from_form_set_property_literal(
-                form, entity, "bevorzugter_titel", kwargs["title_prop"]
-            )
-            from_form_set_property_literal(
-                form, entity, "bevorzugter_untertitel", kwargs["subtitle_prop"]
-            )
-            from_form_set_property_entity(
-                form, entity, "einliefernde_hochschule_uri", kwargs["institution_prop"]
-            )
-            from_form_set_property_entity(
-                form, entity, "projektkategorie_uri", kwargs["category_prop"]
-            )
-            from_form_set_property_entity(
-                form, entity, "beschreibung_uri", kwargs["description_prop"]
-            )
-            from_form_set_property_entity(
-                form, entity, "projektart_uri", kwargs["project_type_prop"]
-            )
-            from_form_set_property_entity_multi_value(
-                form, kwargs["entity"], "schlagwort_uris", kwargs["catchphrase_prop"]
-            )
-            from_form_set_property_entity(
-                form, kwargs["entity"], "vorschaubild_uri", kwargs["preview_image_prop"]
-            )
-        case "Ereignis":
-            from_form_set_property_literal(
-                form, entity, "ereignisname", kwargs["event_name_prop"]
-            )
-            from_form_set_property_literal(
-                form, entity, "ereignisort", kwargs["event_place_prop"]
-            )
-            from_form_set_property_literal(
-                form, entity, "ereignisbeginn", kwargs["begin_date_prop"]
-            )
-            from_form_set_property_literal(
-                form, entity, "ereignisende", kwargs["end_date_prop"]
-            )
-
-
-def form_to_entity(form: BaseEntityForm, dataset_name, organization):
-    base_uri = f"http://arkumu.org/data/{organization.code}"
-    if form.is_valid():
-        if uri := form.cleaned_data.get("uri", ""):
-            logger.info(f"🔄✅✅✅ {uri=} truesy")
-            return EntityResource.get_or_create(uri)
-        logger.info(f"🔄❌❌❌ {uri=} falsy")
-        entity, cls, properties = form_init_resources(
-            base_uri, dataset_name, organization
+def build_entity_extra_context(entity_key: str, metadata_options: dict) -> Dict[str, object]:
+    if entity_key == "event":
+        actor_formset = ActorFormSet(
+            prefix="actors",
+            form_kwargs={"metadata_options": metadata_options},
         )
-        entity.set_type(cls)
-        entity_set_values_from_form(
-            form, dataset_name, organization, entity, **properties
+        role_formset = RoleFormSet(
+            prefix="roles",
+            form_kwargs={"metadata_options": metadata_options},
         )
-        return entity
+        return {
+            "actor_formset": actor_formset,
+            "role_formset": role_formset,
+            "actor_role_forms": list(zip(actor_formset.forms, role_formset.forms)),
+            "actor_row_url": reverse("metadata:event_actor_row"),
+            "actor_fragment_url": reverse("metadata:entity_creation_fragment", args=["actor"]),
+            "role_fragment_url": reverse("metadata:entity_creation_fragment", args=["role"]),
+        }
+    return {}
 
 
-@login_required
-def create_project(request):
-    organization = getattr(request.user, "organization", None)
-    # logger.info(f"🔄 {request.user._wrapped.__dict__}")
-    # logger.info(f"🔄 {organization}")
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
+class EntityCreationBaseView(LoginRequiredMixin, View):
+    """Base view for entity creation pages."""
 
-        if request.method == "POST":
-            project_form = ProjectForm(
-                request.POST,
+    entity_key: str = ""
+
+    @property
+    def config(self) -> EntityCreationConfig:
+        try:
+            return ENTITY_CREATION_CONFIG[self.entity_key]
+        except KeyError as exc:
+            raise ValueError(f"Unknown entity creation key '{self.entity_key}'") from exc
+
+    def get_success_url(self) -> str:
+        return reverse(self.config.success_url_name)
+
+    def get_fragment_url(self) -> str:
+        return reverse("metadata:entity_creation_fragment", args=[self.entity_key])
+
+    def get_metadata_options(self, organization) -> Dict:
+        return get_default_metadata_option_map(organization=organization)
+
+    def get_form(
+        self,
+        *,
+        data=None,
+        metadata_options: Optional[dict] = None,
+        disable_fields: bool = False,
+        initial: Optional[dict] = None,
+    ):
+        form_class = self.config.form_class
+        return form_class(
+            data=data,
+            metadata_options=metadata_options,
+            disable_fields=disable_fields,
+            initial=initial,
+        )
+
+    def get_context_data(self, *, form, fragment_url: str, **extra):
+        is_existing = extra.pop("is_existing", False)
+        configure_uri_widget(form, fragment_url)
+        context = {
+            "form": form,
+            "entity_type": self.entity_key,
+            "title": self.config.title,
+            "description": self.config.description,
+            "fragment_url": fragment_url,
+            "is_existing": is_existing,
+        }
+        context.update(extra)
+        return context
+
+    def get(self, request):
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            logger.warning("Entity creation requested without an organization on user.")
+            return redirect("metadata:metadata_entry")
+
+        metadata_options = self.get_metadata_options(organization)
+        form = self.get_form(metadata_options=metadata_options)
+        context = self.get_context_data(
+            form=form,
+            fragment_url=self.get_fragment_url(),
+        )
+        return render(request, self.config.template_name, context)
+
+    def post(self, request):
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            logger.warning("Entity creation POST without organization.")
+            return redirect("metadata:metadata_entry")
+
+        metadata_options = self.get_metadata_options(organization)
+        form = self.get_form(
+            data=request.POST,
+            metadata_options=metadata_options,
+        )
+
+        if form.is_valid():
+            service = EntityCreationService.for_key(self.entity_key, organization)
+            entity, created = service.create_or_update_from_form(form)
+            post_response = self.form_valid(
+                request,
+                form=form,
+                entity=entity,
+                created=created,
+                organization=organization,
                 metadata_options=metadata_options,
             )
+            if post_response is not None:
+                return post_response
 
-            if project_form.is_valid():
-                project_entity = form_to_entity(project_form, "Projekt", organization)
-                # The RDF resources are now created and linked automatically
-                # Continue with the rest of the project creation workflow
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            project_form = ProjectForm(metadata_options=metadata_options)
+            if _is_htmx(request):
+                success_message = f"{self.config.dataset_name} erfolgreich erstellt."
+                fresh_form = self.get_form(metadata_options=metadata_options)
+                html = _render_form_container(
+                    request,
+                    config=self.config,
+                    form=fresh_form,
+                    fragment_url=self.get_fragment_url(),
+                    is_existing=False,
+                    success_message=success_message,
+                )
+                response = HttpResponse(html)
+                trigger_payload = {
+                    "entity-create-success": {
+                        "entity": self.entity_key,
+                        "created": created,
+                    }
+                }
+                response["HX-Trigger"] = json.dumps(trigger_payload)
+                return response
 
-        return render(
-            request,
-            "metadata/entity_creation/create_project.html",
-            {
-                "project_form": project_form,
-                "entity_type": "project",
-                "title": "Create New Project",
-                "description": "Fill in the details to create a new archival project",
-            },
+            return HttpResponseRedirect(self.get_success_url())
+
+        if _is_htmx(request):
+            html = _render_form_container(
+                request,
+                config=self.config,
+                form=form,
+                fragment_url=self.get_fragment_url(),
+                is_existing=getattr(form, "disable_fields", False),
+                error_message="Bitte korrigiere die markierten Felder.",
+            )
+            return HttpResponse(html, status=400)
+
+        context = self.get_context_data(
+            form=form,
+            fragment_url=self.get_fragment_url(),
+        )
+        return render(request, self.config.template_name, context)
+
+    def form_valid(
+        self,
+        request,
+        *,
+        form,
+        entity: EntityResource,
+        created: bool,
+        organization,
+        metadata_options: dict,
+    ) -> Optional[HttpResponse]:
+        """Hook for subclasses."""
+        return None
+
+
+class ProjectCreationView(EntityCreationBaseView):
+    entity_key = "project"
+
+
+class ActorCreationView(EntityCreationBaseView):
+    entity_key = "actor"
+
+
+class RoleCreationView(EntityCreationBaseView):
+    entity_key = "role"
+
+
+class DigitalObjectCreationView(EntityCreationBaseView):
+    entity_key = "digital_object"
+
+
+class InstitutionCreationView(EntityCreationBaseView):
+    entity_key = "institution"
+
+
+class ProjectCategoryCreationView(EntityCreationBaseView):
+    entity_key = "project_category"
+
+
+class ProjectTypeCreationView(EntityCreationBaseView):
+    entity_key = "project_type"
+
+
+class AlternateTitleCreationView(EntityCreationBaseView):
+    entity_key = "alternate_title"
+
+
+class DescriptionCreationView(EntityCreationBaseView):
+    entity_key = "description"
+
+
+class CatchphraseCreationView(EntityCreationBaseView):
+    entity_key = "catchphrase"
+
+
+class EntityCreationWorkspaceView(LoginRequiredMixin, View):
+    """Single-page workspace for managing entity creation forms."""
+
+    template_name = "metadata/entity_creation/workspace.html"
+
+    _preferred_order = [
+        "project",
+        "event",
+        "actor",
+        "role",
+        "digital_object",
+        "institution",
+        "project_category",
+        "project_type",
+        "alternate_title",
+        "description",
+        "catchphrase",
+    ]
+
+    def get(self, request):
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            return render(
+                request,
+                self.template_name,
+                {"organization_required": True},
+            )
+
+        metadata_options = get_default_metadata_option_map(organization=organization)
+        ordered_keys = [key for key in self._preferred_order if key in ENTITY_CREATION_CONFIG]
+        # include any additional keys not listed explicitly
+        ordered_keys.extend(
+            key for key in ENTITY_CREATION_CONFIG.keys() if key not in ordered_keys
         )
 
+        entity_configs = [
+            {
+                "key": key,
+                "title": ENTITY_CREATION_CONFIG[key].title,
+                "label": ENTITY_CREATION_CONFIG[key].dataset_name,
+            }
+            for key in ordered_keys
+        ]
 
-@login_required
-def create_event(request):
-    organization = getattr(request.user, "organization", None)
+        if not entity_configs:
+            return render(
+                request,
+                self.template_name,
+                {
+                    "organization": organization,
+                    "entity_configs": [],
+                    "initial_form_html": "",
+                },
+            )
 
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
+        active_key = request.GET.get("entity") or entity_configs[0]["key"]
+        if active_key not in ENTITY_CREATION_CONFIG:
+            active_key = entity_configs[0]["key"]
 
-        if request.method == "POST":
-            base_uri = f"http://arkumu.org/data/{organization.code}"
-            event_form = EventForm(
-                request.POST,
+        config = ENTITY_CREATION_CONFIG[active_key]
+        form = config.form_class(metadata_options=metadata_options)
+        fragment_url = reverse("metadata:entity_creation_fragment", args=[active_key])
+        extra_context = build_entity_extra_context(active_key, metadata_options)
+
+        initial_form_html = _render_form_container(
+            request,
+            config=config,
+            form=form,
+            fragment_url=fragment_url,
+            is_existing=False,
+            extra_context=extra_context,
+        )
+
+        context = {
+            "organization": organization,
+            "entity_configs": entity_configs,
+            "active_key": active_key,
+            "initial_form_html": initial_form_html,
+        }
+        return render(request, self.template_name, context)
+
+
+class EventCreationView(EntityCreationBaseView):
+    entity_key = "event"
+
+    def get_context_data(
+        self,
+        *,
+        form,
+        fragment_url: str,
+        actor_formset=None,
+        role_formset=None,
+        actor_row_url: Optional[str] = None,
+        **extra,
+    ):
+        actor_role_forms = []
+        if actor_formset is not None and role_formset is not None:
+            actor_role_forms = list(zip(actor_formset.forms, role_formset.forms))
+
+        context = super().get_context_data(
+            form=form,
+            fragment_url=fragment_url,
+            actor_formset=actor_formset,
+            role_formset=role_formset,
+            actor_row_url=actor_row_url,
+            actor_role_forms=actor_role_forms,
+            **extra,
+        )
+        return context
+
+    def get(self, request):
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            return redirect("metadata:metadata_entry")
+
+        metadata_options = self.get_metadata_options(organization)
+        form = self.get_form(metadata_options=metadata_options)
+        actor_formset = ActorFormSet(
+            prefix="actors",
+            form_kwargs={"metadata_options": metadata_options},
+        )
+        role_formset = RoleFormSet(
+            prefix="roles",
+            form_kwargs={"metadata_options": metadata_options},
+        )
+        context = self.get_context_data(
+            form=form,
+            fragment_url=self.get_fragment_url(),
+            actor_formset=actor_formset,
+            role_formset=role_formset,
+            actor_row_url=reverse("metadata:event_actor_row"),
+            actor_fragment_url=reverse("metadata:entity_creation_fragment", args=["actor"]),
+            role_fragment_url=reverse("metadata:entity_creation_fragment", args=["role"]),
+        )
+        return render(request, self.config.template_name, context)
+
+    def post(self, request):
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            return redirect("metadata:metadata_entry")
+
+        metadata_options = self.get_metadata_options(organization)
+        form = self.get_form(
+            data=request.POST,
+            metadata_options=metadata_options,
+        )
+        actor_formset = ActorFormSet(
+            request.POST,
+            prefix="actors",
+            form_kwargs={"metadata_options": metadata_options},
+        )
+        role_formset = RoleFormSet(
+            request.POST,
+            prefix="roles",
+            form_kwargs={"metadata_options": metadata_options},
+        )
+
+        forms_valid = (
+            form.is_valid()
+            and actor_formset.is_valid()
+            and role_formset.is_valid()
+        )
+
+        if forms_valid:
+            service = EntityCreationService.for_key(self.entity_key, organization)
+            event_entity, created = service.create_or_update_from_form(form)
+            self._link_event_to_project(
+                organization=organization,
+                event_entity=event_entity,
+                project_uri=form.cleaned_data.get("project_uri"),
+            )
+            self._persist_actor_roles(
+                organization=organization,
+                event_entity=event_entity,
+                actor_formset=actor_formset,
+                role_formset=role_formset,
+            )
+            post_response = self.form_valid(
+                request,
+                form=form,
+                entity=event_entity,
+                created=created,
+                organization=organization,
                 metadata_options=metadata_options,
             )
-            actor_formset = ActorFormSet(
-                request.POST,
-                prefix="actors",
-                form_kwargs={"metadata_options": metadata_options},
+            if post_response is not None:
+                return post_response
+
+            if _is_htmx(request):
+                fresh_form = self.get_form(metadata_options=metadata_options)
+                extra_context = build_entity_extra_context("event", metadata_options)
+                html = _render_form_container(
+                    request,
+                    config=self.config,
+                    form=fresh_form,
+                    fragment_url=self.get_fragment_url(),
+                    is_existing=False,
+                    success_message="Ereignis erfolgreich gespeichert.",
+                    extra_context=extra_context,
+                )
+                response = HttpResponse(html)
+                trigger_payload = {
+                    "entity-create-success": {
+                        "entity": self.entity_key,
+                        "created": created,
+                    }
+                }
+                response["HX-Trigger"] = json.dumps(trigger_payload)
+                return response
+            return HttpResponseRedirect(self.get_success_url())
+
+        if _is_htmx(request):
+            html = _render_form_container(
+                request,
+                config=self.config,
+                form=form,
+                fragment_url=self.get_fragment_url(),
+                is_existing=getattr(form, "disable_fields", False),
+                error_message="Bitte korrigiere die markierten Felder.",
+                extra_context={
+                    "actor_formset": actor_formset,
+                    "role_formset": role_formset,
+                    "actor_role_forms": list(zip(actor_formset.forms, role_formset.forms)),
+                    "actor_row_url": reverse("metadata:event_actor_row"),
+                    "actor_fragment_url": reverse("metadata:entity_creation_fragment", args=["actor"]),
+                    "role_fragment_url": reverse("metadata:entity_creation_fragment", args=["role"]),
+                },
             )
-            role_formset = RoleFormSet(
-                request.POST,
-                prefix="roles",
-                form_kwargs={"metadata_options": metadata_options},
-            )
-            event_entity = form_to_entity(event_form, "Ereignis", organization)
+            return HttpResponse(html, status=400)
 
-            event_prop, _ = PropertyResource.get_or_create(
-                uri=f"{base_uri}/properties/ereignis", name="Ereignis"
-            )
-            project_uri = event_form.cleaned_data.get("project_uri", "")
-            if project_uri:
-                project_entity, _ = EntityResource.get_or_create(uri=project_uri)
-                project_entity.set_property(event_prop, event_entity)
-
-            for actor_form, role_form in zip(actor_formset, role_formset):
-                if actor_form.is_valid() and role_form.is_valid():
-                    actor_entity = form_to_entity(actor_form)
-                    role_entity = form_to_entity(role_form)
-                    actor_event_entity, _ = (
-                        EntityResource.create_by_organization_and_dataset_name(
-                            dataset_name="AkteurIn_Ereignis_Kreuztabelle",
-                            organization=organization,
-                        )
-                    )
-
-                    cls, _ = ClassResource.get_or_create(
-                        uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle",
-                        name="AkteurIn_Ereignis_Kreuztabelle",
-                    )
-
-                    actor_event_actor_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/akteurin-im-ereignis",
-                        name="AkteurIn im Ereignis",
-                    )
-                    actor_event_event_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
-                    )
-                    actor_event_actor_role_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
-                        name="Rollen der AkteurIn im Ereignis",
-                    )
-                    actor_event_event_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
-                    )
-
-                    actor_event_entity.set_type(cls)
-
-                    actor_event_entity.set_property(
-                        actor_event_actor_prop, actor_entity
-                    )
-                    actor_event_entity.set_property(
-                        actor_event_event_prop, event_entity
-                    )
-                    actor_event_entity.set_property(
-                        actor_event_actor_role_prop, role_entity
-                    )
-
-            # The RDF resources are now created and linked automatically
-            # Continue with the rest of the event creation workflow
-
-            return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            event_form = EventForm(metadata_options=metadata_options)
-            actor_formset = ActorFormSet(
-                prefix="actors",
-                form_kwargs={"metadata_options": metadata_options},
-            )
-            role_formset = RoleFormSet(
-                prefix="roles",
-                form_kwargs={"metadata_options": metadata_options},
-            )
-
-        return render(
-            request,
-            "metadata/entity_creation/create_event.html",
-            {
-                "event_form": event_form,
-                "actor_formset": actor_formset,
-                "role_formset": role_formset,
-                "entity_type": "event",
-                "title": "Create New Event",
-                "description": "Fill in the details to create a new archival event",
-            },
+        context = self.get_context_data(
+            form=form,
+            fragment_url=self.get_fragment_url(),
+            actor_formset=actor_formset,
+            role_formset=role_formset,
+            actor_row_url=reverse("metadata:event_actor_row"),
+            actor_fragment_url=reverse("metadata:entity_creation_fragment", args=["actor"]),
+            role_fragment_url=reverse("metadata:entity_creation_fragment", args=["role"]),
         )
+        return render(request, self.config.template_name, context)
 
+    def _link_event_to_project(self, *, organization, event_entity, project_uri: Optional[str]) -> None:
+        if not project_uri:
+            return
 
-@login_required
-def create_actor(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
         base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            actor_form = ActorForm(request.POST, metadata_options=metadata_options)
-
-            if actor_form.is_valid():
-                # Create RDF resources for the actor
-                # Create Actor class resource
-                actor_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/akteurin", name="Akteurin"
-                )
-
-                # Create property resources
-                german_name_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name", name="Deutscher Name"
-                )
-
-                # Create actor entity
-                actor_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Akteurin"
-                    )
-                )
-
-                # Set the type of the entity
-                actor_entity.set_type(actor_class)
-
-                # Set properties from form data
-                german_name = actor_form.cleaned_data.get("deutscher_name", "")
-                if german_name:
-                    actor_entity.set_property(german_name_prop, german_name)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            actor_form = ActorForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_actor.html",
-            {
-                "actor_form": actor_form,
-                "entity_type": "actor",
-                "title": "Create New Actor",
-                "description": "Fill in the details to create a new archival actor",
-            },
+        property_resource, _ = PropertyResource.get_or_create(
+            uri=f"{base_uri}/properties/ereignis",
+            name="Ereignis",
         )
+        project_entity, _ = EntityResource.get_or_create(project_uri)
+        project_entity.set_property(property_resource, event_entity)
 
-
-@login_required
-def create_role(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
+    def _persist_actor_roles(
+        self,
+        *,
+        organization,
+        event_entity: EntityResource,
+        actor_formset,
+        role_formset,
+    ) -> None:
         base_uri = f"http://arkumu.org/data/{organization.code}"
+        actor_service = EntityCreationService.for_key("actor", organization)
+        role_service = EntityCreationService.for_key("role", organization)
 
-        if request.method == "POST":
-            role_form = RoleForm(request.POST, metadata_options=metadata_options)
-
-            if role_form.is_valid():
-                # Create RDF resources for the role
-                # Create Role class resource
-                role_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/rolle", name="Rolle"
-                )
-
-                # Create property resources
-                german_name_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name-der-rolle-breadcrumb",
-                    name="Deutscher Name der Rolle Breadcrumb",
-                )
-
-                # Create role entity
-                role_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Rolle"
-                    )
-                )
-
-                # Set the type of the entity
-                role_entity.set_type(role_class)
-
-                # Set properties from form data
-                german_name = role_form.cleaned_data.get(
-                    "deutscher_name_der_rolle_breadcrumb", ""
-                )
-                if german_name:
-                    role_entity.set_property(german_name_prop, german_name)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            role_form = RoleForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_role.html",
-            {
-                "role_form": role_form,
-                "entity_type": "role",
-                "title": "Create New Role",
-                "description": "Fill in the details to create a new archival role",
-            },
+        actor_prop, _ = PropertyResource.get_or_create(
+            uri=f"{base_uri}/properties/akteurin-im-ereignis",
+            name="AkteurIn im Ereignis",
+        )
+        event_prop, _ = PropertyResource.get_or_create(
+            uri=f"{base_uri}/properties/im-ereignis",
+            name="im Ereignis",
+        )
+        role_prop, _ = PropertyResource.get_or_create(
+            uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
+            name="Rollen der AkteurIn im Ereignis",
+        )
+        membership_class, _ = ClassResource.get_or_create(
+            uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle",
+            name="AkteurIn_Ereignis_Kreuztabelle",
         )
 
+        for actor_form, role_form in zip(actor_formset, role_formset):
+            if not (actor_form.has_changed() or role_form.has_changed()):
+                continue
+            if not (actor_form.is_valid() and role_form.is_valid()):
+                continue
 
-@login_required
-def create_digital_object(request):
-    organization = getattr(request.user, "organization", None)
+            actor_entity, _ = actor_service.create_or_update_from_form(actor_form)
+            role_entity, _ = role_service.create_or_update_from_form(role_form)
 
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
-        base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            digital_object_form = DigitalObjectForm(
-                request.POST, metadata_options=metadata_options
+            membership_entity, _ = EntityResource.create_by_organization_and_dataset_name(
+                organization=organization,
+                dataset_name="AkteurIn_Ereignis_Kreuztabelle",
             )
+            membership_entity.set_type(membership_class)
+            membership_entity.set_property(actor_prop, actor_entity)
+            membership_entity.set_property(event_prop, event_entity)
+            membership_entity.set_property(role_prop, role_entity)
 
-            if digital_object_form.is_valid():
-                # Create RDF resources for the digital object
-                # Create Digital Object class resource
-                digital_object_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/digitales-objekt", name="Digitales Objekt"
-                )
 
-                # Create property resources
-                path_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/dateipfad", name="Dateipfad"
-                )
+class EntityFormFragmentView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, View):
+    """Render the form fields fragment for HTMX requests."""
 
-                # Create digital object entity
-                digital_object_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Digitales Objekt"
-                    )
-                )
+    def get(self, request, entity_key: str):
+        if request.headers.get("HX-Request", "").lower() != "true":
+            return HttpResponseBadRequest("HTMX requests only")
 
-                # Set the type of the entity
-                digital_object_entity.set_type(digital_object_class)
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            return HttpResponseBadRequest("Organization required")
 
-                # Set properties from form data
-                path = digital_object_form.cleaned_data.get("dateipfad", "")
-                if path:
-                    digital_object_entity.set_property(path_prop, path)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            digital_object_form = DigitalObjectForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_digital_object.html",
-            {
-                "digital_object_form": digital_object_form,
-                "entity_type": "digital_object",
-                "title": "Create New Digital Object",
-                "description": "Fill in the details to create a new digital object",
-            },
-        )
-
-
-@login_required
-def create_institution(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
-        base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            institution_form = InstitutionForm(
-                request.POST, metadata_options=metadata_options
-            )
-
-            if institution_form.is_valid():
-                # Create RDF resources for the institution
-                # Create Institution class resource
-                institution_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/einliefernde-hochschule",
-                    name="Einliefernde Hochschule",
-                )
-
-                # Create property resources
-                german_name_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name-der-einliefernden-hochschule",
-                    name="Deutscher Name der Einliefernden Hochschule",
-                )
-
-                # Create institution entity
-                institution_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization,
-                        dataset_name="Einliefernde Hochschule",
-                    )
-                )
-
-                # Set the type of the entity
-                institution_entity.set_type(institution_class)
-
-                # Set properties from form data
-                german_name = institution_form.cleaned_data.get(
-                    "deutscher_name_der_einliefernden_hochschule", ""
-                )
-                if german_name:
-                    institution_entity.set_property(german_name_prop, german_name)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            institution_form = InstitutionForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_institution.html",
-            {
-                "institution_form": institution_form,
-                "entity_type": "institution",
-                "title": "Create New Institution",
-                "description": "Fill in the details to create a new institutional affiliation",
-            },
-        )
-
-
-@login_required
-def create_project_category(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
-        base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            project_category_form = ProjectCategoryForm(
-                request.POST, metadata_options=metadata_options
-            )
-
-            if project_category_form.is_valid():
-                # Create RDF resources for the project category
-                # Create Project Category class resource
-                project_category_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/projektkategorie", name="Projektkategorie"
-                )
-
-                # Create property resources
-                german_name_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name-der-projektkategorie-breadcrumb",
-                    name="Deutscher Name der Projektkategorie Breadcrumb",
-                )
-
-                # Create project category entity
-                project_category_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Projektkategorie"
-                    )
-                )
-
-                # Set the type of the entity
-                project_category_entity.set_type(project_category_class)
-
-                # Set properties from form data
-                german_name = project_category_form.cleaned_data.get(
-                    "deutscher_name_der_projektkategorie_breadcrumb", ""
-                )
-                if german_name:
-                    project_category_entity.set_property(german_name_prop, german_name)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            project_category_form = ProjectCategoryForm(
-                metadata_options=metadata_options
-            )
-
-        return render(
-            request,
-            "metadata/entity_creation/create_project_category.html",
-            {
-                "project_category_form": project_category_form,
-                "entity_type": "project_category",
-                "title": "Create New Project Category",
-                "description": "Fill in the details to create a new project category",
-            },
-        )
-
-
-@login_required
-def create_project_type(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
-        base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            project_type_form = ProjectTypeForm(
-                request.POST, metadata_options=metadata_options
-            )
-
-            if project_type_form.is_valid():
-                # Create RDF resources for the project type
-                # Create Project Type class resource
-                project_type_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/projektart", name="Projektart"
-                )
-
-                # Create property resources
-                german_name_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name-der-projektart",
-                    name="Deutscher Name der Projektart",
-                )
-
-                # Create project type entity
-                project_type_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Projektart"
-                    )
-                )
-
-                # Set the type of the entity
-                project_type_entity.set_type(project_type_class)
-
-                # Set properties from form data
-                german_name = project_type_form.cleaned_data.get(
-                    "deutscher_name_der_projektart", ""
-                )
-                if german_name:
-                    project_type_entity.set_property(german_name_prop, german_name)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            project_type_form = ProjectTypeForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_project_type.html",
-            {
-                "project_type_form": project_type_form,
-                "entity_type": "project_type",
-                "title": "Create New Project Type",
-                "description": "Fill in the details to create a new project type",
-            },
-        )
-
-
-@login_required
-def create_alternate_title(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
-        base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            alternate_title_form = AlternateTitleForm(
-                request.POST, metadata_options=metadata_options
-            )
-
-            if alternate_title_form.is_valid():
-                # Create RDF resources for the alternate title
-                # Create Alternate Title class resource
-                alternate_title_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/alternativer-titel",
-                    name="Alternativer Titel",
-                )
-
-                # Create property resources
-                title_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/alternativer-titel",
-                    name="Alternativer Titel",
-                )
-
-                # Create alternate title entity
-                alternate_title_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Alternativer Titel"
-                    )
-                )
-
-                # Set the type of the entity
-                alternate_title_entity.set_type(alternate_title_class)
-
-                # Set properties from form data
-                title = alternate_title_form.cleaned_data.get("alternativer_titel", "")
-                if title:
-                    alternate_title_entity.set_property(title_prop, title)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            alternate_title_form = AlternateTitleForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_alternate_title.html",
-            {
-                "alternate_title_form": alternate_title_form,
-                "entity_type": "alternate_title",
-                "title": "Create New Alternate Title",
-                "description": "Fill in the details to create a new alternate title",
-            },
-        )
-
-
-@login_required
-def create_description(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
-        base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            description_form = DescriptionForm(
-                request.POST, metadata_options=metadata_options
-            )
-
-            if description_form.is_valid():
-                # Create RDF resources for the description
-                # Create Description class resource
-                description_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/beschreibung", name="Beschreibung"
-                )
-
-                # Create property resources
-                description_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )
-
-                # Create description entity
-                description_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Beschreibung"
-                    )
-                )
-
-                # Set the type of the entity
-                description_entity.set_type(description_class)
-
-                # Set properties from form data
-                description_text = description_form.cleaned_data.get("beschreibung", "")
-                if description_text:
-                    description_entity.set_property(description_prop, description_text)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            description_form = DescriptionForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_description.html",
-            {
-                "description_form": description_form,
-                "entity_type": "description",
-                "title": "Create New Description",
-                "description": "Fill in the details to create a new description",
-            },
-        )
-
-
-@login_required
-def create_catchphrase(request):
-    organization = getattr(request.user, "organization", None)
-
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
-
-        # Initialize base URI for resource creation
-        base_uri = f"http://arkumu.org/data/{organization.code}"
-
-        if request.method == "POST":
-            catchphrase_form = CatchphraseForm(
-                request.POST, metadata_options=metadata_options
-            )
-
-            if catchphrase_form.is_valid():
-                # Create RDF resources for the catchphrase
-                # Create Catchphrase class resource
-                catchphrase_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/schlagwort", name="Schlagwort"
-                )
-
-                # Create property resources
-                wikidata_label_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutsches-wikidata-label",
-                    name="Deutsches Wikidata Label",
-                )
-
-                # Create catchphrase entity
-                catchphrase_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Schlagwort"
-                    )
-                )
-
-                # Set the type of the entity
-                catchphrase_entity.set_type(catchphrase_class)
-
-                # Set properties from form data
-                wikidata_label = catchphrase_form.cleaned_data.get(
-                    "deutsches_wikidata_label", ""
-                )
-                if wikidata_label:
-                    catchphrase_entity.set_property(wikidata_label_prop, wikidata_label)
-
-                # The RDF resources are now created and linked automatically
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            catchphrase_form = CatchphraseForm(metadata_options=metadata_options)
-
-        return render(
-            request,
-            "metadata/entity_creation/create_catchphrase.html",
-            {
-                "catchphrase_form": catchphrase_form,
-                "entity_type": "catchphrase",
-                "title": "Create New Catchphrase",
-                "description": "Fill in the details to create a new catchphrase",
-            },
-        )
-
-
-@login_required
-def get_actor_details(request):
-    """
-    Returns actor details as JSON for auto-filling form fields.
-    """
-    actor_uri = request.GET.get("uri","")
-    try:
-
-        # Find the resource with this URI
         try:
-            actor, _ = EntityResource.get_or_create(uri=actor_uri)
-            organization = getattr(request.user, "organization", None)
-            base_uri = f"http://arkumu.org/data/{organization.code}"
-            german_name_prop, _ = PropertyResource.get_or_create(
-                uri=f"{base_uri}/properties/deutscher-name", name="Deutscher Name"
-            )
-            deutscher_name = actor.get_property(german_name_prop)[0]
+            config = ENTITY_CREATION_CONFIG[entity_key]
+        except KeyError:
+            return HttpResponseBadRequest("Unknown entity")
 
-            return JsonResponse({"deutscher_name": deutscher_name})
+        metadata_options = get_default_metadata_option_map(organization=organization)
+        service = EntityCreationService(config=config, organization=organization)
+        initial = {}
+        disable_fields = False
 
-        except Resource.DoesNotExist:
-            return JsonResponse({"error": "Actor not found"}, status=404)
+        selected_uri = request.GET.get("uri")
+        if selected_uri:
+            initial_builder = EntityInitialDataBuilder(service)
+            initial_data = initial_builder.get_initial_for_uri(selected_uri)
+            if initial_data is not None:
+                initial = initial_data
+                if "uri" not in initial:
+                    initial["uri"] = selected_uri
+                disable_fields = True
+            else:
+                initial = {"uri": selected_uri}
 
-    except Exception as e:
-        logger.error(f"Error retrieving actor details for {actor_uri}: {str(e)}")
-        return JsonResponse({"error": "Internal server error"}, status=500)
+        form = config.form_class(
+            metadata_options=metadata_options,
+            disable_fields=disable_fields,
+            initial=initial or None,
+        )
+        if selected_uri:
+            form.initial["uri"] = selected_uri
 
-@login_required
-def get_project_details(request):
-    """
-    Returns project details as JSON for auto-filling form fields.
-    """
+        fragment_url = reverse("metadata:entity_creation_fragment", args=[entity_key])
+        extra_context = build_entity_extra_context(entity_key, metadata_options)
 
-    project_uri = request.GET.get("uri","")
-    try:
+        html = _render_form_container(
+            request,
+            config=config,
+            form=form,
+            fragment_url=fragment_url,
+            is_existing=disable_fields,
+            extra_context=extra_context,
+        )
+        return HttpResponse(html)
 
-        # Find the resource with this URI
-        try:
-            project, _ = EntityResource.get_or_create(uri=project_uri)
-            organization = getattr(request.user, "organization", None)
-            base_uri = f"http://arkumu.org/data/{organization.code}"
-            properties = {
-                "title_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-titel",
-                    name="Bevorzugter Titel",
-                )[0],
-                "subtitle_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-untertitel",
-                    name="Bevorzugter Untertitel",
-                )[0],
-                "institution_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/einliefernde-hochschule",
-                    name="Einliefernde Hochschule",
-                )[0],
-                "category_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektkategorie",
-                    name="Projektkategorie",
-                )[0],
-                "description_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )[0],
-                "catchphrase_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/schlagwort", name="Schlagwort"
-                )[0],
-                "project_type_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektart", name="Projektart"
-                )[0],
-                "preview_image_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/vorschaubild", name="Vorschaubild"
-                )[0],
-            }
-            json = {
-                "bevorzugter_titel" : project.get_property(properties["title_prop"]),
-                "bevorzugter_untertitel" : project.get_property(properties["subtitle_prop"]),
-                "einliefernde_hochschule_uri" : project.get_property(properties["institution_prop"])[0].uri if len(project.get_property(properties["institution_prop"])) > 0 and type(project.get_property(properties["institution_prop"])[0]) == EntityResource else '',
-                "projektkategorie_uri" : project.get_property(properties["category_prop"])[0].uri if len(project.get_property(properties["category_prop"])) > 0 and type(project.get_property(properties["category_prop"])[0]) == EntityResource else '',
-                "beschreibung_uri" : project.get_property(properties["description_prop"])[0].uri if len(project.get_property(properties["description_prop"])) > 0 and type(project.get_property(properties["description_prop"])[0]) == EntityResource else '',
-                "schlagwort_uris" : [catchphrase.uri if type(catchphrase) == EntityResource else '' for catchphrase in project.get_property(properties["catchphrase_prop"])] if len(project.get_property(properties["catchphrase_prop"])) > 0 else '',
-                "projektart_uri" : project.get_property(properties["project_type_prop"])[0].uri if len(project.get_property(properties["project_type_prop"])) > 0 and type(project.get_property(properties["project_type_prop"])[0]) == EntityResource else '',
-                "vorschaubild_uri" : project.get_property(properties["preview_image_prop"])[0].uri if len(project.get_property(properties["preview_image_prop"])) > 0 and type(project.get_property(properties["institution_prop"])[0]) == EntityResource else '',
-            }
 
-            return JsonResponse(json)
+class EventActorRowView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, View):
+    """Return a single actor/role row fragment for HTMX additions."""
 
-        except Resource.DoesNotExist:
-            return JsonResponse({"error": "Actor not found"}, status=404)
+    def get(self, request):
+        if request.headers.get("HX-Request", "").lower() != "true":
+            return HttpResponseBadRequest("HTMX requests only")
 
-    except Exception as e:
-        logger.error(f"Error retrieving actor details for {project_uri}: {str(e)}")
-        return JsonResponse({"error": "Internal server error"}, status=500)
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            return HttpResponseBadRequest("Organization required")
+
+        metadata_options = get_default_metadata_option_map(organization=organization)
+        current_index = int(request.GET.get("actors-TOTAL_FORMS", 0))
+        actor_prefix = f"actors-{current_index}"
+        role_prefix = f"roles-{current_index}"
+
+        actor_form = ActorForm(
+            metadata_options=metadata_options,
+            prefix=actor_prefix,
+        )
+        role_form = RoleForm(
+            metadata_options=metadata_options,
+            prefix=role_prefix,
+        )
+
+        context = {
+            "actor_form": actor_form,
+            "role_form": role_form,
+            "index": current_index,
+        }
+        row_html = render_to_string(
+            "metadata/entity_creation/partials/_event_actor_role_row.html",
+            context,
+            request=request,
+        )
+        new_total = current_index + 1
+        oob_updates = {
+            "id_actors-TOTAL_FORMS": f'<input type="hidden" name="actors-TOTAL_FORMS" value="{new_total}" id="id_actors-TOTAL_FORMS">',
+            "id_roles-TOTAL_FORMS": f'<input type="hidden" name="roles-TOTAL_FORMS" value="{new_total}" id="id_roles-TOTAL_FORMS">',
+        }
+        html = self.build_oob_response(row_html, oob_updates)
+        return HttpResponse(html)
