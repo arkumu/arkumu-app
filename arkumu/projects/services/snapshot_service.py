@@ -41,7 +41,6 @@ from arkumu.projects import (
     ProjectType,
 )
 from arkumu.projects.fixity import parse_fixity
-from arkumu.projects.services.s3_key_index import lookup_dump_storage_key
 from arkumu.projects.services.dump_fixity_index import find_fixity, FixityRecord
 
 logger = logging.getLogger(__name__)
@@ -1221,15 +1220,13 @@ class ProjectSnapshotService:
             ]
             matched_key: Optional[str] = None
             fixity_record: Optional[FixityRecord] = None
+            dump_matched = False
 
             for code in codes:
                 fixity_record = find_fixity(code, candidates)
                 if fixity_record:
                     matched_key = fixity_record.storage_key or fixity_record.dump_key
-                    break
-                fallback_key = lookup_dump_storage_key(code, candidates)
-                if fallback_key:
-                    matched_key = fallback_key
+                    dump_matched = True
                     break
 
             if matched_key and not getattr(obj, "storage_key", None):
@@ -1252,6 +1249,8 @@ class ProjectSnapshotService:
                         obj.checksum_algorithm = fixity.algorithm
                     if fixity.digest and not getattr(obj, "checksum_provenance", None):
                         obj.checksum_provenance = "dump"
+
+            setattr(obj, "_dump_matched", dump_matched)
 
     def _is_digital_object_org(self, codes: Iterable[str]) -> bool:
         if not self._digital_object_orgs or not codes:
