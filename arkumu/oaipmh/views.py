@@ -1353,9 +1353,6 @@ def _build_dc_payload_from_project(
 
     rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
 
-    if resource.canonical_uri and resource.canonical_uri != project_uri:
-        _add_dc_value(payload, 'identifier', resource.canonical_uri)
-
     if getattr(resource, 'updated_at', None):
         _add_dc_value(payload, 'dateSubmitted', _format_datestamp(resource.updated_at), namespace='dcterms')
 

@@ -850,7 +850,7 @@ class TestOAIViewFunctions:
         identifier_values = self._flatten_dc_entries(payload.get("dc:identifier", []))
         assert resource.uri in identifier_values
         if resource.canonical_uri:
-            assert resource.canonical_uri in identifier_values
+            assert resource.canonical_uri not in identifier_values
         assert f"{resource.uri}/event/launch" in identifier_values
         assert not payload.get("dc:relation")
         assert 'dc:format' in payload
