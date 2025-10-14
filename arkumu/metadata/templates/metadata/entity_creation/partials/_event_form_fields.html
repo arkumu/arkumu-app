@@ -124,7 +124,7 @@
 
           <template id="actor-event-template">
               {% include "metadata/entity_creation/partials/_actor_form_fields.html" with actor_form=actor_formset.empty_form prefix="actors-__prefix__-"%}
-              {% include "metadata/entity_creation/partials/_role_form_fields.html" with role_form=role_formset.empty_form %}
+              {% include "metadata/entity_creation/partials/_role_form_fields.html" with role_form=role_formset.empty_form prefix="roles-__prefix__-"%}
           </template>
         </div>
       </div>

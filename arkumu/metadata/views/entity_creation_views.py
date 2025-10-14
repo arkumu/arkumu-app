@@ -1219,6 +1219,34 @@ def get_actor_details(request):
     except Exception as e:
         logger.error(f"Error retrieving actor details for {actor_uri}: {str(e)}")
         return JsonResponse({"error": "Internal server error"}, status=500)
+    
+@login_required
+def get_role_details(request):
+    """
+    Returns role details as JSON for auto-filling form fields.
+    """
+    role_uri = request.GET.get("uri","")
+    try:
+
+        # Find the resource with this URI
+        try:
+            role, _ = EntityResource.get_or_create(uri=role_uri)
+            organization = getattr(request.user, "organization", None)
+            base_uri = f"http://arkumu.org/data/{organization.code}"
+            german_name_prop, _ = PropertyResource.get_or_create(
+                uri=f"{base_uri}/properties/deutscher-name-der-rolle-breadcrumb",
+                name="Deutscher Name der Rolle Breadcrumb",
+            )
+            deutscher_name = role.get_property(german_name_prop)[0]
+
+            return JsonResponse({"deutscher_name": deutscher_name})
+
+        except Resource.DoesNotExist:
+            return JsonResponse({"error": "Actor not found"}, status=404)
+
+    except Exception as e:
+        logger.error(f"Error retrieving actor details for {role_uri}: {str(e)}")
+        return JsonResponse({"error": "Internal server error"}, status=500)
 
 @login_required
 def get_project_details(request):

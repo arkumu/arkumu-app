@@ -127,21 +127,35 @@
             .innerHTML.replace(/roles-__prefix__-/g, `roles-${formCount}-`)
             .replace(/roles__prefix__/g, `roles][${formCount}][`);
 
+          const role_script = template
+            .querySelector(".role-form script")
+            .textContent.replace(/roles-__prefix__-/g, `roles-${formCount}-`)
+            .replace(/roles__prefix__/g, `roles][${formCount}][`)
+            .replace('add_uri_fill_in_handler', 'role_add_uri_fill_in_handler');
+          
+          console.log(role_script)
           // Create a new div for the form
-          const actor_newFormDiv = document.createElement("div");
-          actor_newFormDiv.className =
+          const actor_role_newFormDiv = document.createElement("div");
+          actor_role_newFormDiv.className =
             `actor-event-${formCount}-form p-4 bg-base-100 rounded-lg border border-base-200`;
-          actor_newFormDiv.innerHTML = `<h4 class="text-base font-medium">Akteur ${formCount + 1}</h4> \n` + actor_newFormHTML + '\n' + role_newFormHTML;
+          actor_role_newFormDiv.innerHTML = `<h4 class="text-base font-medium">Akteur ${formCount + 1}</h4> \n` + actor_newFormHTML + '\n' + role_newFormHTML;
 
           // Add the new form to the container
-          container.appendChild(actor_newFormDiv);
+          container.appendChild(actor_role_newFormDiv);
 
-          const scriptElement = document.createElement('script');
-          scriptElement.textContent = actor_script;
-          document.head.appendChild(scriptElement);
+          const actor_scriptElement = document.createElement('script');
+          actor_scriptElement.textContent = actor_script;
+          document.head.appendChild(actor_scriptElement);
 
           //function from inside script
           add_uri_fill_in_handler()
+
+          const role_scriptElement = document.createElement('script');
+          role_scriptElement.textContent = role_script;
+          document.head.appendChild(role_scriptElement);
+
+          //function from inside script
+          role_add_uri_fill_in_handler()
 
           // Update the total form count
           actors_managementFormTotal.value = formCount + 1;

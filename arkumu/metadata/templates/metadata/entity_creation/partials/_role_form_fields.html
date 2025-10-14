@@ -48,5 +48,57 @@
         </div>
       </div>
     </div>
+    <script>
+      function add_uri_fill_in_handler(){
+        console.log("this is a test uri_fill_in")
+        const prefix = "{{prefix}}"
+        const uriSelect = document.querySelector(`#id_${prefix}uri`);
+        const deutscherNameInput = document.querySelector(`#id_${prefix}deutscher_name_der_rolle_breadcrumb`);
+
+        if (uriSelect && deutscherNameInput) {
+          uriSelect.addEventListener('change', function() {
+            const selectedValue = this.value;
+
+            // If nothing is selected, clear the name field
+            if (!selectedValue) {
+              deutscherNameInput.value = '';
+              var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+                  for (var c of controls) {
+                      c.disabled = false;
+                  }   
+              return;
+            }
+
+            // We need to make an AJAX request to get actor details
+            fetch(`/metadata/role/details/?uri=${selectedValue}`)
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+              })
+              .then(data => {
+                if (data.deutscher_name) {
+                  deutscherNameInput.value = data.deutscher_name;
+                } else {
+                  deutscherNameInput.value = '';
+                }
+
+                var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+                for (var c of controls) {
+                    c.disabled = true;
+                }   
+              })
+              .catch(error => {
+                console.error('Error fetching actor details:', error);
+                // Optionally clear the fields on error
+                deutscherNameInput.value = '';
+                // Show an error message to the user (optional enhancement)
+                // You could show a toast notification or modal here if desired
+              });
+          });
+        }
+      }
+    </script>
   </div>
 </div>
