@@ -1031,20 +1031,24 @@ class TestOAIViewFunctions:
         rights_md = mets_root.find(f".//{{{METS_NS}}}rightsMD[@ID='ie-amd-rights']")
         assert rights_md is not None
 
-        dc_source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-dc']")
-        assert dc_source_md is not None
-        dc_source_wrap = dc_source_md.find(f"./{{{METS_NS}}}mdWrap")
-        assert dc_source_wrap is not None
-        assert dc_source_wrap.get("MDTYPE") == "DC"
-        dc_source_xml = dc_source_wrap.find(f"./{{{METS_NS}}}xmlData")
-        assert dc_source_xml is not None
-        dc_records = dc_source_xml.findall(f"./{{{DC_NS}}}record")
-        assert len(dc_records) == len(record.events)
-        for event, dc_event_record in zip(record.events, dc_records):
-            event_dc_entry = dc_event_record.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='event-name']")
+        dc_source_mds = [
+            elem
+            for elem in mets_root.findall(f".//{{{METS_NS}}}amdSec[@ID='ie-amd']/{{{METS_NS}}}sourceMD")
+            if elem.get("ID", "").startswith("ie-amd-source-dc")
+        ]
+        assert len(dc_source_mds) == len(record.events)
+        expected_ids = [f"ie-amd-source-dc-{idx}" for idx in range(1, len(record.events) + 1)]
+        assert [elem.get("ID") for elem in dc_source_mds] == expected_ids
+        for event, dc_source_md in zip(record.events, dc_source_mds):
+            dc_source_wrap = dc_source_md.find(f"./{{{METS_NS}}}mdWrap")
+            assert dc_source_wrap is not None
+            assert dc_source_wrap.get("MDTYPE") == "DC"
+            dc_source_xml = dc_source_wrap.find(f"./{{{METS_NS}}}xmlData")
+            assert dc_source_xml is not None
+            event_dc_entry = dc_source_xml.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='event-name']")
             assert event_dc_entry is not None
             assert event_dc_entry.text == event.name
-            identifier_elem = dc_event_record.find(f"./{{{DC_NS}}}identifier[@{{{XML_NS}}}type='event-id']")
+            identifier_elem = dc_source_xml.find(f"./{{{DC_NS}}}identifier[@{{{XML_NS}}}type='event-id']")
             assert identifier_elem is not None
             assert identifier_elem.text == event.uri
 
@@ -1085,6 +1089,37 @@ class TestOAIViewFunctions:
         for struct_map in struct_maps:
             fptr = struct_map.find(f".//{{{METS_NS}}}fptr")
             assert fptr is not None
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_rosetta_mets_single_event_source_md(self, mock_get_record, sample_resources):
+        """Single event records use the legacy sourceMD identifier without a suffix."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        dc_source_ids = [
+            elem.get("ID")
+            for elem in mets_root.findall(f".//{{{METS_NS}}}amdSec[@ID='ie-amd']/{{{METS_NS}}}sourceMD")
+            if elem.get("ID", "").startswith("ie-amd-source-dc")
+        ]
+        assert dc_source_ids == ["ie-amd-source-dc"]
+
+        dc_source_md = mets_root.find(f".//{{{METS_NS}}}sourceMD[@ID='ie-amd-source-dc']")
+        assert dc_source_md is not None
+        dc_source_wrap = dc_source_md.find(f"./{{{METS_NS}}}mdWrap")
+        assert dc_source_wrap is not None
+        assert dc_source_wrap.get("MDTYPE") == "DC"
+        dc_source_xml = dc_source_wrap.find(f"./{{{METS_NS}}}xmlData")
+        assert dc_source_xml is not None
+        assert not dc_source_xml.findall(f"./{{{DC_NS}}}record")
+        event_entry = dc_source_xml.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='event-name']")
+        assert event_entry is not None
+        assert event_entry.text == record.events[0].name
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_mets_file_sections_include_license_metadata(self, mock_get_record, sample_resources):

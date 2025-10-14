@@ -1567,14 +1567,6 @@ def _build_dc_payload_from_record(
         resource,
         include_event_details=include_event_details,
     )
-
-
-def _build_event_dc_payload(record: ProjectRecord) -> Dict[str, List[Any]]:
-    aggregated: Dict[str, List[Any]] = {}
-    _merge_event_payloads(aggregated, _build_event_dc_payloads(record))
-    return aggregated
-
-
 def _iter_dc_entries(dc_payload: Dict[str, List[Any]]) -> Iterable[tuple[str, str, Any, Dict[Any, Any]]]:
     """Yield namespace URI, term, value, and attribute map for each DC payload entry."""
     for key, values in (dc_payload or {}).items():
@@ -1707,16 +1699,17 @@ def _build_mets_from_project(
         record_elem = _create_dnx_element(granted_section, "record")
         _create_dnx_element(record_elem, "key", {"id": "grantedRightsStatementValue"}, granted_value)
 
-    source_dc_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-dc"})
-    source_dc_wrap = ET.SubElement(source_dc_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
-    source_dc_xml = ET.SubElement(source_dc_wrap, ET.QName(METS_NS, "xmlData"))
-    event_payloads = dc_source_payloads if dc_source_payloads is not None else [_build_event_dc_payload(record)]
+    event_payloads = dc_source_payloads if dc_source_payloads is not None else _build_event_dc_payloads(record)
     if not event_payloads:
         event_payloads = [{}]
-    for event_payload in event_payloads:
-        event_dc_record = ET.SubElement(source_dc_xml, ET.QName(DC_NS, "record"))
+    multiple_source_sections = len(event_payloads) > 1
+    for index, event_payload in enumerate(event_payloads, start=1):
+        source_id = "ie-amd-source-dc" if not multiple_source_sections else f"ie-amd-source-dc-{index}"
+        source_dc_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": source_id})
+        source_dc_wrap = ET.SubElement(source_dc_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+        source_dc_xml = ET.SubElement(source_dc_wrap, ET.QName(METS_NS, "xmlData"))
         for ns_uri, term, text, attrs in _iter_dc_entries(event_payload):
-            elem = ET.SubElement(event_dc_record, ET.QName(ns_uri, term))
+            elem = ET.SubElement(source_dc_xml, ET.QName(ns_uri, term))
             elem.text = text
             for attr_name, attr_value in attrs.items():
                 if attr_value is None:
