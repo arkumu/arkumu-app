@@ -1,5 +1,5 @@
 from django.urls import path
-from arkumu.metadata.views import dashboard_views, resource_views, triple_views, bulk_editor_views, data_discovery_views, data_explorer_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
+from arkumu.metadata.views import dashboard_views, resource_views, triple_views, bulk_editor_views, data_discovery_views, data_explorer_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views, schema_workspace_views
 from arkumu.metadata.views import metadata_entry_views
 # Temporarily disabled bulk arkumu mapping views
 # from arkumu.metadata.views.bulk_arkumu_mapping_views import (
@@ -318,7 +318,8 @@ urlpatterns = [
     
 
     # Entity creation endpoints
-    path('create/', entity_creation_views.EntityCreationWorkspaceView.as_view(), name='entity_creation_workspace'),
+    path('create/', schema_workspace_views.SchemaDrivenWorkspaceView.as_view(), name='entity_creation_workspace'),
+    path('create/<uuid:mapping_id>/dataset/', schema_workspace_views.SchemaDatasetFragmentView.as_view(), name='entity_workspace_dataset'),
     path('create/project/', entity_creation_views.ProjectCreationView.as_view(), name='create_project'),
     path('create/event/', entity_creation_views.EventCreationView.as_view(), name='create_event'),
     path('create/actor/', entity_creation_views.ActorCreationView.as_view(), name='create_actor'),

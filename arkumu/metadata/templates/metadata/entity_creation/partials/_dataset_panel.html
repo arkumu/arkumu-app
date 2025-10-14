@@ -1,0 +1,141 @@
+{% load static %}
+<div class="card bg-base-100 border border-base-300 shadow-sm">
+  <div class="card-body space-y-6">
+    <header class="space-y-1">
+      <div class="flex items-center flex-wrap gap-3">
+        <h2 class="text-xl font-semibold">{{ dataset_summary.display_label }}</h2>
+        <span class="badge badge-outline">{{ dataset_summary.dataset_name }}</span>
+      </div>
+      <p class="text-sm text-base-content/70">
+        {{ dataset_summary.property_count }} Eigenschaften · {{ dataset_summary.anchor_columns|length }} Ankerfeld(er)
+      </p>
+    </header>
+
+    {% if success_message %}
+      <div class="alert alert-success">
+        <span>{{ success_message|safe }}</span>
+      </div>
+    {% endif %}
+
+    {% if error_message %}
+      <div class="alert alert-error">
+        <span>{{ error_message }}</span>
+      </div>
+    {% endif %}
+
+    <section class="space-y-3">
+      <details class="collapse collapse-arrow bg-base-200">
+        <summary class="collapse-title text-sm font-medium">
+          Bestehendes Entity laden
+        </summary>
+        <div class="collapse-content">
+          {% with count=dataset_summary.anchor_columns|length %}
+          <form hx-get="{% url 'metadata:entity_workspace_dataset' mapping.id %}"
+                hx-target="#dataset-panel"
+                hx-swap="innerHTML"
+                hx-push-url="false"
+                class="grid gap-3 lg:grid-cols-{% if count %}{{ count }}{% else %}1{% endif %}">
+            <input type="hidden" name="mode" value="load">
+            <input type="hidden" name="dataset" value="{{ dataset_summary.dataset_name }}">
+            {% for column in dataset_summary.anchor_columns %}
+              <label class="form-control">
+                <span class="label-text text-xs font-semibold uppercase text-base-content/60">{{ column }}</span>
+                <input type="text"
+                       name="anchor__{{ column }}"
+                       class="input input-bordered input-sm"
+                       placeholder="Anchor-Wert"
+                       value="{{ form[column].value|default_if_none:'' }}">
+              </label>
+            {% endfor %}
+            <div class="lg:col-span-full">
+              <button type="submit" class="btn btn-outline btn-sm">Entity laden</button>
+            </div>
+          </form>
+          {% endwith %}
+          {% if load_error %}
+            <p class="mt-2 text-sm text-error">
+              Es wurde kein Entity mit diesen Anchor-Werten gefunden.
+            </p>
+          {% endif %}
+        </div>
+      </details>
+    </section>
+
+    <form
+      hx-post="{% url 'metadata:entity_workspace_dataset' mapping.id %}"
+      hx-target="#dataset-panel"
+      hx-swap="innerHTML"
+      hx-push-url="false"
+      class="space-y-4"
+    >
+      <input type="hidden" name="dataset" value="{{ dataset_summary.dataset_name }}">
+      {% if entity_uri %}
+        <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
+        <div class="alert alert-info">
+          <span>Bearbeitung von <code class="font-mono break-all">{{ entity_uri }}</code></span>
+        </div>
+      {% endif %}
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-error">
+          {% for error in form.non_field_errors %}
+            <span>{{ error }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="grid gap-4">
+        {% for field in form %}
+          {% with meta=field_metadata[field.name] %}
+            <label class="form-control w-full">
+              <div class="label justify-between">
+                <span class="label-text font-medium">{{ field.label }}</span>
+                <span class="flex gap-2">
+                  {% if meta.is_anchor %}
+                    <span class="badge badge-outline badge-sm">Anchor</span>
+                  {% endif %}
+                  {% if meta.is_multi_value %}
+                    <span class="badge badge-outline badge-sm">Multi</span>
+                  {% endif %}
+                  {% if meta.has_fk %}
+                    <span class="badge badge-outline badge-sm">FK</span>
+                  {% endif %}
+                  {% if meta.is_external_ontology %}
+                    <span class="badge badge-outline badge-sm">Extern</span>
+                  {% endif %}
+                </span>
+              </div>
+              {{ field }}
+              {% if field.help_text %}
+                <span class="text-xs text-base-content/70">{{ field.help_text|safe }}</span>
+              {% endif %}
+              {% if field.errors %}
+                <span class="text-xs text-error">
+                  {% for error in field.errors %}
+                    {{ error }}
+                  {% endfor %}
+                </span>
+              {% endif %}
+            </label>
+          {% endwith %}
+        {% endfor %}
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="submit" class="btn btn-primary">
+          {% if entity_uri %}Änderungen speichern{% else %}Entity erstellen{% endif %}
+        </button>
+        {% if entity_uri %}
+          <button type="button"
+                  class="btn btn-ghost btn-sm"
+                  hx-get="{% url 'metadata:entity_workspace_dataset' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
+                  hx-target="#dataset-panel"
+                  hx-swap="innerHTML"
+                  hx-push-url="false">
+            Neues Entity beginnen
+          </button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>

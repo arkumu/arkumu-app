@@ -2,11 +2,11 @@
 {% load static %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto px-6 py-10 space-y-8">
-  <div class="bg-base-200 border border-base-300 rounded-box p-6">
-    <h1 class="text-2xl font-bold">Metadata Entity Workspace</h1>
+<div class="max-w-7xl mx-auto px-6 py-10 space-y-6">
+  <div class="bg-base-200 border border-base-300 rounded-box p-6 shadow-sm">
+    <h1 class="text-2xl font-bold">Metadata Workspace</h1>
     <p class="text-sm text-base-content/70 mt-1">
-      Erfasse Projekte, Ereignisse und kontrollierte Vokabulare auf einer Oberfläche. Wechsle die Register, um verknüpfte Datensätze in einem Arbeitsfluss anzulegen.
+      Erstelle und bearbeite Projekte, Ereignisse und kontrollierte Vokabulare basierend auf deinem Import-Schema.
     </p>
   </div>
 
@@ -15,77 +15,86 @@
       <span>Für die manuelle Datenerfassung ist eine zugeordnete Organisation erforderlich.</span>
     </div>
   {% else %}
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <div class="lg:col-span-8 space-y-4">
-        <div class="card bg-base-100 border border-base-300 shadow-sm">
-          <div class="card-body space-y-4">
-            <div class="flex flex-wrap items-center gap-2" role="tablist">
-              {% for entry in entity_configs %}
-                <button type="button"
-                        class="tab tab-lifted {% if entry.key == active_key %}tab-active{% endif %}"
-                        data-entity-tab="{{ entry.key }}"
-                        hx-get="{% url 'metadata:entity_creation_fragment' entry.key %}"
-                        hx-target="#entity-form-container"
-                        hx-swap="outerHTML"
-                        hx-push-url="false">
-                  {{ entry.label }}
-                </button>
-              {% endfor %}
-            </div>
-
-            <div id="entity-form-container">
-              {{ initial_form_html|safe }}
-            </div>
-          </div>
-        </div>
+    {% if not mappings %}
+      <div class="alert alert-info">
+        <span>Für deine Organisation sind noch keine Mappings verfügbar. Importiere zunächst ein Mapping, um die Workspace-Funktionen zu nutzen.</span>
       </div>
+    {% else %}
+      <div class="grid gap-6 xl:grid-cols-12">
+        <aside class="xl:col-span-4 space-y-6">
+          <div class="card bg-base-100 border border-base-300 shadow-sm">
+            <div class="card-body space-y-4">
+              <div>
+                <label class="label">
+                  <span class="label-text font-semibold">Aktives Mapping</span>
+                </label>
+                <form method="get" class="space-y-3">
+                  <select name="mapping_id"
+                          class="select select-bordered w-full"
+                          onchange="this.form.submit()">
+                    {% for mapping in mappings %}
+                      <option value="{{ mapping.id }}" {% if mapping.id == selected_mapping.id %}selected{% endif %}>
+                        {{ mapping.name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </div>
 
-      <aside class="lg:col-span-4 space-y-4">
-        <div class="card bg-base-100 border border-base-300 shadow-sm">
-          <div class="card-body space-y-3">
-            <h2 class="text-lg font-semibold">Verknüpfungstipps</h2>
-            <ul class="list-disc text-sm text-base-content/70 pl-5 space-y-2">
-              <li>Lege zunächst <strong>Projekte</strong> an und verknüpfe anschließend <strong>Ereignisse</strong> über das Feld „Associated Project“.</li>
-              <li>Nutze „Actors &amp; Roles“, um Beteiligte einem Ereignis mit Rollen zuzuweisen. Akteure und Rollen können direkt aus dem Formular heraus erstellt werden.</li>
-              <li>Pflege kontrollierte Vokabulare (Schlagwörter, Beschreibungen, Projektkategorien) in den entsprechenden Registern, damit sie in den Auswahlfeldern verfügbar sind.</li>
-              <li>Über den Button „Reset“ setzt du das aktuelle Formular zurück, ohne die anderen Register zu beeinflussen.</li>
-            </ul>
+              <div>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Datasets</h2>
+                <div class="space-y-2 max-h-[32rem] overflow-y-auto pr-1">
+                  {% for dataset in dataset_summaries %}
+                    <button type="button"
+                            class="btn btn-sm w-full justify-between {% if dataset.dataset_name == active_dataset_name %}btn-active{% else %}btn-ghost{% endif %}"
+                            data-dataset-button
+                            data-dataset-name="{{ dataset.dataset_name }}"
+                            hx-get="{% url 'metadata:entity_workspace_dataset' selected_mapping.id %}?dataset={{ dataset.dataset_name|urlencode }}"
+                            hx-target="#dataset-panel"
+                            hx-swap="innerHTML"
+                            hx-push-url="false">
+                      <span class="truncate">{{ dataset.display_label }}</span>
+                      <span class="badge badge-outline">{{ dataset.anchor_columns|length }} ID</span>
+                    </button>
+                  {% empty %}
+                    <p class="text-sm text-base-content/70">
+                      Keine Datasets im Mapping gefunden.
+                    </p>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div class="card bg-base-100 border border-base-300 shadow-sm">
-          <div class="card-body space-y-3">
-            <h2 class="text-lg font-semibold">Verwandte Werkzeuge</h2>
-            <a href="{% url 'metadata:data_explorer' %}" class="btn btn-outline btn-sm">Metadata Explorer öffnen</a>
-            <a href="{% url 'metadata:metadata_dashboard' %}" class="btn btn-outline btn-sm">Zurück zum Dashboard</a>
+          <div class="card bg-base-100 border border-base-300 shadow-sm">
+            <div class="card-body space-y-3">
+              <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Verknüpfte Werkzeuge</h2>
+              <a href="{% url 'metadata:data_explorer' %}" class="btn btn-outline btn-sm">Metadata Explorer öffnen</a>
+              <a href="{% url 'metadata:metadata_dashboard' %}" class="btn btn-outline btn-sm">Zum Dashboard</a>
+            </div>
           </div>
-        </div>
-      </aside>
-    </div>
+        </aside>
+
+        <section class="xl:col-span-8">
+          <div id="dataset-panel">
+            {{ dataset_panel_html|safe }}
+          </div>
+        </section>
+      </div>
+    {% endif %}
   {% endif %}
 </div>
 
 <script>
   document.addEventListener('htmx:beforeRequest', (event) => {
-    const tab = event.target.closest('[data-entity-tab]');
-    if (!tab) { return; }
-    document.querySelectorAll('[data-entity-tab]').forEach((button) => {
-      button.classList.remove('tab-active');
+    const trigger = event.target.closest('[data-dataset-button]');
+    if (!trigger) { return; }
+    document.querySelectorAll('[data-dataset-button]').forEach((btn) => {
+      btn.classList.remove('btn-active');
+      btn.classList.add('btn-ghost');
     });
-    tab.classList.add('tab-active');
-  });
-
-  document.addEventListener('htmx:afterSwap', (event) => {
-    if (event.target.id === 'entity-form-container') {
-      // reattach tab state if swap happened via other trigger
-      const form = event.target.querySelector('[data-entity-form]');
-      const key = form ? form.getAttribute('data-entity-form') : null;
-      if (key) {
-        document.querySelectorAll('[data-entity-tab]').forEach((button) => {
-          button.classList.toggle('tab-active', button.getAttribute('data-entity-tab') === key);
-        });
-      }
-    }
+    trigger.classList.add('btn-active');
+    trigger.classList.remove('btn-ghost');
   });
 </script>
 {% endblock %}
