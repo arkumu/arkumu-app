@@ -2029,9 +2029,9 @@ def _build_mets_from_project(
                 lic_uri_elem.set(ET.QName(XML_NS, "type"), "dcterms:URI")
 
             raw_path = (
-                obj.storage_key
+                obj.rosetta_path
+                or obj.storage_key
                 or obj.original_path
-                or obj.rosetta_path
                 or preferred_location
             )
             path_parts: List[str] = []
@@ -2160,18 +2160,25 @@ def _build_mets_from_project(
             if not event_files:
                 continue
             event_obj = event_meta.get(key)
-            event_label = _event_label(event_obj)
-            # Event div - simplified per Rosetta example (no ORDER on intermediate divs)
-            event_div = ET.SubElement(
-                rep_div,
-                ET.QName(METS_NS, "div"),
-                {
-                    "LABEL": event_label,
-                    "ORDERLABEL": event_label,
-                },
+            all_rosetta = all(
+                bool(getattr(file_info.get("object"), "rosetta_path", None))
+                for file_info in event_files
             )
+            if all_rosetta:
+                event_div = rep_div
+            else:
+                event_label = _event_label(event_obj)
+                # Event div - simplified per Rosetta example (no ORDER on intermediate divs)
+                event_div = ET.SubElement(
+                    rep_div,
+                    ET.QName(METS_NS, "div"),
+                    {
+                        "LABEL": event_label,
+                        "ORDERLABEL": event_label,
+                    },
+                )
+                event_position += 1
             folder_nodes[key] = {}
-            event_position += 1
 
             for file_info in event_files:
                 parent = event_div

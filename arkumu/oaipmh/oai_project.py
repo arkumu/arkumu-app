@@ -357,6 +357,7 @@ class OAIProjectBuilder:
                     storage_key,
                     file_name,
                 )
+                return None
 
         if not rosetta_path and institution_code and institution_code in self._s3_rosetta_bases and storage_key:
             base = self._s3_rosetta_bases[institution_code]

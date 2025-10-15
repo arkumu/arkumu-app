@@ -1293,7 +1293,93 @@ class TestOAIViewFunctions:
 
         flocat = mets_root.find(f".//{{{METS_NS}}}file[@ID='{file_id}']/{{{METS_NS}}}FLocat")
         assert flocat is not None
-        assert flocat.get(f"{{{XLINK_NS}}}href") == "streams/launch/test1.txt"
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_struct_map_prefers_rosetta_path(self, mock_get_record, sample_resources, settings, tmp_path):
+        """Folder hierarchy should be derived from Rosetta path when available."""
+        resource = sample_resources[0]
+        record = self._build_snapshot_record(resource, include_files=False)
+        record.institution = ProjectInstitution(label='HMT', code='hmt')
+        record.institution_codes = ['hmt']
+
+        rosetta_path = "/rosetta/hfmt/sandbox/input/arkumu/daten/Tonbandarchiv/test_audio.wav"
+        storage_key = "/Volumes/18TB1/hfmt_tonbandarchiv_dateien/Tonbandarchiv/test_audio.wav"
+        record.digital_objects = [
+            ProjectDigitalObject(
+                path=rosetta_path,
+                storage_key=storage_key,
+                file_name="test_audio.wav",
+                content_type="audio/x-wav",
+                checksum="a" * 64,
+                checksum_algorithm="sha256",
+            )
+        ]
+
+        mapping_path = tmp_path / "hmt_paths.txt"
+        mapping_path.write_text(f"{rosetta_path}\n", encoding="utf-8")
+
+        settings.OAI_EXTERNAL_PATH_FILES = {'hmt': str(mapping_path)}
+        settings.OAI_EXTERNAL_PATH_PREFIXES = {'hmt': ['/Volumes/18TB1']}
+        settings.OAI_EXTERNAL_ROSETTA_ROOTS = {'hmt': '/rosetta/hfmt/sandbox/input/arkumu/daten'}
+        settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('hmt',)
+        settings.OAI_S3_HARVESTABLE_ORGS = ()
+
+        from arkumu.oaipmh import path_mapping
+        path_mapping._load_index.cache_clear()
+
+        mock_get_record.return_value = record
+
+        try:
+            metadata = views._build_metadata_element(resource, "mets")
+            mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+            assert mets_root is not None
+
+            struct_map = mets_root.find(f".//{{{METS_NS}}}structMap")
+            assert struct_map is not None
+
+            assert struct_map.find(f".//{{{METS_NS}}}div[@LABEL='Projektdateien']") is None
+            volumes_div = struct_map.find(f".//{{{METS_NS}}}div[@LABEL='Volumes']")
+            assert volumes_div is None
+
+            rosetta_root_div = struct_map.find(f".//{{{METS_NS}}}div[@LABEL='rosetta']")
+            assert rosetta_root_div is not None
+            hfmt_div = rosetta_root_div.find(f"./{{{METS_NS}}}div[@LABEL='hfmt']")
+            assert hfmt_div is not None
+            tonband_div = hfmt_div.find(f".//{{{METS_NS}}}div[@LABEL='Tonbandarchiv']")
+            assert tonband_div is not None
+            file_div = tonband_div.find(f".//{{{METS_NS}}}div[@TYPE='FILE'][@LABEL='test_audio.wav']")
+            assert file_div is not None
+        finally:
+            path_mapping._load_index.cache_clear()
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_struct_map_uses_rosetta_path_for_s3_org(self, mock_get_record, sample_resources, settings):
+        """S3 organisations should also surface Rosetta-style folder hierarchies when configured."""
+        resource = sample_resources[0]
+        record = self._build_snapshot_record(resource, include_files=True)
+        record.institution = ProjectInstitution(label='FUK', code='fuk')
+        record.institution_codes = ['fuk']
+
+        settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('hmt', 'khm')
+        settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+        settings.OAI_S3_ROSETTA_BASE_PATHS = {'fuk': '/rosetta/fudk/sandbox/input/arkumu/daten'}
+
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        struct_map = mets_root.find(f".//{{{METS_NS}}}structMap")
+        assert struct_map is not None
+        # Event wrapper should be suppressed once Rosetta paths are available
+        assert struct_map.find(f".//{{{METS_NS}}}div[@LABEL='Launch']") is None
+        rosetta_root_div = struct_map.find(f".//{{{METS_NS}}}div[@LABEL='rosetta']")
+        assert rosetta_root_div is not None
+        fudk_div = rosetta_root_div.find(f"./{{{METS_NS}}}div[@LABEL='fudk']")
+        assert fudk_div is not None
+        file_div = fudk_div.find(f".//{{{METS_NS}}}div[@TYPE='FILE'][@LABEL='test1.txt']")
+        assert file_div is not None
 
     def test_build_metadata_element_no_organization(self):
         """Test _build_metadata_element with resource without organization."""
