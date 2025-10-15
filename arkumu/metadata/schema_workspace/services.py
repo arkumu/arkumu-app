@@ -108,8 +108,8 @@ class SchemaWorkspaceService:
             entity_count = 0
             dataset_resource = schema.get("dataset_resource")
             if dataset_resource:
-                # Count entities that belong to this dataset
-                is_part_of_uri = self._processor._generate_property_uri("isPartOf")
+                # Use Dublin Core isPartOf predicate
+                is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
                 entity_count = Triple.objects.filter(
                     predicate__uri=is_part_of_uri,
                     object=dataset_resource
@@ -151,7 +151,8 @@ class SchemaWorkspaceService:
         entity_count = 0
         dataset_resource = schema.get("dataset_resource")
         if dataset_resource:
-            is_part_of_uri = self._processor._generate_property_uri("isPartOf")
+            # Use Dublin Core isPartOf predicate
+            is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
             entity_count = Triple.objects.filter(
                 predicate__uri=is_part_of_uri,
                 object=dataset_resource

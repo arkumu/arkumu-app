@@ -1381,7 +1381,8 @@ class EntitySearchView(LoginRequiredMixin, View):
 
         # Find entities that belong to this dataset
         from arkumu.metadata.models import Triple, Resource
-        is_part_of_uri = service._processor._generate_property_uri("isPartOf")
+        # Use Dublin Core isPartOf predicate
+        is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
 
         # Get all entities for this dataset
         entity_uris_qs = Triple.objects.filter(
