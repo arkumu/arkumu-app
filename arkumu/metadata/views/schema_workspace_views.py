@@ -554,34 +554,17 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
                 },
             )
 
-        mappings_qs = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mappings = list(mappings_qs)
-        if not mappings:
-            return render(
-                request,
-                self.template_name,
-                {
-                    "organization": organization,
-                    "mappings": [],
-                    "selected_mapping": None,
-                    "dataset_summaries": [],
-                    "dataset_panel_html": "",
-                },
-            )
+        # Auto-select latest mapping (most recent created)
+        selected_mapping = Mapping.objects.filter(
+            organization_id=organization.code
+        ).order_by("-created_at").first()
 
-        mapping_id = request.GET.get("mapping_id")
-        selected_mapping = None
-        if mapping_id:
-            selected_mapping = mappings_qs.filter(id=mapping_id).first()
-        if selected_mapping is None:
-            selected_mapping = _resolve_active_mapping(request, organization)
-        if selected_mapping is None:
+        if not selected_mapping:
             return render(
                 request,
                 self.template_name,
                 {
                     "organization": organization,
-                    "mappings": mappings,
                     "selected_mapping": None,
                     "dataset_summaries": [],
                     "dataset_panel_html": "",
@@ -651,7 +634,6 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
             self.template_name,
             {
                 "organization": organization,
-                "mappings": mappings,
                 "selected_mapping": selected_mapping,
                 "dataset_summaries": dataset_summaries,
                 "main_entities": main_entities,
