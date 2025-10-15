@@ -25,23 +25,6 @@
                 </svg>
                 Entity Workspace
             </a>
-            <div class="dropdown dropdown-bottom">
-                <label tabindex="0" class="btn btn-outline btn-success btn-sm">
-                    Quick Create
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg mt-2 p-2 w-48">
-                    <li><a href="{% url 'metadata:create_project' %}">Project</a></li>
-                    <li><a href="{% url 'metadata:create_event' %}">Event</a></li>
-                    <li><a href="{% url 'metadata:create_actor' %}">Actor</a></li>
-                    <li><a href="{% url 'metadata:create_digital_object' %}">Digital Object</a></li>
-                    <li><a href="{% url 'metadata:create_institution' %}">Institution</a></li>
-                    <li><a href="{% url 'metadata:create_project_category' %}">Project Category</a></li>
-                    <li><a href="{% url 'metadata:create_project_type' %}">Project Type</a></li>
-                    <li><a href="{% url 'metadata:create_alternate_title' %}">Alternate Title</a></li>
-                    <li><a href="{% url 'metadata:create_description' %}">Description</a></li>
-                    <li><a href="{% url 'metadata:create_catchphrase' %}">Catchphrase</a></li>
-                </ul>
-            </div>
             <button type="button"
                     class="btn btn-outline btn-primary btn-sm btn-disabled pointer-events-none"
                     title="Disabled while the feature is offline"
