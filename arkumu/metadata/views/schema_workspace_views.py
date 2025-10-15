@@ -21,7 +21,6 @@ from arkumu.metadata.schema_workspace import (
     FlowEvent,
     SchemaWorkspaceCoordinator,
 )
-from arkumu.metadata.views.entity_creation_views import FIELD_OPTION_LOOKUP
 from arkumu.users.models import Organization
 
 STEP_LABELS: Dict[str, str] = {
@@ -265,10 +264,6 @@ def _prepare_project_step(
     form: Optional[DatasetEntityForm] = None,
 ) -> Dict[str, object]:
     dataset_name = PROJECT_DATASET
-    field_search_urls = {
-        field: reverse("metadata:entity_field_options", args=["project", field])
-        for field in FIELD_OPTION_LOOKUP.get("project", {})
-    }
     try:
         field_metadata = service.get_field_metadata(dataset_name)
         dataset_summary = service.get_dataset_summary(dataset_name)
@@ -282,7 +277,6 @@ def _prepare_project_step(
             "project_summary": flow_state.project,
             "dataset_unavailable": True,
             "missing_dataset": dataset_name,
-            "field_search_urls": field_search_urls,
         }
     if form is None:
         form = DatasetEntityForm(field_metadata=field_metadata)
@@ -292,7 +286,6 @@ def _prepare_project_step(
             {
                 "field": field,
                 "meta": field_metadata.get(field.name, {}),
-                "search_url": field_search_urls.get(field.name),
             }
         )
     base_url = reverse("metadata:entity_workspace_flow", args=[mapping.id])
@@ -304,7 +297,6 @@ def _prepare_project_step(
         "flow_id": flow_state.flow_id,
         "submit_url": submit_url,
         "project_summary": flow_state.project,
-        "field_search_urls": field_search_urls,
     }
 
 
@@ -318,10 +310,6 @@ def _prepare_events_step(
 ) -> Dict[str, object]:
     base_url = reverse("metadata:entity_workspace_flow", args=[mapping.id])
     dataset_name = EVENT_DATASET
-    field_search_urls = {
-        field: reverse("metadata:entity_field_options", args=["event", field])
-        for field in FIELD_OPTION_LOOKUP.get("event", {})
-    }
     try:
         field_metadata = service.get_field_metadata(dataset_name)
         schema = service.get_dataset_schema(dataset_name)
@@ -333,7 +321,6 @@ def _prepare_events_step(
             "form": None,
             "fields_with_metadata": [],
             "submit_url": f"{base_url}?step=events&flow_id={flow_state.flow_id}",
-            "field_search_urls": field_search_urls,
             "dataset_unavailable": True,
             "missing_dataset": dataset_name,
         }
@@ -357,7 +344,6 @@ def _prepare_events_step(
                     **field_metadata.get(field.name, {}),
                     "fk_target_dataset": fk_lookup.get(field.name),
                 },
-                "search_url": field_search_urls.get(field.name),
             }
         )
     return {
@@ -367,7 +353,6 @@ def _prepare_events_step(
         "form": form,
         "fields_with_metadata": fields_with_metadata,
         "submit_url": f"{base_url}?step=events&flow_id={flow_state.flow_id}",
-        "field_search_urls": field_search_urls,
     }
 
 
