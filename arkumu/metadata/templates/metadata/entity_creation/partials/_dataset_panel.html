@@ -79,9 +79,9 @@
         </div>
       {% endif %}
 
-      <div class="grid gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {% for item in fields_with_metadata %}
-          <div class="form-control w-full">
+          <div class="form-control w-full {% if item.meta.is_multi_value %}md:col-span-2 lg:col-span-3{% endif %}">
             <div class="label">
               <span class="label-text font-medium">
                 {{ item.field.label }}
@@ -90,7 +90,7 @@
             </div>
 
             {% if item.meta.is_multi_value %}
-              {# Multi-value field with + button UI (HTMX-based) #}
+              {# Multi-value field with + button UI (HTMX-based) - takes full width #}
               {{ item.field }}
               <div id="multi-value-{{ item.field.name }}" class="space-y-2">
                 {# Parse existing values from hidden field #}
