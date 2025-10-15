@@ -341,3 +341,5 @@ AGENTS.md
 !data/mappings/hmt_tonband_labels.csv
 
 missing_fks/
+
+.playwright-mcp/

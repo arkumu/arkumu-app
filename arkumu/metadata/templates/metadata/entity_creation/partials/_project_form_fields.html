@@ -76,16 +76,16 @@
       </div>
     </div>
 
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text font-medium">Beschreibung</span>
-        {% if form.beschreibung_uri.errors %}
-          <span class="label-text-alt text-error">{{ form.beschreibung_uri.errors.0 }}</span>
-        {% endif %}
-      </label>
-      {{ form.beschreibung_uri }}
-      <div class="text-xs text-base-content/60 mt-1">{{ form.beschreibung_uri.help_text }}</div>
-    </div>
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Beschreibung</span>
+          {% if form.beschreibung.errors %}
+            <span class="label-text-alt text-error">{{ form.beschreibung.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ form.beschreibung }}
+        <div class="text-xs text-base-content/60 mt-1">{{ form.beschreibung.help_text }}</div>
+      </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="form-control">

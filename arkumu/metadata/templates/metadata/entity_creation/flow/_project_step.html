@@ -1,0 +1,93 @@
+{% load static %}
+{% with ctx=step_context %}
+  <div class="space-y-6">
+    {% if ctx.dataset_unavailable %}
+      <div class="alert alert-warning">
+        <span>Das aktuelle Mapping enthält kein Dataset "{{ ctx.missing_dataset }}". Wähle ein Mapping mit diesem Dataset, um Projekte anzulegen.</span>
+      </div>
+    {% else %}
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 class="text-lg font-semibold">{{ ctx.dataset_summary.display_label }}</h3>
+          <p class="text-sm text-base-content/70">
+            {{ ctx.dataset_summary.property_count }} Eigenschaften ·
+            {{ ctx.dataset_summary.anchor_columns|length }} Ankerfeld(er)
+          </p>
+        </div>
+        {% if ctx.project_summary %}
+          <div class="badge badge-outline badge-secondary">
+            Aktuelles Projekt: {{ ctx.project_summary.label }}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if ctx.project_summary %}
+        <div class="alert alert-info">
+          <div>
+            <span class="font-semibold block">{{ ctx.project_summary.label }}</span>
+            <span class="text-sm break-all">{{ ctx.project_summary.uri }}</span>
+          </div>
+          <div>
+            <p class="text-sm text-base-content/70">
+              Wenn du ein neues Projekt speicherst, werden zuvor erfasste Ereignisse, Akteur*innen und digitale Objekte für diesen Flow zurückgesetzt.
+            </p>
+          </div>
+        </div>
+      {% endif %}
+
+      <form hx-post="{{ ctx.submit_url }}"
+            hx-target="#guided-flow-panel"
+            hx-swap="innerHTML"
+            hx-push-url="false"
+            class="space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="flow_id" value="{{ ctx.flow_id }}">
+        <input type="hidden" name="step" value="project">
+
+        {% if ctx.form.non_field_errors %}
+          <div class="alert alert-error">
+            {% for error in ctx.form.non_field_errors %}
+              <span>{{ error }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div class="grid gap-4 lg:grid-cols-2">
+          {% for item in ctx.fields_with_metadata %}
+            <label class="form-control w-full">
+              <div class="label justify-between">
+                <span class="label-text font-medium">{{ item.field.label }}</span>
+                <span class="flex gap-1">
+                  {% if item.meta.is_anchor %}
+                    <span class="badge badge-outline badge-xs">Anchor</span>
+                  {% endif %}
+                  {% if item.meta.is_required %}
+                    <span class="badge badge-outline badge-xs">Pflicht</span>
+                  {% endif %}
+                </span>
+              </div>
+              {{ item.field }}
+              {% if item.field.help_text %}
+                <span class="text-xs text-base-content/60">{{ item.field.help_text }}</span>
+              {% endif %}
+              {% if item.field.errors %}
+                <span class="text-xs text-error">
+                  {% for error in item.field.errors %}
+                    {{ error }}
+                  {% endfor %}
+                </span>
+              {% endif %}
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" class="btn btn-primary btn-sm">
+            {% if ctx.project_summary %}Projekt aktualisieren{% else %}Projekt erstellen{% endif %}
+          </button>
+          <button type="reset" class="btn btn-ghost btn-sm">Zurücksetzen</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+{% endwith %}

@@ -319,6 +319,7 @@ urlpatterns = [
 
     # Entity creation endpoints
     path('create/', schema_workspace_views.SchemaDrivenWorkspaceView.as_view(), name='entity_creation_workspace'),
+    path('create/<uuid:mapping_id>/flow/', schema_workspace_views.SchemaWorkspaceFlowView.as_view(), name='entity_workspace_flow'),
     path('create/<uuid:mapping_id>/dataset/', schema_workspace_views.SchemaDatasetFragmentView.as_view(), name='entity_workspace_dataset'),
     path('create/project/', entity_creation_views.ProjectCreationView.as_view(), name='create_project'),
     path('create/event/', entity_creation_views.EventCreationView.as_view(), name='create_event'),

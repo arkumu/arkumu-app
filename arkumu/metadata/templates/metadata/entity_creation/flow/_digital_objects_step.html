@@ -1,0 +1,133 @@
+{% with ctx=step_context %}
+  <div class="space-y-6">
+    {% if not ctx.events %}
+      <div class="alert alert-info">
+        <span>Erstelle zunächst Ereignisse, um digitale Objekte zu verknüpfen.</span>
+      </div>
+    {% else %}
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 class="text-lg font-semibold">Digitale Objekte verknüpfen</h3>
+          <p class="text-sm text-base-content/70">
+            Ordne einem Ereignis passende Medien oder Dateien zu.
+          </p>
+        </div>
+        <form class="flex items-center gap-2">
+          <input type="hidden" name="flow_id" value="{{ ctx.flow_id }}">
+          <input type="hidden" name="step" value="digital_objects">
+          <label class="label text-sm font-semibold">Ereignis</label>
+          <select name="event_uri"
+                  class="select select-bordered select-sm"
+                  hx-get="{{ ctx.switch_event_url }}"
+                  hx-target="#guided-flow-panel"
+                  hx-swap="innerHTML"
+                  hx-push-url="false"
+                  hx-include="closest form"
+                  hx-trigger="change">
+            {% for event in ctx.events %}
+              <option value="{{ event.uri }}" {% if ctx.selected_event and event.uri == ctx.selected_event.uri %}selected{% endif %}>{{ event.label }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      </div>
+
+      {% if not ctx.join_dataset_name %}
+        <div class="alert alert-info">
+          <span>Das Mapping enthält keine Junction-Tabelle für Ereignis ↔ Digitales Objekt.</span>
+        </div>
+      {% else %}
+        <div class="card bg-base-200/40 border border-base-300">
+          <div class="card-body space-y-2">
+            <h4 class="text-sm font-semibold uppercase text-base-content/60">Ausgewähltes Ereignis</h4>
+            <p class="font-semibold">{{ ctx.selected_event.label }}</p>
+            <p class="text-xs text-base-content/60 break-all">{{ ctx.selected_event.uri }}</p>
+          </div>
+        </div>
+
+        <form hx-post="{{ ctx.submit_url }}"
+              hx-target="#guided-flow-panel"
+              hx-swap="innerHTML"
+              hx-push-url="false"
+              class="space-y-4">
+          {% csrf_token %}
+          <input type="hidden" name="flow_id" value="{{ ctx.flow_id }}">
+          <input type="hidden" name="step" value="digital_objects">
+          <input type="hidden" name="event_uri" value="{{ ctx.selected_event.uri }}">
+
+          {% if ctx.form and ctx.form.non_field_errors %}
+            <div class="alert alert-error">
+              {% for error in ctx.form.non_field_errors %}
+                <span>{{ error }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <div class="card border border-base-300 bg-base-100">
+            <div class="card-body space-y-4">
+              <div>
+                <h3 class="text-lg font-semibold">Digitales Objekt zuordnen</h3>
+                <p class="text-sm text-base-content/70">Gib das digitale Objekt (z. B. URI oder Pfad) an und ergänze optionale Metadaten.</p>
+              </div>
+
+              <div class="grid gap-4 lg:grid-cols-2">
+              {% for item in ctx.fields_with_metadata %}
+                {% if item.field.field.widget.input_type == "hidden" %}
+                  {{ item.field }}
+                {% else %}
+                    <label class="form-control w-full">
+                      <div class="label justify-between">
+                        <span class="label-text font-medium">{{ item.field.label }}</span>
+                        <span class="flex gap-1">
+                          {% if item.meta.is_required %}
+                            <span class="badge badge-outline badge-xs">Pflicht</span>
+                          {% endif %}
+                          {% if item.meta.fk_target_dataset %}
+                            <span class="badge badge-outline badge-xs">FK → {{ item.meta.fk_target_dataset }}</span>
+                          {% endif %}
+                        </span>
+                      </div>
+                      {{ item.field }}
+                      {% if item.field.help_text %}
+                        <span class="text-xs text-base-content/60">{{ item.field.help_text }}</span>
+                      {% endif %}
+                      {% if item.field.errors %}
+                        <span class="text-xs text-error">
+                          {% for error in item.field.errors %}
+                            {{ error }}
+                          {% endfor %}
+                        </span>
+                      {% endif %}
+                    </label>
+                  {% endif %}
+                {% endfor %}
+              </div>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <button type="submit" class="btn btn-primary btn-sm">Verknüpfung speichern</button>
+                <button type="reset" class="btn btn-ghost btn-sm">Zurücksetzen</button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="space-y-3">
+          <h4 class="text-lg font-semibold">Zugeordnete digitale Objekte</h4>
+          {% if ctx.selected_event.digital_objects %}
+            {% for obj in ctx.selected_event.digital_objects %}
+              <div class="card border border-base-300 bg-base-100">
+                <div class="card-body py-4">
+                  <p class="font-semibold">{{ obj.label }}</p>
+                  <p class="text-xs text-base-content/60 break-all">{{ obj.uri }}</p>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="p-6 border border-dashed border-base-300 rounded-box text-sm text-base-content/70">
+              Noch keine digitalen Objekte verknüpft.
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endwith %}

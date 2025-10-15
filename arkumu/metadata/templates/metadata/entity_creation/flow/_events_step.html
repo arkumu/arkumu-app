@@ -1,0 +1,117 @@
+{% with ctx=step_context %}
+  <div class="space-y-6">
+    {% if ctx.dataset_unavailable %}
+      <div class="alert alert-warning">
+        <span>Das aktuelle Mapping enthält kein Dataset "{{ ctx.missing_dataset }}". Ereignisse können erst erstellt werden, wenn dieses Dataset verfügbar ist.</span>
+      </div>
+    {% elif not ctx.project_summary %}
+      <div class="alert alert-warning">
+        <span>Bitte lege zuerst ein Projekt an, bevor du Ereignisse hinzufügst.</span>
+      </div>
+    {% else %}
+      <div class="card bg-base-200/40 border border-base-300">
+        <div class="card-body py-4">
+          <h3 class="text-sm font-semibold uppercase text-base-content/60">Aktives Projekt</h3>
+          <p class="text-base font-semibold">{{ ctx.project_summary.label }}</p>
+          <p class="text-xs text-base-content/60 break-all">{{ ctx.project_summary.uri }}</p>
+        </div>
+      </div>
+
+      <form hx-post="{{ ctx.submit_url }}"
+            hx-target="#guided-flow-panel"
+            hx-swap="innerHTML"
+            hx-push-url="false"
+            class="space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="flow_id" value="{{ ctx.flow_id }}">
+        <input type="hidden" name="step" value="events">
+
+        {% if ctx.form and ctx.form.non_field_errors %}
+          <div class="alert alert-error">
+            {% for error in ctx.form.non_field_errors %}
+              <span>{{ error }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if ctx.form %}
+          <div class="card border border-base-300 bg-base-100">
+            <div class="card-body space-y-4">
+              <div>
+                <h3 class="text-lg font-semibold">Ereignis anlegen</h3>
+                <p class="text-sm text-base-content/70">Fülle die Felder aus, um ein Ereignis mit dem Projekt zu verknüpfen.</p>
+              </div>
+
+              <div class="grid gap-4 lg:grid-cols-2">
+                {% for item in ctx.fields_with_metadata %}
+                  {% if item.field.field.widget.input_type == "hidden" %}
+                    {{ item.field }}
+                  {% else %}
+                    <label class="form-control w-full">
+                      <div class="label justify-between">
+                        <span class="label-text font-medium">{{ item.field.label }}</span>
+                        <span class="flex gap-1">
+                          {% if item.meta.is_anchor %}
+                            <span class="badge badge-outline badge-xs">Anchor</span>
+                          {% endif %}
+                          {% if item.meta.is_required %}
+                            <span class="badge badge-outline badge-xs">Pflicht</span>
+                          {% endif %}
+                          {% if item.meta.fk_target_dataset %}
+                            <span class="badge badge-outline badge-xs">FK → {{ item.meta.fk_target_dataset }}</span>
+                          {% endif %}
+                        </span>
+                      </div>
+                      {{ item.field }}
+                      {% if item.field.help_text %}
+                        <span class="text-xs text-base-content/60">{{ item.field.help_text }}</span>
+                      {% endif %}
+                      {% if item.field.errors %}
+                        <span class="text-xs text-error">
+                          {% for error in item.field.errors %}
+                            {{ error }}
+                          {% endfor %}
+                        </span>
+                      {% endif %}
+                    </label>
+                  {% endif %}
+                {% endfor %}
+              </div>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <button type="submit" class="btn btn-primary btn-sm">Ereignis speichern</button>
+                <button type="reset" class="btn btn-ghost btn-sm">Zurücksetzen</button>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      </form>
+
+      <div class="space-y-3">
+        <h3 class="text-lg font-semibold">Erfasste Ereignisse</h3>
+        {% if ctx.events %}
+          {% for event in ctx.events %}
+            <div class="card border border-base-300 bg-base-100">
+              <div class="card-body py-4">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <p class="font-semibold">{{ event.label }}</p>
+                    <p class="text-xs text-base-content/60 break-all">{{ event.uri }}</p>
+                  </div>
+                  <div class="flex gap-2">
+                    <span class="badge badge-outline badge-sm">Akteur*innen: {{ event.actors|length }}</span>
+                    <span class="badge badge-outline badge-sm">Objekte: {{ event.digital_objects|length }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="p-6 border border-dashed border-base-300 rounded-box text-sm text-base-content/70">
+            Noch keine Ereignisse verknüpft. Hinzugefügte Ereignisse erscheinen hier.
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endwith %}

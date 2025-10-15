@@ -41,7 +41,7 @@ def test_entity_creation_service_creates_project_and_initial_data():
             "bevorzugter_untertitel": "Subtitle",
             "einliefernde_hochschule_uri": "http://example.org/institution/1",
             "projektkategorie_uri": "http://example.org/category/1",
-            "beschreibung_uri": "http://example.org/description/1",
+            "beschreibung": "Project description",
             "schlagwort_uris": ["http://example.org/catchphrase/1"],
             "projektart_uri": "http://example.org/type/1",
             "vorschaubild_uri": "http://example.org/object/1",
@@ -61,7 +61,7 @@ def test_entity_creation_service_creates_project_and_initial_data():
     assert initial_data["bevorzugter_untertitel"] == "Subtitle"
     assert initial_data["einliefernde_hochschule_uri"] == "http://example.org/institution/1"
     assert initial_data["projektkategorie_uri"] == "http://example.org/category/1"
-    assert initial_data["beschreibung_uri"] == "http://example.org/description/1"
+    assert initial_data["beschreibung"] == "Project description"
     assert initial_data["projektart_uri"] == "http://example.org/type/1"
     assert initial_data["schlagwort_uris"] == ["http://example.org/catchphrase/1"]
     assert initial_data["vorschaubild_uri"] == "http://example.org/object/1"

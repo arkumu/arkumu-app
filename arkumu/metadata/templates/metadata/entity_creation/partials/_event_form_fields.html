@@ -69,11 +69,11 @@
       <div class="form-control">
         <label class="label">
           <span class="label-text font-medium">Ereignisbeschreibung</span>
-          {% if form.ereignisbeschreibung_uri.errors %}
-            <span class="label-text-alt text-error">{{ form.ereignisbeschreibung_uri.errors.0 }}</span>
+          {% if form.ereignisbeschreibung.errors %}
+            <span class="label-text-alt text-error">{{ form.ereignisbeschreibung.errors.0 }}</span>
           {% endif %}
         </label>
-        {{ form.ereignisbeschreibung_uri }}
+        {{ form.ereignisbeschreibung }}
       </div>
 
       <div class="form-control">

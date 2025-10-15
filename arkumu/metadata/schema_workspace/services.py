@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional, Tuple
 
 from django.db import transaction
@@ -372,9 +373,13 @@ class SchemaWorkspaceService:
         if not target_dataset:
             return
 
-        target_uri = self._processor.resource_manager.generate_entity_uri(
-            target_dataset, target_value
-        )
+        parsed = urlparse(str(target_value))
+        if parsed.scheme and parsed.netloc:
+            target_uri = str(target_value)
+        else:
+            target_uri = self._processor.resource_manager.generate_entity_uri(
+                target_dataset, target_value
+            )
 
         target_resource = Resource.objects.filter(uri=target_uri).first()
         if not target_resource:
