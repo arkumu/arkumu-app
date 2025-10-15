@@ -1354,6 +1354,121 @@ class SchemaWorkspaceFlowView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
+class EntitySearchView(LoginRequiredMixin, View):
+    """
+    HTMX endpoint that searches entities in a dataset by human-readable content.
+    Returns JSON results for autocomplete dropdown.
+    """
+
+    def get(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        dataset_name = request.GET.get("dataset")
+        query = request.GET.get("q", "").strip()
+
+        if not dataset_name:
+            return HttpResponseBadRequest("Missing dataset parameter")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+
+        # Get the schema to understand which properties might be searchable
+        schema = service.get_dataset_schema(dataset_name)
+        dataset_resource = schema.get("dataset_resource")
+
+        if not dataset_resource:
+            return HttpResponse("[]", content_type="application/json")
+
+        # Find entities that belong to this dataset
+        from arkumu.metadata.models import Triple, Resource
+        is_part_of_uri = service._processor._generate_property_uri("isPartOf")
+
+        # Get all entities for this dataset
+        entity_uris_qs = Triple.objects.filter(
+            predicate__uri=is_part_of_uri,
+            object=dataset_resource
+        ).values_list('subject__uri', flat=True)
+
+        if not query:
+            # Return first 20 entities if no search query
+            entity_uris = list(entity_uris_qs[:20])
+        else:
+            # Search by literal values containing the query
+            from django.db.models import Q
+
+            # Find entities where any of their properties contain the search text
+            matching_subject_ids = Triple.objects.filter(
+                subject__uri__in=entity_uris_qs,
+                object__resource_type='Literal'
+            ).filter(
+                Q(object__value__icontains=query) | Q(object__literal_value__icontains=query)
+            ).values_list('subject__uri', flat=True).distinct()
+
+            entity_uris = list(matching_subject_ids[:20])
+
+        # Build result list with display labels
+        results = []
+        for uri in entity_uris:
+            # Get a display label from the entity's properties
+            label = self._get_entity_label(uri, service)
+            results.append({
+                "uri": uri,
+                "label": label,
+                "id": uri.split('/')[-1]  # Extract anchor value from URI
+            })
+
+        return HttpResponse(
+            render_to_string(
+                "metadata/entity_creation/partials/_entity_search_results.html",
+                {
+                    "results": results,
+                    "dataset_name": dataset_name,
+                },
+                request=request
+            )
+        )
+
+    def _get_entity_label(self, entity_uri: str, service: SchemaWorkspaceService) -> str:
+        """Get a human-readable label for an entity by checking common title/name properties."""
+        from arkumu.metadata.models import Triple, Resource
+
+        try:
+            entity = Resource.objects.get(uri=entity_uri)
+        except Resource.DoesNotExist:
+            return entity_uri
+
+        # Check for common label properties (title, name, label, etc.)
+        label_predicates = [
+            'bevorzugter-titel', 'titel', 'title', 'name', 'label',
+            'beschreibung', 'description', 'kommentar', 'comment'
+        ]
+
+        for pred_suffix in label_predicates:
+            triples = Triple.objects.filter(
+                subject=entity,
+                predicate__uri__iendswith=pred_suffix,
+                object__resource_type='Literal'
+            ).select_related('object').first()
+
+            if triples:
+                value = triples.object.value or triples.object.literal_value
+                if value:
+                    return str(value)
+
+        # Fall back to anchor values
+        anchor_triples = Triple.objects.filter(
+            subject=entity,
+            object__resource_type='Literal'
+        ).select_related('predicate', 'object').first()
+
+        if anchor_triples:
+            value = anchor_triples.object.value or anchor_triples.object.literal_value
+            if value:
+                return f"{str(value)} ({entity_uri.split('/')[-1]})"
+
+        return entity_uri.split('/')[-1]
+
+
 class SchemaDatasetFragmentView(LoginRequiredMixin, View):
     """
     HTMX fragment that renders or processes a dataset entity form.
@@ -1378,20 +1493,33 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         disable_anchors = False
 
         if mode == "load":
-            anchor_payload = {
-                key.split("anchor__", 1)[1]: value
-                for key, value in request.GET.items()
-                if key.startswith("anchor__") and value
-            }
-            try:
-                loaded = service.get_initial_entity_data(dataset_name, anchor_payload)
-            except ValueError:
-                loaded = None
-            if loaded:
-                initial_data, entity_uri = loaded
-                disable_anchors = True
+            # Load by entity_uri if provided directly
+            if entity_uri:
+                try:
+                    loaded = service.load_entity_by_uri(dataset_name, entity_uri)
+                    if loaded:
+                        initial_data = loaded
+                        disable_anchors = True
+                    else:
+                        load_error = True
+                except ValueError:
+                    load_error = True
             else:
-                load_error = True
+                # Fall back to anchor-based loading (legacy)
+                anchor_payload = {
+                    key.split("anchor__", 1)[1]: value
+                    for key, value in request.GET.items()
+                    if key.startswith("anchor__") and value
+                }
+                try:
+                    loaded = service.get_initial_entity_data(dataset_name, anchor_payload)
+                except ValueError:
+                    loaded = None
+                if loaded:
+                    initial_data, entity_uri = loaded
+                    disable_anchors = True
+                else:
+                    load_error = True
 
         form = DatasetEntityForm(
             field_metadata=field_metadata,

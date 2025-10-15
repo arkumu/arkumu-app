@@ -1,0 +1,14 @@
+{% if results %}
+  {% for result in results %}
+    <button type="button"
+            class="block w-full text-left px-4 py-2 hover:bg-base-200 transition-colors"
+            onclick="selectEntity('{{ result.uri }}', '{{ result.label|escapejs }}', '{{ dataset_name }}')">
+      <div class="font-medium">{{ result.label }}</div>
+      <div class="text-xs text-base-content/60">ID: {{ result.id }}</div>
+    </button>
+  {% endfor %}
+{% else %}
+  <div class="px-4 py-3 text-sm text-base-content/60">
+    Keine Einträge gefunden
+  </div>
+{% endif %}

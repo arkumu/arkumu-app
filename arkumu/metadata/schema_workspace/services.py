@@ -234,6 +234,60 @@ class SchemaWorkspaceService:
 
         return initial, entity_uri
 
+    def load_entity_by_uri(
+        self, dataset_name: str, entity_uri: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Load an existing entity by its URI for editing.
+
+        Returns:
+            Dict of initial form data or None if not found.
+        """
+        schema = self.get_dataset_schema(dataset_name)
+        resource = Resource.objects.filter(uri=entity_uri).first()
+        if not resource:
+            return None
+
+        entity = EntityResource(resource)
+        initial: Dict[str, Any] = {}
+
+        for column_name, property_resource in schema.get("properties", {}).items():
+            property_wrapper = PropertyResource(property_resource)
+            values = entity.get_property(property_wrapper)
+            if not values:
+                continue
+
+            if column_name in schema.get("multi_value_schemas", {}):
+                # Return as JSON array for + button UI
+                import json
+                initial[column_name] = json.dumps([
+                    str(value) if not isinstance(value, EntityResource) else value._resource.uri
+                    for value in values if value is not None
+                ])
+            else:
+                first_value = values[0]
+                if isinstance(first_value, EntityResource):
+                    initial[column_name] = first_value._resource.uri
+                else:
+                    initial[column_name] = first_value
+
+        # Extract and preserve anchor values from URI
+        uri_parts = entity_uri.split('/')
+        if uri_parts:
+            identifier = uri_parts[-1]
+            anchor_columns = [a["column_name"] for a in schema.get("anchor_columns", [])]
+            if anchor_columns and '_' in identifier:
+                # If identifier has underscores, try to split it
+                id_parts = identifier.split('_')
+                for i, anchor_col in enumerate(anchor_columns):
+                    if i < len(id_parts):
+                        initial.setdefault(anchor_col, id_parts[i])
+            elif anchor_columns and len(anchor_columns) == 1:
+                # Single anchor column, use entire identifier
+                initial.setdefault(anchor_columns[0], identifier)
+
+        return initial
+
     def save_entity(
         self,
         dataset_name: str,
