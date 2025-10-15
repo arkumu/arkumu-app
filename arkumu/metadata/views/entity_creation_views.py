@@ -11,6 +11,7 @@ from typing import Dict, Optional
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.forms import formset_factory
 from django.http import (
+    HttpRequest,
     HttpResponse,
     HttpResponseBadRequest,
     HttpResponseRedirect,
@@ -48,6 +49,18 @@ logger = logging.getLogger(__name__)
 
 ActorFormSet = formset_factory(ActorForm, extra=0, min_num=0, validate_min=False)
 RoleFormSet = formset_factory(RoleForm, extra=0, min_num=0, validate_min=False)
+
+FIELD_OPTION_LOOKUP: Dict[str, Dict[str, str]] = {
+    "project": {
+        "einliefernde_hochschule_uri": "institution",
+        "projektkategorie_uri": "project_category",
+        "projektart_uri": "project_type",
+        "vorschaubild_uri": "digital_object",
+    },
+    "event": {
+        "project_uri": "project",
+    },
+}
 
 
 def configure_uri_widget(form, fragment_url: str) -> None:
@@ -87,8 +100,12 @@ def _render_form_container(
         "success_message": success_message,
         "error_message": error_message,
         "submit_label": submit_label or f"Create {config.dataset_name}",
+        "field_search_urls": {},
     }
     if extra_context:
+        field_search_urls = extra_context.get("field_search_urls")
+        if field_search_urls:
+            context["field_search_urls"] = field_search_urls
         context.update(extra_context)
     return render_to_string(
         "metadata/entity_creation/partials/_form_container.html",
@@ -169,9 +186,19 @@ class EntityCreationBaseView(LoginRequiredMixin, View):
             "description": self.config.description,
             "fragment_url": fragment_url,
             "is_existing": is_existing,
+            "field_search_urls": self._build_field_search_urls(),
         }
         context.update(extra)
         return context
+
+    def _build_field_search_urls(self) -> Dict[str, str]:
+        lookup = FIELD_OPTION_LOOKUP.get(self.entity_key, {})
+        return {
+            field_name: reverse(
+                "metadata:entity_field_options", args=[self.entity_key, field_name]
+            )
+            for field_name in lookup
+        }
 
     def get(self, request):
         organization = getattr(request.user, "organization", None)
@@ -223,6 +250,9 @@ class EntityCreationBaseView(LoginRequiredMixin, View):
                     fragment_url=self.get_fragment_url(),
                     is_existing=False,
                     success_message=success_message,
+                    extra_context={
+                        "field_search_urls": self._build_field_search_urls(),
+                    },
                 )
                 response = HttpResponse(html)
                 trigger_payload = {
@@ -244,6 +274,9 @@ class EntityCreationBaseView(LoginRequiredMixin, View):
                 fragment_url=self.get_fragment_url(),
                 is_existing=getattr(form, "disable_fields", False),
                 error_message="Bitte korrigiere die markierten Felder.",
+                extra_context={
+                    "field_search_urls": self._build_field_search_urls(),
+                },
             )
             return HttpResponse(html, status=400)
 
@@ -370,6 +403,13 @@ class EntityCreationWorkspaceView(LoginRequiredMixin, View):
         form = config.form_class(metadata_options=metadata_options)
         fragment_url = reverse("metadata:entity_creation_fragment", args=[active_key])
         extra_context = build_entity_extra_context(active_key, metadata_options)
+        extra_context = {
+            **extra_context,
+            "field_search_urls": {
+                field_name: reverse("metadata:entity_field_options", args=[active_key, field_name])
+                for field_name in FIELD_OPTION_LOOKUP.get(active_key, {})
+            },
+        }
 
         initial_form_html = _render_form_container(
             request,
@@ -498,6 +538,10 @@ class EventCreationView(EntityCreationBaseView):
             if _is_htmx(request):
                 fresh_form = self.get_form(metadata_options=metadata_options)
                 extra_context = build_entity_extra_context("event", metadata_options)
+                extra_context = {
+                    **extra_context,
+                    "field_search_urls": self._build_field_search_urls(),
+                }
                 html = _render_form_container(
                     request,
                     config=self.config,
@@ -519,6 +563,15 @@ class EventCreationView(EntityCreationBaseView):
             return HttpResponseRedirect(self.get_success_url())
 
         if _is_htmx(request):
+            extra_context = {
+                "actor_formset": actor_formset,
+                "role_formset": role_formset,
+                "actor_role_forms": list(zip(actor_formset.forms, role_formset.forms)),
+                "actor_row_url": reverse("metadata:event_actor_row"),
+                "actor_fragment_url": reverse("metadata:entity_creation_fragment", args=["actor"]),
+                "role_fragment_url": reverse("metadata:entity_creation_fragment", args=["role"]),
+                "field_search_urls": self._build_field_search_urls(),
+            }
             html = _render_form_container(
                 request,
                 config=self.config,
@@ -526,14 +579,7 @@ class EventCreationView(EntityCreationBaseView):
                 fragment_url=self.get_fragment_url(),
                 is_existing=getattr(form, "disable_fields", False),
                 error_message="Bitte korrigiere die markierten Felder.",
-                extra_context={
-                    "actor_formset": actor_formset,
-                    "role_formset": role_formset,
-                    "actor_role_forms": list(zip(actor_formset.forms, role_formset.forms)),
-                    "actor_row_url": reverse("metadata:event_actor_row"),
-                    "actor_fragment_url": reverse("metadata:entity_creation_fragment", args=["actor"]),
-                    "role_fragment_url": reverse("metadata:entity_creation_fragment", args=["role"]),
-                },
+                extra_context=extra_context,
             )
             return HttpResponse(html, status=400)
 
@@ -651,6 +697,13 @@ class EntityFormFragmentView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, 
 
         fragment_url = reverse("metadata:entity_creation_fragment", args=[entity_key])
         extra_context = build_entity_extra_context(entity_key, metadata_options)
+        extra_context = {
+            **extra_context,
+            "field_search_urls": {
+                field_name: reverse("metadata:entity_field_options", args=[entity_key, field_name])
+                for field_name in FIELD_OPTION_LOOKUP.get(entity_key, {})
+            },
+        }
 
         html = _render_form_container(
             request,
@@ -661,6 +714,64 @@ class EntityFormFragmentView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, 
             extra_context=extra_context,
         )
         return HttpResponse(html)
+
+
+class EntityFieldOptionsView(LoginRequiredMixin, View):
+    """HTMX endpoint for filtering select options in entity creation forms."""
+
+    def get(self, request: HttpRequest, entity_key: str, field_name: str) -> HttpResponse:
+        if request.headers.get("HX-Request", "").lower() != "true":
+            return HttpResponseBadRequest("HTMX request expected")
+
+        option_lookup = FIELD_OPTION_LOOKUP.get(entity_key, {})
+        option_key = option_lookup.get(field_name)
+        if option_key is None:
+            return HttpResponseBadRequest("Unsupported field")
+
+        organization = getattr(request.user, "organization", None)
+        if organization is None:
+            return HttpResponseBadRequest("Organization required")
+
+        metadata_options = get_default_metadata_option_map(organization).copy()
+        options = list(metadata_options.get(option_key, []))
+
+        query = (request.GET.get("q") or "").strip()
+        if query:
+            lowered = query.lower()
+            options = [opt for opt in options if lowered in opt[1].lower()]
+
+        metadata_options[option_key] = options
+
+        config = ENTITY_CREATION_CONFIG.get(entity_key)
+        if config is None:
+            return HttpResponseBadRequest("Unknown entity")
+
+        form_class = config.form_class
+        form = form_class(metadata_options=metadata_options)
+
+        if field_name in request.GET:
+            selected_value = request.GET.get(field_name)
+            if selected_value:
+                form.fields[field_name].initial = selected_value
+        else:
+            selected_list = request.GET.getlist(field_name)
+            if selected_list:
+                form.fields[field_name].initial = selected_list
+
+        field = form[field_name]
+        context = {
+            "field": field,
+            "field_name": field_name,
+            "query": query,
+            "search_url": reverse(
+                "metadata:entity_field_options", args=[entity_key, field_name]
+            ),
+        }
+        return render(
+            request,
+            "metadata/entity_creation/partials/_searchable_select_field.html",
+            context,
+        )
 
 
 class EventActorRowView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, View):

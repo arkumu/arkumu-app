@@ -1,0 +1,33 @@
+<div class="form-control" id="searchable-field-{{ field_name }}">
+  <label class="label">
+    <span class="label-text font-medium">{{ field.label }}</span>
+    {% if field.errors %}
+      <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+    {% endif %}
+  </label>
+  <div class="flex items-center gap-2">
+    <input type="search"
+           name="q"
+           value="{{ query }}"
+           placeholder="Suchen ..."
+           class="input input-bordered input-sm flex-1"
+           hx-get="{{ search_url }}"
+           hx-target="#searchable-field-{{ field_name }}"
+           hx-trigger="keyup changed delay:300ms"
+           hx-include="#searchable-field-{{ field_name }} select"
+           hx-params="serialize"
+           autocomplete="off">
+    <button type="button"
+            class="btn btn-ghost btn-sm"
+            hx-get="{{ search_url }}"
+            hx-target="#searchable-field-{{ field_name }}"
+            hx-include="#searchable-field-{{ field_name }} select"
+            hx-vals='{"q": ""}'>
+      Reset
+    </button>
+  </div>
+  {{ field }}
+  {% if field.help_text %}
+    <div class="text-xs text-base-content/60 mt-1">{{ field.help_text }}</div>
+  {% endif %}
+</div>

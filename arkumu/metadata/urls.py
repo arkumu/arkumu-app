@@ -332,6 +332,7 @@ urlpatterns = [
     path('create/alternate-title/', entity_creation_views.AlternateTitleCreationView.as_view(), name='create_alternate_title'),
     path('create/description/', entity_creation_views.DescriptionCreationView.as_view(), name='create_description'),
     path('create/catchphrase/', entity_creation_views.CatchphraseCreationView.as_view(), name='create_catchphrase'),
+    path('create/<slug:entity_key>/<slug:field_name>/options/', entity_creation_views.EntityFieldOptionsView.as_view(), name='entity_field_options'),
     path('create/<slug:entity_key>/fragment/', entity_creation_views.EntityFormFragmentView.as_view(), name='entity_creation_fragment'),
     path('create/event/actor-row/', entity_creation_views.EventActorRowView.as_view(), name='event_actor_row'),
 

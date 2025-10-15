@@ -42,18 +42,22 @@
         <div class="text-xs text-base-content/60 mt-1">{{ form.ereignisname.help_text }}</div>
       </div>
 
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Associated Project</span>
-          {% if form.project_uri.errors %}
-            <span class="label-text-alt text-error">{{ form.project_uri.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.project_uri }}
-        <div class="text-xs text-base-content/60 mt-1">
-          Select the project this event is associated with
+      {% if field_search_urls.project_uri %}
+        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.project_uri field_name="project_uri" search_url=field_search_urls.project_uri %}
+      {% else %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Associated Project</span>
+            {% if form.project_uri.errors %}
+              <span class="label-text-alt text-error">{{ form.project_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ form.project_uri }}
+          <div class="text-xs text-base-content/60 mt-1">
+            Select the project this event is associated with
+          </div>
         </div>
-      </div>
+      {% endif %}
 
       <div class="form-control">
         <label class="label">

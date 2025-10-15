@@ -55,25 +55,33 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Einliefernde Hochschule</span>
-          {% if form.einliefernde_hochschule_uri.errors %}
-            <span class="label-text-alt text-error">{{ form.einliefernde_hochschule_uri.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.einliefernde_hochschule_uri }}
-      </div>
+      {% if field_search_urls.einliefernde_hochschule_uri %}
+        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.einliefernde_hochschule_uri field_name="einliefernde_hochschule_uri" search_url=field_search_urls.einliefernde_hochschule_uri %}
+      {% else %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Einliefernde Hochschule</span>
+            {% if form.einliefernde_hochschule_uri.errors %}
+              <span class="label-text-alt text-error">{{ form.einliefernde_hochschule_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ form.einliefernde_hochschule_uri }}
+        </div>
+      {% endif %}
 
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Projektkategorie</span>
-          {% if form.projektkategorie_uri.errors %}
-            <span class="label-text-alt text-error">{{ form.projektkategorie_uri.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.projektkategorie_uri }}
-      </div>
+      {% if field_search_urls.projektkategorie_uri %}
+        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.projektkategorie_uri field_name="projektkategorie_uri" search_url=field_search_urls.projektkategorie_uri %}
+      {% else %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Projektkategorie</span>
+            {% if form.projektkategorie_uri.errors %}
+              <span class="label-text-alt text-error">{{ form.projektkategorie_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ form.projektkategorie_uri }}
+        </div>
+      {% endif %}
     </div>
 
       <div class="form-control">
@@ -99,26 +107,34 @@
         <div class="text-xs text-base-content/60 mt-1">Select one or more keywords</div>
       </div>
 
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Projektart</span>
-          {% if form.projektart_uri.errors %}
-            <span class="label-text-alt text-error">{{ form.projektart_uri.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.projektart_uri }}
-      </div>
+      {% if field_search_urls.projektart_uri %}
+        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.projektart_uri field_name="projektart_uri" search_url=field_search_urls.projektart_uri %}
+      {% else %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Projektart</span>
+            {% if form.projektart_uri.errors %}
+              <span class="label-text-alt text-error">{{ form.projektart_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ form.projektart_uri }}
+        </div>
+      {% endif %}
     </div>
 
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text font-medium">Vorschaubild</span>
-        {% if form.vorschaubild_uri.errors %}
-          <span class="label-text-alt text-error">{{ form.vorschaubild_uri.errors.0 }}</span>
-        {% endif %}
-      </label>
-      {{ form.vorschaubild_uri }}
-      <div class="text-xs text-base-content/60 mt-1">{{ form.vorschaubild_uri.help_text }}</div>
-    </div>
+      {% if field_search_urls.vorschaubild_uri %}
+        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.vorschaubild_uri field_name="vorschaubild_uri" search_url=field_search_urls.vorschaubild_uri %}
+      {% else %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Vorschaubild</span>
+            {% if form.vorschaubild_uri.errors %}
+              <span class="label-text-alt text-error">{{ form.vorschaubild_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ form.vorschaubild_uri }}
+          <div class="text-xs text-base-content/60 mt-1">{{ form.vorschaubild_uri.help_text }}</div>
+        </div>
+      {% endif %}
   </div>
 </div>
