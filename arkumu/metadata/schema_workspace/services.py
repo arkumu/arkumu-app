@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional, Tuple
+import secrets
 
 from django.db import transaction
 from arkumu.importer.services.schema_service import SchemaService
@@ -11,6 +13,25 @@ from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.resources import EntityResource, PropertyResource
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.users.models import Organization
+
+
+def generate_auto_id(dataset_name: str) -> str:
+    """
+    Generate a unique identifier for an entity using timestamp and random suffix.
+
+    Format: {dataset_name_lower}_{YYYYMMDD}_{random_hex}
+    Example: projekt_20251015_a3f2, ereignis_20251015_b7c9
+
+    Args:
+        dataset_name: Name of the dataset (e.g., "Projekt", "Ereignis")
+
+    Returns:
+        Auto-generated unique identifier string
+    """
+    timestamp = datetime.now().strftime("%Y%m%d")
+    random_suffix = secrets.token_hex(2)  # 4 character hex string
+    dataset_prefix = dataset_name.lower().replace(" ", "_")
+    return f"{dataset_prefix}_{timestamp}_{random_suffix}"
 
 
 @dataclass(frozen=True)
@@ -141,10 +162,12 @@ class SchemaWorkspaceService:
 
             column_meta = schema["column_metadata"].get(column_name, {})
             if column_name in schema.get("multi_value_schemas", {}):
-                separator = schema["multi_value_schemas"][column_name]["separator"]
-                initial[column_name] = separator.join(
-                    str(value) for value in values if value is not None
-                )
+                # Return as JSON array for + button UI
+                import json
+                initial[column_name] = json.dumps([
+                    str(value) if not isinstance(value, EntityResource) else value._resource.uri
+                    for value in values if value is not None
+                ])
             else:
                 first_value = values[0]
                 if isinstance(first_value, EntityResource):
@@ -189,6 +212,17 @@ class SchemaWorkspaceService:
                     )
             else:
                 anchor_values = self._ordered_anchor_values(schema, entity_data)
+                # Auto-generate anchor values if not provided
+                if not anchor_values:
+                    anchor_columns = schema.get("anchor_columns", [])
+                    if anchor_columns:
+                        # Generate auto-ID and populate first anchor field
+                        auto_id = generate_auto_id(dataset_name)
+                        first_anchor_column = anchor_columns[0].get("column_name")
+                        if first_anchor_column:
+                            entity_data[first_anchor_column] = auto_id
+                            anchor_values = [auto_id]
+
                 if not anchor_values:
                     raise ValueError(
                         f"Missing anchor values for dataset '{dataset_name}'"
@@ -253,12 +287,23 @@ class SchemaWorkspaceService:
                     continue
 
                 if column_name in multi_value_schemas:
+                    # Parse values from + button UI (JSON array) or CSV import (separator)
                     separator = multi_value_schemas[column_name]["separator"]
-                    values = (
-                        [v.strip() for v in value.split(separator)]
-                        if isinstance(value, str)
-                        else value
-                    )
+
+                    if isinstance(value, str) and value.startswith('['):
+                        # From + button UI: JSON array
+                        try:
+                            import json
+                            values = json.loads(value)
+                        except (json.JSONDecodeError, ValueError):
+                            # Fallback to separator split
+                            values = [v.strip() for v in value.split(separator)]
+                    elif isinstance(value, str):
+                        # Legacy CSV import: separator split
+                        values = [v.strip() for v in value.split(separator)]
+                    else:
+                        values = value
+
                     for single_value in values:
                         if single_value:
                             self._processor.resource_manager.create_property_triple(
@@ -345,9 +390,23 @@ class SchemaWorkspaceService:
             return []
 
         raw_values: List[Any]
-        if isinstance(value, (list, tuple, set)):
+
+        # Try to parse as JSON array first (from + button UI)
+        if isinstance(value, str) and value.startswith('['):
+            try:
+                import json
+                raw_values = json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                # Fallback to separator split for backwards compatibility
+                if multi_value_schema:
+                    separator = multi_value_schema.get("separator", ",")
+                    raw_values = [v.strip() for v in value.split(separator)]
+                else:
+                    raw_values = [value]
+        elif isinstance(value, (list, tuple, set)):
             raw_values = list(value)
         elif multi_value_schema:
+            # Legacy CSV import path: split by separator
             separator = multi_value_schema.get("separator", ",")
             raw_values = [v.strip() for v in str(value).split(separator)]
         else:

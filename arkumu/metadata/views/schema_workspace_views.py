@@ -286,13 +286,15 @@ def _prepare_project_step(
         }
     if form is None:
         form = DatasetEntityForm(field_metadata=field_metadata)
-    fields_with_metadata = [
-        {
-            "field": field,
-            "meta": field_metadata.get(field.name, {}),
-        }
-        for field in form.visible_fields_in_order()
-    ]
+    fields_with_metadata = []
+    for field in form.visible_fields_in_order():
+        fields_with_metadata.append(
+            {
+                "field": field,
+                "meta": field_metadata.get(field.name, {}),
+                "search_url": field_search_urls.get(field.name),
+            }
+        )
     base_url = reverse("metadata:entity_workspace_flow", args=[mapping.id])
     submit_url = f"{base_url}?step=project&flow_id={flow_state.flow_id}"
     return {
@@ -346,16 +348,18 @@ def _prepare_events_step(
             target_dataset=project.dataset,
             target_uri=project.uri,
         )
-    fields_with_metadata = [
-        {
-            "field": field,
-            "meta": {
-                **field_metadata.get(field.name, {}),
-                "fk_target_dataset": fk_lookup.get(field.name),
-            },
-        }
-        for field in form.visible_fields_in_order()
-    ]
+    fields_with_metadata = []
+    for field in form.visible_fields_in_order():
+        fields_with_metadata.append(
+            {
+                "field": field,
+                "meta": {
+                    **field_metadata.get(field.name, {}),
+                    "fk_target_dataset": fk_lookup.get(field.name),
+                },
+                "search_url": field_search_urls.get(field.name),
+            }
+        )
     return {
         "flow_id": flow_state.flow_id,
         "project_summary": flow_state.project,

@@ -75,15 +75,10 @@
                   {{ item.field }}
                 {% else %}
                     <label class="form-control w-full">
-                      <div class="label justify-between">
-                        <span class="label-text font-medium">{{ item.field.label }}</span>
-                        <span class="flex gap-1">
-                          {% if item.meta.is_required %}
-                            <span class="badge badge-outline badge-xs">Pflicht</span>
-                          {% endif %}
-                          {% if item.meta.fk_target_dataset %}
-                            <span class="badge badge-outline badge-xs">FK → {{ item.meta.fk_target_dataset }}</span>
-                          {% endif %}
+                      <div class="label">
+                        <span class="label-text font-medium">
+                          {{ item.field.label }}
+                          {% if item.meta.is_required %}<span class="text-error ml-1">*</span>{% endif %}
                         </span>
                       </div>
                       {{ item.field }}

@@ -9,7 +9,15 @@ def _humanize_label(raw: str) -> str:
     raw = raw or ""
     if not raw:
         return raw
-    label = raw.replace("_", " ").replace("-", " ").strip()
+
+    # Remove technical suffixes like _uri, _id before humanizing
+    cleaned = raw
+    if cleaned.endswith("_uri"):
+        cleaned = cleaned[:-4]  # Remove "_uri"
+    elif cleaned.endswith("_id"):
+        cleaned = cleaned[:-3]  # Remove "_id"
+
+    label = cleaned.replace("_", " ").replace("-", " ").strip()
     if not label:
         return raw
     return label[0].upper() + label[1:]
@@ -26,6 +34,7 @@ class DatasetEntityForm(forms.Form):
         field_metadata: Dict[str, Dict[str, Any]],
         initial: Dict[str, Any] | None = None,
         disable_anchors: bool = False,
+        hide_anchors: bool = True,
         **kwargs,
     ) -> None:
         kwargs.setdefault("initial", initial or {})
@@ -33,9 +42,10 @@ class DatasetEntityForm(forms.Form):
         self.field_metadata = field_metadata
         self.anchor_fields: List[str] = []
         self.property_fields: List[str] = []
+        self.hide_anchors = hide_anchors
 
         for column_name, meta in field_metadata.items():
-            field = self._build_field(column_name, meta, disable_anchors)
+            field = self._build_field(column_name, meta, disable_anchors, hide_anchors)
             self.fields[column_name] = field
             self.property_fields.append(column_name)
             if meta.get("is_anchor"):
@@ -43,43 +53,44 @@ class DatasetEntityForm(forms.Form):
 
     # ------------------------------------------------------------------ #
     def _build_field(
-        self, column_name: str, meta: Dict[str, Any], disable_anchor: bool
+        self, column_name: str, meta: Dict[str, Any], disable_anchor: bool, hide_anchor: bool
     ) -> forms.Field:
         label = meta.get("property_label") or meta.get("arkumu_type") or column_name
         field_label = _humanize_label(label)
 
-        help_bits: List[str] = []
-        if meta.get("is_anchor"):
-            help_bits.append("Anchor field (unique identifier)")
-        if meta.get("is_multi_value"):
-            separator = meta.get("multi_value_separator", ",")
-            help_bits.append(f"Multiple values separated by “{separator}”")
-        if meta.get("is_external_ontology"):
-            help_bits.append("Linked to an external identifier")
-        if meta.get("has_fk"):
-            help_bits.append("References another entity")
+        is_anchor = meta.get("is_anchor")
+
+        # If hiding anchors, use HiddenInput widget
+        if is_anchor and hide_anchor:
+            return forms.CharField(
+                required=False,
+                widget=forms.HiddenInput(),
+            )
 
         required = bool(meta.get("is_required")) or bool(meta.get("is_anchor"))
 
+        # Multi-value fields use dynamic add/remove UI, not textarea splitting
         if meta.get("is_multi_value"):
+            column_type = meta.get("column_type", "")
+
+            # Multi-value fields render as a special widget with + button
+            # The actual form field is just for validation
             field = forms.CharField(
                 label=field_label,
                 required=required,
-                help_text=" · ".join(help_bits) if help_bits else None,
-                widget=forms.Textarea(
+                widget=forms.HiddenInput(
                     attrs={
-                        "rows": 3,
-                        "class": "textarea textarea-bordered",
                         "data-column": column_name,
-                        "data-column-type": meta.get("column_type"),
+                        "data-column-type": column_type,
+                        "data-multi-value": "true",
                     }
                 ),
             )
+            # Template will render the dynamic add/remove UI
         else:
             field = forms.CharField(
                 label=field_label,
                 required=required,
-                help_text=" · ".join(help_bits) if help_bits else None,
                 widget=forms.TextInput(
                     attrs={
                         "class": "input input-bordered",
@@ -89,7 +100,8 @@ class DatasetEntityForm(forms.Form):
                 ),
             )
 
-        if meta.get("is_anchor") and disable_anchor:
+        # Legacy support: disable anchor if requested (but anchors are usually hidden now)
+        if is_anchor and disable_anchor:
             field.widget.attrs["readonly"] = True
             field.widget.attrs["class"] = (
                 field.widget.attrs.get("class", "") + " input-disabled"

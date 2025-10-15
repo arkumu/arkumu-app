@@ -85,7 +85,7 @@
 
       <div class="grid gap-4">
         {% for item in fields_with_metadata %}
-          <label class="form-control w-full">
+          <div class="form-control w-full">
             <div class="label justify-between">
               <span class="label-text font-medium">{{ item.field.label }}</span>
               <span class="flex gap-2">
@@ -103,7 +103,58 @@
                 {% endif %}
               </span>
             </div>
-            {{ item.field }}
+
+            {% if item.meta.is_multi_value %}
+              {# Multi-value field with + button UI (HTMX-based) #}
+              {{ item.field }}
+              <div id="multi-value-{{ item.field.name }}" class="space-y-2">
+                {# Parse existing values from hidden field #}
+                {% if item.field.value %}
+                  {# TODO: Server-side render existing values as input rows #}
+                  <div class="flex gap-2">
+                    <input type="text"
+                           name="{{ item.field.name }}[]"
+                           class="input input-bordered flex-1"
+                           value="{{ item.field.value }}"
+                           placeholder="Wert eingeben">
+                    <button type="button"
+                            class="btn btn-ghost btn-sm btn-circle"
+                            hx-on:click="this.parentElement.remove()">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+                {% else %}
+                  <div class="flex gap-2">
+                    <input type="text"
+                           name="{{ item.field.name }}[]"
+                           class="input input-bordered flex-1"
+                           placeholder="Wert eingeben">
+                    <button type="button"
+                            class="btn btn-ghost btn-sm btn-circle"
+                            hx-on:click="this.parentElement.remove()"
+                            disabled>
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+                {% endif %}
+              </div>
+              <button type="button"
+                      class="btn btn-ghost btn-sm mt-2"
+                      hx-on:click="addMultiValueRow('{{ item.field.name }}')">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Weiteren Wert hinzufügen
+              </button>
+            {% else %}
+              {# Regular single-value field #}
+              {{ item.field }}
+            {% endif %}
+
             {% if item.field.help_text %}
               <span class="text-xs text-base-content/70">{{ item.field.help_text|safe }}</span>
             {% endif %}
@@ -114,7 +165,7 @@
                 {% endfor %}
               </span>
             {% endif %}
-          </label>
+          </div>
         {% endfor %}
       </div>
 
@@ -136,3 +187,49 @@
     </form>
   </div>
 </div>
+
+<script>
+function addMultiValueRow(fieldName) {
+  const container = document.getElementById(`multi-value-${fieldName}`);
+  if (!container) return;
+
+  const newRow = document.createElement('div');
+  newRow.className = 'flex gap-2';
+  newRow.innerHTML = `
+    <input type="text"
+           name="${fieldName}[]"
+           class="input input-bordered flex-1"
+           placeholder="Wert eingeben">
+    <button type="button"
+            class="btn btn-ghost btn-sm btn-circle"
+            hx-on:click="this.parentElement.remove()">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+      </svg>
+    </button>
+  `;
+  container.appendChild(newRow);
+  htmx.process(newRow);  // Initialize HTMX on new elements
+}
+
+// On form submit, collect multi-value inputs into hidden field
+document.addEventListener('submit', function(e) {
+  const form = e.target;
+  if (!form.matches('form')) return;
+
+  // For each multi-value field
+  document.querySelectorAll('[id^="multi-value-"]').forEach(container => {
+    const fieldName = container.id.replace('multi-value-', '');
+    const inputs = container.querySelectorAll(`input[name="${fieldName}[]"]`);
+    const values = Array.from(inputs)
+      .map(input => input.value.trim())
+      .filter(val => val !== '');
+
+    // Find the hidden field and set its value as JSON array
+    const hiddenField = form.querySelector(`input[name="${fieldName}"]`);
+    if (hiddenField) {
+      hiddenField.value = JSON.stringify(values);
+    }
+  });
+});
+</script>

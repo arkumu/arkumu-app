@@ -55,18 +55,17 @@
         <div class="grid gap-4 lg:grid-cols-2">
           {% for item in ctx.fields_with_metadata %}
             <label class="form-control w-full">
-              <div class="label justify-between">
-                <span class="label-text font-medium">{{ item.field.label }}</span>
-                <span class="flex gap-1">
-                  {% if item.meta.is_anchor %}
-                    <span class="badge badge-outline badge-xs">Anchor</span>
-                  {% endif %}
-                  {% if item.meta.is_required %}
-                    <span class="badge badge-outline badge-xs">Pflicht</span>
-                  {% endif %}
+              <div class="label">
+                <span class="label-text font-medium">
+                  {{ item.field.label }}
+                  {% if item.meta.is_required %}<span class="text-error ml-1">*</span>{% endif %}
                 </span>
               </div>
-              {{ item.field }}
+              {% if item.search_url %}
+                {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=item.field field_name=item.field.name search_url=item.search_url %}
+              {% else %}
+                {{ item.field }}
+              {% endif %}
               {% if item.field.help_text %}
                 <span class="text-xs text-base-content/60">{{ item.field.help_text }}</span>
               {% endif %}
