@@ -646,27 +646,6 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
                 field_metadata=field_metadata,
             )
 
-        flow_state = self.coordinator.get_or_create_flow_state(
-            request,
-            mapping=selected_mapping,
-            organization=organization,
-            flow_id=request.GET.get("flow_id"),
-        )
-        project_step_context = _prepare_project_step(
-            request,
-            service=service,
-            flow_state=flow_state,
-            mapping=selected_mapping,
-        )
-        guided_panel_html = _render_guided_flow_panel(
-            request,
-            service=service,
-            mapping=selected_mapping,
-            flow_state=flow_state,
-            active_step="project",
-            step_context=project_step_context,
-        )
-
         return render(
             request,
             self.template_name,
@@ -680,7 +659,6 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
                 "user_can_edit_vocabs": user_can_edit_vocabs,
                 "dataset_panel_html": dataset_panel_html,
                 "active_dataset_name": active_dataset_name,
-                "guided_panel_html": guided_panel_html,
             },
         )
 
