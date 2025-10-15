@@ -339,11 +339,11 @@ class SchemaWorkspaceService:
                 )
                 created = True
 
-                # Link entity to dataset container
+                # Link entity to dataset container using Dublin Core isPartOf
                 dataset_resource = self._processor.dataset_blueprints[dataset_name][
                     "dataset_resource"
                 ]
-                is_part_of_uri = self._processor._generate_property_uri("isPartOf")
+                is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
                 self._processor.resource_manager.create_relationship_triple(
                     entity_resource,
                     is_part_of_uri,
@@ -556,7 +556,8 @@ class SchemaWorkspaceService:
             if target_blueprint:
                 dataset_resource = target_blueprint.get("dataset_resource")
                 if dataset_resource:
-                    is_part_of_uri = self._processor._generate_property_uri("isPartOf")
+                    # Use Dublin Core isPartOf for consistency with existing entities
+                    is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
                     self._processor.resource_manager.create_relationship_triple(
                         target_resource,
                         is_part_of_uri,
