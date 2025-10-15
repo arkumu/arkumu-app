@@ -66,8 +66,19 @@
       <input type="hidden" name="dataset" value="{{ dataset_summary.dataset_name }}">
       {% if entity_uri %}
         <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
+        {% if entity_label %}
+          <input type="hidden" name="entity_label" value="{{ entity_label }}">
+        {% endif %}
         <div class="alert alert-info">
-          <span>Bearbeitung von <code class="font-mono break-all">{{ entity_uri }}</code></span>
+          <span>
+            Bearbeitung von
+            {% if entity_label %}
+              <span class="font-semibold">{{ entity_label }}</span>
+              <span class="block text-xs text-base-content/70 break-all">{{ entity_uri }}</span>
+            {% else %}
+              <code class="font-mono break-all">{{ entity_uri }}</code>
+            {% endif %}
+          </span>
         </div>
       {% endif %}
 
@@ -92,40 +103,9 @@
             {% if item.meta.is_multi_value %}
               {# Multi-value field with + button UI (HTMX-based) - takes full width #}
               {{ item.field }}
-              <div id="multi-value-{{ item.field.name }}" class="space-y-2">
-                {# Parse existing values from hidden field #}
-                {% if item.field.value %}
-                  {# TODO: Server-side render existing values as input rows #}
-                  <div class="flex gap-2">
-                    <input type="text"
-                           name="{{ item.field.name }}[]"
-                           class="input input-bordered flex-1"
-                           value="{{ item.field.value }}"
-                           placeholder="Wert eingeben">
-                    <button type="button"
-                            class="btn btn-ghost btn-sm btn-circle"
-                            hx-on:click="this.parentElement.remove()">
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                      </svg>
-                    </button>
-                  </div>
-                {% else %}
-                  <div class="flex gap-2">
-                    <input type="text"
-                           name="{{ item.field.name }}[]"
-                           class="input input-bordered flex-1"
-                           placeholder="Wert eingeben">
-                    <button type="button"
-                            class="btn btn-ghost btn-sm btn-circle"
-                            hx-on:click="this.parentElement.remove()"
-                            disabled>
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                      </svg>
-                    </button>
-                  </div>
-                {% endif %}
+              <div id="multi-value-{{ item.field.name }}"
+                   class="space-y-2"
+                   data-suggestion-url="{{ item.search_url|default:'' }}">
               </div>
               <button type="button"
                       class="btn btn-ghost btn-sm mt-2"
@@ -137,7 +117,16 @@
               </button>
             {% else %}
               {# Regular single-value field #}
-              {{ item.field }}
+              {% if item.search_url %}
+                <div class="space-y-2" data-suggestion-container>
+                  {{ item.field }}
+                  <div id="{{ item.target_id }}"
+                       class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden"></div>
+                  <span class="text-xs text-base-content/60">Tippe, um vorhandene Werte zu durchsuchen und zu übernehmen.</span>
+                </div>
+              {% else %}
+                {{ item.field }}
+              {% endif %}
             {% endif %}
 
             {% if item.field.help_text %}
@@ -153,6 +142,42 @@
           </div>
         {% endfor %}
       </div>
+
+      {% if join_fields %}
+        <div class="divider text-sm">Verknüpfungen</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {% for item in join_fields %}
+            <div class="form-control w-full md:col-span-2 lg:col-span-3">
+              <div class="label">
+                <span class="label-text font-medium">
+                  {{ item.field.label }}
+                </span>
+                <span class="label-text-alt text-base-content/60">Mehrfachauswahl möglich</span>
+              </div>
+              {% if item.initial_labels %}
+                <div class="flex flex-wrap gap-2 mb-2">
+                  {% for choice in item.initial_labels %}
+                    <span class="badge badge-outline">{{ choice.label }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+              {{ item.field }}
+              <div id="multi-value-{{ item.field.name }}"
+                   class="space-y-2"
+                   data-suggestion-url="{{ item.search_url|default:'' }}">
+              </div>
+              <button type="button"
+                      class="btn btn-ghost btn-sm mt-2"
+                      hx-on:click="addMultiValueRow('{{ item.field.name }}')">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Weiteren Eintrag hinzufügen
+              </button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
 
       <div class="flex flex-wrap items-center gap-3">
         <button type="submit" class="btn btn-primary">
@@ -174,59 +199,190 @@
 </div>
 
 <script>
-function selectEntity(uri, label, datasetName) {
-  // Clear search input and results
-  document.getElementById('entity-search-input').value = '';
-  document.getElementById('entity-search-results').innerHTML = '';
+(function() {
+  function buildSuggestionUrl(baseUrl, inputId, targetId) {
+    if (!baseUrl) { return ''; }
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}input_id=${encodeURIComponent(inputId)}&target_id=${encodeURIComponent(targetId)}`;
+  }
 
-  // Load the entity data into the form
-  htmx.ajax('GET',
-    '{% url "metadata:entity_workspace_dataset" mapping.id %}?dataset=' + encodeURIComponent(datasetName) + '&mode=load&entity_uri=' + encodeURIComponent(uri),
-    {target: '#dataset-panel', swap: 'innerHTML'}
-  );
-}
+  function selectEntity(uri, label, datasetName) {
+    const searchInput = document.getElementById('entity-search-input');
+    const results = document.getElementById('entity-search-results');
+    if (searchInput) { searchInput.value = ''; }
+    if (results) { results.innerHTML = ''; }
 
-function addMultiValueRow(fieldName) {
-  const container = document.getElementById(`multi-value-${fieldName}`);
-  if (!container) return;
-
-  const newRow = document.createElement('div');
-  newRow.className = 'flex gap-2';
-  newRow.innerHTML = `
-    <input type="text"
-           name="${fieldName}[]"
-           class="input input-bordered flex-1"
-           placeholder="Wert eingeben">
-    <button type="button"
-            class="btn btn-ghost btn-sm btn-circle"
-            hx-on:click="this.parentElement.remove()">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-      </svg>
-    </button>
-  `;
-  container.appendChild(newRow);
-  htmx.process(newRow);  // Initialize HTMX on new elements
-}
-
-// On form submit, collect multi-value inputs into hidden field
-document.addEventListener('submit', function(e) {
-  const form = e.target;
-  if (!form.matches('form')) return;
-
-  // For each multi-value field
-  document.querySelectorAll('[id^="multi-value-"]').forEach(container => {
-    const fieldName = container.id.replace('multi-value-', '');
-    const inputs = container.querySelectorAll(`input[name="${fieldName}[]"]`);
-    const values = Array.from(inputs)
-      .map(input => input.value.trim())
-      .filter(val => val !== '');
-
-    // Find the hidden field and set its value as JSON array
-    const hiddenField = form.querySelector(`input[name="${fieldName}"]`);
-    if (hiddenField) {
-      hiddenField.value = JSON.stringify(values);
+    if (window.htmx) {
+      window.htmx.ajax('GET',
+        '{% url "metadata:entity_workspace_dataset" mapping.id %}?dataset=' + encodeURIComponent(datasetName)
+          + '&mode=load'
+          + '&entity_uri=' + encodeURIComponent(uri)
+          + '&entity_label=' + encodeURIComponent(label || ''),
+        {target: '#dataset-panel', swap: 'innerHTML'}
+      );
     }
-  });
-});
+  }
+  window.selectEntity = selectEntity;
+
+  function setDatasetFieldValue(button) {
+    const value = button.getAttribute('data-value') || '';
+    const label = button.getAttribute('data-label') || value;
+    const inputId = button.getAttribute('data-input-id');
+    const targetId = button.getAttribute('data-target-id');
+    if (!inputId) { return; }
+
+    const input = document.getElementById(inputId);
+    if (input) {
+      input.value = label;
+      if (value) {
+        input.dataset.uri = value;
+      } else {
+        delete input.dataset.uri;
+      }
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.focus();
+    }
+
+    if (targetId) {
+      const container = document.getElementById(targetId);
+      if (container) {
+        container.innerHTML = '';
+      }
+    }
+  }
+  window.setDatasetFieldValue = setDatasetFieldValue;
+
+  function createMultiValueRow(container, fieldName, displayValue, storedValue) {
+    const suggestionUrl = container.dataset.suggestionUrl || '';
+    const row = document.createElement('div');
+    row.className = 'space-y-1';
+
+    const inputRow = document.createElement('div');
+    inputRow.className = 'flex gap-2';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = `${fieldName}[]`;
+    input.className = 'input input-bordered flex-1';
+    input.placeholder = 'Wert eingeben';
+    const uniqueId = `${fieldName}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    input.id = uniqueId;
+    if (displayValue) {
+      input.value = displayValue;
+    }
+    if (storedValue) {
+      input.dataset.uri = storedValue;
+    }
+
+    input.addEventListener('input', () => {
+      if (!input.value) {
+        delete input.dataset.uri;
+      }
+    });
+
+    inputRow.appendChild(input);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-ghost btn-sm btn-circle';
+    removeBtn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+    removeBtn.addEventListener('click', () => {
+      row.remove();
+    });
+    inputRow.appendChild(removeBtn);
+
+    row.appendChild(inputRow);
+
+    if (suggestionUrl) {
+      const targetId = `${uniqueId}-suggestions`;
+      const finalUrl = buildSuggestionUrl(suggestionUrl, uniqueId, targetId);
+      input.setAttribute('hx-get', finalUrl);
+      input.setAttribute('hx-trigger', 'keyup changed delay:400ms, search');
+      input.setAttribute('hx-target', `#${targetId}`);
+      input.setAttribute('hx-include', 'closest form');
+      input.setAttribute('autocomplete', 'off');
+
+      const suggestions = document.createElement('div');
+      suggestions.id = targetId;
+      suggestions.className = 'mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden';
+      row.appendChild(suggestions);
+    }
+
+    container.appendChild(row);
+    if (window.htmx) {
+      window.htmx.process(row);
+    }
+  }
+
+  function initializeMultiValueFields() {
+    document.querySelectorAll('input[type="hidden"][data-multi-value="true"]').forEach(hidden => {
+      const fieldName = hidden.name;
+      const container = document.getElementById(`multi-value-${fieldName}`);
+      if (!container) { return; }
+
+      const suggestionUrl = hidden.dataset.suggestionUrl || container.dataset.suggestionUrl || '';
+      container.dataset.suggestionUrl = suggestionUrl;
+
+      let values = [];
+      if (hidden.value) {
+        try {
+          const parsed = JSON.parse(hidden.value);
+          if (Array.isArray(parsed)) {
+            values = parsed;
+          }
+        } catch (err) {
+          values = [hidden.value];
+        }
+      }
+      if (!values.length) {
+        values = [''];
+      }
+
+      container.innerHTML = '';
+      values.forEach(item => {
+        if (item && typeof item === 'object') {
+          createMultiValueRow(
+            container,
+            fieldName,
+            item.label || item.uri || '',
+            item.uri || ''
+          );
+        } else {
+          const value = typeof item === 'string' ? item : '';
+          createMultiValueRow(container, fieldName, value, value);
+        }
+      });
+    });
+  }
+
+  function addMultiValueRow(fieldName) {
+    const container = document.getElementById(`multi-value-${fieldName}`);
+    if (!container) { return; }
+    createMultiValueRow(container, fieldName, '', '');
+  }
+  window.addMultiValueRow = addMultiValueRow;
+
+  function handleMultiValueSubmit(event) {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) { return; }
+
+    form.querySelectorAll('input[type="hidden"][data-multi-value="true"]').forEach(hidden => {
+      const fieldName = hidden.name;
+      const container = document.getElementById(`multi-value-${fieldName}`);
+      if (!container) { return; }
+
+      const inputs = container.querySelectorAll(`input[name="${fieldName}[]"]`);
+      const values = Array.from(inputs)
+        .map(input => (input.dataset.uri ? input.dataset.uri.trim() : input.value.trim()))
+        .filter(val => val !== '');
+
+      hidden.value = JSON.stringify(values);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', initializeMultiValueFields);
+  initializeMultiValueFields();
+  document.addEventListener('submit', handleMultiValueSubmit);
+})();
 </script>

@@ -37,6 +37,8 @@ class EntityCreationService:
         self.config = config
         self.organization = organization
         self.base_uri = f"http://arkumu.org/data/{organization.code}"
+        self.dataset_base_uri = self.base_uri.rsplit("/", 1)[0] if "/" in self.base_uri else self.base_uri
+        self.dataset_resource_name = self._resolve_dataset_resource_name()
         self._class_resource: Optional[ClassResource] = None
         self._property_cache: Dict[str, PropertyBinding] = {}
 
@@ -84,12 +86,19 @@ class EntityCreationService:
         selected_uri = form.cleaned_data.get("uri")
         if selected_uri:
             entity, created = EntityResource.get_or_create(selected_uri)
+            EntityResource.ensure_dataset_membership(
+                entity=entity,
+                organization=self.organization,
+                dataset_name=self.dataset_resource_name,
+                base_uri=self.dataset_base_uri,
+            )
             return entity, created
 
         with transaction.atomic():
             entity, _ = EntityResource.create_by_organization_and_dataset_name(
                 organization=self.organization,
-                dataset_name=self.config.dataset_name,
+                dataset_name=self.dataset_resource_name,
+                base_uri=self.dataset_base_uri,
             )
             entity.set_type(self.ensure_class_resource())
 
@@ -101,6 +110,55 @@ class EntityCreationService:
                 self._assign_value(entity, binding, value)
 
         return entity, True
+
+    def _resolve_dataset_resource_name(self) -> str:
+        if self.config.dataset_resource_name:
+            return self.config.dataset_resource_name
+
+        inferred = self._infer_dataset_resource_name_from_mapping()
+        if inferred:
+            return inferred
+        return self.config.dataset_name
+
+    def _infer_dataset_resource_name_from_mapping(self) -> Optional[str]:
+        from arkumu.metadata.models.mappings import Mapping
+        from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService
+        from arkumu.common.uri_utils import slugify_uri_part
+
+        try:
+            mapping = (
+                Mapping.objects.filter(organization_id=self.organization.code)
+                .order_by("-created_at")
+                .first()
+            )
+        except Exception:
+            return None
+        if mapping is None:
+            return None
+
+        try:
+            workspace_service = SchemaWorkspaceService(
+                mapping=mapping,
+                organization=self.organization,
+                base_uri=self.dataset_base_uri,
+            )
+            dataset_summaries = workspace_service.list_datasets()
+        except Exception:
+            return None
+
+        target_label = self.config.dataset_name.lower()
+        target_slug = slugify_uri_part(self.config.dataset_name).lower()
+
+        for summary in dataset_summaries:
+            if summary.display_label and summary.display_label.lower() == target_label:
+                return summary.dataset_name
+
+        for summary in dataset_summaries:
+            dataset_name_lower = summary.dataset_name.lower()
+            if dataset_name_lower == target_label or target_slug in dataset_name_lower:
+                return summary.dataset_name
+
+        return None
 
     def _assign_value(
         self,

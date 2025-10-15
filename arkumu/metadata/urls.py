@@ -320,6 +320,7 @@ urlpatterns = [
     # Entity creation workspace (schema-driven)
     path('create/', schema_workspace_views.SchemaDrivenWorkspaceView.as_view(), name='entity_creation_workspace'),
     path('create/<uuid:mapping_id>/dataset/', schema_workspace_views.SchemaDatasetFragmentView.as_view(), name='entity_workspace_dataset'),
+    path('create/<uuid:mapping_id>/field-values/', schema_workspace_views.DatasetFieldValueOptionsView.as_view(), name='entity_workspace_field_values'),
     path('create/<uuid:mapping_id>/search/', schema_workspace_views.EntitySearchView.as_view(), name='entity_workspace_search'),
 
     ]

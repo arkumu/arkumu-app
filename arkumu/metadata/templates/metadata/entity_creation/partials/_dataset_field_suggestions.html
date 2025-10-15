@@ -1,0 +1,19 @@
+{% if suggestions %}
+  <ul class="menu menu-sm w-full text-left">
+    {% for suggestion in suggestions %}
+      <li>
+        <button type="button"
+                class="btn btn-xs btn-outline justify-start w-full"
+                data-input-id="{{ input_id }}"
+                data-target-id="{{ target_id }}"
+                data-value="{{ suggestion.value }}"
+                data-label="{{ suggestion.label }}"
+                hx-on:click="setDatasetFieldValue(this)">
+          <span class="truncate">{{ suggestion.label }}</span>
+        </button>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="px-3 py-2 text-xs text-base-content/60">Keine Treffer gefunden.</div>
+{% endif %}

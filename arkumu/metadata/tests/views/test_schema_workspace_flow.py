@@ -115,6 +115,16 @@ class StubSchemaWorkspaceService:
             uri = f"http://example.org/{dataset_name}/placeholder"
         return uri, True
 
+    # Joins --------------------------------------------------------------
+    def list_join_relationships(self, dataset_name):
+        return []
+
+    def get_join_values(self, relationship, entity_uri):
+        return []
+
+    def sync_join_relationship(self, *, entity_uri, relationship, related_uris):
+        return None
+
 
 @pytest.fixture
 def organization(db):

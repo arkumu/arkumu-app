@@ -8,7 +8,7 @@ views and services can operate generically.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Literal, Sequence, Type
+from typing import Dict, Literal, Optional, Sequence, Type
 
 from .forms import (
     ActorForm,
@@ -52,6 +52,7 @@ class EntityCreationConfig:
     form_partial: str
     title: str
     description: str
+    dataset_resource_name: Optional[str] = None
     fields: Sequence[FieldConfig] = field(default_factory=tuple)
     success_url_name: str = "metadata:metadata_entry"
 
@@ -318,4 +319,3 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
         ),
     ),
 }
-

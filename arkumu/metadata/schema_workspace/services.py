@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
-from urllib.parse import urlparse
-from typing import Any, Dict, List, Optional, Tuple
-import secrets
+from typing import Any, Dict, List, Optional, Tuple, Set
+from urllib.parse import urlparse, urlencode
 
 from django.db import transaction
+
+from arkumu.common.uri_utils import mint_uri, slugify_uri_part
 from arkumu.importer.services.schema_service import SchemaService
+from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
-from arkumu.metadata.models.resources import EntityResource, PropertyResource
-from arkumu.metadata.models.mappings import Mapping
+from arkumu.metadata.models.resources import ClassResource, EntityResource, PropertyResource
 from arkumu.users.models import Organization
 
 
@@ -43,6 +45,20 @@ class DatasetSummary:
     relationship_count: int
     is_controlled_vocab: bool = False
     entity_count: int = 0
+
+
+@dataclass(frozen=True)
+class JoinRelationship:
+    """Description of a junction dataset linking two other datasets."""
+
+    join_dataset: str
+    join_dataset_schema: Dict[str, Any]
+    self_column: str
+    self_property_uri: str
+    other_dataset: str
+    other_column: str
+    other_property_uri: str
+    other_display_label: str
 
 
 class SchemaWorkspaceService:
@@ -106,13 +122,12 @@ class SchemaWorkspaceService:
 
             # Count entities for this dataset (via dataset_resource isPartOf relationship)
             entity_count = 0
-            dataset_resource = schema.get("dataset_resource")
+            dataset_resource = self._resolve_dataset_resource(dataset_name, schema)
             if dataset_resource:
-                # Use Dublin Core isPartOf predicate
                 is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
                 entity_count = Triple.objects.filter(
                     predicate__uri=is_part_of_uri,
-                    object=dataset_resource
+                    object=dataset_resource,
                 ).count()
 
             summaries.append(
@@ -136,6 +151,41 @@ class SchemaWorkspaceService:
             raise ValueError(f"No schema blueprint found for dataset '{dataset_name}'")
         return schema
 
+    def _resolve_dataset_resource(
+        self,
+        dataset_name: str,
+        schema: Dict[str, Any],
+    ) -> Optional[Resource]:
+        dataset_resource = schema.get("dataset_resource")
+        if dataset_resource:
+            return dataset_resource
+
+        organization = self.organization
+        if organization is None:
+            return None
+
+        dataset_uri = mint_uri(
+            self.base_uri,
+            slugify_uri_part(str(organization.code)),
+            "datasets",
+            slugify_uri_part(dataset_name),
+        )
+        dataset_defaults = {
+            "resource_type": ResourceType.IRI,
+            "name": getattr(schema.get("entity_type"), "name", "") or dataset_name,
+            "organization": organization,
+        }
+        dataset_resource, _ = Resource.objects.get_or_create(
+            uri=dataset_uri,
+            defaults=dataset_defaults,
+        )
+        if dataset_resource.organization is None:
+            dataset_resource.organization = organization
+            dataset_resource.save(update_fields=["organization"])
+
+        schema["dataset_resource"] = dataset_resource
+        return dataset_resource
+
     def get_dataset_summary(self, dataset_name: str) -> DatasetSummary:
         schema = self.get_dataset_schema(dataset_name)
         entity_type = schema.get("entity_type")
@@ -149,13 +199,12 @@ class SchemaWorkspaceService:
 
         # Count entities for this dataset
         entity_count = 0
-        dataset_resource = schema.get("dataset_resource")
+        dataset_resource = self._resolve_dataset_resource(dataset_name, schema)
         if dataset_resource:
-            # Use Dublin Core isPartOf predicate
             is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
             entity_count = Triple.objects.filter(
                 predicate__uri=is_part_of_uri,
-                object=dataset_resource
+                object=dataset_resource,
             ).count()
 
         return DatasetSummary(
@@ -168,16 +217,73 @@ class SchemaWorkspaceService:
             entity_count=entity_count,
         )
 
+    def list_join_relationships(self, dataset_name: str) -> List[JoinRelationship]:
+        """Return junction definitions that relate the given dataset to others."""
+
+        relationships: List[JoinRelationship] = []
+        seen: Set[Tuple[str, str, str]] = set()
+
+        for summary in self.list_datasets():
+            candidate = summary.dataset_name
+            schema = self.get_dataset_schema(candidate)
+            fk_rels: List[Dict[str, Any]] = schema.get("fk_relationships", []) or []
+            if not fk_rels:
+                continue
+
+            self_rels = [rel for rel in fk_rels if rel.get("target_dataset") == dataset_name]
+            if not self_rels:
+                continue
+
+            for self_rel in self_rels:
+                for other_rel in fk_rels:
+                    if other_rel is self_rel:
+                        continue
+                    other_dataset = other_rel.get("target_dataset")
+                    if not other_dataset or other_dataset == dataset_name:
+                        continue
+
+                    key = (candidate, dataset_name, other_dataset)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    other_summary = self.get_dataset_summary(other_dataset)
+
+                    relationships.append(
+                        JoinRelationship(
+                            join_dataset=candidate,
+                            join_dataset_schema=schema,
+                            self_column=self_rel.get("source_column"),
+                            self_property_uri=(
+                                self_rel.get("source_property_uri")
+                                or self_rel.get("source_canonical_property")
+                            ),
+                            other_dataset=other_dataset,
+                            other_column=other_rel.get("source_column"),
+                            other_property_uri=(
+                                other_rel.get("source_property_uri")
+                                or other_rel.get("source_canonical_property")
+                            ),
+                            other_display_label=other_summary.display_label,
+                        )
+                    )
+
+        return relationships
+
     def get_field_metadata(self, dataset_name: str) -> Dict[str, Dict[str, Any]]:
         schema = self.get_dataset_schema(dataset_name)
+        fk_lookup = self._build_fk_lookup(schema)
         field_meta: Dict[str, Dict[str, Any]] = {}
         for column_name, column_meta in schema.get("column_metadata", {}).items():
             property_resource = schema["properties"].get(column_name)
-            field_meta[column_name] = {
+            meta = {
                 **column_meta,
                 "property_uri": getattr(property_resource, "uri", None),
                 "property_label": getattr(property_resource, "name", column_name),
             }
+            if column_name in fk_lookup:
+                meta["fk_relationship"] = fk_lookup[column_name]
+            field_meta[column_name] = meta
         return field_meta
 
     # ------------------------------------------------------------------ #
@@ -525,6 +631,110 @@ class SchemaWorkspaceService:
                 normalized.append(item_str)
                 seen.add(item_str)
         return normalized
+
+    # ------------------------------------------------------------------ #
+    # Join dataset helpers
+    # ------------------------------------------------------------------ #
+
+    def _get_property_resource(self, property_uri: Optional[str]) -> Optional[PropertyResource]:
+        if not property_uri:
+            return None
+        resource = Resource.objects.filter(uri=property_uri).first()
+        if resource is None:
+            name = property_uri.rsplit("/", 1)[-1]
+            resource, _ = Resource.objects.get_or_create(
+                uri=property_uri,
+                defaults={
+                    "resource_type": ResourceType.PROPERTY,
+                    "name": name,
+                    "organization": self.organization,
+                },
+            )
+        return PropertyResource(resource)
+
+    def _get_join_entity_map(
+        self,
+        relationship: JoinRelationship,
+        entity_uri: str,
+    ) -> Dict[str, str]:
+        entity_resource = Resource.objects.filter(uri=entity_uri).first()
+        if entity_resource is None:
+            return {}
+
+        self_property = self._get_property_resource(relationship.self_property_uri)
+        other_property = self._get_property_resource(relationship.other_property_uri)
+        if self_property is None or other_property is None:
+            return {}
+
+        join_subject_ids = Triple.objects.filter(
+            predicate=self_property._resource,
+            object=entity_resource,
+        ).values_list("subject_id", flat=True)
+
+        if not join_subject_ids:
+            return {}
+
+        join_map: Dict[str, str] = {}
+        for subject_id, other_uri in Triple.objects.filter(
+            subject_id__in=join_subject_ids,
+            predicate=other_property._resource,
+            object__resource_type=ResourceType.ENTITY,
+        ).values_list("subject_id", "object__uri"):
+            join_map[str(subject_id)] = other_uri
+        return join_map
+
+    def _create_join_entity(
+        self,
+        relationship: JoinRelationship,
+        entity_uri: str,
+        related_uri: str,
+    ) -> None:
+        self_resource = Resource.objects.filter(uri=entity_uri).first()
+        if self_resource is None:
+            return
+
+        self_entity = EntityResource(self_resource)
+        other_entity, _ = EntityResource.get_or_create(related_uri)
+
+        join_entity, _ = EntityResource.create_by_organization_and_dataset_name(
+            organization=self.organization,
+            dataset_name=relationship.join_dataset,
+            base_uri=self.base_uri,
+        )
+
+        join_class = relationship.join_dataset_schema.get("entity_type")
+        if join_class is not None:
+            join_entity.set_type(ClassResource(join_class))
+
+        self_property = self._get_property_resource(relationship.self_property_uri)
+        other_property = self._get_property_resource(relationship.other_property_uri)
+        if self_property is None or other_property is None:
+            return
+
+        join_entity.set_property(self_property, self_entity)
+        join_entity.set_property(other_property, other_entity)
+
+    def sync_join_relationship(
+        self,
+        *,
+        entity_uri: str,
+        relationship: JoinRelationship,
+        related_uris: List[str],
+    ) -> None:
+        desired = {uri for uri in related_uris if uri}
+        existing = self._get_join_entity_map(relationship, entity_uri)
+
+        for join_id, uri in existing.items():
+            if uri not in desired:
+                Resource.objects.filter(id=join_id).delete()
+
+        existing_uris = set(existing.values())
+        for uri in desired:
+            if uri not in existing_uris:
+                self._create_join_entity(relationship, entity_uri, uri)
+
+    def get_join_values(self, relationship: JoinRelationship, entity_uri: str) -> List[str]:
+        return list(self._get_join_entity_map(relationship, entity_uri).values())
 
     def _create_fk_relationship(
         self,
