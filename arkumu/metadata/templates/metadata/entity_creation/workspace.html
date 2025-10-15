@@ -45,26 +45,25 @@
                 </form>
               </div>
 
-              <div>
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-3">Datasets</h2>
+              <div class="space-y-3">
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Datasets</h2>
 
-                <div role="tablist" class="tabs tabs-bordered">
-                  <input type="radio" name="category_tabs" role="tab" class="tab text-xs" aria-label="Hauptentitäten" checked />
-                  <div role="tabpanel" class="tab-content pt-3">
+                <div role="tablist" class="tabs tabs-lifted">
+                  <input type="radio" name="category_tabs" role="tab" class="tab" aria-label="Hauptentitäten" checked />
+                  <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4">
                     {% if main_entities %}
-                      <div role="tablist" class="tabs tabs-boxed tabs-xs flex-wrap gap-1">
+                      <div class="flex flex-wrap gap-2">
                         {% for dataset in main_entities %}
                           <button type="button"
-                                  role="tab"
-                                  class="tab {% if dataset.dataset_name == active_dataset_name %}tab-active{% endif %}"
+                                  class="btn btn-sm {% if dataset.dataset_name == active_dataset_name %}btn-primary{% else %}btn-outline{% endif %}"
                                   data-dataset-button
                                   data-dataset-name="{{ dataset.dataset_name }}"
                                   hx-get="{% url 'metadata:entity_workspace_dataset' selected_mapping.id %}?dataset={{ dataset.dataset_name|urlencode }}"
                                   hx-target="#dataset-panel"
                                   hx-swap="innerHTML"
                                   hx-push-url="false">
-                            {{ dataset.display_label }}
-                            <span class="badge badge-xs ml-1">{{ dataset.entity_count }}</span>
+                            <span class="truncate max-w-[150px]">{{ dataset.display_label }}</span>
+                            <div class="badge badge-sm">{{ dataset.entity_count }}</div>
                           </button>
                         {% endfor %}
                       </div>
@@ -76,24 +75,23 @@
                   </div>
 
                   {% if user_can_edit_vocabs and controlled_vocabs %}
-                  <input type="radio" name="category_tabs" role="tab" class="tab text-xs" aria-label="Vokabulare" />
-                  <div role="tabpanel" class="tab-content pt-3">
-                    <div role="tablist" class="tabs tabs-boxed tabs-xs flex-wrap gap-1">
+                  <input type="radio" name="category_tabs" role="tab" class="tab" aria-label="Vokabulare" />
+                  <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4">
+                    <div class="flex flex-wrap gap-2">
                       {% for dataset in controlled_vocabs %}
                         <button type="button"
-                                role="tab"
-                                class="tab {% if dataset.dataset_name == active_dataset_name %}tab-active{% endif %}"
+                                class="btn btn-sm btn-outline {% if dataset.dataset_name == active_dataset_name %}btn-active{% endif %}"
                                 data-dataset-button
                                 data-dataset-name="{{ dataset.dataset_name }}"
                                 hx-get="{% url 'metadata:entity_workspace_dataset' selected_mapping.id %}?dataset={{ dataset.dataset_name|urlencode }}"
                                 hx-target="#dataset-panel"
                                 hx-swap="innerHTML"
                                 hx-push-url="false">
-                          <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
                           </svg>
-                          {{ dataset.display_label }}
-                          <span class="badge badge-xs ml-1">{{ dataset.entity_count }}</span>
+                          <span class="truncate max-w-[120px]">{{ dataset.display_label }}</span>
+                          <div class="badge badge-sm">{{ dataset.entity_count }}</div>
                         </button>
                       {% endfor %}
                     </div>
