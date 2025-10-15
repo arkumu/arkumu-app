@@ -621,7 +621,24 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
             mapping=selected_mapping,
             organization=organization,
         )
-        dataset_summaries = service.list_datasets()
+        all_dataset_summaries = service.list_datasets()
+
+        # Filter controlled vocabularies for non-admin users
+        user_can_edit_vocabs = request.user.is_staff or (
+            hasattr(request.user, 'has_role') and request.user.has_role('curator')
+        )
+        if not user_can_edit_vocabs:
+            dataset_summaries = [
+                ds for ds in all_dataset_summaries
+                if not ds.is_controlled_vocab
+            ]
+        else:
+            dataset_summaries = all_dataset_summaries
+
+        # Separate main entities and controlled vocabularies for template
+        main_entities = [ds for ds in dataset_summaries if not ds.is_controlled_vocab]
+        controlled_vocabs = [ds for ds in dataset_summaries if ds.is_controlled_vocab]
+
         dataset_panel_html = ""
         active_dataset = request.GET.get("dataset")
 
@@ -673,6 +690,9 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
                 "mappings": mappings,
                 "selected_mapping": selected_mapping,
                 "dataset_summaries": dataset_summaries,
+                "main_entities": main_entities,
+                "controlled_vocabs": controlled_vocabs,
+                "user_can_edit_vocabs": user_can_edit_vocabs,
                 "dataset_panel_html": dataset_panel_html,
                 "active_dataset_name": active_dataset_name,
                 "guided_panel_html": guided_panel_html,

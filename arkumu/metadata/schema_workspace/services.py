@@ -41,6 +41,8 @@ class DatasetSummary:
     anchor_columns: List[str]
     property_count: int
     relationship_count: int
+    is_controlled_vocab: bool = False
+    entity_count: int = 0
 
 
 class SchemaWorkspaceService:
@@ -68,6 +70,21 @@ class SchemaWorkspaceService:
     # ------------------------------------------------------------------ #
     # Blueprint inspection helpers
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def _is_controlled_vocabulary(dataset_name: str, schema: Dict[str, Any]) -> bool:
+        """
+        Detect controlled vocabularies by name patterns.
+
+        Controlled vocabularies are reference data used for dropdowns and validation,
+        typically containing types, categories, and other classification data.
+        """
+        vocab_patterns = [
+            'typ', 'art', 'kategorie', 'rolle', 'schlagwort',
+            'sprache', 'ort', 'einheit', 'lizenz'
+        ]
+        dataset_lower = dataset_name.lower()
+        return any(pattern in dataset_lower for pattern in vocab_patterns)
+
     def list_datasets(self) -> List[DatasetSummary]:
         summaries: List[DatasetSummary] = []
         for dataset_name in self._schema_service.list_datasets():
@@ -83,6 +100,21 @@ class SchemaWorkspaceService:
             anchor_columns = [
                 anchor["column_name"] for anchor in schema.get("anchor_columns", [])
             ]
+
+            # Categorize as controlled vocabulary or main entity
+            is_controlled_vocab = self._is_controlled_vocabulary(dataset_name, schema)
+
+            # Count entities for this dataset (via dataset_resource isPartOf relationship)
+            entity_count = 0
+            dataset_resource = schema.get("dataset_resource")
+            if dataset_resource:
+                # Count entities that belong to this dataset
+                is_part_of_uri = self._processor._generate_property_uri("isPartOf")
+                entity_count = Triple.objects.filter(
+                    predicate__uri=is_part_of_uri,
+                    object=dataset_resource
+                ).count()
+
             summaries.append(
                 DatasetSummary(
                     dataset_name=dataset_name,
@@ -90,11 +122,13 @@ class SchemaWorkspaceService:
                     anchor_columns=anchor_columns,
                     property_count=len(schema.get("properties", {})),
                     relationship_count=len(schema.get("fk_relationships", [])),
+                    is_controlled_vocab=is_controlled_vocab,
+                    entity_count=entity_count,
                 )
             )
 
-        # Order alphabetically by display label for predictable UI
-        return sorted(summaries, key=lambda item: item.display_label.lower())
+        # Sort by category (main entities first) then by display label
+        return sorted(summaries, key=lambda item: (item.is_controlled_vocab, item.display_label.lower()))
 
     def get_dataset_schema(self, dataset_name: str) -> Dict[str, Any]:
         schema = self._schema_service.get_dataset_schema(dataset_name)
@@ -109,12 +143,28 @@ class SchemaWorkspaceService:
         anchor_columns = [
             anchor["column_name"] for anchor in schema.get("anchor_columns", [])
         ]
+
+        # Categorize as controlled vocabulary or main entity
+        is_controlled_vocab = self._is_controlled_vocabulary(dataset_name, schema)
+
+        # Count entities for this dataset
+        entity_count = 0
+        dataset_resource = schema.get("dataset_resource")
+        if dataset_resource:
+            is_part_of_uri = self._processor._generate_property_uri("isPartOf")
+            entity_count = Triple.objects.filter(
+                predicate__uri=is_part_of_uri,
+                object=dataset_resource
+            ).count()
+
         return DatasetSummary(
             dataset_name=dataset_name,
             display_label=display_label,
             anchor_columns=anchor_columns,
             property_count=len(schema.get("properties", {})),
             relationship_count=len(schema.get("fk_relationships", [])),
+            is_controlled_vocab=is_controlled_vocab,
+            entity_count=entity_count,
         )
 
     def get_field_metadata(self, dataset_name: str) -> Dict[str, Dict[str, Any]]:
