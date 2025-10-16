@@ -95,6 +95,48 @@ METS_NSMAP = {
 _DIGITAL_OBJECT_ORG_DEFAULT = ("fuk", "det", "rsh")
 _DIGITAL_OBJECT_URI_REGEX = r'/entities/digitales-objekt/[0-9]+$'
 
+_ARKUMU_LICENSE_LABELS: Dict[str, str] = {
+    "1": "Lizenz arkumu-A 1.0",
+    "2": "Lizenz arkumu-A+B 1.0",
+}
+_ARKUMU_LICENSE_TEXTS: Dict[str, str] = {
+    "1": (
+        "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich unbeschränkte Recht, "
+        "das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit zu vervielfältigen (§16 UrhG), zu "
+        "speichern und gegebenenfalls in langzeitstabile Dateiformate zu überführen. Dies umfasst auch das Recht, ein "
+        "Werk erstmalig zu digitalisieren oder eine digitale Dokumentation des Werkes zu erstellen. Sofern für Zwecke "
+        "der Langzeitverfügbarkeit eine Umwandlung bestehender Dateiformate in andere Dateiformate erforderlich ist und "
+        "diese Umwandlung eine Bearbeitung darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen "
+        "Bearbeitungsrechte eingeräumt.\n\n"
+        "(Lizenz arkumu-A 1.0)"
+    ),
+    "2": (
+        "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich unbeschränkte Recht, "
+        "das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit zu vervielfältigen (§16 UrhG), zu "
+        "speichern und gegebenenfalls in langzeitstabile Dateiformate zu überführen. Dies umfasst auch das Recht, ein "
+        "Werk erstmalig zu digitalisieren oder eine digitale Dokumentation des Werkes zu erstellen. Sofern für Zwecke "
+        "der Langzeitverfügbarkeit eine Umwandlung bestehender Dateiformate in andere Dateiformate erforderlich ist und "
+        "diese Umwandlung eine Bearbeitung darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen "
+        "Bearbeitungsrechte eingeräumt.\n\n"
+        "Zusätzlich räumt der/die Lizenzgeber:in der Hochschule an dem Werk oder \"Projekt\" das einfache "
+        "(nicht-exklusive) zeitlich, räumlich und inhaltlich unbeschränkte Recht ein, das Werk oder \"Projekt\" zu nicht "
+        "kommerziellen Zwecken öffentlich zugänglich zu machen (§19a UrhG), d.h. das Werk oder \"Projekt\" der "
+        "Öffentlichkeit in einer Weise zugänglich zu machen, dass es Mitgliedern der Öffentlichkeit drahtgebunden und/oder "
+        "drahtlos von Orten und Zeiten ihrer Wahl zugänglich ist, über weltweite und/oder räumlich begrenzte, offene und/"
+        "oder geschlossene Netzwerke unabhängig von der Art der Übertragungstechnik (analoge, digitale und/oder sonstige "
+        "Übertragungstechnik), unabhängig von der Art des Endgeräts (PC, Laptops/Notebooks, Tablet PCs, Smartphones, TV "
+        "etc.) und ohne intendierte dauerhafte Speicherung auf dem Endgerät. Diese Nutzungsrechtseinräumung bezieht sich "
+        "auch auf derzeit noch nicht bekannte Nutzungsarten.\n\n"
+        "Sofern für Zwecke der öffentlichen Zugänglichmachung eine Umwandlung bestehender Dateiformate in andere "
+        "Dateiformate erforderlich ist und diese Umwandlung eine Bearbeitung darstellen sollte, räumt der/die "
+        "Lizenzgeber:in der Hochschule für diese Zwecke die dafür erforderlichen Bearbeitungsrechte ein.\n\n"
+        "Die Hochschule ist berechtigt, dieses Nutzungsrecht auch im Rahmen des Projekts arkumu.nrw zu nutzen und den "
+        "beteiligten Projektpartnern (andere Kunst- und Musikhochschulen, technische Partner wie z.B. Rechenzentren) für "
+        "die Zwecke von arkumu.nrw entsprechende einfache Nutzungsrechte einzuräumen."
+    ),
+}
+_KHM_HMT_LICENSE_ORGS: set[str] = {"khm", "hmt"}
+
 
 def _digital_object_orgs() -> set[str]:
     configured = getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", _DIGITAL_OBJECT_ORG_DEFAULT)
@@ -103,6 +145,80 @@ def _digital_object_orgs() -> set[str]:
         for code in configured
         if code
     }
+
+
+def _normalized_org_code(
+    resource: Resource,
+    project: Optional[OAIProject] = None,
+) -> Optional[str]:
+    candidates: List[Optional[str]] = []
+    org = getattr(resource, "organization", None)
+    candidates.append(getattr(org, "code", None))
+    if project is not None:
+        candidates.append(getattr(project, "institution_code", None))
+        institution = getattr(project.record, "institution", None) if getattr(project, "record", None) else None
+        candidates.append(getattr(institution, "code", None))
+    for candidate in candidates:
+        if not candidate:
+            continue
+        normalized = str(candidate).strip().lower()
+        if normalized:
+            return normalized
+    return None
+
+
+def _should_apply_khm_hmt_license_rights(resource: Resource, project: Optional[OAIProject] = None) -> bool:
+    code = _normalized_org_code(resource, project)
+    return code in _KHM_HMT_LICENSE_ORGS
+
+
+def _extract_license_token(value: Optional[Any]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered in _ARKUMU_LICENSE_LABELS:
+        return lowered
+
+    parsed = urlparse(text)
+    path_segment = parsed.path.rstrip('/').split('/')[-1] if parsed.path else ""
+    for candidate in (path_segment, text):
+        candidate_normalized = str(candidate).strip().lower()
+        if candidate_normalized in _ARKUMU_LICENSE_LABELS:
+            return candidate_normalized
+
+    normalized = lowered.replace('_', '-').replace('%2b', '+')
+    if "arkumu-a+b" in normalized:
+        return "2"
+    if "arkumu-a" in normalized and "arkumu-a+b" not in normalized:
+        return "1"
+
+    if any(keyword in normalized for keyword in ("lizenz", "license", "arkumu", "digitales-objekt-lizenz")):
+        match = re.search(r'([12])(?:\.0)?(?:[^0-9]|$)', normalized)
+        if match:
+            token = match.group(1)
+            if token in _ARKUMU_LICENSE_LABELS:
+                return token
+    return None
+
+
+def _license_status_token(license_info: Optional[Any]) -> Optional[str]:
+    if not license_info:
+        return None
+    candidates = [
+        getattr(license_info, "identifier", None),
+        getattr(license_info, "uri", None),
+        getattr(license_info, "label_de", None),
+        getattr(license_info, "label_en", None),
+        getattr(license_info, "rights_statement", None),
+    ]
+    for candidate in candidates:
+        token = _extract_license_token(candidate)
+        if token:
+            return token
+    return None
 
 
 def _metadata_element_is_valid(
@@ -1381,30 +1497,62 @@ def _build_dc_payload_from_project(
         if language:
             _add_dc_value(payload, 'language', language)
 
-    license_rights: set[str] = set()
+    xml_lang_attr = ET.QName(XML_NS, "lang")
+    apply_khm_licensing = _should_apply_khm_hmt_license_rights(resource, project)
+    arkumu_tokens: set[str] = set()
+    fallback_rights: set[str] = set()
+
     for obj in project.digital_objects:
         license_info = getattr(obj, "license", None)
-        if license_info and getattr(license_info, "rights_statement", None):
-            normalized = str(license_info.rights_statement).strip()
-            if normalized:
-                license_rights.add(normalized)
-    for rights_value in sorted(license_rights):
+        if not license_info:
+            continue
+        token = _license_status_token(license_info)
+        if token and token in _ARKUMU_LICENSE_LABELS:
+            arkumu_tokens.add(token)
+            continue
+
+        candidates = [
+            getattr(license_info, "rights_statement", None),
+            getattr(license_info, "label_de", None),
+            getattr(license_info, "label_en", None),
+        ]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            normalized = str(candidate).strip()
+            if not normalized:
+                continue
+            if apply_khm_licensing and normalized in {"1", "2"}:
+                continue
+            fallback_rights.add(normalized)
+
+    canonical_values: set[str] = set()
+    for token in sorted(arkumu_tokens):
+        label = _ARKUMU_LICENSE_LABELS[token]
+        text = _ARKUMU_LICENSE_TEXTS[token]
+        _add_dc_value(payload, 'rights', label, attrs={xml_lang_attr: "ger"})
+        _add_dc_value(payload, 'rights', text, attrs={xml_lang_attr: "ger"})
+        canonical_values.update({label, text})
+
+    fallback_rights.difference_update(canonical_values)
+    for rights_value in sorted(fallback_rights):
         _add_dc_value(payload, 'rights', rights_value)
 
-    if not rights_meta:
-        rights_meta = _default_rights_metadata(resource, record)
+    if not arkumu_tokens:
+        if not rights_meta:
+            rights_meta = _default_rights_metadata(resource, record)
 
-    if rights_meta:
-        _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
-        _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
-        for text in rights_meta.get("disclaimers_de", []):
-            _add_dc_value(payload, 'rights', text)
-        for text in rights_meta.get("disclaimers_en", []):
-            _add_dc_value(payload, 'rights', text)
-    elif not payload.get('dc:rights'):
-        rights = _rights_label_for_resource(resource)
-        if rights:
-            _add_dc_value(payload, 'rights', rights)
+        if rights_meta:
+            _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
+            _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
+            for text in rights_meta.get("disclaimers_de", []):
+                _add_dc_value(payload, 'rights', text)
+            for text in rights_meta.get("disclaimers_en", []):
+                _add_dc_value(payload, 'rights', text)
+        elif not payload.get('dc:rights'):
+            rights = _rights_label_for_resource(resource)
+            if rights:
+                _add_dc_value(payload, 'rights', rights)
 
     return payload
 
@@ -1639,6 +1787,8 @@ def _build_mets_from_project(
     _register_rosetta_namespaces()
 
     record = project.record
+    normalized_org_code = _normalized_org_code(resource, project)
+    apply_khm_licensing = normalized_org_code in _KHM_HMT_LICENSE_ORGS
 
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
@@ -1896,6 +2046,13 @@ def _build_mets_from_project(
                     )
 
             license_info = getattr(obj, "license", None)
+            license_uri: Optional[str] = None
+            license_identifier: Optional[str] = None
+            license_rights_statement: Optional[str] = None
+            license_label_de: Optional[str] = None
+            license_label_en: Optional[str] = None
+            license_token: Optional[str] = None
+
             if license_info:
                 def _normalize_license_value(value: Optional[Any]) -> Optional[str]:
                     if value is None:
@@ -1908,13 +2065,13 @@ def _build_mets_from_project(
                 license_rights_statement = _normalize_license_value(getattr(license_info, "rights_statement", None))
                 license_label_de = _normalize_license_value(getattr(license_info, "label_de", None))
                 license_label_en = _normalize_license_value(getattr(license_info, "label_en", None))
+                license_token = _license_status_token(license_info)
 
                 granted_statement_value = license_rights_statement or license_label_de or license_label_en
-                requires_rights_md = any([
-                    license_uri,
-                    license_identifier,
-                    granted_statement_value,
-                ])
+                requires_rights_md = (
+                    not apply_khm_licensing
+                    and any([license_uri, license_identifier, granted_statement_value])
+                )
 
                 if requires_rights_md:
                     file_rights = ET.SubElement(
@@ -2013,20 +2170,54 @@ def _build_mets_from_project(
                 sig_en_elem.text = obj.significant_properties_en
                 sig_en_elem.set(ET.QName(XML_NS, "type"), "significant-properties-english")
 
-            if license_info and license_info.label_de:
-                lic_de_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                lic_de_elem.text = license_info.label_de
-                lic_de_elem.set(ET.QName(XML_NS, "lang"), "ger")
+            if license_info:
+                xml_lang_attr = ET.QName(XML_NS, "lang")
+                rights_signatures: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
 
-            if license_info and license_info.label_en:
-                lic_en_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                lic_en_elem.text = license_info.label_en
-                lic_en_elem.set(ET.QName(XML_NS, "lang"), "eng")
+                def _append_rights_value(
+                    value: Optional[str],
+                    attrs: Optional[Dict[ET.QName, str]] = None,
+                ) -> None:
+                    if value is None:
+                        return
+                    normalized = str(value).strip()
+                    if not normalized:
+                        return
+                    signature_attrs = tuple(sorted((str(key), val) for key, val in (attrs or {}).items()))
+                    signature = (normalized, signature_attrs)
+                    if signature in rights_signatures:
+                        return
+                    elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "rights"))
+                    elem.text = normalized
+                    for key, val in (attrs or {}).items():
+                        elem.set(key, val)
+                    rights_signatures.add(signature)
 
-            if license_info and license_info.uri:
-                lic_uri_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                lic_uri_elem.text = license_info.uri
-                lic_uri_elem.set(ET.QName(XML_NS, "type"), "dcterms:URI")
+                canonical_attrs = {xml_lang_attr: "ger"}
+                has_canonical_mapping = bool(license_token and license_token in _ARKUMU_LICENSE_LABELS)
+                if has_canonical_mapping:
+                    _append_rights_value(_ARKUMU_LICENSE_LABELS[license_token], canonical_attrs)
+                    _append_rights_value(_ARKUMU_LICENSE_TEXTS[license_token], canonical_attrs)
+
+                include_additional_rights = not apply_khm_licensing or not has_canonical_mapping
+                if include_additional_rights:
+                    _append_rights_value(license_label_de, {xml_lang_attr: "ger"} if license_label_de else None)
+                    _append_rights_value(license_label_en, {xml_lang_attr: "eng"} if license_label_en else None)
+                    _append_rights_value(license_rights_statement)
+
+                if not apply_khm_licensing:
+                    if license_label_de:
+                        lic_de_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
+                        lic_de_elem.text = license_label_de
+                        lic_de_elem.set(xml_lang_attr, "ger")
+                    if license_label_en:
+                        lic_en_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
+                        lic_en_elem.text = license_label_en
+                        lic_en_elem.set(xml_lang_attr, "eng")
+                    if license_uri:
+                        lic_uri_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
+                        lic_uri_elem.text = license_uri
+                        lic_uri_elem.set(ET.QName(XML_NS, "type"), "dcterms:URI")
 
             raw_path = (
                 obj.rosetta_path

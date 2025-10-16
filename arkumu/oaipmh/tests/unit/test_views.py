@@ -942,17 +942,42 @@ class TestOAIViewFunctions:
         resource.save(update_fields=["organization"])
 
         record = self._build_snapshot_record(resource, include_files=True, rights_status=None)
+        license_tokens = ["1", "2"]
+        for digital_object, identifier in zip(record.digital_objects, license_tokens):
+            digital_object.license = ProjectDigitalObjectLicense(
+                uri=f"http://arkumu.org/data/literals/license-{identifier}",
+                identifier=identifier,
+                label_de=identifier,
+            )
         record.rights_status = None
 
         payload = views._build_dc_payload_from_record(record, resource)
-        rights_values = self._flatten_dc_entries(payload.get("dc:rights", []))
+        rights_entries = payload.get("dc:rights", [])
+        assert len(rights_entries) == 4
 
-        assert self.primary_rights_statement in rights_values
-        assert self.secondary_rights_statement in rights_values
-        assert "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt" in rights_values
-        assert views._RIGHTS_STATUS_PROTECTED_EN in rights_values
-        assert views._RIGHTS_DISCLAIMER_PROTECTED_DE in rights_values
-        assert views._RIGHTS_DISCLAIMER_PROTECTED_EN in rights_values
+        expected_sequence = [
+            (views._ARKUMU_LICENSE_LABELS["1"], "ger"),
+            (views._ARKUMU_LICENSE_TEXTS["1"], "ger"),
+            (views._ARKUMU_LICENSE_LABELS["2"], "ger"),
+            (views._ARKUMU_LICENSE_TEXTS["2"], "ger"),
+        ]
+        for entry, (expected_value, expected_lang) in zip(rights_entries, expected_sequence):
+            assert isinstance(entry, dict)
+            assert entry["value"] == expected_value
+            attrs = entry.get("attrs") or {}
+            assert attrs.get(ET.QName(XML_NS, "lang")) == expected_lang
+
+        rights_values = self._flatten_dc_entries(rights_entries)
+        for identifier in license_tokens:
+            assert views._ARKUMU_LICENSE_LABELS[identifier] in rights_values
+            assert views._ARKUMU_LICENSE_TEXTS[identifier] in rights_values
+
+        assert self.primary_rights_statement not in rights_values
+        assert self.secondary_rights_statement not in rights_values
+        assert views._RIGHTS_STATUS_PROTECTED_EN not in rights_values
+        assert views._RIGHTS_DISCLAIMER_PROTECTED_DE not in rights_values
+        assert views._RIGHTS_DISCLAIMER_PROTECTED_EN not in rights_values
+        assert "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt" not in rights_values
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
@@ -1125,8 +1150,40 @@ class TestOAIViewFunctions:
     def test_mets_file_sections_include_license_metadata(self, mock_get_record, sample_resources):
         """File-level AMD sections include object characteristics, rights, and DC licence metadata."""
         resource = sample_resources[0]
+        fuk_org = Organization.objects.create(
+            name="Folkwang Universität der Künste",
+            code="fuk",
+            domain="fuk.example",
+            is_active=True,
+        )
+        resource.organization = fuk_org
+        resource.save(update_fields=["organization"])
         self._ensure_event_storage(resource)
         record = self._build_snapshot_record(resource, include_files=True)
+        license_payloads = [
+            (
+                "1",
+                "https://docs.arkumu.nrw/resolver/arkumu-a-1.0",
+                "arkumu-A 1.0 – Langzeitverfügbarkeit",
+                "arkumu-A 1.0 – Long-term Availability",
+                "Rights Statements Urheberrechtsschutz",
+            ),
+            (
+                "2",
+                "https://docs.arkumu.nrw/resolver/arkumu-a+b-1.0",
+                "arkumu-A+B 1.0 – Langzeitverfügbarkeit und öffentliche Zugänglichmachung",
+                "arkumu-A+B 1.0 – Long-term Availability and Public Accessibility",
+                "Rights Statements Urheberrechtsschutz",
+            ),
+        ]
+        for digital_object, (identifier, uri, label_de, label_en, rights_statement) in zip(record.digital_objects, license_payloads):
+            digital_object.license = ProjectDigitalObjectLicense(
+                uri=uri,
+                identifier=identifier,
+                label_de=label_de,
+                label_en=label_en,
+                rights_statement=rights_statement,
+            )
         mock_get_record.return_value = record
 
         metadata = views._build_metadata_element(resource, "mets")
@@ -1215,6 +1272,82 @@ class TestOAIViewFunctions:
             assert digital_obj.license.label_de in license_values
             assert digital_obj.license.label_en in license_values
             assert digital_obj.license.uri in license_values
+
+            rights_elements = source_record.findall(f"./{{{DC_NS}}}rights")
+            rights_values = {elem.text for elem in rights_elements}
+            assert digital_obj.license.label_de in rights_values
+            assert digital_obj.license.label_en in rights_values
+            assert digital_obj.license.rights_statement in rights_values
+            identifier = digital_obj.license.identifier
+            if identifier in views._ARKUMU_LICENSE_LABELS:
+                assert views._ARKUMU_LICENSE_LABELS[identifier] in rights_values
+                assert views._ARKUMU_LICENSE_TEXTS[identifier] in rights_values
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_mets_file_sections_khm_apply_canonical_rights(self, mock_get_record, sample_resources):
+        """KHM/HMT digital objects expose canonical rights as dc:rights with no per-file rightsMD or dcterms:license."""
+        resource = sample_resources[0]
+        khm_org = Organization.objects.create(
+            name="Kunsthochschule für Medien Köln",
+            code="khm",
+            domain="khm.example",
+            is_active=True,
+        )
+        resource.organization = khm_org
+        resource.save(update_fields=["organization"])
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        license_payloads = [
+            ("1", "http://arkumu.org/data/literals/license-1"),
+            ("2", "http://arkumu.org/data/literals/license-2"),
+        ]
+        for digital_object, (identifier, uri) in zip(record.digital_objects, license_payloads):
+            digital_object.license = ProjectDigitalObjectLicense(
+                uri=uri,
+                identifier=identifier,
+                label_de=identifier,
+            )
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        file_elements = mets_root.findall(f".//{{{METS_NS}}}file")
+        normalized_project = views.project_builder.from_project_record(record)
+        harvestable_objects = [
+            obj for obj in normalized_project.digital_objects
+            if obj.harvestable and obj.preferred_location
+        ]
+        expected_objects: list = []
+        for _rep_type, rep_objects in views._group_digital_objects_for_rosetta(list(harvestable_objects)):
+            expected_objects.extend(rep_objects)
+        assert len(file_elements) == len(expected_objects)
+
+        for file_elem, digital_obj in zip(file_elements, expected_objects):
+            adm_id = file_elem.get("ADMID")
+            assert adm_id
+            amd_sec = mets_root.find(f".//{{{METS_NS}}}amdSec[@ID='{adm_id}']")
+            assert amd_sec is not None
+            assert amd_sec.find(f"./{{{METS_NS}}}rightsMD") is None
+
+            source_record = amd_sec.find(f".//{{{DC_NS}}}record")
+            assert source_record is not None
+
+            license_nodes = source_record.findall(f"./{{{DCTERMS_NS}}}license")
+            assert not license_nodes
+
+            rights_elements = source_record.findall(f"./{{{DC_NS}}}rights")
+            assert len(rights_elements) == 2
+            rights_values = [elem.text for elem in rights_elements]
+            identifier = digital_obj.license.identifier
+            assert identifier in views._ARKUMU_LICENSE_LABELS
+            assert sorted(rights_values) == sorted([
+                views._ARKUMU_LICENSE_LABELS[identifier],
+                views._ARKUMU_LICENSE_TEXTS[identifier],
+            ])
+            for elem in rights_elements:
+                assert elem.get(f"{{{XML_NS}}}lang") == "ger"
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_ie_admin_metadata_contains_characteristics_and_rights(self, mock_get_record, sample_resources):
