@@ -1,0 +1,60 @@
+{% load i18n %}
+<div class="space-y-6">
+  <div>
+    <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">{% trans "Ereignisse" %}</h3>
+    {% if events %}
+      <div class="space-y-4 mt-3">
+        {% for event in events %}
+          <div class="rounded-lg border border-base-300 bg-base-100 p-3 shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="font-medium">{{ event.title|default:event.uri }}</div>
+              {% if event.start or event.end %}
+                <div class="text-xs text-base-content/60">
+                  {{ event.start|default:"–" }}{% if event.end %} &ndash; {{ event.end }}{% endif %}
+                </div>
+              {% endif %}
+            </div>
+            {% if event.actors %}
+              <div class="mt-2">
+                <span class="text-xs uppercase text-base-content/60">{% trans "Akteure" %}</span>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  {% for actor in event.actors %}
+                    <span class="badge badge-outline text-xs">{{ actor.label }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+            {% if event.digital_objects %}
+              <div class="mt-2">
+                <span class="text-xs uppercase text-base-content/60">{% trans "Digitale Objekte" %}</span>
+                <div class="mt-1 flex flex-col gap-1 text-xs">
+                  {% for obj in event.digital_objects %}
+                    <span class="text-base-content/80">{{ obj.label|default:obj.uri }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-3 text-sm text-base-content/60">{% trans "Keine Ereignisse vorhanden." %}</p>
+    {% endif %}
+  </div>
+
+  <div>
+    <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">{% trans "Digitale Objekte" %}</h3>
+    {% if digital_objects %}
+      <ul class="mt-3 space-y-2 text-sm">
+        {% for obj in digital_objects %}
+          <li class="flex items-center justify-between gap-2">
+            <span class="break-words">{{ obj.label|default:obj.uri }}</span>
+            {% if obj.uri %}<a href="{{ obj.uri }}" class="link link-primary" target="_blank" rel="noopener">{% trans "Öffnen" %}</a>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="mt-3 text-sm text-base-content/60">{% trans "Keine digitalen Objekte verknüpft." %}</p>
+    {% endif %}
+  </div>
+</div>

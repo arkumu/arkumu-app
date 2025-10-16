@@ -1,0 +1,73 @@
+{% load i18n %}
+<tbody id="project-table-body">
+  {% if projects %}
+    {% for project in projects %}
+      {% include "metadata/projects/partials/row.html" %}
+    {% endfor %}
+  {% else %}
+    <tr>
+      <td colspan="8" class="p-6 text-center text-base-content/70">
+        {% trans "Keine Projekte passend zu den aktuellen Filtern gefunden." %}
+      </td>
+    </tr>
+  {% endif %}
+</tbody>
+
+<div id="project-pagination" hx-swap-oob="true" class="flex flex-wrap items-center justify-between gap-3 mt-4">
+  <div>
+    {% if page_obj.has_previous %}
+      <button
+        type="button"
+        class="btn btn-sm"
+        hx-get="{% url 'metadata:project_overview_table' %}"
+        hx-target="#project-table-body"
+        hx-include="#project-filter-form"
+        hx-vals='{"page": "{{ page_obj.previous_page_number }}"}'
+      >
+        ‹ {% trans "Zurück" %}
+      </button>
+    {% else %}
+      <button class="btn btn-sm btn-disabled" disabled>‹ {% trans "Zurück" %}</button>
+    {% endif %}
+  </div>
+
+  <div class="text-sm text-base-content/70">
+    {% blocktrans with number=page_obj.number pages=paginator.num_pages %}
+      Seite {{ number }} von {{ pages }}
+    {% endblocktrans %}
+  </div>
+
+  <div>
+    {% if page_obj.has_next %}
+      <button
+        type="button"
+        class="btn btn-sm"
+        hx-get="{% url 'metadata:project_overview_table' %}"
+        hx-target="#project-table-body"
+        hx-include="#project-filter-form"
+        hx-vals='{"page": "{{ page_obj.next_page_number }}"}'
+      >
+        {% trans "Weiter" %} ›
+      </button>
+    {% else %}
+      <button class="btn btn-sm btn-disabled" disabled>{% trans "Weiter" %} ›</button>
+    {% endif %}
+  </div>
+</div>
+
+<div id="project-result-meta" hx-swap-oob="true" class="text-sm text-base-content/70">
+  {% blocktrans count total=total_count %}
+    {{ total }} Projekt gefunden
+  {% plural %}
+    {{ total }} Projekte gefunden
+  {% endblocktrans %}
+</div>
+
+<input
+  type="hidden"
+  id="project-filter-page"
+  name="page"
+  value="{{ page_obj.number }}"
+  form="project-filter-form"
+  hx-swap-oob="true"
+>

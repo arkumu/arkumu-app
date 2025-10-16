@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block content %}
+<div id="project-overview-app" class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold">{% trans "Projektübersicht" %}</h1>
+      <p class="text-base-content/70">{% trans "Verwalte interne Projekte und stoße Veröffentlichungen direkt aus dem Workspace an." %}</p>
+    </div>
+    <div id="project-result-meta" class="text-sm text-base-content/70"></div>
+  </div>
+
+  <div id="project-feedback"></div>
+
+  <form
+    id="project-filter-form"
+    class="bg-base-200/70 rounded-lg border border-base-300 p-4 grid gap-4 md:grid-cols-3"
+    hx-get="{% url 'metadata:project_overview_table' %}"
+    hx-target="#project-table-body"
+    hx-trigger="submit, change delay:300ms, keyup changed delay:500ms"
+    hx-swap="innerHTML"
+    hx-on="change: document.getElementById('project-filter-page').value = 1"
+  >
+    <input type="hidden" id="project-filter-page" name="page" value="1">
+    <div class="form-control md:col-span-2">
+      <label class="label" for="project-search">
+        <span class="label-text font-medium">{% trans "Suche" %}</span>
+      </label>
+      <input
+        id="project-search"
+        name="q"
+        type="search"
+        value="{{ filters.search|default_if_none:'' }}"
+        placeholder="{% trans 'Titel, Identifier oder URI' %}"
+        class="input input-bordered"
+      >
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="project-organization">
+        <span class="label-text font-medium">{% trans "Organisation" %}</span>
+      </label>
+      <select id="project-organization" name="organization" class="select select-bordered">
+        {% if show_all_option %}
+          <option value="all" {% if filters.organization_code == 'all' %}selected{% endif %}>{% trans "Alle Organisationen" %}</option>
+        {% endif %}
+        {% for org in organizations %}
+          <option value="{{ org.code }}"
+            {% if filters.organization_code == org.code %}selected{% elif not filters.organization_code and request.user.organization and org.code == request.user.organization.code %}selected{% endif %}>
+            {{ org.name }} ({{ org.code }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="project-status">
+        <span class="label-text font-medium">{% trans "Status" %}</span>
+      </label>
+      <select id="project-status" name="status" class="select select-bordered">
+        <option value="">{% trans "Alle Stati" %}</option>
+        {% for code, label in status_labels.items %}
+          <option value="{{ code }}" {% if code in filters.statuses %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="project-has-events">
+        <span class="label-text font-medium">{% trans "Ereignisse" %}</span>
+      </label>
+      <select id="project-has-events" name="has_events" class="select select-bordered">
+        <option value="">{% trans "Beliebig" %}</option>
+        <option value="true" {% if filters.has_events is True %}selected{% endif %}>{% trans "Mit Ereignissen" %}</option>
+        <option value="false" {% if filters.has_events is False %}selected{% endif %}>{% trans "Ohne Ereignisse" %}</option>
+      </select>
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="project-has-actors">
+        <span class="label-text font-medium">{% trans "Akteure" %}</span>
+      </label>
+      <select id="project-has-actors" name="has_actors" class="select select-bordered">
+        <option value="">{% trans "Beliebig" %}</option>
+        <option value="true" {% if filters.has_actors is True %}selected{% endif %}>{% trans "Mit Akteuren" %}</option>
+        <option value="false" {% if filters.has_actors is False %}selected{% endif %}>{% trans "Ohne Akteure" %}</option>
+      </select>
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="project-has-digital">
+        <span class="label-text font-medium">{% trans "Digitale Objekte" %}</span>
+      </label>
+      <select id="project-has-digital" name="has_digital" class="select select-bordered">
+        <option value="">{% trans "Beliebig" %}</option>
+        <option value="true" {% if filters.has_digital is True %}selected{% endif %}>{% trans "Mit Medien" %}</option>
+        <option value="false" {% if filters.has_digital is False %}selected{% endif %}>{% trans "Ohne Medien" %}</option>
+      </select>
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="project-updated-after">
+        <span class="label-text font-medium">{% trans "Geändert nach" %}</span>
+      </label>
+      <input
+        id="project-updated-after"
+        type="date"
+        name="updated_after"
+        value="{{ filters.updated_after|date:'Y-m-d' }}"
+        class="input input-bordered"
+      >
+    </div>
+
+    <div class="form-control">
+      <label class="label" for="project-page-size">
+        <span class="label-text font-medium">{% trans "Treffer pro Seite" %}</span>
+      </label>
+      <select id="project-page-size" name="page_size" class="select select-bordered">
+        {% for size in page_sizes %}
+          <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-control md:self-end">
+      <button type="submit" class="btn btn-primary w-full">{% trans "Filtern" %}</button>
+    </div>
+  </form>
+
+  <div class="overflow-x-auto border border-base-300 rounded-lg">
+    <table class="table table-zebra w-full">
+      <thead>
+        <tr class="text-xs uppercase text-base-content/70">
+          <th class="w-1/3">{% trans "Projekt" %}</th>
+          <th>{% trans "Organisation" %}</th>
+          <th>{% trans "Status" %}</th>
+          <th>{% trans "Zuletzt bearbeitet" %}</th>
+          <th class="text-center">{% trans "Ereignisse" %}</th>
+          <th class="text-center">{% trans "Akteure" %}</th>
+          <th class="text-center">{% trans "Medien" %}</th>
+          <th class="text-right">{% trans "Aktionen" %}</th>
+        </tr>
+      </thead>
+      <tbody
+        id="project-table-body"
+        hx-get="{% url 'metadata:project_overview_table' %}"
+        hx-trigger="load, project-status-updated from:body"
+        hx-target="this"
+        hx-swap="innerHTML"
+        hx-include="#project-filter-form"
+      >
+        <tr>
+          <td colspan="8" class="p-6 text-center text-base-content/70">{% trans "Projekte werden geladen …" %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="project-pagination" class="flex justify-between items-center text-sm text-base-content/70"></div>
+</div>
+{% endblock %}

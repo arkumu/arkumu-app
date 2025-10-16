@@ -1,0 +1,95 @@
+{% load i18n %}
+{% with status=project.status_code|default:"draft" %}
+<tr id="project-row-{{ project.id }}" data-project-id="{{ project.id }}">
+  <td class="align-top">
+    <div class="flex items-start gap-2">
+      <button
+        type="button"
+        class="btn btn-xs btn-outline"
+        hx-get="{% url 'metadata:project_overview_detail' project.id %}"
+        hx-target="#project-detail-{{ project.id }}"
+        hx-trigger="click"
+        hx-swap="innerHTML"
+        hx-include="#project-filter-form"
+        hx-on="htmx:afterSwap: this.closest('tr').nextElementSibling.querySelector('div').classList.remove('hidden')"
+      >
+        {% trans "Details" %}
+      </button>
+      <div class="space-y-1">
+        <p class="font-medium break-words">
+          {{ project.display_title|default:project.name|default:project.value|default:project.uri }}
+        </p>
+        <p class="text-xs text-base-content/60 break-all">{{ project.uri }}</p>
+      </div>
+    </div>
+  </td>
+  <td class="align-top">
+    {% if project.organization %}
+      <div class="font-medium">{{ project.organization.name }}</div>
+      <div class="text-xs text-base-content/60">{{ project.organization.code }}</div>
+    {% else %}
+      <span class="text-base-content/60">{% trans "Keine Zuordnung" %}</span>
+    {% endif %}
+  </td>
+  <td class="align-top">
+    <span class="badge {{ project.status_css|default:'badge-ghost' }}">
+      {{ project.status_label|default:status|capfirst }}
+    </span>
+  </td>
+  <td class="align-top text-sm">
+    {% if project.updated_at %}
+      {{ project.updated_at|date:"d.m.Y H:i" }}
+    {% else %}
+      –
+    {% endif %}
+  </td>
+  <td class="align-top text-center font-medium">{{ project.events_count|default:0 }}</td>
+  <td class="align-top text-center font-medium">{{ project.actors_count|default:0 }}</td>
+  <td class="align-top text-center font-medium">{{ project.digital_objects_count|default:0 }}</td>
+  <td class="align-top text-right">
+    <div class="flex justify-end gap-2">
+      {% if status == 'published' %}
+        <button
+          type="button"
+          class="btn btn-sm btn-outline btn-error"
+          hx-post="{% url 'metadata:project_overview_unpublish' project.id %}"
+          hx-target="closest tr"
+          hx-swap="outerHTML"
+          hx-include="#project-filter-form"
+          hx-confirm="{% trans 'Projekt aus dem öffentlichen Katalog entfernen?' %}"
+          {% if project.is_externally_linked %}
+            disabled
+            title="{% trans 'Projekt ist extern verknüpft und kann nicht entveröffentlicht werden.' %}"
+          {% endif %}
+        >
+          {% trans "Entveröffentlichen" %}
+        </button>
+      {% else %}
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          hx-post="{% url 'metadata:project_overview_publish' project.id %}"
+          hx-target="closest tr"
+          hx-swap="outerHTML"
+          hx-include="#project-filter-form"
+          hx-confirm="{% trans 'Projekt für die Öffentlichkeit freigeben?' %}"
+          {% if project.is_externally_linked %}
+            disabled
+            title="{% trans 'Projekt ist extern verknüpft und kann nicht veröffentlicht werden.' %}"
+          {% elif not project.is_publishable %}
+            disabled
+            title="{% trans 'Es werden Freigaberechte benötigt.' %}"
+          {% endif %}
+        >
+          {% trans "Veröffentlichen" %}
+        </button>
+      {% endif %}
+    </div>
+  </td>
+</tr>
+<tr class="bg-base-200/40">
+  <td colspan="8">
+    <div id="project-detail-{{ project.id }}" class="hidden space-y-4"></div>
+  </td>
+</tr>
+{% endwith %}
