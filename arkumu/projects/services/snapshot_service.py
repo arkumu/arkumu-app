@@ -42,6 +42,12 @@ from arkumu.projects import (
 )
 from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services.dump_fixity_index import find_fixity, FixityRecord
+from arkumu.common.arkumu_license import (
+    ARKUMU_LICENSE_LABELS,
+    ARKUMU_LICENSE_TEXTS,
+    ARKUMU_LICENSE_URIS,
+    license_token_from_license_info,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1793,13 +1799,24 @@ class ProjectSnapshotService:
         if not any([uri, label_de, label_en, rights_statement, identifier]):
             return None
 
-        return ProjectDigitalObjectLicense(
+        license_info = ProjectDigitalObjectLicense(
             uri=uri,
             label_de=label_de,
             label_en=label_en,
             rights_statement=rights_statement,
             identifier=identifier,
         )
+
+        token = license_token_from_license_info(license_info)
+        if token and token in ARKUMU_LICENSE_LABELS:
+            license_info.identifier = token
+            license_info.label_de = ARKUMU_LICENSE_LABELS[token]
+            license_info.rights_statement = ARKUMU_LICENSE_TEXTS[token]
+            license_info.label_en = None
+            if not license_info.uri:
+                license_info.uri = ARKUMU_LICENSE_URIS.get(token)
+
+        return license_info
 
     @staticmethod
     def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:

@@ -19,6 +19,7 @@ from django.utils import timezone as django_timezone
 
 from arkumu.oaipmh import views
 from arkumu.oaipmh.views import METS_NS, METS_SCHEMA_URL, DNX_NS, XLINK_NS, DC_NS, DCTERMS_NS, XML_NS
+from arkumu.common.arkumu_license import ARKUMU_LICENSE_LABELS, ARKUMU_LICENSE_TEXTS
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
@@ -44,10 +45,10 @@ class TestOAIViewFunctions:
     def setup_method(self):
         """Set up test method."""
         self.factory = RequestFactory()
-        self.primary_license_uri = "http://rights.example/licenses/primary"
-        self.secondary_license_uri = "http://rights.example/licenses/secondary"
-        self.primary_rights_statement = "© 2024 Example Archive – All rights reserved"
-        self.secondary_rights_statement = "CC BY 4.0"
+        self.primary_license_uri = "https://docs.arkumu.nrw/resolver/arkumu-a-1.0"
+        self.secondary_license_uri = "https://docs.arkumu.nrw/resolver/arkumu-a+b-1.0"
+        self.primary_license_identifier = "1"
+        self.secondary_license_identifier = "2"
         self.primary_uuid = "uuid-test-1"
         self.secondary_uuid = "uuid-test-2"
         self.event_actor_name = "Event Specialist"
@@ -139,10 +140,9 @@ class TestOAIViewFunctions:
                     significant_properties_en="Significant properties (EN)",
                     license=ProjectDigitalObjectLicense(
                         uri=self.primary_license_uri,
-                        identifier="license-primary",
-                        label_de="Lizenz Eins",
-                        label_en="License One",
-                        rights_statement=self.primary_rights_statement,
+                        identifier=self.primary_license_identifier,
+                        label_de=ARKUMU_LICENSE_LABELS[self.primary_license_identifier],
+                        rights_statement=ARKUMU_LICENSE_TEXTS[self.primary_license_identifier],
                     ),
                 )
             )
@@ -161,10 +161,9 @@ class TestOAIViewFunctions:
                     significant_properties_en="Additional properties (EN)",
                     license=ProjectDigitalObjectLicense(
                         uri=self.secondary_license_uri,
-                        identifier="license-secondary",
-                        label_de="Lizenz Zwei",
-                        label_en="License Two",
-                        rights_statement=self.secondary_rights_statement,
+                        identifier=self.secondary_license_identifier,
+                        label_de=ARKUMU_LICENSE_LABELS[self.secondary_license_identifier],
+                        rights_statement=ARKUMU_LICENSE_TEXTS[self.secondary_license_identifier],
                     ),
                 )
             )
@@ -862,8 +861,8 @@ class TestOAIViewFunctions:
             for entry in rights_entries if isinstance(entry, dict)
         ]
         assert arkumu_values == [
-            (views._ARKUMU_LICENSE_LABELS["1"], "ger"),
-            (views._ARKUMU_LICENSE_TEXTS["1"], "ger"),
+            (ARKUMU_LICENSE_LABELS["1"], "ger"),
+            (ARKUMU_LICENSE_TEXTS["1"], "ger"),
         ]
         assert "dc:collection" not in payload
         is_part_of_values = self._flatten_dc_entries(payload.get("dcterms:isPartOf", []))
@@ -958,8 +957,8 @@ class TestOAIViewFunctions:
         assert len(rights_entries) == 2
 
         expected_sequence = [
-            (views._ARKUMU_LICENSE_LABELS["1"], "ger"),
-            (views._ARKUMU_LICENSE_TEXTS["1"], "ger"),
+            (ARKUMU_LICENSE_LABELS["1"], "ger"),
+            (ARKUMU_LICENSE_TEXTS["1"], "ger"),
         ]
         for entry, (expected_value, expected_lang) in zip(rights_entries, expected_sequence):
             assert isinstance(entry, dict)
@@ -968,17 +967,10 @@ class TestOAIViewFunctions:
             assert attrs.get(ET.QName(XML_NS, "lang")) == expected_lang
 
         rights_values = self._flatten_dc_entries(rights_entries)
-        assert views._ARKUMU_LICENSE_LABELS["1"] in rights_values
-        assert views._ARKUMU_LICENSE_TEXTS["1"] in rights_values
-        assert views._ARKUMU_LICENSE_LABELS["2"] not in rights_values
-        assert views._ARKUMU_LICENSE_TEXTS["2"] not in rights_values
-
-        assert self.primary_rights_statement not in rights_values
-        assert self.secondary_rights_statement not in rights_values
-        assert views._RIGHTS_STATUS_PROTECTED_EN not in rights_values
-        assert views._RIGHTS_DISCLAIMER_PROTECTED_DE not in rights_values
-        assert views._RIGHTS_DISCLAIMER_PROTECTED_EN not in rights_values
-        assert "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt" not in rights_values
+        assert ARKUMU_LICENSE_LABELS["1"] in rights_values
+        assert ARKUMU_LICENSE_TEXTS["1"] in rights_values
+        assert ARKUMU_LICENSE_LABELS["2"] not in rights_values
+        assert ARKUMU_LICENSE_TEXTS["2"] not in rights_values
 
     @pytest.mark.django_db
     def test_build_dc_payload_includes_arkumu_rights_for_other_orgs(self, sample_resources):
@@ -995,26 +987,15 @@ class TestOAIViewFunctions:
 
         record = self._build_snapshot_record(resource, include_files=True)
         arkumu_payloads = [
-            (
-                "1",
-                "https://docs.arkumu.nrw/resolver/arkumu-a-1.0",
-                "arkumu-A 1.0 – Langzeitverfügbarkeit",
-                "arkumu-A 1.0 – Long-term Availability",
-            ),
-            (
-                "2",
-                "https://docs.arkumu.nrw/resolver/arkumu-a+b-1.0",
-                "arkumu-A+B 1.0 – Langzeitverfügbarkeit und öffentliche Zugänglichmachung",
-                "arkumu-A+B 1.0 – Long-term Availability and Public Accessibility",
-            ),
+            ("1", "https://docs.arkumu.nrw/resolver/arkumu-a-1.0"),
+            ("2", "https://docs.arkumu.nrw/resolver/arkumu-a+b-1.0"),
         ]
-        for digital_object, (identifier, uri, label_de, label_en) in zip(record.digital_objects, arkumu_payloads):
+        for digital_object, (identifier, uri) in zip(record.digital_objects, arkumu_payloads):
             digital_object.license = ProjectDigitalObjectLicense(
                 uri=uri,
                 identifier=identifier,
-                label_de=label_de,
-                label_en=label_en,
-                rights_statement="Rights Statements Urheberrechtsschutz",
+                label_de=ARKUMU_LICENSE_LABELS[identifier],
+                rights_statement=ARKUMU_LICENSE_TEXTS[identifier],
             )
 
         payload = views._build_dc_payload_from_record(record, resource)
@@ -1030,19 +1011,18 @@ class TestOAIViewFunctions:
         ]
 
         expected_pairs = [
-            (views._ARKUMU_LICENSE_LABELS["1"], "ger"),
-            (views._ARKUMU_LICENSE_TEXTS["1"], "ger"),
+            (ARKUMU_LICENSE_LABELS["1"], "ger"),
+            (ARKUMU_LICENSE_TEXTS["1"], "ger"),
         ]
 
         for expected_value, expected_lang in expected_pairs:
             assert (expected_value, expected_lang) in values_with_lang
 
         disallowed_values = {
-            views._ARKUMU_LICENSE_LABELS["2"],
-            views._ARKUMU_LICENSE_TEXTS["2"],
+            ARKUMU_LICENSE_LABELS["2"],
+            ARKUMU_LICENSE_TEXTS["2"],
             "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt",
             "Protected by German Urheberrecht and/oder Leistungsschutzrecht.",
-            "Rights Statements Urheberrechtsschutz",
         }
         assert all(value not in disallowed_values for value, _lang in values_with_lang)
 
@@ -1228,28 +1208,15 @@ class TestOAIViewFunctions:
         self._ensure_event_storage(resource)
         record = self._build_snapshot_record(resource, include_files=True)
         license_payloads = [
-            (
-                "1",
-                "https://docs.arkumu.nrw/resolver/arkumu-a-1.0",
-                "arkumu-A 1.0 – Langzeitverfügbarkeit",
-                "arkumu-A 1.0 – Long-term Availability",
-                "Rights Statements Urheberrechtsschutz",
-            ),
-            (
-                "2",
-                "https://docs.arkumu.nrw/resolver/arkumu-a+b-1.0",
-                "arkumu-A+B 1.0 – Langzeitverfügbarkeit und öffentliche Zugänglichmachung",
-                "arkumu-A+B 1.0 – Long-term Availability and Public Accessibility",
-                "Rights Statements Urheberrechtsschutz",
-            ),
+            ("1", "https://docs.arkumu.nrw/resolver/arkumu-a-1.0"),
+            ("2", "https://docs.arkumu.nrw/resolver/arkumu-a+b-1.0"),
         ]
-        for digital_object, (identifier, uri, label_de, label_en, rights_statement) in zip(record.digital_objects, license_payloads):
+        for digital_object, (identifier, uri) in zip(record.digital_objects, license_payloads):
             digital_object.license = ProjectDigitalObjectLicense(
                 uri=uri,
                 identifier=identifier,
-                label_de=label_de,
-                label_en=label_en,
-                rights_statement=rights_statement,
+                label_de=ARKUMU_LICENSE_LABELS[identifier],
+                rights_statement=ARKUMU_LICENSE_TEXTS[identifier],
             )
         mock_get_record.return_value = record
 
@@ -1279,29 +1246,6 @@ class TestOAIViewFunctions:
             )
             assert object_type_key is not None
             assert object_type_key.text == "FILE"
-
-            rights_value = amd_sec.find(
-                f".//{{{DNX_NS}}}section[@id='linkingRightsStatementIdentifier']//{{{DNX_NS}}}key[@id='linkingRightsStatementIdentifierValue']"
-            )
-            assert rights_value is not None
-            assert rights_value.text == digital_obj.license.uri
-
-            granted_identifier = amd_sec.find(
-                f".//{{{DNX_NS}}}section[@id='grantedRightsStatement']//{{{DNX_NS}}}key[@id='grantedRightsStatementIdentifier']"
-            )
-            assert granted_identifier is not None
-            assert granted_identifier.text == digital_obj.license.identifier
-
-            granted_value = amd_sec.find(
-                f".//{{{DNX_NS}}}section[@id='grantedRightsStatement']//{{{DNX_NS}}}key[@id='grantedRightsStatementValue']"
-            )
-            assert granted_value is not None
-            expected_granted_value = (
-                digital_obj.license.rights_statement
-                or digital_obj.license.label_de
-                or digital_obj.license.label_en
-            )
-            assert granted_value.text == expected_granted_value
 
             source_record = amd_sec.find(f".//{{{DC_NS}}}record")
             assert source_record is not None
@@ -1336,19 +1280,17 @@ class TestOAIViewFunctions:
 
             license_elements = source_record.findall(f"./{{{DCTERMS_NS}}}license")
             license_values = {elem.text for elem in license_elements}
-            assert digital_obj.license.label_de in license_values
-            assert digital_obj.license.label_en in license_values
-            assert digital_obj.license.uri in license_values
+            if digital_obj.license and digital_obj.license.label_de:
+                assert digital_obj.license.label_de in license_values
 
             rights_elements = source_record.findall(f"./{{{DC_NS}}}rights")
-            rights_values = {elem.text for elem in rights_elements}
-            assert digital_obj.license.label_de in rights_values
-            assert digital_obj.license.label_en in rights_values
-            assert digital_obj.license.rights_statement in rights_values
-            identifier = digital_obj.license.identifier
-            if identifier in views._ARKUMU_LICENSE_LABELS:
-                assert views._ARKUMU_LICENSE_LABELS[identifier] in rights_values
-                assert views._ARKUMU_LICENSE_TEXTS[identifier] in rights_values
+            if digital_obj.license:
+                assert len(rights_elements) == 2
+                rights_values = {elem.text for elem in rights_elements}
+                identifier = digital_obj.license.identifier
+                expected_label = ARKUMU_LICENSE_LABELS[identifier]
+                expected_text = ARKUMU_LICENSE_TEXTS[identifier]
+                assert rights_values == {expected_label, expected_text}
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_mets_file_sections_khm_apply_canonical_rights(self, mock_get_record, sample_resources):
@@ -1408,10 +1350,10 @@ class TestOAIViewFunctions:
             assert len(rights_elements) == 2
             rights_values = [elem.text for elem in rights_elements]
             identifier = digital_obj.license.identifier
-            assert identifier in views._ARKUMU_LICENSE_LABELS
+            assert identifier in ARKUMU_LICENSE_LABELS
             assert sorted(rights_values) == sorted([
-                views._ARKUMU_LICENSE_LABELS[identifier],
-                views._ARKUMU_LICENSE_TEXTS[identifier],
+                ARKUMU_LICENSE_LABELS[identifier],
+                ARKUMU_LICENSE_TEXTS[identifier],
             ])
             for elem in rights_elements:
                 assert elem.get(f"{{{XML_NS}}}lang") == "ger"

@@ -61,8 +61,12 @@ def _infer_file_name(obj: ProjectDigitalObject) -> Optional[str]:
         try:
             name = Path(candidate).name
         except ValueError:
-            # Fall back to final URL/path segment when Path parsing fails
-            name = candidate.split("/")[-1]
+            name = candidate
+        if name == candidate:
+            for separator in ("/", "\\"):
+                if separator in candidate:
+                    name = candidate.split(separator)[-1]
+                    break
         name = _clean(name)
         if name:
             return name
@@ -300,8 +304,10 @@ class OAIProjectBuilder:
         storage_key = _clean(getattr(obj, "storage_key", None))
         if original_path:
             original_path = original_path.replace("\\", "/")
+            obj.path = original_path
         if storage_key:
             storage_key = storage_key.replace("\\", "/")
+            obj.storage_key = storage_key
         if not storage_key and original_path:
             storage_key = original_path
         access_url = _clean(getattr(obj, "access_url", None))

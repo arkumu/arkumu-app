@@ -25,7 +25,13 @@ from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.users.models import Organization
-from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, ProjectSnapshot
+from arkumu.projects import (
+    ProjectDigitalObject,
+    ProjectDigitalObjectLicense,
+    ProjectEvent,
+    ProjectRecord,
+    ProjectSnapshot,
+)
 from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.projects.services.s3_key_index import lookup_dump_storage_key
@@ -50,6 +56,12 @@ from arkumu.oaipmh.oai_project import (
     OAIProjectBuilder,
 )
 from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
+from arkumu.common.arkumu_license import (
+    ARKUMU_LICENSE_LABELS,
+    ARKUMU_LICENSE_TEXTS,
+    ARKUMU_LICENSE_URIS,
+    license_token_from_license_info,
+)
 
 
 # Minimal repository config (can be moved to settings)
@@ -95,46 +107,6 @@ METS_NSMAP = {
 _DIGITAL_OBJECT_ORG_DEFAULT = ("fuk", "det", "rsh")
 _DIGITAL_OBJECT_URI_REGEX = r'/entities/digitales-objekt/[0-9]+$'
 
-_ARKUMU_LICENSE_LABELS: Dict[str, str] = {
-    "1": "Lizenz arkumu-A 1.0",
-    "2": "Lizenz arkumu-A+B 1.0",
-}
-_ARKUMU_LICENSE_TEXTS: Dict[str, str] = {
-    "1": (
-        "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich unbeschränkte Recht, "
-        "das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit zu vervielfältigen (§16 UrhG), zu "
-        "speichern und gegebenenfalls in langzeitstabile Dateiformate zu überführen. Dies umfasst auch das Recht, ein "
-        "Werk erstmalig zu digitalisieren oder eine digitale Dokumentation des Werkes zu erstellen. Sofern für Zwecke "
-        "der Langzeitverfügbarkeit eine Umwandlung bestehender Dateiformate in andere Dateiformate erforderlich ist und "
-        "diese Umwandlung eine Bearbeitung darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen "
-        "Bearbeitungsrechte eingeräumt.\n\n"
-        "(Lizenz arkumu-A 1.0)"
-    ),
-    "2": (
-        "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich unbeschränkte Recht, "
-        "das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit zu vervielfältigen (§16 UrhG), zu "
-        "speichern und gegebenenfalls in langzeitstabile Dateiformate zu überführen. Dies umfasst auch das Recht, ein "
-        "Werk erstmalig zu digitalisieren oder eine digitale Dokumentation des Werkes zu erstellen. Sofern für Zwecke "
-        "der Langzeitverfügbarkeit eine Umwandlung bestehender Dateiformate in andere Dateiformate erforderlich ist und "
-        "diese Umwandlung eine Bearbeitung darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen "
-        "Bearbeitungsrechte eingeräumt.\n\n"
-        "Zusätzlich räumt der/die Lizenzgeber:in der Hochschule an dem Werk oder \"Projekt\" das einfache "
-        "(nicht-exklusive) zeitlich, räumlich und inhaltlich unbeschränkte Recht ein, das Werk oder \"Projekt\" zu nicht "
-        "kommerziellen Zwecken öffentlich zugänglich zu machen (§19a UrhG), d.h. das Werk oder \"Projekt\" der "
-        "Öffentlichkeit in einer Weise zugänglich zu machen, dass es Mitgliedern der Öffentlichkeit drahtgebunden und/oder "
-        "drahtlos von Orten und Zeiten ihrer Wahl zugänglich ist, über weltweite und/oder räumlich begrenzte, offene und/"
-        "oder geschlossene Netzwerke unabhängig von der Art der Übertragungstechnik (analoge, digitale und/oder sonstige "
-        "Übertragungstechnik), unabhängig von der Art des Endgeräts (PC, Laptops/Notebooks, Tablet PCs, Smartphones, TV "
-        "etc.) und ohne intendierte dauerhafte Speicherung auf dem Endgerät. Diese Nutzungsrechtseinräumung bezieht sich "
-        "auch auf derzeit noch nicht bekannte Nutzungsarten.\n\n"
-        "Sofern für Zwecke der öffentlichen Zugänglichmachung eine Umwandlung bestehender Dateiformate in andere "
-        "Dateiformate erforderlich ist und diese Umwandlung eine Bearbeitung darstellen sollte, räumt der/die "
-        "Lizenzgeber:in der Hochschule für diese Zwecke die dafür erforderlichen Bearbeitungsrechte ein.\n\n"
-        "Die Hochschule ist berechtigt, dieses Nutzungsrecht auch im Rahmen des Projekts arkumu.nrw zu nutzen und den "
-        "beteiligten Projektpartnern (andere Kunst- und Musikhochschulen, technische Partner wie z.B. Rechenzentren) für "
-        "die Zwecke von arkumu.nrw entsprechende einfache Nutzungsrechte einzuräumen."
-    ),
-}
 _KHM_HMT_LICENSE_ORGS: set[str] = {"khm", "hmt"}
 
 
@@ -172,53 +144,6 @@ def _should_apply_khm_hmt_license_rights(resource: Resource, project: Optional[O
     return code in _KHM_HMT_LICENSE_ORGS
 
 
-def _extract_license_token(value: Optional[Any]) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    lowered = text.lower()
-    if lowered in _ARKUMU_LICENSE_LABELS:
-        return lowered
-
-    parsed = urlparse(text)
-    path_segment = parsed.path.rstrip('/').split('/')[-1] if parsed.path else ""
-    for candidate in (path_segment, text):
-        candidate_normalized = str(candidate).strip().lower()
-        if candidate_normalized in _ARKUMU_LICENSE_LABELS:
-            return candidate_normalized
-
-    normalized = lowered.replace('_', '-').replace('%2b', '+')
-    if "arkumu-a+b" in normalized:
-        return "2"
-    if "arkumu-a" in normalized and "arkumu-a+b" not in normalized:
-        return "1"
-
-    if any(keyword in normalized for keyword in ("lizenz", "license", "arkumu", "digitales-objekt-lizenz")):
-        match = re.search(r'([12])(?:\.0)?(?:[^0-9]|$)', normalized)
-        if match:
-            token = match.group(1)
-            if token in _ARKUMU_LICENSE_LABELS:
-                return token
-    return None
-
-
-def _license_status_token(license_info: Optional[Any]) -> Optional[str]:
-    if not license_info:
-        return None
-    candidates = [
-        getattr(license_info, "identifier", None),
-        getattr(license_info, "uri", None),
-        getattr(license_info, "label_de", None),
-        getattr(license_info, "label_en", None),
-        getattr(license_info, "rights_statement", None),
-    ]
-    for candidate in candidates:
-        token = _extract_license_token(candidate)
-        if token:
-            return token
-    return None
 
 
 def _metadata_element_is_valid(
@@ -1508,8 +1433,8 @@ def _build_dc_payload_from_project(
     def _scan_license(license_obj: Optional[Any]) -> None:
         if not license_obj:
             return
-        token = _license_status_token(license_obj)
-        if token and token in _ARKUMU_LICENSE_LABELS:
+        token = license_token_from_license_info(license_obj)
+        if token and token in ARKUMU_LICENSE_LABELS:
             arkumu_tokens.add(token)
             return
         candidates = [
@@ -1534,15 +1459,15 @@ def _build_dc_payload_from_project(
         for raw_obj in record.digital_objects:
             _scan_license(getattr(raw_obj, "license", None))
 
-    if "1" in _ARKUMU_LICENSE_LABELS:
+    if "1" in ARKUMU_LICENSE_LABELS:
         arkumu_tokens = {"1"}
     else:
         arkumu_tokens.clear()
 
     canonical_values: set[str] = set()
     for token in sorted(arkumu_tokens):
-        label = _ARKUMU_LICENSE_LABELS[token]
-        text = _ARKUMU_LICENSE_TEXTS[token]
+        label = ARKUMU_LICENSE_LABELS[token]
+        text = ARKUMU_LICENSE_TEXTS[token]
         _add_dc_value(payload, 'rights', label, attrs={xml_lang_attr: "ger"}, allow_duplicates=True)
         _add_dc_value(payload, 'rights', text, attrs={xml_lang_attr: "ger"}, allow_duplicates=True)
         canonical_values.update({label, text})
@@ -1904,6 +1829,14 @@ def _build_mets_from_project(
     digiprov_xml = ET.SubElement(digiprov_wrap, ET.QName(METS_NS, "xmlData"))
     _create_dnx_element(digiprov_xml, "dnx")
 
+    project_license_tokens: set[str] = set()
+    for candidate_obj in project.digital_objects:
+        token = license_token_from_license_info(getattr(candidate_obj, "license", None))
+        if token:
+            project_license_tokens.add(token)
+    if not project_license_tokens:
+        project_license_tokens.add("1")
+
     harvestable_objects = [
         obj for obj in project.digital_objects
         if obj.harvestable and obj.preferred_location
@@ -2081,7 +2014,31 @@ def _build_mets_from_project(
                 license_rights_statement = _normalize_license_value(getattr(license_info, "rights_statement", None))
                 license_label_de = _normalize_license_value(getattr(license_info, "label_de", None))
                 license_label_en = _normalize_license_value(getattr(license_info, "label_en", None))
-                license_token = _license_status_token(license_info)
+                license_token = license_token_from_license_info(license_info)
+
+            if not license_info or not license_token:
+                fallback_token = sorted(project_license_tokens)[0]
+                canonical_uri = ARKUMU_LICENSE_URIS.get(fallback_token)
+                if not license_info:
+                    license_info = ProjectDigitalObjectLicense(
+                        uri=canonical_uri,
+                        identifier=fallback_token,
+                        label_de=ARKUMU_LICENSE_LABELS[fallback_token],
+                        rights_statement=ARKUMU_LICENSE_TEXTS[fallback_token],
+                    )
+                else:
+                    license_info = ProjectDigitalObjectLicense(
+                        uri=license_uri or canonical_uri,
+                        identifier=fallback_token,
+                        label_de=ARKUMU_LICENSE_LABELS[fallback_token],
+                        rights_statement=ARKUMU_LICENSE_TEXTS[fallback_token],
+                    )
+                license_token = fallback_token
+                license_uri = license_info.uri
+                license_identifier = license_info.identifier
+                license_rights_statement = license_info.rights_statement
+                license_label_de = license_info.label_de
+                license_label_en = None
 
                 granted_statement_value = license_rights_statement or license_label_de or license_label_en
                 requires_rights_md = (
@@ -2210,12 +2167,12 @@ def _build_mets_from_project(
                     rights_signatures.add(signature)
 
                 canonical_attrs = {xml_lang_attr: "ger"}
-                has_canonical_mapping = bool(license_token and license_token in _ARKUMU_LICENSE_LABELS)
+                has_canonical_mapping = bool(license_token and license_token in ARKUMU_LICENSE_LABELS)
                 if has_canonical_mapping:
-                    _append_rights_value(_ARKUMU_LICENSE_LABELS[license_token], canonical_attrs)
-                    _append_rights_value(_ARKUMU_LICENSE_TEXTS[license_token], canonical_attrs)
+                    _append_rights_value(ARKUMU_LICENSE_LABELS[license_token], canonical_attrs)
+                    _append_rights_value(ARKUMU_LICENSE_TEXTS[license_token], canonical_attrs)
 
-                include_additional_rights = not apply_khm_licensing or not has_canonical_mapping
+                include_additional_rights = not has_canonical_mapping
                 if include_additional_rights:
                     _append_rights_value(license_label_de, {xml_lang_attr: "ger"} if license_label_de else None)
                     _append_rights_value(license_label_en, {xml_lang_attr: "eng"} if license_label_en else None)
