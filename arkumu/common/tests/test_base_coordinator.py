@@ -262,6 +262,31 @@ class TestOrganizationChangeHandling:
         # Verify the mixin method was called
         mock_set_last.assert_called_once_with(mock_request, test_organization.code)
 
+    def test_clear_state_uses_all_identifier_variants(self, mock_request, test_organization):
+        """Ensure organization cleanup runs for both numeric ID and organization code."""
+
+        class RecordingCoordinator(BaseCoordinatorMixin):
+            def __init__(self):
+                self.cleared = []
+
+            def clear_organization_specific_state(self, request, organization_id):
+                self.cleared.append(organization_id)
+                super().clear_organization_specific_state(request, organization_id)
+
+        coordinator = RecordingCoordinator()
+        coordinator.set_current_organization(mock_request, test_organization.code)
+
+        another_org = Organization.objects.create(
+            name="Another Org",
+            code="another-org",
+        )
+
+        coordinator.set_current_organization(mock_request, another_org.code)
+
+        assert test_organization.id in coordinator.cleared
+        assert str(test_organization.id) in coordinator.cleared
+        assert test_organization.code in coordinator.cleared
+
 
 @pytest.mark.django_db
 class TestStateManagement:

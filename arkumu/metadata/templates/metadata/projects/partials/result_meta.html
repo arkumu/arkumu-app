@@ -1,0 +1,6 @@
+{% load i18n %}
+{% blocktrans count total=total_count with dataset=dataset_label %}
+  {{ total }} Eintrag in {{ dataset }} gefunden
+{% plural %}
+  {{ total }} Einträge in {{ dataset }} gefunden
+{% endblocktrans %}

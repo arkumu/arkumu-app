@@ -22,7 +22,10 @@
         <p class="font-medium break-words">
           {{ project.display_title|default:project.name|default:project.value|default:project.uri }}
         </p>
-        <p class="text-xs text-base-content/60 break-all">{{ project.uri }}</p>
+        {% if project.display_description %}
+          <p class="text-sm text-base-content/70">{{ project.display_description }}</p>
+        {% endif %}
+        <p class="text-xs text-base-content/50 font-mono truncate" title="{{ project.uri }}">{{ project.uri }}</p>
       </div>
     </div>
   </td>

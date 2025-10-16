@@ -714,6 +714,76 @@ class ProjectWorkspaceListingService:
             )
         return results
 
+    def enrich_project_metadata(self, projects: Sequence[Resource]) -> None:
+        """Extract human-readable metadata from project triples."""
+
+        if not projects:
+            return
+
+        # Define predicate URIs for common metadata fields
+        label_predicates = [
+            "http://arkumu.org/data/properties/bevorzugter-titel",
+            "http://arkumu.org/data/properties/titel",
+            "http://purl.org/dc/terms/title",
+            "http://www.w3.org/2000/01/rdf-schema#label",
+        ]
+
+        description_predicates = [
+            "http://arkumu.org/data/properties/beschreibung",
+            "http://purl.org/dc/terms/description",
+        ]
+
+        start_predicates = [
+            "http://arkumu.org/data/properties/projektbeginn",
+        ]
+
+        end_predicates = [
+            "http://arkumu.org/data/properties/projektende",
+        ]
+
+        project_ids = [p.id for p in projects]
+
+        # Bulk fetch all relevant triples
+        all_predicates = label_predicates + description_predicates + start_predicates + end_predicates
+        triples = Triple.objects.filter(
+            subject_id__in=project_ids,
+            object__resource_type=ResourceType.LITERAL
+        ).filter(
+            Q(predicate__uri__in=all_predicates) |
+            Q(predicate__canonical_uri__in=all_predicates)
+        ).select_related('object', 'predicate')
+
+        # Group triples by project
+        project_triples = {}
+        for triple in triples:
+            project_triples.setdefault(triple.subject_id, []).append(triple)
+
+        # Enrich each project
+        for project in projects:
+            project_triple_list = project_triples.get(project.id, [])
+
+            # Extract title
+            title = self._extract_first_literal(project_triple_list, label_predicates)
+            project.display_title = title or project.name or project.uri.split('/')[-1]
+
+            # Extract description (truncated)
+            desc = self._extract_first_literal(project_triple_list, description_predicates)
+            project.display_description = (desc[:150] + '...') if desc and len(desc) > 150 else desc
+
+            # Extract dates
+            project.display_start = self._extract_first_literal(project_triple_list, start_predicates)
+            project.display_end = self._extract_first_literal(project_triple_list, end_predicates)
+
+    def _extract_first_literal(self, triples: List[Triple], predicate_uris: List[str]) -> Optional[str]:
+        """Extract first matching literal value from a list of triples."""
+        for triple in triples:
+            pred_uri = triple.predicate.canonical_uri or triple.predicate.uri
+            if pred_uri in predicate_uris and triple.object:
+                value = triple.object.value or getattr(triple.object, "literal_value", None)
+                if value:
+                    return str(value)
+        return None
+
     def _validate_resource(self, project: Resource) -> None:
         """Ensure the resource is an entity belonging to the active dataset."""
 

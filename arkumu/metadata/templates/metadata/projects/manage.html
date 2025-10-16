@@ -21,7 +21,7 @@
 
   <form
     id="project-filter-form"
-    class="bg-base-200/70 rounded-lg border border-base-300 p-4 grid gap-4 md:grid-cols-3"
+    class="bg-base-200/70 rounded-lg border border-base-300 p-4 grid gap-4 md:grid-cols-2"
     hx-get="{% url 'metadata:project_overview_table' %}"
     hx-target="#project-table-body"
     hx-trigger="submit, change delay:300ms, keyup changed delay:500ms, project-status-updated from:body"
@@ -33,24 +33,7 @@
       <label class="label" for="project-dataset">
         <span class="label-text font-medium">{% trans "Dataset" %}</span>
       </label>
-      <select id="project-dataset" name="dataset" class="select select-bordered">
-        <optgroup label="{% trans 'Entitäten' %}">
-          {% for dataset in entity_datasets %}
-            <option value="{{ dataset.dataset_name }}" {% if filters.dataset == dataset.dataset_name %}selected{% endif %}>
-              {{ dataset.label }}
-            </option>
-          {% endfor %}
-        </optgroup>
-        {% if vocabulary_datasets %}
-        <optgroup label="{% trans 'Vokabulare' %}">
-          {% for dataset in vocabulary_datasets %}
-            <option value="{{ dataset.dataset_name }}" {% if filters.dataset == dataset.dataset_name %}selected{% endif %}>
-              {{ dataset.label }}
-            </option>
-          {% endfor %}
-        </optgroup>
-        {% endif %}
-      </select>
+      {% include 'metadata/projects/partials/dataset_dropdown.html' with entity_datasets=entity_datasets vocabulary_datasets=vocabulary_datasets filters=filters %}
     </div>
     <div class="form-control md:col-span-2">
       <label class="label" for="project-search">
@@ -67,78 +50,19 @@
     </div>
 
     <div class="form-control">
-      <label class="label" for="project-organization">
-        <span class="label-text font-medium">{% trans "Organisation" %}</span>
-      </label>
-      <select id="project-organization" name="organization" class="select select-bordered">
-        {% if show_all_option %}
-          <option value="all" {% if filters.organization_code == 'all' %}selected{% endif %}>{% trans "Alle Organisationen" %}</option>
-        {% endif %}
-        {% for org in organizations %}
-          <option value="{{ org.code }}"
-            {% if filters.organization_code == org.code %}selected{% elif not filters.organization_code and request.user.organization and org.code == request.user.organization.code %}selected{% endif %}>
-            {{ org.name }} ({{ org.code }})
-          </option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="form-control">
       <label class="label" for="project-status">
         <span class="label-text font-medium">{% trans "Status" %}</span>
       </label>
-      <select id="project-status" name="status" class="select select-bordered">
+      <select
+        id="project-status"
+        name="status"
+        class="select select-bordered"
+      >
         <option value="">{% trans "Alle Stati" %}</option>
         {% for code, label in status_labels.items %}
           <option value="{{ code }}" {% if code in filters.statuses %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-    </div>
-
-    <div class="form-control">
-      <label class="label" for="project-has-events">
-        <span class="label-text font-medium">{% trans "Ereignisse" %}</span>
-      </label>
-      <select id="project-has-events" name="has_events" class="select select-bordered">
-        <option value="">{% trans "Beliebig" %}</option>
-        <option value="true" {% if filters.has_events is True %}selected{% endif %}>{% trans "Mit Ereignissen" %}</option>
-        <option value="false" {% if filters.has_events is False %}selected{% endif %}>{% trans "Ohne Ereignisse" %}</option>
-      </select>
-    </div>
-
-    <div class="form-control">
-      <label class="label" for="project-has-actors">
-        <span class="label-text font-medium">{% trans "Akteure" %}</span>
-      </label>
-      <select id="project-has-actors" name="has_actors" class="select select-bordered">
-        <option value="">{% trans "Beliebig" %}</option>
-        <option value="true" {% if filters.has_actors is True %}selected{% endif %}>{% trans "Mit Akteuren" %}</option>
-        <option value="false" {% if filters.has_actors is False %}selected{% endif %}>{% trans "Ohne Akteure" %}</option>
-      </select>
-    </div>
-
-    <div class="form-control">
-      <label class="label" for="project-has-digital">
-        <span class="label-text font-medium">{% trans "Digitale Objekte" %}</span>
-      </label>
-      <select id="project-has-digital" name="has_digital" class="select select-bordered">
-        <option value="">{% trans "Beliebig" %}</option>
-        <option value="true" {% if filters.has_digital is True %}selected{% endif %}>{% trans "Mit Medien" %}</option>
-        <option value="false" {% if filters.has_digital is False %}selected{% endif %}>{% trans "Ohne Medien" %}</option>
-      </select>
-    </div>
-
-    <div class="form-control">
-      <label class="label" for="project-updated-after">
-        <span class="label-text font-medium">{% trans "Geändert nach" %}</span>
-      </label>
-      <input
-        id="project-updated-after"
-        type="date"
-        name="updated_after"
-        value="{{ filters.updated_after|date:'Y-m-d' }}"
-        class="input input-bordered"
-      >
     </div>
 
     <div class="form-control">
@@ -156,6 +80,10 @@
       <button type="submit" class="btn btn-primary w-full">{% trans "Filtern" %}</button>
     </div>
   </form>
+
+  <div id="dataset-detail-panel" class="space-y-4">
+    {% include 'metadata/projects/partials/dataset_detail.html' with detail=dataset_detail %}
+  </div>
 
   <div class="overflow-x-auto border border-base-300 rounded-lg">
     <table class="table table-zebra w-full">
