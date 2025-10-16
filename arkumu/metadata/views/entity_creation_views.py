@@ -443,6 +443,33 @@ def form_init_resources(base_uri, dataset_name, organization):
                 )[0],
             }
             return (entity, cls, properties)
+        case "Akteurin":
+            entity, _ = EntityResource.create_by_organization_and_dataset_name(
+                dataset_name=dataset_name, organization=organization
+            )
+            cls, _ = ClassResource.get_or_create(
+                uri=f"{base_uri}/types/akteurin", name=dataset_name
+            )
+            properties = {
+                "german_name_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutscher-name", name="Deutscher Name"
+                )[0],
+            }
+            return (entity, cls, properties)
+        case "Rolle":
+            entity, _ = EntityResource.create_by_organization_and_dataset_name(
+                dataset_name=dataset_name, organization=organization
+            )
+            cls, _ = ClassResource.get_or_create(
+                uri=f"{base_uri}/types/rolle", name=dataset_name
+            )
+            properties = {
+                "german_name_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/deutscher-name-der-rolle-breadcrumb",
+                    name="Deutscher Name der Rolle Breadcrumb",
+                )[0],
+            }
+            return (entity, cls, properties)
 
 
 def entity_set_values_from_form(
@@ -469,10 +496,10 @@ def entity_set_values_from_form(
                 form, entity, "projektart_uri", kwargs["project_type_prop"]
             )
             from_form_set_property_entity_multi_value(
-                form, kwargs["entity"], "schlagwort_uris", kwargs["catchphrase_prop"]
+                form, entity, "schlagwort_uris", kwargs["catchphrase_prop"]
             )
             from_form_set_property_entity(
-                form, kwargs["entity"], "vorschaubild_uri", kwargs["preview_image_prop"]
+                form, entity, "vorschaubild_uri", kwargs["preview_image_prop"]
             )
         case "Ereignis":
             from_form_set_property_literal(
@@ -486,6 +513,14 @@ def entity_set_values_from_form(
             )
             from_form_set_property_literal(
                 form, entity, "ereignisende", kwargs["end_date_prop"]
+            )
+        case "Akteurin":
+            from_form_set_property_literal(
+                form, entity, "deutscher-name", kwargs["german_name_prop"]
+            )
+        case "Rolle":
+            from_form_set_property_literal(
+                form, entity, "deutscher-name-der-rolle-breadcrumb", kwargs["german_name_prop"]
             )
 
 
@@ -575,8 +610,8 @@ def create_event(request):
 
             for actor_form, role_form in zip(actor_formset, role_formset):
                 if actor_form.is_valid() and role_form.is_valid():
-                    actor_entity = form_to_entity(actor_form)
-                    role_entity = form_to_entity(role_form)
+                    actor_entity = form_to_entity(actor_form, "Akteurin", organization)
+                    role_entity = form_to_entity(role_form, "Rolle", organization)
                     actor_event_entity, _ = (
                         EntityResource.create_by_organization_and_dataset_name(
                             dataset_name="AkteurIn_Ereignis_Kreuztabelle",
@@ -596,12 +631,9 @@ def create_event(request):
                     actor_event_event_prop, _ = PropertyResource.get_or_create(
                         uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
                     )
-                    actor_event_actor_role_prop, _ = PropertyResource.get_or_create(
+                    actor_event_role_prop, _ = PropertyResource.get_or_create(
                         uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
                         name="Rollen der AkteurIn im Ereignis",
-                    )
-                    actor_event_event_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
                     )
 
                     actor_event_entity.set_type(cls)
@@ -613,7 +645,7 @@ def create_event(request):
                         actor_event_event_prop, event_entity
                     )
                     actor_event_entity.set_property(
-                        actor_event_actor_role_prop, role_entity
+                        actor_event_role_prop, role_entity
                     )
 
             # The RDF resources are now created and linked automatically
