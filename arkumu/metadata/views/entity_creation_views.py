@@ -528,9 +528,9 @@ def form_to_entity(form: BaseEntityForm, dataset_name, organization):
     base_uri = f"http://arkumu.org/data/{organization.code}"
     if form.is_valid():
         if uri := form.cleaned_data.get("uri", ""):
-            logger.info(f"🔄✅✅✅ {uri=} truesy")
+            # logger.info(f"🔄✅✅✅ {uri=} truesy")
             return EntityResource.get_or_create(uri)
-        logger.info(f"🔄❌❌❌ {uri=} falsy")
+        # logger.info(f"🔄❌❌❌ {uri=} falsy")
         entity, cls, properties = form_init_resources(
             base_uri, dataset_name, organization
         )
