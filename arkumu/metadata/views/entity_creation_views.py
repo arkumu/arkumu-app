@@ -340,6 +340,7 @@ class AlternateTitleForm(BaseEntityForm):
 
 ActorFormSet = formset_factory(ActorForm, extra=0, min_num=0, validate_min=False)
 RoleFormSet = formset_factory(RoleForm, extra=0, min_num=0, validate_min=False)
+DescriptionFormSet = formset_factory(DescriptionForm, extra=0, min_num=1, validate_min=False)
 
 
 def from_form_set_property_literal(
@@ -404,9 +405,6 @@ def form_init_resources(base_uri, dataset_name, organization):
                     uri=f"{base_uri}/properties/projektkategorie",
                     name="Projektkategorie",
                 )[0],
-                "description_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )[0],
                 "catchphrase_prop": PropertyResource.get_or_create(
                     uri=f"{base_uri}/properties/schlagwort", name="Schlagwort"
                 )[0],
@@ -470,6 +468,19 @@ def form_init_resources(base_uri, dataset_name, organization):
                 )[0],
             }
             return (entity, cls, properties)
+        case "Beschreibung":
+            entity, _ = EntityResource.create_by_organization_and_dataset_name(
+                dataset_name=dataset_name, organization=organization
+            )
+            cls, _ = ClassResource.get_or_create(
+                uri=f"{base_uri}/types/beschreibung", name=dataset_name
+            )
+            properties = {
+                "description_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
+                )[0],
+            }
+            return (entity, cls, properties)
 
 
 def entity_set_values_from_form(
@@ -488,9 +499,6 @@ def entity_set_values_from_form(
             )
             from_form_set_property_entity(
                 form, entity, "projektkategorie_uri", kwargs["category_prop"]
-            )
-            from_form_set_property_entity(
-                form, entity, "beschreibung_uri", kwargs["description_prop"]
             )
             from_form_set_property_entity(
                 form, entity, "projektart_uri", kwargs["project_type_prop"]
@@ -522,6 +530,10 @@ def entity_set_values_from_form(
             from_form_set_property_literal(
                 form, entity, "deutscher_name_der_rolle_breadcrumb", kwargs["german_name_prop"]
             )
+        case "Beschreibung":
+            from_form_set_property_literal(
+                form, entity, "beschreibung", kwargs["description_prop"]
+            )
 
 
 def form_to_entity(form: BaseEntityForm, dataset_name, organization):
@@ -550,24 +562,44 @@ def create_project(request):
         metadata_options = get_default_metadata_option_map(organization=organization)
 
         if request.method == "POST":
+            base_uri = f"http://arkumu.org/data/{organization.code}"
             project_form = ProjectForm(
                 request.POST,
                 metadata_options=metadata_options,
             )
 
+            description_formset = DescriptionFormSet(
+                request.POST,
+                prefix="descriptions",
+                form_kwargs={"metadata_options": metadata_options},
+            )
+
             if project_form.is_valid():
                 project_entity = form_to_entity(project_form, "Projekt", organization)
+
+                for description_form in description_formset:
+                    if description_form.is_valid():
+                        description_entity = form_to_entity(description_form, "Beschreibung", organization)
+                        description_prop, _ = PropertyResource.get_or_create(
+                            uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
+                        )
+                        project_entity.set_property(description_prop, description_entity)
                 # The RDF resources are now created and linked automatically
                 # Continue with the rest of the project creation workflow
                 return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             project_form = ProjectForm(metadata_options=metadata_options)
+            description_formset = DescriptionFormSet(
+                prefix="descriptions",
+                form_kwargs={"metadata_options": metadata_options},
+            )
 
         return render(
             request,
             "metadata/entity_creation/create_project.html",
             {
                 "project_form": project_form,
+                "description_formset": description_formset,
                 "entity_type": "project",
                 "title": "Create New Project",
                 "description": "Fill in the details to create a new archival project",
@@ -598,55 +630,56 @@ def create_event(request):
                 prefix="roles",
                 form_kwargs={"metadata_options": metadata_options},
             )
-            event_entity = form_to_entity(event_form, "Ereignis", organization)
+            if event_form.is_valid():
+                event_entity = form_to_entity(event_form, "Ereignis", organization)
 
-            event_prop, _ = PropertyResource.get_or_create(
-                uri=f"{base_uri}/properties/ereignis", name="Ereignis"
-            )
-            project_uri = event_form.cleaned_data.get("project_uri", "")
-            if project_uri:
-                project_entity, _ = EntityResource.get_or_create(uri=project_uri)
-                project_entity.set_property(event_prop, event_entity)
+                event_prop, _ = PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/ereignis", name="Ereignis"
+                )
+                project_uri = event_form.cleaned_data.get("project_uri", "")
+                if project_uri:
+                    project_entity, _ = EntityResource.get_or_create(uri=project_uri)
+                    project_entity.set_property(event_prop, event_entity)
 
-            for actor_form, role_form in zip(actor_formset, role_formset):
-                if actor_form.is_valid() and role_form.is_valid():
-                    actor_entity = form_to_entity(actor_form, "Akteurin", organization)
-                    role_entity = form_to_entity(role_form, "Rolle", organization)
-                    actor_event_entity, _ = (
-                        EntityResource.create_by_organization_and_dataset_name(
-                            dataset_name="AkteurIn_Ereignis_Kreuztabelle",
-                            organization=organization,
+                for actor_form, role_form in zip(actor_formset, role_formset):
+                    if actor_form.is_valid() and role_form.is_valid():
+                        actor_entity = form_to_entity(actor_form, "Akteurin", organization)
+                        role_entity = form_to_entity(role_form, "Rolle", organization)
+                        actor_event_entity, _ = (
+                            EntityResource.create_by_organization_and_dataset_name(
+                                dataset_name="AkteurIn_Ereignis_Kreuztabelle",
+                                organization=organization,
+                            )
                         )
-                    )
 
-                    cls, _ = ClassResource.get_or_create(
-                        uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle",
-                        name="AkteurIn_Ereignis_Kreuztabelle",
-                    )
+                        cls, _ = ClassResource.get_or_create(
+                            uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle",
+                            name="AkteurIn_Ereignis_Kreuztabelle",
+                        )
 
-                    actor_event_actor_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/akteurin-im-ereignis",
-                        name="AkteurIn im Ereignis",
-                    )
-                    actor_event_event_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
-                    )
-                    actor_event_role_prop, _ = PropertyResource.get_or_create(
-                        uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
-                        name="Rollen der AkteurIn im Ereignis",
-                    )
+                        actor_event_actor_prop, _ = PropertyResource.get_or_create(
+                            uri=f"{base_uri}/properties/akteurin-im-ereignis",
+                            name="AkteurIn im Ereignis",
+                        )
+                        actor_event_event_prop, _ = PropertyResource.get_or_create(
+                            uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
+                        )
+                        actor_event_role_prop, _ = PropertyResource.get_or_create(
+                            uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
+                            name="Rollen der AkteurIn im Ereignis",
+                        )
 
-                    actor_event_entity.set_type(cls)
+                        actor_event_entity.set_type(cls)
 
-                    actor_event_entity.set_property(
-                        actor_event_actor_prop, actor_entity
-                    )
-                    actor_event_entity.set_property(
-                        actor_event_event_prop, event_entity
-                    )
-                    actor_event_entity.set_property(
-                        actor_event_role_prop, role_entity
-                    )
+                        actor_event_entity.set_property(
+                            actor_event_actor_prop, actor_entity
+                        )
+                        actor_event_entity.set_property(
+                            actor_event_event_prop, event_entity
+                        )
+                        actor_event_entity.set_property(
+                            actor_event_role_prop, role_entity
+                        )
 
             # The RDF resources are now created and linked automatically
             # Continue with the rest of the event creation workflow
@@ -1069,31 +1102,7 @@ def create_description(request):
             )
 
             if description_form.is_valid():
-                # Create RDF resources for the description
-                # Create Description class resource
-                description_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/beschreibung", name="Beschreibung"
-                )
-
-                # Create property resources
-                description_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )
-
-                # Create description entity
-                description_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Beschreibung"
-                    )
-                )
-
-                # Set the type of the entity
-                description_entity.set_type(description_class)
-
-                # Set properties from form data
-                description_text = description_form.cleaned_data.get("beschreibung", "")
-                if description_text:
-                    description_entity.set_property(description_prop, description_text)
+                description_entity = form_to_entity(description_form, "Beschreibung", organization)
 
                 # The RDF resources are now created and linked automatically
                 return HttpResponseRedirect("/metadata/metadata-entry/")

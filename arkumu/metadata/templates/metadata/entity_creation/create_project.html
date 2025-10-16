@@ -46,6 +46,51 @@
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       document.querySelector("#id_uri").closest(".form-control").style.display = 'none';
+
+      // Handle dynamic addition of description forms
+      document.querySelectorAll(".add-description").forEach(function (button) {
+        button.addEventListener("click", function (e) {
+          e.preventDefault();
+
+          const container = document.querySelector(".description-container");
+          const template = document
+            .querySelector("#description-template")
+            .content.cloneNode(true);
+
+          // Find the management form fields
+          const descriptions_managementFormTotal = document.querySelector(
+            '[name="descriptions-TOTAL_FORMS"]',
+          );
+
+          if (!descriptions_managementFormTotal) {
+            console.error(
+              "Management form not found. Make sure it's properly rendered in the template.",
+            );
+            return;
+          }
+
+          // Get current form count
+          let formCount = parseInt(descriptions_managementFormTotal.value);
+
+          // Update the new form HTML to replace __prefix__ with the new index
+          const description_newFormHTML = template
+            .querySelector(".description-form")
+            .innerHTML.replace(/descriptions-__prefix__-/g, `descriptions-${formCount}-`)
+            .replace(/descriptions__prefix__/g, `descriptions][${formCount}][`);
+          
+          // Create a new div for the form
+          const description_newFormDiv = document.createElement("div");
+          description_newFormDiv.className =
+            `description-${formCount}-form p-4 bg-base-100 rounded-lg border border-base-200`;
+          description_newFormDiv.innerHTML = `<h4 class="text-base font-medium">Beschreibung ${formCount + 1}</h4> \n` + description_newFormHTML;
+
+          // Add the new form to the container
+          container.appendChild(description_newFormDiv);
+
+          // Update the total form count
+          descriptions_managementFormTotal.value = formCount + 1;
+        });
+      });
     });
   </script>
 {% endblock javascript %}
