@@ -516,11 +516,11 @@ def entity_set_values_from_form(
             )
         case "Akteurin":
             from_form_set_property_literal(
-                form, entity, "deutscher-name", kwargs["german_name_prop"]
+                form, entity, "deutscher_name", kwargs["german_name_prop"]
             )
         case "Rolle":
             from_form_set_property_literal(
-                form, entity, "deutscher-name-der-rolle-breadcrumb", kwargs["german_name_prop"]
+                form, entity, "deutscher_name_der_rolle_breadcrumb", kwargs["german_name_prop"]
             )
 
 
@@ -691,31 +691,7 @@ def create_actor(request):
             actor_form = ActorForm(request.POST, metadata_options=metadata_options)
 
             if actor_form.is_valid():
-                # Create RDF resources for the actor
-                # Create Actor class resource
-                actor_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/akteurin", name="Akteurin"
-                )
-
-                # Create property resources
-                german_name_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name", name="Deutscher Name"
-                )
-
-                # Create actor entity
-                actor_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Akteurin"
-                    )
-                )
-
-                # Set the type of the entity
-                actor_entity.set_type(actor_class)
-
-                # Set properties from form data
-                german_name = actor_form.cleaned_data.get("deutscher_name", "")
-                if german_name:
-                    actor_entity.set_property(german_name_prop, german_name)
+                actor_entity = form_to_entity(actor_form, "Akteurin", organization)
 
                 # The RDF resources are now created and linked automatically
                 return HttpResponseRedirect("/metadata/metadata-entry/")
@@ -748,34 +724,7 @@ def create_role(request):
             role_form = RoleForm(request.POST, metadata_options=metadata_options)
 
             if role_form.is_valid():
-                # Create RDF resources for the role
-                # Create Role class resource
-                role_class, created = ClassResource.get_or_create(
-                    uri=f"{base_uri}/types/rolle", name="Rolle"
-                )
-
-                # Create property resources
-                german_name_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name-der-rolle-breadcrumb",
-                    name="Deutscher Name der Rolle Breadcrumb",
-                )
-
-                # Create role entity
-                role_entity, created = (
-                    EntityResource.create_by_organization_and_dataset_name(
-                        organization=organization, dataset_name="Rolle"
-                    )
-                )
-
-                # Set the type of the entity
-                role_entity.set_type(role_class)
-
-                # Set properties from form data
-                german_name = role_form.cleaned_data.get(
-                    "deutscher_name_der_rolle_breadcrumb", ""
-                )
-                if german_name:
-                    role_entity.set_property(german_name_prop, german_name)
+                role_entity = form_to_entity(role_form, "Rolle", organization)
 
                 # The RDF resources are now created and linked automatically
                 return HttpResponseRedirect("/metadata/metadata-entry/")
