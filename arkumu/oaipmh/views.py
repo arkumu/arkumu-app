@@ -1425,7 +1425,6 @@ def _build_dc_payload_from_project(
         if language:
             _add_dc_value(payload, 'language', language)
 
-    xml_lang_attr = ET.QName(XML_NS, "lang")
     apply_khm_licensing = _should_apply_khm_hmt_license_rights(resource, project)
     arkumu_tokens: set[str] = set()
     fallback_rights: set[str] = set()
@@ -1468,8 +1467,8 @@ def _build_dc_payload_from_project(
     for token in sorted(arkumu_tokens):
         label = ARKUMU_LICENSE_LABELS[token]
         text = ARKUMU_LICENSE_TEXTS[token]
-        _add_dc_value(payload, 'rights', label, attrs={xml_lang_attr: "ger"}, allow_duplicates=True)
-        _add_dc_value(payload, 'rights', text, attrs={xml_lang_attr: "ger"}, allow_duplicates=True)
+        _add_dc_value(payload, 'rights', label, allow_duplicates=True)
+        _add_dc_value(payload, 'rights', text, allow_duplicates=True)
         canonical_values.update({label, text})
 
     if arkumu_tokens:
@@ -2166,16 +2165,15 @@ def _build_mets_from_project(
                         elem.set(key, val)
                     rights_signatures.add(signature)
 
-                canonical_attrs = {xml_lang_attr: "ger"}
                 has_canonical_mapping = bool(license_token and license_token in ARKUMU_LICENSE_LABELS)
                 if has_canonical_mapping:
-                    _append_rights_value(ARKUMU_LICENSE_LABELS[license_token], canonical_attrs)
-                    _append_rights_value(ARKUMU_LICENSE_TEXTS[license_token], canonical_attrs)
+                    _append_rights_value(ARKUMU_LICENSE_LABELS[license_token])
+                    _append_rights_value(ARKUMU_LICENSE_TEXTS[license_token])
 
                 include_additional_rights = not has_canonical_mapping
                 if include_additional_rights:
-                    _append_rights_value(license_label_de, {xml_lang_attr: "ger"} if license_label_de else None)
-                    _append_rights_value(license_label_en, {xml_lang_attr: "eng"} if license_label_en else None)
+                    _append_rights_value(license_label_de)
+                    _append_rights_value(license_label_en)
                     _append_rights_value(license_rights_statement)
 
                 if not apply_khm_licensing:

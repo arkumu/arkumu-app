@@ -854,15 +854,10 @@ class TestOAIViewFunctions:
         assert not payload.get("dc:relation")
         assert 'dc:format' in payload
         assert 'text/plain' in payload['dc:format']
-        rights_entries = payload.get("dc:rights", [])
-        assert len(rights_entries) == 2
-        arkumu_values = [
-            (entry.get("value"), (entry.get("attrs") or {}).get(ET.QName(XML_NS, "lang")))
-            for entry in rights_entries if isinstance(entry, dict)
-        ]
-        assert arkumu_values == [
-            (ARKUMU_LICENSE_LABELS["1"], "ger"),
-            (ARKUMU_LICENSE_TEXTS["1"], "ger"),
+        rights_entries = self._flatten_dc_entries(payload.get("dc:rights", []))
+        assert rights_entries == [
+            ARKUMU_LICENSE_LABELS["1"],
+            ARKUMU_LICENSE_TEXTS["1"],
         ]
         assert "dc:collection" not in payload
         is_part_of_values = self._flatten_dc_entries(payload.get("dcterms:isPartOf", []))
@@ -956,21 +951,11 @@ class TestOAIViewFunctions:
         rights_entries = payload.get("dc:rights", [])
         assert len(rights_entries) == 2
 
-        expected_sequence = [
-            (ARKUMU_LICENSE_LABELS["1"], "ger"),
-            (ARKUMU_LICENSE_TEXTS["1"], "ger"),
-        ]
-        for entry, (expected_value, expected_lang) in zip(rights_entries, expected_sequence):
-            assert isinstance(entry, dict)
-            assert entry["value"] == expected_value
-            attrs = entry.get("attrs") or {}
-            assert attrs.get(ET.QName(XML_NS, "lang")) == expected_lang
-
         rights_values = self._flatten_dc_entries(rights_entries)
-        assert ARKUMU_LICENSE_LABELS["1"] in rights_values
-        assert ARKUMU_LICENSE_TEXTS["1"] in rights_values
-        assert ARKUMU_LICENSE_LABELS["2"] not in rights_values
-        assert ARKUMU_LICENSE_TEXTS["2"] not in rights_values
+        assert rights_values == [
+            ARKUMU_LICENSE_LABELS["1"],
+            ARKUMU_LICENSE_TEXTS["1"],
+        ]
 
     @pytest.mark.django_db
     def test_build_dc_payload_includes_arkumu_rights_for_other_orgs(self, sample_resources):
@@ -999,24 +984,11 @@ class TestOAIViewFunctions:
             )
 
         payload = views._build_dc_payload_from_record(record, resource)
-        rights_entries = payload.get("dc:rights", [])
-        assert len(rights_entries) == 2
-
-        values_with_lang = [
-            (
-                entry.get("value") if isinstance(entry, dict) else entry,
-                (entry.get("attrs") or {}).get(ET.QName(XML_NS, "lang")) if isinstance(entry, dict) else None,
-            )
-            for entry in rights_entries
+        rights_entries = self._flatten_dc_entries(payload.get("dc:rights", []))
+        assert rights_entries == [
+            ARKUMU_LICENSE_LABELS["1"],
+            ARKUMU_LICENSE_TEXTS["1"],
         ]
-
-        expected_pairs = [
-            (ARKUMU_LICENSE_LABELS["1"], "ger"),
-            (ARKUMU_LICENSE_TEXTS["1"], "ger"),
-        ]
-
-        for expected_value, expected_lang in expected_pairs:
-            assert (expected_value, expected_lang) in values_with_lang
 
         disallowed_values = {
             ARKUMU_LICENSE_LABELS["2"],
@@ -1024,7 +996,7 @@ class TestOAIViewFunctions:
             "Urheberrechtlich und/oder Leistungsschutzrechtlich geschützt",
             "Protected by German Urheberrecht and/oder Leistungsschutzrecht.",
         }
-        assert all(value not in disallowed_values for value, _lang in values_with_lang)
+        assert all(value not in disallowed_values for value in rights_entries)
 
     # ============================================================================
     # METADATA ELEMENT BUILDING TESTS
