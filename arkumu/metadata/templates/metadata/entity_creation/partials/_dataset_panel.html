@@ -180,10 +180,10 @@
       {% endif %}
 
       <div class="flex flex-wrap items-center gap-3">
-        <button type="submit" class="btn btn-primary">
-          {% if entity_uri %}Änderungen speichern{% else %}Entity erstellen{% endif %}
-        </button>
         {% if entity_uri %}
+          <button type="submit" class="btn btn-primary">
+            Änderungen speichern
+          </button>
           <button type="button"
                   class="btn btn-ghost btn-sm"
                   hx-get="{% url 'metadata:entity_workspace_dataset' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
@@ -191,6 +191,19 @@
                   hx-swap="innerHTML"
                   hx-push-url="false">
             Neues Entity beginnen
+          </button>
+        {% else %}
+          <button type="submit"
+                  name="submission_mode"
+                  value="stay_on_entity"
+                  class="btn btn-secondary">
+            Entity erstellen &amp; weiter bearbeiten
+          </button>
+          <button type="submit"
+                  name="submission_mode"
+                  value="create_new"
+                  class="btn btn-primary">
+            Entity erstellen &amp; neues Formular
           </button>
         {% endif %}
       </div>

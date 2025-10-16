@@ -21,6 +21,9 @@ def test_manage_view_renders(client):
     content = response.content.decode()
     assert 'name="dataset"' in content
     assert "Projekte" in content
+    org_data = client.session.get("current_organization")
+    assert org_data is not None
+    assert org_data["code"] == organization.code
 
 
 @pytest.mark.django_db
@@ -57,6 +60,59 @@ def test_table_view_lists_projects(client):
     )
     assert response.status_code == 200
     assert "Listenprojekt" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_table_view_uses_session_organization_when_not_explicit(client):
+    organization = Organization.objects.create(code="demo", name="Demo")
+    manager = User.objects.create_user("manager", password="pass", role="manager", organization=organization)
+    client.force_login(manager)
+
+    dataset = Resource.objects.create(
+        uri="http://arkumu.org/data/demo/datasets/projekt",
+        resource_type=ResourceType.IRI,
+        name="Projekt",
+        organization=organization,
+    )
+    is_part_of = Resource.objects.create(
+        uri=IS_PART_OF_URI,
+        resource_type=ResourceType.PROPERTY,
+        name="isPartOf",
+        organization=organization,
+    )
+    project = Resource.objects.create(
+        uri="http://arkumu.org/data/demo/projects/1",
+        resource_type=ResourceType.ENTITY,
+        name="Sessionprojekt",
+        organization=organization,
+        public_access_level=PublicAccessLevel.RESTRICTED,
+    )
+    Triple.objects.create(subject=project, predicate=is_part_of, object=dataset, source=organization)
+
+    # Prime session organization
+    client.get(reverse("metadata:project_overview_manage"))
+
+    response = client.get(
+        reverse("metadata:project_overview_table"),
+        {"dataset": "Projekt"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 200
+    assert "Sessionprojekt" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_manage_view_superuser_defaults_to_all(client):
+    Organization.objects.create(code="demo", name="Demo")
+    Organization.objects.create(code="khm", name="KHM")
+    admin = User.objects.create_user("admin", password="pass", role="system_admin", organization=None)
+    client.force_login(admin)
+
+    response = client.get(reverse("metadata:project_overview_manage"))
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'value="all" selected' in content
+    assert client.session.get("current_organization") is None
 
 
 @pytest.mark.django_db

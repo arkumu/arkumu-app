@@ -64,11 +64,21 @@ def _resolve_active_organization(request: HttpRequest) -> Optional[Organization]
             org_code = org_data.get("code")
             if org_code:
                 organization = Organization.objects.filter(code=org_code).first()
-    if organization is None:
-        organization = getattr(request.user, "organization", None)
-    if organization is None:
-        organization = Organization.objects.filter(code=DEFAULT_ORGANIZATION_CODE).first()
-    return organization
+        if organization is None:
+            workspace_coordinator.clear_current_organization(request)
+
+    if organization is not None:
+        return organization
+
+    user_organization = getattr(request.user, "organization", None)
+    if user_organization is not None:
+        workspace_coordinator.set_current_organization(request, user_organization.id)
+        return user_organization
+
+    fallback = Organization.objects.filter(code=DEFAULT_ORGANIZATION_CODE).first()
+    if fallback is not None:
+        workspace_coordinator.set_current_organization(request, fallback.id)
+    return fallback
 
 
 def _resolve_active_mapping(
@@ -1921,6 +1931,8 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         )
         entity_uri = request.POST.get("entity_uri") or None
 
+        submission_mode = request.POST.get("submission_mode", "create_new")
+
         form = DatasetEntityForm(
             request.POST,
             field_metadata=field_metadata,
@@ -1939,6 +1951,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     dataset_name, entity_data, entity_uri=entity_uri
                 )
                 entity_label = _infer_entity_label(service, saved_uri)
+                cleaned_initial = {key: form.cleaned_data.get(key) for key in form.fields}
 
                 for field_name, values in join_payloads.items():
                     relationship = join_field_map[field_name]
@@ -1949,18 +1962,29 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     )
 
                 if created:
-                    success_message = f"Entity erfolgreich erstellt (<code class=\"font-mono\">{saved_uri}</code>)."
-                    # Reset form for a new entry while keeping anchors blank
-                    form = DatasetEntityForm(field_metadata=field_metadata)
-                    entity_uri = None
-                    entity_label = None
+                    keep_editing = submission_mode == "stay_on_entity"
+                    if keep_editing:
+                        success_message = "Entity erfolgreich erstellt. Du kannst weiter bearbeiten."
+                        form = DatasetEntityForm(
+                            field_metadata=field_metadata,
+                            initial=cleaned_initial,
+                            disable_anchors=True,
+                        )
+                        entity_uri = saved_uri
+                    else:
+                        success_message = (
+                            f"Entity erfolgreich erstellt (<code class=\"font-mono\">{saved_uri}</code>)."
+                        )
+                        # Reset form for a new entry while keeping anchors blank
+                        form = DatasetEntityForm(field_metadata=field_metadata)
+                        entity_uri = None
+                        entity_label = None
                 else:
                     success_message = "Änderungen gespeichert."
                     # Rehydrate form with current values to keep user context
-                    initial = {key: form.cleaned_data.get(key) for key in form.fields}
                     form = DatasetEntityForm(
                         field_metadata=field_metadata,
-                        initial=initial,
+                        initial=cleaned_initial,
                         disable_anchors=True,
                     )
                     entity_uri = saved_uri

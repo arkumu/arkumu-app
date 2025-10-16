@@ -5,16 +5,17 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 from django.views.generic import TemplateView
-from django.core.paginator import Paginator
 
-from arkumu.metadata.models.resource import Resource
+from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.metadata.models.mappings import Mapping
+from arkumu.metadata.models.resource import Resource
 from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService
 from arkumu.metadata.services.project_workspace_listing_service import (
     ProjectWorkspaceFilters,
@@ -94,7 +95,60 @@ def _select_dataset(user, dataset_name: Optional[str]) -> Tuple[DatasetOption, L
     return selected, entity_options, vocab_options
 
 
-class ProjectOverviewManageView(ManagerRequiredMixin, TemplateView):
+class ProjectOverviewCoordinatorMixin(BaseCoordinatorMixin):
+    """Shared helpers for project overview views integrating BaseCoordinator."""
+
+    def _normalize_org_selection(
+        self,
+        request: HttpRequest,
+        *,
+        requested_code: Optional[str],
+        allow_all: bool,
+    ) -> Tuple[Optional[str], Optional[Organization]]:
+        """
+        Determine the effective organization selection given the request, honoring
+        the BaseCoordinator session and user defaults.
+        """
+
+        normalized = (requested_code or "").strip() or None
+
+        if normalized == "all":
+            if allow_all:
+                self.clear_current_organization(request)
+                return "all", None
+            normalized = None
+
+        if normalized:
+            org_data = self.set_current_organization(request, normalized)
+            if org_data:
+                organization = Organization.objects.filter(id=org_data["id"]).first()
+                return org_data["code"], organization
+            self.clear_current_organization(request)
+            normalized = None
+
+        org_data = self.get_current_organization(request)
+        if org_data:
+            organization = Organization.objects.filter(id=org_data["id"]).first()
+            if organization:
+                return org_data["code"], organization
+
+        user_org = getattr(request.user, "organization", None)
+        if user_org:
+            self.set_current_organization(request, user_org.id)
+            return user_org.code, user_org
+
+        if allow_all:
+            self.clear_current_organization(request)
+            return "all", None
+
+        return None, None
+
+
+class ProjectOverviewManageView(
+    ManagerRequiredMixin,
+    ProjectOverviewCoordinatorMixin,
+    TemplateView,
+):
     """Render the HTMX-powered workspace overview shell."""
 
     template_name = "metadata/projects/manage.html"
@@ -108,6 +162,21 @@ class ProjectOverviewManageView(ManagerRequiredMixin, TemplateView):
             user, filters.dataset
         )
         filters = replace(filters, dataset=selected_dataset.dataset_name)
+
+        organizations_qs = Organization.objects.order_by("name")
+        if user.has_role_permission("can_view_cross_university_public"):
+            organizations = list(organizations_qs)
+            show_all_option = True
+        else:
+            organizations = [user.organization] if user.organization else []
+            show_all_option = False
+
+        active_org_code, active_org = self._normalize_org_selection(
+            self.request,
+            requested_code=filters.organization_code,
+            allow_all=show_all_option,
+        )
+        filters = replace(filters, organization_code=active_org_code)
 
         service = ProjectWorkspaceListingService(user, dataset_name=selected_dataset.dataset_name)
         queryset = service.get_queryset(filters)
@@ -141,19 +210,13 @@ class ProjectOverviewManageView(ManagerRequiredMixin, TemplateView):
             "table_config": table_config,
         }
 
-        organizations_qs = Organization.objects.order_by("name")
-        if user.has_role_permission("can_view_cross_university_public"):
-            organizations = list(organizations_qs)
-            show_all_option = True
-        else:
-            organizations = [user.organization] if user.organization else []
-            show_all_option = False
-
         context.update(
             {
                 "filters": filters,
                 "organizations": organizations,
                 "show_all_option": show_all_option,
+                "active_organization": active_org,
+                "active_organization_code": active_org_code,
                 "status_labels": STATUS_LABELS,
                 "page_sizes": (25, 50, 100),
                 "table_context": table_context,
@@ -166,7 +229,11 @@ class ProjectOverviewManageView(ManagerRequiredMixin, TemplateView):
         return context
 
 
-class ProjectOverviewTableView(ManagerRequiredMixin, View):
+class ProjectOverviewTableView(
+    ManagerRequiredMixin,
+    ProjectOverviewCoordinatorMixin,
+    View,
+):
     """Return the paginated table body for the overview list."""
 
     template_name = "metadata/projects/partials/table_body.html"
@@ -175,6 +242,14 @@ class ProjectOverviewTableView(ManagerRequiredMixin, View):
         filters = ProjectWorkspaceFilters.from_query_params(request.GET.dict())
         selected_dataset, _, _ = _select_dataset(request.user, filters.dataset)
         filters = replace(filters, dataset=selected_dataset.dataset_name)
+
+        show_all_option = request.user.has_role_permission("can_view_cross_university_public")
+        active_org_code, _ = self._normalize_org_selection(
+            request,
+            requested_code=filters.organization_code,
+            allow_all=show_all_option,
+        )
+        filters = replace(filters, organization_code=active_org_code)
 
         service = ProjectWorkspaceListingService(request.user, dataset_name=selected_dataset.dataset_name)
         queryset = service.get_queryset(filters)

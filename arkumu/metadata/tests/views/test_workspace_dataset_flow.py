@@ -436,6 +436,51 @@ def test_project_creation_persists_literals(client, user, mapping, organization,
     assert "Projekt Alpha" in reload_response.content.decode()
 
 
+def test_project_creation_continue_editing_keeps_context(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+    response = _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-003",
+            "titel": "Projekt Gamma",
+            "submission_mode": "stay_on_entity",
+        },
+    )
+    assert response.status_code == 200
+    project_uri = _entity_uri(organization, "Projekt", "P-003")
+    content = response.content.decode()
+    assert project_uri in content
+    assert "weiter bearbeiten" in content
+
+    update_response = _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "entity_uri": project_uri,
+            "projekt_id": "P-003",
+            "titel": "Projekt Gamma aktualisiert",
+        },
+    )
+    assert update_response.status_code == 200
+    assert "Änderungen gespeichert." in update_response.content.decode()
+
+    titel_predicate = workspace_service.datasets["Projekt"]["properties"]["titel"]
+    literal_values = Triple.objects.filter(
+        subject__uri=project_uri,
+        predicate=titel_predicate,
+    ).values_list("object__value", flat=True)
+    assert list(literal_values) == ["Projekt Gamma aktualisiert"]
+
+
 def test_project_event_join_create_and_remove(
     client,
     user,
