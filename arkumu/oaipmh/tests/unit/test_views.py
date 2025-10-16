@@ -1251,9 +1251,7 @@ class TestOAIViewFunctions:
             assert sig_en_elem.text == digital_obj.significant_properties_en
 
             license_elements = source_record.findall(f"./{{{DCTERMS_NS}}}license")
-            license_values = {elem.text for elem in license_elements}
-            if digital_obj.license and digital_obj.license.label_de:
-                assert digital_obj.license.label_de in license_values
+            assert not license_elements
 
             rights_elements = source_record.findall(f"./{{{DC_NS}}}rights")
             if digital_obj.license:

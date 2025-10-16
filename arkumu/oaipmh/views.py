@@ -2176,15 +2176,6 @@ def _build_mets_from_project(
                     _append_rights_value(license_label_en)
                     _append_rights_value(license_rights_statement)
 
-                if not apply_khm_licensing:
-                    if license_label_de:
-                        lic_de_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                        lic_de_elem.text = license_label_de
-                    if license_uri:
-                        lic_uri_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                        lic_uri_elem.text = license_uri
-                        lic_uri_elem.set(ET.QName(XML_NS, "type"), "dcterms:URI")
-
             raw_path = (
                 obj.rosetta_path
                 or obj.storage_key
