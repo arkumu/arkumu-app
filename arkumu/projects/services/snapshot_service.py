@@ -42,6 +42,7 @@ from arkumu.projects import (
 )
 from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services.dump_fixity_index import find_fixity, FixityRecord
+from arkumu.common.uri_utils import normalize_text_input
 
 logger = logging.getLogger(__name__)
 
@@ -1469,10 +1470,7 @@ class ProjectSnapshotService:
 
     @staticmethod
     def _normalize_text_value(value: Optional[Any]) -> Optional[str]:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
+        return normalize_text_input(value, blank_to_none=True)
 
     def _requires_numeric_license_cleanup(self, license_uri: Optional[str]) -> bool:
         if not license_uri:

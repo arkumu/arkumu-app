@@ -6,6 +6,7 @@ Represents RDF literal values in the semantic web.
 from typing import Optional, Dict, Any
 from arkumu.metadata.models.resource import Resource, ResourceType
 from .base import BaseResource
+from arkumu.common.uri_utils import normalize_text_input
 
 
 class LiteralResource(BaseResource):
@@ -41,17 +42,21 @@ class LiteralResource(BaseResource):
         """
         # Create a hash for deduplication
         from arkumu.common.hash_utils import generate_value_hash
-        value_hash = generate_value_hash(value)
+        normalized_value = normalize_text_input(value)
+        if normalized_value is None:
+            raise ValueError("Literal value cannot be empty")
+        value_hash = generate_value_hash(normalized_value)
 
         resource, created = Resource.objects.get_or_create(
             value_hash=value_hash,
-            value=value,
+            value=normalized_value,
             datatype=datatype,
             language=language,
             defaults={
                 **kwargs,
                 "resource_type": cls._resource_type,
-                "name": value[:100],  # Truncate name for display
+                "value": normalized_value,
+                "name": normalized_value[:100],  # Truncate name for display
             }
         )
         return cls(resource), created

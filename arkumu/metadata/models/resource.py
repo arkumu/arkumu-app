@@ -2,7 +2,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.contrib.postgres.indexes import GinIndex
 from arkumu.metadata.models.base import UUIDModel
-from arkumu.common.uri_utils import normalize_string_nfc
+from arkumu.common.uri_utils import normalize_text_input
 from arkumu.common.hash_utils import generate_value_hash
 
 
@@ -287,11 +287,11 @@ class Resource(UUIDModel):
     def save(self, *args, **kwargs):
         """Normalize text and generate hash if needed. Bulk operations handle this manually."""
         # Normalize text fields for consistent storage
-        if self.value:
-            self.value = normalize_string_nfc(self.value)
+        if self.value is not None:
+            self.value = normalize_text_input(self.value)
             
-        if self.name:
-            self.name = normalize_string_nfc(self.name)
+        if self.name is not None:
+            self.name = normalize_text_input(self.name)
             
         # Generate hash for literals if not already set (fallback for individual saves)
         if self.resource_type == ResourceType.LITERAL and self.value and not self.value_hash:

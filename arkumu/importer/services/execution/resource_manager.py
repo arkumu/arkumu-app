@@ -10,7 +10,7 @@ import polars as pl
 from arkumu.metadata.models import Resource
 from arkumu.metadata.models.resource import ResourceType
 from arkumu.metadata.models.triples import Triple
-from arkumu.common.uri_utils import mint_uri, slugify_uri_part
+from arkumu.common.uri_utils import mint_uri, slugify_uri_part, normalize_text_input
 from arkumu.common.enums import LiteralURIStrategy
 from .statistics import ExecutionStatistics
 
@@ -137,7 +137,8 @@ class ResourceManager:
         """
         # Use centralized hash function for URI generation
         from arkumu.common.hash_utils import generate_uri_hash
-        value_hash = generate_uri_hash(value, digest_size=8)
+        normalized_value = normalize_text_input(value) or ""
+        value_hash = generate_uri_hash(normalized_value, digest_size=8)
         
         if strategy == LiteralURIStrategy.SEMANTIC and datatype:
             # Extract simple type name from URI for semantic URIs
@@ -148,8 +149,8 @@ class ResourceManager:
             return f"{self.base_uri}/literals/{value_hash}"
         else:
             # Legacy contextual URIs (existing behavior with Blake2b)
-            legacy_hash = generate_uri_hash(value, digest_size=4)
-            value_identifier = f"{slugify_uri_part(value[:50])}-{legacy_hash}"
+            legacy_hash = generate_uri_hash(normalized_value, digest_size=4)
+            value_identifier = f"{slugify_uri_part(normalized_value[:50])}-{legacy_hash}"
             return mint_uri(self.base_uri, self.institution, "values", value_identifier)
     
     
@@ -244,13 +245,14 @@ class ResourceManager:
         uri_to_value = {}  # Map URIs back to original values
         
         for value, datatype in values:
-            if not value or not value.strip():
+            normalized_value = normalize_text_input(value, blank_to_none=True)
+            if normalized_value is None:
                 continue
                 
-            # Generate URI and hash using full value (no truncation for storage)
-            canonical_uri = self.create_canonical_literal_uri(value, datatype)
-            from arkumu.common.hash_utils import generate_value_hash_and_normalize
-            value_hash, normalized_value = generate_value_hash_and_normalize(value)
+            # Generate URI and hash using normalized value
+            canonical_uri = self.create_canonical_literal_uri(normalized_value, datatype)
+            from arkumu.common.hash_utils import generate_value_hash
+            value_hash = generate_value_hash(normalized_value)
             
             # Skip if we've already seen this URI in this batch
             if canonical_uri in uri_to_value:
@@ -634,12 +636,15 @@ class ResourceManager:
                 
                 # Create value resource if needed
                 # Generate URI first to ensure uniqueness across different datatypes
-                canonical_uri = self.create_canonical_literal_uri(object_value, datatype)
+                normalized_value = normalize_text_input(object_value)
+                if normalized_value is None:
+                    raise ValueError("Literal value cannot be empty")
+                canonical_uri = self.create_canonical_literal_uri(normalized_value, datatype)
                 
                 # Use hash-based uniqueness without source to enable deduplication across archives
                 # and prevent PostgreSQL btree index size limitations
-                from arkumu.common.hash_utils import generate_value_hash_and_normalize
-                value_hash, normalized_value = generate_value_hash_and_normalize(object_value)
+                from arkumu.common.hash_utils import generate_value_hash
+                value_hash = generate_value_hash(normalized_value)
                 
                 value_resource, created = Resource.objects.get_or_create(
                     uri=canonical_uri,  # Use URI for primary uniqueness
