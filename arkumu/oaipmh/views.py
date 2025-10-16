@@ -1202,6 +1202,8 @@ def _add_dc_value(
     value: Optional[str],
     namespace: str = 'dc',
     attrs: Optional[Dict[ET.QName, str]] = None,
+    *,
+    allow_duplicates: bool = False,
 ) -> None:
     if value is None:
         return
@@ -1212,13 +1214,14 @@ def _add_dc_value(
     entries = payload.setdefault(key, [])
     entry = {'value': normalized, 'attrs': attrs or {}} if attrs else normalized
 
-    for existing in entries:
-        if isinstance(existing, dict):
-            if existing.get('value') == normalized and (existing.get('attrs') or {}) == (attrs or {}):
-                return
-        else:
-            if not attrs and existing == normalized:
-                return
+    if not allow_duplicates:
+        for existing in entries:
+            if isinstance(existing, dict):
+                if existing.get('value') == normalized and (existing.get('attrs') or {}) == (attrs or {}):
+                    return
+            else:
+                if not attrs and existing == normalized:
+                    return
 
     entries.append(entry)
 
@@ -1502,19 +1505,17 @@ def _build_dc_payload_from_project(
     arkumu_tokens: set[str] = set()
     fallback_rights: set[str] = set()
 
-    for obj in project.digital_objects:
-        license_info = getattr(obj, "license", None)
-        if not license_info:
-            continue
-        token = _license_status_token(license_info)
+    def _scan_license(license_obj: Optional[Any]) -> None:
+        if not license_obj:
+            return
+        token = _license_status_token(license_obj)
         if token and token in _ARKUMU_LICENSE_LABELS:
             arkumu_tokens.add(token)
-            continue
-
+            return
         candidates = [
-            getattr(license_info, "rights_statement", None),
-            getattr(license_info, "label_de", None),
-            getattr(license_info, "label_en", None),
+            getattr(license_obj, "rights_statement", None),
+            getattr(license_obj, "label_de", None),
+            getattr(license_obj, "label_en", None),
         ]
         for candidate in candidates:
             if candidate is None:
@@ -1526,17 +1527,32 @@ def _build_dc_payload_from_project(
                 continue
             fallback_rights.add(normalized)
 
+    for obj in project.digital_objects:
+        _scan_license(getattr(obj, "license", None))
+
+    if getattr(record, "digital_objects", None):
+        for raw_obj in record.digital_objects:
+            _scan_license(getattr(raw_obj, "license", None))
+
+    if "1" in _ARKUMU_LICENSE_LABELS:
+        arkumu_tokens = {"1"}
+    else:
+        arkumu_tokens.clear()
+
     canonical_values: set[str] = set()
     for token in sorted(arkumu_tokens):
         label = _ARKUMU_LICENSE_LABELS[token]
         text = _ARKUMU_LICENSE_TEXTS[token]
-        _add_dc_value(payload, 'rights', label, attrs={xml_lang_attr: "ger"})
-        _add_dc_value(payload, 'rights', text, attrs={xml_lang_attr: "ger"})
+        _add_dc_value(payload, 'rights', label, attrs={xml_lang_attr: "ger"}, allow_duplicates=True)
+        _add_dc_value(payload, 'rights', text, attrs={xml_lang_attr: "ger"}, allow_duplicates=True)
         canonical_values.update({label, text})
 
-    fallback_rights.difference_update(canonical_values)
-    for rights_value in sorted(fallback_rights):
-        _add_dc_value(payload, 'rights', rights_value)
+    if arkumu_tokens:
+        fallback_rights.clear()
+    else:
+        fallback_rights.difference_update(canonical_values)
+        for rights_value in sorted(fallback_rights):
+            _add_dc_value(payload, 'rights', rights_value)
 
     if not arkumu_tokens:
         if not rights_meta:
