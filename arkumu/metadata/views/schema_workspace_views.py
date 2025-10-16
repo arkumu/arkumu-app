@@ -305,7 +305,7 @@ def _render_dataset_panel(
                 search_url = f"{base_suggestion_url}?{params}"
                 widget.attrs.setdefault("autocomplete", "off")
                 widget.attrs["hx-get"] = search_url
-                widget.attrs["hx-trigger"] = "keyup changed delay:400ms, focus changed delay:0.5s"
+                widget.attrs["hx-trigger"] = "focus, keyup changed delay:200ms"
                 widget.attrs["hx-target"] = f"#{target_id}"
                 widget.attrs["hx-include"] = "this"
                 widget.attrs["data-suggestion-enabled"] = "true"
@@ -1660,7 +1660,13 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         if not field_meta:
             return HttpResponseBadRequest("Unknown field")
 
-        query = (request.GET.get("q") or request.GET.get(column_name) or "").strip()
+        column_alias = f"{column_name}[]"
+        query = (
+            request.GET.get("q")
+            or request.GET.get(column_name)
+            or request.GET.get(column_alias)
+            or ""
+        ).strip()
 
         fk_info = field_meta.get("fk_relationship")
         if field_meta.get("is_join"):

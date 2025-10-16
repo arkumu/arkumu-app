@@ -298,9 +298,9 @@
       const targetId = `${uniqueId}-suggestions`;
       const finalUrl = buildSuggestionUrl(suggestionUrl, uniqueId, targetId);
       input.setAttribute('hx-get', finalUrl);
-      input.setAttribute('hx-trigger', 'keyup changed delay:400ms, search');
+      input.setAttribute('hx-trigger', 'focus, keyup changed delay:200ms');
       input.setAttribute('hx-target', `#${targetId}`);
-      input.setAttribute('hx-include', 'closest form');
+      input.setAttribute('hx-include', 'this');
       input.setAttribute('autocomplete', 'off');
 
       const suggestions = document.createElement('div');
