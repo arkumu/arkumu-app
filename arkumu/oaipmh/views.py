@@ -2180,11 +2180,6 @@ def _build_mets_from_project(
                     if license_label_de:
                         lic_de_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
                         lic_de_elem.text = license_label_de
-                        lic_de_elem.set(xml_lang_attr, "ger")
-                    if license_label_en:
-                        lic_en_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                        lic_en_elem.text = license_label_en
-                        lic_en_elem.set(xml_lang_attr, "eng")
                     if license_uri:
                         lic_uri_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
                         lic_uri_elem.text = license_uri

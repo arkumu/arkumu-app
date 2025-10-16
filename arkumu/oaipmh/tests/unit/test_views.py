@@ -1327,8 +1327,6 @@ class TestOAIViewFunctions:
                 ARKUMU_LICENSE_LABELS[identifier],
                 ARKUMU_LICENSE_TEXTS[identifier],
             ])
-            for elem in rights_elements:
-                assert elem.get(f"{{{XML_NS}}}lang") == "ger"
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_ie_admin_metadata_contains_characteristics_and_rights(self, mock_get_record, sample_resources):
