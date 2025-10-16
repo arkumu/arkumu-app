@@ -18,6 +18,9 @@ def test_manage_view_renders(client):
     response = client.get(reverse("metadata:project_overview_manage"))
     assert response.status_code == 200
     assert "Projektübersicht" in response.content.decode()
+    content = response.content.decode()
+    assert 'name="dataset"' in content
+    assert "Projekte" in content
 
 
 @pytest.mark.django_db
@@ -49,7 +52,7 @@ def test_table_view_lists_projects(client):
 
     response = client.get(
         reverse("metadata:project_overview_table"),
-        {"organization": organization.code},
+        {"organization": organization.code, "dataset": "Projekt"},
         HTTP_HX_REQUEST="true",
     )
     assert response.status_code == 200
@@ -103,7 +106,7 @@ def test_publish_action_updates_status(client):
         mock_task.schedule.return_value = None
         response = client.post(
             reverse("metadata:project_overview_publish", args=[project.id]),
-            {"organization": organization.code},
+            {"organization": organization.code, "dataset": "Projekt"},
             HTTP_HX_REQUEST="true",
         )
 

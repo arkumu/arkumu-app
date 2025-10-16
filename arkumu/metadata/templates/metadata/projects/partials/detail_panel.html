@@ -1,4 +1,5 @@
 {% load i18n %}
+{% if dataset_is_project %}
 <div class="space-y-6">
   <div>
     <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">{% trans "Ereignisse" %}</h3>
@@ -58,3 +59,31 @@
     {% endif %}
   </div>
 </div>
+{% else %}
+<div class="space-y-4">
+  <div class="rounded-lg border border-base-300 bg-base-100 p-4 shadow-sm">
+    <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">
+      {% trans "Allgemeine Informationen" %}
+    </h3>
+    <dl class="mt-2 text-sm text-base-content/80 space-y-1">
+      <div class="flex justify-between gap-4">
+        <dt class="font-medium">{% trans "Titel" %}</dt>
+        <dd class="text-right">{{ project.display_title|default:project.name|default:project.value|default:project.uri }}</dd>
+      </div>
+      <div class="flex justify-between gap-4">
+        <dt class="font-medium">{% trans "URI" %}</dt>
+        <dd class="text-right break-all">{{ project.uri }}</dd>
+      </div>
+      <div class="flex justify-between gap-4">
+        <dt class="font-medium">{% trans "Dataset" %}</dt>
+        <dd class="text-right">{{ dataset_label }}</dd>
+      </div>
+      <div class="flex justify-between gap-4">
+        <dt class="font-medium">{% trans \"Sichtbarkeit\" %}</dt>
+        <dd class=\"text-right\">{{ project.public_access_level }}</dd>
+      </div>
+    </dl>
+  </div>
+  <p class=\"text-xs text-base-content/60\">{% trans \"Detailansichten stehen für dieses Dataset noch nicht zur Verfügung.\" %}</p>
+</div>
+{% endif %}

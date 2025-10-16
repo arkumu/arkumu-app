@@ -8,7 +8,13 @@
       <h1 class="text-2xl font-semibold">{% trans "Projektübersicht" %}</h1>
       <p class="text-base-content/70">{% trans "Verwalte interne Projekte und stoße Veröffentlichungen direkt aus dem Workspace an." %}</p>
     </div>
-    <div id="project-result-meta" class="text-sm text-base-content/70"></div>
+    <div id="project-result-meta" class="text-sm text-base-content/70">
+      {% blocktrans count total=table_context.total_count with dataset=table_config.dataset_label %}
+        {{ total }} Eintrag in {{ dataset }} gefunden
+      {% plural %}
+        {{ total }} Einträge in {{ dataset }} gefunden
+      {% endblocktrans %}
+    </div>
   </div>
 
   <div id="project-feedback"></div>
@@ -18,11 +24,34 @@
     class="bg-base-200/70 rounded-lg border border-base-300 p-4 grid gap-4 md:grid-cols-3"
     hx-get="{% url 'metadata:project_overview_table' %}"
     hx-target="#project-table-body"
-    hx-trigger="submit, change delay:300ms, keyup changed delay:500ms"
-    hx-swap="innerHTML"
+    hx-trigger="submit, change delay:300ms, keyup changed delay:500ms, project-status-updated from:body"
+    hx-swap="outerHTML"
     hx-on="change: document.getElementById('project-filter-page').value = 1"
   >
     <input type="hidden" id="project-filter-page" name="page" value="1">
+    <div class="form-control">
+      <label class="label" for="project-dataset">
+        <span class="label-text font-medium">{% trans "Dataset" %}</span>
+      </label>
+      <select id="project-dataset" name="dataset" class="select select-bordered">
+        <optgroup label="{% trans 'Entitäten' %}">
+          {% for dataset in entity_datasets %}
+            <option value="{{ dataset.dataset_name }}" {% if filters.dataset == dataset.dataset_name %}selected{% endif %}>
+              {{ dataset.label }}
+            </option>
+          {% endfor %}
+        </optgroup>
+        {% if vocabulary_datasets %}
+        <optgroup label="{% trans 'Vokabulare' %}">
+          {% for dataset in vocabulary_datasets %}
+            <option value="{{ dataset.dataset_name }}" {% if filters.dataset == dataset.dataset_name %}selected{% endif %}>
+              {{ dataset.label }}
+            </option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+      </select>
+    </div>
     <div class="form-control md:col-span-2">
       <label class="label" for="project-search">
         <span class="label-text font-medium">{% trans "Suche" %}</span>
@@ -130,33 +159,10 @@
 
   <div class="overflow-x-auto border border-base-300 rounded-lg">
     <table class="table table-zebra w-full">
-      <thead>
-        <tr class="text-xs uppercase text-base-content/70">
-          <th class="w-1/3">{% trans "Projekt" %}</th>
-          <th>{% trans "Organisation" %}</th>
-          <th>{% trans "Status" %}</th>
-          <th>{% trans "Zuletzt bearbeitet" %}</th>
-          <th class="text-center">{% trans "Ereignisse" %}</th>
-          <th class="text-center">{% trans "Akteure" %}</th>
-          <th class="text-center">{% trans "Medien" %}</th>
-          <th class="text-right">{% trans "Aktionen" %}</th>
-        </tr>
-      </thead>
-      <tbody
-        id="project-table-body"
-        hx-get="{% url 'metadata:project_overview_table' %}"
-        hx-trigger="load, project-status-updated from:body"
-        hx-target="this"
-        hx-swap="innerHTML"
-        hx-include="#project-filter-form"
-      >
-        <tr>
-          <td colspan="8" class="p-6 text-center text-base-content/70">{% trans "Projekte werden geladen …" %}</td>
-        </tr>
-      </tbody>
+      {% include 'metadata/projects/partials/header.html' with table_config=table_config oob=False %}
+      {% include 'metadata/projects/partials/table_body.html' with projects=table_context.projects page_obj=table_context.page_obj paginator=table_context.paginator filters=table_context.filters status_labels=status_labels status_badges=table_context.status_badges total_count=table_context.total_count table_config=table_config oob=False %}
     </table>
   </div>
 
-  <div id="project-pagination" class="flex justify-between items-center text-sm text-base-content/70"></div>
 </div>
 {% endblock %}

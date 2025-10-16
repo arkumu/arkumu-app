@@ -1,20 +1,23 @@
 {% load i18n %}
 {% with status=project.status_code|default:"draft" %}
+{% with show_events=table_config.show_event_counts show_actors=table_config.show_actor_counts show_digital=table_config.show_digital_counts %}
 <tr id="project-row-{{ project.id }}" data-project-id="{{ project.id }}">
   <td class="align-top">
     <div class="flex items-start gap-2">
-      <button
-        type="button"
-        class="btn btn-xs btn-outline"
-        hx-get="{% url 'metadata:project_overview_detail' project.id %}"
-        hx-target="#project-detail-{{ project.id }}"
-        hx-trigger="click"
-        hx-swap="innerHTML"
-        hx-include="#project-filter-form"
-        hx-on="htmx:afterSwap: this.closest('tr').nextElementSibling.querySelector('div').classList.remove('hidden')"
-      >
-        {% trans "Details" %}
-      </button>
+      {% if table_config.supports_detail %}
+        <button
+          type="button"
+          class="btn btn-xs btn-outline"
+          hx-get="{% url 'metadata:project_overview_detail' project.id %}"
+          hx-target="#project-detail-{{ project.id }}"
+          hx-trigger="click"
+          hx-swap="innerHTML"
+          hx-include="#project-filter-form"
+          hx-on="htmx:afterSwap: this.closest('tr').nextElementSibling.querySelector('div').classList.remove('hidden')"
+        >
+          {% trans "Details" %}
+        </button>
+      {% endif %}
       <div class="space-y-1">
         <p class="font-medium break-words">
           {{ project.display_title|default:project.name|default:project.value|default:project.uri }}
@@ -43,9 +46,15 @@
       –
     {% endif %}
   </td>
-  <td class="align-top text-center font-medium">{{ project.events_count|default:0 }}</td>
-  <td class="align-top text-center font-medium">{{ project.actors_count|default:0 }}</td>
-  <td class="align-top text-center font-medium">{{ project.digital_objects_count|default:0 }}</td>
+  {% if show_events %}
+    <td class="align-top text-center font-medium">{{ project.events_count|default:0 }}</td>
+  {% endif %}
+  {% if show_actors %}
+    <td class="align-top text-center font-medium">{{ project.actors_count|default:0 }}</td>
+  {% endif %}
+  {% if show_digital %}
+    <td class="align-top text-center font-medium">{{ project.digital_objects_count|default:0 }}</td>
+  {% endif %}
   <td class="align-top text-right">
     <div class="flex justify-end gap-2">
       {% if status == 'published' %}
@@ -88,8 +97,9 @@
   </td>
 </tr>
 <tr class="bg-base-200/40">
-  <td colspan="8">
+  <td colspan="{{ table_config.total_columns }}">
     <div id="project-detail-{{ project.id }}" class="hidden space-y-4"></div>
   </td>
 </tr>
+{% endwith %}
 {% endwith %}

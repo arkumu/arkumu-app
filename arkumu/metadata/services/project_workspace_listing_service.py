@@ -73,6 +73,7 @@ class ProjectWorkspaceFilters:
 
     search: Optional[str] = None
     organization_code: Optional[str] = None
+    dataset: Optional[str] = None
     statuses: Tuple[str, ...] = ()
     has_events: Optional[bool] = None
     has_actors: Optional[bool] = None
@@ -124,6 +125,7 @@ class ProjectWorkspaceFilters:
             search=(params.get("q") or params.get("search") or None),
             organization_code=params.get("organization") or None,
             statuses=statuses,
+            dataset=params.get("dataset") or None,
             has_events=_parse_bool(params.get("has_events")),
             has_actors=_parse_bool(params.get("has_actors")),
             has_digital=_parse_bool(params.get("has_digital")),
@@ -150,12 +152,18 @@ def _triple_predicate_filter(uris: Sequence[str]) -> Q:
 
 
 class ProjectWorkspaceListingService:
-    """Aggregate project metadata for the workspace overview."""
+    """Aggregate entity metadata for the workspace overview."""
 
-    DATASET_NAME = "Projekt"
+    DEFAULT_DATASET = "Projekt"
 
-    def __init__(self, user: User) -> None:
+    def __init__(self, user: User, dataset_name: Optional[str] = None) -> None:
         self.user = user
+        self._set_dataset(dataset_name or self.DEFAULT_DATASET)
+
+    def _set_dataset(self, dataset_name: str) -> None:
+        self.dataset_name = dataset_name
+        self._dataset_name_lower = dataset_name.lower()
+        self._is_project_dataset = self._dataset_name_lower == self.DEFAULT_DATASET.lower()
 
     # ------------------------------------------------------------------ #
     # Query construction
@@ -164,6 +172,9 @@ class ProjectWorkspaceListingService:
         """
         Return annotated project queryset suitable for pagination.
         """
+
+        if filters.dataset:
+            self._set_dataset(filters.dataset)
 
         queryset = (
             Resource.objects.filter(resource_type=ResourceType.ENTITY)
@@ -185,7 +196,7 @@ class ProjectWorkspaceListingService:
     def publish(self, project: Resource) -> Resource:
         """Approve a project for public catalog display."""
 
-        self._validate_project_subject(project)
+        self._validate_resource(project)
 
         if not self.user.has_role_permission("can_transfer_to_public"):
             raise PermissionDenied("Dir fehlen die Rechte zum Veröffentlichen.")
@@ -211,13 +222,14 @@ class ProjectWorkspaceListingService:
             ]
         )
 
-        self._schedule_snapshot_refresh()
+        if self._is_project_dataset:
+            self._schedule_snapshot_refresh()
         return project
 
     def unpublish(self, project: Resource) -> Resource:
         """Revert a project back to restricted workspace visibility."""
 
-        self._validate_project_subject(project)
+        self._validate_resource(project)
 
         if not self.user.has_role_permission("can_transfer_to_public"):
             raise PermissionDenied("Dir fehlen die Rechte zum Entveröffentlichen.")
@@ -242,7 +254,8 @@ class ProjectWorkspaceListingService:
             ]
         )
 
-        self._schedule_snapshot_refresh()
+        if self._is_project_dataset:
+            self._schedule_snapshot_refresh()
         return project
 
     # ------------------------------------------------------------------ #
@@ -254,13 +267,16 @@ class ProjectWorkspaceListingService:
         project = Resource.objects.select_related("organization").filter(id=project_id).first()
         if not project:
             raise PermissionDenied("Projekt wurde nicht gefunden.")
-        self._validate_project_subject(project)
+        self._validate_resource(project)
         if not project.can_user_view(self.user):
             raise PermissionDenied("Dir fehlt die Berechtigung für dieses Projekt.")
         return project
 
     def list_events(self, project: Resource) -> List[dict]:
         """Return detailed event metadata for the project detail drawer."""
+
+        if not self._is_project_dataset:
+            return []
 
         event_triples = (
             Triple.objects.filter(
@@ -299,6 +315,9 @@ class ProjectWorkspaceListingService:
     def list_digital_objects(self, project: Resource) -> List[dict]:
         """Return digital objects directly linked from the project."""
 
+        if not self._is_project_dataset:
+            return []
+
         triples = (
             Triple.objects.filter(subject=project)
             .filter(_predicate_filter("predicate", DIGITAL_PREDICATE_URIS))
@@ -320,6 +339,12 @@ class ProjectWorkspaceListingService:
 
     def populate_actor_counts(self, projects: Sequence[Resource]) -> None:
         """Hydrate actor counts for the provided project resources."""
+
+        if not self._is_project_dataset:
+            for project in projects:
+                project.actors_count = getattr(project, "actors_count", 0)
+                project.has_actor_edges = getattr(project, "has_actor_edges", False)
+            return
 
         project_ids = [project.id for project in projects if getattr(project, "id", None)]
         if not project_ids:
@@ -360,14 +385,14 @@ class ProjectWorkspaceListingService:
     def _dataset_filter(self) -> Q:
         dataset_ids = list(
             Resource.objects.filter(
-                name__iexact=self.DATASET_NAME, resource_type=ResourceType.IRI
+                name__iexact=self.dataset_name, resource_type=ResourceType.IRI
             ).values_list("id", flat=True)
         )
         if dataset_ids:
             return Q(subject_triples__object_id__in=dataset_ids)
         # Fallback for freshly minted datasets where canonical name differs slightly
-        slug = self.DATASET_NAME.lower()
-        return Q(subject_triples__object__name__icontains=self.DATASET_NAME) | Q(
+        slug = self.dataset_name.lower()
+        return Q(subject_triples__object__name__icontains=self.dataset_name) | Q(
             subject_triples__object__uri__icontains=f"/datasets/{slug}"
         )
 
@@ -418,48 +443,54 @@ class ProjectWorkspaceListingService:
     def _annotate_metrics(self, queryset: QuerySet[Resource]) -> QuerySet[Resource]:
         """Attach status flags and related entity counters."""
 
-        events_qs = (
-            Triple.objects.filter(subject=OuterRef("pk"))
-            .filter(_triple_predicate_filter(EVENT_PREDICATE_URIS))
-            .filter(object__resource_type=ResourceType.ENTITY)
-            .values()
-            .annotate(total=Count("object_id", distinct=True))
-            .values("total")
-        )
-        digital_qs = (
-            Triple.objects.filter(subject=OuterRef("pk"))
-            .filter(_triple_predicate_filter(DIGITAL_PREDICATE_URIS))
-            .filter(object__resource_type=ResourceType.ENTITY)
-            .values()
-            .annotate(total=Count("object_id", distinct=True))
-            .values("total")
-        )
+        integer_zero = Value(0, output_field=IntegerField())
+        boolean_false = Value(False, output_field=BooleanField())
 
-        base_event_ids = (
-            Triple.objects.filter(subject=OuterRef("pk"))
-            .filter(_triple_predicate_filter(EVENT_PREDICATE_URIS))
-            .values("object_id")
-        )
-        events_count_sq = Subquery(events_qs, output_field=IntegerField())
-        digital_count_sq = Subquery(digital_qs, output_field=IntegerField())
-
-        direct_actor_exists = (
-            Triple.objects.filter(subject=OuterRef("pk"))
-            .filter(_triple_predicate_filter(ACTOR_DIRECT_PREDICATE_URIS))
-            .filter(object__resource_type=ResourceType.ENTITY)
-        )
-
-        event_actor_exists = (
-            Triple.objects.filter(subject__in=Subquery(base_event_ids))
-            .filter(_triple_predicate_filter((ACTOR_IN_EVENT_URI,)))
-            .filter(object__resource_type=ResourceType.ENTITY)
-        )
-
-        has_actor_case = Case(
-            When(Exists(direct_actor_exists) | Exists(event_actor_exists), then=Value(True)),
-            default=Value(False),
-            output_field=BooleanField(),
-        )
+        if self._is_project_dataset:
+            events_qs = (
+                Triple.objects.filter(subject=OuterRef("pk"))
+                .filter(_triple_predicate_filter(EVENT_PREDICATE_URIS))
+                .filter(object__resource_type=ResourceType.ENTITY)
+                .values()
+                .annotate(total=Count("object_id", distinct=True))
+                .values("total")
+            )
+            digital_qs = (
+                Triple.objects.filter(subject=OuterRef("pk"))
+                .filter(_triple_predicate_filter(DIGITAL_PREDICATE_URIS))
+                .filter(object__resource_type=ResourceType.ENTITY)
+                .values()
+                .annotate(total=Count("object_id", distinct=True))
+                .values("total")
+            )
+            base_event_ids = (
+                Triple.objects.filter(subject=OuterRef("pk"))
+                .filter(_triple_predicate_filter(EVENT_PREDICATE_URIS))
+                .values("object_id")
+            )
+            events_expr = Coalesce(Subquery(events_qs, output_field=IntegerField()), integer_zero)
+            digital_expr = Coalesce(
+                Subquery(digital_qs, output_field=IntegerField()), integer_zero
+            )
+            direct_actor_exists = (
+                Triple.objects.filter(subject=OuterRef("pk"))
+                .filter(_triple_predicate_filter(ACTOR_DIRECT_PREDICATE_URIS))
+                .filter(object__resource_type=ResourceType.ENTITY)
+            )
+            event_actor_exists = (
+                Triple.objects.filter(subject__in=Subquery(base_event_ids))
+                .filter(_triple_predicate_filter((ACTOR_IN_EVENT_URI,)))
+                .filter(object__resource_type=ResourceType.ENTITY)
+            )
+            has_actor_case = Case(
+                When(Exists(direct_actor_exists) | Exists(event_actor_exists), then=Value(True)),
+                default=boolean_false,
+                output_field=BooleanField(),
+            )
+        else:
+            events_expr = integer_zero
+            digital_expr = integer_zero
+            has_actor_case = boolean_false
 
         status_case = Case(
             When(is_externally_linked=True, then=Value("blocked")),
@@ -495,16 +526,14 @@ class ProjectWorkspaceListingService:
         )
 
         queryset = queryset.annotate(
-            events_count=Coalesce(events_count_sq, Value(0, output_field=IntegerField())),
-            digital_objects_count=Coalesce(
-                digital_count_sq, Value(0, output_field=IntegerField())
-            ),
+            events_count=events_expr,
+            digital_objects_count=digital_expr,
             has_actor_edges=has_actor_case,
             status_code=status_case,
         )
 
         queryset = queryset.annotate(
-            actors_count=Value(0, output_field=IntegerField()),
+            actors_count=integer_zero,
             is_publishable=Case(
                 When(status_code__in=["draft", "pending"], then=Value(True)),
                 default=Value(False),
@@ -563,6 +592,9 @@ class ProjectWorkspaceListingService:
 
     def _year_range_predicate(self, year_start: Optional[int], year_end: Optional[int]) -> Q:
         """Build predicate restricting projects by event start/end ISO years."""
+
+        if not self._is_project_dataset:
+            return Q()
 
         if year_start is None and year_end is None:
             return Q()
@@ -639,6 +671,9 @@ class ProjectWorkspaceListingService:
     def _collect_event_actors(self, event: Resource) -> List[dict]:
         """Collect actors linked to the given event."""
 
+        if not self._is_project_dataset:
+            return []
+
         triples = (
             Triple.objects.filter(subject=event)
             .filter(
@@ -679,13 +714,22 @@ class ProjectWorkspaceListingService:
             )
         return results
 
-    def _validate_project_subject(self, project: Resource) -> None:
-        """Ensure the resource is a project entity and editable by the user."""
+    def _validate_resource(self, project: Resource) -> None:
+        """Ensure the resource is an entity belonging to the active dataset."""
 
         if project.resource_type != ResourceType.ENTITY:
             raise PermissionDenied("Nur Entitäten können verwaltet werden.")
-        if not project.subject_triples.filter(predicate__uri=IS_PART_OF_URI).exists():
-            raise PermissionDenied("Ressource ist keinem Projekt-Dataset zugeordnet.")
+        dataset_filter: Q
+        dataset_resources = Resource.objects.filter(
+            name__iexact=self.dataset_name,
+            resource_type=ResourceType.IRI,
+        )
+        if dataset_resources.exists():
+            dataset_filter = Q(predicate__uri=IS_PART_OF_URI, object__in=dataset_resources)
+        else:
+            dataset_filter = Q(predicate__uri=IS_PART_OF_URI)
+        if not project.subject_triples.filter(dataset_filter).exists():
+            raise PermissionDenied("Ressource ist keinem passenden Dataset zugeordnet.")
         if not project.can_user_view(self.user):
             raise PermissionDenied("Dir fehlt die Berechtigung für dieses Projekt.")
 

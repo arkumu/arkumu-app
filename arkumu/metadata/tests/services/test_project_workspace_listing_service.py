@@ -172,3 +172,47 @@ def test_filters_can_require_related_entities():
     ids = set(queryset.values_list("id", flat=True))
     assert project_with_event.id in ids
     assert project_without_event.id not in ids
+
+
+@pytest.mark.django_db
+def test_service_supports_non_project_dataset():
+    organization = Organization.objects.create(code="demo", name="Demo Org")
+    manager = User.objects.create_user(
+        "manager3",
+        password="pass",
+        role="manager",
+        organization=organization,
+    )
+
+    dataset_actor = Resource.objects.create(
+        uri="http://arkumu.org/data/demo/datasets/akteure",
+        resource_type=ResourceType.IRI,
+        name="Akteurin",
+        organization=organization,
+    )
+    is_part_of = Resource.objects.create(
+        uri=IS_PART_OF_URI,
+        resource_type=ResourceType.PROPERTY,
+        name="isPartOf",
+        organization=organization,
+    )
+
+    actor = Resource.objects.create(
+        uri="http://arkumu.org/data/demo/actors/1",
+        resource_type=ResourceType.ENTITY,
+        name="Max Mustermann",
+        organization=organization,
+        public_access_level=PublicAccessLevel.RESTRICTED,
+    )
+    Triple.objects.create(subject=actor, predicate=is_part_of, object=dataset_actor, source=organization)
+
+    service = ProjectWorkspaceListingService(manager, dataset_name="Akteurin")
+    filters = ProjectWorkspaceFilters.from_query_params({"dataset": "Akteurin"})
+    queryset = service.get_queryset(filters)
+
+    assert queryset.count() == 1
+    row = queryset.first()
+    assert row.name == "Max Mustermann"
+    assert row.events_count == 0
+    assert row.digital_objects_count == 0
+    assert row.actors_count == 0

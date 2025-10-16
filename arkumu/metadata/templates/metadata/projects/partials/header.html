@@ -1,0 +1,23 @@
+{% load i18n %}
+{% if oob %}
+<thead id="project-table-header" hx-swap-oob="outerHTML">
+{% else %}
+<thead id="project-table-header">
+{% endif %}
+  <tr class="text-xs uppercase text-base-content/70">
+    <th class="w-1/3">{% trans "Titel" %}</th>
+    <th>{% trans "Organisation" %}</th>
+    <th>{% trans "Status" %}</th>
+    <th>{% trans "Zuletzt bearbeitet" %}</th>
+    {% if table_config.show_event_counts %}
+      <th class="text-center">{% trans "Ereignisse" %}</th>
+    {% endif %}
+    {% if table_config.show_actor_counts %}
+      <th class="text-center">{% trans "Akteure" %}</th>
+    {% endif %}
+    {% if table_config.show_digital_counts %}
+      <th class="text-center">{% trans "Medien" %}</th>
+    {% endif %}
+    <th class="text-right">{% trans "Aktionen" %}</th>
+  </tr>
+</thead>
