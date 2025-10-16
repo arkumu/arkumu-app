@@ -29,14 +29,14 @@ def normalize_string_nfc(text: str) -> str:
 
 def normalize_text_input(value: Any, *, blank_to_none: bool = False) -> Optional[str]:
     """
-    Normalize arbitrary textual input by trimming whitespace and applying NFC normalization.
+    Normalize arbitrary textual input by applying NFC normalization while preserving outer whitespace.
 
     Args:
         value: Input value that should be normalized. Non-string values are cast to string.
         blank_to_none: If True, return None when the normalized text is empty.
 
     Returns:
-        Normalized string or None if the input is None or blank and blank_to_none is True.
+        Normalized string or None if the input is None or blank (after trimming) and blank_to_none is True.
     """
     if value is None:
         return None
@@ -45,12 +45,11 @@ def normalize_text_input(value: Any, *, blank_to_none: bool = False) -> Optional
         value = str(value)
 
     normalized = normalize_string_nfc(value)
-    trimmed = normalized.strip()
 
-    if not trimmed and blank_to_none:
+    if blank_to_none and normalized.strip() == "":
         return None
 
-    return trimmed
+    return normalized
 
 def slugify_uri_part(value_str):
     """
