@@ -154,6 +154,35 @@ def _normalize_fixity_type(label: Optional[str]) -> Optional[str]:
     return label
 
 
+def _original_storage_path(obj: NormalizedDigitalObject) -> Optional[str]:
+    """
+    Return the path representing Arkumu-managed storage.
+
+    Rosetta-specific paths must not be exposed via fileOriginalPath, so we filter
+    out any value that matches the Rosetta location candidates.
+    """
+    rosetta_refs = {
+        candidate.strip()
+        for candidate in (
+            *(obj.rosetta_candidates or ()),
+            obj.rosetta_path,
+        )
+        if candidate
+    }
+    for candidate in (obj.storage_key, obj.original_path):
+        if not candidate:
+            continue
+        normalized = candidate.strip()
+        if not normalized:
+            continue
+        if normalized in rosetta_refs:
+            continue
+        if normalized.startswith("/rosetta/"):
+            continue
+        return normalized
+    return None
+
+
 def _metadata_element_is_valid(
     metadata_elem: ET._Element,
     *,
@@ -1958,12 +1987,9 @@ def _build_mets_from_project(
                 general_keys.append(("label", label_value))
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
-            if preferred_location:
-                general_keys.append(("fileOriginalPath", preferred_location))
-            elif obj.storage_key:
-                general_keys.append(("fileOriginalPath", obj.storage_key))
-            elif obj.original_path:
-                general_keys.append(("fileOriginalPath", obj.original_path))
+            storage_path = _original_storage_path(obj)
+            if storage_path:
+                general_keys.append(("fileOriginalPath", storage_path))
             if obj.content_type:
                 general_keys.append(("fileMIMEType", obj.content_type))
             if obj.size_bytes is not None:
