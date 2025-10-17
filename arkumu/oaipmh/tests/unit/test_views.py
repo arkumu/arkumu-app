@@ -1263,6 +1263,45 @@ class TestOAIViewFunctions:
                 assert rights_values == {expected_label, expected_text}
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_mets_file_fixity_uses_sha256_without_hyphen(self, mock_get_record, sample_resources):
+        """Fixity metadata must spell SHA256 without the hyphen to satisfy Rosetta."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+
+        primary_obj = record.digital_objects[0]
+        primary_obj.checksum = "a" * 64
+        primary_obj.checksum_algorithm = "SHA-256"
+
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        fixity_type_values = [
+            key.text
+            for key in mets_root.findall(
+                f".//{{{DNX_NS}}}section[@id='fileFixity']"
+                f"/{{{DNX_NS}}}record/{{{DNX_NS}}}key[@id='fixityType']"
+            )
+            if key.text
+        ]
+        assert fixity_type_values
+        assert "SHA256" in fixity_type_values
+        assert "SHA-256" not in fixity_type_values
+
+        fixity_algorithm_values = [
+            key.text
+            for key in mets_root.findall(
+                f".//{{{DNX_NS}}}section[@id='fileFixity']"
+                f"/{{{DNX_NS}}}record/{{{DNX_NS}}}key[@id='fixityAlgorithm']"
+            )
+            if key.text
+        ]
+        assert "SHA-256" not in fixity_algorithm_values
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_mets_file_sections_khm_apply_canonical_rights(self, mock_get_record, sample_resources):
         """KHM/HMT digital objects expose canonical rights as dc:rights with no per-file rightsMD or dcterms:license."""
         resource = sample_resources[0]
