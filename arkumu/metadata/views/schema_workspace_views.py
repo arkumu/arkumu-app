@@ -14,7 +14,7 @@ from urllib.parse import urlparse, urlencode
 from django.utils.text import slugify
 
 from arkumu.metadata.models.mappings import Mapping
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.schema_workspace import (
     DatasetEntityForm,
@@ -263,6 +263,50 @@ def _infer_entity_label(service: SchemaWorkspaceService, entity_uri: str) -> str
     return entity_uri.split('/')[-1]
 
 
+def _build_project_access_context(
+    *,
+    service: SchemaWorkspaceService,
+    dataset_summary: Any,
+    dataset_name: str,
+    entity_uri: Optional[str],
+    message: Optional[str] = None,
+) -> Dict[str, Any]:
+    slug = slugify(dataset_name).lower()
+    if slug not in {"projekt", "project"}:
+        return {
+            "project_access_enabled": False,
+        }
+
+    choices = [
+        {"value": value, "label": label}
+        for value, label in PublicAccessLevel.choices
+    ]
+
+    resource: Optional[Resource] = None
+    if entity_uri:
+        resource = Resource.objects.filter(uri=entity_uri).first()
+
+    current_level_enum = PublicAccessLevel.PRIVATE
+    if resource and resource.public_access_level:
+        current_level_enum = PublicAccessLevel(resource.public_access_level)
+
+    choice_map = dict(PublicAccessLevel.choices)
+    current_display = choice_map.get(current_level_enum.value, current_level_enum.label)
+
+    disabled = resource is None or not entity_uri
+
+    context: Dict[str, Any] = {
+        "project_access_enabled": True,
+        "project_access_choices": choices,
+        "current_access_level": current_level_enum.value,
+        "current_access_display": current_display,
+        "project_access_disabled": disabled,
+        "project_access_public_approved": bool(resource and resource.is_public_approved),
+        "project_access_message": message or "",
+    }
+    return context
+
+
 def _render_dataset_panel(
     request: HttpRequest,
     *,
@@ -278,6 +322,12 @@ def _render_dataset_panel(
     load_error: bool = False,
 ) -> str:
     dataset_summary = service.get_dataset_summary(dataset_name)
+    project_access_context = _build_project_access_context(
+        service=service,
+        dataset_summary=dataset_summary,
+        dataset_name=dataset_name,
+        entity_uri=entity_uri,
+    )
     join_field_map = join_field_map or {}
 
     selected_property = (
@@ -387,22 +437,25 @@ def _render_dataset_panel(
         key=lambda item: (item["meta"].get("join_other_dataset", ""), item["field"].label.lower()),
     )
 
+    template_context = {
+        "dataset_summary": dataset_summary,
+        "fields_with_metadata": normal_fields,
+        "join_fields": join_fields_sorted,
+        "form": form,
+        "entity_uri": entity_uri,
+        "entity_label": entity_label,
+        "success_message": success_message,
+        "error_message": error_message,
+        "load_error": load_error,
+        "mapping": service.mapping,
+        "search_properties": search_properties,
+        "selected_property": selected_property,
+    }
+    template_context.update(project_access_context)
+
     return render_to_string(
         "metadata/entity_creation/partials/_dataset_panel.html",
-        {
-            "dataset_summary": dataset_summary,
-            "fields_with_metadata": normal_fields,
-            "join_fields": join_fields_sorted,
-            "form": form,
-            "entity_uri": entity_uri,
-            "entity_label": entity_label,
-            "success_message": success_message,
-            "error_message": error_message,
-            "load_error": load_error,
-            "mapping": service.mapping,
-            "search_properties": search_properties,
-            "selected_property": selected_property,
-        },
+        template_context,
         request=request,
     )
 
@@ -1755,6 +1808,75 @@ class EntitySearchView(LoginRequiredMixin, View):
         helper = CSVMappingTemplateHelperMixin()
         response_html = helper.build_oob_response(html)
         return HttpResponse(response_html)
+
+
+class ProjectAccessLevelUpdateView(LoginRequiredMixin, View):
+    """Update public access level for project resources."""
+
+    def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        dataset_name = request.POST.get("dataset") or ""
+        entity_uri = request.POST.get("entity_uri")
+        desired_level = request.POST.get("public_access_level")
+
+        if not dataset_name or not entity_uri or not desired_level:
+            return HttpResponseBadRequest("Missing required parameters")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+
+        slug = slugify(dataset_name).lower()
+        if slug not in {"projekt", "project"}:
+            return HttpResponseBadRequest("Unsupported dataset for access updates")
+
+        valid_levels = {value for value, _ in PublicAccessLevel.choices}
+        if desired_level not in valid_levels:
+            return HttpResponseBadRequest("Ungültiger Zugriffsstatus")
+
+        resource = Resource.objects.filter(uri=entity_uri).first()
+        if resource is None:
+            return HttpResponseBadRequest("Projekt wurde nicht gefunden")
+
+        desired_level_enum = PublicAccessLevel(desired_level)
+        fields_to_update: List[str] = []
+        if resource.public_access_level != desired_level_enum.value:
+            resource.public_access_level = desired_level_enum.value
+            fields_to_update.append("public_access_level")
+
+        if desired_level_enum != PublicAccessLevel.PUBLIC and resource.is_public_approved:
+            resource.is_public_approved = False
+            fields_to_update.append("is_public_approved")
+
+        if fields_to_update:
+            resource.save(update_fields=list(set(fields_to_update)))
+            feedback_message = "Zugriff angepasst."
+        else:
+            feedback_message = "Zugriff unverändert."
+
+        dataset_summary = service.get_dataset_summary(dataset_name)
+        context = {
+            "mapping": service.mapping,
+            "dataset_summary": dataset_summary,
+            "entity_uri": entity_uri,
+        }
+        context.update(
+            _build_project_access_context(
+                service=service,
+                dataset_summary=dataset_summary,
+                dataset_name=dataset_name,
+                entity_uri=entity_uri,
+                message=feedback_message,
+            )
+        )
+
+        html = render_to_string(
+            "metadata/entity_creation/partials/_project_access_control.html",
+            context,
+            request=request,
+        )
+        return HttpResponse(html)
+
 
 class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
     """Return existing literal suggestions for dataset fields."""

@@ -11,6 +11,10 @@
       </p>
     </header>
 
+    {% if project_access_enabled %}
+      {% include "metadata/entity_creation/partials/_project_access_control.html" %}
+    {% endif %}
+
     {% if success_message %}
       <div class="alert alert-success">
         <span>{{ success_message|safe }}</span>

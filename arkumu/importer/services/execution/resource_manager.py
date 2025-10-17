@@ -568,7 +568,7 @@ class ResourceManager:
                     "organization": self.organization,
                 }
                 if self._dataset_requires_private_default(dataset_name):
-                    defaults["public_access_level"] = PublicAccessLevel.PRIVATE
+                    defaults["public_access_level"] = PublicAccessLevel.PRIVATE.value
 
                 entity_resource, created = Resource.objects.get_or_create(
                     uri=entity_uri,
