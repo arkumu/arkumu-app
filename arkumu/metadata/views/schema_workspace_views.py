@@ -25,7 +25,7 @@ from arkumu.metadata.schema_workspace import (
     FlowEvent,
     SchemaWorkspaceCoordinator,
 )
-from arkumu.metadata.schema_workspace.services import JoinRelationship
+from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 from arkumu.users.models import Organization
 
@@ -98,53 +98,6 @@ def _resolve_active_mapping(
     return queryset.first()
 
 
-def _augment_field_metadata_with_joins(
-    service: SchemaWorkspaceService,
-    dataset_name: str,
-    field_metadata: Dict[str, Dict[str, Any]],
-) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, JoinRelationship]]:
-    metadata = dict(field_metadata)
-    join_map: Dict[str, JoinRelationship] = {}
-    for relationship in service.list_join_relationships(dataset_name):
-        # Hide the original foreign-key column and any direct property mapped to the same predicate
-        metadata.pop(relationship.self_column, None)
-        for field_name, field_meta in list(metadata.items()):
-            if field_meta.get("property_uri") == relationship.self_property_uri:
-                metadata.pop(field_name, None)
-            elif (
-                (field_meta.get("property_label") or "").strip().lower()
-                == (relationship.other_display_label or "").strip().lower()
-            ):
-                metadata.pop(field_name, None)
-
-        field_name = f"__join__{relationship.join_dataset}__{relationship.other_dataset}"
-        join_map[field_name] = relationship
-        if field_name in metadata:
-            metadata[field_name]["is_join"] = True
-            metadata[field_name]["join_relationship"] = relationship
-            metadata[field_name]["join_other_dataset"] = relationship.other_dataset
-            metadata[field_name]["property_label"] = (
-                metadata[field_name].get("property_label")
-                or relationship.other_display_label
-            )
-            continue
-
-        metadata[field_name] = {
-            "column_name": field_name,
-            "column_type": "join",
-            "property_label": relationship.other_display_label,
-            "is_required": False,
-            "is_multi_value": True,
-            "is_join": True,
-            "join_relationship": relationship,
-            "join_other_dataset": relationship.other_dataset,
-            "join_key": f"{relationship.join_dataset}::{relationship.other_dataset}",
-            "help_text": f"Verknüpfte {relationship.other_display_label}",
-        }
-
-    return metadata, join_map
-
-
 def _parse_join_payload(raw_value) -> List[str]:
     if raw_value in (None, "", []):
         return []
@@ -181,6 +134,44 @@ def _remove_join_source_fields(form: DatasetEntityForm, join_field_map: Dict[str
             form.fields.pop(source_field)
         if hasattr(form, "initial") and isinstance(form.initial, dict):
             form.initial.pop(source_field, None)
+
+
+def _apply_relationship_initials(
+    *,
+    service: SchemaWorkspaceService,
+    form: DatasetEntityForm,
+    relationships: List[RelationshipValues],
+    mutate_form: bool = True,
+) -> List[Dict[str, Any]]:
+    badges: List[Dict[str, Any]] = []
+
+    for relationship in relationships:
+        labelled = [
+            {
+                "uri": uri,
+                "label": _infer_entity_label(service, uri),
+            }
+            for uri in relationship.uris
+        ]
+
+        if mutate_form:
+            field = form.fields.get(relationship.field_name)
+            if field is not None and isinstance(field.widget, forms.HiddenInput):
+                payload = json.dumps(labelled)
+                form.initial[relationship.field_name] = payload
+                field.initial = payload
+
+        badges.append(
+            {
+                "field_name": relationship.field_name,
+                "label": relationship.display_label,
+                "items": labelled,
+                "is_join": relationship.is_join,
+                "editable": relationship.editable,
+            }
+        )
+
+    return badges
 
 
 def _get_schema_service(request: HttpRequest, mapping_id: Optional[str] = None) -> SchemaWorkspaceService:
@@ -971,8 +962,7 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
             )
             active_dataset_name = target_dataset
             field_metadata = service.get_field_metadata(target_dataset)
-            field_metadata, join_field_map = _augment_field_metadata_with_joins(
-                service,
+            field_metadata, join_field_map = service.augment_field_metadata_with_joins(
                 target_dataset,
                 field_metadata,
             )
@@ -1944,8 +1934,7 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             return HttpResponseBadRequest(str(exc))
 
         field_metadata = service.get_field_metadata(dataset_name)
-        field_metadata, join_field_map = _augment_field_metadata_with_joins(
-            service,
+        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
         )
@@ -2118,8 +2107,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
 
         service = self.get_service(request, mapping_id)
         field_metadata = service.get_field_metadata(dataset_name)
-        field_metadata, join_field_map = _augment_field_metadata_with_joins(
-            service,
+        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
         )
@@ -2171,22 +2159,19 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         _remove_join_source_fields(form, join_field_map)
 
         if entity_uri:
-            for field_name, relationship in join_field_map.items():
-                join_values = service.get_join_values(relationship, entity_uri)
-                if not join_values:
-                    form.initial[field_name] = json.dumps([])
-                    continue
-                labelled = [
-                    {
-                        "uri": uri,
-                        "label": _infer_entity_label(service, uri),
-                    }
-                    for uri in join_values
-                ]
-                form.initial[field_name] = json.dumps(labelled)
-                # Ensure entity label for info banner if missing
-                if not entity_label:
-                    entity_label = _infer_entity_label(service, entity_uri)
+            relationships = service.collect_relationship_values(
+                dataset_name=dataset_name,
+                entity_uri=entity_uri,
+                field_metadata=field_metadata,
+                join_field_map=join_field_map,
+            )
+            _apply_relationship_initials(
+                service=service,
+                form=form,
+                relationships=relationships,
+            )
+            if not entity_label:
+                entity_label = _infer_entity_label(service, entity_uri)
 
         html = _render_dataset_panel(
             request,
@@ -2208,8 +2193,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
 
         service = self.get_service(request, mapping_id)
         field_metadata = service.get_field_metadata(dataset_name)
-        field_metadata, join_field_map = _augment_field_metadata_with_joins(
-            service,
+        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
         )
@@ -2274,16 +2258,17 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     entity_uri = saved_uri
 
                 if entity_uri:
-                    for field_name, relationship in join_field_map.items():
-                        join_values = service.get_join_values(relationship, entity_uri)
-                        labelled = [
-                            {
-                                "uri": uri,
-                                "label": _infer_entity_label(service, uri),
-                            }
-                            for uri in join_values
-                        ]
-                        form.initial[field_name] = json.dumps(labelled)
+                    relationships = service.collect_relationship_values(
+                        dataset_name=dataset_name,
+                        entity_uri=entity_uri,
+                        field_metadata=field_metadata,
+                        join_field_map=join_field_map,
+                    )
+                    _apply_relationship_initials(
+                        service=service,
+                        form=form,
+                        relationships=relationships,
+                    )
 
                 html = _render_dataset_panel(
                     request,

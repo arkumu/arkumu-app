@@ -64,6 +64,19 @@ class JoinRelationship:
     other_display_label: str
 
 
+@dataclass(frozen=True)
+class RelationshipValues:
+    """Collected relationship values for badge display and widget hydration."""
+
+    field_name: str
+    display_label: str
+    uris: List[str]
+    is_join: bool
+    target_dataset: Optional[str] = None
+    property_uri: Optional[str] = None
+    editable: bool = True
+
+
 class SchemaWorkspaceService:
     """Expose SchemaService blueprints in a UI-friendly format."""
 
@@ -231,9 +244,52 @@ class SchemaWorkspaceService:
         relationships: List[JoinRelationship] = []
         seen: Set[Tuple[str, str, str]] = set()
 
-        for summary in self.list_datasets():
-            candidate = summary.dataset_name
+        dataset_names = self._schema_service.list_datasets()
+        for candidate in dataset_names:
             schema = self.get_dataset_schema(candidate)
+            junction = schema.get("junction_schema")
+            if junction:
+                primary_dataset = junction.get("primary_dataset")
+                secondary_dataset = junction.get("secondary_dataset")
+                if dataset_name not in {primary_dataset, secondary_dataset}:
+                    continue
+
+                if dataset_name == primary_dataset:
+                    self_column = junction.get("primary_fk")
+                    other_dataset = secondary_dataset
+                    other_column = junction.get("secondary_fk")
+                else:
+                    self_column = junction.get("secondary_fk")
+                    other_dataset = primary_dataset
+                    other_column = junction.get("primary_fk")
+
+                if not other_dataset or not self_column or not other_column:
+                    continue
+
+                key = (candidate, dataset_name, other_dataset)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                properties = schema.get("properties", {}) or {}
+                self_property = properties.get(self_column)
+                other_property = properties.get(other_column)
+                other_summary = self.get_dataset_summary(other_dataset)
+
+                relationships.append(
+                    JoinRelationship(
+                        join_dataset=candidate,
+                        join_dataset_schema=schema,
+                        self_column=self_column,
+                        self_property_uri=getattr(self_property, "uri", None),
+                        other_dataset=other_dataset,
+                        other_column=other_column,
+                        other_property_uri=getattr(other_property, "uri", None),
+                        other_display_label=other_summary.display_label,
+                    )
+                )
+                continue
+
             fk_rels: List[Dict[str, Any]] = schema.get("fk_relationships", []) or []
             if not fk_rels:
                 continue
@@ -386,6 +442,12 @@ class SchemaWorkspaceService:
             }
             if column_name in fk_lookup:
                 meta["fk_relationship"] = fk_lookup[column_name]
+                if meta.get("fk_relationship", {}).get("is_multi_value"):
+                    meta["is_multi_value"] = True
+            if not meta.get("is_multi_value"):
+                column_type = str(meta.get("column_type") or "").lower()
+                if "multi_value" in column_type or column_name in schema.get("multi_value_schemas", {}):
+                    meta["is_multi_value"] = True
             if enforce_title_required:
                 column_key = column_name.strip().lower()
                 label_key = str(meta.get("property_label") or "").strip().lower()
@@ -398,6 +460,237 @@ class SchemaWorkspaceService:
                     meta["is_required"] = True
             field_meta[column_name] = meta
         return field_meta
+
+    def augment_field_metadata_with_joins(
+        self,
+        dataset_name: str,
+        field_metadata: Dict[str, Dict[str, Any]],
+    ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, JoinRelationship]]:
+        metadata = dict(field_metadata)
+        join_map: Dict[str, JoinRelationship] = {}
+
+        for relationship in self.list_join_relationships(dataset_name):
+            metadata.pop(relationship.self_column, None)
+
+            for field_name, field_meta in list(metadata.items()):
+                if field_meta.get("property_uri") == relationship.self_property_uri:
+                    metadata.pop(field_name, None)
+
+            field_name = f"__join__{relationship.join_dataset}__{relationship.other_dataset}"
+            join_map[field_name] = relationship
+            if field_name in metadata:
+                metadata[field_name]["is_join"] = True
+                metadata[field_name]["join_relationship"] = relationship
+                metadata[field_name]["join_other_dataset"] = relationship.other_dataset
+                metadata[field_name]["property_label"] = (
+                    metadata[field_name].get("property_label")
+                    or relationship.other_display_label
+                )
+                continue
+
+            metadata[field_name] = {
+                "column_name": field_name,
+                "column_type": "join",
+                "property_label": relationship.other_display_label,
+                "is_required": False,
+                "is_multi_value": True,
+                "is_join": True,
+                "join_relationship": relationship,
+                "join_other_dataset": relationship.other_dataset,
+                "join_key": f"{relationship.join_dataset}::{relationship.other_dataset}",
+                "help_text": f"Verknüpfte {relationship.other_display_label}",
+            }
+
+        return metadata, join_map
+
+    def collect_relationship_values(
+        self,
+        *,
+        dataset_name: str,
+        entity_uri: str,
+        field_metadata: Dict[str, Dict[str, Any]],
+        join_field_map: Dict[str, JoinRelationship],
+    ) -> List[RelationshipValues]:
+        if not entity_uri:
+            return []
+
+        entity_resource = Resource.objects.filter(uri=entity_uri).first()
+        if entity_resource is None:
+            return []
+
+        collected: List[RelationshipValues] = []
+
+        for field_name, relationship in join_field_map.items():
+            uris = self.get_join_values(relationship, entity_uri)
+            if not uris:
+                continue
+            other_label = relationship.other_display_label or relationship.other_dataset
+            collected.append(
+                RelationshipValues(
+                    field_name=field_name,
+                    display_label=other_label,
+                    uris=list(uris),
+                    is_join=True,
+                    target_dataset=relationship.other_dataset,
+                    property_uri=relationship.other_property_uri,
+                )
+            )
+
+        for field_name, meta in field_metadata.items():
+            if field_name in join_field_map:
+                continue
+
+            fk_info = meta.get("fk_relationship")
+            if not fk_info:
+                continue
+
+            property_uri = (
+                meta.get("property_uri")
+                or fk_info.get("source_property_uri")
+                or fk_info.get("source_canonical_property")
+            )
+            if not property_uri:
+                continue
+
+            uris = self._get_fk_values(
+                entity_resource=entity_resource,
+                property_uri=property_uri,
+            )
+            if not uris:
+                continue
+
+            target_dataset = fk_info.get("target_dataset")
+            display_label = target_dataset
+            if target_dataset:
+                try:
+                    display_label = self.get_dataset_summary(target_dataset).display_label
+                except ValueError:
+                    display_label = target_dataset
+
+            collected.append(
+                RelationshipValues(
+                    field_name=field_name,
+                    display_label=display_label or field_name,
+                    uris=uris,
+                    is_join=False,
+                    target_dataset=target_dataset,
+                    property_uri=property_uri,
+                    editable=True,
+                )
+            )
+
+        exclude_datasets = {
+            rel.target_dataset
+            for rel in collected
+            if rel.target_dataset
+        }
+
+        collected.extend(
+            self._collect_reverse_fk_values(
+                dataset_name=dataset_name,
+                entity_resource=entity_resource,
+                field_metadata=field_metadata,
+                join_field_map=join_field_map,
+                exclude_datasets=exclude_datasets,
+            )
+        )
+
+        return collected
+
+    def _collect_reverse_fk_values(
+        self,
+        *,
+        dataset_name: str,
+        entity_resource: Resource,
+        field_metadata: Dict[str, Dict[str, Any]],
+        join_field_map: Dict[str, JoinRelationship],
+        exclude_datasets: Set[str],
+    ) -> List[RelationshipValues]:
+        """
+        Gather entities from other datasets that reference the current entity via FK.
+
+        These values are used for read-only badges on the dataset panel.
+        """
+        is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
+        reverse_values: List[RelationshipValues] = []
+        for candidate in self._schema_service.list_datasets():
+            if candidate == dataset_name or candidate in exclude_datasets:
+                continue
+
+            schema = self.get_dataset_schema(candidate)
+            if schema.get("junction_schema"):
+                # Junction datasets are already handled via join relationships
+                continue
+
+            fk_rels: List[Dict[str, Any]] = schema.get("fk_relationships", []) or []
+            relevant_rels = [
+                rel for rel in fk_rels if rel.get("target_dataset") == dataset_name
+            ]
+            if not relevant_rels:
+                continue
+
+            candidate_dataset_resource = self._resolve_dataset_resource(candidate, schema)
+            candidate_summary = self.get_dataset_summary(candidate)
+            collected_subject_ids: Set[int] = set()
+
+            for rel in relevant_rels:
+                property_uri = (
+                    rel.get("source_property_uri")
+                    or rel.get("source_canonical_property")
+                )
+                property_resource = self._get_property_resource(property_uri)
+                if property_resource is None:
+                    continue
+
+                subject_ids = Triple.objects.filter(
+                    predicate=property_resource._resource,
+                    object=entity_resource,
+                ).values_list("subject_id", flat=True)
+                if not subject_ids:
+                    continue
+
+                if candidate_dataset_resource:
+                    member_ids = set(
+                        Triple.objects.filter(
+                            subject_id__in=subject_ids,
+                            predicate__uri=is_part_of_uri,
+                            object=candidate_dataset_resource,
+                        ).values_list("subject_id", flat=True)
+                    )
+                else:
+                    member_ids = set(subject_ids)
+
+                if not member_ids:
+                    member_ids = set(subject_ids)
+
+                if not member_ids:
+                    continue
+
+                collected_subject_ids.update(member_ids)
+
+            if not collected_subject_ids:
+                continue
+
+            uris = list(
+                Resource.objects.filter(id__in=collected_subject_ids).values_list(
+                    "uri", flat=True
+                )
+            )
+            if not uris:
+                continue
+
+            reverse_values.append(
+                RelationshipValues(
+                    field_name=f"__reverse__{candidate}",
+                    display_label=candidate_summary.display_label,
+                    uris=uris,
+                    is_join=False,
+                    target_dataset=candidate,
+                    editable=False,
+                )
+            )
+
+        return reverse_values
 
     # ------------------------------------------------------------------ #
     # Entity helpers
@@ -950,3 +1243,24 @@ class SchemaWorkspaceService:
             property_resource.uri,
             target_resource,
         )
+
+    def _get_fk_values(
+        self,
+        *,
+        entity_resource: Resource,
+        property_uri: Optional[str],
+    ) -> List[str]:
+        property_resource = self._get_property_resource(property_uri)
+        if property_resource is None:
+            return []
+
+        uris = [
+            uri
+            for uri in Triple.objects.filter(
+                subject=entity_resource,
+                predicate=property_resource._resource,
+                object__resource_type=ResourceType.ENTITY,
+            ).values_list("object__uri", flat=True)
+            if uri
+        ]
+        return uris
