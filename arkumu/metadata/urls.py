@@ -53,7 +53,6 @@ urlpatterns = [
     path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
 
     # Project workspace overview
-    path('projects/manage/', project_overview_views.ProjectOverviewManageView.as_view(), name='project_overview_manage'),
     path('api/projects/', project_overview_views.ProjectOverviewTableView.as_view(), name='project_overview_table'),
     path('api/projects/<uuid:resource_id>/detail/', project_overview_views.ProjectOverviewDetailView.as_view(), name='project_overview_detail'),
     path('api/projects/<uuid:resource_id>/publish/', project_overview_views.ProjectPublishView.as_view(), name='project_overview_publish'),

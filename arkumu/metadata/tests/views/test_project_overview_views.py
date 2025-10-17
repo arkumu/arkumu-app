@@ -10,23 +10,6 @@ from arkumu.users.models import Organization, User
 
 
 @pytest.mark.django_db
-def test_manage_view_renders(client):
-    organization = Organization.objects.create(code="demo", name="Demo")
-    manager = User.objects.create_user("manager", password="pass", role="manager", organization=organization)
-    client.force_login(manager)
-
-    response = client.get(reverse("metadata:project_overview_manage"))
-    assert response.status_code == 200
-    assert "Projektübersicht" in response.content.decode()
-    content = response.content.decode()
-    assert 'name="dataset"' in content
-    assert "Projekte" in content
-    org_data = client.session.get("current_organization")
-    assert org_data is not None
-    assert org_data["code"] == organization.code
-
-
-@pytest.mark.django_db
 def test_table_view_lists_projects(client):
     organization = Organization.objects.create(code="demo", name="Demo")
     manager = User.objects.create_user("manager", password="pass", role="manager", organization=organization)
@@ -89,8 +72,13 @@ def test_table_view_uses_session_organization_when_not_explicit(client):
     )
     Triple.objects.create(subject=project, predicate=is_part_of, object=dataset, source=organization)
 
-    # Prime session organization
-    client.get(reverse("metadata:project_overview_manage"))
+    session = client.session
+    session["current_organization"] = {
+        "id": organization.id,
+        "code": organization.code,
+        "name": organization.name,
+    }
+    session.save()
 
     response = client.get(
         reverse("metadata:project_overview_table"),
@@ -99,20 +87,6 @@ def test_table_view_uses_session_organization_when_not_explicit(client):
     )
     assert response.status_code == 200
     assert "Sessionprojekt" in response.content.decode()
-
-
-@pytest.mark.django_db
-def test_manage_view_superuser_defaults_to_all(client):
-    Organization.objects.create(code="demo", name="Demo")
-    Organization.objects.create(code="khm", name="KHM")
-    admin = User.objects.create_user("admin", password="pass", role="system_admin", organization=None)
-    client.force_login(admin)
-
-    response = client.get(reverse("metadata:project_overview_manage"))
-    assert response.status_code == 200
-    content = response.content.decode()
-    assert 'value="all" selected' in content
-    assert client.session.get("current_organization") is None
 
 
 @pytest.mark.django_db

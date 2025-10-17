@@ -10,12 +10,10 @@ from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views import View
-from django.views.generic import TemplateView
 
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.metadata.models.mappings import Mapping
@@ -433,99 +431,6 @@ class ProjectOverviewCoordinatorMixin(BaseCoordinatorMixin):
         return detail
 
 
-class ProjectOverviewManageView(
-    ManagerRequiredMixin,
-    ProjectOverviewCoordinatorMixin,
-    TemplateView,
-):
-    """Render the HTMX-powered workspace overview shell."""
-
-    template_name = "metadata/projects/manage.html"
-
-    def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
-        context = super().get_context_data(**kwargs)
-        filters = ProjectWorkspaceFilters.from_query_params(self.request.GET.dict())
-        user = self.request.user
-
-        organizations_qs = Organization.objects.order_by("name")
-        if user.has_role_permission("can_view_cross_university_public"):
-            organizations = list(organizations_qs)
-            show_all_option = True
-        else:
-            organizations = [user.organization] if user.organization else []
-            show_all_option = False
-
-        active_org_code, active_org = self._normalize_org_selection(
-            self.request,
-            requested_code=filters.organization_code,
-            allow_all=show_all_option,
-        )
-        filters = replace(filters, organization_code=active_org_code)
-
-        selected_dataset, entity_datasets, vocabulary_datasets = _select_dataset(
-            user,
-            filters.dataset,
-            organization_code=active_org.code if active_org else None,
-        )
-        filters = replace(filters, dataset=selected_dataset.dataset_name)
-
-        service = ProjectWorkspaceListingService(user, dataset_name=selected_dataset.dataset_name)
-        queryset = service.get_queryset(filters)
-        paginator = Paginator(queryset, filters.page_size)
-        page_obj = paginator.get_page(filters.page)
-        service.populate_actor_counts(page_obj.object_list)
-        service.enrich_project_metadata(page_obj.object_list)
-
-        table_config = {
-            "dataset_name": selected_dataset.dataset_name,
-            "dataset_label": selected_dataset.label,
-            "show_event_counts": service._is_project_dataset,
-            "show_actor_counts": service._is_project_dataset,
-            "show_digital_counts": service._is_project_dataset,
-            "supports_detail": service._is_project_dataset,
-        }
-        table_config["total_columns"] = 5 + sum(
-            1 for key in ("show_event_counts", "show_actor_counts", "show_digital_counts") if table_config[key]
-        )
-        table_config["total_columns"] = 5 + sum(
-            1 for key in ("show_event_counts", "show_actor_counts", "show_digital_counts") if table_config[key]
-        )
-
-        table_context = {
-            "projects": page_obj.object_list,
-            "page_obj": page_obj,
-            "paginator": paginator,
-            "filters": filters,
-            "status_labels": STATUS_LABELS,
-            "status_badges": STATUS_BADGE_STYLES,
-            "total_count": paginator.count,
-            "table_config": table_config,
-        }
-
-        context.update(
-            {
-                "filters": filters,
-                "organizations": organizations,
-                "show_all_option": show_all_option,
-                "active_organization": active_org,
-                "active_organization_code": active_org_code,
-                "status_labels": STATUS_LABELS,
-                "page_sizes": (25, 50, 100),
-                "table_context": table_context,
-                "entity_datasets": entity_datasets,
-                "vocabulary_datasets": vocabulary_datasets,
-                "selected_dataset": selected_dataset,
-                "table_config": table_config,
-            }
-        )
-
-        context["dataset_detail"] = self._build_dataset_detail_context(
-            organization=active_org,
-            dataset_option=selected_dataset,
-        )
-        return context
-
-
 class ProjectOverviewTableView(
     ManagerRequiredMixin,
     ProjectOverviewCoordinatorMixin,
@@ -813,7 +718,6 @@ class ProjectUnpublishView(_ProjectStatusMutationView):
 
 
 __all__ = [
-    "ProjectOverviewManageView",
     "ProjectOverviewTableView",
     "ProjectOverviewDetailView",
     "ProjectPublishView",

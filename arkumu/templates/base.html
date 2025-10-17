@@ -60,10 +60,10 @@
               Catalog Explorer
             </a></li>
             <li>
-              <a href="{% url 'metadata:project_overview_manage' %}"
-                 class="flex items-center gap-2 {% if current_url_name == 'project_overview_manage' or current_url_name == 'project_overview_table' %}active{% endif %}">
-                <i class="fas fa-project-diagram"></i>
-                Project Overview
+              <a href="{% url 'metadata:entity_creation_workspace' %}"
+                 class="flex items-center gap-2 {% if current_url_name == 'entity_creation_workspace' or current_url_name == 'entity_workspace_dataset' or current_url_name == 'project_access_update' or current_url_name == 'entity_workspace_field_values' or current_url_name == 'entity_workspace_search' %}active{% endif %}">
+                <i class="fas fa-layer-group"></i>
+                Metadata Workspace
               </a>
             </li>
             <li><a href="{% url 'storage:archivist_dashboard' %}"
@@ -93,10 +93,10 @@
             Archivist Dashboard
           </a></li>
           <li>
-            <a href="{% url 'metadata:project_overview_manage' %}"
-               class="flex items-center gap-2 {% if current_url_name == 'project_overview_manage' or current_url_name == 'project_overview_table' %}active{% endif %}">
-              <i class="fas fa-project-diagram"></i>
-              Project Overview
+            <a href="{% url 'metadata:entity_creation_workspace' %}"
+               class="flex items-center gap-2 {% if current_url_name == 'entity_creation_workspace' or current_url_name == 'entity_workspace_dataset' or current_url_name == 'project_access_update' or current_url_name == 'entity_workspace_field_values' or current_url_name == 'entity_workspace_search' %}active{% endif %}">
+              <i class="fas fa-layer-group"></i>
+              Metadata Workspace
             </a>
           </li>
           <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
