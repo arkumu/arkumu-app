@@ -414,6 +414,40 @@ def _render_dataset_panel(
                         uri = str(entry)
                     if label:
                         initial_labels.append({"label": label, "uri": uri})
+            if initial_labels:
+                labelled_json = json.dumps(initial_labels)
+                form.initial[field.name] = labelled_json
+                field.form.initial[field.name] = labelled_json
+        elif meta.get("fk_relationship") and meta.get("is_multi_value"):
+            raw_initial = form.initial.get(field.name, field.value())
+            parsed_values: List[Any]
+            if isinstance(raw_initial, str) and raw_initial:
+                try:
+                    loaded = json.loads(raw_initial)
+                    parsed_values = loaded if isinstance(loaded, list) else [raw_initial]
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed_values = [raw_initial]
+            elif isinstance(raw_initial, list):
+                parsed_values = raw_initial
+            else:
+                parsed_values = []
+
+            normalized: List[Dict[str, str]] = []
+            for entry in parsed_values:
+                if isinstance(entry, dict):
+                    uri = (entry.get("uri") or entry.get("value") or "").strip()
+                else:
+                    uri = str(entry).strip()
+                if not uri:
+                    continue
+                label = _infer_entity_label(service, uri)
+                normalized.append({"label": label, "uri": uri})
+
+            if normalized:
+                labelled_json = json.dumps(normalized)
+                form.initial[field.name] = labelled_json
+                field.form.initial[field.name] = labelled_json
+                initial_labels.extend(normalized)
 
         destination = join_fields if is_join else normal_fields
         if is_join:

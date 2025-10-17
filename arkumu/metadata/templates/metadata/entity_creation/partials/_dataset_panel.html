@@ -136,6 +136,13 @@
 
             {% if item.meta.is_multi_value %}
               {# Multi-value field with + button UI (HTMX-based) - takes full width #}
+              {% if item.initial_labels %}
+                <div class="flex flex-wrap gap-2 mb-2">
+                  {% for choice in item.initial_labels %}
+                    <span class="badge badge-outline">{{ choice.label }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
               {{ item.field }}
               <div id="multi-value-{{ item.field.name }}"
                    class="space-y-2"
