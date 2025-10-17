@@ -901,7 +901,7 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
 
         # Filter controlled vocabularies for non-admin users
         user_can_edit_vocabs = request.user.is_staff or (
-            hasattr(request.user, 'has_role') and request.user.has_role('curator')
+            hasattr(request.user, 'has_role') and request.user.has_role('researcher')  # TODO: tighten to manager/archivist once roles are finalized.
         )
         if not user_can_edit_vocabs:
             dataset_summaries = [

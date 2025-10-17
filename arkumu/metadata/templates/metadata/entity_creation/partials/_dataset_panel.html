@@ -4,10 +4,12 @@
     <header class="space-y-1">
       <div class="flex items-center flex-wrap gap-3">
         <h2 class="text-xl font-semibold">{{ dataset_summary.display_label }}</h2>
-        <span class="badge badge-outline">{{ dataset_summary.dataset_name }}</span>
+        {% if dataset_summary.dataset_name != dataset_summary.display_label %}
+          <span class="badge badge-outline">{{ dataset_summary.dataset_name }}</span>
+        {% endif %}
       </div>
       <p class="text-sm text-base-content/70">
-        {{ dataset_summary.property_count }} Eigenschaften · {{ dataset_summary.anchor_columns|length }} Ankerfeld(er)
+        {{ dataset_summary.property_count }} Eigenschaften
       </p>
     </header>
 

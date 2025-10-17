@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import re
 import secrets
+import string
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set, Pattern
 from urllib.parse import urlparse, urlencode
 
 from django.db import transaction
+from django.utils.text import slugify
 
 from arkumu.common.uri_utils import mint_uri, slugify_uri_part
 from arkumu.importer.services.schema_service import SchemaService
@@ -64,6 +67,10 @@ class JoinRelationship:
 class SchemaWorkspaceService:
     """Expose SchemaService blueprints in a UI-friendly format."""
 
+    _PROJECT_DATASET_SLUGS: Set[str] = {"projekt", "project"}
+    _PROJECT_TITLE_COLUMN_NAMES: Set[str] = {"bevorzugter_titel", "preferred_title"}
+    _PROJECT_TITLE_LABELS: Set[str] = {"bevorzugter titel", "preferred title"}
+
     def __init__(
         self,
         *,
@@ -82,6 +89,7 @@ class SchemaWorkspaceService:
         # Ensure processor and dataset blueprints are available once up front
         self._schema_service._ensure_schema_loaded()
         self._processor = self._schema_service._processor
+        self._external_template_regex_cache: Dict[str, Pattern[str]] = {}
 
     # ------------------------------------------------------------------ #
     # Blueprint inspection helpers
@@ -270,10 +278,105 @@ class SchemaWorkspaceService:
 
         return relationships
 
+    def _get_external_schema(
+        self,
+        schema: Dict[str, Any],
+        column_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        external_schemas = schema.get("external_ontology_schemas", {}) or {}
+        return external_schemas.get(column_name)
+
+    def _build_external_template_regex(self, template: str) -> Optional[Pattern[str]]:
+        if not template:
+            return None
+        cached = self._external_template_regex_cache.get(template)
+        if cached is not None:
+            return cached
+
+        formatter = string.Formatter()
+        pattern_parts: List[str] = []
+        seen: Set[str] = set()
+        try:
+            for literal_text, field_name, _format_spec, _conversion in formatter.parse(template):
+                if literal_text:
+                    pattern_parts.append(re.escape(literal_text))
+                if field_name is None:
+                    continue
+                if field_name in seen:
+                    pattern_parts.append(f"(?P={field_name})")
+                else:
+                    pattern_parts.append(f"(?P<{field_name}>.+?)")
+                    seen.add(field_name)
+            pattern_parts.append("$")
+            pattern = re.compile("".join(pattern_parts))
+        except ValueError:
+            return None
+
+        self._external_template_regex_cache[template] = pattern
+        return pattern
+
+    def _extract_external_identifier(
+        self,
+        *,
+        template: str,
+        candidate: str,
+    ) -> Optional[str]:
+        if not template or not candidate:
+            return None
+        regex = self._build_external_template_regex(template)
+        if regex is None:
+            return None
+        match = regex.match(candidate)
+        if not match:
+            return None
+        groups = match.groupdict()
+        for key in ("identifier", "value"):
+            value = groups.get(key)
+            if value:
+                return value
+        for value in groups.values():
+            if value:
+                return value
+        return None
+
+    def _normalize_external_identifier(self, template: str, value: Any) -> str:
+        if value in (None, ""):
+            return ""
+        candidate = str(value).strip()
+        extracted = self._extract_external_identifier(template=template, candidate=candidate)
+        return extracted or candidate
+
+    def _prepare_form_value(
+        self,
+        *,
+        schema: Dict[str, Any],
+        column_name: str,
+        value: Any,
+    ) -> str:
+        if isinstance(value, EntityResource):
+            raw_value = value._resource.uri
+        else:
+            raw_value = value
+
+        if raw_value is None:
+            return ""
+
+        external_schema = self._get_external_schema(schema, column_name)
+        if external_schema:
+            template = external_schema.get("uri_template", "")
+            return self._normalize_external_identifier(template, raw_value)
+
+        return str(raw_value)
+
     def get_field_metadata(self, dataset_name: str) -> Dict[str, Dict[str, Any]]:
         schema = self.get_dataset_schema(dataset_name)
         fk_lookup = self._build_fk_lookup(schema)
         field_meta: Dict[str, Dict[str, Any]] = {}
+        dataset_slug = slugify(dataset_name or "").lower()
+        enforce_title_required = dataset_slug in self._PROJECT_DATASET_SLUGS
+        project_title_slugs = {
+            slugify(name).replace("-", "_") for name in self._PROJECT_TITLE_COLUMN_NAMES
+        } if enforce_title_required else set()
         for column_name, column_meta in schema.get("column_metadata", {}).items():
             property_resource = schema["properties"].get(column_name)
             meta = {
@@ -283,6 +386,16 @@ class SchemaWorkspaceService:
             }
             if column_name in fk_lookup:
                 meta["fk_relationship"] = fk_lookup[column_name]
+            if enforce_title_required:
+                column_key = column_name.strip().lower()
+                label_key = str(meta.get("property_label") or "").strip().lower()
+                column_slug = slugify(column_name or "").replace("-", "_")
+                if (
+                    column_key in self._PROJECT_TITLE_COLUMN_NAMES
+                    or column_slug in project_title_slugs
+                    or label_key in self._PROJECT_TITLE_LABELS
+                ):
+                    meta["is_required"] = True
             field_meta[column_name] = meta
         return field_meta
 
@@ -317,20 +430,25 @@ class SchemaWorkspaceService:
             if not values:
                 continue
 
-            column_meta = schema["column_metadata"].get(column_name, {})
             if column_name in schema.get("multi_value_schemas", {}):
-                # Return as JSON array for + button UI
                 import json
-                initial[column_name] = json.dumps([
-                    str(value) if not isinstance(value, EntityResource) else value._resource.uri
-                    for value in values if value is not None
-                ])
+                prepared_values = [
+                    self._prepare_form_value(
+                        schema=schema,
+                        column_name=column_name,
+                        value=value,
+                    )
+                    for value in values
+                    if value is not None
+                ]
+                initial[column_name] = json.dumps(prepared_values)
             else:
                 first_value = values[0]
-                if isinstance(first_value, EntityResource):
-                    initial[column_name] = first_value._resource.uri
-                else:
-                    initial[column_name] = first_value
+                initial[column_name] = self._prepare_form_value(
+                    schema=schema,
+                    column_name=column_name,
+                    value=first_value,
+                )
 
         # Preserve anchor values explicitly (in case form hides them)
         for anchor_col, value in zip(
@@ -365,18 +483,24 @@ class SchemaWorkspaceService:
                 continue
 
             if column_name in schema.get("multi_value_schemas", {}):
-                # Return as JSON array for + button UI
                 import json
-                initial[column_name] = json.dumps([
-                    str(value) if not isinstance(value, EntityResource) else value._resource.uri
-                    for value in values if value is not None
-                ])
+                prepared_values = [
+                    self._prepare_form_value(
+                        schema=schema,
+                        column_name=column_name,
+                        value=value,
+                    )
+                    for value in values
+                    if value is not None
+                ]
+                initial[column_name] = json.dumps(prepared_values)
             else:
                 first_value = values[0]
-                if isinstance(first_value, EntityResource):
-                    initial[column_name] = first_value._resource.uri
-                else:
-                    initial[column_name] = first_value
+                initial[column_name] = self._prepare_form_value(
+                    schema=schema,
+                    column_name=column_name,
+                    value=first_value,
+                )
 
         # Extract and preserve anchor values from URI
         uri_parts = entity_uri.split('/')
@@ -526,14 +650,20 @@ class SchemaWorkspaceService:
                     continue
 
                 if column_name in external_schemas:
-                    external_uri = external_schemas[column_name]["uri_template"].format(
-                        value=value
+                    template = external_schemas[column_name].get("uri_template", "")
+                    normalized_value = self._normalize_external_identifier(template, value)
+                    entity_data[column_name] = normalized_value
+                    external_uri = self._format_external_uri(
+                        column_name=column_name,
+                        template=template,
+                        value=normalized_value,
+                        entity_data=entity_data,
                     )
                     external_resource, _ = Resource.objects.get_or_create(
                         uri=external_uri,
                         defaults={
                             "resource_type": ResourceType.ENTITY,
-                            "name": str(value)[:100],
+                            "name": str(normalized_value or value)[:100],
                             "is_placeholder": False,
                             "organization": None,
                         },
@@ -560,6 +690,39 @@ class SchemaWorkspaceService:
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
+    def _format_external_uri(
+        self,
+        *,
+        column_name: str,
+        template: str,
+        value: Any,
+        entity_data: Dict[str, Any],
+    ) -> str:
+        """
+        Resolve an external ontology URI template, supporting legacy placeholder
+        names like {identifier} alongside the current {value} token.
+        """
+        formatter = string.Formatter()
+        format_kwargs: Dict[str, Any] = {
+            "value": value,
+            "identifier": value,
+            column_name: value,
+        }
+
+        for _, field_name, _, _ in formatter.parse(template):
+            if not field_name or field_name in format_kwargs:
+                continue
+            if field_name in entity_data:
+                format_kwargs[field_name] = entity_data[field_name]
+
+        try:
+            return template.format(**format_kwargs)
+        except KeyError as exc:
+            missing_field = exc.args[0] if exc.args else "value"
+            raise ValueError(
+                f"URI template for column '{column_name}' requires value for '{missing_field}'"
+            ) from exc
+
     def _build_entity_uri(self, dataset_name: str, anchor_values: List[str]) -> str:
         entity_identifier = "_".join(
             str(value).strip() for value in anchor_values if str(value).strip()

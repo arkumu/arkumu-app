@@ -10,6 +10,7 @@ from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
+from arkumu.metadata.schema_workspace.forms import DatasetEntityForm
 from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService
 from arkumu.users.models import Organization, User
 
@@ -39,6 +40,7 @@ class FieldDefinition:
     separator: str = ";"
     fk_target: Optional[str] = None
     fk_column: Optional[str] = None
+    external_uri_template: Optional[str] = None
 
 
 @dataclass
@@ -83,6 +85,7 @@ class WorkspaceSchemaBuilder:
         column_metadata: Dict[str, Dict[str, object]] = {}
         fk_relationships: List[Dict[str, object]] = []
         multi_value_schemas: Dict[str, Dict[str, object]] = {}
+        external_ontology_schemas: Dict[str, Dict[str, object]] = {}
 
         for field_def in config.fields:
             property_resource = Resource.objects.create(
@@ -105,6 +108,15 @@ class WorkspaceSchemaBuilder:
             if field_def.multi:
                 multi_value_schemas[field_def.name] = {
                     "separator": field_def.separator,
+                }
+
+            if field_def.external_uri_template:
+                external_ontology_schemas[field_def.name] = {
+                    "column_name": field_def.name,
+                    "ontology_type": field_def.column_type,
+                    "uri_template": field_def.external_uri_template,
+                    "property_resource": property_resource,
+                    "creates_external_reference": True,
                 }
 
             if field_def.fk_target and field_def.fk_column:
@@ -130,7 +142,7 @@ class WorkspaceSchemaBuilder:
             ],
             "fk_relationships": fk_relationships,
             "multi_value_schemas": multi_value_schemas,
-            "external_ontology_schemas": {},
+            "external_ontology_schemas": external_ontology_schemas,
         }
         self.datasets[config.name] = blueprint
 
@@ -191,6 +203,11 @@ def workspace_service(monkeypatch, organization):
             fields=[
                 FieldDefinition(name="projekt_id", label="Projekt-ID", anchor=True, required=True),
                 FieldDefinition(name="titel", label="Titel", required=True),
+                FieldDefinition(
+                    name="wikidata_id",
+                    label="Wikidata-ID",
+                    external_uri_template="https://www.wikidata.org/entity/{identifier}",
+                ),
             ],
         )
     )
@@ -355,6 +372,40 @@ def workspace_service(monkeypatch, organization):
     return builder
 
 
+def test_project_title_field_is_enforced(monkeypatch, organization, mapping):
+    builder = WorkspaceSchemaBuilder(organization)
+    builder.register_dataset(
+        DatasetBlueprintConfig(
+            name="Projekt",
+            label="Projekt",
+            fields=[
+                FieldDefinition(name="projekt_id", label="Projekt-ID", anchor=True, required=True),
+                FieldDefinition(name="bevorzugter_titel", label="Bevorzugter Titel", required=False),
+            ],
+        )
+    )
+    schema_service_cls = builder.as_schema_service()
+    monkeypatch.setattr(
+        "arkumu.metadata.schema_workspace.services.SchemaService",
+        schema_service_cls,
+    )
+
+    service = SchemaWorkspaceService(
+        mapping=mapping,
+        organization=organization,
+        base_uri="http://arkumu.org/data",
+    )
+    metadata = service.get_field_metadata("Projekt")
+    assert metadata["bevorzugter_titel"]["is_required"] is True
+
+    form = DatasetEntityForm(
+        data={"projekt_id": "P-001", "bevorzugter_titel": ""},
+        field_metadata=metadata,
+    )
+    assert form.is_valid() is False
+    assert "bevorzugter_titel" in form.errors
+
+
 def _post_dataset(client, mapping, dataset, payload, hx=True):
     url = reverse("metadata:entity_workspace_dataset", args=[mapping.id])
     headers = {}
@@ -434,6 +485,112 @@ def test_project_creation_persists_literals(client, user, mapping, organization,
     )
     assert reload_response.status_code == 200
     assert "Projekt Alpha" in reload_response.content.decode()
+
+
+def test_project_external_reference_uses_identifier_placeholder(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+    response = _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-010",
+            "titel": "Projekt Wikidata",
+            "wikidata_id": "Q3939",
+        },
+    )
+    assert response.status_code == 200
+
+    project_uri = _entity_uri(organization, "Projekt", "P-010")
+    wikidata_uri = "https://www.wikidata.org/entity/Q3939"
+    wikidata_resource = Resource.objects.filter(uri=wikidata_uri).first()
+    assert wikidata_resource is not None
+    assert wikidata_resource.is_placeholder is False
+
+    wikidata_property = workspace_service.datasets["Projekt"]["properties"]["wikidata_id"]
+    assert Triple.objects.filter(
+        subject__uri=project_uri,
+        predicate=wikidata_property,
+        object=wikidata_resource,
+    ).exists()
+
+    reload_response = _load_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "mode": "load",
+            "entity_uri": project_uri,
+        },
+    )
+    assert reload_response.status_code == 200
+    html = reload_response.content.decode()
+    assert 'value="Q3939"' in html
+    assert "https://www.wikidata.org/entity/Q3939" not in html
+
+
+def test_project_external_reference_can_be_updated(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+    create_response = _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-011",
+            "titel": "Projekt Delta",
+            "wikidata_id": "Q3939",
+        },
+    )
+    assert create_response.status_code == 200
+
+    project_uri = _entity_uri(organization, "Projekt", "P-011")
+    wikidata_property = workspace_service.datasets["Projekt"]["properties"]["wikidata_id"]
+
+    # Update to a different identifier
+    update_response = _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "entity_uri": project_uri,
+            "projekt_id": "P-011",
+            "titel": "Projekt Delta",
+            "wikidata_id": "Q42",
+        },
+    )
+    assert update_response.status_code == 200
+
+    triples = Triple.objects.filter(
+        subject__uri=project_uri,
+        predicate=wikidata_property,
+    )
+    assert triples.count() == 1
+    assert triples.first().object.uri == "https://www.wikidata.org/entity/Q42"
+
+    reload_response = _load_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "mode": "load",
+            "entity_uri": project_uri,
+        },
+    )
+    assert reload_response.status_code == 200
+    html = reload_response.content.decode()
+    assert 'value="Q42"' in html
 
 
 def test_project_creation_continue_editing_keeps_context(
