@@ -2177,8 +2177,7 @@ def _build_mets_from_project(
                     _append_rights_value(license_rights_statement)
 
             raw_path = (
-                obj.rosetta_path
-                or obj.storage_key
+                obj.storage_key
                 or obj.original_path
                 or preferred_location
             )
@@ -2295,46 +2294,30 @@ def _build_mets_from_project(
             files_by_event.setdefault(key, []).append(file_info)
             event_meta.setdefault(key, event_obj)
 
-        folder_nodes: Dict[str, Dict[tuple[str, ...], ET._Element]] = {}
+        folder_nodes: Dict[tuple[str, ...], ET._Element] = {}
 
-        def _event_label(event_obj: Optional[ProjectEvent]) -> str:
+        def _event_label(event_obj: Optional[ProjectEvent]) -> Optional[str]:
             if event_obj is None:
-                return "Projektdateien"
+                return None
             return event_obj.name or event_obj.location or event_obj.uri or "Ereignis"
 
-        event_position = 1
         for key in event_order:
             event_files = files_by_event.get(key)
             if not event_files:
                 continue
             event_obj = event_meta.get(key)
-            all_rosetta = all(
-                bool(getattr(file_info.get("object"), "rosetta_path", None))
-                for file_info in event_files
-            )
-            if all_rosetta:
-                event_div = rep_div
-            else:
-                event_label = _event_label(event_obj)
-                # Event div - simplified per Rosetta example (no ORDER on intermediate divs)
-                event_div = ET.SubElement(
-                    rep_div,
-                    ET.QName(METS_NS, "div"),
-                    {
-                        "LABEL": event_label,
-                        "ORDERLABEL": event_label,
-                    },
-                )
-                event_position += 1
-            folder_nodes[key] = {}
+            event_label = _event_label(event_obj)
 
             for file_info in event_files:
-                parent = event_div
+                parent = rep_div
                 folder_key_prefix: List[str] = []
-                for segment in file_info.get("folders", []):
+                segments = list(file_info.get("folders") or [])
+                if not segments and event_label:
+                    segments = [event_label]
+                for segment in segments:
                     folder_key_prefix.append(segment)
                     folder_key = tuple(folder_key_prefix)
-                    existing = folder_nodes[key].get(folder_key)
+                    existing = folder_nodes.get(folder_key)
                     if not existing:
                         existing = ET.SubElement(
                             parent,
@@ -2344,7 +2327,7 @@ def _build_mets_from_project(
                                 "ORDERLABEL": segment,
                             },
                         )
-                        folder_nodes[key][folder_key] = existing
+                        folder_nodes[folder_key] = existing
                     parent = existing
 
                 # File div per Rosetta example - TYPE="FILE", LABEL, ORDERLABEL (no ORDER)
