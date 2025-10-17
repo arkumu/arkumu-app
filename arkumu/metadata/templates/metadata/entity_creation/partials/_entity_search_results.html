@@ -1,14 +1,32 @@
-{% if results %}
-  {% for result in results %}
-    <button type="button"
-            class="block w-full text-left px-4 py-2 hover:bg-base-200 transition-colors"
-            onclick="selectEntity('{{ result.uri }}', '{{ result.label|escapejs }}', '{{ dataset_name }}')">
-      <div class="font-medium">{{ result.label }}</div>
-      <div class="text-xs text-base-content/60">ID: {{ result.id }}</div>
-    </button>
-  {% endfor %}
-{% else %}
-  <div class="px-4 py-3 text-sm text-base-content/60">
-    Keine Einträge gefunden
-  </div>
-{% endif %}
+<div id="entity-search-results"
+     class="mt-2 max-h-64 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-lg">
+  {% if results %}
+    {% for result in results %}
+      <button type="button"
+              class="block w-full text-left px-4 py-2 hover:bg-base-200 transition-colors"
+              hx-get="{{ result.load_url }}"
+              hx-target="#dataset-panel"
+              hx-swap="innerHTML"
+              hx-push-url="false">
+        <div class="font-medium">
+          {% if result.property_value %}
+            {{ result.property_value }}
+          {% else %}
+            {{ result.entity_label }}
+          {% endif %}
+        </div>
+        <div class="text-xs text-base-content/60">
+          {% if result.property_value %}
+            {{ result.property_label }} · {{ result.entity_label }} · ID: {{ result.id }}
+          {% else %}
+            ID: {{ result.id }}
+          {% endif %}
+        </div>
+      </button>
+    {% endfor %}
+  {% else %}
+    <div class="px-4 py-3 text-sm text-base-content/60">
+      Keine Einträge gefunden
+    </div>
+  {% endif %}
+</div>

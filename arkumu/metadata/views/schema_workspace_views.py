@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 from django import forms
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -26,6 +26,7 @@ from arkumu.metadata.schema_workspace import (
     SchemaWorkspaceCoordinator,
 )
 from arkumu.metadata.schema_workspace.services import JoinRelationship
+from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 from arkumu.users.models import Organization
 
 STEP_LABELS: Dict[str, str] = {
@@ -269,6 +270,7 @@ def _render_dataset_panel(
     dataset_name: str,
     form: DatasetEntityForm,
     field_metadata: Dict[str, Dict[str, object]],
+    join_field_map: Optional[Dict[str, JoinRelationship]] = None,
     entity_uri: Optional[str] = None,
     entity_label: Optional[str] = None,
     success_message: Optional[str] = None,
@@ -276,6 +278,30 @@ def _render_dataset_panel(
     load_error: bool = False,
 ) -> str:
     dataset_summary = service.get_dataset_summary(dataset_name)
+    join_field_map = join_field_map or {}
+
+    selected_property = (
+        request.GET.get("property")
+        or request.POST.get("property")
+        or None
+    )
+
+    search_properties: List[Dict[str, str]] = []
+    seen_property_uris: Set[str] = set()
+    for meta in field_metadata.values():
+        if meta.get("is_join"):
+            continue
+        property_uri = meta.get("property_uri")
+        if not property_uri:
+            continue
+        uri_str = str(property_uri)
+        if not uri_str or uri_str in seen_property_uris:
+            continue
+        label = str(meta.get("property_label") or meta.get("column_name") or uri_str)
+        search_properties.append({"uri": uri_str, "label": label})
+        seen_property_uris.add(uri_str)
+
+    search_properties.sort(key=lambda item: item["label"].lower())
 
     # Pair form fields with their metadata for template access
     normal_fields: List[Dict[str, Any]] = []
@@ -374,6 +400,8 @@ def _render_dataset_panel(
             "error_message": error_message,
             "load_error": load_error,
             "mapping": service.mapping,
+            "search_properties": search_properties,
+            "selected_property": selected_property,
         },
         request=request,
     )
@@ -847,13 +875,20 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
             )
             active_dataset_name = target_dataset
             field_metadata = service.get_field_metadata(target_dataset)
+            field_metadata, join_field_map = _augment_field_metadata_with_joins(
+                service,
+                target_dataset,
+                field_metadata,
+            )
             form = DatasetEntityForm(field_metadata=field_metadata)
+            _remove_join_source_fields(form, join_field_map)
             dataset_panel_html = _render_dataset_panel(
                 request,
                 service=service,
                 dataset_name=target_dataset,
                 form=form,
                 field_metadata=field_metadata,
+                join_field_map=join_field_map,
             )
 
         return render(
@@ -1594,52 +1629,132 @@ class EntitySearchView(LoginRequiredMixin, View):
             object=dataset_resource,
         ).values_list("subject__uri", flat=True)
 
+        selected_property = request.GET.get("property") or ""
+        property_uris: List[str] = []
+        property_label: str = ""
+        property_values: Dict[str, str] = {}
+        entity_uris: List[str] = []
+
+        if selected_property:
+            field_metadata = service.get_field_metadata(dataset_name)
+            property_label_lookup: Dict[str, str] = {}
+            for meta in field_metadata.values():
+                property_uri = meta.get("property_uri")
+                if not property_uri:
+                    continue
+                uri_str = str(property_uri)
+                if not uri_str:
+                    continue
+                label_str = str(meta.get("property_label") or meta.get("column_name") or uri_str)
+                property_label_lookup.setdefault(uri_str, label_str)
+            if selected_property in property_label_lookup:
+                property_uris = [selected_property]
+                property_label = property_label_lookup[selected_property]
+
         max_results = 20
 
-        if query:
-            from django.db.models import Q
+        if property_uris:
+            triples_qs = (
+                Triple.objects.filter(
+                    subject__uri__in=dataset_entities_qs,
+                    predicate__uri__in=property_uris,
+                    object__resource_type=ResourceType.LITERAL,
+                )
+                .select_related("subject", "object")
+                .order_by("object__value", "object__name", "subject__uri")
+            )
+            if query:
+                from django.db.models import Q
 
-            literal_matches = Triple.objects.filter(
-                subject__uri__in=dataset_entities_qs,
-                object__resource_type=ResourceType.LITERAL,
-            ).filter(
-                Q(object__value__icontains=query)
-                | Q(object__name__icontains=query)
-            ).values_list("subject__uri", flat=True)
+                triples_qs = triples_qs.filter(
+                    Q(object__value__icontains=query) | Q(object__name__icontains=query)
+                )
 
-            uri_matches = dataset_entities_qs.filter(subject__uri__icontains=query)
-
-            combined = list(uri_matches[:max_results])
-            for uri in literal_matches[:max_results]:
-                if uri not in combined:
-                    combined.append(uri)
-                    if len(combined) >= max_results:
-                        break
-            entity_uris = combined
+            for triple in triples_qs:
+                subject_uri = getattr(triple.subject, "uri", None)
+                if not subject_uri or subject_uri in property_values:
+                    continue
+                literal_resource = triple.object
+                literal_value = (
+                    literal_resource.value
+                    or getattr(literal_resource, "literal_value", None)
+                    or literal_resource.name
+                    or ""
+                )
+                property_values[subject_uri] = str(literal_value)
+                entity_uris.append(subject_uri)
+                if len(entity_uris) >= max_results:
+                    break
         else:
-            entity_uris = list(dataset_entities_qs[:max_results])
+            if query:
+                from django.db.models import Q
 
-        results = []
+                literal_matches_qs = (
+                    Triple.objects.filter(
+                        subject__uri__in=dataset_entities_qs,
+                        object__resource_type=ResourceType.LITERAL,
+                    )
+                    .filter(
+                        Q(object__value__icontains=query)
+                        | Q(object__name__icontains=query)
+                    )
+                    .values_list("subject__uri", flat=True)
+                    .distinct()
+                )
+
+                uri_matches = dataset_entities_qs.filter(subject__uri__icontains=query)
+
+                combined = list(uri_matches[:max_results])
+                for uri in literal_matches_qs[:max_results]:
+                    if uri not in combined:
+                        combined.append(uri)
+                        if len(combined) >= max_results:
+                            break
+                entity_uris = combined
+            else:
+                entity_uris = list(dataset_entities_qs[:max_results])
+
+        dataset_endpoint = reverse("metadata:entity_workspace_dataset", args=[service.mapping.id])
+        results: List[Dict[str, str]] = []
         for uri in entity_uris:
-            label = _infer_entity_label(service, uri)
+            raw_label = _infer_entity_label(service, uri)
+            identifier = uri.split("/")[-1]
+            label = str(raw_label) if raw_label else identifier
+            property_value = property_values.get(uri, "")
+
+            params: Dict[str, str] = {
+                "dataset": dataset_name,
+                "mode": "load",
+                "entity_uri": uri,
+            }
+            if label:
+                params["entity_label"] = label
+            if property_uris:
+                params["property"] = property_uris[0]
+
             results.append(
                 {
                     "uri": uri,
                     "label": label,
-                    "id": uri.split("/")[-1],
+                    "entity_label": label,
+                    "property_value": property_value,
+                    "property_label": property_label if property_uris else "",
+                    "id": identifier,
+                    "load_url": f"{dataset_endpoint}?{urlencode(params)}",
                 }
             )
 
-        return HttpResponse(
-            render_to_string(
-                "metadata/entity_creation/partials/_entity_search_results.html",
-                {
-                    "results": results,
-                    "dataset_name": dataset_name,
-                },
-                request=request
-            )
+        html = render_to_string(
+            "metadata/entity_creation/partials/_entity_search_results.html",
+            {
+                "results": results,
+                "dataset_name": dataset_name,
+            },
+            request=request,
         )
+        helper = CSVMappingTemplateHelperMixin()
+        response_html = helper.build_oob_response(html)
+        return HttpResponse(response_html)
 
 class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
     """Return existing literal suggestions for dataset fields."""
@@ -1911,6 +2026,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
             dataset_name=dataset_name,
             form=form,
             field_metadata=field_metadata,
+            join_field_map=join_field_map,
             entity_uri=entity_uri,
             entity_label=entity_label,
             load_error=load_error,
@@ -2007,6 +2123,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     dataset_name=dataset_name,
                     form=form,
                     field_metadata=field_metadata,
+                    join_field_map=join_field_map,
                     entity_uri=entity_uri,
                     entity_label=entity_label,
                     success_message=success_message,
@@ -2028,6 +2145,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
             dataset_name=dataset_name,
             form=form,
             field_metadata=field_metadata,
+            join_field_map=join_field_map,
             entity_uri=entity_uri,
             entity_label=_infer_entity_label(service, entity_uri) if entity_uri else None,
             error_message=error_message,

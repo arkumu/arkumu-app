@@ -33,18 +33,41 @@
             <label class="label">
               <span class="label-text text-sm">Nach Entity suchen</span>
             </label>
-            <input type="text"
-                   id="entity-search-input"
-                   class="input input-bordered input-sm"
-                   placeholder="Titel, Name oder Beschreibung eingeben..."
-                   hx-get="{% url 'metadata:entity_workspace_search' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
-                   hx-trigger="keyup changed delay:300ms, search"
-                   hx-target="#entity-search-results"
-                   hx-include="this"
-                   name="q">
+            <div class="space-y-2">
+              {% if search_properties %}
+                <select id="entity-search-property"
+                        name="property"
+                        class="select select-bordered select-sm w-full"
+                        hx-get="{% url 'metadata:entity_workspace_search' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
+                        hx-trigger="change"
+                        hx-target="#entity-search-results"
+                        hx-swap="outerHTML"
+                        hx-include="#entity-search-input"
+                        autocomplete="off">
+                  <option value="" {% if not selected_property %}selected{% endif %}>
+                    Alle Eigenschaften
+                  </option>
+                  {% for prop in search_properties %}
+                    <option value="{{ prop.uri }}" {% if prop.uri == selected_property %}selected{% endif %}>
+                      {{ prop.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              {% endif %}
+              <input type="text"
+                     id="entity-search-input"
+                     class="input input-bordered input-sm w-full"
+                     placeholder="Titel, Name oder Beschreibung eingeben..."
+                     hx-get="{% url 'metadata:entity_workspace_search' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
+                     hx-trigger="keyup changed delay:300ms, focus"
+                     hx-target="#entity-search-results"
+                     hx-swap="outerHTML"
+                     hx-include="#entity-search-property"
+                     autocomplete="off"
+                     name="q">
+            </div>
             <div id="entity-search-results"
-                 class="mt-2 max-h-64 overflow-y-auto border border-base-300 rounded-lg bg-base-100 empty:hidden">
-              {# Search results will be loaded here via HTMX #}
+                 class="mt-2 max-h-64 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-lg">
             </div>
           </div>
           {% if load_error %}
@@ -218,24 +241,6 @@
     const separator = baseUrl.includes('?') ? '&' : '?';
     return `${baseUrl}${separator}input_id=${encodeURIComponent(inputId)}&target_id=${encodeURIComponent(targetId)}`;
   }
-
-  function selectEntity(uri, label, datasetName) {
-    const searchInput = document.getElementById('entity-search-input');
-    const results = document.getElementById('entity-search-results');
-    if (searchInput) { searchInput.value = ''; }
-    if (results) { results.innerHTML = ''; }
-
-    if (window.htmx) {
-      window.htmx.ajax('GET',
-        '{% url "metadata:entity_workspace_dataset" mapping.id %}?dataset=' + encodeURIComponent(datasetName)
-          + '&mode=load'
-          + '&entity_uri=' + encodeURIComponent(uri)
-          + '&entity_label=' + encodeURIComponent(label || ''),
-        {target: '#dataset-panel', swap: 'innerHTML'}
-      );
-    }
-  }
-  window.selectEntity = selectEntity;
 
   function setDatasetFieldValue(button) {
     const value = button.getAttribute('data-value') || '';
