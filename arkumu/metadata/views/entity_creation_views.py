@@ -687,6 +687,9 @@ class EntityFormFragmentView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, 
             else:
                 initial = {"uri": selected_uri}
 
+        if disable_fields:
+            disable_fields = False
+
         form = config.form_class(
             metadata_options=metadata_options,
             disable_fields=disable_fields,
