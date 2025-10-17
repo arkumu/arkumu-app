@@ -144,6 +144,14 @@ def _should_apply_khm_hmt_license_rights(resource: Resource, project: Optional[O
     return code in _KHM_HMT_LICENSE_ORGS
 
 
+def _normalize_fixity_type(label: Optional[str]) -> Optional[str]:
+    """
+    Rosetta requires SHA-256 to be spelled without the hyphen (SHA256) for fixityType.
+    Keep other algorithms untouched to avoid masking unexpected values.
+    """
+    if label and label.upper().replace("-", "") == "SHA256":
+        return "SHA256"
+    return label
 
 
 def _metadata_element_is_valid(
@@ -1970,6 +1978,7 @@ def _build_mets_from_project(
             checksum_algorithm, checksum_value = obj.checksum_tuple()
             checksum_label = obj.checksum_label() if checksum_algorithm else None
             fallback_label = checksum_label or ("MD5" if obj.source == "s3" else "SHA-256")
+            fixity_type_value = _normalize_fixity_type(fallback_label)
             if checksum_value:
                 fixity_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixity"})
                 fixity_record = _create_dnx_element(fixity_section, "record")
@@ -1977,7 +1986,7 @@ def _build_mets_from_project(
                     fixity_record,
                     "key",
                     {"id": "fixityType"},
-                    fallback_label,
+                    fixity_type_value,
                 )
                 _create_dnx_element(
                     fixity_record,
@@ -1985,7 +1994,7 @@ def _build_mets_from_project(
                     {"id": "fixityValue"},
                     checksum_value,
                 )
-                if checksum_label and checksum_label != fallback_label:
+                if checksum_label and _normalize_fixity_type(checksum_label) != fixity_type_value:
                     _create_dnx_element(
                         fixity_record,
                         "key",
