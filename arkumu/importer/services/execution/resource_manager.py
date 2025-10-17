@@ -8,7 +8,7 @@ from django.db import transaction
 import polars as pl
 
 from arkumu.metadata.models import Resource
-from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.common.uri_utils import mint_uri, slugify_uri_part, normalize_text_input
 from arkumu.common.enums import LiteralURIStrategy
@@ -561,14 +561,18 @@ class ResourceManager:
         try:
             with transaction.atomic():
                 entity_id = entity_uri.split('/')[-1]
+                defaults: Dict[str, Any] = {
+                    "resource_type": ResourceType.ENTITY,
+                    "name": entity_id[:100] if len(entity_id) > 100 else entity_id,
+                    "is_placeholder": is_stub,
+                    "organization": self.organization,
+                }
+                if self._dataset_requires_private_default(dataset_name):
+                    defaults["public_access_level"] = PublicAccessLevel.PRIVATE
+
                 entity_resource, created = Resource.objects.get_or_create(
                     uri=entity_uri,
-                    defaults={
-                        "resource_type": ResourceType.ENTITY,
-                        "name": entity_id[:100] if len(entity_id) > 100 else entity_id,
-                        "is_placeholder": is_stub,
-                        "organization": self.organization
-                    }
+                    defaults=defaults,
                 )
                 
                 # STUB RESOLUTION LOGIC: If entity exists and it's a stub, but we're creating a real entity
@@ -594,6 +598,13 @@ class ResourceManager:
         except Exception as e:
             logger.error(f"Failed to create entity resource {entity_uri}: {e}")
             raise
+
+    @staticmethod
+    def _dataset_requires_private_default(dataset_name: Optional[str]) -> bool:
+        if not dataset_name:
+            return False
+        slug = slugify_uri_part(str(dataset_name)).lower()
+        return slug in {"projekt", "project"}
     
     def create_external_resource(self, external_uri: str, ontology_type: str) -> Resource:
         """Create or get an external ontology resource."""
