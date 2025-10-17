@@ -2440,7 +2440,7 @@ def _build_metadata_element(
                     message = getattr(issue, "message", None)
                     messages.append(str(message) if message is not None else str(issue))
                 issue_summary = "; ".join(messages) or "unknown reason"
-                logger.warning(
+                logger.error(
                     "Generated METS payload failed validation for %s: %s; trying next candidate",
                     getattr(resource, "uri", "unknown"),
                     issue_summary,

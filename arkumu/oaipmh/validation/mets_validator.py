@@ -183,7 +183,7 @@ class RosettaMETSValidator:
             detail = first_error.reason or first_error.message
             if getattr(first_error, "path", None):
                 detail = f"{detail} (path: {first_error.path})"
-            self.logger.warning(
+            self.logger.error(
                 "Rosetta METS validation failed for %s: %s",
                 resource_uri or "unknown resource",
                 detail,
