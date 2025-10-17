@@ -121,6 +121,11 @@
                 {{ item.field.label }}
                 {% if item.field.field.required %}<span class="text-error ml-1">*</span>{% endif %}
               </span>
+              {% if item.search_url %}
+                <span class="tooltip ml-2" data-tip="Tippe, um vorhandene Werte zu durchsuchen.">
+                  <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-base-200 text-xs font-semibold text-base-content/70">i</span>
+                </span>
+              {% endif %}
             </div>
 
             {% if item.meta.is_multi_value %}
@@ -145,9 +150,6 @@
                   {{ item.field }}
                   <div id="{{ item.target_id }}"
                        class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden"></div>
-                  <span class="tooltip tooltip-left" data-tip="Tippe, um vorhandene Werte zu durchsuchen.">
-                    <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-base-200 text-xs font-semibold text-base-content/70">i</span>
-                  </span>
                 </div>
               {% else %}
                 {{ item.field }}
