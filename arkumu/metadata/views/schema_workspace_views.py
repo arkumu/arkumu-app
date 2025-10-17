@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Tuple, Set
+import logging
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Set
 
 from django import forms
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -12,6 +13,8 @@ from django.urls import reverse
 from django.views import View
 from urllib.parse import urlparse, urlencode
 from django.utils.text import slugify
+
+logger = logging.getLogger(__name__)
 
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
@@ -143,16 +146,41 @@ def _apply_relationship_initials(
     relationships: List[RelationshipValues],
     mutate_form: bool = True,
 ) -> List[Dict[str, Any]]:
-    badges: List[Dict[str, Any]] = []
+    read_only: List[Dict[str, Any]] = []
 
+    logger.info(f"[_apply_relationship_initials] Processing {len(relationships)} relationships, mutate_form={mutate_form}")
     for relationship in relationships:
+        logger.info(f"[_apply_relationship_initials] Relationship: field={relationship.field_name}, editable={relationship.editable}, uris={len(relationship.uris)}")
         labelled = [
             {
                 "uri": uri,
-                "label": _infer_entity_label(service, uri),
+                "label": _infer_entity_label(
+                    service,
+                    uri,
+                    relationship.target_dataset,
+                ),
             }
             for uri in relationship.uris
         ]
+
+        if relationship.editable:
+            if mutate_form:
+                field = form.fields.get(relationship.field_name)
+                if field is not None and isinstance(field.widget, forms.HiddenInput):
+                    payload = json.dumps(labelled)
+                    logger.info(f"[_apply_relationship_initials] Setting initial for '{relationship.field_name}': {len(labelled)} items")
+                    form.initial[relationship.field_name] = payload
+                    field.initial = payload
+                else:
+                    logger.warning(f"[_apply_relationship_initials] Field '{relationship.field_name}' not found or not HiddenInput")
+        else:
+            read_only.append(
+                {
+                    "label": relationship.display_label,
+                    "items": labelled,
+                }
+            )
+            continue
 
         if mutate_form:
             field = form.fields.get(relationship.field_name)
@@ -161,17 +189,7 @@ def _apply_relationship_initials(
                 form.initial[relationship.field_name] = payload
                 field.initial = payload
 
-        badges.append(
-            {
-                "field_name": relationship.field_name,
-                "label": relationship.display_label,
-                "items": labelled,
-                "is_join": relationship.is_join,
-                "editable": relationship.editable,
-            }
-        )
-
-    return badges
+    return read_only
 
 
 def _get_schema_service(request: HttpRequest, mapping_id: Optional[str] = None) -> SchemaWorkspaceService:
@@ -205,11 +223,65 @@ def _get_schema_service(request: HttpRequest, mapping_id: Optional[str] = None) 
     return SchemaWorkspaceService(mapping=mapping, organization=organization)
 
 
-def _infer_entity_label(service: SchemaWorkspaceService, entity_uri: str) -> str:
+def _infer_entity_label(
+    service: SchemaWorkspaceService,
+    entity_uri: str,
+    target_dataset: Optional[str] = None,
+) -> str:
+    logger.debug(f"[_infer_entity_label] Called with entity_uri={entity_uri}, target_dataset={target_dataset}")
+
+    # Handle malformed URIs from old data (pattern: uri-{uri}-label-{label})
+    uri_tail = entity_uri.split("/")[-1]
+    if uri_tail.startswith("uri-") and "-label-" in uri_tail:
+        # Extract the actual label from the malformed pattern
+        # Pattern: uri-http-arkumu-org-data-fuk-entities-ereignis-1-label-1
+        # Extract: 1
+        parts = uri_tail.split("-label-")
+        if len(parts) == 2:
+            actual_label = parts[1]
+            logger.info(f"[_infer_entity_label] Extracted label from malformed URI: {actual_label} (from {uri_tail})")
+            return actual_label
+
     try:
         entity = Resource.objects.get(uri=entity_uri)
     except Resource.DoesNotExist:
-        return entity_uri
+        logger.warning(f"[_infer_entity_label] Resource not found for URI: {entity_uri}")
+        return uri_tail
+
+    if target_dataset:
+        try:
+            target_schema = service.get_dataset_schema(target_dataset)
+        except ValueError:
+            target_schema = None
+        if target_schema:
+            properties = target_schema.get("properties", {}) or {}
+            anchor_columns = [
+                col.get("column_name")
+                for col in target_schema.get("anchor_columns", [])
+                if col.get("column_name")
+            ]
+            candidate_columns = anchor_columns or list(properties.keys())
+            for column in candidate_columns:
+                prop_resource = properties.get(column)
+                if not prop_resource:
+                    continue
+                triple = (
+                    Triple.objects.filter(
+                        subject=entity,
+                        predicate=prop_resource,
+                        object__resource_type=ResourceType.LITERAL,
+                    )
+                    .select_related("object")
+                    .first()
+                )
+                if triple:
+                    value = (
+                        triple.object.value
+                        or triple.object.literal_value
+                        or triple.object.name
+                    )
+                    if value:
+                        return str(value)
 
     label_predicates = [
         "bevorzugter-titel",
@@ -238,6 +310,11 @@ def _infer_entity_label(service: SchemaWorkspaceService, entity_uri: str) -> str
             if value:
                 return str(value)
 
+    if entity.name and entity.name != entity_uri:
+        tail = entity_uri.split("/")[-1]
+        if entity.name != tail:
+            return entity.name
+
     anchor = (
         Triple.objects.filter(
             subject=entity,
@@ -249,9 +326,13 @@ def _infer_entity_label(service: SchemaWorkspaceService, entity_uri: str) -> str
     if anchor:
         value = anchor.object.value or anchor.object.literal_value or anchor.object.name
         if value:
-            return f"{value} ({entity_uri.split('/')[-1]})"
+            final_label = f"{value} ({entity_uri.split('/')[-1]})"
+            logger.debug(f"[_infer_entity_label] Returning anchor-based label: {final_label}")
+            return final_label
 
-    return entity_uri.split('/')[-1]
+    final_label = entity_uri.split('/')[-1]
+    logger.info(f"[_infer_entity_label] No good label found, returning URI tail: {final_label} for {entity_uri}")
+    return final_label
 
 
 def _build_project_access_context(
@@ -311,6 +392,7 @@ def _render_dataset_panel(
     success_message: Optional[str] = None,
     error_message: Optional[str] = None,
     load_error: bool = False,
+    read_only_relationships: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     dataset_summary = service.get_dataset_summary(dataset_name)
     project_access_context = _build_project_access_context(
@@ -320,6 +402,7 @@ def _render_dataset_panel(
         entity_uri=entity_uri,
     )
     join_field_map = join_field_map or {}
+    target_property_cache: Dict[str, List[Dict[str, str]]] = {}
 
     selected_property = (
         request.GET.get("property")
@@ -346,8 +429,8 @@ def _render_dataset_panel(
 
     # Pair form fields with their metadata for template access
     normal_fields: List[Dict[str, Any]] = []
-    join_fields: List[Dict[str, Any]] = []
-    seen_join_keys: Set[str] = set()
+    relationship_fields: List[Dict[str, Any]] = []
+    seen_relationship_keys: Set[str] = set()
     base_suggestion_url = reverse(
         "metadata:entity_workspace_field_values",
         args=[service.mapping.id],
@@ -356,13 +439,48 @@ def _render_dataset_panel(
     for index, field in enumerate(form):
         meta = dict(field_metadata.get(field.name, {}))
         widget = field.field.widget
-        search_url = None
-        target_id = None
+        search_url: Optional[str] = None
+        target_id: Optional[str] = None
         is_join = bool(meta.get("is_join"))
+        fk_info = meta.get("fk_relationship") or {}
+        is_multi_fk = bool(fk_info and meta.get("is_multi_value"))
+        is_relationship = is_join or is_multi_fk
+        target_dataset: Optional[str] = None
+        relationship = None
 
         if is_join:
-            search_url = f"{base_suggestion_url}?{urlencode({'dataset': dataset_name, 'column': field.name})}"
-            field.field.widget.attrs.setdefault("data-suggestion-url", search_url)
+            relationship = join_field_map.get(field.name)
+            if relationship:
+                target_dataset = relationship.other_dataset
+        elif fk_info:
+            target_dataset = fk_info.get("target_dataset")
+
+        if target_dataset:
+            if target_dataset not in target_property_cache:
+                try:
+                    target_schema = service.get_dataset_schema(target_dataset)
+                except ValueError:
+                    target_property_cache[target_dataset] = []
+                else:
+                    properties: List[Dict[str, str]] = []
+                    for column, prop in (target_schema.get("properties", {}) or {}).items():
+                        uri = getattr(prop, "uri", None)
+                        if not uri:
+                            continue
+                        label = getattr(prop, "name", column) or column
+                        properties.append({"uri": uri, "label": label})
+                    properties.sort(key=lambda item: item["label"].lower())
+                    target_property_cache[target_dataset] = properties
+            meta["search_properties"] = target_property_cache[target_dataset]
+            meta["target_dataset"] = target_dataset
+
+        base_params = {"dataset": dataset_name, "column": field.name}
+        base_url = f"{base_suggestion_url}?{urlencode(base_params)}"
+        meta["base_suggestion_url"] = base_url
+        field.field.widget.attrs.setdefault("data-base-suggestion-url", base_url)
+        field.field.widget.attrs.setdefault("data-suggestion-url", base_url)
+        if is_join or is_multi_fk:
+            field.field.widget.attrs.setdefault("data-suggestion-enabled", "true")
 
         if not isinstance(widget, forms.HiddenInput):
             has_property = bool(meta.get("property_uri"))
@@ -371,22 +489,37 @@ def _render_dataset_panel(
                 from django.utils.text import slugify
 
                 target_id = f"field-suggestions-{index}-{slugify(field.name) or index}"
-                params = urlencode(
-                    {
-                        "dataset": dataset_name,
-                        "column": field.name,
-                        "input_id": field.auto_id or f"id_{slugify(field.name) or index}",
-                        "target_id": target_id,
-                    }
-                )
-                search_url = f"{base_suggestion_url}?{params}"
+                input_id = field.auto_id or f"id_{slugify(field.name) or index}"
+                meta["input_id"] = input_id
+                query_params = {"input_id": input_id, "target_id": target_id}
+                selected_property = meta.get("selected_property") or ""
+                if selected_property:
+                    query_params["property"] = selected_property
+                search_url = base_url + "&" + urlencode(query_params)
                 widget.attrs.setdefault("autocomplete", "off")
                 widget.attrs["hx-get"] = search_url
                 widget.attrs["hx-trigger"] = "focus, keyup changed delay:200ms"
                 widget.attrs["hx-target"] = f"#{target_id}"
                 widget.attrs["hx-include"] = "this"
                 widget.attrs["data-suggestion-enabled"] = "true"
-                widget.attrs["data-suggestion-url"] = search_url
+                widget.attrs["data-suggestion-url"] = base_url
+                widget.attrs["data-base-suggestion-url"] = base_url
+                widget.attrs["data-target-id"] = target_id
+                widget.attrs["data-input-id"] = input_id
+                if meta.get("search_properties"):
+                    select_id = f"field-property-{index}-{slugify(field.name) or index}"
+                    meta["search_select_id"] = select_id
+                    widget.attrs.setdefault("data-property-select", select_id)
+                meta["target_id"] = target_id
+            else:
+                meta["target_id"] = None
+        else:
+            meta["target_id"] = None
+
+        if is_join or is_multi_fk:
+            meta["container_id"] = f"multi-value-{field.name}"
+        else:
+            meta["container_id"] = ""
 
         initial_labels: List[Dict[str, str]] = []
         if is_join:
@@ -431,7 +564,11 @@ def _render_dataset_panel(
                     uri = str(entry).strip()
                 if not uri:
                     continue
-                label = _infer_entity_label(service, uri)
+                label = _infer_entity_label(
+                    service,
+                    uri,
+                    fk_info.get("target_dataset") if fk_info else None,
+                )
                 normalized.append({"label": label, "uri": uri})
 
             if normalized:
@@ -440,12 +577,30 @@ def _render_dataset_panel(
                 field.form.initial[field.name] = labelled_json
                 initial_labels.extend(normalized)
 
-        destination = join_fields if is_join else normal_fields
-        if is_join:
-            join_key = meta.get("join_key") or meta.get("join_relationship")
-            if join_key in seen_join_keys:
+        if fk_info and not meta.get("is_multi_value"):
+            raw_value = form.initial.get(field.name, field.value())
+            if raw_value:
+                resolved_label = _infer_entity_label(
+                    service,
+                    str(raw_value),
+                    fk_info.get("target_dataset"),
+                )
+                if resolved_label and resolved_label != raw_value:
+                    meta["resolved_label"] = resolved_label
+                    meta["resolved_uri"] = str(raw_value)
+                    form.initial[field.name] = resolved_label
+                    if field.name in form.fields:
+                        form.fields[field.name].initial = resolved_label
+
+        if meta.get("resolved_uri") and hasattr(widget, "attrs"):
+            widget.attrs.setdefault("data-initial-uri", meta["resolved_uri"])
+
+        destination = relationship_fields if is_relationship else normal_fields
+        if is_relationship:
+            join_key = meta.get("join_key") or meta.get("join_relationship") or meta.get("property_uri")
+            if join_key in seen_relationship_keys:
                 continue
-            seen_join_keys.add(join_key)
+            seen_relationship_keys.add(join_key)
         destination.append(
             {
                 "field": field,
@@ -457,15 +612,107 @@ def _render_dataset_panel(
             }
         )
 
-    join_fields_sorted = sorted(
-        join_fields,
-        key=lambda item: (item["meta"].get("join_other_dataset", ""), item["field"].label.lower()),
+    normal_fields_sorted = sorted(
+        normal_fields,
+        key=lambda item: item["field"].label.lower(),
     )
+
+    # Prepare multi-value rows for regular fields (pure HTMX, no JS)
+    import uuid
+    for item in normal_fields_sorted:
+        if not item["meta"].get("is_multi_value"):
+            continue
+
+        field = item["field"]
+        meta = item["meta"]
+        field_name = field.name
+        initial_labels = item.get("initial_labels", [])
+
+        rows = []
+        if initial_labels:
+            for label_data in initial_labels:
+                row_id = f"multi-value-row-{field_name}-{uuid.uuid4().hex[:8]}"
+                input_id = f"input-{row_id}"
+                suggestions_id = f"suggestions-{row_id}"
+
+                if isinstance(label_data, dict):
+                    display_value = label_data.get("label", "")
+                    stored_value = label_data.get("uri", "")
+                else:
+                    display_value = str(label_data)
+                    stored_value = str(label_data)
+
+                rows.append({
+                    "row_id": row_id,
+                    "input_id": input_id,
+                    "suggestions_id": suggestions_id,
+                    "display_value": display_value,
+                    "stored_value": stored_value,
+                    "suggestion_url": meta.get("base_suggestion_url", ""),
+                })
+
+        item["rows"] = rows
+
+    relationship_fields_sorted = sorted(
+        relationship_fields,
+        key=lambda item: item["field"].label.lower(),
+    )
+
+    # Prepare relationship rows data for pure HTMX rendering
+    import uuid
+    for rel_item in relationship_fields_sorted:
+        field = rel_item["field"]
+        meta = rel_item["meta"]
+        field_name = field.name
+
+        # Ensure search_properties is always a list
+        if "search_properties" not in meta or meta["search_properties"] is None:
+            meta["search_properties"] = []
+
+        # Get initial labels/values
+        initial_labels = rel_item.get("initial_labels", [])
+
+        # Generate rows for existing values
+        rows = []
+        if initial_labels:
+            for label_data in initial_labels:
+                row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+                input_id = f"input-{row_id}"
+                suggestions_id = f"suggestions-{row_id}"
+
+                display_value = label_data.get("label", "")
+                stored_value = label_data.get("uri", "")
+
+                rows.append({
+                    "row_id": row_id,
+                    "input_id": input_id,
+                    "suggestions_id": suggestions_id,
+                    "display_value": display_value,
+                    "stored_value": stored_value,
+                    "suggestion_url": meta.get("base_suggestion_url", ""),
+                })
+        else:
+            # Create one empty row if no initial values
+            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+            input_id = f"input-{row_id}"
+            suggestions_id = f"suggestions-{row_id}"
+            rows.append({
+                "row_id": row_id,
+                "input_id": input_id,
+                "suggestions_id": suggestions_id,
+                "display_value": "",
+                "stored_value": "",
+                "suggestion_url": meta.get("base_suggestion_url", ""),
+            })
+
+        rel_item["rows"] = rows
+        rel_item["property_select_id"] = f"relationship-property-{field_name}"
+        rel_item["selected_property"] = ""
 
     template_context = {
         "dataset_summary": dataset_summary,
-        "fields_with_metadata": normal_fields,
-        "join_fields": join_fields_sorted,
+        "fields_with_metadata": normal_fields_sorted,
+        "relationship_fields": relationship_fields_sorted,
         "form": form,
         "entity_uri": entity_uri,
         "entity_label": entity_label,
@@ -475,6 +722,10 @@ def _render_dataset_panel(
         "mapping": service.mapping,
         "search_properties": search_properties,
         "selected_property": selected_property,
+        "read_only_relationships": sorted(
+            read_only_relationships or [],
+            key=lambda item: item["label"].lower(),
+        ),
     }
     template_context.update(project_access_context)
 
@@ -1806,7 +2057,7 @@ class EntitySearchView(LoginRequiredMixin, View):
         dataset_endpoint = reverse("metadata:entity_workspace_dataset", args=[service.mapping.id])
         results: List[Dict[str, str]] = []
         for uri in entity_uris:
-            raw_label = _infer_entity_label(service, uri)
+            raw_label = _infer_entity_label(service, uri, dataset_name)
             identifier = uri.split("/")[-1]
             label = str(raw_label) if raw_label else identifier
             property_value = property_values.get(uri, "")
@@ -1924,8 +2175,12 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         column_name = request.GET.get("column")
         input_id = request.GET.get("input_id")
         target_id = request.GET.get("target_id")
+        property_uri = request.GET.get("property")
+
+        logger.info(f"[DatasetFieldValueOptionsView.GET] dataset={dataset_name}, column={column_name}, property={property_uri}")
 
         if not dataset_name or not column_name or not input_id or not target_id:
+            logger.error("[DatasetFieldValueOptionsView.GET] Missing required parameters")
             return HttpResponseBadRequest("Missing required parameters")
 
         try:
@@ -1953,9 +2208,9 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         fk_info = field_meta.get("fk_relationship")
         if field_meta.get("is_join"):
             relationship = join_field_map.get(column_name)
-            suggestions = self._collect_join_entity_suggestions(service, relationship, query)
+            suggestions = self._collect_join_entity_suggestions(service, relationship, query, property_uri)
         elif fk_info:
-            suggestions = self._collect_fk_suggestions(service, fk_info, query)
+            suggestions = self._collect_fk_suggestions(service, fk_info, query, property_uri)
         else:
             suggestions = self._collect_property_suggestions(
                 service,
@@ -1967,7 +2222,10 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             "suggestions": suggestions[: self.max_suggestions],
             "input_id": input_id,
             "target_id": target_id,
+            "mapping_id": mapping_id,
         }
+        logger.info(f"[DatasetFieldValueOptionsView.GET] Returning {len(context['suggestions'])} suggestions for target={target_id}")
+        logger.debug(f"[DatasetFieldValueOptionsView.GET] Suggestions: {context['suggestions'][:3]}")  # Log first 3
         return render(
             request,
             "metadata/entity_creation/partials/_dataset_field_suggestions.html",
@@ -1979,16 +2237,12 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         service: SchemaWorkspaceService,
         fk_info: Dict[str, Any],
         query: str,
+        property_uri: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         target_dataset = fk_info.get("target_dataset")
-        target_column = fk_info.get("target_column")
-        if not target_dataset or not target_column:
+        if not target_dataset:
             return []
-
-        target_schema = service.get_dataset_schema(target_dataset)
-        property_resource = target_schema.get("properties", {}).get(target_column)
-        property_uri = getattr(property_resource, "uri", None)
-        return self._collect_property_suggestions(service, property_uri, query)
+        return self._collect_dataset_entity_suggestions(service, target_dataset, query, property_uri)
 
     def _collect_property_suggestions(
         self,
@@ -2041,17 +2295,19 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
 
         return suggestions
 
-    def _collect_join_entity_suggestions(
+    def _collect_dataset_entity_suggestions(
         self,
         service: SchemaWorkspaceService,
-        relationship: Optional[JoinRelationship],
+        dataset_name: str,
         query: str,
+        property_uri: Optional[str] = None,
     ) -> List[Dict[str, str]]:
-        if relationship is None:
+        try:
+            schema = service.get_dataset_schema(dataset_name)
+        except ValueError:
             return []
 
-        schema = service.get_dataset_schema(relationship.other_dataset)
-        dataset_resource = service._resolve_dataset_resource(relationship.other_dataset, schema)  # type: ignore[attr-defined]
+        dataset_resource = service._resolve_dataset_resource(dataset_name, schema)  # type: ignore[attr-defined]
         if not dataset_resource:
             return []
 
@@ -2061,33 +2317,346 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             object=dataset_resource,
         ).values_list("subject__uri", flat=True)
 
+        max_results = self.max_suggestions
+        literal_label_map: Dict[str, str] = {}
+        uri_matches: List[str] = []
         if query:
             from django.db.models import Q
 
-            literal_matches = Triple.objects.filter(
+            literal_matches_qs = Triple.objects.filter(
                 subject__uri__in=entities_qs,
                 object__resource_type=ResourceType.LITERAL,
-            ).filter(
+            )
+
+            if property_uri:
+                literal_matches_qs = literal_matches_qs.filter(predicate__uri=property_uri)
+
+            literal_matches_qs = literal_matches_qs.filter(
                 Q(object__value__icontains=query)
                 | Q(object__name__icontains=query)
-            ).values_list("subject__uri", flat=True)
+            ).values_list(
+                "subject__uri",
+                "object__value",
+                "object__name",
+            )
 
-            uri_matches = entities_qs.filter(subject__uri__icontains=query)
+            for (
+                subject_uri,
+                value,
+                name,
+            ) in literal_matches_qs[: max_results * 5]:
+                candidate = next(
+                    (
+                        str(val).strip()
+                        for val in (value, name)
+                        if val not in (None, "")
+                    ),
+                    "",
+                )
+                if not candidate:
+                    continue
+                literal_label_map.setdefault(subject_uri, candidate)
+                if len(literal_label_map) >= max_results:
+                    break
 
-            uris = list(uri_matches[:20])
-            for uri in literal_matches[:20]:
-                if uri not in uris:
-                    uris.append(uri)
-                    if len(uris) >= 20:
-                        break
+            uri_matches = list(
+                Triple.objects.filter(
+                    predicate__uri=is_part_of_uri,
+                    object=dataset_resource,
+                    subject__uri__icontains=query,
+                ).values_list("subject__uri", flat=True)[: max_results * 2]
+            )
         else:
-            uris = list(entities_qs[:20])
+            uri_matches = []
 
+        uris: List[str] = []
+
+        def append_unique(items: Iterable[str]) -> None:
+            for item in items:
+                if len(uris) >= max_results:
+                    break
+                if item not in uris:
+                    uris.append(item)
+
+        append_unique(literal_label_map.keys())
+        append_unique(uri_matches)
+
+        if len(uris) < max_results:
+            append_unique(list(entities_qs[:max_results]))
+
+        seen: Set[str] = set()
         results: List[Dict[str, str]] = []
         for uri in uris:
-            label = _infer_entity_label(service, uri)
-            results.append({"value": uri, "label": label})
+            if uri in seen:
+                continue
+            seen.add(uri)
+            identifier = uri.split("/")[-1]
+            matched_label = literal_label_map.get(uri, "").strip()
+            inferred_label = _infer_entity_label(service, uri, dataset_name).strip()
+
+            label = matched_label or inferred_label or identifier
+            if label.lower() == identifier.lower():
+                humanized = identifier.replace("_", " ").replace("-", " ").strip()
+                if humanized and humanized.lower() != label.lower():
+                    label = humanized
+
+            display_label = matched_label or label
+
+            suggestion = {
+                "value": uri,
+                "label": label,
+                "display": display_label,
+                "identifier": identifier,
+            }
+            results.append(suggestion)
+
+            # Log first few suggestions to debug display issues
+            if len(results) <= 3:
+                logger.info(f"[Suggestion #{len(results)}] display='{display_label}', label='{label}', identifier='{identifier}'")
         return results
+
+    def _collect_join_entity_suggestions(
+        self,
+        service: SchemaWorkspaceService,
+        relationship: Optional[JoinRelationship],
+        query: str,
+        property_uri: Optional[str] = None,
+    ) -> List[Dict[str, str]]:
+        if relationship is None:
+            return []
+        return self._collect_dataset_entity_suggestions(
+            service,
+            relationship.other_dataset,
+            query,
+            property_uri,
+        )
+
+
+class RelationshipRowView(LoginRequiredMixin, View):
+    """
+    HTMX endpoint for managing individual relationship rows.
+    """
+
+    def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        """Add a new relationship row."""
+        dataset_name = request.GET.get("dataset")
+        field_name = request.GET.get("field_name")
+
+        logger.info(f"[RelationshipRowView.POST] Adding row: dataset={dataset_name}, field={field_name}")
+
+        if not dataset_name or not field_name:
+            logger.error("[RelationshipRowView.POST] Missing dataset or field_name parameter")
+            return HttpResponseBadRequest("Missing dataset or field_name parameter")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            logger.error(f"[RelationshipRowView.POST] Service error: {exc}")
+            return HttpResponseBadRequest(str(exc))
+
+        field_metadata = service.get_field_metadata(dataset_name)
+        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+        field_meta = field_metadata.get(field_name)
+        if not field_meta:
+            logger.error(f"[RelationshipRowView.POST] Unknown field: {field_name}")
+            return HttpResponseBadRequest("Unknown field")
+
+        selected_property = request.POST.get(f"relationship_property_{field_name}", "")
+        logger.info(f"[RelationshipRowView.POST] Selected property: {selected_property}")
+
+        # Generate unique IDs for this row
+        import uuid
+        row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+        input_id = f"input-{row_id}"
+        suggestions_id = f"suggestions-{row_id}"
+
+        # Build suggestion URL
+        base_suggestion_url = reverse(
+            "metadata:entity_workspace_field_values",
+            args=[service.mapping.id],
+        )
+        base_params = {"dataset": dataset_name, "column": field_name}
+        suggestion_url = f"{base_suggestion_url}?{urlencode(base_params)}"
+
+        # Determine property select ID
+        property_select_id = f"relationship-property-{field_name}"
+
+        context = {
+            "row_id": row_id,
+            "input_id": input_id,
+            "suggestions_id": suggestions_id,
+            "field_name": field_name,
+            "display_value": "",
+            "stored_value": "",
+            "suggestion_url": suggestion_url,
+            "selected_property": selected_property,
+            "property_select_id": property_select_id,
+            "mapping_id": mapping_id,
+        }
+
+        logger.info(f"[RelationshipRowView.POST] Rendering row: {row_id}")
+        return render(
+            request,
+            "metadata/entity_creation/partials/_relationship_row.html",
+            context,
+        )
+
+    def delete(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        """Remove a relationship row."""
+        # Return empty response to remove the row via hx-swap="outerHTML"
+        return HttpResponse("")
+
+
+class RelationshipRowsView(LoginRequiredMixin, View):
+    """
+    HTMX endpoint for re-rendering all relationship rows when property changes.
+    """
+
+    def get(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        """Re-render all rows with new property selection."""
+        dataset_name = request.GET.get("dataset")
+        field_name = request.GET.get("field_name")
+
+        logger.info(f"[RelationshipRowsView.GET] Re-rendering rows: dataset={dataset_name}, field={field_name}")
+
+        if not dataset_name or not field_name:
+            logger.error("[RelationshipRowsView.GET] Missing dataset or field_name parameter")
+            return HttpResponseBadRequest("Missing dataset or field_name parameter")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            logger.error(f"[RelationshipRowsView.GET] Service error: {exc}")
+            return HttpResponseBadRequest(str(exc))
+
+        field_metadata = service.get_field_metadata(dataset_name)
+        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+
+        selected_property = request.GET.get(f"relationship_property_{field_name}", "")
+        logger.info(f"[RelationshipRowsView.GET] Selected property: {selected_property}")
+
+        # Collect existing values from the form
+        existing_values = request.GET.getlist(f"{field_name}[]")
+        logger.info(f"[RelationshipRowsView.GET] Existing values: {existing_values}")
+
+        # Build suggestion URL
+        base_suggestion_url = reverse(
+            "metadata:entity_workspace_field_values",
+            args=[service.mapping.id],
+        )
+        base_params = {"dataset": dataset_name, "column": field_name}
+        suggestion_url = f"{base_suggestion_url}?{urlencode(base_params)}"
+
+        # Determine property select ID
+        property_select_id = f"relationship-property-{field_name}"
+
+        # Generate rows for existing values
+        rows = []
+        import uuid
+        for value in existing_values:
+            if not value.strip():
+                continue
+            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+            input_id = f"input-{row_id}"
+            suggestions_id = f"suggestions-{row_id}"
+
+            rows.append({
+                "row_id": row_id,
+                "input_id": input_id,
+                "suggestions_id": suggestions_id,
+                "display_value": value,
+                "stored_value": value,
+                "suggestion_url": suggestion_url,
+            })
+
+        # If no existing values, create one empty row
+        if not rows:
+            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+            input_id = f"input-{row_id}"
+            suggestions_id = f"suggestions-{row_id}"
+            rows.append({
+                "row_id": row_id,
+                "input_id": input_id,
+                "suggestions_id": suggestions_id,
+                "display_value": "",
+                "stored_value": "",
+                "suggestion_url": suggestion_url,
+            })
+
+        logger.info(f"[RelationshipRowsView.GET] Rendering {len(rows)} rows")
+
+        context = {
+            "rows": rows,
+            "field_name": field_name,
+            "selected_property": selected_property,
+            "property_select_id": property_select_id,
+            "mapping_id": mapping_id,
+        }
+
+        # Render all rows
+        html = "".join([
+            render_to_string(
+                "metadata/entity_creation/partials/_relationship_row.html",
+                {**row, "field_name": field_name, "selected_property": selected_property,
+                 "property_select_id": property_select_id, "mapping_id": mapping_id},
+                request=request,
+            )
+            for row in rows
+        ])
+
+        logger.info(f"[RelationshipRowsView.GET] Rendered HTML length: {len(html)}")
+        return HttpResponse(html)
+
+
+class RelationshipSelectSuggestionView(LoginRequiredMixin, View):
+    """
+    HTMX endpoint for selecting a suggestion value.
+    Returns OOB updates for both visible and hidden inputs.
+    """
+
+    def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        """Handle suggestion selection with OOB updates."""
+        from django.utils.html import escape
+
+        input_id = request.POST.get("input_id")
+        target_id = request.POST.get("target_id")
+        value = request.POST.get("value", "")
+        label = request.POST.get("label", value)
+
+        logger.info(f"[RelationshipSelectSuggestionView.POST] input_id={input_id}, value={value}, label={label}")
+
+        if not input_id:
+            return HttpResponseBadRequest("Missing input_id")
+
+        # Escape for HTML safety
+        value_escaped = escape(value)
+        label_escaped = escape(label)
+
+        # Clear suggestions container (main swap target)
+        main_html = ""
+        if target_id:
+            main_html = f'<div id="{target_id}" class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden"></div>'
+
+        # OOB updates for both inputs
+        hidden_input_id = f"{input_id}-hidden"
+
+        # Update visible input value (OOB)
+        visible_oob = f'<input id="{input_id}" value="{label_escaped}" hx-swap-oob="true">'
+
+        # Update hidden input value (OOB)
+        hidden_oob = f'<input id="{hidden_input_id}" value="{value_escaped}" hx-swap-oob="true">'
+
+        # Combine all updates
+        response_html = main_html + visible_oob + hidden_oob
+
+        logger.info(f"[RelationshipSelectSuggestionView.POST] Response length: {len(response_html)}")
+        return HttpResponse(response_html)
 
 
 class SchemaDatasetFragmentView(LoginRequiredMixin, View):
@@ -2127,7 +2696,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                         initial_data = loaded
                         disable_anchors = True
                         if not entity_label:
-                            entity_label = _infer_entity_label(service, entity_uri)
+                            entity_label = _infer_entity_label(service, entity_uri, dataset_name)
                     else:
                         load_error = True
                 except ValueError:
@@ -2147,7 +2716,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     initial_data, entity_uri = loaded
                     disable_anchors = True
                     if entity_uri and not entity_label:
-                        entity_label = _infer_entity_label(service, entity_uri)
+                        entity_label = _infer_entity_label(service, entity_uri, dataset_name)
                 else:
                     load_error = True
 
@@ -2158,6 +2727,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         )
         _remove_join_source_fields(form, join_field_map)
 
+        read_only_relationships: List[Dict[str, Any]] = []
         if entity_uri:
             relationships = service.collect_relationship_values(
                 dataset_name=dataset_name,
@@ -2165,13 +2735,13 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                 field_metadata=field_metadata,
                 join_field_map=join_field_map,
             )
-            _apply_relationship_initials(
+            read_only_relationships = _apply_relationship_initials(
                 service=service,
                 form=form,
                 relationships=relationships,
             )
             if not entity_label:
-                entity_label = _infer_entity_label(service, entity_uri)
+                entity_label = _infer_entity_label(service, entity_uri, dataset_name)
 
         html = _render_dataset_panel(
             request,
@@ -2183,6 +2753,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
             entity_uri=entity_uri,
             entity_label=entity_label,
             load_error=load_error,
+            read_only_relationships=read_only_relationships,
         )
         return HttpResponse(html)
 
@@ -2191,6 +2762,8 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         if not dataset_name:
             return HttpResponseBadRequest("Missing dataset parameter")
 
+        logger.info(f"[SchemaDatasetFragmentView.POST] Saving entity for dataset={dataset_name}")
+
         service = self.get_service(request, mapping_id)
         field_metadata = service.get_field_metadata(dataset_name)
         field_metadata, join_field_map = service.augment_field_metadata_with_joins(
@@ -2198,6 +2771,8 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
             field_metadata,
         )
         entity_uri = request.POST.get("entity_uri") or None
+
+        logger.info(f"[SchemaDatasetFragmentView.POST] entity_uri={entity_uri}, join_fields={list(join_field_map.keys())}")
 
         submission_mode = request.POST.get("submission_mode", "create_new")
 
@@ -2212,22 +2787,58 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
             try:
                 entity_data = form.cleaned_entity_data()
                 join_payloads: Dict[str, List[str]] = {}
+
+                # Process join fields (those in join_field_map)
                 for field_name, relationship in join_field_map.items():
                     raw = entity_data.pop(field_name, None)
+                    logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': raw_value={raw}")
                     join_payloads[field_name] = _parse_join_payload(raw)
+                    logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': parsed={join_payloads[field_name]}")
+
+                # Process multi-value FK fields (not in join_field_map but are relationships)
+                for field_name, meta in field_metadata.items():
+                    if field_name in join_payloads:
+                        continue  # Already processed above
+                    fk_info = meta.get("fk_relationship")
+                    if fk_info and meta.get("is_multi_value"):
+                        raw = entity_data.pop(field_name, None)
+                        logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': raw_value={raw}")
+                        parsed = _parse_join_payload(raw)
+                        logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': parsed={parsed}")
+                        # Store for later processing
+                        join_payloads[field_name] = parsed
+
                 saved_uri, created = service.save_entity(
                     dataset_name, entity_data, entity_uri=entity_uri
                 )
-                entity_label = _infer_entity_label(service, saved_uri)
+                entity_label = _infer_entity_label(service, saved_uri, dataset_name)
                 cleaned_initial = {key: form.cleaned_data.get(key) for key in form.fields}
 
                 for field_name, values in join_payloads.items():
-                    relationship = join_field_map[field_name]
-                    service.sync_join_relationship(
-                        entity_uri=saved_uri,
-                        relationship=relationship,
-                        related_uris=values,
-                    )
+                    # Check if this is a join field or a multi-FK field
+                    if field_name in join_field_map:
+                        # Join field - use sync_join_relationship
+                        relationship = join_field_map[field_name]
+                        logger.info(f"[SchemaDatasetFragmentView.POST] Syncing join relationship '{field_name}' with {len(values)} values")
+                        service.sync_join_relationship(
+                            entity_uri=saved_uri,
+                            relationship=relationship,
+                            related_uris=values,
+                        )
+                    else:
+                        # Multi-FK field - save as FK relationship
+                        meta = field_metadata.get(field_name, {})
+                        fk_info = meta.get("fk_relationship")
+                        if fk_info:
+                            target_dataset = fk_info.get("target_dataset")
+                            property_uri = meta.get("property_uri")
+                            logger.info(f"[SchemaDatasetFragmentView.POST] Saving multi-FK '{field_name}' -> {target_dataset} with {len(values)} values")
+                            # Save as direct FK triples
+                            service.save_multi_fk_relationship(
+                                entity_uri=saved_uri,
+                                property_uri=property_uri,
+                                related_uris=values,
+                            )
 
                 if created:
                     keep_editing = submission_mode == "stay_on_entity"
@@ -2257,6 +2868,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     )
                     entity_uri = saved_uri
 
+                read_only_relationships: List[Dict[str, Any]] = []
                 if entity_uri:
                     relationships = service.collect_relationship_values(
                         dataset_name=dataset_name,
@@ -2264,11 +2876,13 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                         field_metadata=field_metadata,
                         join_field_map=join_field_map,
                     )
-                    _apply_relationship_initials(
+                    logger.info(f"[SchemaDatasetFragmentView.POST] Collected {len(relationships)} relationships after save")
+                    read_only_relationships = _apply_relationship_initials(
                         service=service,
                         form=form,
                         relationships=relationships,
                     )
+                    logger.info(f"[SchemaDatasetFragmentView.POST] Applied relationship initials: {len(read_only_relationships)} fields")
 
                 html = _render_dataset_panel(
                     request,
@@ -2280,6 +2894,7 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     entity_uri=entity_uri,
                     entity_label=entity_label,
                     success_message=success_message,
+                    read_only_relationships=read_only_relationships,
                 )
                 response = HttpResponse(html)
                 response["HX-Trigger"] = '{"entity-saved": {"dataset": "%s", "uri": "%s"}}' % (
@@ -2292,6 +2907,27 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         else:
             error_message = "Please correct the highlighted fields."
 
+        read_only_relationships: List[Dict[str, Any]] = []
+        if entity_uri:
+            relationships = service.collect_relationship_values(
+                dataset_name=dataset_name,
+                entity_uri=entity_uri,
+                field_metadata=field_metadata,
+                join_field_map=join_field_map,
+            )
+            read_only_relationships = _apply_relationship_initials(
+                service=service,
+                form=form,
+                relationships=relationships,
+                mutate_form=False,
+            )
+
+        entity_label_resolved = (
+            _infer_entity_label(service, entity_uri, dataset_name)
+            if entity_uri
+            else None
+        )
+
         html = _render_dataset_panel(
             request,
             service=service,
@@ -2300,7 +2936,8 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
             field_metadata=field_metadata,
             join_field_map=join_field_map,
             entity_uri=entity_uri,
-            entity_label=_infer_entity_label(service, entity_uri) if entity_uri else None,
+            entity_label=entity_label_resolved,
             error_message=error_message,
+            read_only_relationships=read_only_relationships,
         )
         return HttpResponse(html, status=400)

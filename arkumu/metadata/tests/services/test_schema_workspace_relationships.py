@@ -340,16 +340,16 @@ def test_apply_relationship_initials_respects_mutate_flag(workspace_setup):
         rel for rel in relationships if not rel.is_join and rel.field_name in form.fields
     )
 
-    badges = _apply_relationship_initials(
+    read_only = _apply_relationship_initials(
         service=service,
         form=form,
         relationships=[direct_relationship],
         mutate_form=False,
     )
     assert "actor_refs" not in form.initial
-    assert badges and badges[0]["label"]
+    assert read_only == []
 
-    _apply_relationship_initials(
+    read_only_after_mutation = _apply_relationship_initials(
         service=service,
         form=form,
         relationships=[direct_relationship],
@@ -358,3 +358,4 @@ def test_apply_relationship_initials_respects_mutate_flag(workspace_setup):
     assert "actor_refs" in form.initial
     payload = json.loads(form.initial["actor_refs"])
     assert payload[0]["uri"] == actor_resource.uri
+    assert read_only_after_mutation == []

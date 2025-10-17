@@ -44,7 +44,12 @@ class DatasetEntityForm(forms.Form):
         self.property_fields: List[str] = []
         self.hide_anchors = hide_anchors
 
-        for column_name, meta in field_metadata.items():
+        sorted_fields = sorted(
+            field_metadata.items(),
+            key=lambda item: (str(item[1].get("property_label") or item[0]).lower(), item[0]),
+        )
+
+        for column_name, meta in sorted_fields:
             field = self._build_field(column_name, meta, disable_anchors, hide_anchors)
             self.fields[column_name] = field
             self.property_fields.append(column_name)

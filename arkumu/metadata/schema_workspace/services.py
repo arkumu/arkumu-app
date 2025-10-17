@@ -248,89 +248,48 @@ class SchemaWorkspaceService:
         for candidate in dataset_names:
             schema = self.get_dataset_schema(candidate)
             junction = schema.get("junction_schema")
-            if junction:
-                primary_dataset = junction.get("primary_dataset")
-                secondary_dataset = junction.get("secondary_dataset")
-                if dataset_name not in {primary_dataset, secondary_dataset}:
-                    continue
+            if not junction:
+                continue
 
-                if dataset_name == primary_dataset:
-                    self_column = junction.get("primary_fk")
-                    other_dataset = secondary_dataset
-                    other_column = junction.get("secondary_fk")
-                else:
-                    self_column = junction.get("secondary_fk")
-                    other_dataset = primary_dataset
-                    other_column = junction.get("primary_fk")
+            primary_dataset = junction.get("primary_dataset")
+            secondary_dataset = junction.get("secondary_dataset")
+            if dataset_name not in {primary_dataset, secondary_dataset}:
+                continue
 
-                if not other_dataset or not self_column or not other_column:
-                    continue
+            if dataset_name == primary_dataset:
+                self_column = junction.get("primary_fk")
+                other_dataset = secondary_dataset
+                other_column = junction.get("secondary_fk")
+            else:
+                self_column = junction.get("secondary_fk")
+                other_dataset = primary_dataset
+                other_column = junction.get("primary_fk")
 
-                key = (candidate, dataset_name, other_dataset)
-                if key in seen:
-                    continue
-                seen.add(key)
+            if not other_dataset or not self_column or not other_column:
+                continue
 
-                properties = schema.get("properties", {}) or {}
-                self_property = properties.get(self_column)
-                other_property = properties.get(other_column)
-                other_summary = self.get_dataset_summary(other_dataset)
+            key = (candidate, dataset_name, other_dataset)
+            if key in seen:
+                continue
+            seen.add(key)
 
-                relationships.append(
-                    JoinRelationship(
-                        join_dataset=candidate,
-                        join_dataset_schema=schema,
-                        self_column=self_column,
-                        self_property_uri=getattr(self_property, "uri", None),
-                        other_dataset=other_dataset,
-                        other_column=other_column,
-                        other_property_uri=getattr(other_property, "uri", None),
-                        other_display_label=other_summary.display_label,
-                    )
+            properties = schema.get("properties", {}) or {}
+            self_property = properties.get(self_column)
+            other_property = properties.get(other_column)
+            other_summary = self.get_dataset_summary(other_dataset)
+
+            relationships.append(
+                JoinRelationship(
+                    join_dataset=candidate,
+                    join_dataset_schema=schema,
+                    self_column=self_column,
+                    self_property_uri=getattr(self_property, "uri", None),
+                    other_dataset=other_dataset,
+                    other_column=other_column,
+                    other_property_uri=getattr(other_property, "uri", None),
+                    other_display_label=other_summary.display_label,
                 )
-                continue
-
-            fk_rels: List[Dict[str, Any]] = schema.get("fk_relationships", []) or []
-            if not fk_rels:
-                continue
-
-            self_rels = [rel for rel in fk_rels if rel.get("target_dataset") == dataset_name]
-            if not self_rels:
-                continue
-
-            for self_rel in self_rels:
-                for other_rel in fk_rels:
-                    if other_rel is self_rel:
-                        continue
-                    other_dataset = other_rel.get("target_dataset")
-                    if not other_dataset or other_dataset == dataset_name:
-                        continue
-
-                    key = (candidate, dataset_name, other_dataset)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-
-                    other_summary = self.get_dataset_summary(other_dataset)
-
-                    relationships.append(
-                        JoinRelationship(
-                            join_dataset=candidate,
-                            join_dataset_schema=schema,
-                            self_column=self_rel.get("source_column"),
-                            self_property_uri=(
-                                self_rel.get("source_property_uri")
-                                or self_rel.get("source_canonical_property")
-                            ),
-                            other_dataset=other_dataset,
-                            other_column=other_rel.get("source_column"),
-                            other_property_uri=(
-                                other_rel.get("source_property_uri")
-                                or other_rel.get("source_canonical_property")
-                            ),
-                            other_display_label=other_summary.display_label,
-                        )
-                    )
+            )
 
         return relationships
 
@@ -459,7 +418,12 @@ class SchemaWorkspaceService:
                 ):
                     meta["is_required"] = True
             field_meta[column_name] = meta
-        return field_meta
+
+        sorted_items = sorted(
+            field_meta.items(),
+            key=lambda item: (str(item[1].get("property_label") or item[0]).lower(), item[0]),
+        )
+        return {key: field_meta[key] for key, _ in sorted_items}
 
     def augment_field_metadata_with_joins(
         self,
@@ -469,7 +433,15 @@ class SchemaWorkspaceService:
         metadata = dict(field_metadata)
         join_map: Dict[str, JoinRelationship] = {}
 
+        direct_multi_targets = {
+            meta.get("fk_relationship", {}).get("target_dataset")
+            for meta in metadata.values()
+            if meta.get("fk_relationship") and meta.get("is_multi_value")
+        }
+
         for relationship in self.list_join_relationships(dataset_name):
+            if relationship.other_dataset in direct_multi_targets:
+                continue
             metadata.pop(relationship.self_column, None)
 
             for field_name, field_meta in list(metadata.items()):
@@ -1191,6 +1163,55 @@ class SchemaWorkspaceService:
 
     def get_join_values(self, relationship: JoinRelationship, entity_uri: str) -> List[str]:
         return list(self._get_join_entity_map(relationship, entity_uri).values())
+
+    def save_multi_fk_relationship(
+        self,
+        *,
+        entity_uri: str,
+        property_uri: str,
+        related_uris: List[str],
+    ) -> None:
+        """Save multiple FK relationships, replacing existing ones."""
+        from arkumu.metadata.models.resource import Resource
+        from arkumu.metadata.models.triples import Triple
+
+        # Get the entity and property resources
+        entity = Resource.objects.filter(uri=entity_uri).first()
+        predicate = Resource.objects.filter(uri=property_uri).first()
+
+        if not entity or not predicate:
+            return
+
+        # Delete existing triples for this property
+        Triple.objects.filter(
+            subject=entity,
+            predicate=predicate,
+        ).delete()
+
+        # Create new triples for each related URI
+        for related_uri in related_uris:
+            if not related_uri:
+                continue
+
+            # Get or create the related resource
+            related_resource = Resource.objects.filter(uri=related_uri).first()
+            if not related_resource:
+                # Try to create it if it's a valid URI
+                try:
+                    related_resource = Resource.objects.create(
+                        uri=related_uri,
+                        source=self.organization,
+                    )
+                except Exception:
+                    continue  # Skip if we can't create the resource
+
+            # Create the triple
+            Triple.objects.create(
+                subject=entity,
+                predicate=predicate,
+                object=related_resource,
+                source=self.organization,
+            )
 
     def _create_fk_relationship(
         self,

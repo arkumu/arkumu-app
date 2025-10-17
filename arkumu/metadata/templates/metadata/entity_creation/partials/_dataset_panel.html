@@ -135,7 +135,7 @@
             </div>
 
             {% if item.meta.is_multi_value %}
-              {# Multi-value field with + button UI (HTMX-based) - takes full width #}
+              {# Multi-value field - pure HTMX, no JavaScript #}
               {% if item.initial_labels %}
                 <div class="flex flex-wrap gap-2 mb-2">
                   {% for choice in item.initial_labels %}
@@ -144,13 +144,17 @@
                 </div>
               {% endif %}
               {{ item.field }}
-              <div id="multi-value-{{ item.field.name }}"
-                   class="space-y-2"
-                   data-suggestion-url="{{ item.search_url|default:'' }}">
+              {# Server-rendered multi-value rows - no JS initialization needed #}
+              <div id="multi-value-rows-{{ item.field.name }}" class="space-y-2">
+                {% for row in item.rows %}
+                  {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=item.field.name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url mapping_id=mapping.id %}
+                {% endfor %}
               </div>
               <button type="button"
                       class="btn btn-ghost btn-sm mt-2"
-                      hx-on:click="addMultiValueRow('{{ item.field.name }}')">
+                      hx-post="{% url 'metadata:entity_workspace_relationship_row' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}&field_name={{ item.field.name }}"
+                      hx-target="#multi-value-rows-{{ item.field.name }}"
+                      hx-swap="beforeend">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                 </svg>
@@ -172,6 +176,9 @@
             {% if item.field.help_text %}
               <span class="text-xs text-base-content/70">{{ item.field.help_text|safe }}</span>
             {% endif %}
+            {% if item.meta.resolved_label %}
+              <span class="text-xs text-base-content/60 block">Wert: {{ item.meta.resolved_label }}</span>
+            {% endif %}
             {% if item.field.errors %}
               <span class="text-xs text-error">
                 {% for error in item.field.errors %}
@@ -183,10 +190,10 @@
         {% endfor %}
       </div>
 
-      {% if join_fields %}
+      {% if relationship_fields or read_only_relationships %}
         <div class="divider text-sm">Verknüpfungen</div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {% for item in join_fields %}
+          {% for item in relationship_fields %}
             <div class="form-control w-full md:col-span-2 lg:col-span-3">
               <div class="label">
                 <span class="label-text font-medium">
@@ -202,18 +209,29 @@
                 </div>
               {% endif %}
               {{ item.field }}
-              <div id="multi-value-{{ item.field.name }}"
-                   class="space-y-2"
-                   data-suggestion-url="{{ item.search_url|default:'' }}">
+
+              {# New pure HTMX relationship container #}
+              {% include "metadata/entity_creation/partials/_relationship_rows_container.html" with field_name=item.field.name rows=item.rows search_properties=item.meta.search_properties selected_property=item.selected_property property_select_id=item.property_select_id dataset_name=dataset_summary.dataset_name mapping_id=mapping.id %}
+            </div>
+          {% endfor %}
+          {% for relation in read_only_relationships %}
+            <div class="form-control w-full md:col-span-2 lg:col-span-3">
+              <div class="label">
+                <span class="label-text font-medium">
+                  {{ relation.label }}
+                </span>
+                <span class="label-text-alt text-base-content/60">Nur Anzeige</span>
               </div>
-              <button type="button"
-                      class="btn btn-ghost btn-sm mt-2"
-                      hx-on:click="addMultiValueRow('{{ item.field.name }}')">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                </svg>
-                Weiteren Eintrag hinzufügen
-              </button>
+              {% if relation.items %}
+                <div class="flex flex-wrap gap-2 mb-2">
+                  {% for choice in relation.items %}
+                    <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="text-xs text-base-content/60 mb-2">Keine verknüpften Einträge vorhanden.</p>
+              {% endif %}
+              <p class="text-xs text-base-content/50">Bitte im entsprechenden Formular pflegen.</p>
             </div>
           {% endfor %}
         </div>
@@ -252,172 +270,30 @@
 </div>
 
 <script>
-(function() {
-  function buildSuggestionUrl(baseUrl, inputId, targetId) {
-    if (!baseUrl) { return ''; }
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}input_id=${encodeURIComponent(inputId)}&target_id=${encodeURIComponent(targetId)}`;
-  }
+// NOTE: setDatasetFieldValue removed - now using pure HTMX with OOB swaps
+// See: RelationshipSelectSuggestionView in schema_workspace_views.py
 
-  function setDatasetFieldValue(button) {
-    const value = button.getAttribute('data-value') || '';
-    const label = button.getAttribute('data-label') || value;
-    const inputId = button.getAttribute('data-input-id');
-    const targetId = button.getAttribute('data-target-id');
-    if (!inputId) { return; }
+// Handle form submission: convert data-uri to actual values
+document.addEventListener('submit', function(event) {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
 
-    const input = document.getElementById(inputId);
-    if (input) {
-      input.value = label;
-      if (value) {
-        input.dataset.uri = value;
-      } else {
-        delete input.dataset.uri;
-      }
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      input.focus();
+  // For single FK fields with data-uri, use the URI instead of label
+  form.querySelectorAll('input[data-uri]:not([name*="[]"])').forEach(input => {
+    if (input.dataset.uri) {
+      input.value = input.dataset.uri;
     }
+  });
 
-    if (targetId) {
-      const container = document.getElementById(targetId);
-      if (container) {
-        container.innerHTML = '';
-      }
-    }
-  }
-  window.setDatasetFieldValue = setDatasetFieldValue;
-
-  function createMultiValueRow(container, fieldName, displayValue, storedValue) {
-    const suggestionUrl = container.dataset.suggestionUrl || '';
-    const row = document.createElement('div');
-    row.className = 'space-y-1';
-
-    const inputRow = document.createElement('div');
-    inputRow.className = 'flex gap-2';
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.name = `${fieldName}[]`;
-    input.className = 'input input-bordered flex-1';
-    input.placeholder = 'Wert eingeben';
-    const uniqueId = `${fieldName}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-    input.id = uniqueId;
-    if (displayValue) {
-      input.value = displayValue;
-    }
-    if (storedValue) {
-      input.dataset.uri = storedValue;
-    }
-
-    input.addEventListener('input', () => {
-      if (!input.value) {
-        delete input.dataset.uri;
-      }
-    });
-
-    inputRow.appendChild(input);
-
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'btn btn-ghost btn-sm btn-circle';
-    removeBtn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
-    removeBtn.addEventListener('click', () => {
-      row.remove();
-    });
-    inputRow.appendChild(removeBtn);
-
-    row.appendChild(inputRow);
-
-    if (suggestionUrl) {
-      const targetId = `${uniqueId}-suggestions`;
-      const finalUrl = buildSuggestionUrl(suggestionUrl, uniqueId, targetId);
-      input.setAttribute('hx-get', finalUrl);
-      input.setAttribute('hx-trigger', 'focus, keyup changed delay:200ms');
-      input.setAttribute('hx-target', `#${targetId}`);
-      input.setAttribute('hx-include', 'this');
-      input.setAttribute('autocomplete', 'off');
-
-      const suggestions = document.createElement('div');
-      suggestions.id = targetId;
-      suggestions.className = 'mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden';
-      row.appendChild(suggestions);
-    }
-
-    container.appendChild(row);
-    if (window.htmx) {
-      window.htmx.process(row);
-    }
-  }
-
-  function initializeMultiValueFields() {
-    document.querySelectorAll('input[type="hidden"][data-multi-value="true"]').forEach(hidden => {
-      const fieldName = hidden.name;
-      const container = document.getElementById(`multi-value-${fieldName}`);
-      if (!container) { return; }
-
-      const suggestionUrl = hidden.dataset.suggestionUrl || container.dataset.suggestionUrl || '';
-      container.dataset.suggestionUrl = suggestionUrl;
-
-      let values = [];
-      if (hidden.value) {
-        try {
-          const parsed = JSON.parse(hidden.value);
-          if (Array.isArray(parsed)) {
-            values = parsed;
-          }
-        } catch (err) {
-          values = [hidden.value];
-        }
-      }
-      if (!values.length) {
-        values = [''];
-      }
-
-      container.innerHTML = '';
-      values.forEach(item => {
-        if (item && typeof item === 'object') {
-          createMultiValueRow(
-            container,
-            fieldName,
-            item.label || item.uri || '',
-            item.uri || ''
-          );
-        } else {
-          const value = typeof item === 'string' ? item : '';
-          createMultiValueRow(container, fieldName, value, value);
-        }
-      });
-    });
-  }
-
-  function addMultiValueRow(fieldName) {
-    const container = document.getElementById(`multi-value-${fieldName}`);
-    if (!container) { return; }
-    createMultiValueRow(container, fieldName, '', '');
-  }
-  window.addMultiValueRow = addMultiValueRow;
-
-  function handleMultiValueSubmit(event) {
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) { return; }
-
-    form.querySelectorAll('input[type="hidden"][data-multi-value="true"]').forEach(hidden => {
-      const fieldName = hidden.name;
-      const container = document.getElementById(`multi-value-${fieldName}`);
-      if (!container) { return; }
-
-      const inputs = container.querySelectorAll(`input[name="${fieldName}[]"]`);
-      const values = Array.from(inputs)
-        .map(input => (input.dataset.uri ? input.dataset.uri.trim() : input.value.trim()))
-        .filter(val => val !== '');
-
-      hidden.value = JSON.stringify(values);
-    });
-  }
-
-  document.addEventListener('DOMContentLoaded', initializeMultiValueFields);
-  initializeMultiValueFields();
-  document.addEventListener('submit', handleMultiValueSubmit);
-})();
+  // For multi-value/relationship fields, collect data-uri or value from HTMX-rendered rows
+  form.querySelectorAll('input[type="hidden"][data-multi-value="true"]').forEach(hidden => {
+    const fieldName = hidden.name;
+    // Check both multi-value-rows and relationship-rows containers
+    const inputs = form.querySelectorAll(`input[name="${fieldName}[]"]`);
+    const values = Array.from(inputs)
+      .map(input => (input.dataset.uri || input.value).trim())
+      .filter(val => val !== '');
+    hidden.value = JSON.stringify(values);
+  });
+});
 </script>
