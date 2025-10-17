@@ -139,7 +139,7 @@
               {% if item.initial_labels %}
                 <div class="flex flex-wrap gap-2 mb-2">
                   {% for choice in item.initial_labels %}
-                    <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:80 }}</span>
+                    <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:40 }}</span>
                   {% endfor %}
                 </div>
               {% endif %}
@@ -197,7 +197,7 @@
               {% if item.initial_labels %}
                 <div class="flex flex-wrap gap-2 mb-2">
                   {% for choice in item.initial_labels %}
-                    <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:80 }}</span>
+                    <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:40 }}</span>
                   {% endfor %}
                 </div>
               {% endif %}
