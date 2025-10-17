@@ -272,26 +272,40 @@ class OAIProjectBuilder:
         seen: set[str] = set()
 
         for obj in getattr(record, "digital_objects", []) or []:
-            normalized = self._normalize_object(obj, institution_code)
-            if not normalized:
-                continue
-            if not self._is_harvestable(normalized):
-                logger.info(
-                    "OAI digital object dropped: not harvestable (org=%s source=%s status=%s storage_key=%s rosetta_path=%s)",
-                    institution_code,
-                    normalized.source,
-                    normalized.storage_status,
-                    normalized.storage_key,
-                    normalized.rosetta_path,
-                )
-                continue
-            identity = normalized.preferred_location
-            if identity:
-                identity_key = identity.lower()
-                if identity_key in seen:
+            # Check if this object represents a DCP folder
+            expanded_objects = self._expand_dcp_folder_if_needed(obj, institution_code)
+
+            # If DCP folder was expanded, use all files; otherwise use single object
+            objects_to_process = expanded_objects if expanded_objects else [obj]
+
+            if expanded_objects:
+                logger.info(f"Processing {len(expanded_objects)} expanded DCP files for object {getattr(obj, 'uri', 'N/A')}")
+
+            for current_obj in objects_to_process:
+                normalized = self._normalize_object(current_obj, institution_code)
+                if not normalized:
                     continue
-                seen.add(identity_key)
-            objects.append(normalized)
+                if not self._is_harvestable(normalized):
+                    logger.info(
+                        "OAI digital object dropped: not harvestable (org=%s source=%s status=%s storage_key=%s rosetta_path=%s)",
+                        institution_code,
+                        normalized.source,
+                        normalized.storage_status,
+                        normalized.storage_key,
+                        normalized.rosetta_path,
+                    )
+                    continue
+                identity = normalized.preferred_location
+                if identity:
+                    identity_key = identity.lower()
+                    if identity_key in seen:
+                        if expanded_objects and '.dcp/' in identity:
+                            logger.info(f"DCP file deduplicated: {identity}")
+                        continue
+                    seen.add(identity_key)
+                objects.append(normalized)
+                if expanded_objects and '.dcp/' in identity:
+                    logger.info(f"DCP file added: {identity}")
 
         return objects
 
@@ -418,6 +432,125 @@ class OAIProjectBuilder:
             significant_properties_en=significant_en,
             license=license_info,
         )
+
+    def _expand_dcp_folder_if_needed(
+        self,
+        obj: ProjectDigitalObject,
+        institution_code: Optional[str],
+    ) -> Optional[List[ProjectDigitalObject]]:
+        """
+        Check if digital object represents a DCP folder and expand to all files.
+        Returns None if not a DCP folder, or list of ProjectDigitalObject for all files in folder.
+        """
+        # Only check for KHM institution
+        if institution_code != 'khm':
+            return None
+
+        # Import here to avoid circular dependencies
+        from arkumu.metadata.models import Triple
+
+        # Get the digital object URI
+        obj_uri = getattr(obj, 'uri', None)
+        if not obj_uri:
+            return None
+
+        # Query for the DCP folder property
+        try:
+            dcp_folder_triples = Triple.objects.filter(
+                subject__uri=obj_uri,
+                predicate__uri='http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner'
+            ).select_related('object')
+
+            if not dcp_folder_triples.exists():
+                return None
+
+            # Get the folder path
+            dcp_triple = dcp_folder_triples.first()
+            folder_path = dcp_triple.object.value if dcp_triple.object else None
+
+            if not folder_path:
+                return None
+
+        except Exception as e:
+            logger.error(f"Error querying DCP folder property: {e}")
+            return None
+
+        # Clean and normalize the folder path
+        folder_path = folder_path.strip().replace('\\', '/')
+
+        # Extract just the folder name (last component of the path)
+        # E.g., "/Volumes/.../Deflower_de_UT_170529.dcp/" -> "Deflower_de_UT_170529.dcp"
+        folder_path = folder_path.rstrip('/')
+        folder_name = folder_path.split('/')[-1] if '/' in folder_path else folder_path
+
+        logger.info(f"Looking for DCP folder: {folder_name} (from path: {folder_path})")
+
+        # Load the path index and find all files in this folder
+        path_index_file = getattr(settings, 'OAI_EXTERNAL_PATH_FILES', {}).get('khm')
+        if not path_index_file:
+            logger.warning("No path index file configured for KHM")
+            return None
+
+        try:
+            with open(path_index_file, 'r', encoding='utf-8') as f:
+                all_paths = [line.strip() for line in f if line.strip()]
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to read path index: {e}")
+            return None
+
+        # Find all files that are direct children of this folder
+        matching_files = []
+        for path in all_paths:
+            # Normalize path for comparison
+            normalized_path = path.replace('\\', '/')
+
+            # Check if the folder name appears in the path
+            if folder_name not in normalized_path:
+                continue
+
+            # Find the position of the folder in the path
+            folder_idx = normalized_path.find(folder_name)
+            if folder_idx == -1:
+                continue
+
+            # Get the part after the folder name
+            after_folder = normalized_path[folder_idx + len(folder_name):]
+
+            # Check if this is a direct child file (starts with / and has no more /)
+            if after_folder.startswith('/'):
+                filename = after_folder[1:]  # Remove leading /
+                if filename and '/' not in filename:  # No subdirectories
+                    matching_files.append(path)
+
+        if not matching_files:
+            logger.info(f"No files found in DCP folder: {folder_name}")
+            return None
+
+        # Create ProjectDigitalObject instances for each file
+        expanded_objects = []
+        for file_path in matching_files:
+            # Create a new object based on the original
+            new_obj = ProjectDigitalObject(
+                path=file_path,
+                uri=obj.uri,  # Same logical entity
+            )
+
+            # Copy other relevant attributes from the original object
+            # Don't copy path-specific attributes like file_name, storage_key
+            for attr in ['content_type', 'size_bytes', 'checksum',
+                         'checksum_algorithm', 'checksum_provenance',
+                         'access_url', 'storage_status', 'created_at', 'updated_at',
+                         'license', 'uuid', 'genesis_type', 'media_type',
+                         'significant_properties_de', 'significant_properties_en']:
+                if hasattr(obj, attr):
+                    value = getattr(obj, attr)
+                    if value is not None:
+                        setattr(new_obj, attr, value)
+
+            expanded_objects.append(new_obj)
+
+        logger.info(f"Expanded DCP folder {folder_name} to {len(expanded_objects)} files")
+        return expanded_objects
 
     @staticmethod
     def _is_harvestable(obj: NormalizedDigitalObject) -> bool:

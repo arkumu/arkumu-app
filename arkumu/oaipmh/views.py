@@ -1877,7 +1877,9 @@ def _build_mets_from_project(
         obj for obj in project.digital_objects
         if obj.harvestable and obj.preferred_location
     ]
+    logger.info(f"METS generation: project has {len(project.digital_objects)} digital objects, {len(harvestable_objects)} harvestable")
     rep_groups = _group_digital_objects_for_rosetta(harvestable_objects)
+    logger.info(f"METS generation: {len(rep_groups)} representation groups with {sum(len(objs) for _, objs in rep_groups)} total objects")
 
     file_sec_entries: List[Dict[str, Any]] = []
 
