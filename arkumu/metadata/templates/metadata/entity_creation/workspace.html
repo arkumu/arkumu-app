@@ -10,6 +10,28 @@
         <span class="font-semibold">Organisation:</span> {{ organization.name }}
       </div>
     {% endif %}
+    {% if mappings %}
+      <form method="get" action="{% url 'metadata:entity_creation_workspace' %}"
+            class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <label for="id_mapping_select" class="text-sm font-semibold">Mapping auswählen</label>
+        <div class="flex items-center gap-2">
+          <select id="id_mapping_select"
+                  name="mapping"
+                  class="select select-bordered w-full min-w-[240px]"
+                  onchange="this.form.submit()">
+            {% for mapping in mappings %}
+              <option value="{{ mapping.id }}"
+                      {% if active_mapping_id and mapping.id|stringformat:'s' == active_mapping_id %}selected{% endif %}>
+                {{ mapping.name }}{% if mapping.updated_at %} — {{ mapping.updated_at|date:"Y-m-d H:i" }}{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          <noscript>
+            <button type="submit" class="btn btn-sm btn-primary">Laden</button>
+          </noscript>
+        </div>
+      </form>
+    {% endif %}
   </div>
 
   {% if organization_required %}

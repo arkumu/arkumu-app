@@ -862,10 +862,17 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
                 },
             )
 
-        # Auto-select latest mapping (most recent created)
-        selected_mapping = Mapping.objects.filter(
+        mapping_queryset = Mapping.objects.filter(
             organization_id=organization.code
-        ).order_by("-created_at").first()
+        ).order_by("-created_at")
+        mapping_list = list(mapping_queryset)
+
+        mapping_override = request.GET.get("mapping")
+        selected_mapping = _resolve_active_mapping(
+            request,
+            organization,
+            mapping_override,
+        )
 
         if not selected_mapping:
             return render(
@@ -879,6 +886,8 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
                     "active_dataset_name": None,
                     "guided_panel_html": "",
                     "mapping_required": True,
+                    "mappings": mapping_list,
+                    "active_mapping_id": None,
                 },
             )
 
@@ -956,6 +965,9 @@ class SchemaDrivenWorkspaceView(LoginRequiredMixin, View):
                 "user_can_edit_vocabs": user_can_edit_vocabs,
                 "dataset_panel_html": dataset_panel_html,
                 "active_dataset_name": active_dataset_name,
+                "mappings": mapping_list,
+                "active_mapping_id": str(selected_mapping.id),
+                "mapping_required": False,
             },
         )
 
