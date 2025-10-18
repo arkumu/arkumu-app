@@ -2177,6 +2177,10 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
     max_suggestions = 20
 
     def get(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        # Handle clear parameter - return empty content to hide dropdown
+        if request.GET.get("clear"):
+            return HttpResponse("")
+
         dataset_name = request.GET.get("dataset")
         column_name = request.GET.get("column")
         input_id = request.GET.get("input_id")
@@ -2225,6 +2229,16 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
                 query,
             )
 
+        # Build suggestion URL for close button
+        from django.urls import reverse
+        from urllib.parse import urlencode
+        suggestion_base_url = reverse(
+            "metadata:entity_workspace_field_values",
+            args=[mapping_id],
+        )
+        suggestion_params = urlencode({"dataset": dataset_name, "column": column_name})
+        suggestion_url = f"{suggestion_base_url}?{suggestion_params}"
+
         context = {
             "suggestions": suggestions[: self.max_suggestions],
             "input_id": input_id,
@@ -2234,6 +2248,7 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             "column_name": column_name,
             "property_uri": property_uri or "",
             "property_select_id": property_select_id,
+            "suggestion_url": suggestion_url,
         }
         logger.info(f"[DatasetFieldValueOptionsView.GET] Returning {len(context['suggestions'])} suggestions for target={target_id}")
         logger.debug(f"[DatasetFieldValueOptionsView.GET] Suggestions: {context['suggestions'][:3]}")  # Log first 3

@@ -1,21 +1,30 @@
-<div id="{{ target_id }}" class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm {% if not suggestions %}empty:hidden{% endif %}">
-  {% if suggestions %}
-    <ul class="menu menu-sm w-full text-left">
-      {% for suggestion in suggestions %}
-        <li>
-          <button type="button"
-                  class="btn btn-xs btn-outline justify-start w-full"
-                  {% if suggestion.value %}title="{{ suggestion.value }}"{% endif %}
-                  hx-post="{% url 'metadata:entity_workspace_select_suggestion' mapping_id %}"
-                  hx-vals='{"input_id": "{{ input_id }}", "target_id": "{{ target_id }}", "value": "{{ suggestion.value|escapejs }}", "label": "{{ suggestion.label|escapejs }}", "dataset": "{{ dataset_name|escapejs }}", "column": "{{ column_name|escapejs }}", "property": "{{ property_uri|default:""|escapejs }}", "property_select_id": "{{ property_select_id|default:""|escapejs }}"}'
-                  hx-target="#{{ target_id }}"
-                  hx-swap="innerHTML">
-            <span class="truncate">{{ suggestion.display|default:suggestion.label }}</span>
-          </button>
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <div class="px-3 py-2 text-xs text-base-content/60">Keine Treffer gefunden.</div>
-  {% endif %}
+{% if suggestions %}
+<div class="flex justify-between items-center px-2 py-1 border-b border-base-300">
+  <span class="text-xs text-base-content/60">{{ suggestions|length }} Ergebnis{{ suggestions|length|pluralize:"se" }}</span>
+  <button type="button"
+          class="btn btn-ghost btn-xs btn-circle"
+          hx-get="{{ suggestion_url }}&input_id={{ input_id }}&target_id={{ target_id }}&clear=true"
+          hx-target="#{{ target_id }}"
+          hx-swap="innerHTML"
+          title="Schließen">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+    </svg>
+  </button>
 </div>
+<ul class="menu menu-sm w-full text-left">
+  {% for suggestion in suggestions %}
+    <li>
+      <button type="button"
+              class="btn btn-xs btn-outline justify-start w-full"
+              {% if suggestion.value %}title="{{ suggestion.value }}"{% endif %}
+              hx-post="{% url 'metadata:entity_workspace_select_suggestion' mapping_id %}"
+              hx-vals='{"input_id": "{{ input_id }}", "target_id": "{{ target_id }}", "value": "{{ suggestion.value|escapejs }}", "label": "{{ suggestion.label|escapejs }}", "dataset": "{{ dataset_name|escapejs }}", "column": "{{ column_name|escapejs }}", "property": "{{ property_uri|default:""|escapejs }}", "property_select_id": "{{ property_select_id|default:""|escapejs }}"}'
+              hx-target="#{{ target_id }}"
+              hx-swap="innerHTML">
+        <span class="truncate">{{ suggestion.display|default:suggestion.label }}</span>
+      </button>
+    </li>
+  {% endfor %}
+</ul>
+{% endif %}

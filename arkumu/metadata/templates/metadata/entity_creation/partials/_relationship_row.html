@@ -18,7 +18,7 @@
            placeholder="Wert eingeben"
            value="{{ display_value|default:'' }}"
            hx-get="{{ suggestion_url }}&input_id={{ input_id }}&target_id={{ suggestions_id }}{% if property_select_id %}&property_select_id={{ property_select_id }}{% endif %}{% if selected_property %}&property={{ selected_property|urlencode }}{% endif %}"
-           hx-trigger="focus, keyup changed delay:200ms"
+           hx-trigger="input changed delay:200ms"
            hx-target="#{{ suggestions_id }}"
            hx-include="this{% if property_select_id %}, #{{ property_select_id }}{% endif %}"
            autocomplete="off">
