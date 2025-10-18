@@ -1,25 +1,14 @@
-{# Single FK field with property selector dropdown #}
+{# Single FK field with autocomplete search - pure HTMX #}
 <div class="space-y-2">
-  {# Property selector dropdown - shows which property is being displayed #}
-  {% if search_properties and search_properties|length > 0 %}
+  {# Property selector dropdown - informational for now #}
+  {% if search_properties and search_properties|length > 1 %}
     <div class="flex items-center gap-2">
-      <label class="label-text text-xs text-base-content/70">Anzeige:</label>
-      <select id="display-property-{{ field_name }}"
-              class="select select-bordered select-xs max-w-xs"
-              name="display_property_{{ field_name }}"
-              disabled
-              title="Zeigt aktuell die {{ display_property_label|default:'Standard' }} Eigenschaft an">
-        {% for prop in search_properties %}
-          <option value="{{ prop.uri }}" {% if prop.uri == display_property %}selected{% endif %}>
-            {{ prop.label }}
-          </option>
-        {% endfor %}
-      </select>
-      <span class="text-xs text-base-content/50">(nur Anzeige)</span>
+      <label class="label-text text-xs text-base-content/70">Zeigt Eigenschaft:</label>
+      <span class="badge badge-sm badge-outline">{{ display_property_label|default:'Auto' }}</span>
     </div>
   {% endif %}
 
-  <div class="flex gap-2">
+  <div class="relative">
     {# Hidden input that stores the actual URI (this gets submitted) #}
     <input type="hidden"
            name="{{ field_name }}"
@@ -28,35 +17,23 @@
            data-uri="{{ uri_value|default:'' }}"
            data-label="{{ display_value|default:'' }}">
 
-    {# Visible input for display/search (not submitted) - READ ONLY to prevent manual input #}
+    {# Visible input for search/display - NOT submitted (name starts with q_) #}
+    {# Users type here to search, autocomplete fills in both visible and hidden inputs #}
     <input type="text"
            id="{{ input_id }}"
            name="q_{{ field_name }}"
-           class="{{ css_class }} input-disabled cursor-not-allowed"
-           placeholder="{{ placeholder|default:'Wähle aus Dropdown...' }}"
+           class="{{ css_class }}"
+           placeholder="Tippen zum Suchen..."
            value="{{ display_value|default:'' }}"
-           title="{{ uri_value|default:'' }}"
-           readonly
+           title="URI: {{ uri_value|default:'nicht gesetzt' }}"
            {% if search_url %}
            hx-get="{{ search_url }}&input_id={{ input_id }}&target_id={{ target_id }}"
-           hx-trigger="focus"
+           hx-trigger="input changed delay:200ms"
            hx-target="#{{ target_id }}"
            hx-include="this"
            {% endif %}
            autocomplete="off"
            {% if required %}required{% endif %}>
-
-    {# Search button to trigger dropdown #}
-    <button type="button"
-            class="btn btn-sm btn-outline"
-            hx-get="{{ search_url }}&input_id={{ input_id }}&target_id={{ target_id }}"
-            hx-trigger="click"
-            hx-target="#{{ target_id }}"
-            title="Wert suchen">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-      </svg>
-    </button>
   </div>
 
   {% if target_id %}
