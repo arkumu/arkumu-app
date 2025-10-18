@@ -95,31 +95,36 @@ class StubWorkspaceService:
                 },
             }
         if dataset_name == "Mitarbeit":
+            # Base metadata includes FK columns that will be replaced by join fields
             return {
                 "mitarbeit_id": {
                     "column_name": "mitarbeit_id",
                     "is_anchor": True,
                     "is_required": True,
                 },
-                "projekt_ref": {
-                    "column_name": "projekt_ref",
-                    "is_join": True,
-                    "is_multi_value": True,
-                    "join_key": "projekt_ref",
-                },
-                "person_ref": {
-                    "column_name": "person_ref",
-                    "is_join": True,
-                    "is_multi_value": True,
-                    "join_key": "person_ref",
-                },
+                # Note: projekt_ref and person_ref FK columns are removed
+                # during augment_field_metadata_with_joins() and replaced with
+                # __join__ fields
             }
         return {}
 
     def augment_field_metadata_with_joins(self, dataset_name, metadata):
+        """
+        Augment metadata with join relationships, matching real implementation:
+        - Remove source columns from metadata
+        - Add join fields with __join__ prefix
+        """
+        metadata = dict(metadata)  # Copy to avoid mutating original
         join_map = {}
+
         if dataset_name == "Mitarbeit":
-            join_map["projekt_ref"] = JoinRelationship(
+            # Remove source columns from metadata (like real implementation)
+            metadata.pop("projekt_ref", None)
+            metadata.pop("person_ref", None)
+
+            # Create join field for Projekt with proper naming
+            projekt_field_name = "__join__Mitarbeit__Projekt"
+            join_map[projekt_field_name] = JoinRelationship(
                 join_dataset="Mitarbeit",
                 join_dataset_schema={},
                 self_column="projekt_ref",
@@ -129,7 +134,21 @@ class StubWorkspaceService:
                 other_property_uri="http://arkumu.org/properties/projekt-id",
                 other_display_label="Projekt",
             )
-            join_map["person_ref"] = JoinRelationship(
+            metadata[projekt_field_name] = {
+                "column_name": projekt_field_name,
+                "column_type": "join",
+                "property_label": "Projekt",
+                "is_required": False,
+                "is_multi_value": True,
+                "is_join": True,
+                "join_relationship": join_map[projekt_field_name],
+                "join_other_dataset": "Projekt",
+                "join_key": "Mitarbeit::Projekt",
+            }
+
+            # Create join field for Person with proper naming
+            person_field_name = "__join__Mitarbeit__Person"
+            join_map[person_field_name] = JoinRelationship(
                 join_dataset="Mitarbeit",
                 join_dataset_schema={},
                 self_column="person_ref",
@@ -139,6 +158,18 @@ class StubWorkspaceService:
                 other_property_uri="http://arkumu.org/properties/person-id",
                 other_display_label="Person",
             )
+            metadata[person_field_name] = {
+                "column_name": person_field_name,
+                "column_type": "join",
+                "property_label": "Person",
+                "is_required": False,
+                "is_multi_value": True,
+                "is_join": True,
+                "join_relationship": join_map[person_field_name],
+                "join_other_dataset": "Person",
+                "join_key": "Mitarbeit::Person",
+            }
+
         return metadata, join_map
 
     def get_dataset_schema(self, dataset_name: str):
@@ -464,7 +495,7 @@ class TestRelationshipSaving:
             {
                 "dataset": "Mitarbeit",
                 "mitarbeit_id": "M001",
-                "person_ref": json.dumps(person_uris),  # JSON array of URIs
+                "__join__Mitarbeit__Person": json.dumps(person_uris),  # JSON array of URIs
                 "submission_mode": "stay_on_entity",
             },
             HTTP_HX_REQUEST="true",
@@ -501,7 +532,7 @@ class TestRelationshipSaving:
             {
                 "dataset": "Mitarbeit",
                 "mitarbeit_id": "M002",
-                "person_ref": json.dumps([]),  # Empty array
+                "__join__Mitarbeit__Person": json.dumps([]),  # Empty array
                 "submission_mode": "create_new",
             },
             HTTP_HX_REQUEST="true",
@@ -524,7 +555,7 @@ class TestRelationshipSaving:
             {
                 "dataset": "Mitarbeit",
                 "mitarbeit_id": "M003",
-                "person_ref": json.dumps([first_person_uri]),
+                "__join__Mitarbeit__Person": json.dumps([first_person_uri]),
                 "submission_mode": "stay_on_entity",
             },
             HTTP_HX_REQUEST="true",
@@ -544,7 +575,7 @@ class TestRelationshipSaving:
                 "dataset": "Mitarbeit",
                 "entity_uri": mitarbeit_uri,
                 "mitarbeit_id": "M003",
-                "person_ref": json.dumps(both_person_uris),
+                "__join__Mitarbeit__Person": json.dumps(both_person_uris),
             },
             HTTP_HX_REQUEST="true",
         )
