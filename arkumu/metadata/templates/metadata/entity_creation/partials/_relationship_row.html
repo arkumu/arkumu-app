@@ -1,4 +1,6 @@
+{% if wrap|default:True %}
 <div class="space-y-1" id="{{ row_id }}">
+{% endif %}
   <div class="flex gap-2">
     {# Hidden input that stores the actual URI (this gets submitted) #}
     <input type="hidden"
@@ -15,7 +17,7 @@
            class="input input-bordered flex-1"
            placeholder="Wert eingeben"
            value="{{ display_value|default:'' }}"
-           hx-get="{{ suggestion_url }}&input_id={{ input_id }}&target_id={{ suggestions_id }}{% if selected_property %}&property={{ selected_property|urlencode }}{% endif %}"
+           hx-get="{{ suggestion_url }}&input_id={{ input_id }}&target_id={{ suggestions_id }}{% if property_select_id %}&property_select_id={{ property_select_id }}{% endif %}{% if selected_property %}&property={{ selected_property|urlencode }}{% endif %}"
            hx-trigger="focus, keyup changed delay:200ms"
            hx-target="#{{ suggestions_id }}"
            hx-include="this{% if property_select_id %}, #{{ property_select_id }}{% endif %}"
@@ -34,4 +36,6 @@
   <div id="{{ suggestions_id }}"
        class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden">
   </div>
+{% if wrap|default:True %}
 </div>
+{% endif %}

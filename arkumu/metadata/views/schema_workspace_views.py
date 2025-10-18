@@ -2182,6 +2182,7 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         input_id = request.GET.get("input_id")
         target_id = request.GET.get("target_id")
         property_uri = request.GET.get("property")
+        property_select_id = request.GET.get("property_select_id", "")
 
         logger.info(f"[DatasetFieldValueOptionsView.GET] dataset={dataset_name}, column={column_name}, property={property_uri}")
 
@@ -2229,6 +2230,10 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             "input_id": input_id,
             "target_id": target_id,
             "mapping_id": mapping_id,
+            "dataset_name": dataset_name,
+            "column_name": column_name,
+            "property_uri": property_uri or "",
+            "property_select_id": property_select_id,
         }
         logger.info(f"[DatasetFieldValueOptionsView.GET] Returning {len(context['suggestions'])} suggestions for target={target_id}")
         logger.debug(f"[DatasetFieldValueOptionsView.GET] Suggestions: {context['suggestions'][:3]}")  # Log first 3
@@ -2620,78 +2625,79 @@ class RelationshipRowsView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
-class RelationshipSelectSuggestionView(LoginRequiredMixin, View):
+class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, View):
     """
     HTMX endpoint for selecting a suggestion value.
     Returns OOB updates for both visible and hidden inputs.
     """
 
     def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
-        """Handle suggestion selection with OOB updates."""
-        from django.utils.html import escape
-        import json
+        """Handle suggestion selection using targeted OOB swaps for input elements."""
         import re
+        from django.utils.html import escape
 
         input_id = request.POST.get("input_id")
         target_id = request.POST.get("target_id")
-        value = request.POST.get("value", "")
-        label = request.POST.get("label", value)
+        dataset_name = request.POST.get("dataset")
+        column_name = request.POST.get("column")
+        value = request.POST.get("value", "") or ""
+        label = request.POST.get("label", value) or ""
+        selected_property = request.POST.get("property") or ""
+        property_select_id = request.POST.get("property_select_id") or ""
 
-        logger.info(f"[RelationshipSelectSuggestionView.POST] input_id={input_id}, value={value}, label={label}")
+        if not input_id or not target_id or not dataset_name or not column_name:
+            logger.warning(
+                "[RelationshipSelectSuggestionView.POST] Missing required parameters: "
+                f"input_id={input_id}, target_id={target_id}, dataset={dataset_name}, column={column_name}"
+            )
+            return HttpResponseBadRequest("Missing required parameters")
 
-        if not input_id:
-            return HttpResponseBadRequest("Missing input_id")
-
-        # Extract field_name from input_id (format: input-relationship-row-{field_name}-{uuid})
-        field_name_match = re.search(r'input-relationship-row-(.+?)-[0-9a-f]{8}$', input_id)
-        if field_name_match:
-            field_name = field_name_match.group(1)
-        else:
-            # Fallback: try to extract from a simpler pattern
-            field_name = "unknown_field"
-            logger.warning(f"[RelationshipSelectSuggestionView.POST] Could not extract field_name from input_id: {input_id}")
-
-        # Escape for HTML safety
-        value_escaped = escape(value)
-        label_escaped = escape(label)
-
-        # JSON-safe escaping for JavaScript
-        value_json = json.dumps(value)
-        label_json = json.dumps(label)
-
-        # Clear suggestions container (main swap target)
-        main_html = ""
-        if target_id:
-            main_html = f'<div id="{escape(target_id)}" class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden"></div>'
-
-        # OOB updates for both inputs
         hidden_input_id = f"{input_id}-hidden"
 
-        # Update visible input value via inline script (preserves HX attributes)
-        visible_update_script = (
-            f'<script>'
-            f'(function() {{'
-            f'  const input = document.getElementById({json.dumps(input_id)});'
-            f'  if (input) {{ input.value = {label_json}; }}'
-            f'}})();'
-            f'</script>'
+        logger.info(
+            "[RelationshipSelectSuggestionView.POST] Updating inputs: "
+            f"visible={input_id}, hidden={hidden_input_id}, value={value}, label={label}"
         )
 
-        # Update hidden input with OOB (including the name attribute for form submission)
-        hidden_oob = (
-            f'<input type="hidden" '
-            f'name="{escape(field_name)}[]" '
-            f'id="{escape(hidden_input_id)}" '
-            f'value="{value_escaped}" '
-            f'data-uri="{value_escaped}" '
-            f'data-label="{label_escaped}" '
-            f'hx-swap-oob="outerHTML:#{escape(hidden_input_id)}">'
+        # Build suggestion URL for the visible input
+        suggestion_base_url = reverse(
+            "metadata:entity_workspace_field_values",
+            args=[mapping_id],
         )
+        suggestion_params = urlencode({"dataset": dataset_name, "column": column_name})
+        suggestion_url = f"{suggestion_base_url}?{suggestion_params}"
+        property_param = f"&property={escape(selected_property)}" if selected_property else ""
+        property_select_param = f"&property_select_id={escape(property_select_id)}" if property_select_id else ""
 
-        # Combine all updates
-        response_html = main_html + visible_update_script + hidden_oob
+        # Create OOB updates for individual inputs
+        # 1. Update hidden input with the URI value
+        hidden_input_html = f'''<input type="hidden"
+           name="{escape(column_name)}[]"
+           id="{escape(hidden_input_id)}"
+           value="{escape(value)}"
+           data-uri="{escape(value)}"
+           data-label="{escape(label)}"
+           hx-swap-oob="outerHTML">'''
 
-        logger.info(f"[RelationshipSelectSuggestionView.POST] field_name={field_name}, Response length: {len(response_html)}")
+        # 2. Update visible input with the display label
+        visible_input_html = f'''<input type="text"
+           id="{escape(input_id)}"
+           name="q"
+           class="input input-bordered flex-1"
+           placeholder="Wert eingeben"
+           value="{escape(label)}"
+           hx-get="{escape(suggestion_url)}&input_id={escape(input_id)}&target_id={escape(target_id)}{property_select_param}{property_param}"
+           hx-trigger="focus, keyup changed delay:200ms"
+           hx-target="#{escape(target_id)}"
+           hx-include="this{', #' + escape(property_select_id) if property_select_id else ''}"
+           autocomplete="off"
+           hx-swap-oob="outerHTML">'''
+
+        # 3. Clear the dropdown
+        dropdown_html = f'<div id="{escape(target_id)}" hx-swap-oob="innerHTML"></div>'
+
+        response_html = f"{hidden_input_html}\n{visible_input_html}\n{dropdown_html}"
+        logger.debug(f"[RelationshipSelectSuggestionView.POST] Response HTML: {response_html[:200]}")
         return HttpResponse(response_html)
 
 
