@@ -2629,6 +2629,8 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, View):
     def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
         """Handle suggestion selection with OOB updates."""
         from django.utils.html import escape
+        import json
+        import re
 
         input_id = request.POST.get("input_id")
         target_id = request.POST.get("target_id")
@@ -2640,28 +2642,56 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, View):
         if not input_id:
             return HttpResponseBadRequest("Missing input_id")
 
+        # Extract field_name from input_id (format: input-relationship-row-{field_name}-{uuid})
+        field_name_match = re.search(r'input-relationship-row-(.+?)-[0-9a-f]{8}$', input_id)
+        if field_name_match:
+            field_name = field_name_match.group(1)
+        else:
+            # Fallback: try to extract from a simpler pattern
+            field_name = "unknown_field"
+            logger.warning(f"[RelationshipSelectSuggestionView.POST] Could not extract field_name from input_id: {input_id}")
+
         # Escape for HTML safety
         value_escaped = escape(value)
         label_escaped = escape(label)
 
+        # JSON-safe escaping for JavaScript
+        value_json = json.dumps(value)
+        label_json = json.dumps(label)
+
         # Clear suggestions container (main swap target)
         main_html = ""
         if target_id:
-            main_html = f'<div id="{target_id}" class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden"></div>'
+            main_html = f'<div id="{escape(target_id)}" class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden"></div>'
 
         # OOB updates for both inputs
         hidden_input_id = f"{input_id}-hidden"
 
-        # Update visible input value (OOB)
-        visible_oob = f'<input id="{input_id}" value="{label_escaped}" hx-swap-oob="true">'
+        # Update visible input value via inline script (preserves HX attributes)
+        visible_update_script = (
+            f'<script>'
+            f'(function() {{'
+            f'  const input = document.getElementById({json.dumps(input_id)});'
+            f'  if (input) {{ input.value = {label_json}; }}'
+            f'}})();'
+            f'</script>'
+        )
 
-        # Update hidden input value (OOB)
-        hidden_oob = f'<input id="{hidden_input_id}" value="{value_escaped}" hx-swap-oob="true">'
+        # Update hidden input with OOB (including the name attribute for form submission)
+        hidden_oob = (
+            f'<input type="hidden" '
+            f'name="{escape(field_name)}[]" '
+            f'id="{escape(hidden_input_id)}" '
+            f'value="{value_escaped}" '
+            f'data-uri="{value_escaped}" '
+            f'data-label="{label_escaped}" '
+            f'hx-swap-oob="outerHTML:#{escape(hidden_input_id)}">'
+        )
 
         # Combine all updates
-        response_html = main_html + visible_oob + hidden_oob
+        response_html = main_html + visible_update_script + hidden_oob
 
-        logger.info(f"[RelationshipSelectSuggestionView.POST] Response length: {len(response_html)}")
+        logger.info(f"[RelationshipSelectSuggestionView.POST] field_name={field_name}, Response length: {len(response_html)}")
         return HttpResponse(response_html)
 
 
