@@ -151,8 +151,9 @@ def _apply_relationship_initials(
     logger.info(f"[_apply_relationship_initials] Processing {len(relationships)} relationships, mutate_form={mutate_form}")
     for relationship in relationships:
         logger.info(f"[_apply_relationship_initials] Relationship: field={relationship.field_name}, editable={relationship.editable}, uris={len(relationship.uris)}")
-        labelled = [
-            {
+        labelled = []
+        for uri in relationship.uris:
+            item = {
                 "uri": uri,
                 "label": _infer_entity_label(
                     service,
@@ -160,8 +161,11 @@ def _apply_relationship_initials(
                     relationship.target_dataset,
                 ),
             }
-            for uri in relationship.uris
-        ]
+            # Add resource ID for graph view navigation
+            resource = Resource.objects.filter(uri=uri).first()
+            if resource:
+                item["resource_id"] = str(resource.id)
+            labelled.append(item)
 
         if relationship.editable:
             if mutate_form:
@@ -623,6 +627,13 @@ def _render_dataset_panel(
         if is_join or is_multi_fk:
             field.field.widget.attrs.setdefault("data-suggestion-enabled", "true")
 
+        # Add property resource ID for graph view navigation
+        property_uri = meta.get("property_uri")
+        if property_uri:
+            property_resource = Resource.objects.filter(uri=property_uri).first()
+            if property_resource:
+                meta["property_resource_id"] = str(property_resource.id)
+
         if not isinstance(widget, forms.HiddenInput):
             has_property = bool(meta.get("property_uri"))
             has_fk = bool(meta.get("fk_relationship"))
@@ -678,7 +689,13 @@ def _render_dataset_panel(
                         label = str(entry)
                         uri = str(entry)
                     if label:
-                        initial_labels.append({"label": label, "uri": uri})
+                        label_entry = {"label": label, "uri": uri}
+                        # Add resource ID for graph view navigation
+                        if uri:
+                            target_resource = Resource.objects.filter(uri=uri).first()
+                            if target_resource:
+                                label_entry["resource_id"] = str(target_resource.id)
+                        initial_labels.append(label_entry)
             if initial_labels:
                 labelled_json = json.dumps(initial_labels)
                 form.initial[field.name] = labelled_json
@@ -710,7 +727,13 @@ def _render_dataset_panel(
                     uri,
                     fk_info.get("target_dataset") if fk_info else None,
                 )
-                normalized.append({"label": label, "uri": uri})
+
+                # Add resource ID for graph view navigation
+                resource_entry = {"label": label, "uri": uri}
+                target_resource = Resource.objects.filter(uri=uri).first()
+                if target_resource:
+                    resource_entry["resource_id"] = str(target_resource.id)
+                normalized.append(resource_entry)
 
             if normalized:
                 labelled_json = json.dumps(normalized)
@@ -736,8 +759,32 @@ def _render_dataset_panel(
                     if field.name in form.fields:
                         form.fields[field.name].initial = resolved_label
 
+                    # Add resource ID for graph view navigation of FK target
+                    target_resource = Resource.objects.filter(uri=str(raw_value)).first()
+                    if target_resource:
+                        meta["resolved_resource_id"] = str(target_resource.id)
+
         if meta.get("resolved_uri") and hasattr(widget, "attrs"):
             widget.attrs.setdefault("data-initial-uri", meta["resolved_uri"])
+
+        # For non-FK/relationship fields, try to find resource ID for current value
+        if not is_relationship and not meta.get("resolved_uri"):
+            current_value = form.initial.get(field.name) or field.value()
+            if current_value and not isinstance(widget, forms.HiddenInput):
+                # Try to find a resource with this value (could be by name, value, or URI)
+                resource = None
+                # First try as URI
+                resource = Resource.objects.filter(uri=str(current_value)).first()
+                # Then try by name
+                if not resource:
+                    resource = Resource.objects.filter(name=str(current_value)).first()
+                # Then try by value (for literals)
+                if not resource:
+                    resource = Resource.objects.filter(value=str(current_value)).first()
+
+                if resource:
+                    meta["current_value_resource_id"] = str(resource.id)
+                    meta["current_value"] = str(current_value)
 
         destination = relationship_fields if is_relationship else normal_fields
         if is_relationship:
@@ -782,18 +829,24 @@ def _render_dataset_panel(
                 if isinstance(label_data, dict):
                     display_value = label_data.get("label", "")
                     stored_value = label_data.get("uri", "")
+                    resource_id = label_data.get("resource_id")
                 else:
                     display_value = str(label_data)
                     stored_value = str(label_data)
+                    resource_id = None
 
-                rows.append({
+                row_data = {
                     "row_id": row_id,
                     "input_id": input_id,
                     "suggestions_id": suggestions_id,
                     "display_value": display_value,
                     "stored_value": stored_value,
                     "suggestion_url": meta.get("base_suggestion_url", ""),
-                })
+                }
+                if resource_id:
+                    # Ensure resource_id is string (might already be from JSON)
+                    row_data["resource_id"] = str(resource_id) if resource_id else None
+                rows.append(row_data)
 
         item["rows"] = rows
 
@@ -826,15 +879,20 @@ def _render_dataset_panel(
 
                 display_value = label_data.get("label", "")
                 stored_value = label_data.get("uri", "")
+                resource_id = label_data.get("resource_id")
 
-                rows.append({
+                row_data = {
                     "row_id": row_id,
                     "input_id": input_id,
                     "suggestions_id": suggestions_id,
                     "display_value": display_value,
                     "stored_value": stored_value,
                     "suggestion_url": meta.get("base_suggestion_url", ""),
-                })
+                }
+                if resource_id:
+                    # Ensure resource_id is string (might already be from JSON)
+                    row_data["resource_id"] = str(resource_id) if resource_id else None
+                rows.append(row_data)
         else:
             # Create one empty row if no initial values
             row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"

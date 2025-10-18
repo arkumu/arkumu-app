@@ -23,7 +23,7 @@
 
   <div id="relationship-rows-{{ field_name }}" class="space-y-2">
     {% for row in rows %}
-      {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=field_name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url selected_property=selected_property property_select_id=property_select_id mapping_id=mapping_id %}
+      {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=field_name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url selected_property=selected_property property_select_id=property_select_id mapping_id=mapping_id resource_id=row.resource_id %}
     {% endfor %}
   </div>
 
