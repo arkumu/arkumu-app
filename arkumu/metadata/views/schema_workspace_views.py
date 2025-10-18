@@ -2459,7 +2459,13 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             seen.add(uri)
             identifier = uri.split("/")[-1]
             matched_label = literal_label_map.get(uri, "").strip()
-            inferred_label = _infer_entity_label(service, uri, dataset_name).strip()
+            # Use selected property for display if specified
+            inferred_label = _infer_entity_label(
+                service,
+                uri,
+                dataset_name,
+                display_property_uri=property_uri
+            ).strip()
 
             label = matched_label or inferred_label or identifier
             if label.lower() == identifier.lower():
