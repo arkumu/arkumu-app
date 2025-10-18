@@ -2369,6 +2369,10 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         query: str,
         property_uri: Optional[str] = None,
     ) -> List[Dict[str, str]]:
+        logger.info(
+            f"[_collect_dataset_entity_suggestions] dataset={dataset_name}, "
+            f"query='{query}', property_uri={property_uri}"
+        )
         try:
             schema = service.get_dataset_schema(dataset_name)
         except ValueError:
@@ -2396,7 +2400,10 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             )
 
             if property_uri:
+                logger.info(f"[_collect_dataset_entity_suggestions] Filtering by property: {property_uri}")
                 literal_matches_qs = literal_matches_qs.filter(predicate__uri=property_uri)
+            else:
+                logger.info("[_collect_dataset_entity_suggestions] No property filter - searching all properties")
 
             literal_matches_qs = literal_matches_qs.filter(
                 Q(object__value__icontains=query)
@@ -2406,6 +2413,8 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
                 "object__value",
                 "object__name",
             )
+
+            logger.info(f"[_collect_dataset_entity_suggestions] Found {literal_matches_qs.count()} literal matches")
 
             for (
                 subject_uri,
