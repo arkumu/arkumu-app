@@ -227,8 +227,10 @@ def _infer_entity_label(
     service: SchemaWorkspaceService,
     entity_uri: str,
     target_dataset: Optional[str] = None,
+    include_rich_context: bool = False,
+    display_property_uri: Optional[str] = None,
 ) -> str:
-    logger.debug(f"[_infer_entity_label] Called with entity_uri={entity_uri}, target_dataset={target_dataset}")
+    logger.debug(f"[_infer_entity_label] Called with entity_uri={entity_uri}, target_dataset={target_dataset}, display_property_uri={display_property_uri}")
 
     # Handle malformed URIs from old data (pattern: uri-{uri}-label-{label})
     uri_tail = entity_uri.split("/")[-1]
@@ -247,6 +249,27 @@ def _infer_entity_label(
     except Resource.DoesNotExist:
         logger.warning(f"[_infer_entity_label] Resource not found for URI: {entity_uri}")
         return uri_tail
+
+    # If specific display property requested, fetch that first
+    if display_property_uri:
+        try:
+            prop_resource = Resource.objects.get(uri=display_property_uri)
+            triple = (
+                Triple.objects.filter(
+                    subject=entity,
+                    predicate=prop_resource,
+                    object__resource_type=ResourceType.LITERAL,
+                )
+                .select_related("object")
+                .first()
+            )
+            if triple:
+                value = triple.object.value or triple.object.literal_value or triple.object.name
+                if value:
+                    logger.debug(f"[_infer_entity_label] Found value via display_property_uri: {value}")
+                    return str(value)
+        except Resource.DoesNotExist:
+            logger.warning(f"[_infer_entity_label] Display property resource not found: {display_property_uri}")
 
     if target_dataset:
         try:
@@ -326,7 +349,11 @@ def _infer_entity_label(
     if anchor:
         value = anchor.object.value or anchor.object.literal_value or anchor.object.name
         if value:
-            final_label = f"{value} ({entity_uri.split('/')[-1]})"
+            if include_rich_context:
+                # Include ID for context: "Deutsch (110)"
+                final_label = f"{value} ({entity_uri.split('/')[-1]})"
+            else:
+                final_label = str(value)
             logger.debug(f"[_infer_entity_label] Returning anchor-based label: {final_label}")
             return final_label
 
@@ -468,11 +495,22 @@ def _render_dataset_panel(
                         if not uri:
                             continue
                         label = getattr(prop, "name", column) or column
-                        properties.append({"uri": uri, "label": label})
+                        properties.append({"uri": uri, "label": label, "column": column})
                     properties.sort(key=lambda item: item["label"].lower())
                     target_property_cache[target_dataset] = properties
             meta["search_properties"] = target_property_cache[target_dataset]
             meta["target_dataset"] = target_dataset
+
+            # Auto-select best display property for single FK fields
+            if fk_info and not meta.get("is_multi_value"):
+                preferred_names = ["name", "titel", "title", "label", "bezeichnung", "beschreibung"]
+                meta["display_property"] = None
+                for prop in target_property_cache[target_dataset]:
+                    prop_name_lower = prop.get("column", "").lower()
+                    if any(pref in prop_name_lower for pref in preferred_names):
+                        meta["display_property"] = prop.get("uri")
+                        meta["display_property_label"] = prop.get("label")
+                        break
 
         base_params = {"dataset": dataset_name, "column": field.name}
         base_url = f"{base_suggestion_url}?{urlencode(base_params)}"
@@ -580,10 +618,13 @@ def _render_dataset_panel(
         if fk_info and not meta.get("is_multi_value"):
             raw_value = form.initial.get(field.name, field.value())
             if raw_value:
+                # Use selected display property if available
+                display_prop_uri = meta.get("display_property")
                 resolved_label = _infer_entity_label(
                     service,
                     str(raw_value),
                     fk_info.get("target_dataset"),
+                    display_property_uri=display_prop_uri,
                 )
                 if resolved_label and resolved_label != raw_value:
                     meta["resolved_label"] = resolved_label
