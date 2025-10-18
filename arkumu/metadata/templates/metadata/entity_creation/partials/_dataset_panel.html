@@ -134,7 +134,10 @@
               {% endif %}
             </div>
 
-            {% if item.meta.is_multi_value %}
+            {% if item.meta.resolved_uri %}
+              {# Single FK field with URI resolution - use hidden input pattern #}
+              {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.field.auto_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class search_url=item.search_url target_id=item.target_id required=item.field.field.required %}
+            {% elif item.meta.is_multi_value %}
               {# Multi-value field - pure HTMX, no JavaScript #}
               {% if item.initial_labels %}
                 <div class="flex flex-wrap gap-2 mb-2">
