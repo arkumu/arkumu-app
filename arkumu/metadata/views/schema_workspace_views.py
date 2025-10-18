@@ -250,6 +250,68 @@ def _infer_entity_label(
         logger.warning(f"[_infer_entity_label] Resource not found for URI: {entity_uri}")
         return uri_tail
 
+    # Detect and resolve through join/junction tables
+    # Join tables typically have "Kreuz" (cross) in their dataset name or multiple FK relationships
+    if target_dataset and ("kreuz" in target_dataset.lower() or "junction" in target_dataset.lower()):
+        logger.debug(f"[_infer_entity_label] Detected join table: {target_dataset}, attempting to resolve through it")
+
+        # Find FK relationships from this join entity (excluding the one pointing back to current context)
+        related_entities = Triple.objects.filter(
+            subject=entity,
+            object__resource_type=ResourceType.ENTITY,
+        ).exclude(
+            predicate__uri__icontains="ispartof"
+        ).select_related('predicate', 'object')[:5]
+
+        # Try to find a good label from one of the related entities
+        # Prioritize certain entity types: Events > Actors/Persons > Digital Objects
+        candidates_by_priority = []
+
+        for rel_triple in related_entities:
+            related_uri = rel_triple.object.uri
+            related_name = rel_triple.object.name or ""
+            pred_uri = rel_triple.predicate.uri if rel_triple.predicate else ""
+
+            # Skip if this looks like it points back to a project/werk (the source we came from)
+            if "projekt" in pred_uri.lower() or "werk" in pred_uri.lower():
+                continue
+
+            # Determine priority based on entity type in URI
+            priority = 3  # Default low priority
+            if "ereignis" in related_uri.lower() or "event" in related_uri.lower():
+                priority = 1  # High priority for events
+            elif "akteur" in related_uri.lower() or "person" in related_uri.lower() or "koerperschaft" in related_uri.lower():
+                priority = 2  # Medium priority for actors/persons/organizations
+            elif "digital" in related_uri.lower() or "objekt" in related_uri.lower():
+                priority = 4  # Low priority for digital objects
+
+            # Try to infer dataset name from the related entity's URI
+            # Pattern: http://arkumu.org/data/hmt/entities/02-hfm-ereignis/319
+            uri_parts = related_uri.split("/entities/")
+            if len(uri_parts) == 2:
+                dataset_part = uri_parts[1].split("/")[0]  # e.g., "02-hfm-ereignis"
+                # Convert to dataset name format: "02_hfm_Ereignis"
+                inferred_dataset = dataset_part.replace("-", "_")
+                # Capitalize first letter of last part
+                parts = inferred_dataset.rsplit("_", 1)
+                if len(parts) == 2:
+                    inferred_dataset = f"{parts[0]}_{parts[1].capitalize()}"
+
+                candidates_by_priority.append((priority, related_uri, inferred_dataset, related_name))
+
+        # Sort by priority and try each candidate
+        candidates_by_priority.sort(key=lambda x: x[0])
+        for priority, related_uri, inferred_dataset, related_name in candidates_by_priority:
+            logger.debug(f"[_infer_entity_label] Resolving through join table to {related_uri} (priority {priority}, inferred dataset: {inferred_dataset})")
+
+            # Recursively get label for the related entity
+            related_label = _infer_entity_label(service, related_uri, inferred_dataset)
+
+            # If we got a good label (not just a number/ID), use it
+            if related_label and not related_label.isdigit() and related_label != related_name:
+                logger.info(f"[_infer_entity_label] Resolved join entity {entity_uri} -> {related_label} (priority {priority})")
+                return related_label
+
     # If specific display property requested, fetch that first
     if display_property_uri:
         try:
@@ -304,21 +366,25 @@ def _infer_entity_label(
                         or triple.object.name
                     )
                     if value:
-                        return str(value)
+                        # Skip anchor columns that are just numeric IDs - continue to smarter pattern matching
+                        value_str = str(value).strip()
+                        if not value_str.isdigit():
+                            logger.debug(f"[_infer_entity_label] Found label via anchor column '{column}': {value_str}")
+                            return value_str
+                        else:
+                            logger.debug(f"[_infer_entity_label] Skipping numeric anchor column '{column}': {value_str}")
 
-    label_predicates = [
+    # Try exact suffix matches first (most specific)
+    label_predicates_exact = [
         "bevorzugter-titel",
+        "bevorzugtertitel",
         "titel",
         "title",
         "name",
         "label",
-        "beschreibung",
-        "description",
-        "kommentar",
-        "comment",
     ]
 
-    for suffix in label_predicates:
+    for suffix in label_predicates_exact:
         triple = (
             Triple.objects.filter(
                 subject=entity,
@@ -331,7 +397,44 @@ def _infer_entity_label(
         if triple:
             value = triple.object.value or triple.object.literal_value or triple.object.name
             if value:
+                logger.debug(f"[_infer_entity_label] Found label via exact suffix '{suffix}': {value}")
                 return str(value)
+
+    # Try "contains" matches for common patterns (e.g., "Ereignis_DeutscherName" contains "Name")
+    label_patterns_contains = [
+        ("titel", 1),  # Priority 1 (highest)
+        ("title", 1),
+        ("name", 2),   # Priority 2
+        ("label", 2),
+        ("beschreibung", 3),  # Priority 3
+        ("description", 3),
+        ("kommentar", 4),  # Priority 4 (lowest)
+        ("comment", 4),
+    ]
+
+    # Collect all matching triples with their priority
+    candidates = []
+    for pattern, priority in label_patterns_contains:
+        triples = Triple.objects.filter(
+            subject=entity,
+            predicate__uri__icontains=pattern,
+            object__resource_type=ResourceType.LITERAL,
+        ).select_related("object", "predicate")[:5]
+
+        for triple in triples:
+            value = triple.object.value or triple.object.literal_value or triple.object.name
+            if value and str(value).strip():
+                # Skip if it's just a number or ID
+                if not str(value).strip().isdigit():
+                    candidates.append((priority, triple, str(value)))
+
+    # Return the highest priority candidate
+    if candidates:
+        candidates.sort(key=lambda x: x[0])  # Sort by priority (lowest number = highest priority)
+        _, best_triple, best_value = candidates[0]
+        pred_name = best_triple.predicate.name if best_triple.predicate else "unknown"
+        logger.debug(f"[_infer_entity_label] Found label via pattern match (predicate: {pred_name}): {best_value}")
+        return best_value
 
     if entity.name and entity.name != entity_uri:
         tail = entity_uri.split("/")[-1]
