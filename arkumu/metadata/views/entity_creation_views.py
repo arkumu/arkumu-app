@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from typing import Dict, Optional
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -112,6 +113,15 @@ def _render_form_container(
         context,
         request=request,
     )
+
+
+def _normalize_search_value(raw_value) -> str:
+    """Normalize labels and URIs for case- and accent-insensitive matching."""
+    if raw_value in (None, ""):
+        return ""
+    text = unicodedata.normalize("NFKD", str(raw_value))
+    stripped = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return stripped.lower()
 
 
 def _is_htmx(request) -> bool:
@@ -740,8 +750,31 @@ class EntityFieldOptionsView(LoginRequiredMixin, View):
 
         query = (request.GET.get("q") or "").strip()
         if query:
-            lowered = query.lower()
-            options = [opt for opt in options if lowered in opt[1].lower()]
+            tokens = []
+            for raw_token in query.split():
+                normalized = _normalize_search_value(raw_token)
+                if normalized:
+                    tokens.append(normalized)
+
+            if tokens:
+                filtered_options = []
+                for option in options:
+                    if not isinstance(option, (list, tuple)) or len(option) < 2:
+                        continue
+                    value, label = option
+                    normalized_label = _normalize_search_value(label)
+                    normalized_value = _normalize_search_value(value)
+                    searchable_parts = [
+                        part for part in (normalized_label, normalized_value) if part
+                    ]
+                    if not searchable_parts:
+                        continue
+                    if all(
+                        any(token in part for part in searchable_parts)
+                        for token in tokens
+                    ):
+                        filtered_options.append(option)
+                options = filtered_options
 
         metadata_options[option_key] = options
 
@@ -769,6 +802,7 @@ class EntityFieldOptionsView(LoginRequiredMixin, View):
             "search_url": reverse(
                 "metadata:entity_field_options", args=[entity_key, field_name]
             ),
+            "is_htmx": True,
         }
         return render(
             request,

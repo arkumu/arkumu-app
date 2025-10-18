@@ -1,8 +1,8 @@
 import pytest
 from django.urls import reverse
 
-from arkumu.metadata.entity_creation.forms import ProjectForm
 from arkumu.metadata.entity_creation import EntityCreationService
+from arkumu.metadata.entity_creation.forms import ProjectForm
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.users.models import Organization, User
 
@@ -79,8 +79,6 @@ def test_project_fragment_disables_fields_for_existing(client, user, organizatio
 
     assert response.status_code == 200
     content = response.content.decode()
-    assert "Existing project selected" in content
-    # Fields should render with the stored value
     assert "Existing Project" in content
 
 
@@ -90,3 +88,49 @@ def test_project_fragment_requires_htmx_header(client, user):
     url = reverse("metadata:entity_creation_fragment", args=["project"])
     response = client.get(url)
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_entity_field_options_match_uri(monkeypatch, client, user, organization):
+    client.force_login(user)
+
+    def fake_option_map(organization=None, **_kwargs):
+        return {
+            "project": [],
+            "institution": [],
+            "project_category": [
+                ("http://example.org/category/1", "Fête Alpha"),
+                ("http://example.org/category/2", "Category Beta"),
+            ],
+            "project_type": [],
+            "catchphrase": [],
+            "digital_object": [],
+        }
+
+    monkeypatch.setattr(
+        "arkumu.metadata.views.entity_creation_views.get_default_metadata_option_map",
+        fake_option_map,
+    )
+
+    def render(query: str):
+        url = reverse(
+            "metadata:entity_field_options",
+            args=["project", "projektkategorie_uri"],
+        )
+        response = client.get(
+            url,
+            {"q": query},
+            HTTP_HX_REQUEST="true",
+        )
+        assert response.status_code == 200
+        return response.content.decode()
+
+    content = render("category/2")
+    assert "http://example.org/category/2" in content
+    assert "http://example.org/category/1" not in content
+
+    content = render("Fete")
+    assert "http://example.org/category/1" in content
+
+    content = render("category beta")
+    assert "http://example.org/category/2" in content

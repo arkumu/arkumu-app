@@ -9,17 +9,16 @@
               hx-swap="innerHTML"
               hx-push-url="false">
         <div class="font-medium">
-          {% if result.property_value %}
-            {{ result.property_value }}
-          {% else %}
-            {{ result.entity_label }}
-          {% endif %}
+          {{ result.entity_label }}
         </div>
         <div class="text-xs text-base-content/60">
           {% if result.property_value %}
-            {{ result.property_label }} · {{ result.entity_label }} · ID: {{ result.id }}
+            {% if result.property_label %}{{ result.property_label }} · {% endif %}
+            {{ result.property_value }}
+            {% if result.secondary_label %} · {{ result.secondary_label }}{% endif %}
+            · ID: {{ result.id }}
           {% else %}
-            ID: {{ result.id }}
+            {% if result.secondary_label %}{{ result.secondary_label }} · {% endif %}ID: {{ result.id }}
           {% endif %}
         </div>
       </button>

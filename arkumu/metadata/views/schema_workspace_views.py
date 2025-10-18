@@ -2059,27 +2059,33 @@ class EntitySearchView(LoginRequiredMixin, View):
         for uri in entity_uris:
             raw_label = _infer_entity_label(service, uri, dataset_name)
             identifier = uri.split("/")[-1]
-            label = str(raw_label) if raw_label else identifier
-            property_value = property_values.get(uri, "")
+            raw_label_str = str(raw_label).strip() if raw_label else ""
+            property_value = property_values.get(uri, "").strip()
+
+            display_label = property_value or raw_label_str or identifier
+            secondary_label = ""
+            if property_value and raw_label_str and property_value.lower() != raw_label_str.lower():
+                secondary_label = raw_label_str
 
             params: Dict[str, str] = {
                 "dataset": dataset_name,
                 "mode": "load",
                 "entity_uri": uri,
             }
-            if label:
-                params["entity_label"] = label
+            if display_label:
+                params["entity_label"] = display_label
             if property_uris:
                 params["property"] = property_uris[0]
 
             results.append(
                 {
                     "uri": uri,
-                    "label": label,
-                    "entity_label": label,
+                    "label": display_label,
+                    "entity_label": display_label,
                     "property_value": property_value,
                     "property_label": property_label if property_uris else "",
                     "id": identifier,
+                    "secondary_label": secondary_label,
                     "load_url": f"{dataset_endpoint}?{urlencode(params)}",
                 }
             )
