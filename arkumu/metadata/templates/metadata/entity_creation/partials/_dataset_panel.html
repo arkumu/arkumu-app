@@ -269,31 +269,6 @@
   </div>
 </div>
 
-<script>
-// NOTE: setDatasetFieldValue removed - now using pure HTMX with OOB swaps
-// See: RelationshipSelectSuggestionView in schema_workspace_views.py
-
-// Handle form submission: convert data-uri to actual values
-document.addEventListener('submit', function(event) {
-  const form = event.target;
-  if (!(form instanceof HTMLFormElement)) return;
-
-  // For single FK fields with data-uri, use the URI instead of label
-  form.querySelectorAll('input[data-uri]:not([name*="[]"])').forEach(input => {
-    if (input.dataset.uri) {
-      input.value = input.dataset.uri;
-    }
-  });
-
-  // For multi-value/relationship fields, collect data-uri or value from HTMX-rendered rows
-  form.querySelectorAll('input[type="hidden"][data-multi-value="true"]').forEach(hidden => {
-    const fieldName = hidden.name;
-    // Check both multi-value-rows and relationship-rows containers
-    const inputs = form.querySelectorAll(`input[name="${fieldName}[]"]`);
-    const values = Array.from(inputs)
-      .map(input => (input.dataset.uri || input.value).trim())
-      .filter(val => val !== '');
-    hidden.value = JSON.stringify(values);
-  });
-});
-</script>
+{# Pure HTMX - no JavaScript needed! #}
+{# Relationship rows with name="fieldname[]" automatically submitted as arrays by HTMX #}
+{# Hidden inputs store URIs, visible inputs show labels - only hidden inputs are submitted #}

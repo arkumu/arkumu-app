@@ -468,6 +468,42 @@ class TestFormSubmissionModes:
 
 
 @pytest.mark.django_db
+class TestFormRendering:
+    """Test that the form renders relationship fields correctly."""
+
+    def test_join_field_names_in_rendered_html(self, client, user, mapping):
+        """
+        Test that join fields are rendered with correct __join__ naming in HTML.
+        This verifies the UI sends the correct field names to the backend.
+        """
+        client.force_login(user)
+        url = reverse("metadata:entity_workspace_dataset", args=[mapping.id])
+
+        # GET the form for Mitarbeit dataset which has join fields
+        response = client.get(url, {"dataset": "Mitarbeit"}, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 200
+        content = response.content.decode()
+
+        # Check that join fields are rendered with __join__ naming
+        # The hidden input for the join field should have data-multi-value="true"
+        assert '__join__Mitarbeit__Person' in content, "Join field for Person should be present"
+        assert '__join__Mitarbeit__Projekt' in content, "Join field for Projekt should be present"
+
+        # Check that the hidden inputs have data-multi-value attribute
+        assert 'data-multi-value="true"' in content, "Hidden inputs should have data-multi-value attribute"
+
+        # Check that the relationship rows use the correct name pattern (field_name + [])
+        # The dynamic rows should have name="__join__Mitarbeit__Person[]"
+        assert 'name="__join__Mitarbeit__Person[]"' in content or \
+               'name="__join__Mitarbeit__Projekt[]"' in content, \
+               "Relationship rows should use __join__ field names with [] suffix"
+
+        # Verify the JavaScript looks for the correct pattern
+        assert 'data-multi-value="true"' in content, "Form should have multi-value markers for JavaScript"
+
+
+@pytest.mark.django_db
 class TestRelationshipSaving:
     """Test that Verküpfungen (relationships) are properly saved."""
 

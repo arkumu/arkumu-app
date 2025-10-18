@@ -2846,10 +2846,22 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                 join_payloads: Dict[str, List[str]] = {}
 
                 # Process join fields (those in join_field_map)
+                # HTMX sends arrays as fieldname[], so check POST directly
                 for field_name, relationship in join_field_map.items():
-                    raw = entity_data.pop(field_name, None)
-                    logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': raw_value={raw}")
-                    join_payloads[field_name] = _parse_join_payload(raw)
+                    # First try to get array data from POST (pure HTMX submission)
+                    array_key = f"{field_name}[]"
+                    raw_array = request.POST.getlist(array_key)
+
+                    if raw_array:
+                        # Pure HTMX: got array of values directly
+                        logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': raw_array={raw_array}")
+                        join_payloads[field_name] = [v.strip() for v in raw_array if v.strip()]
+                    else:
+                        # Fallback: check form data (for JSON string or single value)
+                        raw = entity_data.pop(field_name, None)
+                        logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': raw_value={raw}")
+                        join_payloads[field_name] = _parse_join_payload(raw)
+
                     logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': parsed={join_payloads[field_name]}")
 
                 # Process multi-value FK fields (not in join_field_map but are relationships)
@@ -2858,12 +2870,22 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                         continue  # Already processed above
                     fk_info = meta.get("fk_relationship")
                     if fk_info and meta.get("is_multi_value"):
-                        raw = entity_data.pop(field_name, None)
-                        logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': raw_value={raw}")
-                        parsed = _parse_join_payload(raw)
-                        logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': parsed={parsed}")
-                        # Store for later processing
-                        join_payloads[field_name] = parsed
+                        # First try to get array data from POST (pure HTMX submission)
+                        array_key = f"{field_name}[]"
+                        raw_array = request.POST.getlist(array_key)
+
+                        if raw_array:
+                            # Pure HTMX: got array of values directly
+                            logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': raw_array={raw_array}")
+                            join_payloads[field_name] = [v.strip() for v in raw_array if v.strip()]
+                        else:
+                            # Fallback: check form data (for JSON string or single value)
+                            raw = entity_data.pop(field_name, None)
+                            logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': raw_value={raw}")
+                            parsed = _parse_join_payload(raw)
+                            logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': parsed={parsed}")
+                            # Store for later processing
+                            join_payloads[field_name] = parsed
 
                 saved_uri, created = service.save_entity(
                     dataset_name, entity_data, entity_uri=entity_uri
