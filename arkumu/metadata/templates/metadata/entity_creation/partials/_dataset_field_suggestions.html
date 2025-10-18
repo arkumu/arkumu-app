@@ -1,6 +1,5 @@
 {% if suggestions %}
-<div class="flex justify-between items-center px-2 py-1 border-b border-base-300">
-  <span class="text-xs text-base-content/60">{{ suggestions|length }} Ergebnis{{ suggestions|length|pluralize:"se" }}</span>
+<div class="flex justify-end items-center px-2 py-1 border-b border-base-300">
   <button type="button"
           class="btn btn-ghost btn-xs btn-circle"
           hx-get="{{ suggestion_url }}&input_id={{ input_id }}&target_id={{ target_id }}&clear=true"
