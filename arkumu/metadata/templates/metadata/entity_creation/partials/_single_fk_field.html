@@ -1,23 +1,5 @@
 {# Single FK field with autocomplete search - pure HTMX #}
 <div class="space-y-2" id="fk-container-{{ field_name }}">
-  {# Property selector dropdown - controls which property to display/search #}
-  {% if search_properties and search_properties|length > 1 %}
-    <div class="flex items-center gap-2">
-      <label class="label-text text-xs text-base-content/70">Suchen/Anzeigen:</label>
-      <select id="property-select-{{ field_name }}"
-              class="select select-bordered select-xs max-w-xs"
-              name="property"
-              title="Wähle welche Eigenschaft zum Suchen und Anzeigen verwendet wird">
-        {% for prop in search_properties %}
-          <option value="{{ prop.uri }}" {% if prop.uri == display_property %}selected{% endif %}>
-            {{ prop.label }}
-          </option>
-        {% endfor %}
-      </select>
-      <span class="text-xs text-base-content/60">(ändert Suche/Anzeige)</span>
-    </div>
-  {% endif %}
-
   <div class="relative">
     {# Hidden input that stores the actual URI (this gets submitted) #}
     <input type="hidden"
@@ -27,20 +9,35 @@
            data-uri="{{ uri_value|default:'' }}"
            data-label="{{ display_value|default:'' }}">
 
+    {# Property selector dropdown - controls which property to display/search #}
+    {% if search_properties and search_properties|length > 1 %}
+      <div class="flex items-center gap-2 mb-2">
+        <label class="label-text text-xs text-base-content/70">Suchen nach:</label>
+        <select id="prop-{{ input_id }}"
+                name="property"
+                class="select select-bordered select-xs max-w-xs">
+          {% for prop in search_properties %}
+            <option value="{{ prop.uri }}" {% if prop.uri == display_property %}selected{% endif %}>
+              {{ prop.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
     {# Visible input for search/display - NOT submitted (name starts with q_) #}
-    {# Users type here to search, autocomplete fills in both visible and hidden inputs #}
     <input type="text"
            id="{{ input_id }}"
-           name="q_{{ field_name }}"
+           name="q"
            class="{{ css_class }}"
            placeholder="Tippen zum Suchen..."
            value="{{ display_value|default:'' }}"
            title="URI: {{ uri_value|default:'nicht gesetzt' }}"
            {% if search_url %}
-           hx-get="{{ search_url }}&input_id={{ input_id }}&target_id={{ target_id }}{% if search_properties and search_properties|length > 1 %}&property_select_id=property-select-{{ field_name }}{% endif %}"
+           hx-get="{{ search_url }}&input_id={{ input_id }}&target_id={{ target_id }}"
            hx-trigger="input changed delay:200ms"
            hx-target="#{{ target_id }}"
-           hx-include="this{% if search_properties and search_properties|length > 1 %}, #property-select-{{ field_name }}{% endif %}"
+           hx-include="this, [name='property'], #{{ input_id }}-hidden"
            {% endif %}
            autocomplete="off"
            {% if required %}required{% endif %}>
