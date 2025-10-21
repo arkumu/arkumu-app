@@ -3,23 +3,25 @@
             bg-arkumu-light border border-gray-300
             theme-dark:bg-arkumu-dark theme-dark:border-gray-600
             theme-blue:bg-arkumu-light theme-blue:border-arkumu-blue">
-  
+
   <!-- Header Navigation -->
   <div class="flex space-x-16 mb-6">
     <span class="text-sm transition-colors
                 text-arkumu-dark
                 theme-dark:text-arkumu-light
-                theme-blue:text-arkumu-blue">
+                theme-blue:text-arkumu-blue"
+          tabindex="0">
       {{ beginn_ende|default:"Beginn-Ende" }}
     </span>
     <span class="text-sm transition-colors
                 text-arkumu-dark
                 theme-dark:text-arkumu-light
-                theme-blue:text-arkumu-blue">
+                theme-blue:text-arkumu-blue"
+          tabindex="0">
       {{ ereignistyp|default:"Ereignistyp" }}
     </span>
   </div>
-  
+
   <!-- Main Content Layout -->
   <div class="flex justify-between items-center">
     <!-- Left Side - Event Information -->
@@ -28,46 +30,51 @@
       <h2 class="text-3xl font-medium mb-3 transition-colors
                  text-arkumu-dark
                  theme-dark:text-arkumu-light
-                 theme-blue:text-arkumu-blue">
+                 theme-blue:text-arkumu-blue"
+          tabindex="0">
         {{ ereignistitel|default:"Ereignistitel" }}
       </h2>
-      
+
       <!-- Actors/Participants -->
       <div class="space-y-1">
         {% if akteur1 %}
           <a href="#" class="block text-sm underline transition-colors
                            text-arkumu-dark hover:opacity-70
                            theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             {{ akteur1 }}
           </a>
         {% else %}
           <a href="#" class="block text-sm underline transition-colors
                            text-arkumu-dark hover:opacity-70
                            theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             Akteur*in
           </a>
         {% endif %}
-        
+
         {% if akteur2 %}
           <a href="#" class="block text-sm underline transition-colors
                            text-arkumu-dark hover:opacity-70
                            theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             {{ akteur2 }}
           </a>
         {% else %}
           <a href="#" class="block text-sm underline transition-colors
                            text-arkumu-dark hover:opacity-70
                            theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             Akteur*in
           </a>
         {% endif %}
       </div>
     </div>
-    
+
     <!-- Right Side - Media and Button -->
     <div class="flex items-center space-x-6">
       <!-- Media Elements -->
@@ -81,23 +88,25 @@
             <img src="{{ large_media_url }}" class="w-full h-full object-cover" alt="Large media">
           {% endif %}
         </div>
-        
+
         <!-- Small Media Block -->
         <div class="w-16 h-16 transition-colors
                     bg-arkumu-dark
                     theme-dark:bg-arkumu-light
-                    theme-blue:bg-arkumu-blue">
+                    theme-blue:bg-arkumu-blue"
+             tabindex="0">
           {% if small_media_url %}
             <img src="{{ small_media_url }}" class="w-full h-full object-cover" alt="Small media">
           {% endif %}
         </div>
       </div>
-      
+
       <!-- Action Button -->
       <button class="px-4 py-2 text-sm transition-colors
                     border border-arkumu-dark text-arkumu-dark hover:bg-arkumu-dark hover:text-arkumu-light
                     theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:hover:bg-arkumu-light theme-dark:hover:text-arkumu-dark
-                    theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:hover:bg-arkumu-blue theme-blue:hover:text-arkumu-light">
+                    theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:hover:bg-arkumu-blue theme-blue:hover:text-arkumu-light"
+              tabindex="0">
         {{ button_text|default:"Buttontext" }}
       </button>
     </div>

@@ -27,7 +27,7 @@
       </div>
     </div>
   </div>
-  
+
   <!-- Year and Institution area con soporte para temas -->
   <div class="relative mb-4">
     <!-- Year value -->
@@ -65,12 +65,12 @@
       {{ institution|default:"" }}
     </div>
   </div>
-  
+
   <!-- Content with left margin -->
   <div class="flex">
     <!-- Margen izquierdo (más pequeño) -->
     <div class="w-10 mr-4"></div>
-    
+
     <!-- Contenido principal -->
     <div class="flex-1">
       <!-- Project Title - Aligned left -->
@@ -96,7 +96,7 @@
           {{ subtitle }}
         </p>
       </div>
-      
+
       <!-- Contributors - With underline -->
       {% comment %}
       RDF: actor-event-crosstable http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle
@@ -142,7 +142,7 @@
         </div>{% endif %}
         {% if additional_contributors %}<div class="mb-1 underline">{{ additional_contributors }}</div>{% endif %}
       </div>
-      
+
       <!-- Categories / Tags -->
       {% comment %}
       RDF Property: http://arkumu.org/data/properties/projektkategorie
@@ -177,9 +177,13 @@
                                data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">{{ category4 }}</span>{% endif %}
         {% if additional_categories %}<span class="mb-1 underline">{{ additional_categories }}</span>{% endif %}
       </div>
-      
+
       <!-- View Project Button -->
-      <a href="{% url 'catalog:projekt' %}?projekt={{uri}}">
+      <a href="{% url 'catalog:projekt' %}?projekt={{uri}}"
+      aria-label="Projekt '{{ title }}' ansehen: {{ subtitle }}.
+               Jahr: {{ year|default:'unbekannt' }},
+               Hochschule: {{ institution|default:'unbekannt' }},
+               Autoren: {% if contributor1_name %}{{ contributor1_name }}{% endif %}{% if contributor2_name %}, {{ contributor2_name }}{% endif %}{% if contributor3_name %}, {{ contributor3_name }}{% endif %}{% if contributor4_name %}, {{ contributor4_name }}{% endif %}, {%if additional_contributors%} {{ additional_contributors }} {% endif %}">
         <button class="px-3 py-1 text-xs transition-colors hover:bg-opacity-10
                        border border-arkumu-dark text-arkumu-dark
                        theme-dark:border-arkumu-light theme-dark:text-arkumu-light
