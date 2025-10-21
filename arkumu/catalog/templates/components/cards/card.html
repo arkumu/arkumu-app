@@ -41,7 +41,10 @@
                 theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
          data-rdf-property="http://arkumu.org/data/properties/ereignis"
          data-rdf-type="http://arkumu.org/data/types/ereignis">
-      {{ year|default:"" }}
+      {% comment %}
+      Refer to issue: https://gitlab.git.nrw/arkumu/arkumu-app/-/issues/67
+      {% endcomment %}
+      {{ year|default:"&nbsp;&nbsp;&nbsp;" }}
     </div>
 
     <!-- Horizontal line -->
@@ -83,7 +86,7 @@
                    theme-dark:text-arkumu-light
                    theme-blue:text-arkumu-blue"
             data-rdf-property="http://arkumu.org/data/properties/bevorzugter-titel">
-          {{ title}}
+          {{ title }}
         </h3>
         {% comment %}
         RDF Property: http://arkumu.org/data/properties/bevorzugter-untertitel
@@ -112,35 +115,44 @@
                   theme-dark:text-arkumu-light
                   theme-blue:text-arkumu-blue"
            data-rdf-type="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle">
-        {% if contributor1_name %}<div class="mb-1 underline"
-                                      data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                                      data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-          {{ contributor1_name }}
-          {% if contributor1_role %}<span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                                         data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor1_role }}]</span>{% endif %}
-        </div>{% endif %}
-        {% if contributor2_name %}<div class="mb-1 underline"
-                                      data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                                      data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-          {{ contributor2_name }}
-          {% if contributor2_role %}<span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                                         data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor2_role }}]</span>{% endif %}
-        </div>{% endif %}
-        {% if contributor3_name %}<div class="mb-1 underline"
-                                      data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                                      data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-          {{ contributor3_name }}
-          {% if contributor3_role %}<span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                                         data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor3_role }}]</span>{% endif %}
-        </div>{% endif %}
-        {% if contributor4_name %}<div class="mb-1 underline"
-                                      data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                                      data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-          {{ contributor4_name }}
-          {% if contributor4_role %}<span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                                         data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor4_role }}]</span>{% endif %}
-        </div>{% endif %}
-        {% if additional_contributors %}<div class="mb-1 underline">{{ additional_contributors }}</div>{% endif %}
+        {% if contributor1_name %}
+          <div class="mb-1 underline"
+               data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
+               data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
+            {{ contributor1_name }}
+            {% if contributor1_role %}
+              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor1_role }}]</span>{% endif %}
+          </div>{% endif %}
+        {% if contributor2_name %}
+          <div class="mb-1 underline"
+               data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
+               data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
+            {{ contributor2_name }}
+            {% if contributor2_role %}
+              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor2_role }}]</span>{% endif %}
+          </div>{% endif %}
+        {% if contributor3_name %}
+          <div class="mb-1 underline"
+               data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
+               data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
+            {{ contributor3_name }}
+            {% if contributor3_role %}
+              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor3_role }}]</span>{% endif %}
+          </div>{% endif %}
+        {% if contributor4_name %}
+          <div class="mb-1 underline"
+               data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
+               data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
+            {{ contributor4_name }}
+            {% if contributor4_role %}
+              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor4_role }}]</span>{% endif %}
+          </div>{% endif %}
+        {% if additional_contributors %}
+          <div class="mb-1 underline">{{ additional_contributors }}</div>{% endif %}
       </div>
 
       <!-- Categories / Tags -->
@@ -155,43 +167,44 @@
                                       border border-arkumu-dark text-arkumu-dark
                                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
-                               data-rdf-type="http://arkumu.org/data/types/projektkategorie"
-                               data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
+                                data-rdf-type="http://arkumu.org/data/types/projektkategorie"
+                                data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
           <a href="https://www.wikidata.org/wiki/{{ category1 }}">{{ category1 }}</a>
         </span>{% endif %}
         {% if category2 %}<span class="inline-block px-2 py-1 mr-1 mb-2 transition-colors
                                       border border-arkumu-dark text-arkumu-dark
                                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
-                               data-rdf-type="http://arkumu.org/data/types/projektkategorie"
-                               data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
+                                data-rdf-type="http://arkumu.org/data/types/projektkategorie"
+                                data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
                     <a href="https://www.wikidata.org/wiki/{{ category2 }}">{{ category2 }}</a>
         </span>{% endif %}
         {% if category3 %}<span class="inline-block px-2 py-1 mr-1 mb-2 transition-colors
                                       border border-arkumu-dark text-arkumu-dark
                                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
-                               data-rdf-type="http://arkumu.org/data/types/projektkategorie"
-                               data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
+                                data-rdf-type="http://arkumu.org/data/types/projektkategorie"
+                                data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
                   <a href="https://www.wikidata.org/wiki/{{ category3 }}">{{ category3 }}</a>
         </span>{% endif %}
         {% if category4 %}<span class="inline-block px-2 py-1 mr-1 mb-2 transition-colors
                                       border border-arkumu-dark text-arkumu-dark
                                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
-                               data-rdf-type="http://arkumu.org/data/types/projektkategorie"
-                               data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
+                                data-rdf-type="http://arkumu.org/data/types/projektkategorie"
+                                data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
                   <a href="https://www.wikidata.org/wiki/{{ category4 }}">{{ category4 }}</a>
         </span>{% endif %}
         {% if additional_categories %}<span class="mb-1 underline">{{ additional_categories }}</span>{% endif %}
       </div>
 
       <!-- View Project Button -->
-      <a href="{% url 'catalog:projekt' %}?projekt={{uri}}"
-      aria-label="Projekt '{{ title }}' ansehen: {{ subtitle }}.
+      <a href="{% url 'catalog:projekt' %}?projekt={{ uri }}"
+         aria-label="Projekt '{{ title }}' ansehen: {{ subtitle }}.
                Jahr: {{ year|default:'unbekannt' }},
                Hochschule: {{ institution|default:'unbekannt' }},
-               Autoren: {% if contributor1_name %}{{ contributor1_name }}{% endif %}{% if contributor2_name %}, {{ contributor2_name }}{% endif %}{% if contributor3_name %}, {{ contributor3_name }}{% endif %}{% if contributor4_name %}, {{ contributor4_name }}{% endif %}, {%if additional_contributors%} {{ additional_contributors }} {% endif %}">
+               Autoren:
+           {% if contributor1_name %}{{ contributor1_name }}{% endif %}{% if contributor2_name %}, {{ contributor2_name }}{% endif %}{% if contributor3_name %}, {{ contributor3_name }}{% endif %}{% if contributor4_name %}, {{ contributor4_name }}{% endif %}, {% if additional_contributors %} {{ additional_contributors }} {% endif %}">
         <button class="px-3 py-1 text-xs transition-colors hover:bg-opacity-10
                        border border-arkumu-dark text-arkumu-dark
                        theme-dark:border-arkumu-light theme-dark:text-arkumu-light
