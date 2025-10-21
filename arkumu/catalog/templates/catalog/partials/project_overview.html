@@ -45,10 +45,12 @@
                data-rdf-property="http://arkumu.org/data/properties/projektkategorie"
                aria-label="Projektkategorien">
             {% for category in project.categories %}
-              <div data-rdf-type="http://arkumu.org/data/types/projektkategorie"
-                   data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
-                {% include 'components/buttons/small_secondary_button.html' with button_text=category %}
-              </div>
+              <a tabindex="0" href="https://www.wikidata.org/wiki/{{ category }}">
+                <div data-rdf-type="http://arkumu.org/data/types/projektkategorie"
+                     data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
+                  {% include 'components/buttons/small_secondary_button.html' with button_text=category%}
+                </div>
+              </a>
             {% endfor %}
           </div>
         {% endif %}
