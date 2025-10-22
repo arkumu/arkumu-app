@@ -7,38 +7,42 @@
     {% if events %}
       <div class="space-y-10">
         {% for event in events %}
-        <article class="space-y-6">
-          {% include 'components/events/event_item.html' with beginn_ende=event.display_date ereignistyp=event.type ereignistitel=event.name|default:event.uri|default:"Ereignis" akteur1=event.primary_actor akteur2=event.secondary_actor button_text="Details ansehen" %}
+          <article class="space-y-6">
+            {% include 'components/events/event_item.html' with beginn_ende=event.display_date ereignistyp=event.type ereignistitel=event.name|default:event.uri|default:"Ereignis" akteur1=event.primary_actor akteur2=event.secondary_actor button_text="Details ansehen" %}
 
-          <div class="grid gap-6 md:grid-cols-2">
-            {% include 'components/events/event_list.html' with table_title="Details" row1_label="Beschreibung" row1_value=event.description|default:"–" row2_label="Ort" row2_value=event.location|default:"–" row3_label="Land" row3_value=event.country|default:"–" row4_label="Beginn" row4_value=event.start|default:"–" row5_label="Ende" row5_value=event.end|default:"–" %}
+            <div class="grid gap-6 md:grid-cols-2">
+              {% include 'components/events/event_list.html' with table_title="Details" row1_label="Beschreibung" row1_value=event.description|default:"–" row2_label="Ort" row2_value=event.location|default:"–" row3_label="Land" row3_value=event.country|default:"–" row4_label="Beginn" row4_value=event.start|default:"–" row5_label="Ende" row5_value=event.end|default:"–" %}
 
-            {% if event.latitude and event.longitude %}
-            <div class="h-48 rounded-lg overflow-hidden border border-arkumu-dark/10
+              {% if event.latitude and event.longitude %}
+                <div class="h-48 rounded-lg overflow-hidden border border-arkumu-dark/10
                         theme-dark:border-arkumu-light/20"
-                 data-event-map
-                 data-event-id="{{ event.id }}"
-                 data-lat="{{ event.latitude }}"
-                 data-lng="{{ event.longitude }}"
-                 data-location="{{ event.location|default:"Ort" }}">
+                     data-event-map
+                     data-event-id="{{ event.id }}"
+                     data-lat="{{ event.latitude }}"
+                     data-lng="{{ event.longitude }}"
+                     data-location="{{ event.location|default:"Ort" }}">
+                </div>
+              {% endif %}
             </div>
-            {% endif %}
-          </div>
 
-          {% if event.actors %}
-          <footer>
-            <h4 class="text-sm font-mono uppercase tracking-wide mb-2">Akteur:innen</h4>
-            <ul class="flex flex-wrap gap-2 text-sm">
-              {% for actor in event.actors %}
-              <li class="px-3 py-1 border border-arkumu-dark/20 rounded-full transition-colors
-                         theme-dark:border-arkumu-light/30">
-                {{ actor.name }}{% if actor.roles %} &ndash; {{ actor.roles|join:", " }}{% endif %}
-              </li>
-              {% endfor %}
-            </ul>
-          </footer>
-          {% endif %}
-        </article>
+            {% if event.actors %}
+              <footer>
+                <h4 class="text-sm font-mono uppercase tracking-wide mb-2" tabindex="0">Akteur:innen</h4>
+                <ul class="flex flex-wrap gap-2 text-sm">
+                  {% for actor in event.actors %}
+                    <li class="px-3 py-1 border border-arkumu-dark/20 rounded-full transition-colors
+                         theme-dark:border-arkumu-light/30"
+                        role="listitem"
+                        tabindex="0"
+                        aria-label="Akteur:
+                          {{ actor.name }}{% if actor.roles %}, Rollen: {{ actor.roles|join:', ' }}{% endif %}">
+                      {{ actor.name }}{% if actor.roles %} &ndash; {{ actor.roles|join:", " }}{% endif %}
+                    </li>
+                  {% endfor %}
+                </ul>
+              </footer>
+            {% endif %}
+          </article>
         {% endfor %}
       </div>
     {% else %}
