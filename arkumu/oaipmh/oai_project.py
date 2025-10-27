@@ -231,15 +231,101 @@ class OAIProjectBuilder:
 
     def from_project_record(self, record: ProjectRecord) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
-        normalized_objects = self._normalize_objects(record, institution_code)
+
+        # For KHM/HMT: Filter out digital objects from shared events to prevent cross-project contamination
+        filtered_record = self._filter_shared_event_objects(record, institution_code)
+
+        normalized_objects = self._normalize_objects(filtered_record, institution_code)
 
         return OAIProject(
-            record=record,
+            record=filtered_record,
             institution_code=institution_code,
             digital_objects=tuple(normalized_objects),
         )
 
     # Internal helpers -----------------------------------------------------
+
+    def _filter_shared_event_objects(
+        self,
+        record: ProjectRecord,
+        institution_code: Optional[str],
+    ) -> ProjectRecord:
+        """
+        For KHM/HMT only: Filter out digital objects from events that are shared with other projects.
+
+        This prevents cross-project contamination where projects sharing the same event
+        (e.g., "Showcase 2007" linked to multiple projects) would incorrectly include
+        each other's digital objects.
+
+        Rule: Only include digital objects from events that are exclusively linked to this project.
+        """
+        # Only apply filtering for KHM and HMT organizations
+        if not institution_code or institution_code.lower() not in {'khm', 'hmt'}:
+            return record
+
+        # If there are no events or digital objects, nothing to filter
+        events = getattr(record, 'events', None)
+        digital_objects = getattr(record, 'digital_objects', None)
+        if not events or not digital_objects:
+            return record
+
+        # Import here to avoid circular dependencies
+        from arkumu.metadata.models.triples import Triple
+        from django.db.models import Count
+
+        # Get the canonical event predicate URI
+        event_predicate = "http://arkumu.org/data/properties/ereignis"
+
+        # Find which events are exclusive to this project
+        project_id = getattr(record, 'subject_id', None)
+        if not project_id:
+            return record
+
+        exclusive_event_ids = set()
+
+        for event in events:
+            event_id = getattr(event, 'id', None)
+            if not event_id:
+                continue
+
+            # Check how many projects reference this event
+            referencing_projects = Triple.objects.filter(
+                predicate__canonical_uri=event_predicate,
+                object_id=event_id
+            ).values_list('subject_id', flat=True)
+
+            project_refs = list(referencing_projects)
+
+            # Only include events exclusively linked to this project
+            if len(project_refs) == 1 and str(project_refs[0]) == str(project_id):
+                exclusive_event_ids.add(str(event_id))
+            elif len(project_refs) == 0:
+                # Orphaned event - include it since it was in get_detailed_event_data
+                exclusive_event_ids.add(str(event_id))
+            else:
+                logger.info(
+                    "OAI: Excluding shared event %s from project %s (shared with %d other projects)",
+                    event_id,
+                    project_id,
+                    len(project_refs) - 1,
+                )
+
+        # If no exclusive events, return record as-is (no filtering needed)
+        if not exclusive_event_ids:
+            return record
+
+        # Filter the events list to only include exclusive events
+        filtered_events = [
+            event for event in events
+            if str(getattr(event, 'id', None)) in exclusive_event_ids
+        ]
+
+        # Create a new record with filtered events
+        # We need to create a new ProjectRecord instance with the filtered events
+        from dataclasses import replace
+        filtered_record = replace(record, events=filtered_events)
+
+        return filtered_record
 
     def _resolve_institution_code(self, record: ProjectRecord) -> Optional[str]:
         institution = getattr(record, "institution", None)
