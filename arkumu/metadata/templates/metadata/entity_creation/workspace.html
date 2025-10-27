@@ -11,7 +11,7 @@
       </div>
     {% endif %}
     {% if mappings %}
-      <form method="get" action="{% url 'metadata:entity_creation_workspace' %}"
+      <form method="get" action="{% url 'metadata:create_project' %}"
             class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
         <label for="id_mapping_select" class="text-sm font-semibold">Mapping auswählen</label>
         <div class="flex items-center gap-2">

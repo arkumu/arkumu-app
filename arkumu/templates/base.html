@@ -66,6 +66,10 @@
             <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
             <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
             <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
+            <li><a href="{% url 'metadata:create_project' %}"
+                   class="{% if current_url_name == 'create_project' or current_url_name == 'create_event' or current_url_name == 'create_actor' or current_url_name == 'create_role' or current_url_name == 'create_digital_object' or current_url_name == 'create_institution' or current_url_name == 'create_project_category' or current_url_name == 'create_project_type' or current_url_name == 'create_alternate_title' or current_url_name == 'create_description' or current_url_name == 'create_catchphrase' %}active{% endif %}">
+              Metadata Workspace
+            </a></li>
 
             <li><a href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a></li>
           {% else %}
@@ -88,6 +92,10 @@
           <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
           <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
           <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
+          <li><a href="{% url 'metadata:create_project' %}"
+                 class="{% if current_url_name == 'create_project' or current_url_name == 'create_event' or current_url_name == 'create_actor' or current_url_name == 'create_role' or current_url_name == 'create_digital_object' or current_url_name == 'create_institution' or current_url_name == 'create_project_category' or current_url_name == 'create_project_type' or current_url_name == 'create_alternate_title' or current_url_name == 'create_description' or current_url_name == 'create_catchphrase' %}active{% endif %}">
+            Metadata Workspace
+          </a></li>
           <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2 {% if current_namespace == 'catalog' %}active{% endif %}">
             <i class="fas fa-search"></i>
             <span>Catalog Explorer</span>
@@ -161,6 +169,59 @@
       {% endif %}
     </div>
   </div>
+
+  {% if request.user.is_authenticated and current_namespace == 'metadata' and current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}
+  <div class="bg-base-200 border-b border-base-300">
+    <div class="max-w-7xl mx-auto px-4">
+      <div class="flex flex-wrap gap-2 py-3">
+        <a href="{% url 'metadata:create_project' %}"
+           class="btn btn-sm {% if current_url_name == 'create_project' %}btn-primary{% else %}btn-outline{% endif %}">
+          Project
+        </a>
+        <a href="{% url 'metadata:create_event' %}"
+           class="btn btn-sm {% if current_url_name == 'create_event' %}btn-primary{% else %}btn-outline{% endif %}">
+          Event
+        </a>
+        <a href="{% url 'metadata:create_actor' %}"
+           class="btn btn-sm {% if current_url_name == 'create_actor' %}btn-primary{% else %}btn-outline{% endif %}">
+          Actor
+        </a>
+        <a href="{% url 'metadata:create_role' %}"
+           class="btn btn-sm {% if current_url_name == 'create_role' %}btn-primary{% else %}btn-outline{% endif %}">
+          Role
+        </a>
+        <a href="{% url 'metadata:create_digital_object' %}"
+           class="btn btn-sm {% if current_url_name == 'create_digital_object' %}btn-primary{% else %}btn-outline{% endif %}">
+          Digital Object
+        </a>
+        <a href="{% url 'metadata:create_institution' %}"
+           class="btn btn-sm {% if current_url_name == 'create_institution' %}btn-primary{% else %}btn-outline{% endif %}">
+          Institution
+        </a>
+        <a href="{% url 'metadata:create_project_category' %}"
+           class="btn btn-sm {% if current_url_name == 'create_project_category' %}btn-primary{% else %}btn-outline{% endif %}">
+          Project Category
+        </a>
+        <a href="{% url 'metadata:create_project_type' %}"
+           class="btn btn-sm {% if current_url_name == 'create_project_type' %}btn-primary{% else %}btn-outline{% endif %}">
+          Project Type
+        </a>
+        <a href="{% url 'metadata:create_alternate_title' %}"
+           class="btn btn-sm {% if current_url_name == 'create_alternate_title' %}btn-primary{% else %}btn-outline{% endif %}">
+          Alternate Title
+        </a>
+        <a href="{% url 'metadata:create_description' %}"
+           class="btn btn-sm {% if current_url_name == 'create_description' %}btn-primary{% else %}btn-outline{% endif %}">
+          Description
+        </a>
+        <a href="{% url 'metadata:create_catchphrase' %}"
+           class="btn btn-sm {% if current_url_name == 'create_catchphrase' %}btn-primary{% else %}btn-outline{% endif %}">
+          Catchphrase
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Construction Notice Banner -->
   <div class="bg-error text-white py-2">
