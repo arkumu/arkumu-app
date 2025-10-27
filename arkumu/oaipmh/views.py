@@ -1400,10 +1400,14 @@ def _select_primary_event_actors(record: ProjectRecord) -> List[Dict[str, Any]]:
 
     for event in grund_events:
         for actor in getattr(event, "actors", []) or []:
-            name = actor.get("name")
+            name = getattr(actor, "name", None) if not isinstance(actor, dict) else actor.get("name")
             if name and name in seen_names:
                 continue
-            selected.append(actor)
+            actor_dict = {
+                "name": name,
+                "roles": list(getattr(actor, "roles", []) or []) if not isinstance(actor, dict) else actor.get("roles", []),
+            }
+            selected.append(actor_dict)
             if name:
                 seen_names.add(name)
 
