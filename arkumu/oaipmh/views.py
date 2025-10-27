@@ -1382,6 +1382,50 @@ def _collect_collection_labels(resource: Resource, record: ProjectRecord) -> Lis
     return labels
 
 
+def _select_primary_event_actors(record: ProjectRecord) -> List[Dict[str, Any]]:
+    """Pick the actor records that should surface as creators/contributors."""
+
+    grund_events = [
+        event
+        for event in record.events
+        if (
+            (getattr(event, "uri", None) and "/01-grundereignis/" in event.uri)
+            or (getattr(event, "type", None) and "herstellung" in str(event.type).lower())
+            or (getattr(event, "name", None) and "herstellung" in str(event.name).lower())
+        )
+    ]
+
+    selected: List[Dict[str, Any]] = []
+    seen_names: set[str] = set()
+
+    for event in grund_events:
+        for actor in getattr(event, "actors", []) or []:
+            name = actor.get("name")
+            if name and name in seen_names:
+                continue
+            selected.append(actor)
+            if name:
+                seen_names.add(name)
+
+    if selected:
+        return selected
+
+    fallback: List[Dict[str, Any]] = []
+    for actor in record.actors:
+        name = getattr(actor, "name", None)
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        fallback.append(
+            {
+                "name": name,
+                "roles": list(getattr(actor, "roles", []) or []),
+            }
+        )
+
+    return fallback
+
+
 def _build_dc_payload_from_project(
     project: OAIProject,
     resource: Resource,
@@ -1409,13 +1453,17 @@ def _build_dc_payload_from_project(
         _add_dc_value(payload, 'publisher', record.institution.label)
         _add_dc_value(payload, 'contributor', record.institution.label)
 
-    for actor in record.actors:
-        name = getattr(actor, 'name', None)
-        if name:
+    primary_actors = _select_primary_event_actors(record)
+    seen_creators: set[str] = set()
+    for actor in primary_actors:
+        name = actor.get('name')
+        if name and name not in seen_creators:
             _add_dc_value(payload, 'creator', name)
-        if getattr(actor, 'roles', None):
-            for role in actor.roles:
-                _add_dc_value(payload, 'contributor', f"{name} ({role})" if name else role)
+            seen_creators.add(name)
+
+        for role in actor.get('roles') or []:
+            contributor_value = f"{name} ({role})" if name else role
+            _add_dc_value(payload, 'contributor', contributor_value)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
