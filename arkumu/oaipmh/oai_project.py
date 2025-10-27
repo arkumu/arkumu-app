@@ -432,19 +432,29 @@ class OAIProjectBuilder:
         rosetta_candidates: Tuple[str, ...] = ()
         rosetta_path: Optional[str] = None
 
-        dump_matched = getattr(obj, "_dump_matched", None)
-        if (
-            institution_code
-            and institution_code in self._s3_orgs
-            and dump_matched is False
-        ):
-            logger.info(
-                "OAI digital object skipped: no dump match (org=%s path=%s storage_key=%s)",
-                institution_code,
-                original_path,
-                storage_key,
-            )
-            return None
+        # For S3 orgs (FUK, DET, RSH): check if file exists in dump/fixity index
+        if institution_code and institution_code in self._s3_orgs:
+            from arkumu.projects.services.dump_fixity_index import find_fixity
+
+            candidates = [original_path, storage_key, access_url, file_name]
+            fixity_record = find_fixity(institution_code, candidates)
+
+            if not fixity_record:
+                logger.info(
+                    "OAI digital object skipped: no dump match (org=%s path=%s storage_key=%s)",
+                    institution_code,
+                    original_path,
+                    storage_key,
+                )
+                return None
+
+            # Update storage_key and fixity info from dump index
+            if fixity_record.storage_key and not storage_key:
+                storage_key = fixity_record.storage_key
+            if fixity_record.status and not storage_status:
+                storage_status = fixity_record.status
+            if fixity_record.checksum_or_etag and not fixity.digest:
+                fixity = parse_fixity(fixity_record.checksum_or_etag)
 
         if institution_code and institution_code in self._rosetta_orgs:
             resolved = self._path_resolver(
