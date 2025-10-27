@@ -10,7 +10,7 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 import logging
 
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 
 from arkumu.metadata.services.vocabulary_options_service import (
@@ -383,7 +383,7 @@ def form_init_resources(base_uri, dataset_name, organization):
     match dataset_name:
         case "Projekt":
             entity, _ = EntityResource.create_by_organization_and_dataset_name(
-                dataset_name=dataset_name, organization=organization
+                dataset_name=dataset_name, organization=organization, public_access_level=PublicAccessLevel.PRIVATE
             )
             cls, _ = ClassResource.get_or_create(
                 uri=f"{base_uri}/types/projekt", name=dataset_name
