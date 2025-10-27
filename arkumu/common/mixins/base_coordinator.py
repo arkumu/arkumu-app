@@ -135,7 +135,7 @@ class BaseCoordinatorMixin:
                 
                 # Clear organization-specific state
                 logger.info(f"BASE_COORDINATOR: Clearing organization-specific state for old org {old_org['code']} (ID: {old_org['id']})")
-                self.clear_organization_specific_state(request, old_org['id'])
+                self._clear_organization_state_variants(request, old_org)
             
             session_key = self._get_shared_session_key(self.SHARED_CURRENT_ORGANIZATION_KEY)
             request.session[session_key] = org_data
@@ -258,6 +258,59 @@ class BaseCoordinatorMixin:
                 'organization_numeric_id': None,
                 'has_organization': False
             }
+
+    def _clear_organization_state_variants(self, request, organization_info):
+        """
+        Clear organization-specific session state using multiple identifier variants.
+
+        Some coordinators store session data using the organization code while others
+        use the numeric database ID. When switching organizations we clear state for
+        every known identifier to avoid leaking session data between organizations.
+
+        Args:
+            request: Django request object
+            organization_info (dict | int | str): Organization metadata or direct identifier
+        """
+        if not organization_info:
+            return
+
+        def _add_variant(variant, collected, seen):
+            if variant in (None, ''):
+                return
+            if variant not in seen:
+                collected.append(variant)
+                seen.add(variant)
+
+        variants = []
+        seen = set()
+
+        if isinstance(organization_info, dict):
+            org_id = organization_info.get('id')
+            org_code = organization_info.get('code')
+
+            _add_variant(org_id, variants, seen)
+            if org_id is not None:
+                _add_variant(str(org_id), variants, seen)
+            _add_variant(org_code, variants, seen)
+        else:
+            _add_variant(organization_info, variants, seen)
+            if isinstance(organization_info, int):
+                _add_variant(str(organization_info), variants, seen)
+
+        for identifier in variants:
+            try:
+                logger.debug(
+                    "BASE_COORDINATOR: Clearing organization-specific state for identifier %r (type=%s)",
+                    identifier,
+                    type(identifier).__name__,
+                )
+                self.clear_organization_specific_state(request, identifier)
+            except Exception as exc:
+                logger.exception(
+                    "BASE_COORDINATOR: Error clearing state for organization identifier %r: %s",
+                    identifier,
+                    exc,
+                )
     
     def handle_organization_change(self, request, new_organization_identifier):
         """
@@ -288,7 +341,7 @@ class BaseCoordinatorMixin:
         # Only clear old state AFTER successfully setting new organization
         if old_org and old_org['id'] != new_org_data['id']:
             logger.info(f"BASE_COORDINATOR: Clearing old organization state for {old_org['code']} (ID: {old_org['id']})")
-            self.clear_organization_specific_state(request, old_org['id'])
+            self._clear_organization_state_variants(request, old_org)
             
             # Only clear the current mapping if it belongs to the old organization
             current_mapping = self.get_current_mapping(request)
@@ -354,9 +407,9 @@ class BaseCoordinatorMixin:
         
         Args:
             request: Django request object
-            organization_id (int): Organization numeric ID to clear state for
+            organization_id (int | str): Organization identifier used by session keys
         """
-        logger.info(f"BASE_COORDINATOR: Clearing organization-specific state for org ID {organization_id}")
+        logger.info(f"BASE_COORDINATOR: Clearing organization-specific state for org identifier {organization_id}")
         # Subclasses should implement specific state clearing
         # This is intentionally a no-op in the base class
     

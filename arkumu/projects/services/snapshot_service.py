@@ -23,7 +23,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 )
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
@@ -41,6 +41,13 @@ from arkumu.projects import (
     ProjectType,
 )
 from arkumu.projects.fixity import parse_fixity
+from arkumu.projects.services.dump_fixity_index import find_fixity, FixityRecord
+from arkumu.common.arkumu_license import (
+    ARKUMU_LICENSE_LABELS,
+    ARKUMU_LICENSE_TEXTS,
+    ARKUMU_LICENSE_URIS,
+    license_token_from_license_info,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +83,13 @@ class ProjectSnapshotService:
     DIGITAL_OBJECT_LICENSE_IDENTIFIER_PROPERTIES: Tuple[str, ...] = (
         "http://arkumu.org/data/properties/digitales-objekt-lizenz-id",
     )
+    DIGITAL_OBJECT_FALLBACK_PREDICATES: Dict[str, Tuple[str, ...]] = {
+        'fuk': (
+            "http://arkumu.org/data/fuk/properties/vorschaubild",
+        ),
+        'hmt': (),
+        'det': (),
+    }
     RIGHTS_STATEMENT_FALLBACK_PREDICATES: Tuple[str, ...] = (
         "http://purl.org/dc/terms/title",
         "http://purl.org/dc/elements/1.1/title",
@@ -151,7 +165,7 @@ class ProjectSnapshotService:
         self._record_index_version: Optional[str] = None
         self._digital_object_orgs: set[str] = {
             str(code).lower().strip()
-            for code in getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", ("fuk", "hmt", "det"))
+            for code in getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", ("fuk", "det", "rsh"))
             if code
         }
 
@@ -893,6 +907,53 @@ class ProjectSnapshotService:
                 organization_code=self.relationship_org_code,
             )
 
+        if digital_only_org and event_ids:
+            for event_id in event_ids:
+                event_objects = triple_service.get_related_entities(
+                    event_id,
+                    self.DIGITAL_OBJECT_LINK_URI,
+                    organization_code=self.relationship_org_code,
+                )
+                if event_objects:
+                    digital_entries.extend(event_objects)
+
+        if not digital_entries and code_candidates:
+            fallback_predicates = self._fallback_digital_predicates_for_org(code_candidates)
+            for predicate_uri in fallback_predicates:
+                literal_map = triple_service.get_literal_map(
+                    subject_ids=[subject_id],
+                    predicate_uri=predicate_uri,
+                    organization_code=self.relationship_org_code,
+                )
+                if not literal_map:
+                    continue
+                candidate_ids = {
+                    literal.strip()
+                    for literal in literal_map.values()
+                    if literal and literal.strip()
+                }
+                if not candidate_ids:
+                    continue
+
+                query = Q()
+                for candidate_id in candidate_ids:
+                    query |= Q(uri__iendswith=f"/{candidate_id}") | Q(value__iexact=candidate_id)
+
+                if not query:
+                    continue
+
+                for resource in Resource.objects.filter(query):
+                    digital_entries.append(
+                        {
+                            'id': str(resource.id),
+                            'uri': resource.uri,
+                            'canonical_uri': resource.canonical_uri,
+                            'name': resource.name,
+                            'value': resource.value,
+                            'resource_type': resource.resource_type,
+                        }
+                    )
+
         digital_object_ids: List[str] = []
         digital_entry_by_id: Dict[str, Dict[str, Any]] = {}
         for entry in digital_entries:
@@ -942,6 +1003,7 @@ class ProjectSnapshotService:
                 object_id,
                 nodes,
                 edges_by_subject,
+                code_candidates,
             )
             digital_objects.append(project_object)
             linked_digital_ids.add(str(object_id))
@@ -985,6 +1047,7 @@ class ProjectSnapshotService:
                 digital_id_str,
                 nodes,
                 edges_by_subject,
+                code_candidates,
             )
             digital_objects.append(project_object)
             linked_digital_ids.add(digital_id_str)
@@ -1012,8 +1075,14 @@ class ProjectSnapshotService:
             for digital_id in linked_digital_ids:
                 storage_files.extend(storage_files_map.get(str(digital_id), []))
 
-        if storage_files:
+        if storage_files and not digital_only_org:
             digital_objects = self._merge_storage_metadata(digital_objects, storage_files)
+
+        if digital_only_org and digital_objects:
+            code_scope: List[str] = list(code_candidates)
+            if not code_scope and primary_institution_code:
+                code_scope.append(primary_institution_code)
+            self._apply_dump_storage_matches(digital_objects, code_scope)
 
         rights_status = self._first_literal_from_predicates(
             subject_edges,
@@ -1133,6 +1202,64 @@ class ProjectSnapshotService:
 
         return digital_objects
 
+    def _apply_dump_storage_matches(
+        self,
+        digital_objects: List[ProjectDigitalObject],
+        institution_codes: Iterable[str],
+    ) -> None:
+        codes: List[str] = []
+        for code in institution_codes:
+            normalized = (code or "").strip().lower()
+            if not normalized:
+                continue
+            if normalized not in self._digital_object_orgs:
+                continue
+            codes.append(normalized)
+
+        if not codes:
+            return
+
+        for obj in digital_objects:
+            candidates = [
+                getattr(obj, "path", None),
+                getattr(obj, "storage_key", None),
+                getattr(obj, "access_url", None),
+                getattr(obj, "file_name", None),
+            ]
+            matched_key: Optional[str] = None
+            fixity_record: Optional[FixityRecord] = None
+            dump_matched = False
+
+            for code in codes:
+                fixity_record = find_fixity(code, candidates)
+                if fixity_record:
+                    matched_key = fixity_record.storage_key or fixity_record.dump_key
+                    dump_matched = True
+                    break
+
+            if matched_key and not getattr(obj, "storage_key", None):
+                obj.storage_key = matched_key
+
+            if fixity_record:
+                storage_key = fixity_record.storage_key or fixity_record.dump_key
+                if storage_key and not getattr(obj, "storage_key", None):
+                    obj.storage_key = storage_key
+
+                if fixity_record.status and not getattr(obj, "storage_status", None):
+                    obj.storage_status = fixity_record.status
+
+                checksum_value = fixity_record.checksum_or_etag
+                if checksum_value and not getattr(obj, "checksum", None):
+                    fixity = parse_fixity(checksum_value)
+                    if fixity.digest:
+                        obj.checksum = fixity.digest
+                    if fixity.algorithm and not getattr(obj, "checksum_algorithm", None):
+                        obj.checksum_algorithm = fixity.algorithm
+                    if fixity.digest and not getattr(obj, "checksum_provenance", None):
+                        obj.checksum_provenance = "dump"
+
+            setattr(obj, "_dump_matched", dump_matched)
+
     def _is_digital_object_org(self, codes: Iterable[str]) -> bool:
         if not self._digital_object_orgs or not codes:
             return False
@@ -1141,6 +1268,19 @@ class ProjectSnapshotService:
             if normalized in self._digital_object_orgs:
                 return True
         return False
+
+    def _fallback_digital_predicates_for_org(self, codes: Iterable[str]) -> List[str]:
+        predicates: List[str] = []
+        seen: set[str] = set()
+        for code in codes:
+            normalized = (code or "").lower().strip()
+            if not normalized:
+                continue
+            for predicate in self.DIGITAL_OBJECT_FALLBACK_PREDICATES.get(normalized, ()):
+                if predicate and predicate not in seen:
+                    predicates.append(predicate)
+                    seen.add(predicate)
+        return predicates
 
     def _checksum_predicate_for_org(self, institution_code: Optional[str]) -> Optional[str]:
         if not institution_code:
@@ -1322,7 +1462,17 @@ class ProjectSnapshotService:
             .values_list('object__value', flat=True)
         )
 
-        value = qs.first()
+        try:
+            value = qs.first()
+        except RuntimeError:
+            return None
+        except Exception:  # pragma: no cover - defensive
+            logger.debug(
+                "Literal lookup skipped for %s (predicates=%s)",
+                subject_id,
+                predicate_list,
+            )
+            return None
         return self._normalize_text_value(value)
 
     @staticmethod
@@ -1435,6 +1585,7 @@ class ProjectSnapshotService:
         object_id: str,
         nodes: Dict[str, Dict[str, Any]],
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        institution_codes: Iterable[str],
     ) -> None:
         edges_for_digital = edges_by_subject.get(str(object_id), [])
 
@@ -1478,6 +1629,8 @@ class ProjectSnapshotService:
             nodes,
             edges_by_subject,
         )
+        if self._should_force_public_license(institution_codes):
+            license_info = self._force_arkumu_a_license(license_info)
         if license_info:
             project_object.license = license_info
 
@@ -1651,13 +1804,45 @@ class ProjectSnapshotService:
         if not any([uri, label_de, label_en, rights_statement, identifier]):
             return None
 
-        return ProjectDigitalObjectLicense(
+        license_info = ProjectDigitalObjectLicense(
             uri=uri,
             label_de=label_de,
             label_en=label_en,
             rights_statement=rights_statement,
             identifier=identifier,
         )
+
+        token = license_token_from_license_info(license_info)
+        if token and token in ARKUMU_LICENSE_LABELS:
+            license_info.identifier = token
+            license_info.label_de = ARKUMU_LICENSE_LABELS[token]
+            license_info.rights_statement = ARKUMU_LICENSE_TEXTS[token]
+            license_info.label_en = None
+            if not license_info.uri:
+                license_info.uri = ARKUMU_LICENSE_URIS.get(token)
+
+        return license_info
+
+    @staticmethod
+    def _should_force_public_license(institution_codes: Iterable[str]) -> bool:
+        for code in institution_codes:
+            normalized = (code or "").strip().lower()
+            if normalized in {"khm", "hmt"}:
+                return True
+        return False
+
+    @staticmethod
+    def _force_arkumu_a_license(
+        license_info: Optional[ProjectDigitalObjectLicense],
+    ) -> ProjectDigitalObjectLicense:
+        token = "1"
+        info = license_info or ProjectDigitalObjectLicense()
+        info.identifier = token
+        info.label_de = ARKUMU_LICENSE_LABELS[token]
+        info.label_en = None
+        info.rights_statement = ARKUMU_LICENSE_TEXTS[token]
+        info.uri = ARKUMU_LICENSE_URIS.get(token)
+        return info
 
     @staticmethod
     def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:

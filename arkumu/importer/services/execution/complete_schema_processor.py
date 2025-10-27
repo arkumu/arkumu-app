@@ -241,14 +241,30 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
             
             for column in dataset_config.columns:
                 if column.column_type == ColumnType.EXTERNAL_ONTOLOGY:
+                    configs = getattr(column, "external_ontology_configs", None) or []
+                    if not configs and getattr(column, "external_ontology_config", None):
+                        configs = [column.external_ontology_config]
+
+                    selected_config = next(
+                        (cfg for cfg in configs if isinstance(cfg, dict) and cfg.get("uri_template")),
+                        None,
+                    )
+                    if not selected_config:
+                        logger.warning(
+                            "External ontology column '%s.%s' has no valid configuration; treated as literal",
+                            dataset_config.dataset_name,
+                            column.column_name,
+                        )
+                        continue
+
                     external_schema = {
                         'column_name': column.column_name,
-                        'ontology_type': getattr(column, 'ontology_type', 'generic'),
-                        'uri_template': getattr(column, 'uri_template', 'https://example.org/{value}'),
+                        'ontology_type': selected_config.get('ontology_type', 'generic'),
+                        'uri_template': selected_config.get('uri_template'),
                         'property_resource': blueprint['property_resources'][column.column_name],
                         'creates_external_reference': True
                     }
-                    
+
                     blueprint['external_ontology_schemas'][column.column_name] = external_schema
             
             if blueprint['external_ontology_schemas']:

@@ -1,0 +1,233 @@
+{% load i18n %}
+{% if detail.available %}
+<div class="card bg-base-100 border border-base-300 shadow-sm">
+  <div class="card-body space-y-5">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="space-y-1">
+        <div class="flex items-center flex-wrap gap-2">
+          <h2 class="text-xl font-semibold">{{ detail.summary.display_label }}</h2>
+          <span class="badge badge-outline">{{ detail.summary.dataset_name }}</span>
+          {% if detail.is_vocabulary %}
+            <span class="badge badge-info badge-outline text-xs">{% trans "Vokabular" %}</span>
+          {% endif %}
+        </div>
+        <p class="text-sm text-base-content/70">
+          {% blocktrans with dataset=detail.summary.display_label %}
+            Die Auswertung unten zeigt die Datensätze aus {{ dataset }}.
+          {% endblocktrans %}
+          {% trans "Behalte hier den Überblick über Felder und Beziehungen. Änderungen erfolgen im Workspace." %}
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="{{ detail.workspace_url }}"
+           class="btn btn-secondary btn-sm"
+           target="_blank"
+           rel="noopener">
+          {% trans "Im Workspace öffnen" %}
+        </a>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+      <div class="stat bg-base-200 rounded-lg">
+        <div class="stat-title text-xs text-base-content/60">{% trans "Datensätze" %}</div>
+        <div class="stat-value text-lg">{{ detail.summary.entity_count }}</div>
+        <div class="stat-desc text-xs text-base-content/60">{% trans "Bereits veröffentlichte Einträge" %}</div>
+      </div>
+      <div class="stat bg-base-200 rounded-lg">
+        <div class="stat-title text-xs text-base-content/60">{% trans "Felder" %}</div>
+        <div class="stat-value text-lg">{{ detail.total_properties }}</div>
+        <div class="stat-desc text-xs text-base-content/60">
+          {% blocktrans with count=detail.summary.anchor_columns|length %}
+            {{ count }} Schlüsselfeld(er)
+          {% endblocktrans %}
+        </div>
+      </div>
+      <div class="stat bg-base-200 rounded-lg">
+        <div class="stat-title text-xs text-base-content/60">{% trans "Verknüpfungen" %}</div>
+        <div class="stat-value text-lg">
+          {{ detail.total_relationships }}
+        </div>
+        <div class="stat-desc text-xs text-base-content/60">{% trans "Direkte Beziehungen & Joins" %}</div>
+      </div>
+    </div>
+
+    {% if detail.anchor_columns %}
+      <section class="space-y-2">
+        <h3 class="text-sm font-semibold">{% trans "Schlüsselfelder" %}</h3>
+        <p class="text-xs text-base-content/60">
+          {% trans "Diese Felder identifizieren Datensätze eindeutig und werden beim Import benötigt." %}
+        </p>
+        <div class="flex flex-wrap gap-2">
+          {% for column in detail.anchor_columns %}
+            <span class="badge badge-primary badge-outline">{{ column }}</span>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+
+    {% if detail.preview_entries %}
+      <section class="space-y-2">
+        <h3 class="text-sm font-semibold">{% trans "Beispieleinträge" %}</h3>
+        <p class="text-xs text-base-content/60">
+          {% trans "Ein schneller Blick auf vorhandene Daten. Öffne den Workspace für vollständige Bearbeitung." %}
+        </p>
+        <div class="overflow-x-auto">
+          <table class="table table-compact">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/60">
+                <th>{% trans "Datensatz" %}</th>
+                {% for column in detail.preview_columns %}
+                  <th>{{ column.label }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for entry in detail.preview_entries %}
+                <tr class="align-top">
+                  <td class="text-sm">
+                    <div class="flex flex-col gap-1">
+                      <span class="font-medium">{{ entry.title }}</span>
+                      {% if entry.uri %}
+                        <span class="text-xs text-base-content/60 break-all">{{ entry.uri }}</span>
+                      {% endif %}
+                    </div>
+                  </td>
+                  {% for cell in entry.values %}
+                    <td class="text-xs text-base-content/80 align-top">
+                      {% if cell.values %}
+                        {{ cell.values|join:", " }}
+                      {% else %}
+                        <span class="text-base-content/40">—</span>
+                      {% endif %}
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% endif %}
+
+    {% if detail.available and not detail.preview_entries %}
+      <section>
+        <p class="text-xs text-base-content/60">
+          {% trans "Für dieses Dataset liegen noch keine Datensätze vor." %}
+        </p>
+      </section>
+    {% endif %}
+
+    <section class="space-y-3">
+      <details class="collapse collapse-arrow bg-base-200">
+        <summary class="collapse-title text-sm font-medium">
+          {% blocktrans with count=detail.total_properties %}
+            Feldübersicht ({{ count }})
+          {% endblocktrans %}
+        </summary>
+        <div class="collapse-content pt-2">
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr class="text-xs uppercase text-base-content/60">
+                  <th>{% trans "Feld" %}</th>
+                  <th>{% trans "Spaltenname" %}</th>
+                  <th class="hidden md:table-cell">{% trans "Datentyp" %}</th>
+                  <th class="hidden md:table-cell text-right">{% trans "Pflicht" %}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in detail.properties %}
+                  <tr class="align-top">
+                    <td>
+                      <div class="flex items-center gap-2">
+                        <span class="font-medium">{{ item.label }}</span>
+                        {% if item.is_anchor %}
+                        <span class="badge badge-primary badge-outline text-xs">{% trans "Schlüssel" %}</span>
+                        {% endif %}
+                      </div>
+                      {% if item.description %}
+                        <p class="text-xs text-base-content/60 mt-1">{{ item.description }}</p>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <code class="text-xs">{{ item.column }}</code>
+                    </td>
+                    <td class="hidden md:table-cell text-xs text-base-content/70">
+                      {{ item.data_type|default:"—" }}
+                    </td>
+                    <td class="hidden md:table-cell text-right">
+                      {% if item.required %}
+                        <span class="badge badge-success badge-outline text-xs">{% trans "Ja" %}</span>
+                      {% else %}
+                        <span class="badge badge-ghost badge-outline text-xs">{% trans "Optional" %}</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if detail.has_more_properties %}
+            <p class="text-xs text-base-content/60 mt-3">
+              {% trans "Weitere Felder findest du im Workspace." %}
+            </p>
+          {% endif %}
+        </div>
+      </details>
+    </section>
+
+    {% if detail.relationships %}
+      <section class="space-y-2">
+        <h3 class="text-sm font-semibold">{% trans "Direkte Beziehungen" %}</h3>
+        <ul class="space-y-1 text-sm">
+          {% for rel in detail.relationships %}
+            <li class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span class="font-medium">{{ rel.label }}</span>
+                <span class="text-xs text-base-content/60 block">
+                  {% blocktrans with source=rel.source_column target=rel.target_dataset %}
+                    Von {{ source }} nach {{ target }}
+                  {% endblocktrans %}
+                </span>
+              </div>
+              {% if rel.cardinality %}
+                <span class="badge badge-outline text-xs">{{ rel.cardinality }}</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    {% if detail.join_relationships %}
+      <section class="space-y-2">
+        <h3 class="text-sm font-semibold">{% trans "Verbundtabellen" %}</h3>
+        <ul class="space-y-1 text-sm text-base-content/80">
+          {% for join in detail.join_relationships %}
+            <li>
+              {% blocktrans with join_dataset=join.join_dataset other=join.other_display_label %}
+                {{ join_dataset }} verbindet zusätzlich zu {{ other }} weitere Informationen.
+              {% endblocktrans %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    <div class="alert alert-info">
+      <span>
+        {% trans "Die Tabelle unten zeigt die tatsächlichen Datensätze. Öffne den Workspace, wenn du Felder bearbeiten oder neue Werte anlegen möchtest." %}
+      </span>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card bg-base-100 border border-dashed border-base-300">
+  <div class="card-body">
+    <div class="alert alert-info">
+      <span>{{ detail.message }}</span>
+    </div>
+  </div>
+</div>
+{% endif %}

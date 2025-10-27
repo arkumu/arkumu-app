@@ -34,7 +34,13 @@ def client_logged_in(client, user):
 @pytest.mark.django_db
 def test_dashboard_renders_sections(client_logged_in, organization):
     url = reverse("metadata:metadata_entry")
-    response = client_logged_in.get(url, {"organization": organization.code})
+    response = client_logged_in.get(
+        url,
+        {
+            "organization": organization.code,
+            "legacy": "1",
+        },
+    )
 
     assert response.status_code == 200
     body = response.content.decode()

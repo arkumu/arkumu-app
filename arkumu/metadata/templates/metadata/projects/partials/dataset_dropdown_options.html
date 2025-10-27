@@ -1,0 +1,17 @@
+{% load i18n %}
+<optgroup label="{% trans 'Entitäten' %}">
+  {% for dataset in entity_datasets %}
+    <option value="{{ dataset.dataset_name }}" {% if filters.dataset == dataset.dataset_name %}selected{% endif %}>
+      {{ dataset.label }}
+    </option>
+  {% endfor %}
+</optgroup>
+{% if vocabulary_datasets %}
+<optgroup label="{% trans 'Vokabulare' %}">
+  {% for dataset in vocabulary_datasets %}
+    <option value="{{ dataset.dataset_name }}" {% if filters.dataset == dataset.dataset_name %}selected{% endif %}>
+      {{ dataset.label }}
+    </option>
+  {% endfor %}
+</optgroup>
+{% endif %}

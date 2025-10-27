@@ -482,7 +482,7 @@ OAI_EXTERNAL_PATH_FILES = {
 OAI_EXTERNAL_ROSETTA_ROOTS = {
     "hmt": env(
         "OAI_EXTERNAL_ROSETTA_ROOT_HMT",
-        default="/rosetta/hfmt/sandbox/input/arkumu",
+        default="/rosetta/hfmt/sandbox/input/arkumu/daten",
     ),
     "khm": env(
         "OAI_EXTERNAL_ROSETTA_ROOT_KHM",
@@ -492,7 +492,7 @@ OAI_EXTERNAL_ROSETTA_ROOTS = {
 
 _default_hmt_prefixes = env(
     "OAI_EXTERNAL_PATH_PREFIXES_HMT",
-    default="/Volumes/18TB1,/rosetta/hfmt/sandbox/input/arkumu",
+    default="/Volumes/18TB1,/rosetta/hfmt/sandbox/input/arkumu/daten",
 )
 OAI_EXTERNAL_PATH_PREFIXES = {
     "hmt": [

@@ -1,0 +1,8 @@
+{% load i18n %}
+<select
+  id="project-dataset"
+  name="dataset"
+  class="select select-bordered"
+>
+  {% include 'metadata/projects/partials/dataset_dropdown_options.html' with entity_datasets=entity_datasets vocabulary_datasets=vocabulary_datasets filters=filters %}
+</select>

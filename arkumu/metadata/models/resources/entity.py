@@ -3,16 +3,22 @@ Entity resource wrapper for RDF-style entity management.
 Represents RDF entities in the semantic web.
 """
 
-from typing import Optional, Dict, Any, List, Union
+from typing import List, TYPE_CHECKING, Union
+import uuid
+
 from django.db import transaction
+
+from arkumu.common.uri_utils import mint_uri, slugify_uri_part
+from arkumu.importer.services.execution.resource_manager import ResourceManager
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
+
 from .base import BaseResource
 from .class_resource import ClassResource
 from .property import PropertyResource
-from arkumu.importer.services.execution.resource_manager import ResourceManager
-import uuid
 
+if TYPE_CHECKING:
+    from arkumu.users.models import Organization
 
 
 class EntityResource(BaseResource):
@@ -54,25 +60,96 @@ class EntityResource(BaseResource):
         return cls(resource), created
     
     @classmethod
-    def create_by_organization_and_dataset_name(cls, organization: str, dataset_name:str, base_uri: str = "http://arkumu.org/data", **kwargs) -> tuple['EntityResource', bool]:
+    def create_by_organization_and_dataset_name(
+        cls,
+        *,
+        organization: "Organization",
+        dataset_name: str,
+        base_uri: str = "http://arkumu.org/data",
+        **kwargs,
+    ) -> tuple["EntityResource", bool]:
         """
-        Create an entity resource for a specified Organization 
+        Create an entity resource for a specified organization and ensure dataset membership.
 
         Args:
-            organization: Organization object
+            organization: Organization object owning the entity
             dataset_name: Name of the dataset for which a new entity will be created
+            base_uri: Base URI used for minting resources (defaults to arkumu namespace)
             **kwargs: Additional fields for creation
 
         Returns:
             Tuple of (entity_resource_instance, was_created)
         """
+        if organization is None:
+            raise ValueError("organization is required when minting dataset entities")
+
         resource_manager = ResourceManager(
             organization=organization,
-            base_uri=base_uri
+            base_uri=base_uri,
         )
         entity_id = uuid.uuid4()
-        uri = resource_manager.generate_entity_uri(dataset_name=dataset_name, entity_id=entity_id)
-        return cls.get_or_create(uri=uri)
+        uri = resource_manager.generate_entity_uri(
+            dataset_name=dataset_name,
+            entity_id=entity_id,
+        )
+        entity, created = cls.get_or_create(uri=uri, **kwargs)
+        cls.ensure_dataset_membership(
+            entity=entity,
+            organization=organization,
+            dataset_name=dataset_name,
+            base_uri=base_uri,
+        )
+        return entity, created
+
+    @classmethod
+    def ensure_dataset_membership(
+        cls,
+        *,
+        entity: "EntityResource",
+        organization: "Organization",
+        dataset_name: str,
+        base_uri: str = "http://arkumu.org/data",
+    ) -> None:
+        """
+        Ensure that an entity is linked to its dataset via dcterms:isPartOf.
+        """
+        if organization is None:
+            raise ValueError("organization is required to establish dataset membership")
+
+        dataset_uri = mint_uri(
+            base_uri,
+            slugify_uri_part(str(organization.code)),
+            "datasets",
+            slugify_uri_part(dataset_name),
+        )
+        dataset_resource, _ = Resource.objects.get_or_create(
+            uri=dataset_uri,
+            defaults={
+                "resource_type": ResourceType.IRI,
+                "name": dataset_name,
+                "organization": organization,
+            },
+        )
+        if dataset_resource.organization is None:
+            dataset_resource.organization = organization
+            dataset_resource.save(update_fields=["organization"])
+
+        is_part_of_resource, _ = Resource.objects.get_or_create(
+            uri="http://purl.org/dc/terms/isPartOf",
+            defaults={
+                "resource_type": ResourceType.PROPERTY,
+                "name": "isPartOf",
+                "organization": organization,
+            },
+        )
+
+        Triple.objects.get_or_create(
+            subject=entity._resource,
+            predicate=is_part_of_resource,
+            object=dataset_resource,
+            source=organization,
+            defaults={"is_derived": False},
+        )
 
     @property
     def name(self) -> str:
