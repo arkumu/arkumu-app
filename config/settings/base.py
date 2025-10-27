@@ -540,3 +540,14 @@ OAI_INSTITUTION_LABEL_ALIASES = {
     "hochschule für musik und tanz köln": "hmt",
     "kunsthochschule für medien köln": "khm",
 }
+
+# Project snapshot tuning (development helpers)
+PROJECT_SNAPSHOT_ORG_CODES = tuple(
+    code.strip()
+    for code in env.list("PROJECT_SNAPSHOT_ORG_CODES", default=[])
+    if code.strip()
+) or None
+PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS = env.bool(
+    "PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS",
+    default=False,
+)

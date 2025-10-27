@@ -161,6 +161,24 @@ class ProjectSnapshotService:
         self.cache = ProjectCacheService()
         self.schema_service = SchemaManifestService()
         self._graph_service_factory = CanonicalGraphService
+        raw_org_codes = getattr(
+            settings,
+            "PROJECT_SNAPSHOT_ORG_CODES",
+            self.DEFAULT_ORGANIZATION_CODES,
+        )
+        if raw_org_codes is None:
+            self.organization_codes = self.DEFAULT_ORGANIZATION_CODES
+        else:
+            if isinstance(raw_org_codes, str):
+                raw_org_codes = [raw_org_codes]
+            self.organization_codes = tuple(raw_org_codes)
+            if not self.organization_codes:
+                self.organization_codes = self.DEFAULT_ORGANIZATION_CODES
+        self._force_org_graphs = getattr(
+            settings,
+            "PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS",
+            False,
+        )
         self._record_index: Dict[str, ProjectRecord] = {}
         self._record_index_version: Optional[str] = None
         self._digital_object_orgs: set[str] = {
@@ -233,23 +251,25 @@ class ProjectSnapshotService:
         self._record_index_version = marker
 
     def _fetch_cross_institutional_graph(self) -> Dict[str, Any]:
-        logger.info("Building cross-institutional project graph via CanonicalGraphService")
-        primary_graph = self._graph_service_factory().get_project_graph(
-            dataset_name="Projekt",
-            type_canonical_uri=CardURIs.PROJECT_TYPE,
-            expand_neighbors=True,
-        )
-
-        if primary_graph.get('subjects'):
-            logger.info(
-                "Cross-institutional graph built from canonical class: %d subjects",
-                len(primary_graph.get('subjects', [])),
+        if not self._force_org_graphs and self.organization_codes == self.DEFAULT_ORGANIZATION_CODES:
+            logger.info("Building cross-institutional project graph via CanonicalGraphService")
+            primary_graph = self._graph_service_factory().get_project_graph(
+                dataset_name="Projekt",
+                type_canonical_uri=CardURIs.PROJECT_TYPE,
+                expand_neighbors=True,
             )
-            return self._deduplicate_graph(primary_graph)
 
-        logger.info(
-            "No subjects found for canonical project type; falling back to per-organization graphs",
-        )
+            if primary_graph.get('subjects'):
+                logger.info(
+                    "Cross-institutional graph built from canonical class: %d subjects",
+                    len(primary_graph.get('subjects', [])),
+                )
+                return self._deduplicate_graph(primary_graph)
+
+            logger.info(
+                "No subjects found for canonical project type; falling back to per-organization graphs",
+            )
+
         combined_graph = self._build_combined_organization_graphs()
         logger.info(
             "Combined per-organization graphs: %d subjects, %d nodes, %d edges",
@@ -364,17 +384,17 @@ class ProjectSnapshotService:
         from arkumu.users.models import Organization
 
         available_codes = set(
-            Organization.objects.filter(code__in=self.DEFAULT_ORGANIZATION_CODES)
+            Organization.objects.filter(code__in=self.organization_codes)
             .values_list('code', flat=True)
         )
-        missing_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code not in available_codes]
+        missing_codes = [code for code in self.organization_codes if code not in available_codes]
         if missing_codes:
             logger.warning(
                 "Organizations missing from database (skipped for snapshot): %s",
                 missing_codes,
             )
 
-        included_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code in available_codes]
+        included_codes = [code for code in self.organization_codes if code in available_codes]
         if included_codes:
             logger.info("Organizations included in snapshot: %s", included_codes)
 
@@ -479,18 +499,18 @@ class ProjectSnapshotService:
 
         available_orgs = set(
             Mapping.objects
-            .filter(organization_id__in=self.DEFAULT_ORGANIZATION_CODES)
+            .filter(organization_id__in=self.organization_codes)
             .values_list('organization_id', flat=True)
         )
 
-        missing_orgs = set(self.DEFAULT_ORGANIZATION_CODES) - available_orgs
+        missing_orgs = set(self.organization_codes) - available_orgs
         if missing_orgs:
             logger.warning("Orgs without Mappings (excluded from snapshot): %s", sorted(missing_orgs))
         logger.info("Orgs with Mappings (included in snapshot): %s", sorted(available_orgs))
 
         schemas = [
             self.schema_service.get_card_schema(code)
-            for code in self.DEFAULT_ORGANIZATION_CODES
+            for code in self.organization_codes
             if code in available_orgs
         ]
         return self._combine_card_schemas(schemas)

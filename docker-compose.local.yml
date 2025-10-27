@@ -34,6 +34,8 @@ services:
       - OAI_S3_ROSETTA_BASE_FUK=/rosetta/fudk/sandbox/input/arkumu/daten
       - OAI_S3_ROSETTA_BASE_RSH=/rosetta/rsh/sandbox/input/arkumu/daten
       - OAI_S3_ROSETTA_BASE_DET=/rosetta/hfmdt/sandbox/input/arkumu/daten
+      - PROJECT_SNAPSHOT_ORG_CODES=${PROJECT_SNAPSHOT_ORG_CODES:-}
+      - PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS=${PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS:-false}
     networks:
       - arkumu_network
 
@@ -118,6 +120,8 @@ services:
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_DET: /rosetta/hfmdt/sandbox/input/arkumu/daten
+      PROJECT_SNAPSHOT_ORG_CODES: ${PROJECT_SNAPSHOT_ORG_CODES:-}
+      PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS: ${PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS:-false}
     command: /bin/sh -c "python manage.py run_huey"
     # No ports exposed - only accessible internally
     networks:
