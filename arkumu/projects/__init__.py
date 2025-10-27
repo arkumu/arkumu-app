@@ -1,5 +1,4 @@
 """Project domain models and services."""
-
 from .models import (
     ProjectRecord,
     ProjectEvent,

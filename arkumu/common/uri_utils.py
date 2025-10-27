@@ -1,6 +1,7 @@
 """Common URI utility functions shared across the Arkumu application."""
 import re
 import unicodedata
+from typing import Any, Optional
 
 # Base URIs
 RDF_BASE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -24,6 +25,31 @@ def normalize_string_nfc(text: str) -> str:
         return text
         
     return unicodedata.normalize('NFC', text)
+
+
+def normalize_text_input(value: Any, *, blank_to_none: bool = False) -> Optional[str]:
+    """
+    Normalize arbitrary textual input by applying NFC normalization while preserving outer whitespace.
+
+    Args:
+        value: Input value that should be normalized. Non-string values are cast to string.
+        blank_to_none: If True, return None when the normalized text is empty.
+
+    Returns:
+        Normalized string or None if the input is None or blank (after trimming) and blank_to_none is True.
+    """
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        value = str(value)
+
+    normalized = normalize_string_nfc(value)
+
+    if blank_to_none and normalized.strip() == "":
+        return None
+
+    return normalized
 
 def slugify_uri_part(value_str):
     """

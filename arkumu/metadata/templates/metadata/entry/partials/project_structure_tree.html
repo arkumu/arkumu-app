@@ -1,0 +1,47 @@
+<div class="space-y-3">
+    <div class="rounded-box border border-base-300 bg-base-100 p-4">
+        <div class="flex items-start justify-between gap-3">
+            <div>
+                <p class="font-semibold flex items-center gap-2">
+                    {{ node.label }}
+                    {% if node.repeatable %}
+                    <span class="badge badge-outline badge-xs">Mehrfach</span>
+                    {% endif %}
+                </p>
+                {% if node.description %}
+                <p class="text-xs text-base-content/70 mt-1">{{ node.description }}</p>
+                {% endif %}
+            </div>
+            <span class="text-xs text-base-content/60 uppercase tracking-wide">Struktur</span>
+        </div>
+
+        {% if node.fields %}
+        <ul class="mt-4 space-y-2">
+            {% for field in node.fields %}
+            <li class="border border-base-200 rounded-btn px-3 py-2">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                        <span class="font-medium text-sm">{{ field.label }}</span>
+                        {% if field.repeatable %}
+                        <span class="badge badge-soft badge-xs">Liste</span>
+                        {% endif %}
+                        {% if field.required %}
+                        <span class="badge badge-primary badge-xs">Pflicht</span>
+                        {% endif %}
+                    </div>
+                    <span class="text-xs text-base-content/60">{{ field.type_label }}</span>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    {% if node.children %}
+    <div class="space-y-3 border-l border-dashed border-base-300 pl-4">
+        {% for child in node.children %}
+            {% include "metadata/entry/partials/project_structure_tree.html" with node=child %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>

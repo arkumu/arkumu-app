@@ -1,0 +1,42 @@
+<div class="card bg-base-100 border border-base-300 shadow-sm">
+    <div class="card-body space-y-4">
+        <div class="flex items-center justify-between gap-3">
+            <div>
+                <h2 class="text-lg font-semibold">Letzte Projekte</h2>
+                <p class="text-xs text-base-content/70">Neueste manuelle Einreichungen der ausgewählten Institution.</p>
+            </div>
+            <span class="badge badge-soft badge-sm">{{ recent_entries|length }}</span>
+        </div>
+
+        {% if recent_entries %}
+        <ul class="space-y-3">
+            {% for entry in recent_entries %}
+            <li class="border border-base-200 rounded-btn px-3 py-2">
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-start justify-between gap-3">
+                        <p class="font-medium leading-tight">{{ entry.title }}</p>
+                        {% if entry.resource_id %}
+                        <a href="{% url 'metadata:resource_detail' entry.resource_id %}?origin=metadata-entry"
+                           class="btn btn-ghost btn-xs">
+                            Anzeigen
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3 text-xs text-base-content/60">
+                        <span>{{ entry.saved_at|date:"d.m.Y H:i" }} Uhr</span>
+                        {% if entry.organization_code %}
+                        <span class="badge badge-outline badge-xs uppercase">{{ entry.organization_code }}</span>
+                        {% endif %}
+                        {% if entry.uri %}
+                        <span class="truncate max-w-[200px]" title="{{ entry.uri }}">{{ entry.uri }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-base-content/70">Es wurden noch keine Projekte über das Formular gespeichert.</p>
+        {% endif %}
+    </div>
+</div>

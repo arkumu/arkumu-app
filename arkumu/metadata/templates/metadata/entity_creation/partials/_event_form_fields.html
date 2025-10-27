@@ -1,0 +1,141 @@
+{% if form.non_field_errors %}
+  <div class="alert alert-error shadow-lg mb-6">
+    <div class="flex items-center gap-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <div>
+        {% for error in form.non_field_errors %}
+          <p>{{ error }}</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if is_existing %}
+  <div class="alert alert-info shadow-lg mb-6">
+    <div>
+      <span>Existing event selected. Editing is disabled until you pick "Create new".</span>
+    </div>
+  </div>
+{% endif %}
+
+<div class="space-y-6">
+  <div class="space-y-4">
+    <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-secondary mr-2" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+      </svg>
+      Event Details
+    </h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Ereignisname</span>
+          {% if form.ereignisname.errors %}
+            <span class="label-text-alt text-error">{{ form.ereignisname.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ form.ereignisname }}
+        <div class="text-xs text-base-content/60 mt-1">{{ form.ereignisname.help_text }}</div>
+      </div>
+
+      {% if field_search_urls.project_uri %}
+        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.project_uri field_name="project_uri" search_url=field_search_urls.project_uri %}
+      {% else %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Associated Project</span>
+            {% if form.project_uri.errors %}
+              <span class="label-text-alt text-error">{{ form.project_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ form.project_uri }}
+          <div class="text-xs text-base-content/60 mt-1">
+            Select the project this event is associated with
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Ereignisort</span>
+          {% if form.ereignisort.errors %}
+            <span class="label-text-alt text-error">{{ form.ereignisort.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ form.ereignisort }}
+        <div class="text-xs text-base-content/60 mt-1">{{ form.ereignisort.help_text }}</div>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Ereignisbeschreibung</span>
+          {% if form.ereignisbeschreibung.errors %}
+            <span class="label-text-alt text-error">{{ form.ereignisbeschreibung.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ form.ereignisbeschreibung }}
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Ereignisbeginn</span>
+          {% if form.ereignisbeginn.errors %}
+            <span class="label-text-alt text-error">{{ form.ereignisbeginn.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ form.ereignisbeginn }}
+        <div class="text-xs text-base-content/60 mt-1">{{ form.ereignisbeginn.help_text }}</div>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text font-medium">Ereignisende</span>
+          {% if form.ereignisende.errors %}
+            <span class="label-text-alt text-error">{{ form.ereignisende.errors.0 }}</span>
+          {% endif %}
+        </label>
+        {{ form.ereignisende }}
+        <div class="text-xs text-base-content/60 mt-1">{{ form.ereignisende.help_text }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-4 pt-6 border-t">
+    <div class="flex items-center justify-between">
+      <h3 class="text-base font-semibold">Actors &amp; Roles</h3>
+      <button type="button"
+              class="btn btn-sm btn-primary{% if is_existing %} btn-disabled{% endif %}"
+              hx-get="{{ actor_row_url }}"
+              hx-target="#event-actor-role-list"
+              hx-swap="beforeend"
+              hx-include="#id_actors-TOTAL_FORMS,#id_roles-TOTAL_FORMS"
+              {% if is_existing %}disabled{% endif %}>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6" />
+        </svg>
+        Add Actor
+      </button>
+    </div>
+
+    {% if actor_formset and role_formset %}
+      {{ actor_formset.management_form }}
+      {{ role_formset.management_form }}
+    {% endif %}
+
+    <div id="event-actor-role-list" class="space-y-4">
+      {% if actor_role_forms %}
+        {% for actor_form, role_form in actor_role_forms %}
+          {% include "metadata/entity_creation/partials/_event_actor_role_row.html" with actor_form=actor_form role_form=role_form index=forloop.counter0 %}
+        {% endfor %}
+      {% else %}
+        <div class="p-4 border border-dashed border-base-300 rounded-lg text-sm text-base-content/60">
+          No actors linked to this event yet. Use “Add Actor” to connect people and their roles.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>

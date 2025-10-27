@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-10">
+  <div class="card bg-base-100 shadow-xl border border-base-200">
+    <div class="card-body p-8 space-y-8">
+      <div class="flex items-center mb-2">
+        <div class="p-3 rounded-xl mr-4 bg-secondary/10">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="card-title text-2xl font-bold">{{ title }}</h1>
+          <p class="text-base-content/70 mt-1">{{ description }}</p>
+        </div>
+      </div>
+
+      <form action="{% url 'metadata:create_event' %}" method="post" class="space-y-10">
+        {% csrf_token %}
+
+        {% if 'uri' in form.fields %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Wähle oder erstelle ein Ereignis</span>
+              {% if form.uri.errors %}
+                <span class="label-text-alt text-error">{{ form.uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ form.uri }}
+            <div class="text-xs text-base-content/60 mt-1">{{ form.uri.help_text }}</div>
+          </div>
+        {% endif %}
+
+        <div id="event-fields" hx-swap="innerHTML transition:true">
+          {% include "metadata/entity_creation/partials/_event_form_fields.html" %}
+        </div>
+
+        <div class="space-y-5 border-t pt-6">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold">Actors in Event</h3>
+            <button type="button"
+                    class="btn btn-sm btn-primary"
+                    hx-get="{{ actor_row_url }}"
+                    hx-target="#actor-event-container"
+                    hx-swap="beforeend"
+                    hx-include="#id_actors-TOTAL_FORMS,#id_roles-TOTAL_FORMS">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6" />
+              </svg>
+              Add Actor
+            </button>
+          </div>
+
+          {{ actor_formset.management_form }}
+          {{ role_formset.management_form }}
+
+          <div id="actor-event-container" class="space-y-4">
+            {% for actor_form, role_form in actor_role_forms %}
+              {% include "metadata/entity_creation/partials/_event_actor_role_row.html" with actor_form=actor_form role_form=role_form index=forloop.counter0 %}
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
+          <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Cancel
+          </a>
+          <button type="submit" class="btn btn-primary px-8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Create Event
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock content %}

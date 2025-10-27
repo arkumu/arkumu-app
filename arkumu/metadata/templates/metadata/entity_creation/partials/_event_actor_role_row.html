@@ -1,0 +1,39 @@
+<div class="p-4 border border-base-300 rounded-xl bg-base-100 space-y-4" data-index="{{ index }}">
+  <div class="flex justify-between items-center">
+    <h4 class="text-base font-semibold">Actor {{ index|add:1 }}</h4>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="space-y-3">
+      {% for field in actor_form.hidden_fields %}
+        {{ field }}
+      {% endfor %}
+      {% for field in actor_form.visible_fields %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">{{ field.label }}</span>
+            {% if field.errors %}
+              <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ field }}
+        </div>
+      {% endfor %}
+    </div>
+    <div class="space-y-3">
+      {% for field in role_form.hidden_fields %}
+        {{ field }}
+      {% endfor %}
+      {% for field in role_form.visible_fields %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">{{ field.label }}</span>
+            {% if field.errors %}
+              <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ field }}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>

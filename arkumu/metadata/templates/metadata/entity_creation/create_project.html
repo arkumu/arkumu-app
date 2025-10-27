@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-10">
+  <div class="card bg-base-100 shadow-xl border border-base-200">
+    <div class="card-body p-8 space-y-8">
+      <div class="flex items-center mb-6">
+        <div class="p-3 rounded-xl mr-4 bg-primary/10">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="card-title text-2xl font-bold">{{ title }}</h1>
+          <p class="text-base-content/70 mt-1">{{ description }}</p>
+        </div>
+      </div>
+
+      <form action="{% url 'metadata:create_project' %}" method="post" class="space-y-8">
+        {% csrf_token %}
+
+        {% if 'uri' in form.fields %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Wähle oder erstelle ein Projekt</span>
+              {% if form.uri.errors %}
+                <span class="label-text-alt text-error">{{ form.uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ form.uri }}
+            <div class="text-xs text-base-content/60 mt-1">{{ form.uri.help_text }}</div>
+          </div>
+        {% endif %}
+
+        <div id="entity-fields" hx-swap="innerHTML transition:true">
+          {% include "metadata/entity_creation/partials/_project_form_fields.html" %}
+        </div>
+
+        <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
+          <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Cancel
+          </a>
+          <button type="submit" class="btn btn-primary px-8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Create Project
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock content %}

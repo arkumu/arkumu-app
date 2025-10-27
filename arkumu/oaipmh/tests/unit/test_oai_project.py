@@ -121,6 +121,36 @@ def test_builder_resolves_hmt_prefix(tmp_path, settings):
     assert obj.checksum_algorithm == 'sha256'
 
 
+def test_builder_skips_rosetta_object_without_index(tmp_path, settings):
+    mapping = tmp_path / 'hmt_paths.txt'
+    mapping.write_text("/rosetta/hfmt/sandbox/input/arkumu/daten/object_master.wav\n", encoding='utf-8')
+
+    settings.OAI_EXTERNAL_PATH_FILES = {'hmt': str(mapping)}
+    settings.OAI_EXTERNAL_ROSETTA_ROOTS = {'hmt': '/rosetta/hfmt/sandbox/input/arkumu/daten'}
+    settings.OAI_EXTERNAL_PATH_PREFIXES = {'hmt': ['/Volumes/18TB1']}
+    settings.OAI_S3_HARVESTABLE_ORGS = ()
+    settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('hmt',)
+
+    from arkumu.oaipmh import path_mapping
+    path_mapping._load_index.cache_clear()
+
+    builder = OAIProjectBuilder()
+    record = _make_record(
+        institution=ProjectInstitution(label='HMT', code='hmt'),
+        digital_objects=[
+            ProjectDigitalObject(
+                path='/Volumes/18TB1/source/object_missing.wav',
+                file_name='object_missing.wav',
+            )
+        ],
+    )
+
+    project = builder.from_project_record(record)
+
+    assert project.harvestable is False
+    assert project.digital_objects == ()
+
+
 def test_builder_applies_code_alias(settings):
     settings.OAI_S3_HARVESTABLE_ORGS = ()
     settings.OAI_ROSETTA_HARVESTABLE_ORGS = ('hmt',)

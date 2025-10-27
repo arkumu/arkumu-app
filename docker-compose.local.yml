@@ -16,6 +16,7 @@ services:
     image: arkumu_local_django
     container_name: arkumu_local_django
     restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       - postgres
       - minio
@@ -104,6 +105,7 @@ services:
       dockerfile: ./compose/local/django/Dockerfile
     image: arkumu_local_huey
     container_name: arkumu_local_huey
+    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       - django
       - redis

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% load static %}
+<div class="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 py-12 px-4 sm:px-6 lg:px-8">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-center mb-10">
+      <h1 class="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+        <span class="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+          Create New Project
+        </span>
+      </h1>
+      <p class="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">
+        Configure your project details with precise metadata for optimal organization and discovery
+      </p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+      <div class="bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4">
+        <h2 class="text-xl font-semibold text-white flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Project Configuration
+        </h2>
+      </div>
+
+      <form action="create/project/" method="post" class="p-6 sm:p-8">
+        {% csrf_token %}
+        
+        <!-- Form Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <!-- Preferred Title -->
+          <div>
+            <label for="{{ form.bevorzugter_titel.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.bevorzugter_titel.label }}
+              <span class="text-indigo-500">*</span>
+            </label>
+            {{ form.bevorzugter_titel }}
+            {% if form.bevorzugter_titel.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.bevorzugter_titel.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <!-- Language for Preferred Title -->
+          <div>
+            <label for="{{ form.sprache_bevorzugter_titel.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.sprache_bevorzugter_titel.label }}
+              <span class="text-indigo-500">*</span>
+            </label>
+            {{ form.sprache_bevorzugter_titel }}
+            <p class="mt-1 text-xs text-gray-500">Enter language UUID (e.g., 5a0d0d0d-0d0d-4d0d-8d0d-0d0d0d0d0d0d)</p>
+            {% if form.sprache_bevorzugter_titel.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.sprache_bevorzugter_titel.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <!-- Preferred Subtitle -->
+          <div>
+            <label for="{{ form.bevorzugter_untertitel.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.bevorzugter_untertitel.label }}
+            </label>
+            {{ form.bevorzugter_untertitel }}
+            {% if form.bevorzugter_untertitel.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.bevorzugter_untertitel.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <!-- Language for Subtitle -->
+          <div>
+            <label for="{{ form.sprache_bevorzugter_untertitel.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.sprache_bevorzugter_untertitel.label }}
+            </label>
+            {{ form.sprache_bevorzugter_untertitel }}
+            <p class="mt-1 text-xs text-gray-500">Enter language UUID</p>
+            {% if form.sprache_bevorzugter_untertitel.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.sprache_bevorzugter_untertitel.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <!-- Description -->
+          <div class="md:col-span-2">
+            <label for="{{ form.beschreibung.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.beschreibung.label }}
+              <span class="text-indigo-500">*</span>
+            </label>
+            {{ form.beschreibung }}
+            <p class="mt-1 text-xs text-gray-500">Enter description UUID</p>
+            {% if form.beschreibung.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.beschreibung.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <!-- Project Type -->
+          <div>
+            <label for="{{ form.projektart.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.projektart.label }}
+              <span class="text-indigo-500">*</span>
+            </label>
+            {{ form.projektart }}
+            <p class="mt-1 text-xs text-gray-500">Enter project type UUID</p>
+            {% if form.projektart.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.projektart.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <!-- German Comment -->
+          <div>
+            <label for="{{ form.deutscher_kommentar.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.deutscher_kommentar.label }}
+            </label>
+            {{ form.deutscher_kommentar }}
+            <p class="mt-1 text-xs text-gray-500">Enter comment UUID</p>
+            {% if form.deutscher_kommentar.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.deutscher_kommentar.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <!-- English Comment -->
+          <div>
+            <label for="{{ form.englischer_kommentar.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+              {{ form.englischer_kommentar.label }}
+            </label>
+            {{ form.englischer_kommentar }}
+            <p class="mt-1 text-xs text-gray-500">Enter comment UUID</p>
+            {% if form.englischer_kommentar.errors %}
+              <p class="mt-1 text-sm text-red-600">{{ form.englischer_kommentar.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex flex-col sm:flex-row sm:justify-end gap-3 pt-6 border-t border-gray-200">
+          <a href="/" class="inline-flex items-center justify-center px-5 py-2.5 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="-ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Cancel
+          </a>
+          <button type="submit" class="inline-flex items-center justify-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="-ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Create Project
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="mt-8 text-center text-sm text-gray-500">
+      <p>Need help? Contact our support team at 
+        <a href="mailto:support@example.com" class="text-indigo-600 hover:text-indigo-800 font-medium">
+          support@example.com
+        </a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<style>
+  input, select {
+    @apply appearance-none border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-700 
+           focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 
+           transition duration-200;
+  }
+  
+  input:focus, select:focus {
+    @apply shadow-sm;
+  }
+</style>
+{% endblock %}

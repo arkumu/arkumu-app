@@ -1,0 +1,81 @@
+{% load i18n %}
+{% if oob %}
+<tbody id="project-table-body" hx-swap-oob="outerHTML">
+{% else %}
+<tbody id="project-table-body">
+{% endif %}
+  {% if projects %}
+    {% for project in projects %}
+      {% include "metadata/projects/partials/row.html" with project=project table_config=table_config status_labels=status_labels status_badges=status_badges %}
+    {% endfor %}
+  {% else %}
+    <tr>
+      <td colspan="{{ table_config.total_columns }}" class="p-6 text-center text-base-content/70">
+        {% trans "Keine Einträge passend zu den aktuellen Filtern gefunden." %}
+      </td>
+    </tr>
+  {% endif %}
+</tbody>
+
+<div id="project-pagination"{% if oob %} hx-swap-oob="true"{% endif %} class="flex flex-wrap items-center justify-between gap-3 mt-4">
+  <div>
+    {% if page_obj.has_previous %}
+      <button
+        type="button"
+        class="btn btn-sm"
+        hx-get="{% url 'metadata:project_overview_table' %}"
+        hx-target="#project-table-body"
+        hx-include="#project-filter-form"
+        hx-swap="outerHTML"
+        hx-vals='{"page": "{{ page_obj.previous_page_number }}"}'
+      >
+        ‹ {% trans "Zurück" %}
+      </button>
+    {% else %}
+      <button class="btn btn-sm btn-disabled" disabled>‹ {% trans "Zurück" %}</button>
+    {% endif %}
+  </div>
+
+  <div class="text-sm text-base-content/70">
+    {% blocktrans with number=page_obj.number pages=paginator.num_pages %}
+      Seite {{ number }} von {{ pages }}
+    {% endblocktrans %}
+  </div>
+
+  <div>
+    {% if page_obj.has_next %}
+      <button
+        type="button"
+        class="btn btn-sm"
+        hx-get="{% url 'metadata:project_overview_table' %}"
+        hx-target="#project-table-body"
+        hx-include="#project-filter-form"
+        hx-swap="outerHTML"
+        hx-vals='{"page": "{{ page_obj.next_page_number }}"}'
+      >
+        {% trans "Weiter" %} ›
+      </button>
+    {% else %}
+      <button class="btn btn-sm btn-disabled" disabled>{% trans "Weiter" %} ›</button>
+    {% endif %}
+  </div>
+</div>
+
+<div id="project-result-meta"{% if oob %} hx-swap-oob="true"{% endif %} class="text-sm text-base-content/70">
+  {% blocktrans count total=total_count with dataset=table_config.dataset_label %}
+    {{ total }} Eintrag in {{ dataset }} gefunden
+  {% plural %}
+    {{ total }} Einträge in {{ dataset }} gefunden
+  {% endblocktrans %}
+</div>
+
+{% if oob %}
+<input
+  type="hidden"
+  id="project-filter-page"
+  name="page"
+  value="{{ page_obj.number }}"
+  form="project-filter-form"
+  hx-swap-oob="true"
+>
+{% endif %}

@@ -1,0 +1,51 @@
+{# Single FK field with autocomplete search - pure HTMX #}
+<div class="space-y-2" id="fk-container-{{ field_name }}">
+  <div class="relative">
+    {# Hidden input that stores the actual URI (this gets submitted) #}
+    <input type="hidden"
+           name="{{ field_name }}"
+           id="{{ input_id }}-hidden"
+           value="{{ uri_value|default:'' }}"
+           data-uri="{{ uri_value|default:'' }}"
+           data-label="{{ display_value|default:'' }}">
+
+    {# Property selector dropdown - controls which property to display/search #}
+    {% if search_properties and search_properties|length > 1 %}
+      <div class="flex items-center gap-2 mb-2">
+        <label class="label-text text-xs text-base-content/70">Suchen nach:</label>
+        <select id="prop-{{ input_id }}"
+                name="property"
+                class="select select-bordered select-xs max-w-xs">
+          {% for prop in search_properties %}
+            <option value="{{ prop.uri }}" {% if prop.uri == display_property %}selected{% endif %}>
+              {{ prop.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {# Visible input for search/display - NOT submitted (name starts with q_) #}
+    <input type="text"
+           id="{{ input_id }}"
+           name="q"
+           class="{{ css_class }}"
+           placeholder="Tippen zum Suchen..."
+           value="{{ display_value|default:'' }}"
+           title="URI: {{ uri_value|default:'nicht gesetzt' }}"
+           {% if search_url %}
+           hx-get="{{ search_url }}&input_id={{ input_id }}&target_id={{ target_id }}"
+           hx-trigger="input changed delay:200ms"
+           hx-target="#{{ target_id }}"
+           hx-include="this, [id='prop-{{ input_id }}'], #{{ input_id }}-hidden"
+           {% endif %}
+           autocomplete="off"
+           {% if required %}required{% endif %}>
+  </div>
+
+  {% if target_id %}
+  <div id="{{ target_id }}"
+       class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden">
+  </div>
+  {% endif %}
+</div>
