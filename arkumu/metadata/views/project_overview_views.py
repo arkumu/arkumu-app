@@ -296,7 +296,7 @@ class ProjectOverviewCoordinatorMixin(BaseCoordinatorMixin):
             )
 
         workspace_query = urlencode({"dataset": summary.dataset_name})
-        workspace_url = reverse("metadata:entity_creation_workspace")
+        workspace_url = reverse("metadata:create_project")
 
         preview_columns: List[str] = []
         property_map = schema.get("properties") or {}

@@ -6,7 +6,7 @@ import json
 from typing import Dict, Iterable, List
 
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
-from django.shortcuts import redirect, render
+from django.shortcuts import render
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -107,8 +107,6 @@ class MetadataEntryDashboardView(MetadataEntryMixin, TemplateView):
     template_name = "metadata/entry/dashboard.html"
 
     def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
-        if request.GET.get("legacy") != "1":
-            return redirect("metadata:entity_creation_workspace")
         context = self._shared_context(request)
         if request.headers.get("HX-Request"):
             return render(request, "metadata/entry/partials/dashboard_inner.html", context)
@@ -210,16 +208,6 @@ class MetadataEntrySubmitView(MetadataEntryMixin, View):
             response["HX-Trigger"] = json.dumps(trigger_payload)
         return response
 
-    def _build_payload(self, post_data, manifest: SectionManifest) -> Dict[str, object]:
-        payload: Dict[str, object] = {}
-        for field in manifest.fields:
-            values = post_data.getlist(field.name)
-            if not values:
-                payload[field.name] = ""
-            else:
-                payload[field.name] = values[-1]
-        return payload
-
 
 class MetadataEntryLatestProjectsView(MetadataEntryMixin, View):
     """HTMX endpoint providing the latest project submissions panel."""
@@ -241,3 +229,13 @@ class MetadataEntryLatestProjectsView(MetadataEntryMixin, View):
             "selected_organization": org_code,
         }
         return render(request, self.template_name, context)
+
+    def _build_payload(self, post_data, manifest: SectionManifest) -> Dict[str, object]:
+        payload: Dict[str, object] = {}
+        for field in manifest.fields:
+            values = post_data.getlist(field.name)
+            if not values:
+                payload[field.name] = ""
+            else:
+                payload[field.name] = values[-1]
+        return payload

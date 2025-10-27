@@ -1,140 +1,220 @@
-{% if form.non_field_errors %}
-  <div class="alert alert-error shadow-lg">
-    <div class="flex items-center gap-3">
-      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      <div>
-        {% for error in form.non_field_errors %}
-          <p>{{ error }}</p>
-        {% endfor %}
-      </div>
-    </div>
+<div class="project-form">
+  <div class="form-control">
+    <label class="label">
+      <span class="label-text font-medium">Wähle oder erstelle ein Projekt</span>
+      {% if project_form.uri.errors %}
+        <span class="label-text-alt text-error">{{ project_form.uri.errors.0 }}</span>
+      {% endif %}
+    </label>
+    {{ project_form.uri }}
+    <div class="text-xs text-base-content/60 mt-1">{{ project_form.uri.help_text }}</div>
   </div>
-{% endif %}
 
-{% if is_existing %}
-  <div class="alert alert-info shadow-lg">
-    <div>
-      <span>Existing project selected. Fields are locked until you choose "Create new".</span>
-    </div>
-  </div>
-{% endif %}
-
-<div class="space-y-6">
-  <div class="space-y-4">
-    <h2 class="text-lg font-semibold flex items-center border-b pb-2">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
-      </svg>
-      Project Details
-    </h2>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Bevorzugter Titel</span>
-          {% if form.bevorzugter_titel.errors %}
-            <span class="label-text-alt text-error">{{ form.bevorzugter_titel.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.bevorzugter_titel }}
-        <div class="text-xs text-base-content/60 mt-1">{{ form.bevorzugter_titel.help_text }}</div>
+  <div id="{{prefix}}fields">
+    {% if project_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div></div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span></span>
+            {% for error in project_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
       </div>
+    {% endif %}
 
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Bevorzugter Untertitel</span>
-          {% if form.bevorzugter_untertitel.errors %}
-            <span class="label-text-alt text-error">{{ form.bevorzugter_untertitel.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.bevorzugter_untertitel }}
-        <div class="text-xs text-base-content/60 mt-1">{{ form.bevorzugter_untertitel.help_text }}</div>
-      </div>
-    </div>
+    <div class="space-y-6">
+      <!-- Project Details Section -->
+      <div class="space-y-4">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Project Details
+        </h2>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {% if field_search_urls.einliefernde_hochschule_uri %}
-        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.einliefernde_hochschule_uri field_name="einliefernde_hochschule_uri" search_url=field_search_urls.einliefernde_hochschule_uri %}
-      {% else %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bevorzugter Titel</span>
+              {% if project_form.bevorzugter_titel.errors %}
+              <span class="label-text-alt text-error">{{ project_form.bevorzugter_titel.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.bevorzugter_titel }}
+            <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_titel.help_text }}</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bevorzugter Untertitel</span>
+              {% if project_form.bevorzugter_untertitel.errors %}
+              <span class="label-text-alt text-error">{{ project_form.bevorzugter_untertitel.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.bevorzugter_untertitel }}
+            <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_untertitel.help_text }}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Einliefernde Hochschule</span>
+              {% if project_form.einliefernde_hochschule_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.einliefernde_hochschule_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.einliefernde_hochschule_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Projektkategorie</span>
+              {% if project_form.projektkategorie_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.projektkategorie_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.projektkategorie_uri }}
+          </div>
+        </div>
+
         <div class="form-control">
           <label class="label">
-            <span class="label-text font-medium">Einliefernde Hochschule</span>
-            {% if form.einliefernde_hochschule_uri.errors %}
-              <span class="label-text-alt text-error">{{ form.einliefernde_hochschule_uri.errors.0 }}</span>
+            <div class="flex justify-between items-center">
+              <h3 class="text-base font-medium">Beschreibung</h3>
+              <button type="button" class="btn btn-sm btn-primary add-description">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Description
+              </button>
+            </div>
+            {% if description_formset.errors %}
+            <span class="label-text-alt text-error">{{ description_formset.errors.0 }}</span>
             {% endif %}
           </label>
-          {{ form.einliefernde_hochschule_uri }}
+          <!-- This renders the management form fields that Django needs -->
+          {{ description_formset.management_form }}
+
+          <div class="description-container space-y-4">
+            {% for form in description_formset %}
+              {% include "metadata/entity_creation/partials/_description_form_fields.html" with description_form=form %}
+            {% endfor %}
+          </div>
+
+          <template id="description-template">
+              {% include "metadata/entity_creation/partials/_description_form_fields.html" with description_form=description_formset.empty_form %}
+          </template>
+          <div class="text-xs text-base-content/60 mt-1">{{ project_form.beschreibung_uri.help_text }}</div>
         </div>
-      {% endif %}
 
-      {% if field_search_urls.projektkategorie_uri %}
-        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.projektkategorie_uri field_name="projektkategorie_uri" search_url=field_search_urls.projektkategorie_uri %}
-      {% else %}
-        <div class="form-control">
-          <label class="label">
-            <span class="label-text font-medium">Projektkategorie</span>
-            {% if form.projektkategorie_uri.errors %}
-              <span class="label-text-alt text-error">{{ form.projektkategorie_uri.errors.0 }}</span>
-            {% endif %}
-          </label>
-          {{ form.projektkategorie_uri }}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Schlagwörter</span>
+              {% if project_form.schlagwort_uris.errors %}
+              <span class="label-text-alt text-error">{{ project_form.schlagwort_uris.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.schlagwort_uris }}
+            <div class="text-xs text-base-content/60 mt-1">Select one or more keywords</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Projektart</span>
+              {% if project_form.projektart_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.projektart_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.projektart_uri }}
+          </div>
         </div>
-      {% endif %}
-    </div>
 
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Beschreibung</span>
-          {% if form.beschreibung.errors %}
-            <span class="label-text-alt text-error">{{ form.beschreibung.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.beschreibung }}
-        <div class="text-xs text-base-content/60 mt-1">{{ form.beschreibung.help_text }}</div>
-      </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text font-medium">Schlagwörter</span>
-          {% if form.schlagwort_uris.errors %}
-            <span class="label-text-alt text-error">{{ form.schlagwort_uris.errors.0 }}</span>
-          {% endif %}
-        </label>
-        {{ form.schlagwort_uris }}
-        <div class="text-xs text-base-content/60 mt-1">Select one or more keywords</div>
-      </div>
-
-      {% if field_search_urls.projektart_uri %}
-        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.projektart_uri field_name="projektart_uri" search_url=field_search_urls.projektart_uri %}
-      {% else %}
-        <div class="form-control">
-          <label class="label">
-            <span class="label-text font-medium">Projektart</span>
-            {% if form.projektart_uri.errors %}
-              <span class="label-text-alt text-error">{{ form.projektart_uri.errors.0 }}</span>
-            {% endif %}
-          </label>
-          {{ form.projektart_uri }}
-        </div>
-      {% endif %}
-    </div>
-
-      {% if field_search_urls.vorschaubild_uri %}
-        {% include "metadata/entity_creation/partials/_searchable_select_field.html" with field=form.vorschaubild_uri field_name="vorschaubild_uri" search_url=field_search_urls.vorschaubild_uri %}
-      {% else %}
         <div class="form-control">
           <label class="label">
             <span class="label-text font-medium">Vorschaubild</span>
-            {% if form.vorschaubild_uri.errors %}
-              <span class="label-text-alt text-error">{{ form.vorschaubild_uri.errors.0 }}</span>
+            {% if project_form.vorschaubild_uri.errors %}
+            <span class="label-text-alt text-error">{{ project_form.vorschaubild_uri.errors.0 }}</span>
             {% endif %}
           </label>
-          {{ form.vorschaubild_uri }}
-          <div class="text-xs text-base-content/60 mt-1">{{ form.vorschaubild_uri.help_text }}</div>
+          {{ project_form.vorschaubild_uri }}
+          <div class="text-xs text-base-content/60 mt-1">{{ project_form.vorschaubild_uri.help_text }}</div>
         </div>
-      {% endif %}
+      </div>
+    </div>
+    <script>
+      function add_uri_fill_in_handler(){
+        console.log("this is a test uri_fill_in")
+        const prefix = "{{prefix}}"
+        const uriSelect = document.querySelector(`#id_${prefix}uri`);
+        const bevorzugter_titel_input = document.querySelector(`#id_${prefix}bevorzugter_titel`);
+        const bevorzugter_untertitel_input = document.querySelector(`#id_${prefix}bevorzugter_untertitel`);
+        const einliefernde_hochschule_uri_input = document.querySelector(`#id_${prefix}einliefernde_hochschule_uri`);
+        const projektkategorie_uri_input = document.querySelector(`#id_${prefix}projektkategorie_uri`);
+        const beschreibung_uri_input = document.querySelector(`#id_${prefix}beschreibung_uri`);
+        const schlagwort_uris_input = document.querySelector(`#id_${prefix}schlagwort_uris`);
+        const projektart_uri_input = document.querySelector(`#id_${prefix}projektart_uri`);
+        const vorschaubild_uri_input = document.querySelector(`#id_${prefix}vorschaubild_uri`);
+        const fields = {bevorzugter_titel : bevorzugter_titel_input 
+        ,bevorzugter_untertitel : bevorzugter_untertitel_input
+        ,einliefernde_hochschule_uri : einliefernde_hochschule_uri_input
+        ,projektkategorie_uri : projektkategorie_uri_input
+        ,beschreibung_uri : beschreibung_uri_input
+        ,schlagwort_uris : schlagwort_uris_input
+        ,projektart_uri : projektart_uri_input
+        ,vorschaubild_uri : vorschaubild_uri_input
+        }
+        
+        uriSelect.addEventListener('change', function() {
+          const selectedValue = this.value;
+
+          // If nothing is selected, clear the name field
+          if (!selectedValue) {
+            Object.entries(fields).forEach((field_name, field) =>{field.value = '';})
+            var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+                for (var c of controls) {
+                    c.disabled = false;
+                }   
+            return;
+          }
+
+          // We need to make an AJAX request to get actor details
+          fetch(`/metadata/project/details/?uri=${selectedValue}`)
+            .then(response => {
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              return response.json();
+            })
+            .then(data => {
+              for (field in data){
+                if (field){
+                  fields[field].value = data[field];
+                }
+                else{
+                  fields[field].value = '';
+                }
+              }
+
+              var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+              for (var c of controls) {
+                  c.disabled = true;
+              }   
+            })
+            .catch(error => {
+              console.error('Error fetching actor details:', error);
+              // Optionally clear the fields on error
+              Object.entries(fields).forEach((field_name, field) =>{field.value = '';})
+              // Show an error message to the user (optional enhancement)
+              // You could show a toast notification or modal here if desired
+            });
+        });
+      }
+    </script>
   </div>
 </div>

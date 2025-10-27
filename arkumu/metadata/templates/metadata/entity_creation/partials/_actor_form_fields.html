@@ -1,42 +1,104 @@
-{% if form.non_field_errors %}
-  <div class="alert alert-error shadow-lg mb-4">
-    <div class="flex items-center gap-3">
-      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      <div>
-        {% for error in form.non_field_errors %}
-          <p>{{ error }}</p>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-{% endif %}
-
-{% if is_existing %}
-  <div class="alert alert-info shadow-lg mb-4">
-    <div>
-      <span>Existing actor selected. Fields are locked until you choose "Create new".</span>
-    </div>
-  </div>
-{% endif %}
-
-<div class="space-y-4">
-  <h2 class="text-lg font-semibold flex items-center border-b pb-2">
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
-      <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
-    </svg>
-    Actor Details
-  </h2>
-
+<div class="actor-form">
   <div class="form-control">
     <label class="label">
-      <span class="label-text font-medium">Deutscher Name</span>
-      {% if form.deutscher_name.errors %}
-        <span class="label-text-alt text-error">{{ form.deutscher_name.errors.0 }}</span>
+      <span class="label-text font-medium">Wähle oder erstelle eine AkteurIn</span>
+        {% if actor_form.uri.errors %}
+      <span class="label-text-alt text-error">{{ actor_form.uri.errors.0 }}</span>
       {% endif %}
     </label>
-    {{ form.deutscher_name }}
-    <div class="text-xs text-base-content/60 mt-1">{{ form.deutscher_name.help_text }}</div>
+    {{ actor_form.uri }}
+    <div class="text-xs text-base-content/60 mt-1">{{ actor_form.uri.help_text }}</div>
+  </div>
+
+  <div id="{{prefix}}fields">
+    {% if actor_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div></div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span></span>
+            {% for error in actor_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="space-y-6">
+      <!-- Actor Details Section -->
+      <div class="space-y-4">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Actor Details
+        </h2>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Deutscher Name</span>
+            {% if actor_form.deutscher_name.errors %}
+            <span class="label-text-alt text-error">{{ actor_form.deutscher_name.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ actor_form.deutscher_name }}
+          <div class="text-xs text-base-content/60 mt-1">{{ actor_form.deutscher_name.help_text }}</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      function add_uri_fill_in_handler(){
+        console.log("this is a test uri_fill_in")
+        const prefix = "{{prefix}}"
+        const uriSelect = document.querySelector(`#id_${prefix}uri`);
+        const deutscherNameInput = document.querySelector(`#id_${prefix}deutscher_name`);
+
+        if (uriSelect && deutscherNameInput) {
+          uriSelect.addEventListener('change', function() {
+            const selectedValue = this.value;
+
+            // If nothing is selected, clear the name field
+            if (!selectedValue) {
+              deutscherNameInput.value = '';
+              var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+                  for (var c of controls) {
+                      c.disabled = false;
+                  }   
+              return;
+            }
+
+            // We need to make an AJAX request to get actor details
+            fetch(`/metadata/actor/details/?uri=${selectedValue}`)
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+              })
+              .then(data => {
+                if (data.deutscher_name) {
+                  deutscherNameInput.value = data.deutscher_name;
+                } else {
+                  deutscherNameInput.value = '';
+                }
+
+                var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+                for (var c of controls) {
+                    c.disabled = true;
+                }   
+              })
+              .catch(error => {
+                console.error('Error fetching actor details:', error);
+                // Optionally clear the fields on error
+                deutscherNameInput.value = '';
+                // Show an error message to the user (optional enhancement)
+                // You could show a toast notification or modal here if desired
+              });
+          });
+        }
+      }
+    </script>
   </div>
 </div>
