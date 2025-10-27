@@ -231,7 +231,8 @@
     </div>
     {% endif %}
 
-    <!-- Database Management -->
+    <!-- Database Management (Superuser Only) -->
+    {% if request.user.is_superuser %}
     <div class="mb-4">
         <h3 class="text-lg font-semibold mb-2">Database Management</h3>
         <p class="text-sm text-base-content/70 mb-4">High-impact actions that write to PostgreSQL. Use these when you need to remove or reset imported data; every button requires confirmation.</p>
@@ -347,7 +348,10 @@
             <div id="clear-uploads-result"></div>
             <div id="clear-ingests-result"></div>
         </div>
-        {% if request.user.is_staff %}
+    </div>
+    {% endif %}
+
+    {% if request.user.is_staff %}
         <div class="mt-6">
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4 space-y-3">

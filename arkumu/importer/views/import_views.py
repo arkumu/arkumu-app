@@ -153,24 +153,43 @@ def reset_database(request):
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
+
+    # Superuser-only restriction
+    if not request.user.is_superuser:
+        logger.warning(
+            f"SECURITY: Unauthorized database reset attempt by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')}"
+        )
+        return JsonResponse({'error': 'Only superusers can reset the database'}, status=403)
+
     try:
         from arkumu.metadata.models.resource import Resource
         from arkumu.metadata.models.triples import Triple
         from django.db import transaction
-        
+
         with transaction.atomic():
             # Count records before deletion
             triple_count = Triple.objects.count()
             resource_count = Resource.objects.count()
-            
+
+            # AUDIT LOG: Record who is performing this dangerous operation
+            logger.warning(
+                f"DATABASE RESET INITIATED by user={request.user.username} "
+                f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+                f"about_to_delete: {triple_count} triples, {resource_count} resources"
+            )
+
             # Delete all triples first (due to foreign key constraints)
             Triple.objects.all().delete()
-            
+
             # Delete all resources
             Resource.objects.all().delete()
-            
-        logger.info(f"Database reset completed: deleted {triple_count} triples and {resource_count} resources")
+
+        logger.warning(
+            f"DATABASE RESET COMPLETED by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+            f"deleted: {triple_count} triples, {resource_count} resources"
+        )
         
         # Return HTMX-friendly response
         if request.headers.get('HX-Request') == 'true':
@@ -212,30 +231,46 @@ def delete_organization_triples(request):
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
+
+    # Superuser-only restriction
+    if not request.user.is_superuser:
+        logger.warning(
+            f"SECURITY: Unauthorized organization data deletion attempt by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')}"
+        )
+        return JsonResponse({'error': 'Only superusers can delete organization data'}, status=403)
+
     organization_id = request.POST.get('organization_id')
     if not organization_id:
         return JsonResponse({'error': 'Organization ID is required'}, status=400)
-    
+
     try:
         from arkumu.metadata.models.resource import Resource
         from arkumu.metadata.models.triples import Triple
         from arkumu.users.models import Organization
         from django.db import transaction
-        
+
         # Get the organization
         try:
             organization = Organization.objects.get(id=organization_id)
         except Organization.DoesNotExist:
             return JsonResponse({'error': 'Organization not found'}, status=404)
-        
+
         with transaction.atomic():
             # Count records before deletion
             org_triples = Triple.objects.for_organization(organization)
             org_resources = Resource.objects.for_organization(organization)
-            
+
             triple_count = org_triples.count()
             resource_count = org_resources.count()
+
+            # AUDIT LOG: Record who is deleting organization data
+            logger.warning(
+                f"ORGANIZATION DATA DELETION INITIATED by user={request.user.username} "
+                f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+                f"organization={organization.name} (id={organization_id}) "
+                f"about_to_delete: {triple_count} triples, {resource_count} resources"
+            )
             
             # Strategy: Identify resources that will become orphaned BEFORE deleting triples
             
@@ -267,12 +302,16 @@ def delete_organization_triples(request):
             
             # Delete organization-specific triples first
             deleted_triples = org_triples.delete()[0]
-            
+
             # Delete the identified orphaned resources
             deleted_resources = resources_to_delete.delete()[0]
-            
-        logger.info(f"Organization '{organization.name}' data deletion completed: "
-                   f"deleted {deleted_triples} triples and {deleted_resources} orphaned resources")
+
+        logger.warning(
+            f"ORGANIZATION DATA DELETION COMPLETED by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+            f"organization={organization.name} (id={organization_id}) "
+            f"deleted: {deleted_triples} triples, {deleted_resources} orphaned resources"
+        )
         
         # Return HTMX-friendly response
         if request.headers.get('HX-Request') == 'true':
@@ -350,22 +389,42 @@ def clear_upload_sessions(request):
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
+
+    # Superuser-only restriction
+    if not request.user.is_superuser:
+        logger.warning(
+            f"SECURITY: Unauthorized upload sessions clear attempt by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')}"
+        )
+        return JsonResponse({'error': 'Only superusers can clear upload sessions'}, status=403)
+
     try:
         from arkumu.storage.models.upload_tracking import AsyncUploadSession
         from arkumu.storage.models.upload_sessions import UploadSession
         from django.db import transaction
-        
+
         with transaction.atomic():
             # Count before deletion
             async_count = AsyncUploadSession.objects.count()
             legacy_count = UploadSession.objects.count()
+
+            # AUDIT LOG: Record who is clearing upload sessions
+            logger.warning(
+                f"UPLOAD SESSIONS CLEAR INITIATED by user={request.user.username} "
+                f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+                f"about_to_delete: {async_count} async sessions, {legacy_count} legacy sessions"
+            )
+
             # Delete all upload sessions in both tables
             AsyncUploadSession.objects.all().delete()
             UploadSession.objects.all().delete()
             upload_count = async_count + legacy_count
-            
-        logger.info(f"Upload sessions cleared: deleted {upload_count} upload sessions (async={async_count}, legacy={legacy_count})")
+
+        logger.warning(
+            f"UPLOAD SESSIONS CLEAR COMPLETED by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+            f"deleted: {upload_count} upload sessions (async={async_count}, legacy={legacy_count})"
+        )
         
         # Return HTMX-friendly response
         if request.headers.get('HX-Request') == 'true':
@@ -406,18 +465,38 @@ def clear_ingest_sessions(request):
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
+
+    # Superuser-only restriction
+    if not request.user.is_superuser:
+        logger.warning(
+            f"SECURITY: Unauthorized ingest sessions clear attempt by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')}"
+        )
+        return JsonResponse({'error': 'Only superusers can clear ingest sessions'}, status=403)
+
     try:
         from arkumu.importer.models.ingest_sessions import IngestSession
         from django.db import transaction
-        
+
         with transaction.atomic():
             # Count before deletion
             ingest_count = IngestSession.objects.count()
+
+            # AUDIT LOG: Record who is clearing ingest sessions
+            logger.warning(
+                f"INGEST SESSIONS CLEAR INITIATED by user={request.user.username} "
+                f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+                f"about_to_delete: {ingest_count} ingest sessions"
+            )
+
             # Delete all ingest sessions
             IngestSession.objects.all().delete()
-            
-        logger.info(f"Ingest sessions cleared: deleted {ingest_count} ingest sessions")
+
+        logger.warning(
+            f"INGEST SESSIONS CLEAR COMPLETED by user={request.user.username} "
+            f"email={request.user.email} ip={request.META.get('REMOTE_ADDR', 'unknown')} "
+            f"deleted: {ingest_count} ingest sessions"
+        )
         
         # Return HTMX-friendly response
         if request.headers.get('HX-Request') == 'true':
