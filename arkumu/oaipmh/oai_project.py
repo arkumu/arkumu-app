@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
@@ -234,6 +234,8 @@ class OAIProjectBuilder:
 
         # For KHM/HMT: Filter out digital objects from shared events to prevent cross-project contamination
         filtered_record = self._filter_shared_event_objects(record, institution_code)
+        filtered_record = self._filter_flagged_digital_objects(filtered_record)
+        filtered_record = self._filter_overarching_projects(filtered_record, institution_code)
 
         normalized_objects = self._normalize_objects(filtered_record, institution_code)
 
@@ -337,10 +339,125 @@ class OAIProjectBuilder:
 
         # Create a new record with filtered events
         # We need to create a new ProjectRecord instance with the filtered events
-        from dataclasses import replace
         filtered_record = replace(record, events=filtered_events)
 
         return filtered_record
+
+    def _filter_flagged_digital_objects(self, record: ProjectRecord) -> ProjectRecord:
+        """
+        Remove digital objects that snapshot generation marked as filtered.
+
+        Snapshot service retains the original resources for auditing via
+        `filtered_digital_object_ids`. When we build OAI views we must ensure
+        those resources are not exported to downstream consumers.
+        """
+
+        filtered_ids = {
+            str(identifier).strip()
+            for identifier in getattr(record, "filtered_digital_object_ids", []) or []
+            if identifier is not None and str(identifier).strip()
+        }
+        if not filtered_ids:
+            return record
+
+        objects = list(getattr(record, "digital_objects", []) or [])
+        if not objects:
+            return record
+
+        retained: List[ProjectDigitalObject] = []
+        removed = False
+
+        for obj in objects:
+            resource_id = getattr(obj, "resource_id", None)
+            if resource_id is not None and str(resource_id) in filtered_ids:
+                removed = True
+                continue
+            retained.append(obj)
+
+        if not removed:
+            return record
+
+        sources = getattr(record, "digital_object_sources", None)
+        updated_sources = sources
+        if isinstance(sources, dict):
+            updated_sources = {
+                key: value
+                for key, value in sources.items()
+                if str(key) not in filtered_ids
+            }
+
+        harvestable_flag = bool(retained)
+        reference_only_flag = getattr(record, "ownership_filtered", False) and not harvestable_flag
+
+        return replace(
+            record,
+            digital_objects=retained,
+            digital_object_sources=updated_sources,
+            harvestable=harvestable_flag,
+            reference_only=reference_only_flag,
+        )
+
+    def _filter_overarching_projects(
+        self,
+        record: ProjectRecord,
+        institution_code: Optional[str],
+    ) -> ProjectRecord:
+        """
+        Prevent overarching HMT works (Oberwerke) from exporting digital objects.
+
+        These umbrella records aggregate subordinate projects but should only
+        reference them. They are identifiable by their slug/URI pattern
+        (`hfmt-ow-*`). Any digital objects present on such records are shared
+        with their sub-projects and must not be emitted to hbz.
+        """
+
+        if (institution_code or "").lower() != "hmt":
+            return record
+
+        uri = getattr(record, "uri", "") or ""
+        slug = record.slug if hasattr(record, "slug") else uri.rstrip("/").split("/")[-1]
+        if not slug.startswith("hfmt-ow-"):
+            return record
+
+        if not getattr(record, "digital_objects", None):
+            return record
+
+        sources = getattr(record, "digital_object_sources", None)
+        updated_sources = {}
+        if isinstance(sources, dict):
+            updated_sources = {}
+
+        return replace(
+            record,
+            digital_objects=[],
+            digital_object_sources=updated_sources,
+            harvestable=False,
+            reference_only=True,
+        )
+
+    @staticmethod
+    def _should_skip_digital_object(
+        obj: ProjectDigitalObject,
+        institution_code: Optional[str],
+    ) -> bool:
+        code = (institution_code or "").lower().strip()
+        if code != "hmt":
+            return False
+
+        def _matches(candidate: Optional[str]) -> bool:
+            if not candidate:
+                return False
+            candidate_lower = str(candidate).lower()
+            return candidate_lower.endswith(".mp3")
+
+        return any(
+            _matches(candidate)
+            for candidate in (
+                getattr(obj, "file_name", None),
+                getattr(obj, "path", None),
+                getattr(obj, "storage_key", None),
+            )
+        )
 
     def _resolve_institution_code(self, record: ProjectRecord) -> Optional[str]:
         institution = getattr(record, "institution", None)
@@ -373,6 +490,14 @@ class OAIProjectBuilder:
         seen: set[str] = set()
 
         for obj in getattr(record, "digital_objects", []) or []:
+            if self._should_skip_digital_object(obj, institution_code):
+                logger.info(
+                    "OAI digital object skipped: format excluded (org=%s path=%s file=%s)",
+                    institution_code,
+                    getattr(obj, "path", None),
+                    getattr(obj, "file_name", None),
+                )
+                continue
             # Check if this object represents a DCP folder
             expanded_objects = self._expand_dcp_folder_if_needed(obj, institution_code)
 
