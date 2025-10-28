@@ -10,13 +10,14 @@ from django.db.models import Count
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import escape
 from django.views.decorators.http import require_POST
 from django.test import RequestFactory
 from io import StringIO
 
 from arkumu.importer.models import IngestSession
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.storage.models.upload_tracking import AsyncUploadSession
 from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
@@ -26,6 +27,7 @@ from arkumu.users.models import Organization
 from arkumu.oaipmh.views import oai_endpoint
 from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
 from arkumu.cache.services.project_cache_service import ProjectCacheService
+from arkumu.projects.services import ProjectSnapshotService
 
 from .dashboard_helpers import (
     build_session_entry,
@@ -123,6 +125,72 @@ def metadata_dashboard(request):
             "oai_snapshot": oai_snapshot,
         },
     )
+
+
+@general_login_required
+def publish_projects_visibility(request):
+    """Set all project resources for an organization to public visibility."""
+
+    if request.method != "POST":
+        return redirect("metadata:metadata_dashboard")
+
+    if not request.user.is_superuser:
+        messages.error(request, "Only superusers can publish organization projects.")
+        return redirect("metadata:metadata_dashboard")
+
+    organization_id = request.POST.get("organization_id")
+    if not organization_id:
+        messages.error(request, "Select an organization to publish its projects.")
+        return redirect("metadata:metadata_dashboard")
+
+    try:
+        organization = Organization.objects.get(id=organization_id)
+    except Organization.DoesNotExist:
+        messages.error(request, "The selected organization does not exist.")
+        return redirect("metadata:metadata_dashboard")
+
+    snapshot = ProjectSnapshotService().get_cross_institutional_snapshot()
+    project_uris = [
+        project.uri
+        for project in snapshot.projects
+        if getattr(project, "institution", None)
+        and getattr(project.institution, "code", None)
+        and project.institution.code.lower().strip() == organization.code.lower().strip()
+    ]
+
+    if not project_uris:
+        messages.warning(
+            request,
+            f"No projects were found for {organization.name}.",
+        )
+        return redirect("metadata:metadata_dashboard")
+
+    now = timezone.now()
+    updated = (
+        Resource.objects.filter(
+            organization=organization,
+            uri__in=project_uris,
+        ).update(
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            is_public=True,
+            public_approved_by=request.user,
+            public_approved_at=now,
+        )
+    )
+
+    if updated == 0:
+        messages.warning(
+            request,
+            f"Projects for {organization.name} were already public or no matching resources existed.",
+        )
+    else:
+        messages.success(
+            request,
+            f"Published {updated} project resources for {organization.name}.",
+        )
+
+    return redirect("metadata:metadata_dashboard")
 
 
 @general_login_required

@@ -38,6 +38,7 @@ app_name = 'metadata'
 urlpatterns = [
     # Dashboard
     path('dashboard/', dashboard_views.metadata_dashboard, name='metadata_dashboard'),
+    path('dashboard/publish-projects/', dashboard_views.publish_projects_visibility, name='metadata_dashboard_publish_projects'),
     path('dashboard/cache-refresh/', dashboard_views.trigger_cache_refresh, name='metadata_dashboard_cache_refresh'),
     path('dashboard/checksum-refresh/', dashboard_views.trigger_checksum_refresh, name='metadata_dashboard_checksum_refresh'),
     path('dashboard/mark-missing/', dashboard_views.trigger_mark_missing, name='metadata_dashboard_mark_missing'),

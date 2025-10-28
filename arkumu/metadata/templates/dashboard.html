@@ -240,6 +240,52 @@
             <!-- Delete Organization Data -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Publish Organization Projects</h4>
+                    <p class="text-xs text-base-content/70 mb-3">
+                        Set every project for an organization to public &amp; approved visibility so they appear in the catalog and OAI feeds.
+                    </p>
+                    {% if organizations_with_data %}
+                        <form method="post" action="{% url 'metadata:metadata_dashboard_publish_projects' %}">
+                            {% csrf_token %}
+                            <select name="organization_id" class="select select-bordered select-sm w-full mb-2" required>
+                                <option value="">Select Organization</option>
+                                {% for org in organizations_with_data %}
+                                <option value="{{ org.id }}">
+                                    {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if request.user.is_superuser %}
+                                <button type="submit" class="btn btn-success btn-sm w-full">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Publish Projects
+                                </button>
+                            {% else %}
+                                <button type="button" class="btn btn-success btn-sm w-full btn-disabled" disabled title="Only superusers can publish projects">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Publish Projects
+                                </button>
+                            {% endif %}
+                        </form>
+                    {% else %}
+                        <p class="text-xs text-base-content/50">No organization data available to publish.</p>
+                        <button disabled class="btn btn-success btn-sm w-full btn-disabled">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Publish Projects
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Delete Organization Data -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
                     <h4 class="card-title text-sm">Delete Organization Data</h4>
                     <p class="text-xs text-base-content/70 mb-3">Delete triples from a specific organization only</p>
                     {% if organizations_with_data %}
