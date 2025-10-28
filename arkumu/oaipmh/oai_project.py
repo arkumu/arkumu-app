@@ -250,6 +250,9 @@ class OAIProjectBuilder:
         record: ProjectRecord,
         institution_code: Optional[str],
     ) -> ProjectRecord:
+
+        if getattr(record, "ownership_filtered", False):
+            return record
         """
         For KHM/HMT only: Filter out digital objects from events that are shared with other projects.
 
