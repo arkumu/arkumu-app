@@ -245,7 +245,11 @@
                         Set every project for an organization to public &amp; approved visibility so they appear in the catalog and OAI feeds.
                     </p>
                     {% if organizations_with_data %}
-                        <form method="post" action="{% url 'metadata:metadata_dashboard_publish_projects' %}">
+                        <form method="post"
+                              hx-post="{% url 'metadata:metadata_dashboard_publish_projects' %}"
+                              hx-target="#publish-projects-result"
+                              hx-swap="innerHTML"
+                              hx-indicator="#publish-projects-spinner">
                             {% csrf_token %}
                             <select name="organization_id" class="select select-bordered select-sm w-full mb-2" required>
                                 <option value="">Select Organization</option>
@@ -261,6 +265,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                                     </svg>
                                     Publish Projects
+                                    <span id="publish-projects-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
                                 </button>
                             {% else %}
                                 <button type="button" class="btn btn-success btn-sm w-full btn-disabled" disabled title="Only superusers can publish projects">
@@ -271,6 +276,7 @@
                                 </button>
                             {% endif %}
                         </form>
+                        <div id="publish-projects-result" class="mt-2"></div>
                     {% else %}
                         <p class="text-xs text-base-content/50">No organization data available to publish.</p>
                         <button disabled class="btn btn-success btn-sm w-full btn-disabled">

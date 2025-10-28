@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.management import call_command
 from django.db import models
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -130,44 +130,62 @@ def metadata_dashboard(request):
 @general_login_required
 def publish_projects_visibility(request):
     """Set all project resources for an organization to public visibility."""
+    is_htmx = request.headers.get("HX-Request") == "true"
 
     if request.method != "POST":
+        if is_htmx:
+            return HttpResponse('<div class="alert alert-error">Invalid request method.</div>', status=400)
         return redirect("metadata:metadata_dashboard")
 
     if not request.user.is_superuser:
-        messages.error(request, "Only superusers can publish organization projects.")
+        error_msg = "Only superusers can publish organization projects."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-error">{error_msg}</div>', status=403)
+        messages.error(request, error_msg)
         return redirect("metadata:metadata_dashboard")
 
     organization_id = request.POST.get("organization_id")
     if not organization_id:
-        messages.error(request, "Select an organization to publish its projects.")
+        error_msg = "Select an organization to publish its projects."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-warning">{error_msg}</div>', status=400)
+        messages.error(request, error_msg)
         return redirect("metadata:metadata_dashboard")
 
     try:
         organization = Organization.objects.get(id=organization_id)
     except Organization.DoesNotExist:
-        messages.error(request, "The selected organization does not exist.")
+        error_msg = "The selected organization does not exist."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-error">{error_msg}</div>', status=404)
+        messages.error(request, error_msg)
         return redirect("metadata:metadata_dashboard")
 
-    snapshot = ProjectSnapshotService().get_cross_institutional_snapshot(include_non_public=True)
-    project_uris = [
-        project.subject_id
-        for project in snapshot.projects
-        if _project_matches_organization(project, organization)
-    ]
+    # Query projects directly from database instead of rebuilding snapshot
+    # Find all project resources for this organization
+    project_class_uri = "https://schema.semantic-net.org/Project"
+    project_resources = Resource.objects.filter(
+        organization=organization,
+        resource_type=ResourceType.IRI,
+    ).filter(
+        Q(subject_triples__predicate__uri="http://www.w3.org/1999/02/22-rdf-syntax-ns#type") |
+        Q(subject_triples__predicate__canonical_uri="http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    ).filter(
+        Q(subject_triples__object__uri=project_class_uri) |
+        Q(subject_triples__object__canonical_uri=project_class_uri)
+    ).distinct()
 
-    if not project_uris:
-        messages.warning(
-            request,
-            f"No projects were found for {organization.name}.",
-        )
+    project_count = project_resources.count()
+
+    if project_count == 0:
+        warning_msg = f"No projects were found for {organization.name}."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-warning">{warning_msg}</div>')
+        messages.warning(request, warning_msg)
         return redirect("metadata:metadata_dashboard")
 
     now = timezone.now()
-    updated = Resource.objects.filter(
-        id__in=project_uris,
-        organization=organization,
-    ).update(
+    updated = project_resources.update(
         public_access_level=PublicAccessLevel.PUBLIC,
         is_public_approved=True,
         is_public=True,
@@ -176,65 +194,19 @@ def publish_projects_visibility(request):
     )
 
     if updated == 0:
-        messages.warning(
-            request,
-            f"Projects for {organization.name} were already public or no matching resources existed.",
-        )
+        warning_msg = f"Projects for {organization.name} were already public or no matching resources existed."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-warning">{warning_msg}</div>')
+        messages.warning(request, warning_msg)
     else:
-        messages.success(
-            request,
-            f"Published {updated} project resources for {organization.name}. Use the dashboard refresh control when you want to rebuild the project snapshot.",
-        )
+        success_msg = f"Published {updated} project resources for {organization.name}. Use the dashboard refresh control when you want to rebuild the project snapshot."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-success">{success_msg}</div>')
+        messages.success(request, success_msg)
 
+    if is_htmx:
+        return HttpResponse('')
     return redirect("metadata:metadata_dashboard")
-
-
-def _project_matches_organization(project, organization) -> bool:
-    """Return True when project should be considered part of the organization."""
-
-    org_code = (organization.code or "").lower().strip()
-    if not org_code:
-        return False
-
-    code_aliases = {
-        str(alias).lower().strip(): str(target).lower().strip()
-        for alias, target in getattr(settings, "OAI_INSTITUTION_CODE_ALIASES", {}).items()
-        if alias and target
-    }
-    label_aliases = {
-        str(label).lower().strip(): str(code).lower().strip()
-        for label, code in getattr(settings, "OAI_INSTITUTION_LABEL_ALIASES", {}).items()
-        if label and code
-    }
-
-    def normalize_code(value: str | None) -> str | None:
-        if not value:
-            return None
-        normalized = str(value).lower().strip()
-        if not normalized:
-            return None
-        return code_aliases.get(normalized, normalized)
-
-    candidate_codes: set[str] = set()
-
-    institution = getattr(project, "institution", None)
-    if institution:
-        inst_code = normalize_code(getattr(institution, "code", None))
-        if inst_code:
-            candidate_codes.add(inst_code)
-        label = getattr(institution, "label", None)
-        if label:
-            label_key = str(label).lower().strip()
-            alias_code = label_aliases.get(label_key)
-            if alias_code:
-                candidate_codes.add(alias_code)
-
-    for raw_code in getattr(project, "institution_codes", []) or []:
-        norm_code = normalize_code(raw_code)
-        if norm_code:
-            candidate_codes.add(norm_code)
-
-    return org_code in candidate_codes and getattr(project, "subject_id", None) is not None
 
 
 @general_login_required
