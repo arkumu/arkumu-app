@@ -149,13 +149,11 @@ def publish_projects_visibility(request):
         messages.error(request, "The selected organization does not exist.")
         return redirect("metadata:metadata_dashboard")
 
-    snapshot = ProjectSnapshotService().get_cross_institutional_snapshot()
+    snapshot = ProjectSnapshotService().get_cross_institutional_snapshot(include_non_public=True)
     project_uris = [
-        project.uri
+        project.subject_id
         for project in snapshot.projects
-        if getattr(project, "institution", None)
-        and getattr(project.institution, "code", None)
-        and project.institution.code.lower().strip() == organization.code.lower().strip()
+        if _project_matches_organization(project, organization)
     ]
 
     if not project_uris:
@@ -166,17 +164,15 @@ def publish_projects_visibility(request):
         return redirect("metadata:metadata_dashboard")
 
     now = timezone.now()
-    updated = (
-        Resource.objects.filter(
-            organization=organization,
-            uri__in=project_uris,
-        ).update(
-            public_access_level=PublicAccessLevel.PUBLIC,
-            is_public_approved=True,
-            is_public=True,
-            public_approved_by=request.user,
-            public_approved_at=now,
-        )
+    updated = Resource.objects.filter(
+        id__in=project_uris,
+        organization=organization,
+    ).update(
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+        is_public=True,
+        public_approved_by=request.user,
+        public_approved_at=now,
     )
 
     if updated == 0:
@@ -185,12 +181,61 @@ def publish_projects_visibility(request):
             f"Projects for {organization.name} were already public or no matching resources existed.",
         )
     else:
+        ProjectSnapshotService().refresh_cross_institutional_snapshot()
         messages.success(
             request,
             f"Published {updated} project resources for {organization.name}.",
         )
 
     return redirect("metadata:metadata_dashboard")
+
+
+def _project_matches_organization(project, organization) -> bool:
+    """Return True when project should be considered part of the organization."""
+
+    org_code = (organization.code or "").lower().strip()
+    if not org_code:
+        return False
+
+    code_aliases = {
+        str(alias).lower().strip(): str(target).lower().strip()
+        for alias, target in getattr(settings, "OAI_INSTITUTION_CODE_ALIASES", {}).items()
+        if alias and target
+    }
+    label_aliases = {
+        str(label).lower().strip(): str(code).lower().strip()
+        for label, code in getattr(settings, "OAI_INSTITUTION_LABEL_ALIASES", {}).items()
+        if label and code
+    }
+
+    def normalize_code(value: str | None) -> str | None:
+        if not value:
+            return None
+        normalized = str(value).lower().strip()
+        if not normalized:
+            return None
+        return code_aliases.get(normalized, normalized)
+
+    candidate_codes: set[str] = set()
+
+    institution = getattr(project, "institution", None)
+    if institution:
+        inst_code = normalize_code(getattr(institution, "code", None))
+        if inst_code:
+            candidate_codes.add(inst_code)
+        label = getattr(institution, "label", None)
+        if label:
+            label_key = str(label).lower().strip()
+            alias_code = label_aliases.get(label_key)
+            if alias_code:
+                candidate_codes.add(alias_code)
+
+    for raw_code in getattr(project, "institution_codes", []) or []:
+        norm_code = normalize_code(raw_code)
+        if norm_code:
+            candidate_codes.add(norm_code)
+
+    return org_code in candidate_codes and getattr(project, "subject_id", None) is not None
 
 
 @general_login_required

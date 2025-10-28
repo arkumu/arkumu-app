@@ -22,14 +22,21 @@ def test_superuser_can_publish_projects(client, monkeypatch):
     snapshot = SimpleNamespace(
         projects=[
             SimpleNamespace(
+                subject_id=str(project.id),
                 uri=project.uri,
-                institution=SimpleNamespace(code=organization.code),
+                institution=SimpleNamespace(code=organization.code, label=organization.name),
+                institution_codes=[organization.code],
             )
         ]
     )
     monkeypatch.setattr(
         ProjectSnapshotService,
         "get_cross_institutional_snapshot",
+        lambda self, **kwargs: snapshot,
+    )
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "refresh_cross_institutional_snapshot",
         lambda self: snapshot,
     )
 
@@ -69,6 +76,11 @@ def test_non_superuser_cannot_publish_projects(client, monkeypatch):
     monkeypatch.setattr(
         ProjectSnapshotService,
         "get_cross_institutional_snapshot",
+        lambda self, **kwargs: snapshot,
+    )
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "refresh_cross_institutional_snapshot",
         lambda self: snapshot,
     )
 
@@ -91,3 +103,53 @@ def test_non_superuser_cannot_publish_projects(client, monkeypatch):
     assert project.public_access_level == PublicAccessLevel.PRIVATE
     assert project.is_public_approved is False
     assert project.is_public is False
+
+
+@pytest.mark.django_db
+def test_publish_projects_resolves_alias_codes(client, monkeypatch, settings):
+    settings.OAI_INSTITUTION_CODE_ALIASES = {'ff8f3b0306bebf6d': 'hmt'}
+    organization = Organization.objects.create(name="HMT", code="hmt")
+    project = Resource.objects.create(
+        uri="http://example.org/data/hmt/projekte/1",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+        public_access_level=PublicAccessLevel.RESTRICTED,
+        is_public_approved=False,
+    )
+
+    snapshot = SimpleNamespace(
+        projects=[
+            SimpleNamespace(
+                subject_id=str(project.id),
+                uri=project.uri,
+                institution=SimpleNamespace(code='ff8f3b0306bebf6d', label=organization.name),
+                institution_codes=['ff8f3b0306bebf6d'],
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "get_cross_institutional_snapshot",
+        lambda self, **kwargs: snapshot,
+    )
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "refresh_cross_institutional_snapshot",
+        lambda self: snapshot,
+    )
+
+    superuser = User.objects.create_superuser(
+        username="admin",
+        email="admin@example.com",
+        password="password",
+    )
+    client.force_login(superuser)
+
+    client.post(
+        reverse("metadata:metadata_dashboard_publish_projects"),
+        {"organization_id": str(organization.id)},
+    )
+
+    project.refresh_from_db()
+    assert project.public_access_level == PublicAccessLevel.PUBLIC
+    assert project.is_public_approved is True

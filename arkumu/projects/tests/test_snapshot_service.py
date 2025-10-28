@@ -9,7 +9,8 @@ from arkumu.catalog.services.schema_manifest_service import (
     CanonicalPropertyBinding,
 )
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
+from arkumu.projects import ProjectRecord
 from arkumu.projects import ProjectDigitalObject
 from arkumu.projects.services.snapshot_service import ProjectSnapshotService
 from arkumu.common.arkumu_license import (
@@ -808,3 +809,48 @@ def test_build_project_record_infers_checksum_org_from_uri():
     assert obj.checksum == 'b' * 64
     assert obj.checksum_algorithm == 'sha256'
     assert obj.checksum_provenance == 'metadata'
+
+
+def test_filter_public_projects_excludes_non_public(db):
+    service = ProjectSnapshotService()
+
+    public_resource = Resource.objects.create(
+        uri='http://example.org/project/public',
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+    restricted_resource = Resource.objects.create(
+        uri='http://example.org/project/restricted',
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.RESTRICTED,
+        is_public_approved=True,
+    )
+    pending_resource = Resource.objects.create(
+        uri='http://example.org/project/pending',
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=False,
+    )
+
+    public_record = ProjectRecord(
+        subject_id=str(public_resource.id),
+        uri=public_resource.uri,
+        title='Public Project',
+    )
+    restricted_record = ProjectRecord(
+        subject_id=str(restricted_resource.id),
+        uri=restricted_resource.uri,
+        title='Restricted Project',
+    )
+    pending_record = ProjectRecord(
+        subject_id=str(pending_resource.id),
+        uri=pending_resource.uri,
+        title='Pending Project',
+    )
+
+    filtered = service._filter_public_projects(
+        [public_record, restricted_record, pending_record]
+    )
+
+    assert [record.subject_id for record in filtered] == [str(public_resource.id)]

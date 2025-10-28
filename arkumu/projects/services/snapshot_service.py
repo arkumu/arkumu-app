@@ -23,7 +23,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 )
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
@@ -199,8 +199,23 @@ class ProjectSnapshotService:
         self._ensure_record_index(snapshot)
         return self._record_index.get(uri)
 
-    def get_cross_institutional_snapshot(self, *, force_refresh: bool = False) -> ProjectSnapshot:
+    def get_cross_institutional_snapshot(
+        self,
+        *,
+        force_refresh: bool = False,
+        include_non_public: bool = False,
+    ) -> ProjectSnapshot:
         """Return cached snapshot or rebuild if necessary."""
+
+        if include_non_public:
+            logger.info(
+                "ProjectSnapshotService: building snapshot including non-public projects (force_refresh=%s)",
+                force_refresh,
+            )
+            snapshot = self._build_snapshot(include_non_public=True)
+            self._ensure_record_index(snapshot)
+            return snapshot
+
         if not force_refresh:
             cached = self.cache.get_cross_institutional_snapshot()
             if cached:
@@ -209,36 +224,92 @@ class ProjectSnapshotService:
                 return cached
 
         logger.info("ProjectSnapshotService: cache miss – rebuilding cross-institutional snapshot")
-        snapshot = self._build_snapshot()
+        snapshot = self._build_snapshot(include_non_public=False)
         self.cache.set_cross_institutional_snapshot(snapshot)
         self._ensure_record_index(snapshot)
         return snapshot
 
     def refresh_cross_institutional_snapshot(self) -> ProjectSnapshot:
         """Force a snapshot rebuild and update cache."""
-        snapshot = self._build_snapshot()
+        snapshot = self._build_snapshot(include_non_public=False)
         self.cache.set_cross_institutional_snapshot(snapshot)
         self._ensure_record_index(snapshot)
         return snapshot
 
-    def _build_snapshot(self) -> ProjectSnapshot:
+    def _build_snapshot(self, *, include_non_public: bool) -> ProjectSnapshot:
         graph = self._fetch_cross_institutional_graph()
         self._enhance_license_literals(graph)
         card_schema = self._get_card_schema()
         records = self._graph_to_records(graph, card_schema)
-        counts = graph.get('counts', {})
-        if not counts:
-            counts = {
-                'projects': len(records),
-                'subjects': len(graph.get('subjects', [])),
-                'edges': len(graph.get('edges', [])),
-            }
+        if not include_non_public:
+            records = self._filter_public_projects(records)
+        return self._finalize_snapshot(graph, records)
+
+    def _filter_public_projects(
+        self,
+        records: List[ProjectRecord],
+    ) -> List[ProjectRecord]:
+        """Return only projects whose root resource is approved for public display."""
+
+        if not records:
+            return records
+
+        subject_ids: List[str] = [
+            str(record.subject_id)
+            for record in records
+            if getattr(record, "subject_id", None)
+        ]
+        if not subject_ids:
+            return records
+
+        approved_ids: Set[str] = {
+            str(resource_id)
+            for resource_id in Resource.objects.filter(
+                id__in=subject_ids,
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+            ).values_list('id', flat=True)
+        }
+
+        if not approved_ids:
+            logger.info(
+                "ProjectSnapshotService: no public projects found; returning empty set from %d candidates",
+                len(records),
+            )
+            return []
+
+        filtered: List[ProjectRecord] = [
+            record
+            for record in records
+            if str(record.subject_id) in approved_ids
+        ]
+
+        dropped = len(records) - len(filtered)
+        if dropped:
+            logger.info(
+                "ProjectSnapshotService: filtered out %d non-public projects (remaining=%d)",
+                dropped,
+                len(filtered),
+            )
+
+        return filtered
+
+    def _finalize_snapshot(
+        self,
+        graph: Dict[str, Any],
+        records: List[ProjectRecord],
+    ) -> ProjectSnapshot:
+        counts = dict(graph.get('counts', {}) or {})
+        counts['projects'] = len(records)
+        if 'subjects' not in counts:
+            counts['subjects'] = len(graph.get('subjects', []))
+        if 'edges' not in counts:
+            counts['edges'] = len(graph.get('edges', []))
         snapshot = ProjectSnapshot(
             projects=records,
             counts=counts,
             generated_at=timezone.now(),
         )
-        self._ensure_record_index(snapshot)
         return snapshot
 
     def _ensure_record_index(self, snapshot: ProjectSnapshot) -> None:
