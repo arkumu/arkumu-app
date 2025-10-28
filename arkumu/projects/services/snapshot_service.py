@@ -989,6 +989,7 @@ class ProjectSnapshotService:
         code_candidates: set[str] = set(filter(None, institution_codes))
         if primary_institution_code:
             code_candidates.add(primary_institution_code)
+        is_hmt_context = self._is_hmt_context(code_candidates, project_uri)
 
         ownership_filtered = False
         reference_events: List[ProjectEvent] = []
@@ -996,6 +997,13 @@ class ProjectSnapshotService:
         reference_project_uris: Set[str] = set()
 
         should_filter = self._should_filter_ownership(code_candidates, project_uri)
+
+        if is_hmt_context:
+            for event in events_all:
+                if self._is_hmt_kreuz_event(event):
+                    event.is_reference_only = True
+                    if event not in reference_events:
+                        reference_events.append(event)
 
         if should_filter and events:
             current_project_uri = project_uri
@@ -1054,6 +1062,18 @@ class ProjectSnapshotService:
                 if owners:
                     event.owning_project_uris = sorted(owners)
 
+        if events:
+            retained_events: List[ProjectEvent] = []
+            for event in events:
+                if event.is_reference_only:
+                    if event not in reference_events:
+                        reference_events.append(event)
+                    continue
+                retained_events.append(event)
+            if len(retained_events) != len(events):
+                events = retained_events
+                event_ids = [event_id for event_id in (event.id for event in events) if event_id]
+
         year_range = self._derive_year_range(events)
 
         event_sources_map: Dict[str, List[str]] = {}
@@ -1082,6 +1102,9 @@ class ProjectSnapshotService:
 
         event_edge_map: Dict[str, Set[str]] = {}
         for event_id in all_event_ids:
+            event_obj = event_lookup.get(str(event_id))
+            if event_obj and event_obj.is_reference_only:
+                continue
             event_edges = edges_by_subject.get(event_id, [])
             related_ids = self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
             if not related_ids:
@@ -1741,6 +1764,41 @@ class ProjectSnapshotService:
         )
         for candidate in uri_candidates:
             if candidate and "/01-grundereignis/" in candidate:
+                return True
+        return False
+
+    def _is_hmt_context(
+        self,
+        institution_codes: Iterable[str],
+        project_uri: Optional[str],
+    ) -> bool:
+        candidates: Set[str] = {
+            (code or "").lower().strip()
+            for code in institution_codes
+            if code
+        }
+        if self.relationship_org_code:
+            candidates.add(self.relationship_org_code.lower().strip())
+        uri_code = self._extract_org_code_from_uri(project_uri)
+        if uri_code:
+            candidates.add(uri_code.lower())
+        return "hmt" in candidates
+
+    @staticmethod
+    def _is_hmt_kreuz_event(event: ProjectEvent) -> bool:
+        uri_candidates = (
+            getattr(event, "uri", None),
+            getattr(event, "type_uri", None),
+        )
+        for candidate in uri_candidates:
+            if not candidate:
+                continue
+            normalized = candidate.lower()
+            if (
+                "/kreuz-" in normalized
+                or "/hfm-kreuz-" in normalized
+                or "-kreuz-" in normalized
+            ):
                 return True
         return False
 

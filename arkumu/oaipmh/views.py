@@ -1628,6 +1628,8 @@ def _build_event_dc_payloads(record: ProjectRecord) -> List[Dict[str, List[Any]]
     xml_lang_attr = ET.QName(XML_NS, "lang")
 
     for event in record.events:
+        if getattr(event, "is_reference_only", False):
+            continue
         payload: Dict[str, List[Any]] = {}
         event_name_de = getattr(event, 'name_de', None) or getattr(event, 'name', None)
         if event_name_de:
@@ -1966,6 +1968,8 @@ def _build_mets_from_project(
 
     events_by_uri: Dict[str, ProjectEvent] = {}
     for event in record.events:
+        if getattr(event, "is_reference_only", False):
+            continue
         if event.uri:
             events_by_uri[event.uri] = event
 
