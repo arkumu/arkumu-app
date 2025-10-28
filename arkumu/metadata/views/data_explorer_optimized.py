@@ -58,9 +58,6 @@ class OptimizedDataExplorerView(ListView):
         # Apply access control first (reduces dataset early)
         queryset = self._apply_access_control(queryset)
         
-        # Apply filters before any annotations
-        queryset = self.apply_filters(queryset)
-        
         # Only add the ontology check if filtering by it
         if self.request.GET.get('externally_linked'):
             queryset = queryset.annotate(
@@ -72,6 +69,9 @@ class OptimizedDataExplorerView(ListView):
                     )
                 )
             )
+
+        # Apply filters (may rely on annotations above)
+        queryset = self.apply_filters(queryset)
         
         # Apply sorting
         queryset = self.apply_sorting(queryset)
@@ -191,6 +191,22 @@ class OptimizedDataExplorerView(ListView):
                 Q(organization__code__iexact='fuk')
             )
         
+        visibility = self.request.GET.get('visibility')
+        if visibility == 'public':
+            queryset = queryset.filter(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+            )
+        elif visibility == 'public_pending':
+            queryset = queryset.filter(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=False,
+            )
+        elif visibility == 'restricted':
+            queryset = queryset.filter(public_access_level=PublicAccessLevel.RESTRICTED)
+        elif visibility == 'private':
+            queryset = queryset.filter(public_access_level=PublicAccessLevel.PRIVATE)
+
         # Triple usage filter (expensive - do last)
         triple_usage = self.request.GET.get('triple_usage')
         if triple_usage:
@@ -276,7 +292,7 @@ class OptimizedDataExplorerView(ListView):
             # Authenticated users without org see cross-institutional filter options
             cache_scope = "cross_institutional"
 
-        cache_key = f'filter_options:{cache_scope}'
+        cache_key = f'filter_options:{cache_scope}:v2'
         filter_options = cache.get(cache_key)
         
         if not filter_options:
@@ -299,6 +315,12 @@ class OptimizedDataExplorerView(ListView):
                     {'value': 'as_object', 'label': 'Used as Object'},
                     {'value': 'no_triples', 'label': 'No Triple References'},
                 ],
+                'visibility': [
+                    {'value': 'public', 'label': 'Public (approved)'},
+                    {'value': 'public_pending', 'label': 'Public (pending approval)'},
+                    {'value': 'restricted', 'label': 'Restricted'},
+                    {'value': 'private', 'label': 'Private'},
+                ],
                 'organizations': self._get_accessible_organizations(),
             }
             cache.set(cache_key, filter_options, 300)  # 5 minutes
@@ -314,6 +336,7 @@ class OptimizedDataExplorerView(ListView):
             'triple_usage': self.request.GET.get('triple_usage'),
             'externally_linked': self.request.GET.get('externally_linked'),
             'canonical_status': self.request.GET.get('canonical_status'),
+            'visibility': self.request.GET.get('visibility'),
         }
         
         context['current_sort'] = {
