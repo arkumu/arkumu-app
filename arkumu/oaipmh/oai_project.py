@@ -258,6 +258,8 @@ class OAIProjectBuilder:
         each other's digital objects.
 
         Rule: Only include digital objects from events that are exclusively linked to this project.
+
+        Performance: Uses a single aggregation query instead of N queries (one per event).
         """
         # Only apply filtering for KHM and HMT organizations
         if not institution_code or institution_code.lower() not in {'khm', 'hmt'}:
@@ -271,7 +273,6 @@ class OAIProjectBuilder:
 
         # Import here to avoid circular dependencies
         from arkumu.metadata.models.triples import Triple
-        from django.db.models import Count
 
         # Get the canonical event predicate URI
         event_predicate = "http://arkumu.org/data/properties/ereignis"
@@ -281,27 +282,38 @@ class OAIProjectBuilder:
         if not project_id:
             return record
 
+        # Collect all event IDs
+        event_ids = [str(getattr(event, 'id', None)) for event in events if getattr(event, 'id', None)]
+        if not event_ids:
+            return record
+
+        # OPTIMIZED: Single query to get all event-project relationships
+        # Instead of N queries (one per event), we fetch all relationships at once
+        event_project_relationships = Triple.objects.filter(
+            predicate__canonical_uri=event_predicate,
+            object_id__in=event_ids
+        ).values('object_id', 'subject_id')
+
+        # Build a mapping of event_id -> set of project_ids that reference it
+        event_to_projects = {}
+        for relationship in event_project_relationships:
+            event_id = str(relationship['object_id'])
+            proj_id = str(relationship['subject_id'])
+            if event_id not in event_to_projects:
+                event_to_projects[event_id] = set()
+            event_to_projects[event_id].add(proj_id)
+
+        # Filter to find exclusive events (only linked to this project)
         exclusive_event_ids = set()
-
-        for event in events:
-            event_id = getattr(event, 'id', None)
-            if not event_id:
-                continue
-
-            # Check how many projects reference this event
-            referencing_projects = Triple.objects.filter(
-                predicate__canonical_uri=event_predicate,
-                object_id=event_id
-            ).values_list('subject_id', flat=True)
-
-            project_refs = list(referencing_projects)
+        for event_id in event_ids:
+            project_refs = event_to_projects.get(event_id, set())
 
             # Only include events exclusively linked to this project
-            if len(project_refs) == 1 and str(project_refs[0]) == str(project_id):
-                exclusive_event_ids.add(str(event_id))
+            if len(project_refs) == 1 and str(project_id) in project_refs:
+                exclusive_event_ids.add(event_id)
             elif len(project_refs) == 0:
                 # Orphaned event - include it since it was in get_detailed_event_data
-                exclusive_event_ids.add(str(event_id))
+                exclusive_event_ids.add(event_id)
             else:
                 logger.info(
                     "OAI: Excluding shared event %s from project %s (shared with %d other projects)",
