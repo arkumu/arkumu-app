@@ -186,7 +186,9 @@ class OptimizedDataExplorerView(ListView):
         elif canonical_status == 'arkumu_compliant':
             # Filter for Arkumu-compliant institutions (rsh, det, fuk)
             queryset = queryset.filter(
-                organization__code__iexact__in=['rsh', 'det', 'fuk']
+                Q(organization__code__iexact='rsh') |
+                Q(organization__code__iexact='det') |
+                Q(organization__code__iexact='fuk')
             )
         
         # Triple usage filter (expensive - do last)
