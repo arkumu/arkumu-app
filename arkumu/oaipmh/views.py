@@ -5,7 +5,7 @@ import binascii
 import logging
 import mimetypes
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime, timezone as dt_timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
@@ -24,6 +24,7 @@ from django.db.models import Q
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.metadata.services.oai_stats import classify_project_access
 from arkumu.users.models import Organization
 from arkumu.projects import (
     ProjectDigitalObject,
@@ -1125,7 +1126,36 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
     for proj in harvestable.values():
         org = proj.institution_code or 'unknown'
         org_counts[org] = org_counts.get(org, 0) + 1
-    logger.info("OAI harvestable projects: %d total from snapshot, by org: %s", len(harvestable), dict(sorted(org_counts.items())))
+
+    accessible_uris, blocked_uris, missing_resource_uris = classify_project_access(harvestable.values())
+
+    accessible_counts = Counter()
+    blocked_counts = Counter()
+
+    for uri in accessible_uris:
+        project = harvestable.get(uri)
+        if not project:
+            continue
+        code = (project.institution_code or 'unknown').lower()
+        accessible_counts[code] += 1
+
+    for uri in blocked_uris:
+        project = harvestable.get(uri)
+        if not project:
+            continue
+        code = (project.institution_code or 'unknown').lower()
+        blocked_counts[code] += 1
+
+    logger.info(
+        "OAI harvestable projects: %d total (accessible=%d, blocked=%d, missing_resources=%d), by org total=%s accessible=%s blocked=%s",
+        len(harvestable),
+        len(accessible_uris),
+        len(blocked_uris),
+        len(missing_resource_uris),
+        dict(sorted(org_counts.items())),
+        dict(sorted(accessible_counts.items())),
+        dict(sorted(blocked_counts.items())),
+    )
 
     if not harvestable:
         fallback_records: List[ProjectRecord] = []

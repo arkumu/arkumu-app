@@ -567,8 +567,9 @@ class ResourceManager:
                     "is_placeholder": is_stub,
                     "organization": self.organization,
                 }
-                if self._dataset_requires_private_default(dataset_name):
-                    defaults["public_access_level"] = PublicAccessLevel.PRIVATE.value
+                if self._dataset_defaults_to_public(dataset_name):
+                    defaults["public_access_level"] = PublicAccessLevel.PUBLIC.value
+                    defaults["is_public_approved"] = True
 
                 entity_resource, created = Resource.objects.get_or_create(
                     uri=entity_uri,
@@ -600,7 +601,7 @@ class ResourceManager:
             raise
 
     @staticmethod
-    def _dataset_requires_private_default(dataset_name: Optional[str]) -> bool:
+    def _dataset_defaults_to_public(dataset_name: Optional[str]) -> bool:
         if not dataset_name:
             return False
         slug = slugify_uri_part(str(dataset_name)).lower()
