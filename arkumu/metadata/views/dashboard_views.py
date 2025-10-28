@@ -161,18 +161,15 @@ def publish_projects_visibility(request):
         messages.error(request, error_msg)
         return redirect("metadata:metadata_dashboard")
 
-    # Query projects directly from database instead of rebuilding snapshot
-    # Find all project resources for this organization
-    project_class_uri = "https://schema.semantic-net.org/Project"
+    # Query projects directly from database using canonical URIs (same approach as CanonicalGraphService)
+    # Projects are identified by rdf:type with canonical_uri = http://arkumu.org/data/types/projekt
+    RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    PROJECT_CANONICAL_TYPE = "http://arkumu.org/data/types/projekt"  # CardURIs.PROJECT_TYPE
+
     project_resources = Resource.objects.filter(
         organization=organization,
-        resource_type=ResourceType.IRI,
-    ).filter(
-        Q(subject_triples__predicate__uri="http://www.w3.org/1999/02/22-rdf-syntax-ns#type") |
-        Q(subject_triples__predicate__canonical_uri="http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-    ).filter(
-        Q(subject_triples__object__uri=project_class_uri) |
-        Q(subject_triples__object__canonical_uri=project_class_uri)
+        subject_triples__predicate__uri=RDF_TYPE_URI,
+        subject_triples__object__canonical_uri=PROJECT_CANONICAL_TYPE,
     ).distinct()
 
     project_count = project_resources.count()
