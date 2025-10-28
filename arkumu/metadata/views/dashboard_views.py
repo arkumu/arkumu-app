@@ -181,10 +181,9 @@ def publish_projects_visibility(request):
             f"Projects for {organization.name} were already public or no matching resources existed.",
         )
     else:
-        ProjectSnapshotService().refresh_cross_institutional_snapshot()
         messages.success(
             request,
-            f"Published {updated} project resources for {organization.name}.",
+            f"Published {updated} project resources for {organization.name}. Use the dashboard refresh control when you want to rebuild the project snapshot.",
         )
 
     return redirect("metadata:metadata_dashboard")

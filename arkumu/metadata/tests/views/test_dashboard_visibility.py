@@ -34,11 +34,6 @@ def test_superuser_can_publish_projects(client, monkeypatch):
         "get_cross_institutional_snapshot",
         lambda self, **kwargs: snapshot,
     )
-    monkeypatch.setattr(
-        ProjectSnapshotService,
-        "refresh_cross_institutional_snapshot",
-        lambda self: snapshot,
-    )
 
     superuser = User.objects.create_superuser(
         username="admin",
@@ -77,11 +72,6 @@ def test_non_superuser_cannot_publish_projects(client, monkeypatch):
         ProjectSnapshotService,
         "get_cross_institutional_snapshot",
         lambda self, **kwargs: snapshot,
-    )
-    monkeypatch.setattr(
-        ProjectSnapshotService,
-        "refresh_cross_institutional_snapshot",
-        lambda self: snapshot,
     )
 
     staff_user = User.objects.create_user(
@@ -131,11 +121,6 @@ def test_publish_projects_resolves_alias_codes(client, monkeypatch, settings):
         ProjectSnapshotService,
         "get_cross_institutional_snapshot",
         lambda self, **kwargs: snapshot,
-    )
-    monkeypatch.setattr(
-        ProjectSnapshotService,
-        "refresh_cross_institutional_snapshot",
-        lambda self: snapshot,
     )
 
     superuser = User.objects.create_superuser(
