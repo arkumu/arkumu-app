@@ -125,7 +125,9 @@ class CanonicalUriFilter(SimpleListFilter):
         if self.value() == 'arkumu_compliant':
             # Filter for Arkumu-compliant institutions
             return queryset.filter(
-                organization__code__iexact__in=['rsh', 'det', 'fuk']
+                Q(organization__code__iexact='rsh') |
+                Q(organization__code__iexact='det') |
+                Q(organization__code__iexact='fuk')
             )
         return queryset
 
@@ -256,18 +258,48 @@ class ResourceAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimize queries with annotations."""
         qs = super().get_queryset(request)
-        
-        # Annotate triple counts
-        qs = qs.annotate(
-            subject_count=Count('subject_triples', distinct=True),
-            predicate_count=Count('predicate_triples', distinct=True),
-            object_count=Count('object_triples', distinct=True),
-        )
-        
-        # Select related for foreign keys
-        qs = qs.select_related('organization', 'public_approved_by')
-        
-        return qs
+        return qs.select_related('organization', 'public_approved_by')
+
+    def changelist_view(self, request, extra_context=None):
+        response = super().changelist_view(request, extra_context=extra_context)
+        try:
+            cl = response.context_data['cl']
+            result_list = list(cl.result_list)
+        except (AttributeError, KeyError, TypeError):
+            return response
+
+        if not result_list:
+            return response
+
+        resource_ids = [obj.id for obj in result_list]
+
+        subject_counts = {
+            row['subject_id']: row['count']
+            for row in Triple.objects.filter(subject_id__in=resource_ids)
+            .values('subject_id')
+            .annotate(count=Count('id'))
+        }
+        predicate_counts = {
+            row['predicate_id']: row['count']
+            for row in Triple.objects.filter(predicate_id__in=resource_ids)
+            .values('predicate_id')
+            .annotate(count=Count('id'))
+        }
+        object_counts = {
+            row['object_id']: row['count']
+            for row in Triple.objects.filter(object_id__in=resource_ids)
+            .values('object_id')
+            .annotate(count=Count('id'))
+        }
+
+        for obj in result_list:
+            obj.subject_count = subject_counts.get(obj.id, 0)
+            obj.predicate_count = predicate_counts.get(obj.id, 0)
+            obj.object_count = object_counts.get(obj.id, 0)
+
+        cl.result_list = result_list
+        response.context_data['cl'] = cl
+        return response
     
     def display_value(self, obj):
         """Display the resource value with appropriate formatting."""
