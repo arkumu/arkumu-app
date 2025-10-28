@@ -258,7 +258,9 @@ def delete_organization_triples(request):
 
         with transaction.atomic():
             # Count records before deletion
-            org_triples = Triple.objects.for_organization(organization)
+            # BUG FIX: Use subject__organization instead of source field
+            # because triples may have source=None but subject.organization set
+            org_triples = Triple.objects.filter(subject__organization=organization)
             org_resources = Resource.objects.for_organization(organization)
 
             triple_count = org_triples.count()
@@ -271,35 +273,35 @@ def delete_organization_triples(request):
                 f"organization={organization.name} (id={organization_id}) "
                 f"about_to_delete: {triple_count} triples, {resource_count} resources"
             )
-            
+
             # Strategy: Identify resources that will become orphaned BEFORE deleting triples
-            
+
             # Get all resource IDs that are used in organization triples
             org_triple_resource_ids = set()
             for triple in org_triples.values('subject_id', 'predicate_id', 'object_id'):
                 org_triple_resource_ids.update([
-                    triple['subject_id'], 
-                    triple['predicate_id'], 
+                    triple['subject_id'],
+                    triple['predicate_id'],
                     triple['object_id']
                 ])
-            
+
             # Get all resource IDs currently used in NON-organization triples (triples from other orgs)
             non_org_triple_resource_ids = set()
-            non_org_triples = Triple.objects.exclude(source=organization)
+            non_org_triples = Triple.objects.exclude(subject__organization=organization)
             for triple in non_org_triples.values('subject_id', 'predicate_id', 'object_id'):
                 non_org_triple_resource_ids.update([
-                    triple['subject_id'], 
-                    triple['predicate_id'], 
+                    triple['subject_id'],
+                    triple['predicate_id'],
                     triple['object_id']
                 ])
-            
-            # Resources that will become orphaned: 
+
+            # Resources that will become orphaned:
             # - Used in org triples BUT
-            # - NOT used in any other organization's triples AND  
+            # - NOT used in any other organization's triples AND
             # - Belong to this organization
             potentially_orphaned = org_triple_resource_ids - non_org_triple_resource_ids
             resources_to_delete = org_resources.filter(id__in=potentially_orphaned)
-            
+
             # Delete organization-specific triples first
             deleted_triples = org_triples.delete()[0]
 
