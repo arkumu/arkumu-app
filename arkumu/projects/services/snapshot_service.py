@@ -2014,8 +2014,6 @@ class ProjectSnapshotService:
             nodes,
             edges_by_subject,
         )
-        if self._should_force_public_license(institution_codes):
-            license_info = self._force_arkumu_a_license(license_info)
         if license_info:
             project_object.license = license_info
 
@@ -2207,27 +2205,6 @@ class ProjectSnapshotService:
                 license_info.uri = ARKUMU_LICENSE_URIS.get(token)
 
         return license_info
-
-    @staticmethod
-    def _should_force_public_license(institution_codes: Iterable[str]) -> bool:
-        for code in institution_codes:
-            normalized = (code or "").strip().lower()
-            if normalized in {"khm", "hmt"}:
-                return True
-        return False
-
-    @staticmethod
-    def _force_arkumu_a_license(
-        license_info: Optional[ProjectDigitalObjectLicense],
-    ) -> ProjectDigitalObjectLicense:
-        token = "1"
-        info = license_info or ProjectDigitalObjectLicense()
-        info.identifier = token
-        info.label_de = ARKUMU_LICENSE_LABELS[token]
-        info.label_en = None
-        info.rights_statement = ARKUMU_LICENSE_TEXTS[token]
-        info.uri = ARKUMU_LICENSE_URIS.get(token)
-        return info
 
     @staticmethod
     def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:
