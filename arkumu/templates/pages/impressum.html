@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% translate "Impressum" %} | arkumu{% endblock title %}
+
+{% block content %}
+  <article class="prose max-w-none">
+    {{ impressum_html|safe }}
+  </article>
+{% endblock content %}

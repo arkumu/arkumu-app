@@ -13,6 +13,7 @@ from django.conf.urls.i18n import i18n_patterns
 # Import staticfiles_urlpatterns
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
+from arkumu.pages.views import ImpressumView
 urlpatterns = [
     # ============================================================================
     # BACKEND APPLICATION URLS (with navbar)
@@ -23,6 +24,7 @@ urlpatterns = [
         TemplateView.as_view(template_name="pages/about.html"),
         name="about",
     ),
+    path("impressum/", ImpressumView.as_view(), name="impressum"),
     
     # ============================================================================
     # DESIGN SHOWCASE URLS (moved to catalog app)
