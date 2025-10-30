@@ -2315,6 +2315,15 @@ def _build_mets_from_project(
             else:
                 folder_segments = []
 
+            # Organization-specific structMap path normalization
+            # - HMT: omit intermediate folders entirely
+            # - KHM: keep only the last two folders (closest to the file)
+            if normalized_org_code == "hmt":
+                folder_segments = []
+            elif normalized_org_code == "khm":
+                if len(folder_segments) > 2:
+                    folder_segments = folder_segments[-2:]
+
             rep_files.append({
                 "file_id": file_id,
                 "label": file_label,
