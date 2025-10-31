@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.core.management import call_command
 from django.db import models
 from django.db.models import Count, Q
+from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -33,6 +34,7 @@ from .dashboard_helpers import (
     build_session_entry,
     build_upload_display,
     summarize_upload_stats,
+    UploadSessionDisplay,
 )
 
 
@@ -208,12 +210,64 @@ def publish_projects_visibility(request):
 def all_upload_sessions(request):
     """Displays a list of all upload sessions with their files."""
 
-    entries = [
-        build_session_entry(session)
-        for session in AsyncUploadSession.objects.select_related("user")
-        .prefetch_related("files")
+    page_number = request.GET.get("page", 1)
+    per_page = 25
+
+    sessions_qs = (
+        AsyncUploadSession.objects.select_related("user")
+        .annotate(
+            total_files_agg=Count("files"),
+            completed_files_agg=Count("files", filter=Q(files__status="completed")),
+            failed_files_agg=Count("files", filter=Q(files__status="failed")),
+            uploading_files_agg=Count("files", filter=Q(files__status="uploading")),
+            processing_files_agg=Count("files", filter=Q(files__status="processing")),
+            pending_files_agg=Count("files", filter=Q(files__status="pending")),
+        )
         .order_by("-created_at")
-    ]
+    )
+
+    paginator = Paginator(sessions_qs, per_page)
+    try:
+        page_obj = paginator.page(page_number)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages or 1)
+
+    # Build lightweight session displays without loading per-file rows
+    entries = []
+    for session in page_obj.object_list:
+        uploaded_count = (getattr(session, "uploading_files_agg", 0) or 0) + (
+            getattr(session, "processing_files_agg", 0) or 0
+        )
+        pending_count = getattr(session, "pending_files_agg", 0) or 0
+
+        display = UploadSessionDisplay(
+            id=str(session.id),
+            created_at=session.created_at,
+            completed_at=session.completed_at,
+            status=session.status,
+            status_display=session.get_status_display(),
+            user=session.user,
+            institution=session.organization or "Not specified",
+            organization=session.organization or "",
+            folder_name=session.base_folder or "",
+            total_files=(getattr(session, "total_files_agg", None) or session.total_files or 0),
+            completed_files=getattr(session, "completed_files_agg", 0) or 0,
+            failed_files=getattr(session, "failed_files_agg", 0) or 0,
+            uploaded_files=uploaded_count,
+            pending_files=pending_count,
+            import_stats={"duration_seconds": 0, "total_size": 0, "total_size_formatted": "0 B", "summary": {}, "error_count": 0, "error": None},
+        )
+
+        entries.append(
+            {
+                "session": display,
+                "files": [],  # defer file details to modal/HTMX
+                "file_count": display.total_files,
+                "completed_files": display.completed_files,
+                "failed_files": display.failed_files,
+            }
+        )
+
     total_stats = summarize_upload_stats(entries)
 
     return render(
@@ -222,6 +276,7 @@ def all_upload_sessions(request):
         {
             "enhanced_sessions": entries,
             "total_stats": total_stats,
+            "page_obj": page_obj,
         },
     )
 

@@ -93,27 +93,7 @@
                                 {% endif %}
                             </div>
                             
-                            <!-- Complete File List -->
-                            <div class="file-list">
-                                {% for file in files %}
-                                <div class="text-sm mb-1 flex items-center gap-2">
-                                    <span class="font-medium font-mono" title="{{ file.name }}">{{ file.name|truncatechars:30 }}</span>
-                                    <span class="badge badge-xs 
-                                        {% if file.status == 'completed' %}badge-success
-                                        {% elif file.status == 'failed' %}badge-error
-                                        {% elif file.status == 'uploading' %}badge-info
-                                        {% else %}badge-ghost{% endif %}">
-                                        {{ file.status }}
-                                    </span>
-                                    {% if file.size > 0 %}
-                                        <span class="text-xs text-base-content/60">{{ file.size|filesizeformat }}</span>
-                                    {% endif %}
-                                    {% if file.error_message %}
-                                        <span class="text-xs text-error" title="{{ file.error_message }}">Error</span>
-                                    {% endif %}
-                                </div>
-                                {% endfor %}
-                            </div>
+                            <!-- File details are now loaded on demand via the Stats modal to improve performance. -->
                         </div>
                     </td>
                     
@@ -177,6 +157,29 @@
             </tbody>
         </table>
     </div>
+
+    {% if page_obj %}
+    <div class="flex justify-between items-center mt-4">
+        <div class="text-xs text-base-content/60">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </div>
+        <div class="join">
+            {% if page_obj.has_previous %}
+            <a class="btn btn-sm join-item" href="?page={{ page_obj.previous_page_number }}">« Prev</a>
+            {% else %}
+            <button class="btn btn-sm join-item btn-disabled">« Prev</button>
+            {% endif %}
+
+            <span class="btn btn-sm join-item btn-ghost">{{ page_obj.number }}</span>
+
+            {% if page_obj.has_next %}
+            <a class="btn btn-sm join-item" href="?page={{ page_obj.next_page_number }}">Next »</a>
+            {% else %}
+            <button class="btn btn-sm join-item btn-disabled">Next »</button>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Single Reusable Statistics Modal -->
     <dialog id="stats-modal" class="modal">
