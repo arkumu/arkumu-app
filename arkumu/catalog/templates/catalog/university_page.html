@@ -62,7 +62,68 @@
   <!-- Main Content Area -->
   <main class="w-full px-4">
     <div class="w-full">
+      <div class="w-full transition-colors
+            bg-arkumu-light text-arkumu-dark
+            theme-dark:bg-arkumu-dark theme-dark:text-arkumu-light
+            theme-blue:bg-arkumu-light theme-blue:text-arkumu-dark">
+  <div class="container mx-auto px-6 py-12">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
+      <!-- Left side - Logo and text as image -->
+      <div class="flex-shrink-0">
+        <img src="{% static 'images/khm-logo-text.svg' %}" 
+             alt="Kunsthochschule für Medien Köln - Academy of Media Arts Cologne" 
+             class="w-full max-w-xs">
+      </div>
+
+      <!-- Right side - Description text -->
+      <div class="lg:col-span-2">
+        <h2 class="text-base font-medium mb-4"><b>Kunsthochschule für Medien Köln</b></h2>
+        <div class="space-y-4 text-sm leading-relaxed">
+          <p>
+            Besonderes Augenmerk liegt auf den Verknüpfungen zwischen individueller Kreativität und gemeinschaftlicher Risikoproduktion. Projekte, die sich mit historischen und zeitgenössischen Archiven beschäftigen, sind ebenso vertreten wie experimentelle digitale Archive und dokumentarische Ansätze.
+          </p>
+          <p>
+            Dieses kollektive Archiv ist eine Plattform für Austausch, Reflexion und Inspiration. Es bietet Studierenden, Forschenden und der Öffentlichkeit die Möglichkeit, sich mit künstlerischen Praktiken auseinanderzusetzen und die kreativen Strömungen innerhalb der Kunst- und Medienwelt der letzten Jahrzehnte zu erkunden.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      {% include 'components/text/blue_line.html' %}
       
+<!-- Contact Information Component -->
+<div class="w-full transition-colors
+            bg-arkumu-light text-arkumu-dark
+            theme-dark:bg-arkumu-dark theme-dark:text-arkumu-light
+            theme-blue:bg-arkumu-light theme-blue:text-arkumu-dark">
+  <div class="container mx-auto px-6 py-8">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <!-- Left Column -->
+      <div class="space-y-1">
+        <p class="text-sm"><b>Weitere</b></p>
+        <p class="text-sm">Informationen</p>
+      </div>
+
+      <!-- Right Column -->
+      <div class="space-y-1">
+        <p class="text-sm font-medium"><b>Kunsthochschule für Medien Köln</b></p>
+        <p class="text-sm">Neumarkt 14</p>
+        <p class="text-sm">50667 Köln</p>
+        <a href="https://www.khm.de" 
+           class="text-sm underline hover:no-underline transition-all
+                  text-arkumu-dark
+                  theme-dark:text-arkumu-light
+                  theme-blue:text-arkumu-dark">
+          www.khm.de
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+       {% include 'components/text/blue_line.html' %}
+       <h3 class="text-lg font-medium mb-3">Projekte der Kunsthochschule für Medien Köln</h3>
+      {% include 'components/cards/card_grid.html' %}
     </div>
   </main>
 </div>
