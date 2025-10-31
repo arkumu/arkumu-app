@@ -7,27 +7,49 @@
     <div class="overflow-x-auto p-4 transition-colors
                 theme-dark:border-arkumu-light/20">
       <table class="min-w-full text-sm">
-        <tbody class="divide-y divide-arkumu-dark/10 theme-dark:divide-arkumu-light/10">
+        <tbody class="divide-y divide-arkumu-dark/10 theme-dark:divide-arkumu-light/10 theme-blue:divide-arkumu-blue/10">
         {% for item in metadata %}
+          <!-- Hauptzeile -->
           <tr>
-            <th class="text-left py-3 font-mono uppercase tracking-wide text-xs text-arkumu-dark/70"
+            <th class="text-left py-3 font-mono uppercase tracking-wide text-xs
+                        text-arkumu-dark/70 theme-dark:text-arkumu-light/70 theme-blue:text-arkumu-blue/70"
                 tabindex="0">
               {{ item.key }}
             </th>
-            <td class="py-3 border-b " tabindex="0">
+            <td class="py-3 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
+                tabindex="0">
               {% if item.values %}
-{#                <ul class="list-disc list-inside space-y-1">#}
                   {% for entry in item.values %}
                     {% if item.key != entry %}
                       <div>{{ entry }}</div>
                     {% endif %}
                   {% endfor %}
-{#                </ul>#}
               {% else %}
                 {{ item.value }}
               {% endif %}
             </td>
           </tr>
+
+          <!-- Zusätzliche Stichpunkte -->
+          {% if item.additionalNotes %}
+          <tr>
+            <td colspan="2" class="pb-3 px-4 border-b
+                                  border-arkumu-dark/10
+                                  theme-dark:border-arkumu-light/10
+                                  theme-blue:border-arkumu-blue/10">
+              <div class="mt-1 text-xs
+                         text-arkumu-dark/60
+                         theme-dark:text-arkumu-light/60
+                         theme-blue:text-arkumu-blue/60">
+                <ul class="list-disc list-inside space-y-1">
+                  {% for note in item.additionalNotes %}
+                    <li>{{ note }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </td>
+          </tr>
+          {% endif %}
         {% endfor %}
         </tbody>
       </table>
