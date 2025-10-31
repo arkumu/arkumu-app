@@ -2,345 +2,396 @@
 {% load static %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
+  <div class="container mx-auto px-4 py-8">
     <h1 class="text-3xl font-bold mb-6">Metadata Dashboard</h1>
 
     <!-- Quick Actions - Horizontal Layout -->
     <div class="mb-8 p-4 bg-base-200 rounded-lg">
-        <h3 class="text-lg font-semibold mb-2">Quick Navigation</h3>
-        <p class="text-sm text-base-content/70 mb-4">
-            Jump straight into metadata tools or inspect the live OAI-PMH feeds without touching caches or data.
-        </p>
-        <div class="flex flex-wrap gap-3 justify-start">
-            <!-- Primary Actions -->
-            <a href="{% url 'metadata:data_explorer' %}" class="btn btn-primary btn-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                Metadata Explorer
-            </a>
-            <button type="button"
-                    class="btn btn-outline btn-primary btn-sm btn-disabled pointer-events-none"
-                    title="Disabled while the feature is offline"
-                    disabled>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
-                Data Discovery
-            </button>
+      <h3 class="text-lg font-semibold mb-2">Quick Navigation</h3>
+      <p class="text-sm text-base-content/70 mb-4">
+        Jump straight into metadata tools or inspect the live OAI-PMH feeds without touching caches or data.
+      </p>
+      <div class="flex flex-wrap gap-3 justify-start">
+        <!-- Primary Actions -->
+        <a href="{% url 'metadata:data_explorer' %}" class="btn btn-primary btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          Metadata Explorer
+        </a>
+        <button type="button"
+                class="btn btn-outline btn-primary btn-sm btn-disabled pointer-events-none"
+                title="Disabled while the feature is offline"
+                disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+          </svg>
+          Data Discovery
+        </button>
 
-            <!-- OAI-PMH API Links -->
-            <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=oai_dc" target="_blank" class="btn btn-outline btn-secondary btn-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                OAI Dublin Core
-            </a>
+        <!-- OAI-PMH API Links -->
+        <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=oai_dc" target="_blank"
+           class="btn btn-outline btn-secondary btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          OAI Dublin Core
+        </a>
             <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=mets" target="_blank" class="btn btn-outline btn-secondary btn-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                </svg>
-                OAI METS
-            </a>
-        </div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+          </svg>
+          OAI METS
+        </a>
+        <form method="post" action="{% url 'metadata:metadata_dashboard_external_sources_refresh' %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-warning btn-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2">
+              <path
+                d="M3 15C3 17.8284 3 19.2426 3.87868 20.1213C4.75736 21 6.17157 21 9 21H15C17.8284 21 19.2426 21 20.1213 20.1213C21 19.2426 21 17.8284 21 15"
+                stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12 3V16M12 16L16 11.625M12 16L8 11.625" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Reload External Sources
+          </button>
+        </form>
+      </div>
     </div>
 
     <!-- Snapshot Overview -->
     <div class="mb-8 p-4 bg-base-200 rounded-lg">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <h3 class="text-lg font-semibold mb-2">Project Snapshot</h3>
-                <p class="text-sm text-base-content/70">
-                    View cached cross-institutional project metrics without slowing down the main dashboard.
-                </p>
-            </div>
-            <a href="{% url 'metadata:metadata_dashboard_snapshot_stats' %}"
-               class="btn btn-outline btn-primary btn-sm">
-                View Snapshot Metrics
-            </a>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Project Snapshot</h3>
+          <p class="text-sm text-base-content/70">
+            View cached cross-institutional project metrics without slowing down the main dashboard.
+          </p>
         </div>
-        <p class="text-xs text-base-content/60 mt-3">
-            Snapshot data loads from cache only. Use the cache warmers below when you need to rebuild it.
-        </p>
+        <a href="{% url 'metadata:metadata_dashboard_snapshot_stats' %}"
+           class="btn btn-outline btn-primary btn-sm">
+          View Snapshot Metrics
+        </a>
+      </div>
+      <p class="text-xs text-base-content/60 mt-3">
+        Snapshot data loads from cache only. Use the cache warmers below when you need to rebuild it.
+      </p>
     </div>
 
     {% if request.user.is_staff %}
-    <!-- Cache Warmers -->
-    <div class="mb-8 p-4 bg-base-200 rounded-lg">
+      <!-- Cache Warmers -->
+      <div class="mb-8 p-4 bg-base-200 rounded-lg">
         <h3 class="text-lg font-semibold mb-2">Cache &amp; API Warmers</h3>
         <p class="text-sm text-base-content/70 mb-4">
-            These tasks rebuild derived caches so dashboards stay fast. They never modify source data—only refresh schema, project snapshots, and card layouts.
+          These tasks rebuild derived caches so dashboards stay fast. They never modify source data—only refresh schema,
+          project snapshots, and card layouts.
         </p>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
-                <h4 class="text-sm font-semibold">Schema Map</h4>
-                <p class="text-xs text-base-content/70">Refresh class and property lists used by Metadata Explorer.</p>
-                <div class="flex flex-wrap gap-2 pt-2">
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="schema">
-                        <input type="hidden" name="action" value="warm">
-                        <button type="submit" class="btn btn-warning btn-sm" title="Warm explorer class & property listings">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
-                            </svg>
-                            Warm Schema
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="schema">
-                        <input type="hidden" name="action" value="refresh">
-                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of explorer schema map">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
-                            </svg>
-                            Refresh Schema
-                        </button>
-                    </form>
-                </div>
+          <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+            <h4 class="text-sm font-semibold">Schema Map</h4>
+            <p class="text-xs text-base-content/70">Refresh class and property lists used by Metadata Explorer.</p>
+            <div class="flex flex-wrap gap-2 pt-2">
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="schema">
+                <input type="hidden" name="action" value="warm">
+                <button type="submit" class="btn btn-warning btn-sm" title="Warm explorer class & property listings">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/>
+                  </svg>
+                  Warm Schema
+                </button>
+              </form>
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="schema">
+                <input type="hidden" name="action" value="refresh">
+                <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of explorer schema map">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6"/>
+                  </svg>
+                  Refresh Schema
+                </button>
+              </form>
             </div>
-            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
-                <h4 class="text-sm font-semibold">Project Snapshot</h4>
-                <p class="text-xs text-base-content/70">Rebuild the cross-institutional snapshot backing search results.</p>
-                <div class="flex flex-wrap gap-2 pt-2">
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="projects">
-                        <input type="hidden" name="action" value="warm">
-                        <button type="submit" class="btn btn-warning btn-sm" title="Warm cached project snapshot">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V10a2 2 0 012-2h2" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M7 8V6a5 5 0 0110 0v2" />
-                            </svg>
-                            Warm Snapshot
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="projects">
-                        <input type="hidden" name="action" value="refresh">
-                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of cross-institutional snapshot">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
-                            </svg>
-                            Refresh Snapshot
-                        </button>
-                    </form>
-                </div>
+          </div>
+          <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+            <h4 class="text-sm font-semibold">Project Snapshot</h4>
+            <p class="text-xs text-base-content/70">Rebuild the cross-institutional snapshot backing search results.</p>
+            <div class="flex flex-wrap gap-2 pt-2">
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="projects">
+                <input type="hidden" name="action" value="warm">
+                <button type="submit" class="btn btn-warning btn-sm" title="Warm cached project snapshot">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M17 8h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V10a2 2 0 012-2h2"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 8V6a5 5 0 0110 0v2"/>
+                  </svg>
+                  Warm Snapshot
+                </button>
+              </form>
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="projects">
+                <input type="hidden" name="action" value="refresh">
+                <button type="submit" class="btn btn-primary btn-sm"
+                        title="Force rebuild of cross-institutional snapshot">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6"/>
+                  </svg>
+                  Refresh Snapshot
+                </button>
+              </form>
             </div>
-            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
-                <h4 class="text-sm font-semibold">Card Schemas</h4>
-                <p class="text-xs text-base-content/70">Refresh the layout templates used for catalog cards.</p>
-                <div class="flex flex-wrap gap-2 pt-2">
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="card">
-                        <input type="hidden" name="action" value="warm">
-                        <button type="submit" class="btn btn-warning btn-sm" title="Warm catalog card layouts">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
-                            </svg>
-                            Warm Schemas
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="card">
-                        <input type="hidden" name="action" value="refresh">
-                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of card schema cache">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
-                            </svg>
-                            Refresh Schemas
-                        </button>
-                    </form>
-                </div>
+          </div>
+          <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+            <h4 class="text-sm font-semibold">Card Schemas</h4>
+            <p class="text-xs text-base-content/70">Refresh the layout templates used for catalog cards.</p>
+            <div class="flex flex-wrap gap-2 pt-2">
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="card">
+                <input type="hidden" name="action" value="warm">
+                <button type="submit" class="btn btn-warning btn-sm" title="Warm catalog card layouts">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"/>
+                  </svg>
+                  Warm Schemas
+                </button>
+              </form>
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="card">
+                <input type="hidden" name="action" value="refresh">
+                <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of card schema cache">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6"/>
+                  </svg>
+                  Refresh Schemas
+                </button>
+              </form>
             </div>
-            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
-                <h4 class="text-sm font-semibold">Canonical Graph</h4>
-                <p class="text-xs text-base-content/70">Manage the canonical graph cache used by snapshots and explorer detail views.</p>
-                <div class="flex flex-wrap gap-2 pt-2">
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="canonical_graph">
-                        <input type="hidden" name="action" value="warm">
-                        <button type="submit" class="btn btn-warning btn-sm" title="Warm canonical graph cache">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c1.657 0 3-1.343 3-3S13.657 2 12 2 9 3.343 9 5s1.343 3 3 3zM19 13c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM5 13c1.657 0 3-1.343 3-3S6.657 7 5 7 2 8.343 2 10s1.343 3 3 3z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.59 12.51L12 15l3.41-2.49M12 15v7" />
-                            </svg>
-                            Warm Graph
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="canonical_graph">
-                        <input type="hidden" name="action" value="refresh">
-                        <button type="submit" class="btn btn-primary btn-sm" title="Clear canonical graph cache and reload on demand">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
-                            </svg>
-                            Refresh Graph
-                        </button>
-                    </form>
-                </div>
+          </div>
+          <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+            <h4 class="text-sm font-semibold">Canonical Graph</h4>
+            <p class="text-xs text-base-content/70">Manage the canonical graph cache used by snapshots and explorer
+              detail views.</p>
+            <div class="flex flex-wrap gap-2 pt-2">
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="canonical_graph">
+                <input type="hidden" name="action" value="warm">
+                <button type="submit" class="btn btn-warning btn-sm" title="Warm canonical graph cache">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M12 8c1.657 0 3-1.343 3-3S13.657 2 12 2 9 3.343 9 5s1.343 3 3 3zM19 13c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM5 13c1.657 0 3-1.343 3-3S6.657 7 5 7 2 8.343 2 10s1.343 3 3 3z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.59 12.51L12 15l3.41-2.49M12 15v7"/>
+                  </svg>
+                  Warm Graph
+                </button>
+              </form>
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="canonical_graph">
+                <input type="hidden" name="action" value="refresh">
+                <button type="submit" class="btn btn-primary btn-sm"
+                        title="Clear canonical graph cache and reload on demand">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6"/>
+                  </svg>
+                  Refresh Graph
+                </button>
+              </form>
             </div>
-            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2 md:col-span-1 xl:col-span-2">
-                <h4 class="text-sm font-semibold">Do Everything</h4>
-                <p class="text-xs text-base-content/70">Queue every cache action in one go (schema, snapshot, cards, canonical graph).</p>
-                <div class="flex flex-wrap gap-2 pt-2">
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="all">
-                        <input type="hidden" name="action" value="warm">
-                        <button type="submit" class="btn btn-warning btn-sm" title="Warm all caches without forcing rebuilds">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
-                            </svg>
-                            Warm All
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="cache" value="all">
-                        <input type="hidden" name="action" value="refresh">
-                        <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of every cache">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
-                            </svg>
-                            Refresh All
-                        </button>
-                    </form>
-                </div>
+          </div>
+          <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2 md:col-span-1 xl:col-span-2">
+            <h4 class="text-sm font-semibold">Do Everything</h4>
+            <p class="text-xs text-base-content/70">Queue every cache action in one go (schema, snapshot, cards,
+              canonical graph).</p>
+            <div class="flex flex-wrap gap-2 pt-2">
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="all">
+                <input type="hidden" name="action" value="warm">
+                <button type="submit" class="btn btn-warning btn-sm" title="Warm all caches without forcing rebuilds">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M3 12a9 9 0 0115.48-6.36M21 12a9 9 0 01-15.48 6.36"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/>
+                  </svg>
+                  Warm All
+                </button>
+              </form>
+              <form method="post" action="{% url 'metadata:metadata_dashboard_cache_refresh' %}">
+                {% csrf_token %}
+                <input type="hidden" name="cache" value="all">
+                <input type="hidden" name="action" value="refresh">
+                <button type="submit" class="btn btn-primary btn-sm" title="Force rebuild of every cache">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6"/>
+                  </svg>
+                  Refresh All
+                </button>
+              </form>
             </div>
+          </div>
         </div>
-    </div>
+      </div>
     {% endif %}
 
     <!-- Database Management -->
     <div class="mb-4">
         <h3 class="text-lg font-semibold mb-2">Database Management</h3>
         <p class="text-sm text-base-content/70 mb-4">High-impact actions that write to PostgreSQL. Use these when you need to remove or reset imported data; every button requires confirmation.</p>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <!-- Delete Organization Data -->
-            <div class="card bg-base-100 shadow-md">
-                <div class="card-body p-4">
-                    <h4 class="card-title text-sm">Delete Organization Data</h4>
-                    <p class="text-xs text-base-content/70 mb-3">Delete triples from a specific organization only</p>
-                    {% if organizations_with_data %}
-                        <select id="org-select" name="organization_id" class="select select-bordered select-sm w-full mb-2">
-                            <option value="">Select Organization</option>
-                            {% for org in organizations_with_data %}
-                            <option value="{{ org.id }}">
-                                {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
-                            </option>
-                            {% endfor %}
-                        </select>
-                        <button id="delete-org-btn" 
-                                class="btn btn-warning btn-sm w-full"
-                                hx-post="{% url 'importer:delete_organization_triples' %}"
-                                hx-target="#delete-org-result"
-                                hx-swap="innerHTML"
-                                hx-indicator="#delete-org-spinner"
-                                hx-include="#org-select"
-                                onclick="if (!document.getElementById('org-select').value) { alert('Please select an organization first.'); return false; } return confirm('Are you sure you want to delete data from the selected organization? This cannot be undone!');"
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            Delete Organization Data
-                            <span id="delete-org-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-                        </button>
-                    {% else %}
-                        <p class="text-xs text-base-content/50">No organization data available for deletion</p>
-                        <button disabled class="btn btn-warning btn-sm w-full btn-disabled">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            Delete Organization Data
-                        </button>
-                    {% endif %}
-                </div>
-            </div>
-            
-            <!-- Reset Database -->
-            <div class="card bg-base-100 shadow-md">
-                <div class="card-body p-4">
-                    <h4 class="card-title text-sm">Reset All Data</h4>
-                    <p class="text-xs text-base-content/70 mb-3">Delete all imported data (Resources and Triples)</p>
-                    <button id="reset-db-btn" 
-                            class="btn btn-error btn-sm w-full"
-                            hx-post="{% url 'importer:reset_database' %}"
-                            hx-target="#reset-db-result"
-                            hx-swap="innerHTML"
-                            hx-indicator="#reset-db-spinner"
-                            onclick="return confirm('Are you sure you want to delete ALL imported data? This cannot be undone!')">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Reset Database
-                        <span id="reset-db-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Clear Upload Sessions -->
-            <div class="card bg-base-100 shadow-md">
-                <div class="card-body p-4">
-                    <h4 class="card-title text-sm">Clear Upload Sessions</h4>
-                    <p class="text-xs text-base-content/70 mb-3">Delete all upload session records and history</p>
-                    <button id="clear-uploads-btn" 
-                            class="btn btn-warning btn-sm w-full"
-                            hx-post="{% url 'importer:clear_upload_sessions' %}"
-                            hx-target="#clear-uploads-result"
-                            hx-swap="innerHTML"
-                            hx-indicator="#clear-uploads-spinner"
-                            onclick="return confirm('Are you sure you want to delete all upload session records?')">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        Clear Uploads
-                        <span id="clear-uploads-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Clear Ingest Sessions -->
-            <div class="card bg-base-100 shadow-md">
-                <div class="card-body p-4">
-                    <h4 class="card-title text-sm">Clear Ingest Sessions</h4>
-                    <p class="text-xs text-base-content/70 mb-3">Delete all ingest session records and history</p>
-                    <button id="clear-ingests-btn" 
-                            class="btn btn-warning btn-sm w-full"
-                            hx-post="{% url 'importer:clear_ingest_sessions' %}"
-                            hx-target="#clear-ingests-result"
-                            hx-swap="innerHTML"
-                            hx-indicator="#clear-ingests-spinner"
-                            onclick="return confirm('Are you sure you want to delete all ingest session records?')">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                        </svg>
-                        Clear Ingests
-                        <span id="clear-ingests-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-                    </button>
-                </div>
-            </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- Delete Organization Data -->
+        <div class="card bg-base-100 shadow-md">
+          <div class="card-body p-4">
+            <h4 class="card-title text-sm">Delete Organization Data</h4>
+            <p class="text-xs text-base-content/70 mb-3">Delete triples from a specific organization only</p>
+            {% if organizations_with_data %}
+              <select id="org-select" name="organization_id" class="select select-bordered select-sm w-full mb-2">
+                <option value="">Select Organization</option>
+                {% for org in organizations_with_data %}
+                  <option value="{{ org.id }}">
+                    {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
+                  </option>
+                {% endfor %}
+              </select>
+              <button id="delete-org-btn"
+                      class="btn btn-warning btn-sm w-full"
+                      hx-post="{% url 'importer:delete_organization_triples' %}"
+                      hx-target="#delete-org-result"
+                      hx-swap="innerHTML"
+                      hx-indicator="#delete-org-spinner"
+                      hx-include="#org-select"
+                      onclick="if (!document.getElementById('org-select').value) { alert('Please select an organization first.'); return false; } return confirm('Are you sure you want to delete data from the selected organization? This cannot be undone!');"
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Delete Organization Data
+              <span id="delete-org-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+              </button>
+            {% else %}
+              <p class="text-xs text-base-content/50">No organization data available for deletion</p>
+              <button disabled class="btn btn-warning btn-sm w-full btn-disabled">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                     stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+                Delete Organization Data
+              </button>
+            {% endif %}
+          </div>
         </div>
-        
-        <!-- Results containers -->
-        <div class="mt-4 space-y-2">
-            <div id="delete-org-result"></div>
-            <div id="reset-db-result"></div>
-            <div id="clear-uploads-result"></div>
-            <div id="clear-ingests-result"></div>
+
+        <!-- Reset Database -->
+        <div class="card bg-base-100 shadow-md">
+          <div class="card-body p-4">
+            <h4 class="card-title text-sm">Reset All Data</h4>
+            <p class="text-xs text-base-content/70 mb-3">Delete all imported data (Resources and Triples)</p>
+            <button id="reset-db-btn"
+                    class="btn btn-error btn-sm w-full"
+                    hx-post="{% url 'importer:reset_database' %}"
+                    hx-target="#reset-db-result"
+                    hx-swap="innerHTML"
+                    hx-indicator="#reset-db-spinner"
+                    onclick="return confirm('Are you sure you want to delete ALL imported data? This cannot be undone!')">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Reset Database
+              <span id="reset-db-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+            </button>
+          </div>
         </div>
+
+        <!-- Clear Upload Sessions -->
+        <div class="card bg-base-100 shadow-md">
+          <div class="card-body p-4">
+            <h4 class="card-title text-sm">Clear Upload Sessions</h4>
+            <p class="text-xs text-base-content/70 mb-3">Delete all upload session records and history</p>
+            <button id="clear-uploads-btn"
+                    class="btn btn-warning btn-sm w-full"
+                    hx-post="{% url 'importer:clear_upload_sessions' %}"
+                    hx-target="#clear-uploads-result"
+                    hx-swap="innerHTML"
+                    hx-indicator="#clear-uploads-spinner"
+                    onclick="return confirm('Are you sure you want to delete all upload session records?')">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              Clear Uploads
+              <span id="clear-uploads-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Clear Ingest Sessions -->
+        <div class="card bg-base-100 shadow-md">
+          <div class="card-body p-4">
+            <h4 class="card-title text-sm">Clear Ingest Sessions</h4>
+            <p class="text-xs text-base-content/70 mb-3">Delete all ingest session records and history</p>
+            <button id="clear-ingests-btn"
+                    class="btn btn-warning btn-sm w-full"
+                    hx-post="{% url 'importer:clear_ingest_sessions' %}"
+                    hx-target="#clear-ingests-result"
+                    hx-swap="innerHTML"
+                    hx-indicator="#clear-ingests-spinner"
+                    onclick="return confirm('Are you sure you want to delete all ingest session records?')">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+              </svg>
+              Clear Ingests
+              <span id="clear-ingests-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results containers -->
+      <div class="mt-4 space-y-2">
+        <div id="delete-org-result"></div>
+        <div id="reset-db-result"></div>
+        <div id="clear-uploads-result"></div>
+        <div id="clear-ingests-result"></div>
+      </div>
         {% if request.user.is_staff %}
         <div class="mt-6">
             <div class="card bg-base-100 shadow-md">
@@ -439,54 +490,56 @@
 
     <!-- Stats Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Resources</h2>
-                <p class="text-4xl font-bold">{{ stats.total_resources }}</p>
-                <div class="text-sm">
-                    <div>IRIs: {{ stats.iri_resources }}</div>
-                    <div>Literals: {{ stats.literal_resources }}</div>
-                </div>
-            </div>
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Resources</h2>
+          <p class="text-4xl font-bold">{{ stats.total_resources }}</p>
+          <div class="text-sm">
+            <div>IRIs: {{ stats.iri_resources }}</div>
+            <div>Literals: {{ stats.literal_resources }}</div>
+          </div>
         </div>
-        
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Triples</h2>
-                <p class="text-4xl font-bold">{{ stats.total_triples }}</p>
-            </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Triples</h2>
+          <p class="text-4xl font-bold">{{ stats.total_triples }}</p>
         </div>
-        
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Classes</h2>
-                <p class="text-4xl font-bold">{{ stats.class_resources }}</p>
-            </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Classes</h2>
+          <p class="text-4xl font-bold">{{ stats.class_resources }}</p>
         </div>
-        
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Properties</h2>
-                <p class="text-4xl font-bold">{{ stats.property_resources }}</p>
-            </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Properties</h2>
+          <p class="text-4xl font-bold">{{ stats.property_resources }}</p>
         </div>
-        
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Ingests</h2>
-                <p class="text-4xl font-bold">{{ stats.ingests }}</p>
-            </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Ingests</h2>
+          <p class="text-4xl font-bold">{{ stats.ingests }}</p>
         </div>
-        
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-sm">Resource Links</h2>
-                <p class="text-4xl font-bold">{{ stats.linked_resources|default:0 }}</p>
-                <div class="text-xs text-base-content/70">
-                    Resources with IRI connections
-                </div>
-            </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title text-sm">Resource Links</h2>
+          <p class="text-4xl font-bold">{{ stats.linked_resources|default:0 }}</p>
+          <div class="text-xs text-base-content/70">
+            Resources with IRI connections
+          </div>
         </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-xl">
 
         {% if oai_snapshot %}
         <div class="card bg-base-100 shadow-xl">
@@ -525,52 +578,52 @@
         </div>
         {% endif %}
 
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-sm">Data Sources</h2>
-                <div class="space-y-1">
-                    {% for institution in institutions|slice:":4" %}
-                    <div class="flex justify-between text-xs">
-                        <span class="truncate w-20">{{ institution.organization__name|truncatechars:15|default:"No Organization" }}</span>
-                        <span class="font-semibold">{{ institution.count }}</span>
-                    </div>
-                    {% empty %}
-                    <div class="text-xs text-base-content/70">No data</div>
-                    {% endfor %}
-                </div>
-                {% if institutions|length > 4 %}
-                <div class="text-xs text-base-content/50 mt-2">+{{ institutions|length|add:"-4" }} more</div>
-                {% endif %}
-            </div>
+        <div class="card-body">
+          <h2 class="card-title text-sm">Data Sources</h2>
+          <div class="space-y-1">
+            {% for institution in institutions|slice:":4" %}
+              <div class="flex justify-between text-xs">
+                <span
+                  class="truncate w-20">{{ institution.organization__name|truncatechars:15|default:"No Organization" }}</span>
+                <span class="font-semibold">{{ institution.count }}</span>
+              </div>
+            {% empty %}
+              <div class="text-xs text-base-content/70">No data</div>
+            {% endfor %}
+          </div>
+          {% if institutions|length > 4 %}
+            <div class="text-xs text-base-content/50 mt-2">+{{ institutions|length|add:"-4" }} more</div>
+          {% endif %}
         </div>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Recent Uploads -->
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Recent Uploads</h2>
-                
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra w-full">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>User</th>
-                                <th>Organization</th>
-                                <th>Folder</th>
-                                <th>Files</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for upload in recent_uploads %}
-                            <tr>
-                                <td>{{ upload.created_at|date:"M d, Y" }}</td>
-                                <td>{{ upload.user.username }}</td>
-                                <td class="text-sm">{{ upload.institution|default:"Not specified" }}</td>
-                                <td class="font-mono text-xs">{{ upload.folder_name|truncatechars:20|default:"No folder" }}</td>
-                                <td>{{ upload.total_files }}</td>
+      <!-- Recent Uploads -->
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Recent Uploads</h2>
+
+          <div class="overflow-x-auto">
+            <table class="table table-zebra w-full">
+              <thead>
+              <tr>
+                <th>Date</th>
+                <th>User</th>
+                <th>Organization</th>
+                <th>Folder</th>
+                <th>Files</th>
+                <th>Status</th>
+              </tr>
+              </thead>
+              <tbody>
+              {% for upload in recent_uploads %}
+                <tr>
+                  <td>{{ upload.created_at|date:"M d, Y" }}</td>
+                  <td>{{ upload.user.username }}</td>
+                  <td class="text-sm">{{ upload.institution|default:"Not specified" }}</td>
+                  <td class="font-mono text-xs">{{ upload.folder_name|truncatechars:20|default:"No folder" }}</td>
+                  <td>{{ upload.total_files }}</td>
                                 <td class="space-y-2">
                                     <span class="badge {% if upload.status == 'completed' %}badge-success{% elif upload.status == 'failed' %}badge-error{% elif upload.status == 'awaiting_verification' %}badge-warning{% else %}badge-info{% endif %}">
                                         {{ upload.status_display|default:upload.status }}
@@ -584,74 +637,75 @@
                                             </button>
                                         </form>
                                     {% endif %}
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="6" class="text-center py-4">No uploads yet</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div class="card-actions justify-end mt-4">
-                    <a href="{% url 'metadata:all_upload_sessions' %}" class="btn btn-primary btn-sm">View All</a>
-                </div>
-            </div>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="6" class="text-center py-4">No uploads yet</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card-actions justify-end mt-4">
+            <a href="{% url 'metadata:all_upload_sessions' %}" class="btn btn-primary btn-sm">View All</a>
+          </div>
         </div>
-        
-        <!-- Recent Ingests -->
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Recent Ingests</h2>
-                
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra w-full">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>User</th>
-                                <th>Organization</th>
-                                <th>Source File(s)</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for ingest in recent_ingests %}
-                            <tr>
-                                <td>{{ ingest.created_at|date:"M d, Y" }}</td>
-                                <td>{{ ingest.user.username|default:"Unknown" }}</td>
-                                <td class="text-sm">{{ ingest.organization.code|default:"Unknown"|truncatechars:15 }}</td>
-                                <td class="text-xs font-mono">
-                                    {% if ingest.file_paths %}
-                                        {{ ingest.file_paths|length }} files
-                                    {% elif ingest.file_name %}
-                                        {{ ingest.file_name|truncatechars:20 }}
-                                    {% else %}
-                                        <span class="text-base-content/50">No file info</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <span class="badge {% if ingest.status == 'completed' %}badge-success{% elif ingest.status == 'failed' %}badge-error{% else %}badge-info{% endif %}">
+      </div>
+
+      <!-- Recent Ingests -->
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Recent Ingests</h2>
+
+          <div class="overflow-x-auto">
+            <table class="table table-zebra w-full">
+              <thead>
+              <tr>
+                <th>Date</th>
+                <th>User</th>
+                <th>Organization</th>
+                <th>Source File(s)</th>
+                <th>Status</th>
+              </tr>
+              </thead>
+              <tbody>
+              {% for ingest in recent_ingests %}
+                <tr>
+                  <td>{{ ingest.created_at|date:"M d, Y" }}</td>
+                  <td>{{ ingest.user.username|default:"Unknown" }}</td>
+                  <td class="text-sm">{{ ingest.organization.code|default:"Unknown"|truncatechars:15 }}</td>
+                  <td class="text-xs font-mono">
+                    {% if ingest.file_paths %}
+                      {{ ingest.file_paths|length }} files
+                    {% elif ingest.file_name %}
+                      {{ ingest.file_name|truncatechars:20 }}
+                    {% else %}
+                      <span class="text-base-content/50">No file info</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                                    <span
+                                      class="badge {% if ingest.status == 'completed' %}badge-success{% elif ingest.status == 'failed' %}badge-error{% else %}badge-info{% endif %}">
                                         {{ ingest.status }}
                                     </span>
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="5" class="text-center py-4">No ingests yet</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div class="card-actions justify-end mt-4">
-                    <a href="{% url 'metadata:all_ingest_sessions' %}" class="btn btn-primary btn-sm">View All</a>
-                </div>
-            </div>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="5" class="text-center py-4">No ingests yet</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card-actions justify-end mt-4">
+            <a href="{% url 'metadata:all_ingest_sessions' %}" class="btn btn-primary btn-sm">View All</a>
+          </div>
         </div>
+      </div>
     </div>
-</div>
+  </div>
 {% endblock %}

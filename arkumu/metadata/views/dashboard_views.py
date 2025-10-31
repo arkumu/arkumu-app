@@ -636,3 +636,21 @@ def project_snapshot_stats(request):
             "snapshot_available": bool(snapshot),
         },
     )
+    return redirect('metadata:metadata_dashboard')
+
+@general_login_required
+@require_POST
+def trigger_external_sources_refresh(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Only staff members can trigger external sources refreshes.')
+        return redirect('metadata:metadata_dashboard')
+
+    from arkumu.metadata.tasks import ensure_cached_all_task
+
+    ensure_cached_all_task.schedule(kwargs={"force_refresh": True}, delay=0)
+
+    messages.success(
+        request,
+        'Reload of external sources started.',
+    )
+    return redirect('metadata:metadata_dashboard')
