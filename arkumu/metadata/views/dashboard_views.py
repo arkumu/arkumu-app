@@ -73,11 +73,9 @@ def metadata_dashboard(request):
         "ingests": IngestSession.objects.count(),
     }
 
+    # Defer OAI snapshot building to an on-demand HTMX endpoint to keep initial
+    # dashboard load fast. The template renders a lazy-load control instead.
     oai_snapshot = None
-    try:
-        oai_snapshot = build_oai_dashboard_snapshot()
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
 
     bucket_service = BucketService()
     checksum_buckets = bucket_service.get_predefined_organizations()
@@ -715,5 +713,25 @@ def project_snapshot_stats(request):
             "snapshot_totals": totals,
             "snapshot_generated": snapshot.generated_at if snapshot else None,
             "snapshot_available": bool(snapshot),
+        },
+    )
+
+
+@general_login_required
+def oai_widget(request):
+    """Return the OAI snapshot widget content on demand (HTMX-friendly)."""
+
+    oai_snapshot = None
+    try:
+        oai_snapshot = build_oai_dashboard_snapshot()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
+
+    template_name = "partials/oai_widget_card.html"
+    return render(
+        request,
+        template_name,
+        {
+            "oai_snapshot": oai_snapshot,
         },
     )

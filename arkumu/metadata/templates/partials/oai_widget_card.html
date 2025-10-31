@@ -1,0 +1,53 @@
+{% if oai_snapshot %}
+<div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+        <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+        <p class="text-4xl font-bold">{{ oai_snapshot.total_accessible_projects }}</p>
+        <div class="text-xs text-base-content/70 space-y-1">
+            {% if oai_snapshot.total_projects %}
+                {% for summary in oai_snapshot.institution_summaries|slice:":4" %}
+                <div class="flex justify-between gap-2">
+                    <span class="truncate w-28 uppercase">{{ summary.code }}</span>
+                    <span class="font-semibold">
+                        {{ summary.accessible_count }}/{{ summary.project_count }}
+                    </span>
+                </div>
+                {% endfor %}
+                {% if oai_snapshot.institution_summaries|length > 4 %}
+                <div class="text-xs text-base-content/50">
+                    +{{ oai_snapshot.institution_summaries|length|add:"-4" }} more institutions
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="text-xs text-base-content/60">No harvestable projects detected</div>
+            {% endif %}
+        </div>
+        <div class="mt-2 text-xs space-y-1">
+            <div class="text-success">
+                {{ oai_snapshot.total_accessible_projects }} ready for OAI dissemination
+            </div>
+            {% if oai_snapshot.total_blocked_projects %}
+            <div class="text-error">
+                ⚠ {{ oai_snapshot.total_blocked_projects }} blocked by privacy settings
+                {% if oai_snapshot.total_missing_resources %}
+                ({{ oai_snapshot.total_missing_resources }} missing in resource table)
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="text-xs text-base-content/50 mt-3">
+            {{ oai_snapshot.total_harvestable_objects }} harvestable files ready
+        </div>
+        <div class="text-xs text-base-content/50">Snapshot: {{ oai_snapshot.generated_at|date:"Y-m-d H:i" }}</div>
+    </div>
+    </div>
+{% else %}
+<div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+        <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+        <p class="text-xs text-base-content/70">Snapshot unavailable. Check OAI services.</p>
+    </div>
+</div>
+{% endif %}
+
+

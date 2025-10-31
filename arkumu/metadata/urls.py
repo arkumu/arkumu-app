@@ -52,6 +52,7 @@ urlpatterns = [
     path('dashboard/upload-stats/<uuid:session_id>/', dashboard_views.upload_session_stats, name='upload_session_stats'),
     path('dashboard/upload-session/<uuid:session_id>/verify/', dashboard_views.trigger_upload_verification, name='upload_session_verify'),
     path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
+    path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
     
     # Data Explorer (unified resource and triple browsing)
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
