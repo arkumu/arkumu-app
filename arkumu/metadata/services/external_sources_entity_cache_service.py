@@ -38,6 +38,14 @@ class ExternalSourcesEntityCacheService:
 
         Returns a list of identifiers that were newly fetched/updated.
         """
+
+        if len(data_ids) > 100:
+            ret = []
+            data_ids = list(data_ids)
+            for i in range (0, len(data_ids), 100):
+                ret.append(self.ensure_cached(data_ids[i:i+100], property_ids, source, force_refresh=force_refresh))
+            return ret
+
         if data_ids is None or property_ids is None or source is None:
             return []
         normalized_q = self._normalize_ids(data_ids)
@@ -66,7 +74,7 @@ class ExternalSourcesEntityCacheService:
         ExternalSourcesEntity.objects.bulk_create([ExternalSourcesEntity(**row) for row in fetched])
 
         logger.info(
-            "External entities cache sync completed – %d entities processed (force=%s)",
+            "Querying one batch of external entities completed – %d entities processed (force=%s)",
             len(fetched),
             force_refresh,
         )
@@ -77,8 +85,12 @@ class ExternalSourcesEntityCacheService:
         # Ereignis Orte
         # ----------------------------------
         pred = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/ereignisort")
-        places = Triple.objects.filter(predicate=pred, object__resource_type=ResourceType.LITERAL)
-        return self.ensure_cached(set([place.object.value for place in places]), ["P625", "label_de"], self.Source.WD, force_refresh=force_refresh)
+        entities = Triple.objects.filter(predicate=pred, object__resource_type=ResourceType.LITERAL)
+        cached =  self.ensure_cached(set([entity.object.value for entity in entities]), ["P625", "label_de"], self.Source.WD, force_refresh=force_refresh)
+
+        pred = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/schlagwort")
+        entities = Triple.objects.filter(predicate=pred)
+        cached.append(self.ensure_cached(set([entity.object.value for entity in entities]), ["label_de"], self.Source.WD, force_refresh=force_refresh))
 
     # ------------------------------------------------------------------
     # Internal helpers
