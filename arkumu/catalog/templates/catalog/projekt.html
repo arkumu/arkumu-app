@@ -51,7 +51,52 @@
       <div class="mb-6">
         {% include 'components/text/projekt_title.html' with year_range=project.year_range institution=project.institution %}
       </div>
-
+        <div class="mb-10">
+          <h1 tabindex="0" class="text-4xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue"
+              data-rdf-property="http://arkumu.org/data/properties/bevorzugter-titel">
+            {{ project.title }}
+          </h1>
+          <h2 tabindex="0" class="text-2xl font-normal mb-2 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue"
+              data-rdf-property="http://arkumu.org/data/fuk/properties/alternativer-titel-set"
+              data-rdf-type="http://arkumu.org/data/types/alternativer-titel">
+            {{ project.alternative_title }}
+          </h2>
+          <h3 tabindex="0" class="text-xl font-light mb-4 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue"
+              data-rdf-property="http://arkumu.org/data/properties/bevorzugter-untertitel">
+            {{ project.subtitle }}
+          </h3>
+          <p class="text-base font-mono transition-colors
+                    text-arkumu-dark
+                    theme-dark:text-arkumu-light
+                    theme-blue:text-arkumu-blue"
+             data-rdf-property="http://arkumu.org/data/properties/projektart"
+             tabindex="0">
+            {{ project.projektart }}
+          </p>
+        </div>
+              {% if project.categories %}
+          <div class="mb-12 flex flex-wrap gap-2"
+               data-rdf-property="http://arkumu.org/data/properties/projektkategorie"
+               aria-label="Projektkategorien">
+            {% for category in project.categories %}
+              <a tabindex="0" href="https://www.wikidata.org/wiki/{{ category }}">
+                <div data-rdf-type="http://arkumu.org/data/types/projektkategorie"
+                     data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
+                  {% include 'components/buttons/small_secondary_button.html' with button_text=category%}
+                </div>
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
       <nav class="tab-navigation w-full mb-6" role="tablist">
         <div class="flex flex-wrap gap-3" id="project-tab-buttons"
              data-tab-endpoint="{{ tab_endpoint }}"
@@ -96,8 +141,11 @@
             Metadaten
           </button>
         </div>
-      </nav>
+    <div class="w-full h-px bg-arkumu-dark mt-0
+                theme-dark:bg-arkumu-light theme-blue:bg-arkumu-blue"></div>
 
+
+      </nav>
       <div id="project-tab-content">
         {% include 'catalog/partials/project_overview.html' with project=project %}
       </div>

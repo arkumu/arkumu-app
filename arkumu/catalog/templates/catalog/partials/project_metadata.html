@@ -4,24 +4,25 @@
             theme-blue:text-arkumu-blue">
   <div class="w-full max-w-7xl mx-auto">
     <h2 class="text-3xl font-medium mb-6" tabindex="0">Metadaten</h2>
-    <div class="overflow-x-auto border border-arkumu-dark/10 rounded-xl p-4 transition-colors
+    <div class="overflow-x-auto p-4 transition-colors
                 theme-dark:border-arkumu-light/20">
       <table class="min-w-full text-sm">
         <tbody class="divide-y divide-arkumu-dark/10 theme-dark:divide-arkumu-light/10">
         {% for item in metadata %}
           <tr>
-            <th class="text-left py-3 font-mono uppercase tracking-wide text-xs text-arkumu-dark/70
-                       theme-dark:text-arkumu-light/70"
+            <th class="text-left py-3 font-mono uppercase tracking-wide text-xs text-arkumu-dark/70"
                 tabindex="0">
               {{ item.key }}
             </th>
-            <td class="py-3" tabindex="0">
+            <td class="py-3 border-b " tabindex="0">
               {% if item.values %}
-                <ul class="list-disc list-inside space-y-1">
+{#                <ul class="list-disc list-inside space-y-1">#}
                   {% for entry in item.values %}
-                    <li>{{ entry }}</li>
+                    {% if item.key != entry %}
+                      <div>{{ entry }}</div>
+                    {% endif %}
                   {% endfor %}
-                </ul>
+{#                </ul>#}
               {% else %}
                 {{ item.value }}
               {% endif %}
