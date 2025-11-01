@@ -1,16 +1,23 @@
 """Tabular views for displaying RDF entity data (FUK) in a table with pagination."""
 
+import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from django.core.paginator import Paginator
 from django.shortcuts import render
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
+from arkumu.metadata.models.mappings import Mapping
 from arkumu.users.models import Organization
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
+from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService
+from arkumu.metadata.services.entity_label_service import EntityLabelResolver
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -852,8 +859,10 @@ ENTITY_CONFIG: Dict[str, Dict] = {
 }
 
 
-def _resolve_current_org(request) -> Organization | None:
+def _resolve_current_org(request, override_code: Optional[str] = None) -> Organization | None:
     coord = BaseCoordinatorMixin()
+    if override_code:
+        coord.set_current_organization(request, override_code.lower())
     current = coord.get_current_organization(request)
     if current and 'code' in current:
         try:
@@ -866,21 +875,43 @@ def _resolve_current_org(request) -> Organization | None:
         return None
 
 
-def _display_for_resource(res: Resource, entity_labels: Dict[Any, str]) -> str:
+def _display_for_resource(
+    res: Resource,
+    entity_labels: Dict[Any, str],
+    resolver: Optional[EntityLabelResolver] = None,
+) -> str:
     if res.resource_type == ResourceType.LITERAL:
-        return res.value or ''
-    # Prefer explicit name, then value, then last path segment of URI
+        return res.value or res.name or ''
+
+    fallback = _fallback_uri_segment(res) if res.uri else ''
+
+    label = None
     if res.name:
-        return res.name
-    if res.value:
-        return res.value
-    if entity_labels:
+        label = res.name
+    elif res.value:
+        label = res.value
+    elif entity_labels:
         label = entity_labels.get(res.id)
-        if label:
-            return label
-    if res.uri:
-        frag = res.uri.rstrip('/').split('/')[-1]
-        return frag
+
+    needs_resolution = (
+        resolver is not None
+        and res.resource_type == ResourceType.ENTITY
+        and (not label or label.strip() == '' or (fallback and label == fallback))
+    )
+    if needs_resolution:
+        try:
+            resolved = resolver.label_for_resource(res)
+        except Exception:
+            logger.debug("Failed to resolve label for %s", res.uri, exc_info=True)
+        else:
+            if resolved:
+                label = resolved
+                entity_labels[res.id] = resolved
+
+    if label:
+        return label
+    if fallback:
+        return fallback
     return str(res.id)
 
 
@@ -993,6 +1024,7 @@ def _build_rows_for_subjects(
     desired_columns: List[Any],
     entity_type: str = None,
     org: Organization = None,
+    label_resolver: Optional[EntityLabelResolver] = None,
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, object]]]:
     """
     Build table rows for given subject resources.
@@ -1075,7 +1107,7 @@ def _build_rows_for_subjects(
             if not matched_spec:
                 continue
             label = matched_spec['label']
-            val = _display_for_resource(t.object, entity_labels)
+            val = _display_for_resource(t.object, entity_labels, label_resolver)
             # If multiple values, concatenate with semicolon
             if row[label]:
                 row[label] = f"{row[label]}; {val}"
@@ -1091,7 +1123,7 @@ def _build_rows_for_subjects(
             # For now, we'll add them to columns that might represent relationships
             # This could be enhanced to be more specific based on entity type and column definitions
             for related in related_entities:
-                related_label = _display_for_resource(related, entity_labels)
+                related_label = _display_for_resource(related, entity_labels, label_resolver)
                 # Look for columns that might represent relationships
                 # This is a heuristic - could be made more specific
                 for spec in column_specs:
@@ -1121,7 +1153,8 @@ def _tabular_view(request, entity_type: str):
             'error': f'Unknown entity type: {entity_type}'
         })
 
-    org = _resolve_current_org(request)
+    override_code = request.GET.get('organization')
+    org = _resolve_current_org(request, override_code)
     if not org:
         return render(request, 'metadata/tabular/error.html', {
             'error': 'Organization not selected'
@@ -1144,12 +1177,36 @@ def _tabular_view(request, entity_type: str):
     paginator = Paginator(subjects_qs, 20)
     page_obj = paginator.get_page(page_number)
 
+    label_resolver: Optional[EntityLabelResolver] = None
+    try:
+        mapping = (
+            Mapping.objects.filter(organization_id=org.code)
+            .order_by('-created_at')
+            .first()
+        )
+    except Exception:
+        mapping = None
+        logger.debug("Failed to load mapping for org %s", org.code, exc_info=True)
+
+    if mapping:
+        try:
+            schema_service = SchemaWorkspaceService(mapping=mapping, organization=org)
+        except Exception:
+            logger.debug(
+                "Failed to initialize schema workspace service for org %s",
+                org.code,
+                exc_info=True,
+            )
+        else:
+            label_resolver = EntityLabelResolver(schema_service)
+
     # Build rows for current page
     rows, columns_meta = _build_rows_for_subjects(
         list(page_obj.object_list),
         desired_columns,
         entity_type=entity_type,
         org=org,
+        label_resolver=label_resolver,
     )
 
     # Replace page_obj.object_list with row dicts while preserving pagination metadata
