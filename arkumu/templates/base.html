@@ -64,12 +64,16 @@
               Archivist Dashboard
             </a></li>
             <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
-            <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
-            <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
             <li><a href="{% url 'metadata:create_project' %}"
-                   class="{% if current_url_name == 'create_project' or current_url_name == 'create_event' or current_url_name == 'create_actor' or current_url_name == 'create_role' or current_url_name == 'create_digital_object' or current_url_name == 'create_institution' or current_url_name == 'create_project_category' or current_url_name == 'create_project_type' or current_url_name == 'create_alternate_title' or current_url_name == 'create_description' or current_url_name == 'create_catchphrase' %}active{% endif %}">
+                   class="{% if current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
               Metadata Workspace
             </a></li>
+            <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener"
+                   class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">
+              Metadata Legacy
+            </a></li>
+            <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
+            <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
 
             <li><a href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a></li>
           {% else %}
@@ -90,12 +94,20 @@
             Archivist Dashboard
           </a></li>
           <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">CSV Mapping Editor</a></li>
-          <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
-          <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
           <li><a href="{% url 'metadata:create_project' %}"
-                 class="{% if current_url_name == 'create_project' or current_url_name == 'create_event' or current_url_name == 'create_actor' or current_url_name == 'create_role' or current_url_name == 'create_digital_object' or current_url_name == 'create_institution' or current_url_name == 'create_project_category' or current_url_name == 'create_project_type' or current_url_name == 'create_alternate_title' or current_url_name == 'create_description' or current_url_name == 'create_catchphrase' %}active{% endif %}">
+                 class="{% if current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
             Metadata Workspace
           </a></li>
+          <li><a href="{% url 'metadata:metadata_entry' %}"
+                 class="{% if current_url_name == 'metadata_entry' %}active{% endif %}">
+            Metadata Tabular
+          </a></li>
+          <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener"
+                 class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">
+            Metadata Legacy
+          </a></li>
+          <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
+          <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
           <li><a href="{% url 'catalog:explorer' %}" class="flex items-center gap-2 {% if current_namespace == 'catalog' %}active{% endif %}">
             <i class="fas fa-search"></i>
             <span>Catalog Explorer</span>
@@ -218,6 +230,21 @@
            class="btn btn-sm {% if current_url_name == 'create_catchphrase' %}btn-primary{% else %}btn-outline{% endif %}">
           Catchphrase
         </a>
+      </div>
+    </div>
+  </div>
+  <!-- Second navbar within workspace: navigation to tabular data -->
+  <div class="bg-base-100 border-b border-base-300">
+    <div class="max-w-7xl mx-auto px-4">
+      <div class="flex flex-wrap gap-2 py-2">
+        <a href="{% url 'metadata:tabular_projects' %}"
+           class="btn btn-xs {% if current_url_name == 'tabular_projects' %}btn-primary{% else %}btn-outline{% endif %}">Projects</a>
+        <a href="{% url 'metadata:tabular_events' %}"
+           class="btn btn-xs {% if current_url_name == 'tabular_events' %}btn-primary{% else %}btn-outline{% endif %}">Events</a>
+        <a href="{% url 'metadata:tabular_actors' %}"
+           class="btn btn-xs {% if current_url_name == 'tabular_actors' %}btn-primary{% else %}btn-outline{% endif %}">Actors</a>
+        <a href="{% url 'metadata:tabular_digital_objects' %}"
+           class="btn btn-xs {% if current_url_name == 'tabular_digital_objects' %}btn-primary{% else %}btn-outline{% endif %}">Digital Objects</a>
       </div>
     </div>
   </div>

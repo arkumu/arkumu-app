@@ -1,6 +1,6 @@
 from django.urls import path
 from arkumu.metadata.views import dashboard_views, resource_views, triple_views, bulk_editor_views, data_discovery_views, data_explorer_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
-from arkumu.metadata.views import metadata_entry_views, tabular_views
+from arkumu.metadata.views import metadata_entry_views, tabular_views, schema_workspace_views
 from arkumu.metadata.views import workspace_quick_create_views
 # Temporarily disabled bulk arkumu mapping views
 # from arkumu.metadata.views.bulk_arkumu_mapping_views import (
@@ -144,6 +144,17 @@ urlpatterns = [
 
     # Workspace quick create (human fields, single page)
     path('workspace/quick-create/<str:entity>/', workspace_quick_create_views.quick_create_entity, name='workspace_quick_create'),
+
+    # Legacy schema-driven metadata workspace
+    path('workspace/legacy/', schema_workspace_views.SchemaDrivenWorkspaceView.as_view(), name='entity_creation_workspace'),
+    path('workspace/legacy/<uuid:mapping_id>/dataset/', schema_workspace_views.SchemaDatasetFragmentView.as_view(), name='entity_workspace_dataset'),
+    path('workspace/legacy/<uuid:mapping_id>/project-access/', schema_workspace_views.ProjectAccessLevelUpdateView.as_view(), name='project_access_update'),
+    path('workspace/legacy/<uuid:mapping_id>/field-values/', schema_workspace_views.DatasetFieldValueOptionsView.as_view(), name='entity_workspace_field_values'),
+    path('workspace/legacy/<uuid:mapping_id>/search/', schema_workspace_views.EntitySearchView.as_view(), name='entity_workspace_search'),
+    path('workspace/legacy/<uuid:mapping_id>/relationship-row/', schema_workspace_views.RelationshipRowView.as_view(), name='entity_workspace_relationship_row'),
+    path('workspace/legacy/<uuid:mapping_id>/relationship-rows/', schema_workspace_views.RelationshipRowsView.as_view(), name='entity_workspace_relationship_rows'),
+    path('workspace/legacy/<uuid:mapping_id>/select-suggestion/', schema_workspace_views.RelationshipSelectSuggestionView.as_view(), name='entity_workspace_select_suggestion'),
+    path('workspace/legacy/<uuid:mapping_id>/flow/', schema_workspace_views.SchemaWorkspaceFlowView.as_view(), name='entity_workspace_flow'),
 
     # Manual Relationship Builder
     path('add-column-to-workspace/', direct_data_views.add_column_to_workspace, name='add_column_to_workspace'),
