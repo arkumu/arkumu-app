@@ -1,0 +1,73 @@
+{% load metadata_tags %}
+
+<div class="w-full">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-semibold">{{ dataset_name }} <span class="badge badge-sm">{{ page_obj.paginator.count }}</span></h2>
+    <div class="join hidden sm:inline-flex">
+      {% if page_obj.paginator.num_pages > 1 %}
+        <a href="{% url url_name %}?page=1&embed=1" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?page=1&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">«</a>
+        {% if page_obj.has_previous %}
+        <a href="{% url url_name %}?page={{ page_obj.previous_page_number }}&embed=1" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?page={{ page_obj.previous_page_number }}&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">‹</a>
+        {% else %}
+        <button class="btn btn-xs join-item btn-disabled">‹</button>
+        {% endif %}
+        <span class="btn btn-xs join-item btn-ghost">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a href="{% url url_name %}?page={{ page_obj.next_page_number }}&embed=1" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?page={{ page_obj.next_page_number }}&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">›</a>
+        <a href="{% url url_name %}?page={{ page_obj.paginator.num_pages }}&embed=1" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?page={{ page_obj.paginator.num_pages }}&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">»</a>
+        {% else %}
+        <button class="btn btn-xs join-item btn-disabled">›</button>
+        <button class="btn btn-xs join-item btn-disabled">»</button>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="overflow-x-auto w-full">
+    <table class="table table-zebra table-sm w-full">
+      <thead>
+        <tr>
+          <th class="bg-base-200 sticky left-0 z-10">#</th>
+          {% for column in columns %}
+          <th class="bg-base-200 whitespace-nowrap">
+            {{ column.name }}
+            {% if column.is_fk %}
+            <span class="badge badge-xs badge-info ml-1" title="Foreign Key">FK</span>
+            {% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in page_obj %}
+        <tr>
+          <td class="font-mono text-xs sticky left-0 z-10 bg-base-100">{{ page_obj.start_index|add:forloop.counter|add:"-1" }}</td>
+          {% for column in columns %}
+          <td class="whitespace-nowrap" title="{{ row|get_item:column.name }}">
+            {% with value=row|get_item:column.name %}
+              {% if value %}
+                <div class="max-w-md truncate">{{ value }}</div>
+              {% else %}
+                <span class="text-base-content/30">—</span>
+              {% endif %}
+            {% endwith %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="{{ columns|length|add:1 }}" class="text-center text-base-content/50 py-8">
+            No data available
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+

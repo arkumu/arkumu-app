@@ -1,113 +1,242 @@
-<div class="max-w-screen-2xl mx-auto px-6 py-10">
-    <div class="space-y-6">
-        <div class="bg-base-200 rounded-box p-6 border border-base-300">
-            <h1 class="text-2xl font-bold">Projekt-Metadaten erfassen</h1>
-            <p class="text-sm text-base-content/70 mt-1">
-                Erfasse neue Projekte mit einer institutionseigenen Datensatzstruktur. Wähle zuerst deine Institution, danach eine Sektion.
+<div class="container mx-auto">
+    <div class="space-y-6 p-6">
+        <div class="bg-base-200 rounded-box p-6">
+            <h1 class="text-2xl font-bold">Metadata Workspace</h1>
+            <p class="text-sm text-base-content/70 mt-2">
+                Wähle eine Entität und arbeite in zwei Ansichten: <strong>Browse</strong> (Tabellenansicht vorhandener Einträge) und <strong>Create/Edit</strong> (Formular mit menschenlesbaren Feldern).
             </p>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-            <aside class="xl:col-span-3 space-y-4">
-                <div class="card bg-base-100 border border-base-300 shadow-sm">
-                    <div class="card-body space-y-3">
-                        <h2 class="text-lg font-semibold">Institution</h2>
-                        {% if organizations %}
-                        <select name="organization"
-                                class="select select-bordered w-full"
-                                hx-get="{% url 'metadata:metadata_entry' %}"
-                                hx-target="#metadata-entry-root"
-                                hx-select="#metadata-entry-root"
-                                hx-push-url="true"
-                                hx-trigger="change"
-                                aria-label="Institution auswählen">
-                            {% for org in organizations %}
-                            <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
-                                {{ org.name }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% else %}
-                        <p class="text-sm">Keine Institutionen für die manuelle Eingabe konfiguriert.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="card bg-base-100 border border-base-300 shadow-sm">
-                    <div class="card-body space-y-3">
-                        <div class="flex items-center justify-between">
-                            <h2 class="text-lg font-semibold">Sektionen</h2>
-                            <span class="badge badge-soft badge-sm">{{ sections|length }}</span>
-                        </div>
-                        {% if selected_organization %}
-                            {% if sections %}
-                                <div class="space-y-2">
-                                {% for section in sections %}
-                                    <button type="button"
-                                            class="btn btn-outline btn-sm w-full justify-start"
-                                            hx-get="{% url 'metadata:metadata_entry_section' %}"
-                                            hx-target="#metadata-entry-panel"
-                                            hx-swap="innerHTML"
-                                            hx-vals='{"organization": "{{ selected_organization }}", "section": "{{ section.name }}"}'
-                                            aria-label="{{ section.label }} öffnen">
-                                        <div class="text-left">
-                                            <span class="font-medium block">{{ section.label }}</span>
-                                            {% if section.description %}
-                                            <span class="text-xs text-base-content/60">{{ section.description }}</span>
-                                            {% endif %}
-                                        </div>
-                                    </button>
-                                {% endfor %}
-                                </div>
+        <div class="space-y-6">
+            <!-- Organization selector at top -->
+            <div class="card bg-base-100">
+                <div class="card-body">
+                    <div class="flex items-center gap-4">
+                        <div class="form-control flex-1 max-w-xs">
+                            <label class="label">
+                                <span class="label-text font-semibold">Organisation</span>
+                            </label>
+                            {% if organizations %}
+                            <select name="organization"
+                                  class="select select-bordered"
+                                  hx-get="{% url 'metadata:metadata_entry' %}"
+                                  hx-target="#metadata-entry-root"
+                                  hx-swap="innerHTML"
+                                  hx-push-url="true"
+                                  hx-trigger="change"
+                                  aria-label="Institution auswählen">
+                              {% for org in organizations %}
+                              <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
+                                  {{ org.name }}
+                              </option>
+                              {% endfor %}
+                            </select>
                             {% else %}
-                                <p class="text-sm text-base-content/70">Für diese Institution sind noch keine Sektionen hinterlegt.</p>
+                            <div class="alert alert-info alert-sm">Keine Institutionen konfiguriert.</div>
                             {% endif %}
-                        {% else %}
-                            <p class="text-sm text-base-content/70">Wähle zunächst eine Institution.</p>
-                        {% endif %}
+                        </div>
                     </div>
                 </div>
-            </aside>
+            </div>
 
-            <main class="xl:col-span-6">
-                <div id="metadata-entry-panel" class="card bg-base-100 border border-dashed border-base-300 shadow-none">
+            <main class="w-full">
+                <div class="card bg-base-100">
                     <div class="card-body">
-                        {% if selected_organization %}
-                            <h2 class="text-lg font-semibold mb-2">Sektion wählen</h2>
-                            <p class="text-sm text-base-content/70">
-                                Die Formulare basieren auf den Projekt-Datenklassen deiner Organisation und lassen sich direkt mit HTMX ausfüllen.
-                            </p>
-                        {% else %}
-                            <h2 class="text-lg font-semibold mb-2">Institution wählen</h2>
-                            <p class="text-sm text-base-content/70">
-                                Nach der Auswahl wird die passende Struktur zum Erfassen neuer Projekte angezeigt.
-                            </p>
-                        {% endif %}
+                        <!-- All entity tabs -->
+                        <div class="mb-4">
+                            <style>
+                                .entity-tabs-container[role="tablist"] {
+                                    display: flex !important;
+                                    flex-wrap: wrap !important;
+                                    white-space: normal !important;
+                                    max-width: 100% !important;
+                                }
+                                .entity-tabs-container[role="tablist"] .tab {
+                                    flex-shrink: 0 !important;
+                                    min-width: fit-content !important;
+                                }
+                            </style>
+                            <div role="tablist" class="tabs tabs-lifted tabs-sm entity-tabs-container">
+                                <!-- Main entity tabs only -->
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Projekte" 
+                                       checked
+                                       hx-get="{% url 'metadata:tabular_projects' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Ereignisse"
+                                       hx-get="{% url 'metadata:tabular_ereignis' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Akteure"
+                                       hx-get="{% url 'metadata:tabular_akteur' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Orte"
+                                       hx-get="{% url 'metadata:tabular_ort' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Sammlungen"
+                                       hx-get="{% url 'metadata:tabular_sammlung' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Digitale Objekte"
+                                       hx-get="{% url 'metadata:tabular_digitales_objekt' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Informationstraeger"
+                                       hx-get="{% url 'metadata:tabular_informationstraeger' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Physische Objekte"
+                                       hx-get="{% url 'metadata:tabular_physisches_objekt' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipment Software"
+                                       hx-get="{% url 'metadata:tabular_equipment_software' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipmentart"
+                                       hx-get="{% url 'metadata:tabular_equipmentart' %}?embed=1"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click" />
+                            </div>
+                        </div>
+                        <div role="tablist" class="tabs tabs-boxed">
+                            <a role="tab" class="tab tab-active" id="tab-browse"
+                               hx-get="{% url 'metadata:tabular_projects' %}?embed=1"
+                               hx-target="#workspace-browse-panel"
+                               hx-swap="innerHTML"
+                               hx-trigger="click"
+                               _="on click remove .hidden from #pane-browse add .hidden to #pane-create add .tab-active to me remove .tab-active from #tab-create">Browse</a>
+                            <a role="tab" class="tab" id="tab-create"
+                               _="on click add .hidden to #pane-browse remove .hidden from #pane-create remove .tab-active from #tab-browse add .tab-active to me">Create / Edit</a>
+                        </div>
+
+                        <!-- Browse pane -->
+                        <section id="pane-browse" class="mt-4 w-full">
+                            <div id="workspace-browse-panel"
+                                 hx-get="{% url 'metadata:tabular_projects' %}?embed=1"
+                                 hx-trigger="load"
+                                 hx-target="this" hx-swap="innerHTML"></div>
+                        </section>
+
+                        <!-- Create/Edit pane -->
+                        <section id="pane-create" class="mt-4 hidden">
+                            <div class="form-control">
+                              <label class="label"><span class="label-text">Entität</span></label>
+                              <select id="qc-entity" class="select select-bordered select-sm w-full mb-3">
+                                <option value="project">Project</option>
+                                <option value="event">Event</option>
+                                <option value="actor">Actor</option>
+                                <option value="digital_object">Digital Object</option>
+                              </select>
+                            </div>
+
+                            <form id="qc-form" hx-post="{% url 'metadata:workspace_quick_create' 'project' %}"
+                                  hx-target="#workspace-browse-panel" hx-swap="innerHTML"
+                                  hx-on::after-request="this.reset();">
+                                <div data-entity-fields="project" class="space-y-2">
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Projekt-ID</span></label>
+                                      <input name="id" class="input input-bordered input-sm" required>
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Bevorzugter Titel</span></label>
+                                      <input name="title" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Rechtsstatus</span></label>
+                                      <input name="rights" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Schlagwort</span></label>
+                                      <input name="keyword" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Vorschaubild (URL)</span></label>
+                                      <input name="preview" class="input input-bordered input-sm">
+                                    </div>
+                                </div>
+
+                                <div data-entity-fields="event" class="space-y-2 hidden">
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Ereignis-ID</span></label>
+                                      <input name="id" class="input input-bordered input-sm" required>
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Name</span></label>
+                                      <input name="name" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Ereignistyp</span></label>
+                                      <input name="type" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Ereignisort</span></label>
+                                      <input name="place" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Digitales Objekt (URI)</span></label>
+                                      <input name="digital_object" class="input input-bordered input-sm">
+                                    </div>
+                                </div>
+
+                                <div data-entity-fields="actor" class="space-y-2 hidden">
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">AkteurIn-ID</span></label>
+                                      <input name="id" class="input input-bordered input-sm" required>
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Name</span></label>
+                                      <input name="name" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Beruf und Tätigkeit</span></label>
+                                      <input name="profession" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Geburtsort</span></label>
+                                      <input name="birthplace" class="input input-bordered input-sm">
+                                    </div>
+                                </div>
+
+                                <div data-entity-fields="digital_object" class="space-y-2 hidden">
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Digitales Objekt-ID</span></label>
+                                      <input name="id" class="input input-bordered input-sm" required>
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Dateiname</span></label>
+                                      <input name="filename" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Objekttyp</span></label>
+                                      <input name="type" class="input input-bordered input-sm">
+                                    </div>
+                                    <div class="form-control">
+                                      <label class="label"><span class="label-text">Lizenzstatus</span></label>
+                                      <input name="license" class="input input-bordered input-sm">
+                                    </div>
+                                </div>
+
+                                <div class="form-control pt-2">
+                                    <button type="submit" class="btn btn-primary btn-sm">Speichern</button>
+                                </div>
+                            </form>
+                        </section>
                     </div>
                 </div>
             </main>
-
-            <section class="xl:col-span-3 space-y-4">
-                <div class="card bg-base-100 border border-base-300 shadow-sm">
-                    <div class="card-body space-y-4">
-                        <div>
-                            <h2 class="text-lg font-semibold">Projektstruktur</h2>
-                            <p class="text-xs text-base-content/70">Aus den Dataclasses des Snapshots abgeleitete Felder und Relationen.</p>
-                        </div>
-                        <div class="space-y-4 text-sm">
-                            {% include "metadata/entry/partials/project_structure_tree.html" with node=project_structure %}
-                        </div>
-                    </div>
-                </div>
-
-                <div id="metadata-entry-latest"
-                     hx-get="{% url 'metadata:metadata_entry_latest' %}{% if selected_organization %}?organization={{ selected_organization }}{% endif %}"
-                     hx-trigger="load, metadata-entry:submission-success from:body"
-                     hx-target="this"
-                     hx-swap="innerHTML">
-                    {% include "metadata/entry/partials/latest_projects.html" %}
-                </div>
-            </section>
         </div>
     </div>
 </div>
