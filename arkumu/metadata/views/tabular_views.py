@@ -201,56 +201,63 @@ def _build_entity_label_map(entities: List[Resource]) -> Dict[Any, str]:
 
 PROJECT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "bevorzugterTitel",
+        "label": "Bevorzugter Titel",
         "matchers": _expand_property_variants(
             CardURIs.TITLE,
             "Bevorzugter Titel",
-            "bevorzugterTitel",
-            "bevorzugterTitel.titel",
         ),
     },
     {
-        "label": "projektArt",
+        "label": "Projektart",
         "matchers": _expand_property_variants(
             ProjectURIs.PROJECT_TYPE_FIELD,
             "Projektart",
-            "projektArt",
         ),
     },
     {
-        "label": "kategorie",
+        "label": "Projektkategorie",
         "matchers": _expand_property_variants(
             CardURIs.CATEGORY,
             "Projektkategorie",
-            "kategorie",
         ),
     },
     {
-        "label": "hochschule",
+        "label": "Einliefernde Hochschule",
         "matchers": _expand_property_variants(
             CardURIs.INSTITUTION,
+            "Einliefernde Hochschule",
             "Hochschule",
-            "einliefernde Hochschule",
-            "hochschule",
         ),
     },
     {
-        "label": "signatur",
+        "label": "Schlagworte",
+        "matchers": _expand_property_variants(
+            ProjectURIs.CATCHPHRASE,
+            "Schlagwort",
+        ),
+    },
+    {
+        "label": "Signatur beim Einlieferer",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/signatur-beim-einlieferer",
             "http://arkumu.org/data/properties/signatur",
             "Signatur beim Einlieferer",
-            "signatur",
         ),
     },
     {
-        "label": "status",
+        "label": "Angegebene Nutzungsrechte",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/angegebene-nutzungsrechte",
+            "Angegebene Nutzungsrechte",
+        ),
+    },
+    {
+        "label": "Projektstatus",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/projektstatus",
             "http://arkumu.org/data/properties/anzeigestatus",
             "http://arkumu.org/data/properties/status",
             "Projektstatus",
-            "status",
             "Anzeigestatus",
         ),
     },
@@ -259,48 +266,66 @@ PROJECT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 # Akteur (Actor) column definitions
 AKTEUR_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "name_de",
+        "label": "Deutscher Name",
         "matchers": _expand_property_variants(
             CardURIs.ACTOR_GERMAN_NAME,
-            "http://arkumu.org/data/properties/deutscher-name",
-            "http://arkumu.org/data/properties/name-de",
-            "name_de",
-            "deutscher Name",
+            "Deutscher Name",
         ),
     },
     {
-        "label": "name_en",
+        "label": "Englischer Name",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/englischer-name",
-            "http://arkumu.org/data/properties/name-en",
-            "name_en",
-            "englischer Name",
+            "Englischer Name",
         ),
     },
     {
-        "label": "geburtsort",
+        "label": "Beruf und Tätigkeit",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/beruf-und-taetigkeit",
+            "Beruf und Tätigkeit",
+        ),
+    },
+    {
+        "label": "Geschlecht",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/geschlecht",
+            "Geschlecht",
+        ),
+    },
+    {
+        "label": "Geburtsort",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/geburtsort",
-            "geburtsort",
             "Geburtsort",
         ),
     },
     {
-        "label": "fruehstesGeburtsdatum",
+        "label": "Sterbeort",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/fruehstes-geburtsdatum",
-            "http://arkumu.org/data/properties/geburtsdatum",
-            "fruehstesGeburtsdatum",
-            "frühestes Geburtsdatum",
+            "http://arkumu.org/data/properties/sterbeort",
+            "Sterbeort",
         ),
     },
     {
-        "label": "fruehstesSterbedatum",
+        "label": "Wirkungsbeginn",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/fruehstes-sterbedatum",
-            "http://arkumu.org/data/properties/sterbedatum",
-            "fruehstesSterbedatum",
-            "frühestes Sterbedatum",
+            "http://arkumu.org/data/properties/wirkungsbeginn",
+            "Wirkungsbeginn",
+        ),
+    },
+    {
+        "label": "Wirkungsende",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/wirkungsende",
+            "Wirkungsende",
+        ),
+    },
+    {
+        "label": "Wikidata-ID",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/wikidata-id",
+            "Wikidata-ID",
         ),
     },
 ]
@@ -338,49 +363,68 @@ AKTEUR_RELATION_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 # Digitales Objekt column definitions
 DIGITALES_OBJEKT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "file.originalFileName",
+        "label": "Dateiname",
         "matchers": _expand_property_variants(
-            ProjectURIs.DIGITAL_OBJECT_PATH,
-            "http://arkumu.org/data/properties/dateipfad",
+            "http://arkumu.org/data/properties/dateiname",
             "http://arkumu.org/data/properties/original-dateiname",
-            "file.originalFileName",
             "Dateiname",
         ),
     },
     {
-        "label": "fileSize",
+        "label": "Dateipfad",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/dateigroesse",
-            "http://arkumu.org/data/properties/file-size",
-            "fileSize",
-            "Dateigröße",
+            ProjectURIs.DIGITAL_OBJECT_PATH,
+            "http://arkumu.org/data/properties/dateipfad",
+            "Dateipfad",
         ),
     },
     {
-        "label": "medientyp",
+        "label": "Medientyp",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/medientyp",
-            "http://arkumu.org/data/properties/media-type",
-            "medientyp",
             "Medientyp",
         ),
     },
     {
-        "label": "objekttypen",
+        "label": "Lizenzstatus",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/objekttyp",
-            "http://arkumu.org/data/properties/objekttypen",
-            "objekttypen",
-            "Objekttyp",
+            "http://arkumu.org/data/properties/lizenzstatus",
+            "Lizenzstatus",
         ),
     },
     {
-        "label": "erhaltungstyp",
+        "label": "Anzeigestatus",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/erhaltungstyp",
-            "http://arkumu.org/data/properties/preservation-type",
-            "erhaltungstyp",
-            "Erhaltungstyp",
+            "http://arkumu.org/data/properties/anzeigestatus",
+            "Anzeigestatus",
+        ),
+    },
+    {
+        "label": "Einlieferer",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/einlieferer",
+            "Einlieferer",
+        ),
+    },
+    {
+        "label": "Entstehung",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/entstehung",
+            "Entstehung",
+        ),
+    },
+    {
+        "label": "Tonformat",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/tonformat",
+            "Tonformat",
+        ),
+    },
+    {
+        "label": "Wesentliche Eigenschaften (deutsch)",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/wesentliche-eigenschaften-deutsch",
+            "Wesentliche Eigenschaften (deutsch)",
         ),
     },
 ]
@@ -388,35 +432,102 @@ DIGITALES_OBJEKT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 # Equipment Software column definitions
 EQUIPMENT_SOFTWARE_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "name_de",
+        "label": "Deutsche Produkt-Bezeichnung",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/deutscher-name",
             "http://arkumu.org/data/properties/name-de",
-            "name_de",
+            "Deutsche (Produkt-) Bezeichnung",
         ),
     },
     {
-        "label": "name_en",
+        "label": "Englische Produkt-Bezeichnung",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/englischer-name",
             "http://arkumu.org/data/properties/name-en",
-            "name_en",
+            "Englische (Produkt-) Bezeichnung",
         ),
     },
     {
-        "label": "equipmentart",
+        "label": "Equipmentart",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/equipmentart",
             "http://arkumu.org/data/properties/equipment-art",
-            "equipmentart",
+            "Equipmentart",
         ),
     },
     {
-        "label": "hersteller",
+        "label": "Hersteller",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/hersteller",
             "http://arkumu.org/data/properties/manufacturer",
-            "hersteller",
+            "Hersteller",
+        ),
+    },
+    {
+        "label": "Deutsche Beschreibung",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/deutsche-beschreibung",
+            "Deutsche Beschreibung",
+        ),
+    },
+    {
+        "label": "GND-Nummer",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/gnd-nummer",
+            "GND-Nummer",
+        ),
+    },
+    {
+        "label": "Wikidata-ID",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/wikidata-id",
+            "Wikidata-ID",
+        ),
+    },
+]
+
+# Equipmentart column definitions
+EQUIPMENTART_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "label": "Deutscher Name der Equipmentart",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/deutscher-name-der-equipmentart",
+            "Deutscher Name der Equipmentart",
+        ),
+    },
+    {
+        "label": "Englischer Name der Equipmentart",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/englischer-name-der-equipmentart",
+            "Englischer Name der Equipmentart",
+        ),
+    },
+    {
+        "label": "Equipmentart-ID",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/equipmentart-id",
+            "Equipmentart-ID",
+        ),
+    },
+    {
+        "label": "AAT-ID",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/aat-id",
+            "AAT-ID",
+        ),
+    },
+    {
+        "label": "GND-Nummer",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/gnd-nummer",
+            "GND-Nummer",
+        ),
+    },
+    {
+        "label": "Wikidata-ID",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/wikidata-id",
+            "Wikidata-ID",
         ),
     },
 ]
@@ -424,39 +535,58 @@ EQUIPMENT_SOFTWARE_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 # Ereignis (Event) column definitions
 EREIGNIS_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "name",
+        "label": "Ereignisname",
         "matchers": _expand_property_variants(
             ProjectURIs.EVENT_NAME,
-            CardURIs.ACTOR_GERMAN_NAME,
             "http://arkumu.org/data/properties/ereignisname",
-            "http://arkumu.org/data/properties/name",
-            "name",
+            "Ereignisname",
         ),
     },
     {
-        "label": "ereignisTyp",
+        "label": "Ereignistyp",
         "matchers": _expand_property_variants(
             ProjectURIs.EVENT_TYPE,
             "http://arkumu.org/data/properties/ereignistyp",
-            "ereignisTyp",
+            "Ereignistyp",
         ),
     },
     {
-        "label": "beginn",
+        "label": "Beginn",
         "matchers": _expand_property_variants(
             CardURIs.EVENT_START,
             "http://arkumu.org/data/properties/ereignisbeginn",
-            "http://arkumu.org/data/properties/beginn",
-            "beginn",
+            "Beginn",
         ),
     },
     {
-        "label": "ende",
+        "label": "Ende",
         "matchers": _expand_property_variants(
             CardURIs.EVENT_END,
             "http://arkumu.org/data/properties/ereignisende",
-            "http://arkumu.org/data/properties/ende",
-            "ende",
+            "Ende",
+        ),
+    },
+    {
+        "label": "Ereignisort",
+        "matchers": _expand_property_variants(
+            ProjectURIs.EVENT_LOCATION,
+            "http://arkumu.org/data/properties/ereignisort",
+            "Ereignisort",
+        ),
+    },
+    {
+        "label": "Ereignisbeschreibung",
+        "matchers": _expand_property_variants(
+            ProjectURIs.EVENT_DESCRIPTION,
+            "http://arkumu.org/data/properties/ereignisbeschreibung",
+            "Ereignisbeschreibung",
+        ),
+    },
+    {
+        "label": "Projektbeziehungen",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/ereignis",
+            "Projektbeziehungen",
         ),
     },
 ]
@@ -490,33 +620,74 @@ EREIGNIS_RELATION_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 # Informationstraeger column definitions
 INFORMATIONSTRAEGER_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "name_de",
+        "label": "Deutsche (Produkt-) Bezeichnung",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/deutscher-name",
-            "name_de",
+            "http://arkumu.org/data/properties/deutsche-produkt-bezeichnung",
+            "Deutsche (Produkt-) Bezeichnung",
         ),
     },
     {
-        "label": "name_en",
+        "label": "Englische (Produkt-) Bezeichnung",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/englischer-name",
-            "name_en",
+            "http://arkumu.org/data/properties/englische-produkt-bezeichnung",
+            "Englische (Produkt-) Bezeichnung",
         ),
     },
     {
-        "label": "externeInventarSignaturnummern",
+        "label": "Informationsträgertyp",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/informationstraegertyp",
+            "Informationsträgertyp",
+        ),
+    },
+    {
+        "label": "Aufbewahrungsort",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/aufbewahrungsort",
+            "Aufbewahrungsort",
+        ),
+    },
+    {
+        "label": "BesitzerIn",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/besitzerin",
+            "BesitzerIn",
+        ),
+    },
+    {
+        "label": "EigentümerIn",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/eigentuemerin",
+            "EigentümerIn",
+        ),
+    },
+    {
+        "label": "Externe Inventar-Signaturnummer",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/externe-inventar-signaturnummern",
             "http://arkumu.org/data/properties/externe-inventarsignatur",
-            "externeInventarSignaturnummern",
+            "Externe Inventar-Signaturnummer",
         ),
     },
     {
-        "label": "informationstraegertyp",
+        "label": "Erhaltungszustand (deutsch)",
         "matchers": _expand_property_variants(
-            CardURIs.DIGITAL_OBJECT_LINK,
-            "http://arkumu.org/data/properties/informationstraegertyp",
-            "informationstraegertyp",
+            "http://arkumu.org/data/properties/erhaltungszustand-deutsch",
+            "Erhaltungszustand (deutsch)",
+        ),
+    },
+    {
+        "label": "Maße",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/masse",
+            "Maße",
+        ),
+    },
+    {
+        "label": "Provenienz",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/provenienz",
+            "Provenienz",
         ),
     },
 ]
@@ -550,28 +721,42 @@ ORGANISATIONSEINHEIT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 # Ort (Place) column definitions
 ORT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "wikidataItem",
+        "label": "Deutscher Name des Ortes",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/deutscher-name-des-ortes",
+            "Deutscher Name des Ortes",
+        ),
+    },
+    {
+        "label": "Ort-ID",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/ort-id",
+            "Ort-ID",
+        ),
+    },
+    {
+        "label": "Wikidata-ID",
         "matchers": _expand_property_variants(
             ProjectURIs.EVENT_LOCATION_WIKIDATA,
             "http://arkumu.org/data/properties/wikidata-id",
             "http://arkumu.org/data/properties/wikidata-item",
-            "wikidataItem",
+            "Wikidata-ID",
         ),
     },
     {
-        "label": "hierarchie",
+        "label": "Ortshierarchie",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/hierarchie",
             "http://arkumu.org/data/properties/location-hierarchy",
-            "hierarchie",
+            "Ortshierarchie",
         ),
     },
     {
-        "label": "kategorie",
+        "label": "Ort-Kategorie",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/ort-kategorie",
             "http://arkumu.org/data/properties/location-category",
-            "kategorie",
+            "Ort-Kategorie",
         ),
     },
 ]
@@ -579,24 +764,59 @@ ORT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 # Physisches Objekt column definitions
 PHYSISCHES_OBJEKT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "label": "name_de",
+        "label": "Deutsche Bezeichnung",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/deutscher-name",
-            "name_de",
+            "http://arkumu.org/data/properties/deutsche-bezeichnung",
+            "Deutsche Bezeichnung",
         ),
     },
     {
-        "label": "name_en",
+        "label": "Englische Bezeichnung",
         "matchers": _expand_property_variants(
-            "http://arkumu.org/data/properties/englischer-name",
-            "name_en",
+            "http://arkumu.org/data/properties/englische-bezeichnung",
+            "Englische Bezeichnung",
         ),
     },
     {
-        "label": "externeInventarSignaturnummern",
+        "label": "Aufbewahrungsort",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/aufbewahrungsort",
+            "Aufbewahrungsort",
+        ),
+    },
+    {
+        "label": "BesitzerIn",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/besitzerin",
+            "BesitzerIn",
+        ),
+    },
+    {
+        "label": "Externe Inventar-Signaturnummer",
         "matchers": _expand_property_variants(
             "http://arkumu.org/data/properties/externe-inventar-signaturnummern",
-            "externeInventarSignaturnummern",
+            "Externe Inventar-Signaturnummer",
+        ),
+    },
+    {
+        "label": "Materialschlagwort",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/materialschlagwort",
+            "Materialschlagwort",
+        ),
+    },
+    {
+        "label": "Maße",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/masse",
+            "Maße",
+        ),
+    },
+    {
+        "label": "Provenienz",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/provenienz",
+            "Provenienz",
         ),
     },
 ]
@@ -748,7 +968,7 @@ ENTITY_CONFIG: Dict[str, Dict] = {
     'equipmentart': {
         'uri_contains': '/entities/equipmentart/',
         'dataset_name': 'Equipmentart',
-        'columns': [],  # Inherits default Fields plugin ordering
+        'columns': EQUIPMENTART_COLUMN_DEFINITIONS,
     },
     'ereignis': {
         'uri_contains': '/entities/ereignis/',

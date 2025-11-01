@@ -155,6 +155,32 @@ def test_project_tabular_maps_digikunst_columns(client):
         source=org,
     )
 
+    # Schlagwort literal for new column
+    keyword_pred = add_predicate(
+        "http://arkumu.org/data/fuk/properties/schlagwort",
+        "Schlagwort",
+        ProjectURIs.CATCHPHRASE,
+    )
+    Triple.objects.create(
+        subject=subject,
+        predicate=keyword_pred,
+        object=add_literal("Theater"),
+        source=org,
+    )
+
+    # Usage rights literal for dedicated column
+    usage_pred = add_predicate(
+        "http://arkumu.org/data/fuk/properties/angegebene-nutzungsrechte",
+        "Angegebene Nutzungsrechte",
+        "http://arkumu.org/data/properties/angegebene-nutzungsrechte",
+    )
+    Triple.objects.create(
+        subject=subject,
+        predicate=usage_pred,
+        object=add_literal("CC BY 4.0"),
+        source=org,
+    )
+
     url = reverse("metadata:tabular_projects")
     response = client.get(f"{url}?embed=1")
     assert response.status_code == 200
@@ -166,8 +192,9 @@ def test_project_tabular_maps_digikunst_columns(client):
     assert "Folkwang Universität der Künste" in content
     assert "FUK-123" in content
     assert "Aktiv" in content
-    # Ensure column headers stick to DigiKunst naming
-    assert "bevorzugterTitel" in content
+    assert "CC BY 4.0" in content
+    # Ensure column headers surface human-friendly labels
+    assert "Bevorzugter Titel" in content
 
 
 @pytest.mark.django_db
