@@ -1223,6 +1223,16 @@ def _normalize_reference(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def _escape_flocat_href(value: Optional[str]) -> Optional[str]:
+    """Percent-encode square brackets for METS FLocat href values."""
+    if not value:
+        return value
+    text = str(value)
+    if not text:
+        return text
+    return text.replace('[', '%5B').replace(']', '%5D')
+
+
 def _boolean_token(value: Optional[bool]) -> Optional[str]:
     if value is None:
         return None
@@ -2373,6 +2383,7 @@ def _build_mets_from_project(
             normalized_href = _normalize_reference(href)
             if normalized_href:
                 href = normalized_href
+            href = _escape_flocat_href(href)
             if href:
                 flocat_attrs = {
                     "LOCTYPE": "URL",

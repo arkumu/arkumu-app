@@ -424,6 +424,53 @@ class TestMETSSerializer:
         # Should have at least one div element
         assert len(all_divs) >= 1
 
+    def test_mets_flocat_href_encodes_brackets(self):
+        """Rosetta-exported FLocat href values percent-encode square brackets."""
+        from arkumu.storage.models.s3_file_objects import S3FileObject
+
+        resource_uri = "https://test.example.com/resource/2"
+        resource = Resource.objects.create(
+            uri=resource_uri,
+            organization=self.organization,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+        )
+
+        S3FileObject.objects.create(
+            file_name="test1.txt",
+            s3_key="test_org/files/[demo]/test1.txt",
+            file_size_bytes=2048,
+            content_type="text/plain",
+            related_resource=resource,
+            s3_url="https://s3.example/test_org/files/[demo]/test1.txt",
+            status='completed'
+        )
+
+        mock_service = Mock()
+        mock_service.get_entity_graph.return_value = {
+            "root_id": resource_uri,
+            "nodes": {},
+            "edges": []
+        }
+
+        with patch('arkumu.storage.services.rosetta_export_service.RosettaExportService') as mock_export_cls:
+            mock_export = Mock()
+            mock_export.prepare_file_for_harvest.return_value = {
+                'access_method': 'presigned_url',
+                'url': 'https://download.example/files/[demo]/test1.txt'
+            }
+            mock_export_cls.return_value = mock_export
+
+            serializer = METSSerializer(org_code=self.org_code, graph_service=mock_service)
+            result = serializer.serialize_resource(resource_uri)
+
+        root = ET.fromstring(result.encode("utf-8"))
+        flocat = root.find(f".//{{{METS_NS}}}FLocat")
+        assert flocat is not None
+        href = flocat.get(f'{{{XLINK_NS}}}href')
+        assert href == 'https://download.example/files/%5Bdemo%5D/test1.txt'
+        assert '[' not in href and ']' not in href
+
     # ============================================================================
     # INTEGRATION TESTS
     # ============================================================================

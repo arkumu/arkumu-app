@@ -1047,6 +1047,27 @@ class TestOAIViewFunctions:
         assert ie_dmd.find(f"./{{{DC_NS}}}title[@{{{XML_NS}}}type='event-name']") is None
 
     @patch('arkumu.oaipmh.views._get_snapshot_record')
+    def test_mets_flocat_href_escapes_brackets(self, mock_get_record, sample_resources):
+        """FLocat hrefs encode square brackets in generated METS output."""
+        resource = sample_resources[0]
+        self._ensure_event_storage(resource)
+        record = self._build_snapshot_record(resource, include_files=True)
+        record.digital_objects[0].storage_key = "streams/[launch]/test1.txt"
+        record.digital_objects[0].access_url = "https://download.example/streams/[launch]/test1.txt"
+        mock_get_record.return_value = record
+
+        metadata = views._build_metadata_element(resource, "mets")
+        mets_root = metadata.find(f".//{{{METS_NS}}}mets")
+        assert mets_root is not None
+
+        href_values = {
+            flocat.get(f"{{{XLINK_NS}}}href")
+            for flocat in mets_root.findall(f".//{{{METS_NS}}}FLocat")
+        }
+        assert "streams/%5Blaunch%5D/test1.txt" in href_values
+        assert all(href is None or ('[' not in href and ']' not in href) for href in href_values)
+
+    @patch('arkumu.oaipmh.views._get_snapshot_record')
     def test_rosetta_mets_structure(self, mock_get_record, sample_resources):
         """Ensure Rosetta METS output matches expected structural profile."""
         resource = sample_resources[0]
