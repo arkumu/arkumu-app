@@ -26,7 +26,7 @@ class PropertyResource(BaseResource):
         super().__init__(resource)
 
     @classmethod
-    def get_or_create(cls, uri: str, name: str, **kwargs) -> tuple['PropertyResource', bool]:
+    def get_or_create(cls, canonical_uri: str, name: str, **kwargs) -> tuple['PropertyResource', bool]:
         """
         Get or create a property resource.
 
@@ -39,7 +39,7 @@ class PropertyResource(BaseResource):
             Tuple of (property_resource_instance, was_created)
         """
         resource, created = Resource.objects.get_or_create(
-            uri=uri,
+            canonical_uri=canonical_uri,
             defaults={
                 **kwargs,
                 "resource_type": cls._resource_type,
