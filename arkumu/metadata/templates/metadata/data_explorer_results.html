@@ -57,6 +57,8 @@
                         {% endif %}
                     </button>
                 </th>
+                <!-- Visibility Column -->
+                <th class="w-28 text-center text-xs">Visibility</th>
                 <!-- Sortable Triples Column -->
                 <th class="w-20">
                     <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
@@ -120,6 +122,25 @@
                     {% else %}
                         <span class="text-xs text-base-content/30">-</span>
                     {% endif %}
+                </td>
+                
+                <!-- Visibility -->
+                <td class="text-center">
+                    {% with level=resource.public_access_level approved=resource.is_public_approved %}
+                        {% if level == 'public' %}
+                            <span class="badge badge-success badge-xs block">
+                                Public{% if approved %} ✓{% else %} (pending){% endif %}
+                            </span>
+                        {% elif level == 'restricted' %}
+                            <span class="badge badge-warning badge-xs block">
+                                Restricted{% if approved %} ✓{% endif %}
+                            </span>
+                        {% else %}
+                            <span class="badge badge-error badge-xs block">
+                                Private
+                            </span>
+                        {% endif %}
+                    {% endwith %}
                 </td>
                 
                 <!-- Triple Usage (Lazy Loaded with HTMX) -->

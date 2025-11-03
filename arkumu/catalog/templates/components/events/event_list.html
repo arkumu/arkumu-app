@@ -1,19 +1,20 @@
 <!-- Data Table Component with Theme Support -->
 <div class="data-table-component w-full">
-  
+
   <!-- Table Title -->
   {% if table_title %}
     <h2 class="text-2xl font-medium mb-8 transition-colors
                text-arkumu-dark
                theme-dark:text-arkumu-light
-               theme-blue:text-arkumu-blue">
+               theme-blue:text-arkumu-blue"
+        tabindex="0">
       {{ table_title|default:"Allgemein" }}
     </h2>
   {% endif %}
-  
+
   <!-- Table Content -->
   <div class="space-y-0">
-    
+
     <!-- Row 1 -->
     <div class="flex py-4 border-b border-gray-300 transition-colors
                 theme-dark:border-gray-600
@@ -22,30 +23,33 @@
         <span class="font-bold transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue">
+                     theme-blue:text-arkumu-blue"
+              tabindex="0">
           {{ row1_label|default:"Kommentar DE" }}
         </span>
       </div>
       <div class="w-2/3">
         {% if row1_type == 'link' %}
-          <a href="{{ row1_url|default:'#' }}" 
+          <a href="{{ row1_url|default:'#' }}"
              class="underline transition-colors
                     text-arkumu-dark hover:opacity-70
                     theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             {{ row1_value|default:"Link" }}
           </a>
         {% else %}
           <span class="transition-colors
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
+                       theme-blue:text-arkumu-blue"
+                tabindex="0">
             {{ row1_value|default:"Plain Text" }}
           </span>
         {% endif %}
       </div>
     </div>
-    
+
     <!-- Row 2 -->
     <div class="flex py-4 border-b border-gray-300 transition-colors
                 theme-dark:border-gray-600
@@ -54,30 +58,33 @@
         <span class="font-bold transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue">
+                     theme-blue:text-arkumu-blue"
+              tabindex="0">
           {{ row2_label|default:"Kommentar EN" }}
         </span>
       </div>
       <div class="w-2/3">
         {% if row2_type == 'link' %}
-          <a href="{{ row2_url|default:'#' }}" 
+          <a href="{{ row2_url|default:'#' }}"
              class="underline transition-colors
                     text-arkumu-dark hover:opacity-70
                     theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             {{ row2_value|default:"Link" }}
           </a>
         {% else %}
           <span class="transition-colors
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
+                       theme-blue:text-arkumu-blue"
+                tabindex="0">
             {{ row2_value|default:"Plain Text" }}
           </span>
         {% endif %}
       </div>
     </div>
-    
+
     <!-- Row 3 -->
     <div class="flex py-4 border-b border-gray-300 transition-colors
                 theme-dark:border-gray-600
@@ -86,30 +93,33 @@
         <span class="font-bold transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue">
+                     theme-blue:text-arkumu-blue"
+              tabindex="0">
           {{ row3_label|default:"Sprache Titel" }}
         </span>
       </div>
       <div class="w-2/3">
         {% if row3_type == 'link' %}
-          <a href="{{ row3_url|default:'#' }}" 
+          <a href="{{ row3_url|default:'#' }}"
              class="underline transition-colors
                     text-arkumu-dark hover:opacity-70
                     theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             {{ row3_value|default:"Link" }}
           </a>
         {% else %}
           <span class="transition-colors
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
+                       theme-blue:text-arkumu-blue"
+                tabindex="0">
             {{ row3_value|default:"Link" }}
           </span>
         {% endif %}
       </div>
     </div>
-    
+
     <!-- Row 4 -->
     <div class="flex py-4 border-b border-gray-300 transition-colors
                 theme-dark:border-gray-600
@@ -118,30 +128,33 @@
         <span class="font-bold transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue">
+                     theme-blue:text-arkumu-blue"
+              tabindex="0">
           {{ row4_label|default:"Sprache Untertitel" }}
         </span>
       </div>
       <div class="w-2/3">
         {% if row4_type == 'link' %}
-          <a href="{{ row4_url|default:'#' }}" 
+          <a href="{{ row4_url|default:'#' }}"
              class="underline transition-colors
                     text-arkumu-dark hover:opacity-70
                     theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             {{ row4_value|default:"Link" }}
           </a>
         {% else %}
           <span class="transition-colors
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
+                       theme-blue:text-arkumu-blue"
+                tabindex="0">
             {{ row4_value|default:"Link" }}
           </span>
         {% endif %}
       </div>
     </div>
-    
+
     <!-- Row 5 -->
     <div class="flex py-4 border-b border-gray-300 transition-colors
                 theme-dark:border-gray-600
@@ -150,29 +163,32 @@
         <span class="font-bold transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue">
+                     theme-blue:text-arkumu-blue"
+              tabindex="0">
           {{ row5_label|default:"Zusätzliche Information" }}
         </span>
       </div>
       <div class="w-2/3">
         {% if row5_type == 'link' %}
-          <a href="{{ row5_url|default:'#' }}" 
+          <a href="{{ row5_url|default:'#' }}"
              class="underline transition-colors
                     text-arkumu-dark hover:opacity-70
                     theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70">
+                    theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
             {{ row5_value|default:"Link" }}
           </a>
         {% else %}
           <span class="transition-colors
                        text-arkumu-dark
                        theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue">
+                       theme-blue:text-arkumu-blue"
+                tabindex="0">
             {{ row5_value|default:"Plain Text" }}
           </span>
         {% endif %}
       </div>
     </div>
-    
+
   </div>
 </div>

@@ -6,17 +6,17 @@
     -webkit-box-decoration-break: clone;
     padding: 0.25rem 0.5rem;
     line-height: 2.2; /* Espacio entre líneas para que no se superpongan */
-    
+
     /* Colores por tema */
     background-color: #1E1E1E;
     color: #FAF9F6;
   }
-  
+
   .theme-dark .highlight-text {
     background-color: #FAF9F6;
     color: #1E1E1E;
   }
-  
+
   .theme-blue .highlight-text {
     background-color: #2B7EF2;
     color: #FAF9F6;
@@ -24,7 +24,7 @@
 </style>
 
 <p>
-  <span class="highlight-text font-mono text-sm md:text-base lg:text-lg xl:text-xl leading-[2.2] md:leading-[2.2] lg:leading-[2.2] xl:leading-[2.5]">
+  <span class="highlight-text font-mono text-sm md:text-base lg:text-lg xl:text-xl leading-[2.2] md:leading-[2.2] lg:leading-[2.2] xl:leading-[2.5]" tabindex="0">
     {{ label_text|default:"Este es un texto de ejemplo que se ajustará por líneas, con el fondo adaptándose al contenido exacto en cada línea." }}
   </span>
 </p>

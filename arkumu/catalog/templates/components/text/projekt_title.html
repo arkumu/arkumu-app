@@ -4,21 +4,26 @@
   <div class="inline-block px-3 py-1.5 text-sm font-mono transition-colors
               border border-arkumu-dark text-arkumu-dark
               theme-dark:border-arkumu-light theme-dark:text-arkumu-light
-              theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
-    {{ year_range|default:"Year first Ereignis to latest Ereignis" }}
+              theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
+       tabindex="0">
+    {% comment %}
+      Refer to issue: https://gitlab.git.nrw/arkumu/arkumu-app/-/issues/67
+      {% endcomment %}
+    {{ year_range|default:"&nbsp;&nbsp;&nbsp;" }}
   </div>
-  
+
   <!-- Horizontal line -->
   <div class="w-full h-px transition-colors
               bg-arkumu-dark
               theme-dark:bg-arkumu-light
               theme-blue:bg-arkumu-blue"></div>
-  
+
   <!-- Institution name - Versión más grande -->
   <div class="inline-block px-3 py-1.5 text-sm font-mono transition-colors
               bg-arkumu-dark text-arkumu-light
-              theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
-              theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
+              theme-dark:bg-arkumu-light theme-d  ark:text-arkumu-dark
+              theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light"
+       tabindex="0">
     {{ institution|default:"Hochschule" }}
   </div>
 </div>

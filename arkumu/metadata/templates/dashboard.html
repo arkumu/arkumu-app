@@ -19,7 +19,7 @@
                 </svg>
                 Metadata Explorer
             </a>
-            <a href="{% url 'metadata:entity_creation_workspace' %}" class="btn btn-secondary btn-sm">
+            <a href="{% url 'metadata:create_project' %}" class="btn btn-secondary btn-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h16" />
                 </svg>
@@ -231,11 +231,64 @@
     </div>
     {% endif %}
 
-    <!-- Database Management -->
+    <!-- Database Management (Superuser Only) -->
+    {% if request.user.is_superuser %}
     <div class="mb-4">
         <h3 class="text-lg font-semibold mb-2">Database Management</h3>
         <p class="text-sm text-base-content/70 mb-4">High-impact actions that write to PostgreSQL. Use these when you need to remove or reset imported data; every button requires confirmation.</p>
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <!-- Delete Organization Data -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Publish Organization Projects</h4>
+                    <p class="text-xs text-base-content/70 mb-3">
+                        Set every project for an organization to public &amp; approved visibility so they appear in the catalog and OAI feeds.
+                    </p>
+                    {% if organizations_with_data %}
+                        <form method="post"
+                              hx-post="{% url 'metadata:metadata_dashboard_publish_projects' %}"
+                              hx-target="#publish-projects-result"
+                              hx-swap="innerHTML"
+                              hx-indicator="#publish-projects-spinner">
+                            {% csrf_token %}
+                            <select name="organization_id" class="select select-bordered select-sm w-full mb-2" required>
+                                <option value="">Select Organization</option>
+                                {% for org in organizations_with_data %}
+                                <option value="{{ org.id }}">
+                                    {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if request.user.is_superuser %}
+                                <button type="submit" class="btn btn-success btn-sm w-full">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Publish Projects
+                                    <span id="publish-projects-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                                </button>
+                            {% else %}
+                                <button type="button" class="btn btn-success btn-sm w-full btn-disabled" disabled title="Only superusers can publish projects">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Publish Projects
+                                </button>
+                            {% endif %}
+                        </form>
+                        <div id="publish-projects-result" class="mt-2"></div>
+                    {% else %}
+                        <p class="text-xs text-base-content/50">No organization data available to publish.</p>
+                        <button disabled class="btn btn-success btn-sm w-full btn-disabled">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Publish Projects
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+            
             <!-- Delete Organization Data -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
@@ -347,7 +400,10 @@
             <div id="clear-uploads-result"></div>
             <div id="clear-ingests-result"></div>
         </div>
-        {% if request.user.is_staff %}
+    </div>
+    {% endif %}
+
+    {% if request.user.is_superuser %}
         <div class="mt-6">
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4 space-y-3">
@@ -415,25 +471,6 @@
                             <button type="submit" class="btn btn-outline btn-sm">Deduplicate S3 Rows</button>
                         </form>
 
-                        <form hx-post="{% url 'metadata:metadata_dashboard_link_events' %}"
-                              hx-target="#storage-maintenance-results"
-                              hx-swap="afterbegin"
-                              class="flex flex-wrap gap-2 items-center">
-                            {% csrf_token %}
-                            <label class="text-xs">Bucket:</label>
-                            <select name="bucket" class="select select-bordered select-xs">
-                                <option value="">All</option>
-                                {% for bucket in checksum_buckets %}
-                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
-                                {% endfor %}
-                            </select>
-                            <select name="mode" class="select select-bordered select-xs">
-                                <option value="apply">Run now</option>
-                                <option value="dry">Dry run</option>
-                            </select>
-                            <button type="submit" class="btn btn-outline btn-sm">Link Event Files</button>
-                        </form>
-
                     </div>
 
                     <div id="storage-maintenance-results" class="space-y-2"></div>
@@ -494,42 +531,23 @@
             </div>
         </div>
 
-        {% if oai_snapshot %}
-        <div class="card bg-base-100 shadow-xl">
+        <div id="oai-widget-container"
+             class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
-                <p class="text-4xl font-bold">{{ oai_snapshot.total_projects }}</p>
-                <div class="text-xs text-base-content/70 space-y-1">
-                    {% if oai_snapshot.total_projects %}
-                        {% for summary in oai_snapshot.institution_summaries|slice:":4" %}
-                        <div class="flex justify-between gap-2">
-                            <span class="truncate w-28 uppercase">{{ summary.code }}</span>
-                            <span class="font-semibold">{{ summary.project_count }}</span>
-                        </div>
-                        {% endfor %}
-                        {% if oai_snapshot.institution_summaries|length > 4 %}
-                        <div class="text-xs text-base-content/50">
-                            +{{ oai_snapshot.institution_summaries|length|add:"-4" }} more institutions
-                        </div>
-                        {% endif %}
-                    {% else %}
-                        <div class="text-xs text-base-content/60">No harvestable projects detected</div>
-                    {% endif %}
+                <p class="text-xs text-base-content/70">Load OAI snapshot on demand to keep the dashboard fast.</p>
+                <div class="card-actions justify-start mt-2">
+                    <button class="btn btn-outline btn-primary btn-sm"
+                            hx-get="{% url 'metadata:metadata_dashboard_oai_widget' %}"
+                            hx-target="#oai-widget-container"
+                            hx-swap="outerHTML"
+                            hx-indicator="#oai-widget-spinner">
+                        Load OAI stats
+                        <span id="oai-widget-spinner" class="loading loading-spinner loading-sm htmx-indicator ml-2"></span>
+                    </button>
                 </div>
-                <div class="text-xs text-base-content/50 mt-3">
-                    {{ oai_snapshot.total_harvestable_objects }} harvestable files ready
-                </div>
-                <div class="text-xs text-base-content/50">Snapshot: {{ oai_snapshot.generated_at|date:"Y-m-d H:i" }}</div>
             </div>
         </div>
-        {% else %}
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
-                <p class="text-xs text-base-content/70">Snapshot unavailable. Check OAI services.</p>
-            </div>
-        </div>
-        {% endif %}
 
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">

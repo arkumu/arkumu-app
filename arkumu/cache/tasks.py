@@ -13,6 +13,7 @@ from huey.contrib.djhuey import db_task, periodic_task
 
 # Periodic tasks are always available in djhuey
 HUEY_PERIODIC_AVAILABLE = True
+SKIP_CACHE_WARMUP = getattr(settings, 'OAI_SKIP_CACHE_WARMUP', False)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,9 @@ def warm_schema_cache():
     from arkumu.cache.services import SchemaMapCacheService
 
     try:
+        if SKIP_CACHE_WARMUP:
+            logger.debug("warm_schema_cache skipped (OAI_SKIP_CACHE_WARMUP enabled)")
+            return "Skipped"
         logger.info("Starting schema cache warming task...")
         schema_cache = SchemaMapCacheService()
 
@@ -49,6 +53,9 @@ def refresh_schema_cache():
     from arkumu.cache.services import SchemaMapCacheService
 
     try:
+        if SKIP_CACHE_WARMUP:
+            logger.debug("refresh_schema_cache skipped (OAI_SKIP_CACHE_WARMUP enabled)")
+            return "Skipped"
         logger.info("Refreshing schema cache (forced rebuild)...")
         schema_cache = SchemaMapCacheService()
         schema_map = schema_cache.refresh_cache()
@@ -93,6 +100,9 @@ def _warm_projects_cache(*, force_refresh: bool) -> str:
 @db_task()
 def warm_cross_institutional_projects_cache(force_refresh: bool = False):
     """Warm the cross-institutional projects cache for fast catalog searches."""
+    if SKIP_CACHE_WARMUP:
+        logger.debug("warm_cross_institutional_projects_cache skipped (OAI_SKIP_CACHE_WARMUP enabled)")
+        return "Skipped"
     return _warm_projects_cache(force_refresh=force_refresh)
 
 
@@ -102,6 +112,9 @@ def warm_canonical_graph_cache():
     from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 
     try:
+        if SKIP_CACHE_WARMUP:
+            logger.debug("warm_canonical_graph_cache skipped (OAI_SKIP_CACHE_WARMUP enabled)")
+            return "Skipped"
         logger.info("Warming canonical graph cache (cross-institutional)...")
         service = CanonicalGraphService()
         graph = service.get_project_graph(
@@ -126,6 +139,9 @@ def refresh_canonical_graph_cache():
     from arkumu.cache.services import CacheManager
 
     try:
+        if SKIP_CACHE_WARMUP:
+            logger.debug("refresh_canonical_graph_cache skipped (OAI_SKIP_CACHE_WARMUP enabled)")
+            return "Skipped"
         logger.info("Refreshing canonical graph cache (clearing cached entries)...")
         cache_manager = CacheManager()
         cache_manager.graph.clear_cache()
@@ -141,6 +157,9 @@ def warm_card_schema_cache(organization_code: Optional[str] = None):
     from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
     from arkumu.metadata.models import Mapping
 
+    if SKIP_CACHE_WARMUP:
+        logger.debug("warm_card_schema_cache skipped (OAI_SKIP_CACHE_WARMUP enabled)")
+        return "Skipped"
     target_orgs = [organization_code] if organization_code else _DEFAULT_CARD_SCHEMA_ORGS
     if not target_orgs:
         logger.info("Card schema cache warm-up skipped: no target organizations configured")
@@ -186,6 +205,9 @@ def refresh_card_schema_cache(organization_code: Optional[str] = None):
     from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
     from arkumu.metadata.models import Mapping
 
+    if SKIP_CACHE_WARMUP:
+        logger.debug("refresh_card_schema_cache skipped (OAI_SKIP_CACHE_WARMUP enabled)")
+        return "Skipped"
     target_orgs = [organization_code] if organization_code else _DEFAULT_CARD_SCHEMA_ORGS
     if not target_orgs:
         logger.info("Card schema refresh skipped: no target organizations configured")
@@ -228,7 +250,7 @@ def refresh_card_schema_cache(organization_code: Optional[str] = None):
     return f"Refreshed {refreshed} schema(s)" if refreshed else "No schemas refreshed"
 
 
-if HUEY_PERIODIC_AVAILABLE:
+if HUEY_PERIODIC_AVAILABLE and not SKIP_CACHE_WARMUP:
     @periodic_task(crontab(minute='*/30'))  # Run every 30 minutes
     def refresh_schema_cache_periodic():
         """Periodically refresh the schema map cache."""

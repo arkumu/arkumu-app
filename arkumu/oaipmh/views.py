@@ -5,7 +5,7 @@ import binascii
 import logging
 import mimetypes
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime, timezone as dt_timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
@@ -24,6 +24,7 @@ from django.db.models import Q
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.metadata.services.oai_stats import classify_project_access
 from arkumu.users.models import Organization
 from arkumu.projects import (
     ProjectDigitalObject,
@@ -1125,7 +1126,36 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
     for proj in harvestable.values():
         org = proj.institution_code or 'unknown'
         org_counts[org] = org_counts.get(org, 0) + 1
-    logger.info("OAI harvestable projects: %d total from snapshot, by org: %s", len(harvestable), dict(sorted(org_counts.items())))
+
+    accessible_uris, blocked_uris, missing_resource_uris = classify_project_access(harvestable.values())
+
+    accessible_counts = Counter()
+    blocked_counts = Counter()
+
+    for uri in accessible_uris:
+        project = harvestable.get(uri)
+        if not project:
+            continue
+        code = (project.institution_code or 'unknown').lower()
+        accessible_counts[code] += 1
+
+    for uri in blocked_uris:
+        project = harvestable.get(uri)
+        if not project:
+            continue
+        code = (project.institution_code or 'unknown').lower()
+        blocked_counts[code] += 1
+
+    logger.info(
+        "OAI harvestable projects: %d total (accessible=%d, blocked=%d, missing_resources=%d), by org total=%s accessible=%s blocked=%s",
+        len(harvestable),
+        len(accessible_uris),
+        len(blocked_uris),
+        len(missing_resource_uris),
+        dict(sorted(org_counts.items())),
+        dict(sorted(accessible_counts.items())),
+        dict(sorted(blocked_counts.items())),
+    )
 
     if not harvestable:
         fallback_records: List[ProjectRecord] = []
@@ -1382,6 +1412,54 @@ def _collect_collection_labels(resource: Resource, record: ProjectRecord) -> Lis
     return labels
 
 
+def _select_primary_event_actors(record: ProjectRecord) -> List[Dict[str, Any]]:
+    """Pick the actor records that should surface as creators/contributors."""
+
+    grund_events = [
+        event
+        for event in record.events
+        if (
+            (getattr(event, "uri", None) and "/01-grundereignis/" in event.uri)
+            or (getattr(event, "type", None) and "herstellung" in str(event.type).lower())
+            or (getattr(event, "name", None) and "herstellung" in str(event.name).lower())
+        )
+    ]
+
+    selected: List[Dict[str, Any]] = []
+    seen_names: set[str] = set()
+
+    for event in grund_events:
+        for actor in getattr(event, "actors", []) or []:
+            name = getattr(actor, "name", None) if not isinstance(actor, dict) else actor.get("name")
+            if name and name in seen_names:
+                continue
+            actor_dict = {
+                "name": name,
+                "roles": list(getattr(actor, "roles", []) or []) if not isinstance(actor, dict) else actor.get("roles", []),
+            }
+            selected.append(actor_dict)
+            if name:
+                seen_names.add(name)
+
+    if selected:
+        return selected
+
+    fallback: List[Dict[str, Any]] = []
+    for actor in record.actors:
+        name = getattr(actor, "name", None)
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        fallback.append(
+            {
+                "name": name,
+                "roles": list(getattr(actor, "roles", []) or []),
+            }
+        )
+
+    return fallback
+
+
 def _build_dc_payload_from_project(
     project: OAIProject,
     resource: Resource,
@@ -1409,13 +1487,17 @@ def _build_dc_payload_from_project(
         _add_dc_value(payload, 'publisher', record.institution.label)
         _add_dc_value(payload, 'contributor', record.institution.label)
 
-    for actor in record.actors:
-        name = getattr(actor, 'name', None)
-        if name:
+    primary_actors = _select_primary_event_actors(record)
+    seen_creators: set[str] = set()
+    for actor in primary_actors:
+        name = actor.get('name')
+        if name and name not in seen_creators:
             _add_dc_value(payload, 'creator', name)
-        if getattr(actor, 'roles', None):
-            for role in actor.roles:
-                _add_dc_value(payload, 'contributor', f"{name} ({role})" if name else role)
+            seen_creators.add(name)
+
+        for role in actor.get('roles') or []:
+            contributor_value = f"{name} ({role})" if name else role
+            _add_dc_value(payload, 'contributor', contributor_value)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
@@ -1546,6 +1628,8 @@ def _build_event_dc_payloads(record: ProjectRecord) -> List[Dict[str, List[Any]]
     xml_lang_attr = ET.QName(XML_NS, "lang")
 
     for event in record.events:
+        if getattr(event, "is_reference_only", False):
+            continue
         payload: Dict[str, List[Any]] = {}
         event_name_de = getattr(event, 'name_de', None) or getattr(event, 'name', None)
         if event_name_de:
@@ -1884,6 +1968,8 @@ def _build_mets_from_project(
 
     events_by_uri: Dict[str, ProjectEvent] = {}
     for event in record.events:
+        if getattr(event, "is_reference_only", False):
+            continue
         if event.uri:
             events_by_uri[event.uri] = event
 
@@ -2228,6 +2314,15 @@ def _build_mets_from_project(
                 ]
             else:
                 folder_segments = []
+
+            # Organization-specific structMap path normalization
+            # - HMT: omit intermediate folders entirely
+            # - KHM: keep only the last two folders (closest to the file)
+            if normalized_org_code == "hmt":
+                folder_segments = []
+            elif normalized_org_code == "khm":
+                if len(folder_segments) > 2:
+                    folder_segments = folder_segments[-2:]
 
             rep_files.append({
                 "file_id": file_id,

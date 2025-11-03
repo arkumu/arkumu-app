@@ -22,11 +22,12 @@ from arkumu.metadata.services.recent_metadata_entry_service import (
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import (
     CSVMappingTemplateHelperMixin,
 )
+from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.users.mixins import MetadataEditorMixin
 from arkumu.users.models import Organization
 
 
-class MetadataEntryMixin(MetadataEditorMixin, CSVMappingTemplateHelperMixin):
+class MetadataEntryMixin(BaseCoordinatorMixin, MetadataEditorMixin, CSVMappingTemplateHelperMixin):
     """Shared helpers for metadata entry views."""
 
     allowed_org_codes = {"fuk", "det", "rsh", "hmt", "khm"}
@@ -67,6 +68,7 @@ class MetadataEntryMixin(MetadataEditorMixin, CSVMappingTemplateHelperMixin):
                 context["sections"] = []
                 context["metadata_service_error"] = "Organization manifest unavailable."
             else:
+                self.set_current_organization(request, service.organization.id)
                 context["sections"] = service.list_sections()
                 context["organization"] = service.organization
         else:
@@ -127,6 +129,7 @@ class MetadataEntrySectionView(MetadataEntryMixin, View):
         try:
             service = self._build_service(org_code)
             manifest = service.get_section_manifest(section)
+            self.set_current_organization(request, service.organization.id)
         except ValueError as exc:
             return HttpResponseBadRequest(str(exc))
 
@@ -161,6 +164,7 @@ class MetadataEntrySubmitView(MetadataEntryMixin, View):
         try:
             service = self._build_service(org_code)
             manifest = service.get_section_manifest(section)
+            self.set_current_organization(request, service.organization.id)
         except ValueError as exc:
             return HttpResponseBadRequest(str(exc))
 

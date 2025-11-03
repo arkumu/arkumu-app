@@ -22,6 +22,7 @@
                 <th>Name</th>
                 <th>URI/Value</th>
                 <th>Organization</th>
+                <th>Visibility</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -43,6 +44,23 @@
                 </td>
                 <td>{% if resource.organization %}{{ resource.organization.code }}{% else %}-{% endif %}</td>
                 <td>
+                    {% with level=resource.public_access_level approved=resource.is_public_approved %}
+                        {% if level == 'public' %}
+                            <span class="badge badge-success">
+                                Public{% if approved %} (approved){% else %} (pending approval){% endif %}
+                            </span>
+                        {% elif level == 'restricted' %}
+                            <span class="badge badge-warning">
+                                Restricted{% if approved %} (approved){% endif %}
+                            </span>
+                        {% else %}
+                            <span class="badge badge-error">
+                                Private
+                            </span>
+                        {% endif %}
+                    {% endwith %}
+                </td>
+                <td>
                     {% if resource.id %}
                     <a href="{% url 'metadata:resource_detail' resource.id %}" class="btn btn-sm">
                         View
@@ -54,7 +72,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="5" class="text-center py-4">No resources found matching your criteria</td>
+                <td colspan="6" class="text-center py-4">No resources found matching your criteria</td>
             </tr>
             {% endfor %}
         </tbody>

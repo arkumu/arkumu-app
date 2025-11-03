@@ -9,9 +9,14 @@ from arkumu.catalog.services.schema_manifest_service import (
     CanonicalPropertyBinding,
 )
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
+from arkumu.projects import ProjectRecord
 from arkumu.projects import ProjectDigitalObject
 from arkumu.projects.services.snapshot_service import ProjectSnapshotService
+from arkumu.common.arkumu_license import (
+    ARKUMU_LICENSE_LABELS,
+    ARKUMU_LICENSE_TEXTS,
+)
 
 
 def make_schema(bindings_per_prop, fk_relationships=None) -> CardSchema:
@@ -325,8 +330,9 @@ def test_build_digital_object_license_resolves_related_rights_statement():
     )
 
     assert license_info is not None
-    assert license_info.rights_statement == "Rights Statement Text"
-    assert license_info.identifier == "license-1"
+    assert license_info.identifier == "1"
+    assert license_info.label_de == ARKUMU_LICENSE_LABELS["1"]
+    assert license_info.rights_statement == ARKUMU_LICENSE_TEXTS["1"]
 
 
 def test_build_digital_object_license_strips_numeric_labels_for_fuk():
@@ -370,17 +376,16 @@ def test_build_digital_object_license_strips_numeric_labels_for_fuk():
     assert license_info is not None
     assert license_info.uri == "http://arkumu.org/data/fuk/entities/digitales-objekt-lizenz/2"
     assert license_info.identifier == "2"
-    assert license_info.label_de is None
-    assert license_info.label_en is None
-    assert license_info.rights_statement is None
+    assert license_info.label_de == ARKUMU_LICENSE_LABELS["2"]
+    assert license_info.rights_statement == ARKUMU_LICENSE_TEXTS["2"]
 
 
-def test_build_project_record_merges_event_storage_files():
+def test_build_project_record_merges_event_storage_files(monkeypatch):
     service = ProjectSnapshotService(relationship_org_code='khm')
     card_schema = minimal_card_schema()
 
     subject_id = "proj-1"
-    event_id = "event-1"
+    event_id = "00000000-0000-0000-0000-000000000101"
 
     nodes = {
         subject_id: {"uri": "http://example.org/project/proj-1"},
@@ -426,6 +431,17 @@ def test_build_project_record_merges_event_storage_files():
     storage_files_map = defaultdict(list)
     storage_files_map[event_id].append(event_file)
 
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "_collect_event_owner_map",
+        lambda _self, _event_ids, _nodes: {},
+    )
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "_should_filter_ownership",
+        lambda _self, _codes, _uri: False,
+    )
+
     record = service._build_project_record(
         subject_id=subject_id,
         nodes=nodes,
@@ -444,6 +460,244 @@ def test_build_project_record_merges_event_storage_files():
     assert digital_object.checksum == "checksum"
     assert digital_object.checksum_algorithm is None
     assert digital_object.checksum_provenance == "s3"
+
+
+def test_build_project_record_filters_events_and_digital_objects_by_ownership(monkeypatch):
+    service = ProjectSnapshotService()
+    card_schema = minimal_card_schema()
+
+    subject_id = "proj-1"
+    event_id = "00000000-0000-0000-0000-000000000201"
+    digital_id = "digital-1"
+
+    nodes = {
+        subject_id: {"uri": "http://example.org/project/parent"},
+        event_id: {"uri": "http://example.org/event/child"},
+        digital_id: {"uri": "http://example.org/digital/object-1"},
+    }
+
+    edges_by_subject = {
+        subject_id: [
+            {"predicate_canonical": CardURIs.TITLE, "object_value": "Parent Project"},
+            {"predicate_canonical": CardURIs.EVENT, "object_id": event_id},
+        ],
+        event_id: [
+            {"predicate_canonical": ProjectSnapshotService.DIGITAL_OBJECT_LINK_URI, "object_id": digital_id},
+        ],
+        digital_id: [
+            {"predicate_canonical": ProjectURIs.DIGITAL_OBJECT_PATH, "object_value": "/content/object-1.jpg"},
+        ],
+    }
+
+    class OwnershipTripleService(DummyTripleService):
+        def get_detailed_event_data(self, *_, **__):
+            return [
+                {
+                    "id": event_id,
+                    "name": "Shared Event",
+                    "description": None,
+                    "location": None,
+                    "location_id": None,
+                    "type": None,
+                    "start": None,
+                    "end": None,
+                }
+            ]
+
+        def get_literal_map(self, *_, **kwargs):
+            subject_ids = kwargs.get("subject_ids") or []
+            predicate_uri = kwargs.get("predicate_uri")
+            if digital_id in subject_ids and predicate_uri == ProjectURIs.DIGITAL_OBJECT_PATH:
+                return {digital_id: "/content/object-1.jpg"}
+            return {}
+
+    triple_service = OwnershipTripleService()
+
+    storage_files_map = defaultdict(list)
+
+    def fake_owner_map(_self, _event_ids, _nodes):
+        return {event_id: ["http://example.org/project/child"]}
+
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "_collect_event_owner_map",
+        fake_owner_map,
+    )
+    monkeypatch.setattr(
+        ProjectSnapshotService,
+        "_should_filter_ownership",
+        lambda _self, _codes, _uri: True,
+    )
+
+    record = service._build_project_record(
+        subject_id=subject_id,
+        nodes=nodes,
+        edges_by_subject=edges_by_subject,
+        card_schema=card_schema,
+        triple_service=triple_service,
+        storage_files_map=storage_files_map,
+    )
+
+    assert record is not None
+    assert record.events == []
+    assert record.reference_events and record.reference_events[0].id == event_id
+    assert record.reference_events[0].is_reference_only is True
+    assert record.filtered_event_ids == [event_id]
+    assert record.digital_objects == []
+    assert record.filtered_digital_object_ids == [digital_id]
+    assert record.ownership_filtered is True
+    assert record.reference_only is True
+    assert record.harvestable is False
+    assert record.reference_project_uris == ["http://example.org/project/child"]
+    assert record.event_sources[event_id] == ["http://example.org/project/child"]
+
+
+def test_build_project_record_filters_shared_owned_event_to_reference(monkeypatch):
+    service = ProjectSnapshotService()
+    card_schema = minimal_card_schema()
+
+    subject_id = "proj-1"
+    event_id = "00000000-0000-0000-0000-000000000301"
+    digital_id = "digital-1"
+    project_uri = "http://example.org/project/parent"
+    other_project_uri = "http://example.org/project/other"
+
+    nodes = {
+        subject_id: {"uri": project_uri},
+        event_id: {"uri": "http://arkumu.org/data/khm/entities/06-auszeichnungen-projekte/event-1"},
+        digital_id: {"uri": "http://example.org/digital/shared-object"},
+    }
+
+    edges_by_subject = {
+        subject_id: [
+            {"predicate_canonical": CardURIs.TITLE, "object_value": "Parent Project"},
+            {"predicate_canonical": CardURIs.EVENT, "object_id": event_id},
+        ],
+        event_id: [
+            {"predicate_canonical": ProjectSnapshotService.DIGITAL_OBJECT_LINK_URI, "object_id": digital_id},
+        ],
+        digital_id: [
+            {"predicate_canonical": ProjectURIs.DIGITAL_OBJECT_PATH, "object_value": "/content/shared-object.jpg"},
+        ],
+    }
+
+    class OwnershipTripleService(DummyTripleService):
+        def get_detailed_event_data(self, *_, **__):
+            return [
+                {
+                    "id": event_id,
+                    "name": "Shared Showcase",
+                    "description": None,
+                    "location": None,
+                    "location_id": None,
+                    "type": None,
+                    "start": None,
+                    "end": None,
+                }
+            ]
+
+        def get_literal_map(self, *_, **kwargs):
+            subject_ids = kwargs.get("subject_ids") or []
+            predicate_uri = kwargs.get("predicate_uri")
+            if digital_id in subject_ids and predicate_uri == ProjectURIs.DIGITAL_OBJECT_PATH:
+                return {digital_id: "/content/shared-object.jpg"}
+            return {}
+
+    triple_service = OwnershipTripleService()
+
+    storage_files_map = defaultdict(list)
+
+    def fake_owner_map(_self, _event_ids, _nodes):
+        return {event_id: [project_uri, other_project_uri]}
+
+    monkeypatch.setattr(ProjectSnapshotService, "_collect_event_owner_map", fake_owner_map)
+    monkeypatch.setattr(ProjectSnapshotService, "_should_filter_ownership", lambda _self, _codes, _uri: True)
+
+    record = service._build_project_record(
+        subject_id=subject_id,
+        nodes=nodes,
+        edges_by_subject=edges_by_subject,
+        card_schema=card_schema,
+        triple_service=triple_service,
+        storage_files_map=storage_files_map,
+    )
+
+    assert record is not None
+    assert record.events == []
+    assert record.reference_events and record.reference_events[0].id == event_id
+    assert record.reference_events[0].is_reference_only is True
+    assert record.filtered_event_ids == [event_id]
+    assert record.digital_objects == []
+    assert record.filtered_digital_object_ids == [digital_id]
+    assert record.ownership_filtered is True
+    assert record.reference_only is True
+    assert record.harvestable is False
+    assert record.reference_project_uris == [other_project_uri]
+    assert record.event_sources[event_id] == sorted([project_uri, other_project_uri])
+
+
+def test_build_project_record_keeps_shared_grundereignis_event(monkeypatch):
+    service = ProjectSnapshotService()
+    card_schema = minimal_card_schema()
+
+    subject_id = "proj-1"
+    event_id = "00000000-0000-0000-0000-000000000401"
+    project_uri = "http://example.org/project/parent"
+    other_project_uri = "http://example.org/project/other"
+
+    nodes = {
+        subject_id: {"uri": project_uri},
+        event_id: {"uri": "http://arkumu.org/data/khm/entities/01-grundereignis/event-1"},
+    }
+
+    edges_by_subject = {
+        subject_id: [
+            {"predicate_canonical": CardURIs.TITLE, "object_value": "Parent Project"},
+            {"predicate_canonical": CardURIs.EVENT, "object_id": event_id},
+        ],
+        event_id: [],
+    }
+
+    class GrundTripleService(DummyTripleService):
+        def get_detailed_event_data(self, *_, **__):
+            return [
+                {
+                    "id": event_id,
+                    "name": "Herstellung",
+                    "description": None,
+                    "location": None,
+                    "location_id": None,
+                    "type": None,
+                    "start": None,
+                    "end": None,
+                }
+            ]
+
+    triple_service = GrundTripleService()
+    storage_files_map = defaultdict(list)
+
+    def fake_owner_map(_self, _event_ids, _nodes):
+        return {event_id: [project_uri, other_project_uri]}
+
+    monkeypatch.setattr(ProjectSnapshotService, "_collect_event_owner_map", fake_owner_map)
+    monkeypatch.setattr(ProjectSnapshotService, "_should_filter_ownership", lambda _self, _codes, _uri: True)
+
+    record = service._build_project_record(
+        subject_id=subject_id,
+        nodes=nodes,
+        edges_by_subject=edges_by_subject,
+        card_schema=card_schema,
+        triple_service=triple_service,
+        storage_files_map=storage_files_map,
+    )
+
+    assert record is not None
+    assert record.events and record.events[0].id == event_id
+    assert record.reference_events == []
+    assert record.filtered_event_ids == []
+    assert record.ownership_filtered is False
+    assert record.reference_project_uris == []
+    assert record.event_sources[event_id] == sorted([project_uri, other_project_uri])
 
 
 def test_build_project_record_uses_rosetta_checksum():
@@ -555,3 +809,48 @@ def test_build_project_record_infers_checksum_org_from_uri():
     assert obj.checksum == 'b' * 64
     assert obj.checksum_algorithm == 'sha256'
     assert obj.checksum_provenance == 'metadata'
+
+
+def test_filter_public_projects_excludes_non_public(db):
+    service = ProjectSnapshotService()
+
+    public_resource = Resource.objects.create(
+        uri='http://example.org/project/public',
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+    restricted_resource = Resource.objects.create(
+        uri='http://example.org/project/restricted',
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.RESTRICTED,
+        is_public_approved=True,
+    )
+    pending_resource = Resource.objects.create(
+        uri='http://example.org/project/pending',
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=False,
+    )
+
+    public_record = ProjectRecord(
+        subject_id=str(public_resource.id),
+        uri=public_resource.uri,
+        title='Public Project',
+    )
+    restricted_record = ProjectRecord(
+        subject_id=str(restricted_resource.id),
+        uri=restricted_resource.uri,
+        title='Restricted Project',
+    )
+    pending_record = ProjectRecord(
+        subject_id=str(pending_resource.id),
+        uri=pending_resource.uri,
+        title='Pending Project',
+    )
+
+    filtered = service._filter_public_projects(
+        [public_record, restricted_record, pending_record]
+    )
+
+    assert [record.subject_id for record in filtered] == [str(public_resource.id)]

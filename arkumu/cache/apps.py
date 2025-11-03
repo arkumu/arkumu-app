@@ -60,6 +60,11 @@ class CacheConfig(AppConfig):
         warm_schema = getattr(settings, 'WARM_CACHE_ON_STARTUP', False) or not settings.DEBUG
         warm_projects = getattr(settings, 'WARM_CROSS_INSTITUTIONAL_CACHE_ON_STARTUP', True)  # Enable by default
 
+        if getattr(settings, 'OAI_SKIP_CACHE_WARMUP', False):
+            warm_schema = False
+            warm_projects = False
+            logger.debug("Cache warm-up skipped due to OAI_SKIP_CACHE_WARMUP flag")
+
         if warm_schema:
             try:
                 # Import here to avoid circular imports during app loading

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
 import uuid
 
@@ -23,7 +23,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 )
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import (
@@ -155,12 +155,32 @@ class ProjectSnapshotService:
         'khm': 'http://arkumu.org/data/khm/properties/pruefsumme-sha256',
         'hmt': 'http://arkumu.org/data/hmt/properties/pruefsumme-sha256',
     }
+    EVENT_PROJECT_LINK_URI = "http://arkumu.org/data/properties/projekt"
+    OWNERSHIP_FILTER_ORGS: Tuple[str, ...] = ("khm", "hmt")
 
     def __init__(self, relationship_org_code: Optional[str] = None) -> None:
         self.relationship_org_code = relationship_org_code
         self.cache = ProjectCacheService()
         self.schema_service = SchemaManifestService()
         self._graph_service_factory = CanonicalGraphService
+        raw_org_codes = getattr(
+            settings,
+            "PROJECT_SNAPSHOT_ORG_CODES",
+            self.DEFAULT_ORGANIZATION_CODES,
+        )
+        if raw_org_codes is None:
+            self.organization_codes = self.DEFAULT_ORGANIZATION_CODES
+        else:
+            if isinstance(raw_org_codes, str):
+                raw_org_codes = [raw_org_codes]
+            self.organization_codes = tuple(raw_org_codes)
+            if not self.organization_codes:
+                self.organization_codes = self.DEFAULT_ORGANIZATION_CODES
+        self._force_org_graphs = getattr(
+            settings,
+            "PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS",
+            False,
+        )
         self._record_index: Dict[str, ProjectRecord] = {}
         self._record_index_version: Optional[str] = None
         self._digital_object_orgs: set[str] = {
@@ -179,8 +199,23 @@ class ProjectSnapshotService:
         self._ensure_record_index(snapshot)
         return self._record_index.get(uri)
 
-    def get_cross_institutional_snapshot(self, *, force_refresh: bool = False) -> ProjectSnapshot:
+    def get_cross_institutional_snapshot(
+        self,
+        *,
+        force_refresh: bool = False,
+        include_non_public: bool = False,
+    ) -> ProjectSnapshot:
         """Return cached snapshot or rebuild if necessary."""
+
+        if include_non_public:
+            logger.info(
+                "ProjectSnapshotService: building snapshot including non-public projects (force_refresh=%s)",
+                force_refresh,
+            )
+            snapshot = self._build_snapshot(include_non_public=True)
+            self._ensure_record_index(snapshot)
+            return snapshot
+
         if not force_refresh:
             cached = self.cache.get_cross_institutional_snapshot()
             if cached:
@@ -189,36 +224,92 @@ class ProjectSnapshotService:
                 return cached
 
         logger.info("ProjectSnapshotService: cache miss – rebuilding cross-institutional snapshot")
-        snapshot = self._build_snapshot()
+        snapshot = self._build_snapshot(include_non_public=False)
         self.cache.set_cross_institutional_snapshot(snapshot)
         self._ensure_record_index(snapshot)
         return snapshot
 
     def refresh_cross_institutional_snapshot(self) -> ProjectSnapshot:
         """Force a snapshot rebuild and update cache."""
-        snapshot = self._build_snapshot()
+        snapshot = self._build_snapshot(include_non_public=False)
         self.cache.set_cross_institutional_snapshot(snapshot)
         self._ensure_record_index(snapshot)
         return snapshot
 
-    def _build_snapshot(self) -> ProjectSnapshot:
+    def _build_snapshot(self, *, include_non_public: bool) -> ProjectSnapshot:
         graph = self._fetch_cross_institutional_graph()
         self._enhance_license_literals(graph)
         card_schema = self._get_card_schema()
         records = self._graph_to_records(graph, card_schema)
-        counts = graph.get('counts', {})
-        if not counts:
-            counts = {
-                'projects': len(records),
-                'subjects': len(graph.get('subjects', [])),
-                'edges': len(graph.get('edges', [])),
-            }
+        if not include_non_public:
+            records = self._filter_public_projects(records)
+        return self._finalize_snapshot(graph, records)
+
+    def _filter_public_projects(
+        self,
+        records: List[ProjectRecord],
+    ) -> List[ProjectRecord]:
+        """Return only projects whose root resource is approved for public display."""
+
+        if not records:
+            return records
+
+        subject_ids: List[str] = [
+            str(record.subject_id)
+            for record in records
+            if getattr(record, "subject_id", None)
+        ]
+        if not subject_ids:
+            return records
+
+        approved_ids: Set[str] = {
+            str(resource_id)
+            for resource_id in Resource.objects.filter(
+                id__in=subject_ids,
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+            ).values_list('id', flat=True)
+        }
+
+        if not approved_ids:
+            logger.info(
+                "ProjectSnapshotService: no public projects found; returning empty set from %d candidates",
+                len(records),
+            )
+            return []
+
+        filtered: List[ProjectRecord] = [
+            record
+            for record in records
+            if str(record.subject_id) in approved_ids
+        ]
+
+        dropped = len(records) - len(filtered)
+        if dropped:
+            logger.info(
+                "ProjectSnapshotService: filtered out %d non-public projects (remaining=%d)",
+                dropped,
+                len(filtered),
+            )
+
+        return filtered
+
+    def _finalize_snapshot(
+        self,
+        graph: Dict[str, Any],
+        records: List[ProjectRecord],
+    ) -> ProjectSnapshot:
+        counts = dict(graph.get('counts', {}) or {})
+        counts['projects'] = len(records)
+        if 'subjects' not in counts:
+            counts['subjects'] = len(graph.get('subjects', []))
+        if 'edges' not in counts:
+            counts['edges'] = len(graph.get('edges', []))
         snapshot = ProjectSnapshot(
             projects=records,
             counts=counts,
             generated_at=timezone.now(),
         )
-        self._ensure_record_index(snapshot)
         return snapshot
 
     def _ensure_record_index(self, snapshot: ProjectSnapshot) -> None:
@@ -233,23 +324,25 @@ class ProjectSnapshotService:
         self._record_index_version = marker
 
     def _fetch_cross_institutional_graph(self) -> Dict[str, Any]:
-        logger.info("Building cross-institutional project graph via CanonicalGraphService")
-        primary_graph = self._graph_service_factory().get_project_graph(
-            dataset_name="Projekt",
-            type_canonical_uri=CardURIs.PROJECT_TYPE,
-            expand_neighbors=True,
-        )
-
-        if primary_graph.get('subjects'):
-            logger.info(
-                "Cross-institutional graph built from canonical class: %d subjects",
-                len(primary_graph.get('subjects', [])),
+        if not self._force_org_graphs and self.organization_codes == self.DEFAULT_ORGANIZATION_CODES:
+            logger.info("Building cross-institutional project graph via CanonicalGraphService")
+            primary_graph = self._graph_service_factory().get_project_graph(
+                dataset_name="Projekt",
+                type_canonical_uri=CardURIs.PROJECT_TYPE,
+                expand_neighbors=True,
             )
-            return self._deduplicate_graph(primary_graph)
 
-        logger.info(
-            "No subjects found for canonical project type; falling back to per-organization graphs",
-        )
+            if primary_graph.get('subjects'):
+                logger.info(
+                    "Cross-institutional graph built from canonical class: %d subjects",
+                    len(primary_graph.get('subjects', [])),
+                )
+                return self._deduplicate_graph(primary_graph)
+
+            logger.info(
+                "No subjects found for canonical project type; falling back to per-organization graphs",
+            )
+
         combined_graph = self._build_combined_organization_graphs()
         logger.info(
             "Combined per-organization graphs: %d subjects, %d nodes, %d edges",
@@ -364,17 +457,17 @@ class ProjectSnapshotService:
         from arkumu.users.models import Organization
 
         available_codes = set(
-            Organization.objects.filter(code__in=self.DEFAULT_ORGANIZATION_CODES)
+            Organization.objects.filter(code__in=self.organization_codes)
             .values_list('code', flat=True)
         )
-        missing_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code not in available_codes]
+        missing_codes = [code for code in self.organization_codes if code not in available_codes]
         if missing_codes:
             logger.warning(
                 "Organizations missing from database (skipped for snapshot): %s",
                 missing_codes,
             )
 
-        included_codes = [code for code in self.DEFAULT_ORGANIZATION_CODES if code in available_codes]
+        included_codes = [code for code in self.organization_codes if code in available_codes]
         if included_codes:
             logger.info("Organizations included in snapshot: %s", included_codes)
 
@@ -479,18 +572,18 @@ class ProjectSnapshotService:
 
         available_orgs = set(
             Mapping.objects
-            .filter(organization_id__in=self.DEFAULT_ORGANIZATION_CODES)
+            .filter(organization_id__in=self.organization_codes)
             .values_list('organization_id', flat=True)
         )
 
-        missing_orgs = set(self.DEFAULT_ORGANIZATION_CODES) - available_orgs
+        missing_orgs = set(self.organization_codes) - available_orgs
         if missing_orgs:
             logger.warning("Orgs without Mappings (excluded from snapshot): %s", sorted(missing_orgs))
         logger.info("Orgs with Mappings (included in snapshot): %s", sorted(available_orgs))
 
         schemas = [
             self.schema_service.get_card_schema(code)
-            for code in self.DEFAULT_ORGANIZATION_CODES
+            for code in self.organization_codes
             if code in available_orgs
         ]
         return self._combine_card_schemas(schemas)
@@ -808,6 +901,14 @@ class ProjectSnapshotService:
             if event.id:
                 event.actors = list(actors_by_event.get(event.id, []))
 
+        events_all: List[ProjectEvent] = list(events)
+        all_event_ids: List[str] = [event_id for event_id in event_ids if event_id]
+        event_owner_map = self._collect_event_owner_map(all_event_ids, nodes)
+        for event in events_all:
+            key = str(event.id) if event.id is not None else None
+            owners = event_owner_map.get(key, [])
+            event.owning_project_uris = list(owners) if owners else []
+
         institution_ids = self._related_ids(subject_edges, institution_prop.canonical_uri if institution_prop else None)
         institution: Optional[ProjectInstitution] = None
         institution_codes: List[str] = []
@@ -888,7 +989,153 @@ class ProjectSnapshotService:
         code_candidates: set[str] = set(filter(None, institution_codes))
         if primary_institution_code:
             code_candidates.add(primary_institution_code)
+        is_hmt_context = self._is_hmt_context(code_candidates, project_uri)
+
+        ownership_filtered = False
+        reference_events: List[ProjectEvent] = []
+        filtered_event_ids_set: Set[str] = set()
+        reference_project_uris: Set[str] = set()
+
+        should_filter = self._should_filter_ownership(code_candidates, project_uri)
+
+        if is_hmt_context:
+            for event in events_all:
+                if self._is_hmt_kreuz_event(event):
+                    event.is_reference_only = True
+                    if event not in reference_events:
+                        reference_events.append(event)
+
+        if should_filter and events:
+            current_project_uri = project_uri
+            filtered_events: List[ProjectEvent] = []
+            for event in events:
+                key = str(event.id) if event.id is not None else None
+                raw_owners = event_owner_map.get(key, []) if key is not None else []
+                owner_set: Set[str] = {
+                    str(owner_uri).strip()
+                    for owner_uri in raw_owners
+                    if owner_uri and str(owner_uri).strip()
+                }
+                if owner_set:
+                    event.owning_project_uris = sorted(owner_set)
+                elif not event.owning_project_uris:
+                    event.owning_project_uris = []
+
+                has_current_owner = bool(
+                    current_project_uri and current_project_uri in owner_set
+                )
+                has_foreign_owner = any(
+                    owner_uri != current_project_uri for owner_uri in owner_set
+                )
+                is_grundereignis = self._is_grundereignis_event(event)
+
+                should_reference_event = False
+                if owner_set:
+                    if not has_current_owner:
+                        should_reference_event = True
+                    elif has_foreign_owner and not is_grundereignis:
+                        should_reference_event = True
+
+                if should_reference_event:
+                    ownership_filtered = True
+                    event.is_reference_only = True
+                    if key:
+                        filtered_event_ids_set.add(key)
+                    for owner_uri in owner_set:
+                        if owner_uri and owner_uri != current_project_uri:
+                            reference_project_uris.add(owner_uri)
+                    reference_events.append(event)
+                    continue
+                filtered_events.append(event)
+            events = filtered_events
+            event_ids = [event_id for event_id in (event.id for event in events) if event_id]
+        else:
+            for event in events:
+                key = str(event.id) if event.id is not None else None
+                if key is None:
+                    continue
+                owners = {
+                    str(owner_uri).strip()
+                    for owner_uri in event_owner_map.get(key, [])
+                    if owner_uri and str(owner_uri).strip()
+                }
+                if owners:
+                    event.owning_project_uris = sorted(owners)
+
+        if events:
+            retained_events: List[ProjectEvent] = []
+            for event in events:
+                if event.is_reference_only:
+                    if event not in reference_events:
+                        reference_events.append(event)
+                    continue
+                retained_events.append(event)
+            if len(retained_events) != len(events):
+                events = retained_events
+                event_ids = [event_id for event_id in (event.id for event in events) if event_id]
+
+        year_range = self._derive_year_range(events)
+
+        event_sources_map: Dict[str, List[str]] = {}
+        for event in events_all:
+            key = str(event.id) if event.id is not None else None
+            if not key:
+                continue
+            event_sources_map[key] = list(event.owning_project_uris)
+
+        if reference_events:
+            reference_events = list(reference_events)
+
         digital_only_org = self._is_digital_object_org(code_candidates)
+
+        event_lookup: Dict[str, ProjectEvent] = {}
+        for event in events_all:
+            if event.id is None:
+                continue
+            event_lookup[str(event.id)] = event
+
+        digital_origin_map: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"via_project": False, "event_ids": set()})
+        project_edge_ids: Set[str] = set(self._related_ids(subject_edges, self.DIGITAL_OBJECT_LINK_URI))
+        for digital_id in project_edge_ids:
+            record = digital_origin_map[str(digital_id)]
+            record["via_project"] = True
+
+        event_edge_map: Dict[str, Set[str]] = {}
+        for event_id in all_event_ids:
+            event_obj = event_lookup.get(str(event_id))
+            if event_obj and event_obj.is_reference_only:
+                continue
+            event_edges = edges_by_subject.get(event_id, [])
+            related_ids = self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
+            if not related_ids:
+                continue
+            normalized_ids: Set[str] = {
+                str(rel_id) for rel_id in related_ids if rel_id is not None
+            }
+            if not normalized_ids:
+                continue
+            event_edge_map[event_id] = normalized_ids
+            for digital_id in normalized_ids:
+                record = digital_origin_map[digital_id]
+                record.setdefault("event_ids", set()).add(event_id)
+
+        filtered_digital_only_ids: Set[str] = set()
+        if filtered_event_ids_set:
+            candidate_ids: Set[str] = set()
+            for filtered_event_id in filtered_event_ids_set:
+                candidate_ids.update(event_edge_map.get(filtered_event_id, set()))
+            kept_event_id_set: Set[str] = set(event_ids)
+            filtered_digital_only_ids = {
+                digital_id
+                for digital_id in candidate_ids
+                if digital_id not in project_edge_ids
+                and not any(
+                    digital_id in event_edge_map.get(kept_event_id, set())
+                    for kept_event_id in kept_event_id_set
+                )
+            }
+
+        digital_object_sources: Dict[str, Dict[str, Any]] = {}
 
         checksum_org_code = self._resolve_org_code_for_checksums(
             primary_institution_code,
@@ -899,13 +1146,19 @@ class ProjectSnapshotService:
         storage_files: List[Any] = list(storage_files_map.get(subject_id, []))
         digital_link_predicate = _fk_source_for_target('project', digital_object_path_prop.canonical_uri if digital_object_path_prop else None)
 
-        digital_entries = []
+        digital_entries: List[Dict[str, Any]] = []
         if digital_link_predicate:
-            digital_entries = triple_service.get_related_entities(
+            project_level_entries = triple_service.get_related_entities(
                 subject_id,
                 digital_link_predicate,
                 organization_code=self.relationship_org_code,
             )
+            for entry in project_level_entries:
+                object_id_raw = entry.get('id')
+                if object_id_raw:
+                    key = str(object_id_raw)
+                    digital_origin_map[key]["via_project"] = True
+                digital_entries.append(entry)
 
         if digital_only_org and event_ids:
             for event_id in event_ids:
@@ -914,8 +1167,15 @@ class ProjectSnapshotService:
                     self.DIGITAL_OBJECT_LINK_URI,
                     organization_code=self.relationship_org_code,
                 )
-                if event_objects:
-                    digital_entries.extend(event_objects)
+                if not event_objects:
+                    continue
+                event_key = str(event_id)
+                for entry in event_objects:
+                    object_id_raw = entry.get('id')
+                    if object_id_raw:
+                        key = str(object_id_raw)
+                        digital_origin_map[key]["event_ids"].add(event_key)
+                digital_entries.extend(event_objects)
 
         if not digital_entries and code_candidates:
             fallback_predicates = self._fallback_digital_predicates_for_org(code_candidates)
@@ -943,9 +1203,11 @@ class ProjectSnapshotService:
                     continue
 
                 for resource in Resource.objects.filter(query):
+                    resource_id = str(resource.id)
+                    digital_origin_map[resource_id]["via_project"] = True
                     digital_entries.append(
                         {
-                            'id': str(resource.id),
+                            'id': resource_id,
                             'uri': resource.uri,
                             'canonical_uri': resource.canonical_uri,
                             'name': resource.name,
@@ -957,8 +1219,11 @@ class ProjectSnapshotService:
         digital_object_ids: List[str] = []
         digital_entry_by_id: Dict[str, Dict[str, Any]] = {}
         for entry in digital_entries:
-            object_id = entry.get('id')
-            if not object_id or entry.get('resource_type') == ResourceType.LITERAL:
+            object_id_raw = entry.get('id')
+            if object_id_raw is None or entry.get('resource_type') == ResourceType.LITERAL:
+                continue
+            object_id = str(object_id_raw)
+            if object_id in digital_entry_by_id:
                 continue
             digital_object_ids.append(object_id)
             digital_entry_by_id[object_id] = entry
@@ -998,6 +1263,32 @@ class ProjectSnapshotService:
                 path=normalized_path,
                 uri=digital_entry.get('uri') or digital_entry.get('canonical_uri'),
             )
+            project_object.resource_id = object_id
+            origin_record = digital_origin_map.get(object_id, {"via_project": False, "event_ids": set()})
+            event_ids_for_obj = sorted({str(eid) for eid in origin_record.get("event_ids", set()) if eid})
+            event_uris_for_obj = [
+                event_lookup[event_id].uri
+                for event_id in event_ids_for_obj
+                if event_id in event_lookup and event_lookup[event_id].uri
+            ]
+            project_object.source_event_ids = event_ids_for_obj
+            project_object.source_event_uris = event_uris_for_obj
+            via_project = bool(origin_record.get("via_project"))
+            if via_project and event_ids_for_obj:
+                source_label = "project+event"
+            elif via_project:
+                source_label = "project"
+            elif event_ids_for_obj:
+                source_label = "event"
+            else:
+                source_label = None
+            project_object.source = source_label
+            digital_object_sources[object_id] = {
+                "source": source_label or "unknown",
+                "via_project": via_project,
+                "event_ids": list(event_ids_for_obj),
+                "event_uris": list(event_uris_for_obj),
+            }
             self._populate_digital_object_metadata(
                 project_object,
                 object_id,
@@ -1006,7 +1297,7 @@ class ProjectSnapshotService:
                 code_candidates,
             )
             digital_objects.append(project_object)
-            linked_digital_ids.add(str(object_id))
+            linked_digital_ids.add(object_id)
 
             checksum_value = (checksum_map.get(object_id) or "").strip()
             if checksum_value:
@@ -1042,6 +1333,35 @@ class ProjectSnapshotService:
                 path=path_literal,
                 uri=digital_node.get('uri') or digital_node.get('canonical_uri'),
             )
+            project_object.resource_id = digital_id_str
+            origin_record = digital_origin_map.get(digital_id_str, {"via_project": False, "event_ids": set()})
+            event_ids_for_obj = sorted({str(eid) for eid in origin_record.get("event_ids", set()) if eid})
+            event_uris_for_obj = [
+                event_lookup[event_id].uri
+                for event_id in event_ids_for_obj
+                if event_id in event_lookup and event_lookup[event_id].uri
+            ]
+            project_object.source_event_ids = event_ids_for_obj
+            project_object.source_event_uris = event_uris_for_obj
+            via_project = bool(origin_record.get("via_project"))
+            if via_project and event_ids_for_obj:
+                source_label = "project+event"
+            elif via_project:
+                source_label = "project"
+            elif event_ids_for_obj:
+                source_label = "event"
+            else:
+                source_label = None
+            project_object.source = source_label
+            digital_object_sources.setdefault(
+                digital_id_str,
+                {
+                    "source": source_label or "unknown",
+                    "via_project": via_project,
+                    "event_ids": list(event_ids_for_obj),
+                    "event_uris": list(event_uris_for_obj),
+                },
+            )
             self._populate_digital_object_metadata(
                 project_object,
                 digital_id_str,
@@ -1066,6 +1386,31 @@ class ProjectSnapshotService:
                     project_object.checksum = fixity_info.digest or checksum_value
                     project_object.checksum_algorithm = fixity_info.algorithm or 'sha256'
                     project_object.checksum_provenance = fixity_info.provenance or 'metadata'
+
+        if ownership_filtered and digital_objects:
+            retained_objects: List[ProjectDigitalObject] = []
+            for obj in digital_objects:
+                resource_id = getattr(obj, "resource_id", None)
+                if not resource_id:
+                    retained_objects.append(obj)
+                    continue
+                origin_record = digital_origin_map.get(resource_id, {"via_project": False, "event_ids": set()})
+                via_project = bool(origin_record.get("via_project"))
+                event_ids_for_obj = {
+                    str(eid) for eid in origin_record.get("event_ids", set()) if eid
+                }
+                if should_filter and not via_project and event_ids_for_obj and event_ids_for_obj.issubset(filtered_event_ids_set):
+                    filtered_digital_only_ids.add(resource_id)
+                    metadata = digital_object_sources.get(resource_id)
+                    if metadata is not None:
+                        metadata["filtered"] = True
+                    continue
+                retained_objects.append(obj)
+            if len(retained_objects) != len(digital_objects):
+                digital_objects = retained_objects
+                linked_digital_ids = {
+                    obj.resource_id for obj in digital_objects if getattr(obj, "resource_id", None)
+                }
 
         if not digital_only_org:
             for event_id in event_ids:
@@ -1094,6 +1439,25 @@ class ProjectSnapshotService:
             ),
         )
 
+        if reference_events:
+            reference_events = [event for event in events_all if event.is_reference_only]
+
+        filtered_event_ids_list = sorted(filtered_event_ids_set)
+        filtered_digital_object_ids_list = sorted(filtered_digital_only_ids)
+        reference_project_uris_list = sorted(reference_project_uris)
+
+        for metadata in digital_object_sources.values():
+            event_ids_list = list(metadata.get("event_ids", []))
+            metadata["event_ids"] = event_ids_list
+            metadata["event_uris"] = list(metadata.get("event_uris", []))
+            metadata["filtered_event_ids"] = [
+                event_id for event_id in event_ids_list if event_id in filtered_event_ids_set
+            ]
+            metadata["via_project"] = bool(metadata.get("via_project"))
+
+        reference_only_flag = ownership_filtered and not digital_objects
+        harvestable_flag = bool(digital_objects)
+
         if not title:
             return None
 
@@ -1116,6 +1480,15 @@ class ProjectSnapshotService:
             institution_codes=institution_codes,
             category_slugs=category_slugs,
             rights_status=rights_status,
+            reference_events=reference_events,
+            event_sources=event_sources_map,
+            filtered_event_ids=filtered_event_ids_list,
+            digital_object_sources=digital_object_sources,
+            filtered_digital_object_ids=filtered_digital_object_ids_list,
+            reference_project_uris=reference_project_uris_list,
+            ownership_filtered=ownership_filtered,
+            reference_only=reference_only_flag,
+            harvestable=harvestable_flag,
         )
         return record
 
@@ -1282,11 +1655,152 @@ class ProjectSnapshotService:
                     seen.add(predicate)
         return predicates
 
+    def _collect_event_owner_map(
+        self,
+        event_ids: Sequence[str],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, List[str]]:
+
+        normalized_ids = [str(event_id) for event_id in event_ids if event_id]
+        if not normalized_ids:
+            return {}
+
+        owner_map: Dict[str, Set[str]] = defaultdict(set)
+
+        uuid_ids: List[uuid.UUID] = []
+        string_ids: List[str] = []
+        for event_id in normalized_ids:
+            try:
+                uuid_ids.append(uuid.UUID(event_id))
+            except (ValueError, TypeError, AttributeError):
+                string_ids.append(event_id)
+
+        triples_qs = Triple.objects.select_related("object").filter(
+            predicate__canonical_uri=self.EVENT_PROJECT_LINK_URI,
+        )
+        if uuid_ids:
+            triples_qs = triples_qs.filter(subject_id__in=uuid_ids)
+        else:
+            triples_qs = triples_qs.none()
+
+        for triple in triples_qs:
+            event_id = str(triple.subject_id)
+            project_uri = None
+            obj = triple.object
+            if obj:
+                project_uri = (obj.canonical_uri or obj.uri or obj.value)
+            if not project_uri:
+                project_uri = self._project_uri_from_nodes(nodes, str(triple.object_id))
+            if not project_uri:
+                continue
+            owner_map[event_id].add(project_uri)
+
+        return {
+            event_id: sorted(uris)
+            for event_id, uris in owner_map.items()
+        }
+
+    @staticmethod
+    def _project_uri_from_nodes(
+        nodes: Dict[str, Dict[str, Any]],
+        resource_id: Optional[str],
+    ) -> Optional[str]:
+        if not resource_id:
+            return None
+        node = nodes.get(str(resource_id))
+        if node:
+            return node.get("uri") or node.get("canonical_uri") or node.get("value")
+        try:  # pragma: no cover - defensive DB lookup
+            resource = Resource.objects.filter(id=resource_id).only("uri", "canonical_uri", "value").first()
+        except Exception:
+            resource = None
+        if resource:
+            return resource.canonical_uri or resource.uri or resource.value
+        return None
+
+    def _ownership_filter_orgs(self) -> Set[str]:
+        configured = getattr(settings, "PROJECT_SNAPSHOT_OWNERSHIP_FILTER_ORGS", None)
+        if configured is None:
+            return {code.lower() for code in self.OWNERSHIP_FILTER_ORGS}
+        if isinstance(configured, str):
+            configured = [configured]
+        return {
+            str(code).lower().strip()
+            for code in configured
+            if code
+        }
+
+    def _should_filter_ownership(
+        self,
+        institution_codes: Iterable[str],
+        project_uri: Optional[str],
+    ) -> bool:
+        filter_orgs = self._ownership_filter_orgs()
+        if not filter_orgs:
+            return False
+        candidates: Set[str] = {
+            (code or "").lower().strip()
+            for code in institution_codes
+            if code
+        }
+        if self.relationship_org_code:
+            candidates.add(self.relationship_org_code.lower().strip())
+        uri_code = self._extract_org_code_from_uri(project_uri)
+        if uri_code:
+            candidates.add(uri_code.lower())
+        return bool(filter_orgs.intersection(candidates))
+
     def _checksum_predicate_for_org(self, institution_code: Optional[str]) -> Optional[str]:
         if not institution_code:
             scoped = self.relationship_org_code.lower() if self.relationship_org_code else None
             return self.ROSETTA_CHECKSUM_PREDICATES.get(scoped) if scoped else None
         return self.ROSETTA_CHECKSUM_PREDICATES.get(institution_code.lower())
+
+    @staticmethod
+    def _is_grundereignis_event(event: ProjectEvent) -> bool:
+        uri_candidates = (
+            getattr(event, "uri", None),
+            getattr(event, "type_uri", None),
+        )
+        for candidate in uri_candidates:
+            if candidate and "/01-grundereignis/" in candidate:
+                return True
+        return False
+
+    def _is_hmt_context(
+        self,
+        institution_codes: Iterable[str],
+        project_uri: Optional[str],
+    ) -> bool:
+        candidates: Set[str] = {
+            (code or "").lower().strip()
+            for code in institution_codes
+            if code
+        }
+        if self.relationship_org_code:
+            candidates.add(self.relationship_org_code.lower().strip())
+        uri_code = self._extract_org_code_from_uri(project_uri)
+        if uri_code:
+            candidates.add(uri_code.lower())
+        return "hmt" in candidates
+
+    @staticmethod
+    def _is_hmt_kreuz_event(event: ProjectEvent) -> bool:
+        uri_candidates = (
+            getattr(event, "uri", None),
+            getattr(event, "type_uri", None),
+        )
+        for candidate in uri_candidates:
+            if not candidate:
+                continue
+            normalized = candidate.lower()
+            if (
+                "/kreuz-" in normalized
+                or "/hfm-kreuz-" in normalized
+                or "-kreuz-" in normalized
+            ):
+                return True
+        return False
 
     def _resolve_org_code_for_checksums(
         self,
@@ -1629,8 +2143,6 @@ class ProjectSnapshotService:
             nodes,
             edges_by_subject,
         )
-        if self._should_force_public_license(institution_codes):
-            license_info = self._force_arkumu_a_license(license_info)
         if license_info:
             project_object.license = license_info
 
@@ -1822,27 +2334,6 @@ class ProjectSnapshotService:
                 license_info.uri = ARKUMU_LICENSE_URIS.get(token)
 
         return license_info
-
-    @staticmethod
-    def _should_force_public_license(institution_codes: Iterable[str]) -> bool:
-        for code in institution_codes:
-            normalized = (code or "").strip().lower()
-            if normalized in {"khm", "hmt"}:
-                return True
-        return False
-
-    @staticmethod
-    def _force_arkumu_a_license(
-        license_info: Optional[ProjectDigitalObjectLicense],
-    ) -> ProjectDigitalObjectLicense:
-        token = "1"
-        info = license_info or ProjectDigitalObjectLicense()
-        info.identifier = token
-        info.label_de = ARKUMU_LICENSE_LABELS[token]
-        info.label_en = None
-        info.rights_statement = ARKUMU_LICENSE_TEXTS[token]
-        info.uri = ARKUMU_LICENSE_URIS.get(token)
-        return info
 
     @staticmethod
     def _derive_year_range(events: Sequence[ProjectEvent]) -> Optional[str]:

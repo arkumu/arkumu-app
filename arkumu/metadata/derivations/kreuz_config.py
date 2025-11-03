@@ -25,6 +25,7 @@ ROLE_IN_EVENT = canonical_uri("role_in_event")
 
 # RDF structural predicate used to associate junction rows with dataset resources.
 DCTERMS_IS_PART_OF = "http://purl.org/dc/terms/isPartOf"
+SUBJECT_PLACEHOLDER = "__subject__"
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,19 @@ DERIVATION_PATTERNS: Dict[str, DerivationPattern] = {
             ),
         ),
         description="Bilateral project-event relationships",
+    ),
+    "project_event_subject": DerivationPattern(
+        name="project_event_subject",
+        required_properties=(PROJECT,),
+        recipes=(
+            DerivedTripleRecipe(
+                subject_property=PROJECT,
+                object_property=SUBJECT_PLACEHOLDER,
+                predicate_uri=EVENT,
+                description="Project references Grundereignis event (dataset subject)",
+            ),
+        ),
+        description="Direct project→event linkage using the dataset subject as the event node",
     ),
     "event_digital_object": DerivationPattern(
         name="event_digital_object",
@@ -228,8 +242,16 @@ KREUZ_DATASET_PROFILES: Dict[str, Dict[str, DatasetProfile]] = {
         "01_grundereignis": DatasetProfile(
             name="01_Grundereignis",
             canonical_predicates=(PROJECT, EVENT, DIGITAL_OBJECT),
-            pattern_names=("project_digital_object",),
-            notes=("Derive project↔digital links directly from event rows",),
+            pattern_names=(
+                "project_event",
+                "project_event_subject",
+                "event_digital_object",
+                "project_event_digital_bridge",
+                "project_digital_object",
+            ),
+            notes=(
+                "Derive project↔event and project↔digital links directly from Grundereignis rows",
+            ),
         ),
         "02_kreuz_projekte_personen": DatasetProfile(
             name="02_Kreuz_Projekte_Personen",

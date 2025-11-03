@@ -131,6 +131,7 @@ def test_get_actor_relationships_direct_edges_fallback():
             'name': 'Fallback Actor',
             'roles': [],
             'event_ids': [],
+            'event_rights': {},
         }
     ]
 
@@ -203,8 +204,121 @@ def test_get_actor_relationships_event_edge_fallback():
             'name': 'Event Actor',
             'roles': [],
             'event_ids': [str(event.id)],
+            'event_rights': {
+                str(event.id): {
+                    'is_copyright_holder': False,
+                    'is_neighbouring_rights_holder': False,
+                }
+            },
         }
     ]
+
+
+@pytest.mark.django_db
+def test_get_actor_relationships_filters_shared_event_to_project():
+    project_primary = Resource.objects.create(
+        uri="http://example.org/project/primary",
+        resource_type=ResourceType.ENTITY,
+    )
+    project_other = Resource.objects.create(
+        uri="http://example.org/project/other",
+        resource_type=ResourceType.ENTITY,
+    )
+    shared_event = Resource.objects.create(
+        uri="http://example.org/event/shared",
+        resource_type=ResourceType.ENTITY,
+    )
+
+    actor_primary = Resource.objects.create(
+        uri="http://example.org/actor/primary",
+        resource_type=ResourceType.ENTITY,
+    )
+    actor_other = Resource.objects.create(
+        uri="http://example.org/actor/other",
+        resource_type=ResourceType.ENTITY,
+    )
+
+    actor_name_primary = Resource.objects.create(
+        value="Primary Contributor",
+        resource_type=ResourceType.LITERAL,
+    )
+    actor_name_other = Resource.objects.create(
+        value="Other Project Contributor",
+        resource_type=ResourceType.LITERAL,
+    )
+
+    event_predicate = Resource.objects.create(
+        uri="http://example.org/preds/event",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri=ProjectURIs.EVENT,
+    )
+    actor_link_predicate = Resource.objects.create(
+        uri="http://example.org/preds/actor-link",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri=ProjectURIs.ACTOR_IN_EVENT,
+    )
+    actor_name_predicate = Resource.objects.create(
+        uri="http://example.org/preds/actor-name",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri=ProjectURIs.ACTOR_GERMAN_NAME,
+    )
+    project_link_predicate = Resource.objects.create(
+        uri="http://example.org/preds/project-link",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri="http://arkumu.org/data/properties/projekt",
+    )
+    membership_predicate = Resource.objects.create(
+        uri="http://example.org/preds/im-ereignis",
+        resource_type=ResourceType.PROPERTY,
+        canonical_uri="http://arkumu.org/data/properties/im-ereignis",
+    )
+
+    Triple.objects.create(subject=project_primary, predicate=event_predicate, object=shared_event)
+    Triple.objects.create(subject=project_other, predicate=event_predicate, object=shared_event)
+
+    crosstable_primary = Resource.objects.create(
+        uri="http://example.org/cross/primary",
+        resource_type=ResourceType.ENTITY,
+    )
+    crosstable_other = Resource.objects.create(
+        uri="http://example.org/cross/other",
+        resource_type=ResourceType.ENTITY,
+    )
+
+    Triple.objects.create(subject=crosstable_primary, predicate=membership_predicate, object=shared_event)
+    Triple.objects.create(subject=crosstable_primary, predicate=project_link_predicate, object=project_primary)
+    Triple.objects.create(subject=crosstable_primary, predicate=actor_link_predicate, object=actor_primary)
+
+    Triple.objects.create(subject=crosstable_other, predicate=membership_predicate, object=shared_event)
+    Triple.objects.create(subject=crosstable_other, predicate=project_link_predicate, object=project_other)
+    Triple.objects.create(subject=crosstable_other, predicate=actor_link_predicate, object=actor_other)
+
+    Triple.objects.create(subject=actor_primary, predicate=actor_name_predicate, object=actor_name_primary)
+    Triple.objects.create(subject=actor_other, predicate=actor_name_predicate, object=actor_name_other)
+
+    service = TripleRelationshipService()
+    actors = service.get_actor_relationships(
+        str(project_primary.id),
+        event_predicate=ProjectURIs.EVENT,
+        actor_link_predicate=ProjectURIs.ACTOR_IN_EVENT,
+        role_link_predicate=None,
+        actor_name_predicate=ProjectURIs.ACTOR_GERMAN_NAME,
+        role_name_predicate=None,
+        event_ids=[str(shared_event.id)],
+    )
+
+    assert len(actors) == 1
+    actor_entry = actors[0]
+    assert actor_entry['id'] == str(actor_primary.id)
+    assert actor_entry['name'] == 'Primary Contributor'
+    assert actor_entry.get('roles', []) == []
+    assert actor_entry['event_ids'] == [str(shared_event.id)]
+    assert actor_entry['event_rights'] == {
+        str(shared_event.id): {
+            'is_copyright_holder': False,
+            'is_neighbouring_rights_holder': False,
+        }
+    }
 
 
 def _property(uri: str, canonical: str) -> Resource:

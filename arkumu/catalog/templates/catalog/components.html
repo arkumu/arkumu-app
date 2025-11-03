@@ -251,6 +251,18 @@
         <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/text/projekt_title.html</p>
       </div>
       
+      <!-- Blue Line -->
+      <div class="mb-10">
+        <h3 class="text-lg font-medium mb-3">Blue line</h3>
+        <div class="p-4 border transition-colors
+             bg-white
+             theme-dark:bg-arkumu-dark 
+             theme-dark:border-arkumu-light">
+          {% include 'components/text/blue_line.html' %}
+        </div>
+        <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/text/blue_line.html</p>
+      </div>
+
       <!-- Dotted Line -->
       <div class="mb-10">
         <h3 class="text-lg font-medium mb-3">Dotted Line with Text</h3>
@@ -379,7 +391,7 @@
       </div>
     </section>
 
-    <!-- Table Components Section -->
+<!-- Table Components Section -->
     <section class="mb-16">
       <h2 class="text-2xl font-semibold mb-6 pb-2 border-b">Table Components</h2>
       
@@ -393,6 +405,21 @@
           {% include 'components/events/event_list.html' with table_title="Allgemein" row1_label="Kommentar DE" row1_value="Plain Text" row1_required=True row2_label="Kommentar EN" row2_value="Plain Text" row3_label="Sprache Titel" row3_value="Link" row3_type="link" row3_url="/title-link/" row4_label="Sprache Untertitel" row4_value="Link" row4_type="link" row4_url="/subtitle-link/" row5_label="Zusätzliche Information" row5_value="Mehr Details" %}
         </div>
         <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/events/event_list.html</p>
+      </div>
+    </section>
+
+    <!-- Footer Components Section -->
+    <section class="mb-16">
+      <h2 class="text-2xl font-semibold mb-6 pb-2 border-b">Footer Components</h2>
+      
+      <!-- Footer -->
+      <div class="mb-10">
+        <h3 class="text-lg font-medium mb-3">Footer</h3>
+        <div class="border transition-colors
+             theme-dark:border-arkumu-light">
+          {% include 'components/footer/footer.html' %}
+        </div>
+        <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/footer/footer.html</p>
       </div>
     </section>
   </div>

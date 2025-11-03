@@ -1,0 +1,7 @@
+/* Resource admin customisations placeholder.
+ *
+ * The dev deployment uses ManifestStaticFilesStorage which requires that
+ * referenced assets exist. Keep this file in version control so the admin
+ * change list can load even if no extra styling is needed yet.
+ */
+

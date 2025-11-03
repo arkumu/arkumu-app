@@ -3,8 +3,12 @@
 
 {% block title %}Metadata Data Explorer{% endblock %}
 
+{% block container_type %}
+<div class="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+{% endblock container_type %}
+
 {% block content %}
-<div class="container mx-auto px-6 py-12">
+<div class="w-full">
     <!-- Compact Header -->
     <div class="bg-base-200 rounded-box mb-4 p-4">
         <div class="flex justify-between items-center">
@@ -58,8 +62,12 @@
                         </a>
                     </li>
                 </ul>
-            </div>
+    </div>
         </div>
+
+{% block container_type_end %}
+</div>
+{% endblock container_type_end %}
     </div>
     
     <!-- Lazy-loaded Statistics Table -->
@@ -193,6 +201,21 @@
                             <option value="false" {% if current_filters.externally_linked == 'false' %}selected{% endif %}>
                                 No External Links
                             </option>
+                        </select>
+                    </div>
+                    
+                    <!-- Visibility -->
+                    <div class="form-control mb-3">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Visibility</span>
+                        </label>
+                        <select name="visibility" class="select select-bordered select-xs w-full">
+                            <option value="">All Visibility Levels</option>
+                            {% for option in filter_options.visibility %}
+                            <option value="{{ option.value }}" {% if current_filters.visibility == option.value %}selected{% endif %}>
+                                {{ option.label }}
+                            </option>
+                            {% endfor %}
                         </select>
                     </div>
                     
