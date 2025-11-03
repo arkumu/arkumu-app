@@ -8,49 +8,52 @@
 {% block container_class %}w-full h-full px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto{% endblock container_class %}
 
 {% block content %}
-<div class="w-full min-h-screen"
-     data-rdf-type="http://arkumu.org/data/fuk/types/projekt"
-     data-uri="{{ project.uri }}">
-  <header class="w-full py-8 px-4 transition-colors
+  {#  <div>{{ project }}</div>#}
+  <div class="w-full min-h-screen"
+       data-rdf-type="http://arkumu.org/data/fuk/types/projekt"
+       data-uri="{{ project.uri }}">
+    <header class="w-full py-8 px-4 transition-colors
                  text-arkumu-dark
                  theme-dark:text-arkumu-light
                  theme-blue:text-arkumu-light">
-    <div class="flex items-center justify-between w-full">
-      <div class="w-48 md:w-56 lg:w-64 transition-all duration-300">
-        <a href="/catalog/browse/" class="block">
-          <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo"
-               class="w-full h-auto transition-all duration-300 block theme-dark:hidden theme-blue:hidden">
-          <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
-               class="w-full h-auto transition-all duration-300 hidden theme-dark:block theme-blue:hidden">
-          <img src="{% static 'images/arkumu-logo-blue.svg' %}" alt="arkumu logo"
-               class="w-full h-auto transition-all duration-300 hidden theme-dark:hidden theme-blue:block">
-        </a>
-      </div>
-
-      <div class="flex items-center">
-        <div class="theme-buttons">
-          {% include 'components/header/theme_buttons.html' %}
+      <div class="flex items-center justify-between w-full">
+        <div class="w-48 md:w-56 lg:w-64 transition-all duration-300">
+          <a href="/catalog/browse/" class="block">
+            <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo"
+                 class="w-full h-auto transition-all duration-300 block theme-dark:hidden theme-blue:hidden">
+            <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
+                 class="w-full h-auto transition-all duration-300 hidden theme-dark:block theme-blue:hidden">
+            <img src="{% static 'images/arkumu-logo-blue.svg' %}" alt="arkumu logo"
+                 class="w-full h-auto transition-all duration-300 hidden theme-dark:hidden theme-blue:block">
+          </a>
         </div>
-        <div class="w-6 md:w-8 lg:w-10"></div>
-        <div class="flex items-center space-x-4 md:space-x-5 lg:space-x-6">
-          <div class="flex flex-col items-center">
-            {% include 'components/header/search_button.html' %}
-            <span class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Suche</span>
+
+        <div class="flex items-center">
+          <div class="theme-buttons">
+            {% include 'components/header/theme_buttons.html' %}
           </div>
-          <div class="flex flex-col items-center">
-            {% include 'components/header/menu_button.html' %}
-            <span class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Menü</span>
+          <div class="w-6 md:w-8 lg:w-10"></div>
+          <div class="flex items-center space-x-4 md:space-x-5 lg:space-x-6">
+            <div class="flex flex-col items-center">
+              {% include 'components/header/search_button.html' %}
+              <span
+                class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Suche</span>
+            </div>
+            <div class="flex flex-col items-center">
+              {% include 'components/header/menu_button.html' %}
+              <span
+                class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Menü</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <section class="px-4">
-    <div class="w-full max-w-7xl mx-auto">
-      <div class="mb-6">
-        {% include 'components/text/projekt_title.html' with year_range=project.year_range institution=project.institution %}
-      </div>
+    <section class="px-4">
+      <div class="w-full max-w-7xl mx-auto">
+        <div class="mb-6">
+          {% include 'components/text/projekt_title.html' with year_range=project.year_range institution=project.institution %}
+        </div>
         <div class="mb-10">
           <h1 tabindex="0" class="text-4xl font-medium mb-3 transition-colors
                      text-arkumu-dark
@@ -83,7 +86,7 @@
             {{ project.projektart }}
           </p>
         </div>
-              {% if project.categories %}
+        {% if project.categories %}
           <div class="mb-12 flex flex-wrap gap-2"
                data-rdf-property="http://arkumu.org/data/properties/projektkategorie"
                aria-label="Projektkategorien">
@@ -91,116 +94,170 @@
               <a tabindex="0" href="https://www.wikidata.org/wiki/{{ category }}">
                 <div data-rdf-type="http://arkumu.org/data/types/projektkategorie"
                      data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
-                  {% include 'components/buttons/small_secondary_button.html' with button_text=category%}
+                  {% include 'components/buttons/small_secondary_button.html' with button_text=category %}
                 </div>
               </a>
             {% endfor %}
           </div>
         {% endif %}
-      <nav class="tab-navigation w-full mb-6" role="tablist">
-        <div class="flex flex-wrap gap-3" id="project-tab-buttons"
-             data-tab-endpoint="{{ tab_endpoint }}"
-             data-project-uri="{{ project.uri|urlencode }}">
-          <button type="button"
-                  class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light active"
-                  data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
-                  data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
-                  data-tab="overview"
-                  hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=overview"
-                  hx-target="#project-tab-content"
-                  hx-swap="innerHTML"
-                  hx-push-url="false"
-                  aria-selected="true"
-                  role="tab">
-            Übersicht
-          </button>
-          <button type="button"
-                  class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
-                  data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
-                  data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
-                  data-tab="events"
-                  hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=events"
-                  hx-target="#project-tab-content"
-                  hx-swap="innerHTML"
-                  hx-push-url="false"
-                  aria-selected="false"
-                  role="tab">
-            Ereignisliste
-          </button>
-          <button type="button"
-                  class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
-                  data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
-                  data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
-                  data-tab="metadata"
-                  hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=metadata"
-                  hx-target="#project-tab-content"
-                  hx-swap="innerHTML"
-                  hx-push-url="false"
-                  aria-selected="false"
-                  role="tab">
-            Metadaten
-          </button>
-        </div>
-    <div class="w-full h-px bg-arkumu-dark mt-0
+<div class="mb-12 flex flex-wrap gap-2"
+        <h3 tabindex="0" class="text-xl font-light mb-4 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue"
+            data-rdf-property="http://arkumu.org/data/properties/bevorzugter-untertitel">
+          Projektbeschreibung
+        </h3>
+
+        {% if project.descriptions %}
+          <p id="text">
+            {% for paragraph in project.descriptions %}
+              {{ paragraph }}
+            {% endfor %}
+          </p>
+
+          <button id="toggleBtn">Weiterlesen</button>
+
+          <script>
+            const textElement = document.getElementById("text");
+            const button = document.getElementById("toggleBtn");
+
+            const vollerText = textElement.textContent.trim();
+            const woerter = vollerText.split(" ");
+            const limit = 10; // z.B. 10 Wörter anzeigen
+
+            // Anfangstext kürzen
+            const gekuerzt = woerter.slice(0, limit).join(" ") + "...";
+            let istAusgeklappt = false;
+
+            textElement.textContent = gekuerzt;
+
+            button.addEventListener("click", () => {
+              if (istAusgeklappt) {
+                textElement.textContent = gekuerzt;
+                button.textContent = "Weiterlesen";
+                istAusgeklappt = false;
+              } else {
+                textElement.textContent = vollerText;
+                button.textContent = "Weniger anzeigen";
+                istAusgeklappt = true;
+              }
+            });
+          </script>
+        {% endif %}
+  </div>
+        <nav class="tab-navigation w-full mb-6" role="tablist">
+          <div class="flex flex-wrap gap-3" id="project-tab-buttons"
+               data-tab-endpoint="{{ tab_endpoint }}"
+               data-project-uri="{{ project.uri|urlencode }}">
+            <button type="button"
+                    class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light active"
+                    data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
+                    data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                    data-tab="overview"
+                    hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=overview"
+                    hx-target="#project-tab-content"
+                    hx-swap="innerHTML"
+                    hx-push-url="false"
+                    aria-selected="true"
+                    role="tab">
+              Übersicht
+            </button>
+            <button type="button"
+                    class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                    data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
+                    data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                    data-tab="events"
+                    hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=events"
+                    hx-target="#project-tab-content"
+                    hx-swap="innerHTML"
+                    hx-push-url="false"
+                    aria-selected="false"
+                    role="tab">
+              Ereignisliste
+            </button>
+            <button type="button"
+                    class="project-tab-btn px-4 py-2 font-mono text-sm transition-colors border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                    data-active-class="bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light border-none"
+                    data-inactive-class="border border-arkumu-dark text-arkumu-dark bg-arkumu-light theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-arkumu-light"
+                    data-tab="metadata"
+                    hx-get="{{ tab_endpoint }}?projekt={{ project.uri|urlencode }}&tab=metadata"
+                    hx-target="#project-tab-content"
+                    hx-swap="innerHTML"
+                    hx-push-url="false"
+                    aria-selected="false"
+                    role="tab">
+              Metadaten
+            </button>
+          </div>
+          <div class="w-full h-px bg-arkumu-dark mt-0
                 theme-dark:bg-arkumu-light theme-blue:bg-arkumu-blue"></div>
 
 
-      </nav>
-      <div id="project-tab-content">
-        {% include 'catalog/partials/project_overview.html' with project=project %}
+        </nav>
+        <div id="project-tab-content">
+          {% include 'catalog/partials/project_overview.html' with project=project %}
+        </div>
       </div>
-    </div>
-  </section>
-</div>
+    </section>
+  </div>
 
-<script>
-  (function () {
-    function toggleStateClasses(btn, activate) {
-      var activeClasses = (btn.dataset.activeClass || '').split(/\s+/).filter(Boolean);
-      var inactiveClasses = (btn.dataset.inactiveClass || '').split(/\s+/).filter(Boolean);
-      if (activate) {
-        inactiveClasses.forEach(function (cls) { btn.classList.remove(cls); });
-        activeClasses.forEach(function (cls) { btn.classList.add(cls); });
-      } else {
-        activeClasses.forEach(function (cls) { btn.classList.remove(cls); });
-        inactiveClasses.forEach(function (cls) { btn.classList.add(cls); });
-      }
-    }
-
-    function setActiveTab(button) {
-      document.querySelectorAll('#project-tab-buttons .project-tab-btn').forEach(function (btn) {
-        if (btn === button) {
-          btn.classList.add('active');
-          btn.setAttribute('aria-selected', 'true');
-          toggleStateClasses(btn, true);
+  <script>
+    (function () {
+      function toggleStateClasses(btn, activate) {
+        var activeClasses = (btn.dataset.activeClass || '').split(/\s+/).filter(Boolean);
+        var inactiveClasses = (btn.dataset.inactiveClass || '').split(/\s+/).filter(Boolean);
+        if (activate) {
+          inactiveClasses.forEach(function (cls) {
+            btn.classList.remove(cls);
+          });
+          activeClasses.forEach(function (cls) {
+            btn.classList.add(cls);
+          });
         } else {
-          btn.classList.remove('active');
-          btn.setAttribute('aria-selected', 'false');
-          toggleStateClasses(btn, false);
+          activeClasses.forEach(function (cls) {
+            btn.classList.remove(cls);
+          });
+          inactiveClasses.forEach(function (cls) {
+            btn.classList.add(cls);
+          });
+        }
+      }
+
+      function setActiveTab(button) {
+        document.querySelectorAll('#project-tab-buttons .project-tab-btn').forEach(function (btn) {
+          if (btn === button) {
+            btn.classList.add('active');
+            btn.setAttribute('aria-selected', 'true');
+            toggleStateClasses(btn, true);
+          } else {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
+            toggleStateClasses(btn, false);
+          }
+        });
+      }
+
+      document.addEventListener('click', function (event) {
+        if (event.target.closest('.project-tab-btn')) {
+          setActiveTab(event.target.closest('.project-tab-btn'));
         }
       });
-    }
 
-    document.addEventListener('click', function (event) {
-      if (event.target.closest('.project-tab-btn')) {
-        setActiveTab(event.target.closest('.project-tab-btn'));
-      }
-    });
-
-    document.addEventListener('htmx:afterSwap', function (event) {
-      if (event.detail.target && event.detail.target.id === 'project-tab-content') {
-        if (typeof window.initializeEventMaps === 'function') {
-          window.initializeEventMaps();
+      document.addEventListener('htmx:afterSwap', function (event) {
+        if (event.detail.target && event.detail.target.id === 'project-tab-content') {
+          if (typeof window.initializeEventMaps === 'function') {
+            window.initializeEventMaps();
+          }
         }
-      }
-    });
+      });
 
-    document.addEventListener('DOMContentLoaded', function () {
-      var initial = document.querySelector('#project-tab-buttons .project-tab-btn.active');
-      if (initial) {
-        toggleStateClasses(initial, true);
-      }
-    });
-  })();
-</script>
+      document.addEventListener('DOMContentLoaded', function () {
+        var initial = document.querySelector('#project-tab-buttons .project-tab-btn.active');
+        if (initial) {
+          toggleStateClasses(initial, true);
+        }
+      });
+    })();
+  </script>
 {% endblock content %}
