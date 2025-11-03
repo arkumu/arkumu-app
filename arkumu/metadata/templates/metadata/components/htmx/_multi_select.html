@@ -1,0 +1,55 @@
+{# Generic HTMX multi-select widget #}
+<div id="{{ wrapper_id }}" class="space-y-3" data-htmx-multi-select>
+  {% if search_properties and search_properties|length > 1 %}
+    <div class="flex items-center gap-2">
+      <label class="label-text text-xs text-base-content/70" for="{{ property_select_id }}">Suchen nach:</label>
+      <select id="{{ property_select_id }}"
+              name="relationship_property_{{ field_name }}"
+              class="select select-bordered select-sm w-full max-w-xs"
+              hx-get="{{ rows_url }}"
+              hx-trigger="change"
+              hx-target="#{{ wrapper_id }}"
+              hx-swap="outerHTML"
+              hx-include="#{{ wrapper_id }} input[name='{{ field_name }}[]']"
+              autocomplete="off">
+        <option value="" {% if not selected_property %}selected{% endif %}>Alle Eigenschaften</option>
+        {% for prop in search_properties %}
+          <option value="{{ prop.uri }}" {% if prop.uri == selected_property %}selected{% endif %}>
+            {{ prop.label }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  {% endif %}
+
+  <div id="{{ chip_container_id }}" class="flex flex-wrap gap-2" data-chip-container>
+    {% for item in selected_items %}
+      {% include "metadata/components/htmx/_multi_select_chip.html" with
+        chip_id=item.chip_id
+        hidden_input_id=item.hidden_input_id
+        uri=item.uri
+        label=item.label
+        resource_id=item.resource_id
+        field_name=field_name
+        mapping_id=mapping_id %}
+    {% endfor %}
+  </div>
+
+  <div class="space-y-2">
+    <input type="text"
+           id="{{ search_input_id }}"
+           name="q"
+           class="input input-bordered w-full"
+           placeholder="Wert suchen und auswählen..."
+           value=""
+           hx-get="{{ suggestion_url }}&input_id={{ search_input_id }}&target_id={{ suggestions_id }}{% if property_select_id %}&property_select_id={{ property_select_id }}{% endif %}{% if selected_property %}&property={{ selected_property|urlencode }}{% endif %}&chip_container_id={{ chip_container_id }}&field_name={{ field_name }}&widget=multi_select"
+           hx-trigger="input changed delay:200ms"
+           hx-target="#{{ suggestions_id }}"
+           hx-include="this{% if property_select_id %}, #{{ property_select_id }}{% endif %}"
+           autocomplete="off">
+  </div>
+
+  <div id="{{ suggestions_id }}"
+       class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden">
+  </div>
+</div>

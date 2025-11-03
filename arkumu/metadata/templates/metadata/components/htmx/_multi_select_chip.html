@@ -1,0 +1,31 @@
+{# Single selected item inside the HTMX multi-select widget #}
+<div class="flex items-center gap-1" id="{{ chip_id }}">
+  <input type="hidden"
+         name="{{ field_name }}[]"
+         id="{{ hidden_input_id }}"
+         value="{{ uri }}"
+         data-uri="{{ uri }}"
+         data-label="{{ label }}">
+  <span class="badge badge-outline whitespace-normal max-w-xs break-words" title="{{ label }}">{{ label|truncatechars:30 }}</span>
+  {% if resource_id %}
+    <a href="{% url 'metadata:resource_graph' resource_id %}"
+       class="btn btn-xs btn-primary btn-circle"
+       title="View resource graph"
+       target="_blank">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+      </svg>
+    </a>
+  {% endif %}
+  <button type="button"
+          class="btn btn-ghost btn-xs btn-circle"
+          hx-delete="{% url 'metadata:entity_workspace_relationship_row' mapping_id %}?row_id={{ chip_id }}"
+          hx-target="#{{ chip_id }}"
+          hx-swap="outerHTML"
+          hx-confirm="Diesen Eintrag entfernen?"
+          aria-label="Eintrag entfernen">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+    </svg>
+  </button>
+</div>

@@ -463,8 +463,8 @@ class TestDatasetFieldValueOptionsView:
 class TestRelationshipRowView:
     """Tests for adding/removing relationship rows."""
 
-    def test_post_creates_new_row(self, client, user, mapping):
-        """Test creating a new relationship row."""
+    def test_post_renders_multi_select_widget(self, client, user, mapping):
+        """POST should render the reusable multi-select widget."""
         client.force_login(user)
         url = reverse("metadata:entity_workspace_relationship_row", args=[mapping.id])
 
@@ -473,20 +473,20 @@ class TestRelationshipRowView:
         assert response.status_code == 200
         content = response.content.decode()
 
-        # Should contain row structure
-        assert "relationship-row-projekt_ref" in content
-        assert "input-relationship-row" in content
-        assert "suggestions-relationship-row" in content
+        assert "multi-select-wrapper-projekt_ref" in content
+        assert "data-htmx-multi-select" in content
+        assert "multi-select-search-projekt_ref" in content
+        assert "multi-select-chips-projekt_ref" in content
 
     def test_post_handles_non_htmx(self, client, user, mapping):
-        """Test that non-HTMX requests still return a rendered row."""
+        """Non-HTMX POST should still return the widget markup."""
         client.force_login(user)
         url = reverse("metadata:entity_workspace_relationship_row", args=[mapping.id])
 
         response = client.post(f"{url}?dataset=Mitarbeit&field_name=projekt_ref")
         assert response.status_code == 200
         content = response.content.decode()
-        assert "relationship-row-projekt_ref" in content
+        assert "multi-select-wrapper-projekt_ref" in content
 
     def test_delete_removes_row(self, client, user, mapping):
         """Test deleting a relationship row returns empty response."""
@@ -639,6 +639,76 @@ class TestRelationshipSelectSuggestionView:
         # New implementation should not inject inline script tags
         assert "<script>" not in content
 
+    def test_multi_select_appends_chip(self, client, user, mapping):
+        """Multi-select mode should append a chip via OOB swap."""
+        client.force_login(user)
+        url = reverse("metadata:entity_workspace_select_suggestion", args=[mapping.id])
+
+        input_id = "multi-select-search-projekt_ref"
+        target_id = "multi-select-suggestions-projekt_ref"
+        chip_container_id = "multi-select-chips-projekt_ref"
+        value = "http://example.org/project/2"
+        label = "Sample Project"
+
+        response = client.post(
+            url,
+            {
+                "input_id": input_id,
+                "target_id": target_id,
+                "dataset": "Mitarbeit",
+                "column": "projekt_ref",
+                "field_name": "projekt_ref",
+                "value": value,
+                "label": label,
+                "widget": "multi_select",
+                "chip_container_id": chip_container_id,
+            },
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+
+        assert f'id="{chip_container_id}" hx-swap-oob="beforeend"' in content
+        assert 'name="projekt_ref[]"' in content
+        assert label in content
+        assert f'hx-swap-oob="outerHTML"' in content  # search input reset
+        assert f'id="{target_id}" hx-swap-oob="innerHTML"' in content  # suggestions cleared
+
+    def test_multi_select_skips_duplicate_values(self, client, user, mapping):
+        """Existing selections should not be duplicated."""
+        client.force_login(user)
+        url = reverse("metadata:entity_workspace_select_suggestion", args=[mapping.id])
+
+        input_id = "multi-select-search-projekt_ref"
+        target_id = "multi-select-suggestions-projekt_ref"
+        chip_container_id = "multi-select-chips-projekt_ref"
+        value = "http://example.org/project/2"
+
+        response = client.post(
+            url,
+            {
+                "input_id": input_id,
+                "target_id": target_id,
+                "dataset": "Mitarbeit",
+                "column": "projekt_ref",
+                "field_name": "projekt_ref",
+                "value": value,
+                "label": "Sample Project",
+                "widget": "multi_select",
+                "chip_container_id": chip_container_id,
+                "projekt_ref[]": [value],
+            },
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+
+        # No new chip fragment appended
+        assert f'id="{chip_container_id}" hx-swap-oob="beforeend"' not in content
+        # Search input still reset and dropdown cleared
+        assert f'hx-swap-oob="outerHTML"' in content
+        assert f'id="{target_id}" hx-swap-oob="innerHTML"' in content
+
 
 @pytest.mark.django_db
 class TestRelationshipRowsView:
@@ -660,8 +730,8 @@ class TestRelationshipRowsView:
         assert response.status_code == 200
         content = response.content.decode()
 
-        # Should contain the row
-        assert "relationship-row-projekt_ref" in content
+        assert "multi-select-wrapper-projekt_ref" in content
+        assert "multi-select-chips-projekt_ref" in content
 
     def test_creates_empty_row_when_no_values(self, client, user, mapping):
         """Test that an empty row is created when no existing values."""
@@ -676,5 +746,5 @@ class TestRelationshipRowsView:
         assert response.status_code == 200
         content = response.content.decode()
 
-        # Should still create one row
-        assert "relationship-row-projekt_ref" in content
+        assert "multi-select-wrapper-projekt_ref" in content
+        assert "multi-select-chips-projekt_ref" in content

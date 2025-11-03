@@ -131,6 +131,97 @@ def _parse_join_payload(raw_value) -> List[str]:
     return uris
 
 
+def _build_selected_items(field_name: str, value_items: Iterable[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """
+    Convert normalized value dictionaries into chip metadata used by the multi-select widget.
+    Each value dict should provide at least a URI or label and may include a resource_id.
+    """
+    import uuid
+
+    selected: List[Dict[str, str]] = []
+    seen: Set[str] = set()
+
+    for item in value_items:
+        if not isinstance(item, dict):
+            continue
+        uri = str(item.get("uri") or "").strip()
+        label = str(item.get("label") or uri).strip()
+        resource_id = item.get("resource_id")
+
+        if not uri and not label:
+            continue
+
+        dedupe_key = uri or label
+        if dedupe_key and dedupe_key in seen:
+            continue
+        if dedupe_key:
+            seen.add(dedupe_key)
+
+        suffix = uuid.uuid4().hex[:8]
+        chip_id = f"relationship-chip-{field_name}-{suffix}"
+        selected.append(
+            {
+                "chip_id": chip_id,
+                "hidden_input_id": f"{chip_id}-hidden",
+                "uri": uri,
+                "label": label or uri,
+                "resource_id": str(resource_id) if resource_id else "",
+            }
+        )
+
+    return selected
+
+
+def _build_relationship_widget_context(
+    *,
+    service: SchemaWorkspaceService,
+    dataset_name: str,
+    field_name: str,
+    field_meta: Dict[str, Any],
+    selected_value_items: Iterable[Dict[str, Any]],
+    selected_property: str,
+) -> Dict[str, Any]:
+    """
+    Assemble template context for the reusable HTMX multi-select widget.
+    """
+    search_properties = field_meta.get("search_properties") or []
+    field_meta["search_properties"] = search_properties
+
+    suggestion_url = "{}?{}".format(
+        reverse("metadata:entity_workspace_field_values", args=[service.mapping.id]),
+        urlencode({"dataset": dataset_name, "column": field_name}),
+    )
+
+    rows_url = "{}?{}".format(
+        reverse("metadata:entity_workspace_relationship_rows", args=[service.mapping.id]),
+        urlencode({"dataset": dataset_name, "field_name": field_name}),
+    )
+
+    wrapper_id = f"multi-select-wrapper-{field_name}"
+    search_input_id = f"multi-select-search-{field_name}"
+    suggestions_id = f"multi-select-suggestions-{field_name}"
+    chip_container_id = f"multi-select-chips-{field_name}"
+    property_select_id = f"relationship-property-{field_name}"
+
+    selected_items = _build_selected_items(field_name, selected_value_items)
+
+    return {
+        "field_name": field_name,
+        "mapping_id": str(service.mapping.id),
+        "dataset_name": dataset_name,
+        "search_properties": search_properties,
+        "selected_property": selected_property,
+        "property_select_id": property_select_id,
+        "wrapper_id": wrapper_id,
+        "search_input_id": search_input_id,
+        "suggestions_id": suggestions_id,
+        "chip_container_id": chip_container_id,
+        "rows_url": rows_url,
+        "suggestion_url": suggestion_url,
+        "selected_items": selected_items,
+    }
+
+
 def _remove_join_source_fields(form: DatasetEntityForm, join_field_map: Dict[str, JoinRelationship]) -> None:
     for relationship in join_field_map.values():
         source_field = relationship.self_column
@@ -615,61 +706,47 @@ def _render_dataset_panel(
         key=lambda item: item["field"].label.lower(),
     )
 
-    # Prepare relationship rows data for pure HTMX rendering
-    import uuid
     for rel_item in relationship_fields_sorted:
         field = rel_item["field"]
         meta = rel_item["meta"]
         field_name = field.name
 
-        # Ensure search_properties is always a list
-        if "search_properties" not in meta or meta["search_properties"] is None:
-            meta["search_properties"] = []
-
-        # Get initial labels/values
         initial_labels = rel_item.get("initial_labels", [])
+        value_items: List[Dict[str, Any]] = []
+        for label_data in initial_labels:
+            if isinstance(label_data, dict):
+                value_items.append(
+                    {
+                        "uri": str(label_data.get("uri") or ""),
+                        "label": str(label_data.get("label") or label_data.get("uri") or ""),
+                        "resource_id": label_data.get("resource_id"),
+                    }
+                )
+            else:
+                string_value = str(label_data)
+                value_items.append({"uri": string_value, "label": string_value})
 
-        # Generate rows for existing values
-        rows = []
-        if initial_labels:
-            for label_data in initial_labels:
-                row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
-                input_id = f"input-{row_id}"
-                suggestions_id = f"suggestions-{row_id}"
+        selected_property = (
+            request.GET.get(f"relationship_property_{field_name}", "")
+            or request.POST.get(f"relationship_property_{field_name}", "")
+            or ""
+        )
 
-                display_value = label_data.get("label", "")
-                stored_value = label_data.get("uri", "")
-                resource_id = label_data.get("resource_id")
-
-                row_data = {
-                    "row_id": row_id,
-                    "input_id": input_id,
-                    "suggestions_id": suggestions_id,
-                    "display_value": display_value,
-                    "stored_value": stored_value,
-                    "suggestion_url": meta.get("base_suggestion_url", ""),
-                }
-                if resource_id:
-                    # Ensure resource_id is string (might already be from JSON)
-                    row_data["resource_id"] = str(resource_id) if resource_id else None
-                rows.append(row_data)
-        else:
-            # Create one empty row if no initial values
-            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
-            input_id = f"input-{row_id}"
-            suggestions_id = f"suggestions-{row_id}"
-            rows.append({
-                "row_id": row_id,
-                "input_id": input_id,
-                "suggestions_id": suggestions_id,
-                "display_value": "",
-                "stored_value": "",
-                "suggestion_url": meta.get("base_suggestion_url", ""),
-            })
-
-        rel_item["rows"] = rows
-        rel_item["property_select_id"] = f"relationship-property-{field_name}"
-        rel_item["selected_property"] = ""
+        widget_context = _build_relationship_widget_context(
+            service=service,
+            dataset_name=dataset_name,
+            field_name=field_name,
+            field_meta=meta,
+            selected_value_items=value_items,
+            selected_property=selected_property,
+        )
+        multi_select_html = render_to_string(
+            "metadata/components/htmx/_multi_select.html",
+            widget_context,
+            request=request,
+        )
+        rel_item.update(widget_context)
+        rel_item["multi_select_html"] = multi_select_html
 
     template_context = {
         "dataset_summary": dataset_summary,
@@ -2149,6 +2226,9 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         target_id = request.GET.get("target_id")
         property_uri = request.GET.get("property")
         property_select_id = request.GET.get("property_select_id", "")
+        chip_container_id = request.GET.get("chip_container_id", "")
+        widget_mode = request.GET.get("widget", "")
+        field_name_param = request.GET.get("field_name", column_name)
 
         logger.info(f"[DatasetFieldValueOptionsView.GET] dataset={dataset_name}, column={column_name}, property={property_uri}")
 
@@ -2211,6 +2291,9 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             "property_uri": property_uri or "",
             "property_select_id": property_select_id,
             "suggestion_url": suggestion_url,
+            "chip_container_id": chip_container_id,
+            "widget": widget_mode,
+            "field_name_param": field_name_param,
         }
         logger.info(f"[DatasetFieldValueOptionsView.GET] Returning {len(context['suggestions'])} suggestions for target={target_id}")
         logger.debug(f"[DatasetFieldValueOptionsView.GET] Suggestions: {context['suggestions'][:3]}")  # Log first 3
@@ -2441,11 +2524,11 @@ class RelationshipRowView(LoginRequiredMixin, View):
     """
 
     def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
-        """Add a new relationship row."""
-        dataset_name = request.GET.get("dataset")
-        field_name = request.GET.get("field_name")
+        """Re-render the multi-select widget (legacy compatibility)."""
+        dataset_name = request.GET.get("dataset") or request.POST.get("dataset")
+        field_name = request.GET.get("field_name") or request.POST.get("field_name")
 
-        logger.info(f"[RelationshipRowView.POST] Adding row: dataset={dataset_name}, field={field_name}")
+        logger.info(f"[RelationshipRowView.POST] Refresh widget: dataset={dataset_name}, field={field_name}")
 
         if not dataset_name or not field_name:
             logger.error("[RelationshipRowView.POST] Missing dataset or field_name parameter")
@@ -2467,44 +2550,46 @@ class RelationshipRowView(LoginRequiredMixin, View):
             logger.error(f"[RelationshipRowView.POST] Unknown field: {field_name}")
             return HttpResponseBadRequest("Unknown field")
 
-        selected_property = request.POST.get(f"relationship_property_{field_name}", "")
-        logger.info(f"[RelationshipRowView.POST] Selected property: {selected_property}")
+        selected_property = request.POST.get(f"relationship_property_{field_name}", "") or ""
 
-        # Generate unique IDs for this row
-        import uuid
-        row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
-        input_id = f"input-{row_id}"
-        suggestions_id = f"suggestions-{row_id}"
+        raw_values = [
+            value.strip()
+            for value in request.POST.getlist(f"{field_name}[]")
+            if value and value.strip()
+        ]
 
-        # Build suggestion URL
-        base_suggestion_url = reverse(
-            "metadata:entity_workspace_field_values",
-            args=[service.mapping.id],
+        relationship = join_field_map.get(field_name)
+        fk_info = field_meta.get("fk_relationship") or {}
+        target_dataset = None
+        if relationship:
+            target_dataset = relationship.other_dataset
+        elif fk_info:
+            target_dataset = fk_info.get("target_dataset")
+
+        value_items: List[Dict[str, Any]] = []
+        for value in raw_values:
+            label = _infer_entity_label(
+                service,
+                value,
+                target_dataset,
+            ) or value
+            resource = Resource.objects.filter(uri=value).first()
+            resource_id = str(resource.id) if resource else ""
+            value_items.append({"uri": value, "label": label, "resource_id": resource_id})
+
+        widget_context = _build_relationship_widget_context(
+            service=service,
+            dataset_name=dataset_name,
+            field_name=field_name,
+            field_meta=field_meta,
+            selected_value_items=value_items,
+            selected_property=selected_property,
         )
-        base_params = {"dataset": dataset_name, "column": field_name}
-        suggestion_url = f"{base_suggestion_url}?{urlencode(base_params)}"
 
-        # Determine property select ID
-        property_select_id = f"relationship-property-{field_name}"
-
-        context = {
-            "row_id": row_id,
-            "input_id": input_id,
-            "suggestions_id": suggestions_id,
-            "field_name": field_name,
-            "display_value": "",
-            "stored_value": "",
-            "suggestion_url": suggestion_url,
-            "selected_property": selected_property,
-            "property_select_id": property_select_id,
-            "mapping_id": mapping_id,
-        }
-
-        logger.info(f"[RelationshipRowView.POST] Rendering row: {row_id}")
         return render(
             request,
-            "metadata/entity_creation/partials/_relationship_row.html",
-            context,
+            "metadata/components/htmx/_multi_select.html",
+            widget_context,
         )
 
     def delete(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
@@ -2519,7 +2604,7 @@ class RelationshipRowsView(LoginRequiredMixin, View):
     """
 
     def get(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
-        """Re-render all rows with new property selection."""
+        """Re-render the multi-select widget when filters change."""
         dataset_name = request.GET.get("dataset")
         field_name = request.GET.get("field_name")
 
@@ -2540,81 +2625,54 @@ class RelationshipRowsView(LoginRequiredMixin, View):
             dataset_name,
             field_metadata,
         )
+        field_meta = field_metadata.get(field_name)
+        if not field_meta:
+            logger.error(f"[RelationshipRowsView.GET] Unknown field: {field_name}")
+            return HttpResponseBadRequest("Unknown field")
 
-        selected_property = request.GET.get(f"relationship_property_{field_name}", "")
+        selected_property = request.GET.get(f"relationship_property_{field_name}", "") or ""
         logger.info(f"[RelationshipRowsView.GET] Selected property: {selected_property}")
 
-        # Collect existing values from the form
-        existing_values = request.GET.getlist(f"{field_name}[]")
+        existing_values = [
+            value.strip()
+            for value in request.GET.getlist(f"{field_name}[]")
+            if value and value.strip()
+        ]
         logger.info(f"[RelationshipRowsView.GET] Existing values: {existing_values}")
 
-        # Build suggestion URL
-        base_suggestion_url = reverse(
-            "metadata:entity_workspace_field_values",
-            args=[service.mapping.id],
-        )
-        base_params = {"dataset": dataset_name, "column": field_name}
-        suggestion_url = f"{base_suggestion_url}?{urlencode(base_params)}"
+        relationship = join_field_map.get(field_name)
+        fk_info = field_meta.get("fk_relationship") or {}
+        target_dataset = None
+        if relationship:
+            target_dataset = relationship.other_dataset
+        elif fk_info:
+            target_dataset = fk_info.get("target_dataset")
 
-        # Determine property select ID
-        property_select_id = f"relationship-property-{field_name}"
-
-        # Generate rows for existing values
-        rows = []
-        import uuid
+        value_items: List[Dict[str, Any]] = []
         for value in existing_values:
-            if not value.strip():
-                continue
-            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
-            input_id = f"input-{row_id}"
-            suggestions_id = f"suggestions-{row_id}"
+            label = _infer_entity_label(
+                service,
+                value,
+                target_dataset,
+            ) or value
+            resource = Resource.objects.filter(uri=value).first()
+            resource_id = str(resource.id) if resource else ""
+            value_items.append({"uri": value, "label": label, "resource_id": resource_id})
 
-            rows.append({
-                "row_id": row_id,
-                "input_id": input_id,
-                "suggestions_id": suggestions_id,
-                "display_value": value,
-                "stored_value": value,
-                "suggestion_url": suggestion_url,
-            })
+        widget_context = _build_relationship_widget_context(
+            service=service,
+            dataset_name=dataset_name,
+            field_name=field_name,
+            field_meta=field_meta,
+            selected_value_items=value_items,
+            selected_property=selected_property,
+        )
 
-        # If no existing values, create one empty row
-        if not rows:
-            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
-            input_id = f"input-{row_id}"
-            suggestions_id = f"suggestions-{row_id}"
-            rows.append({
-                "row_id": row_id,
-                "input_id": input_id,
-                "suggestions_id": suggestions_id,
-                "display_value": "",
-                "stored_value": "",
-                "suggestion_url": suggestion_url,
-            })
-
-        logger.info(f"[RelationshipRowsView.GET] Rendering {len(rows)} rows")
-
-        context = {
-            "rows": rows,
-            "field_name": field_name,
-            "selected_property": selected_property,
-            "property_select_id": property_select_id,
-            "mapping_id": mapping_id,
-        }
-
-        # Render all rows
-        html = "".join([
-            render_to_string(
-                "metadata/entity_creation/partials/_relationship_row.html",
-                {**row, "field_name": field_name, "selected_property": selected_property,
-                 "property_select_id": property_select_id, "mapping_id": mapping_id},
-                request=request,
-            )
-            for row in rows
-        ])
-
-        logger.info(f"[RelationshipRowsView.GET] Rendered HTML length: {len(html)}")
-        return HttpResponse(html)
+        return render(
+            request,
+            "metadata/components/htmx/_multi_select.html",
+            widget_context,
+        )
 
 
 class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, View):
@@ -2636,6 +2694,9 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         label = request.POST.get("label", value) or ""
         selected_property = request.POST.get("property") or ""
         property_select_id = request.POST.get("property_select_id") or ""
+        widget_mode = request.POST.get("widget") or ""
+        chip_container_id = request.POST.get("chip_container_id") or ""
+        field_name = request.POST.get("field_name") or column_name
 
         if not input_id or not target_id or not dataset_name or not column_name:
             logger.warning(
@@ -2660,6 +2721,67 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         suggestion_url = f"{suggestion_base_url}?{suggestion_params}"
         property_param = f"&property={escape(selected_property)}" if selected_property else ""
         property_select_param = f"&property_select_id={escape(property_select_id)}" if property_select_id else ""
+
+        if widget_mode == "multi_select" and chip_container_id:
+            existing_values = [
+                item.strip()
+                for item in request.POST.getlist(f"{field_name}[]")
+                if item and item.strip()
+            ]
+            if value and value.strip() in existing_values:
+                logger.info(
+                    "[RelationshipSelectSuggestionView.POST] Value already selected; skipping chip append"
+                )
+                chip_fragment = ""
+            else:
+                import uuid
+
+                chip_suffix = uuid.uuid4().hex[:8]
+                chip_id = f"relationship-chip-{field_name}-{chip_suffix}"
+                hidden_input_id = f"{chip_id}-hidden"
+                resource = Resource.objects.filter(uri=value).first() if value else None
+                resource_id = str(resource.id) if resource else ""
+
+                chip_fragment_inner = render_to_string(
+                    "metadata/components/htmx/_multi_select_chip.html",
+                    {
+                        "chip_id": chip_id,
+                        "hidden_input_id": hidden_input_id,
+                        "uri": value,
+                        "label": label,
+                        "resource_id": resource_id,
+                        "field_name": field_name,
+                        "mapping_id": mapping_id,
+                    },
+                    request=request,
+                )
+                chip_fragment = (
+                    f'<div id="{escape(chip_container_id)}" '
+                    f'hx-swap-oob="beforeend">{chip_fragment_inner}</div>'
+                )
+
+            include_property = (
+                f", #{escape(property_select_id)}" if property_select_id else ""
+            )
+            search_input_html = f'''<input type="text"
+           id="{escape(input_id)}"
+           name="q"
+           class="input input-bordered w-full"
+           placeholder="Wert suchen und auswählen..."
+           value=""
+           hx-get="{escape(suggestion_url)}&input_id={escape(input_id)}&target_id={escape(target_id)}{property_select_param}{property_param}&chip_container_id={escape(chip_container_id)}&field_name={escape(field_name)}&widget=multi_select"
+           hx-trigger="input changed delay:200ms"
+           hx-target="#{escape(target_id)}"
+           hx-include="this{include_property}"
+           autocomplete="off"
+           hx-swap-oob="outerHTML">'''
+
+            dropdown_html = f'<div id="{escape(target_id)}" hx-swap-oob="innerHTML"></div>'
+
+            fragments = [fragment for fragment in [chip_fragment, search_input_html, dropdown_html] if fragment]
+            response_html = "\n".join(fragments)
+            logger.debug(f"[RelationshipSelectSuggestionView.POST] Multi-select response length: {len(response_html)}")
+            return HttpResponse(response_html)
 
         # Create OOB updates for individual inputs
         # 1. Update hidden input with the URI value
