@@ -335,6 +335,9 @@ class AlternateTitleForm(BaseEntityForm):
     def __init__(self, *args, metadata_options=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
 
+
+DescriptionFormSet = formset_factory(DescriptionForm, extra=0, min_num=1, validate_min=False)
+
 def from_form_set_property_literal(
     form: BaseEntityForm,
     form_entity: EntityResource,
@@ -560,20 +563,38 @@ def create_project(request):
                 metadata_options=metadata_options,
             )
 
+            description_formset = DescriptionFormSet(
+                request.POST,
+                prefix="descriptions",
+                form_kwargs={"metadata_options": metadata_options},
+            )
+
             if project_form.is_valid():
                 project_entity = form_to_entity(project_form, "Projekt", organization)
 
+                for description_form in description_formset:
+                    if description_form.is_valid():
+                        description_entity = form_to_entity(description_form, "Beschreibung", organization)
+                        description_prop, _ = PropertyResource.get_or_create(
+                            uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
+                        )
+                        project_entity.set_property(description_prop, description_entity)
                 # The RDF resources are now created and linked automatically
                 # Continue with the rest of the project creation workflow
                 return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
             project_form = ProjectForm(metadata_options=metadata_options)
+            description_formset = DescriptionFormSet(
+                prefix="descriptions",
+                form_kwargs={"metadata_options": metadata_options},
+            )
 
         return render(
             request,
             "metadata/entity_creation/create_project.html",
             {
                 "project_form": project_form,
+                "description_formset": description_formset,
                 "entity_type": "project",
                 "title": "Create New Project",
                 "description": "Fill in the details to create a new archival project",
