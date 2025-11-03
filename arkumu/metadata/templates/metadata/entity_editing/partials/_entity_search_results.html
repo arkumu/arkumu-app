@@ -1,0 +1,31 @@
+<div id="entity-search-results"
+     class="mt-2 max-h-64 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-lg">
+  {% if results %}
+    {% for result in results %}
+      <button type="button"
+              class="block w-full text-left px-4 py-2 hover:bg-base-200 transition-colors"
+              hx-get="{{ result.load_url }}"
+              hx-target="#dataset-panel"
+              hx-swap="innerHTML"
+              hx-push-url="false">
+        <div class="font-medium">
+          {{ result.entity_label }}
+        </div>
+        <div class="text-xs text-base-content/60">
+          {% if result.property_value %}
+            {% if result.property_label %}{{ result.property_label }} · {% endif %}
+            {{ result.property_value }}
+            {% if result.secondary_label %} · {{ result.secondary_label }}{% endif %}
+            · ID: {{ result.id }}
+          {% else %}
+            {% if result.secondary_label %}{{ result.secondary_label }} · {% endif %}ID: {{ result.id }}
+          {% endif %}
+        </div>
+      </button>
+    {% endfor %}
+  {% else %}
+    <div class="px-4 py-3 text-sm text-base-content/60">
+      Keine Einträge gefunden
+    </div>
+  {% endif %}
+</div>

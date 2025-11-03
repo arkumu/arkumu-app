@@ -1,0 +1,366 @@
+{% load static %}
+<div class="card bg-base-100 border border-base-300 shadow-sm">
+  <div class="card-body space-y-6">
+    <header class="space-y-1">
+      <div class="flex items-center flex-wrap gap-3">
+        <h2 class="text-xl font-semibold">{{ dataset_summary.display_label }}</h2>
+        {% if dataset_summary.dataset_name != dataset_summary.display_label %}
+          <span class="badge badge-outline">{{ dataset_summary.dataset_name }}</span>
+        {% endif %}
+      </div>
+      <p class="text-sm text-base-content/70">
+        {{ dataset_summary.property_count }} Eigenschaften
+      </p>
+    </header>
+
+    {% if project_access_enabled %}
+      {% include "metadata/entity_creation/partials/_project_access_control.html" %}
+    {% endif %}
+
+    {% if success_message %}
+      <div class="alert alert-success">
+        <span>{{ success_message|safe }}</span>
+      </div>
+    {% endif %}
+
+    {% if error_message %}
+      <div class="alert alert-error">
+        <span>{{ error_message }}</span>
+      </div>
+    {% endif %}
+
+    <section class="space-y-3">
+      <details class="collapse collapse-arrow bg-base-200" open>
+        <summary class="collapse-title text-sm font-medium">
+          Bestehendes Entity bearbeiten
+        </summary>
+        <div class="collapse-content space-y-3">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text text-sm">Nach Entity suchen</span>
+            </label>
+            <div class="space-y-2">
+              {% if search_properties %}
+                <select id="entity-search-property"
+                        name="property"
+                        class="select select-bordered select-sm w-full"
+                        hx-get="{% url 'metadata:entity_workspace_search' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
+                        hx-trigger="change"
+                        hx-target="#entity-search-results"
+                        hx-swap="outerHTML"
+                        hx-include="#entity-search-input"
+                        autocomplete="off">
+                  <option value="" {% if not selected_property %}selected{% endif %}>
+                    Alle Eigenschaften
+                  </option>
+                  {% for prop in search_properties %}
+                    <option value="{{ prop.uri }}" {% if prop.uri == selected_property %}selected{% endif %}>
+                      {{ prop.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              {% endif %}
+              <input type="text"
+                     id="entity-search-input"
+                     class="input input-bordered input-sm w-full"
+                     placeholder="Titel, Name oder Beschreibung eingeben..."
+                     hx-get="{% url 'metadata:entity_workspace_search' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
+                     hx-trigger="keyup changed delay:300ms, focus"
+                     hx-target="#entity-search-results"
+                     hx-swap="outerHTML"
+                     hx-include="#entity-search-property"
+                     autocomplete="off"
+                     name="q">
+            </div>
+            <div id="entity-search-results"
+                 class="mt-2 max-h-64 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-lg">
+            </div>
+          </div>
+          {% if load_error %}
+            <p class="text-sm text-error">
+              Entity konnte nicht geladen werden.
+            </p>
+          {% endif %}
+        </div>
+      </details>
+    </section>
+
+    <form
+      hx-post="{% url 'metadata:entity_workspace_dataset' mapping.id %}"
+      hx-target="#dataset-panel"
+      hx-swap="innerHTML"
+      hx-push-url="false"
+      class="space-y-4"
+    >
+      <input type="hidden" name="dataset" value="{{ dataset_summary.dataset_name }}">
+      {% if entity_uri %}
+        <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
+        {% if entity_label %}
+          <input type="hidden" name="entity_label" value="{{ entity_label }}">
+        {% endif %}
+        <div class="alert alert-info">
+          <span>
+            Bearbeitung von
+            {% if entity_label %}
+              <span class="font-semibold">{{ entity_label }}</span>
+              <span class="block text-xs text-base-content/70 break-all">{{ entity_uri }}</span>
+            {% else %}
+              <code class="font-mono break-all">{{ entity_uri }}</code>
+            {% endif %}
+          </span>
+        </div>
+      {% endif %}
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-error">
+          {% for error in form.non_field_errors %}
+            <span>{{ error }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for item in fields_with_metadata %}
+          <div class="form-control w-full {% if item.meta.is_multi_value %}md:col-span-2 lg:col-span-3{% endif %}">
+            <div class="label">
+              <span class="label-text font-medium flex items-center gap-2">
+                <span>
+                  {{ item.field.label }}
+                  {% if item.field.field.required %}<span class="text-error ml-1">*</span>{% endif %}
+                </span>
+                {% if item.meta.property_resource_id %}
+                  <a href="{% url 'metadata:resource_graph' item.meta.property_resource_id %}"
+                     class="btn btn-xs btn-primary"
+                     title="View property graph"
+                     target="_blank">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                    </svg>
+                  </a>
+                {% endif %}
+              </span>
+              {% if item.search_url %}
+                <span class="tooltip ml-2" data-tip="Tippe, um vorhandene Werte zu durchsuchen.">
+                  <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-base-200 text-xs font-semibold text-base-content/70">i</span>
+                </span>
+              {% endif %}
+            </div>
+
+            {% if item.meta.resolved_uri %}
+              {# Single FK field with URI resolution - use hidden input pattern #}
+              {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.field.auto_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class search_url=item.search_url target_id=item.target_id required=item.field.field.required search_properties=item.meta.search_properties display_property=item.meta.display_property base_url=item.meta.base_suggestion_url %}
+            {% elif item.meta.is_multi_value %}
+              {# Multi-value field - pure HTMX, no JavaScript #}
+              {% if item.initial_labels %}
+                <!-- DEBUG Multi-value: {{ item.field.name }}, labels={{ item.initial_labels|length }} -->
+                <div class="flex flex-wrap gap-2 mb-2">
+                  {% for choice in item.initial_labels %}
+                    <!-- choice: {{ choice }} -->
+                    <div class="flex items-center gap-1">
+                      <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                      {% if choice.resource_id %}
+                        <a href="{% url 'metadata:resource_graph' choice.resource_id %}"
+                           class="btn btn-xs btn-primary btn-circle"
+                           title="View resource graph"
+                           target="_blank">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                          </svg>
+                        </a>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+              {{ item.field }}
+              {# Server-rendered multi-value rows - no JS initialization needed #}
+              <div id="multi-value-rows-{{ item.field.name }}" class="space-y-2">
+                {% for row in item.rows %}
+                  {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=item.field.name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url mapping_id=mapping.id resource_id=row.resource_id %}
+                {% endfor %}
+              </div>
+              <button type="button"
+                      class="btn btn-ghost btn-sm mt-2"
+                      hx-post="{% url 'metadata:entity_workspace_relationship_row' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}&field_name={{ item.field.name }}"
+                      hx-target="#multi-value-rows-{{ item.field.name }}"
+                      hx-swap="beforeend">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Weiteren Wert hinzufügen
+              </button>
+            {% else %}
+              {# Regular single-value field #}
+              <div class="flex items-center gap-2">
+                {% if item.search_url %}
+                  <div class="flex-1 space-y-2" data-suggestion-container>
+                    {{ item.field }}
+                    <div id="{{ item.target_id }}"
+                         class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden"></div>
+                  </div>
+                {% else %}
+                  <div class="flex-1">
+                    {{ item.field }}
+                  </div>
+                {% endif %}
+                {% if item.meta.current_value_resource_id %}
+                  <a href="{% url 'metadata:resource_graph' item.meta.current_value_resource_id %}"
+                     class="btn btn-xs btn-primary"
+                     title="View value in graph: {{ item.meta.current_value }}"
+                     target="_blank">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                    </svg>
+                  </a>
+                {% endif %}
+              </div>
+            {% endif %}
+
+            {% if item.field.help_text %}
+              <span class="text-xs text-base-content/70">{{ item.field.help_text|safe }}</span>
+            {% endif %}
+            {% if item.meta.resolved_label %}
+              <!-- DEBUG Single FK: field={{ item.field.name }}, resolved_label={{ item.meta.resolved_label }}, resolved_resource_id={{ item.meta.resolved_resource_id }} -->
+              <div class="flex items-center gap-2 mt-1">
+                <span class="text-xs text-base-content/60">Wert: {{ item.meta.resolved_label }}</span>
+                {% if item.meta.resolved_resource_id %}
+                  <a href="{% url 'metadata:resource_graph' item.meta.resolved_resource_id %}"
+                     class="btn btn-xs btn-primary"
+                     title="View resource graph"
+                     target="_blank">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                    </svg>
+                  </a>
+                {% else %}
+                  <!-- DEBUG: No resolved_resource_id -->
+                {% endif %}
+              </div>
+            {% endif %}
+            {% if item.field.errors %}
+              <span class="text-xs text-error">
+                {% for error in item.field.errors %}
+                  {{ error }}
+                {% endfor %}
+              </span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+
+      {% if relationship_fields or read_only_relationships %}
+        <div class="divider text-sm">Verknüpfungen</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {% for item in relationship_fields %}
+            <div class="form-control w-full md:col-span-2 lg:col-span-3">
+              <div class="label">
+                <span class="label-text font-medium flex items-center gap-2">
+                  <span>{{ item.field.label }}</span>
+                  {% if item.meta.property_resource_id %}
+                    <a href="{% url 'metadata:resource_graph' item.meta.property_resource_id %}"
+                       class="btn btn-xs btn-primary"
+                       title="View property graph"
+                       target="_blank">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                      </svg>
+                    </a>
+                  {% endif %}
+                </span>
+                <span class="label-text-alt text-base-content/60">Mehrfachauswahl möglich</span>
+              </div>
+              {% if item.initial_labels %}
+                <div class="flex flex-wrap gap-2 mb-2">
+                  {% for choice in item.initial_labels %}
+                    <div class="flex items-center gap-1">
+                      <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                      {% if choice.resource_id %}
+                        <a href="{% url 'metadata:resource_graph' choice.resource_id %}"
+                           class="btn btn-xs btn-primary btn-circle"
+                           title="View resource graph"
+                           target="_blank">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                          </svg>
+                        </a>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+              {{ item.field }}
+
+              {# New pure HTMX relationship container #}
+              {% include "metadata/entity_creation/partials/_relationship_rows_container.html" with field_name=item.field.name rows=item.rows search_properties=item.meta.search_properties selected_property=item.selected_property property_select_id=item.property_select_id dataset_name=dataset_summary.dataset_name mapping_id=mapping.id %}
+            </div>
+          {% endfor %}
+          {% for relation in read_only_relationships %}
+            <div class="form-control w-full md:col-span-2 lg:col-span-3">
+              <div class="label">
+                <span class="label-text font-medium">
+                  {{ relation.label }}
+                </span>
+                <span class="label-text-alt text-base-content/60">Nur Anzeige</span>
+              </div>
+              {% if relation.items %}
+                <div class="flex flex-wrap gap-2 mb-2">
+                  {% for choice in relation.items %}
+                    <div class="flex items-center gap-1">
+                      <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                      {% if choice.resource_id %}
+                        <a href="{% url 'metadata:resource_graph' choice.resource_id %}"
+                           class="btn btn-xs btn-primary btn-circle"
+                           title="View resource graph"
+                           target="_blank">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                          </svg>
+                        </a>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="text-xs text-base-content/60 mb-2">Keine verknüpften Einträge vorhanden.</p>
+              {% endif %}
+              <p class="text-xs text-base-content/50">Bitte im entsprechenden Formular pflegen.</p>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="flex flex-wrap items-center gap-3">
+        {% if entity_uri %}
+          <button type="submit" class="btn btn-primary">
+            Änderungen speichern
+          </button>
+          <button type="button"
+                  class="btn btn-ghost btn-sm"
+                  hx-get="{% url 'metadata:entity_workspace_dataset' mapping.id %}?dataset={{ dataset_summary.dataset_name|urlencode }}"
+                  hx-target="#dataset-panel"
+                  hx-swap="innerHTML"
+                  hx-push-url="false">
+            Neues Entity beginnen
+          </button>
+        {% else %}
+          <button type="submit"
+                  name="submission_mode"
+                  value="stay_on_entity"
+                  class="btn btn-secondary">
+            Entity erstellen &amp; weiter bearbeiten
+          </button>
+          <button type="submit"
+                  name="submission_mode"
+                  value="create_new"
+                  class="btn btn-primary">
+            Entity erstellen &amp; neues Formular
+          </button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Pure HTMX - no JavaScript needed! #}
+{# Relationship rows with name="fieldname[]" automatically submitted as arrays by HTMX #}
+{# Hidden inputs store URIs, visible inputs show labels - only hidden inputs are submitted #}

@@ -319,12 +319,9 @@ urlpatterns = [
 
     # Entity creation endpoints
     path('create/project/', entity_creation_views.create_project, name='create_project'),
-    path('project/details/', entity_creation_views.get_project_details, name='project_details'),
     path('create/event/', entity_creation_views.create_event, name='create_event'),
     path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
-    path('actor/details/', entity_creation_views.get_actor_details, name='actor_details'),
     path('create/role/', entity_creation_views.create_role, name='create_role'),
-    path('role/details/', entity_creation_views.get_role_details, name='role_details'),
     path('create/digital-object/', entity_creation_views.create_digital_object, name='create_digital_object'),
     path('create/institution/', entity_creation_views.create_institution, name='create_institution'),
     path('create/project-category/', entity_creation_views.create_project_category, name='create_project_category'),
@@ -333,4 +330,16 @@ urlpatterns = [
     path('create/description/', entity_creation_views.create_description, name='create_description'),
     path('create/catchphrase/', entity_creation_views.create_catchphrase, name='create_catchphrase'),
 
+    # Entity edit endpoints
+    path('edit/project/', entity_creation_views.edit_project, name='edit_project'),
+    path('edit/event/', entity_creation_views.edit_event, name='edit_event'),
+    path('edit/actor/', entity_creation_views.edit_actor, name='edit_actor'),
+    path('edit/role/', entity_creation_views.edit_role, name='edit_role'),
+    path('edit/digital-object/', entity_creation_views.edit_digital_object, name='edit_digital_object'),
+    path('edit/institution/', entity_creation_views.edit_institution, name='edit_institution'),
+    path('edit/project-category/', entity_creation_views.edit_project_category, name='edit_project_category'),
+    path('edit/project-type/', entity_creation_views.edit_project_type, name='edit_project_type'),
+    path('edit/alternate-title/', entity_creation_views.edit_alternate_title, name='edit_alternate_title'),
+    path('edit/description/', entity_creation_views.edit_description, name='edit_description'),
+    path('edit/catchphrase/', entity_creation_views.edit_catchphrase, name='edit_catchphrase'),
     ]

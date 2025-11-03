@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8">
+  <div class="card bg-base-100 shadow-xl border border-base-200">
+    <div class="card-body p-8">
+      <div class="flex items-center mb-6">
+        <div class="p-3 rounded-xl mr-4 bg-primary/10">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="card-title text-2xl font-bold">Edit Actor</h1>
+          <p class="text-base-content/70 mt-1">Change the details to edit the archival actor</p>
+        </div>
+      </div>
+
+      <form action="{% url 'metadata:edit_actor' %}" method="post" class="space-y-8">
+        {% csrf_token %}
+
+        {% include "metadata/entity_creation/partials/_actor_form_fields.html" %}
+
+        <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
+          <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Cancel
+          </a>
+          <button type="submit" class="btn btn-primary px-8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Edit Actor
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock content %}
+
+{% block javascript %} {{ block.super }}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      document.querySelector("#id_uri").closest(".form-control").style.display = 'none';
+    });
+  </script>
+{% endblock javascript %}
