@@ -37,6 +37,10 @@ def get_properties(org_code):
                     uri=f"{BASE_URI}/{org_code}/properties/bevorzugter-untertitel",
                     name="Bevorzugter Untertitel",
                 )[0],
+                "event_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/ereignis",
+                    name="Ereignis",
+                )[0],
                 "institution_prop": PropertyResource.get_or_create(
                     uri=f"{BASE_URI}/{org_code}/properties/einliefernde-hochschule",
                     name="Einliefernde Hochschule",
@@ -168,6 +172,11 @@ class ProjectForm(BaseEntityForm):
         required=True,
         choices=[],
     )
+    ereignis_uri = forms.ChoiceField(
+        label="Zugehöriges Ereignis",
+        required=False,
+        choices=[],
+    )
     projektkategorie_uri = forms.ChoiceField(
         label="Projektkategorie",
         required=True,
@@ -290,6 +299,9 @@ class ProjectForm(BaseEntityForm):
         self.fields["einliefernde_hochschule_uri"].choices = [
             ("", "Select an institution")
         ] + options.get("institution", [])
+        self.fields["ereignis_uri"].choices = [
+            ("", "Select an event")
+        ] + options.get("event", [])
         self.fields["projektkategorie_uri"].choices = [
             ("", "Select a category")
         ] + options.get("project_category", [])
@@ -328,9 +340,11 @@ class ProjectForm(BaseEntityForm):
             properties = get_properties(org_code)["Projekt"]
 
             # Pre-fill form fields with existing entity data
+            self.fields["uri"].initial = uri
             self.fields["bevorzugter_titel"].initial = entity.get_property(properties["title_prop"]) if entity.get_property(properties["title_prop"]) else ""
             self.fields["bevorzugter_untertitel"].initial = entity.get_property(properties["subtitle_prop"]) if entity.get_property(properties["subtitle_prop"]) else ""
             self.fields["einliefernde_hochschule_uri"].initial = entity.get_property(properties["institution_prop"])[0].uri if entity.get_property(properties["institution_prop"]) else ""
+            self.fields["ereignis_uri"].initial = entity.get_property(properties["event_prop"])[0].uri if entity.get_property(properties["event_prop"]) else ""
             self.fields["projektkategorie_uri"].initial = entity.get_property(properties["category_prop"])[0].uri if entity.get_property(properties["category_prop"]) else ""
             self.fields["schlagwort_uris"].initial = entity.get_property(properties["catchphrase_prop"])[0].uri if entity.get_property(properties["catchphrase_prop"]) else ""
             self.fields["projektart_uri"].initial = entity.get_property(properties["project_type_prop"])[0].uri if entity.get_property(properties["project_type_prop"]) else ""
@@ -376,7 +390,7 @@ class EventForm(BaseEntityForm):
         help_text="End date of the event (optional)",
     )
 
-    def __init__(self, *args, metadata_options=None, **kwargs):
+    def __init__(self, *args, metadata_options=None, uri = None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
         self.fields["uri"].choices = [("", "Select an event")] + options.get(
@@ -388,6 +402,23 @@ class EventForm(BaseEntityForm):
         self.fields["ereignisbeschreibung_uri"].choices = [
             ("", "Select the description of the event")
         ] + options.get("event_description", [])
+
+        if uri:
+            entity, created = EntityResource.get_or_create(uri)
+            if created:
+                return
+            
+            org_code = entity.uri.split("/")[4]
+            properties = get_properties(org_code)["Ereignis"]
+
+            # Pre-fill form fields with existing entity data
+            self.fields["uri"].initial = uri
+            self.fields["ereignisname"].initial = entity.get_property(properties["event_name_prop"]) if entity.get_property(properties["event_name_prop"]) else ""
+            self.fields["project_uri"].initial = entity.get_property(properties["subtitle_prop"]) if entity.get_property(properties["subtitle_prop"]) else ""
+            self.fields["ereignisbeschreibung_uri"].initial = entity.get_property(properties["description_prop"])[0].uri if entity.get_property(properties["description_prop"]) else ""
+            self.fields["ereignisort"].initial = entity.get_property(properties["event_place_prop"])[0].uri if entity.get_property(properties["event_place_prop"]) else ""
+            self.fields["ereignisbeginn"].initial = entity.get_property(properties["begin_date_prop"])[0].uri if entity.get_property(properties["begin_date_prop"]) else ""
+            self.fields["ereignisende"].initial = entity.get_property(properties["end_date_prop"])[0].uri if entity.get_property(properties["end_date_prop"]) else ""
 
 
 class ActorForm(BaseEntityForm):
