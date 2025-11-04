@@ -8,9 +8,9 @@ from django.db import transaction
 import polars as pl
 
 from arkumu.metadata.models import Resource
-from arkumu.metadata.models.resource import ResourceType
+from arkumu.metadata.models.resource import ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
-from arkumu.common.uri_utils import mint_uri, slugify_uri_part
+from arkumu.common.uri_utils import mint_uri, slugify_uri_part, normalize_text_input
 from arkumu.common.enums import LiteralURIStrategy
 from .statistics import ExecutionStatistics
 
@@ -137,7 +137,8 @@ class ResourceManager:
         """
         # Use centralized hash function for URI generation
         from arkumu.common.hash_utils import generate_uri_hash
-        value_hash = generate_uri_hash(value, digest_size=8)
+        normalized_value = normalize_text_input(value) or ""
+        value_hash = generate_uri_hash(normalized_value, digest_size=8)
         
         if strategy == LiteralURIStrategy.SEMANTIC and datatype:
             # Extract simple type name from URI for semantic URIs
@@ -148,8 +149,8 @@ class ResourceManager:
             return f"{self.base_uri}/literals/{value_hash}"
         else:
             # Legacy contextual URIs (existing behavior with Blake2b)
-            legacy_hash = generate_uri_hash(value, digest_size=4)
-            value_identifier = f"{slugify_uri_part(value[:50])}-{legacy_hash}"
+            legacy_hash = generate_uri_hash(normalized_value, digest_size=4)
+            value_identifier = f"{slugify_uri_part(normalized_value[:50])}-{legacy_hash}"
             return mint_uri(self.base_uri, self.institution, "values", value_identifier)
     
     
@@ -244,13 +245,14 @@ class ResourceManager:
         uri_to_value = {}  # Map URIs back to original values
         
         for value, datatype in values:
-            if not value or not value.strip():
+            normalized_value = normalize_text_input(value, blank_to_none=True)
+            if normalized_value is None:
                 continue
                 
-            # Generate URI and hash using full value (no truncation for storage)
-            canonical_uri = self.create_canonical_literal_uri(value, datatype)
-            from arkumu.common.hash_utils import generate_value_hash_and_normalize
-            value_hash, normalized_value = generate_value_hash_and_normalize(value)
+            # Generate URI and hash using normalized value
+            canonical_uri = self.create_canonical_literal_uri(normalized_value, datatype)
+            from arkumu.common.hash_utils import generate_value_hash
+            value_hash = generate_value_hash(normalized_value)
             
             # Skip if we've already seen this URI in this batch
             if canonical_uri in uri_to_value:
@@ -559,14 +561,19 @@ class ResourceManager:
         try:
             with transaction.atomic():
                 entity_id = entity_uri.split('/')[-1]
+                defaults: Dict[str, Any] = {
+                    "resource_type": ResourceType.ENTITY,
+                    "name": entity_id[:100] if len(entity_id) > 100 else entity_id,
+                    "is_placeholder": is_stub,
+                    "organization": self.organization,
+                }
+                if self._dataset_defaults_to_public(dataset_name):
+                    defaults["public_access_level"] = PublicAccessLevel.PUBLIC.value
+                    defaults["is_public_approved"] = True
+
                 entity_resource, created = Resource.objects.get_or_create(
                     uri=entity_uri,
-                    defaults={
-                        "resource_type": ResourceType.ENTITY,
-                        "name": entity_id[:100] if len(entity_id) > 100 else entity_id,
-                        "is_placeholder": is_stub,
-                        "organization": self.organization
-                    }
+                    defaults=defaults,
                 )
                 
                 # STUB RESOLUTION LOGIC: If entity exists and it's a stub, but we're creating a real entity
@@ -592,6 +599,13 @@ class ResourceManager:
         except Exception as e:
             logger.error(f"Failed to create entity resource {entity_uri}: {e}")
             raise
+
+    @staticmethod
+    def _dataset_defaults_to_public(dataset_name: Optional[str]) -> bool:
+        if not dataset_name:
+            return False
+        slug = slugify_uri_part(str(dataset_name)).lower()
+        return slug in {"projekt", "project"}
     
     def create_external_resource(self, external_uri: str, ontology_type: str) -> Resource:
         """Create or get an external ontology resource."""
@@ -634,12 +648,15 @@ class ResourceManager:
                 
                 # Create value resource if needed
                 # Generate URI first to ensure uniqueness across different datatypes
-                canonical_uri = self.create_canonical_literal_uri(object_value, datatype)
+                normalized_value = normalize_text_input(object_value)
+                if normalized_value is None:
+                    raise ValueError("Literal value cannot be empty")
+                canonical_uri = self.create_canonical_literal_uri(normalized_value, datatype)
                 
                 # Use hash-based uniqueness without source to enable deduplication across archives
                 # and prevent PostgreSQL btree index size limitations
-                from arkumu.common.hash_utils import generate_value_hash_and_normalize
-                value_hash, normalized_value = generate_value_hash_and_normalize(object_value)
+                from arkumu.common.hash_utils import generate_value_hash
+                value_hash = generate_value_hash(normalized_value)
                 
                 value_resource, created = Resource.objects.get_or_create(
                     uri=canonical_uri,  # Use URI for primary uniqueness

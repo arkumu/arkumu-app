@@ -294,7 +294,7 @@ class CSVMappingTemplateHelperMixin:
     def render_file_browser_template(self, request, organization):
         """
         Render file browser template with eager loading for data/metadata folders.
-        
+
         Consolidates the repeated pattern:
         - Get bucket service and contents
         - Pre-load data and metadata folder contents  
@@ -361,4 +361,20 @@ class CSVMappingTemplateHelperMixin:
             
         except Exception as e:
             logger.error(f"❌ FILE_BROWSER_TEMPLATE: Error rendering file browser template: {e}")
-            return f'<div class="alert alert-error"><span>Error loading file browser: {str(e)}</span></div>' 
+            return f'<div class="alert alert-error"><span>Error loading file browser: {str(e)}</span></div>'
+
+    # --------------------------------------------------------------
+    # Navbar helpers (OOB updates for HTMX-enabled flows)
+    # --------------------------------------------------------------
+    def render_metadata_entry_nav_items(self, request, *, active: bool = False):
+        """Render OOB payload for metadata entry navbar links."""
+
+        context = {
+            'active': active,
+        }
+
+        return render_to_string(
+            'metadata/entry/partials/navbar_oob.html',
+            context,
+            request=request,
+        )

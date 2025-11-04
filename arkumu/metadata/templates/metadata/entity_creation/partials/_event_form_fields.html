@@ -1,0 +1,133 @@
+<div class="project-form"></div>  
+  <div class="form-control">
+    <label class="label">
+      <span class="label-text font-medium">Wähle oder erstelle ein Ereignis</span>
+      {% if event_form.uri.errors %}
+        <span class="label-text-alt text-error">{{ event_form.uri.errors.0 }}</span>
+      {% endif %}
+    </label>
+    {{ event_form.uri }}
+    <div class="text-xs text-base-content/60 mt-1">{{ event_form.uri.help_text }}</div>
+  </div>
+
+  <div id="{{prefix}}fields">
+    {% if event_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>
+            {% for error in event_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="space-y-6">
+      <!-- Event Details Section -->
+      <div class="space-y-4">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Event Details
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Ereignisname</span>
+              {% if event_form.ereignisname.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisname.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.ereignisname }}
+            <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisname.help_text }}</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Associated Project</span>
+              {% if event_form.project_uri.errors %}
+              <span class="label-text-alt text-error">{{ event_form.project_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.project_uri }}
+            <div class="text-xs text-base-content/60 mt-1">Select the project this event is associated with</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Ereignisort</span>
+              {% if event_form.ereignisort.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisort.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.ereignisort }}
+            <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisort.help_text }}</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Ereignisbeschreibung</span>
+              {% if event_form.ereignisbeschreibung_uri.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisbeschreibung_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.ereignisbeschreibung_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Ereignisbeginn</span>
+              {% if event_form.ereignisbeginn.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisbeginn.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.ereignisbeginn }}
+            <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisbeginn.help_text }}</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Ereignisende</span>
+              {% if event_form.ereignisende.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisende.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.ereignisende }}
+            <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisende.help_text }}</div>
+          </div>
+        </div>
+
+        <!-- Actor-Event Crosstable -->
+        <div class="space-y-4 pt-6 border-t">
+          <div class="flex justify-between items-center">
+            <h3 class="text-base font-medium">Actors in Event</h3>
+            <button type="button" class="btn btn-sm btn-primary add-actor-event">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Add Actor
+            </button>
+          </div>
+
+          <!-- This renders the management form fields that Django needs -->
+          {{ actor_formset.management_form }}
+          {{ role_formset.management_form }}
+
+          <div class="actor-event-container space-y-4">
+          </div>
+
+          <template id="actor-event-template">
+              {% include "metadata/entity_creation/partials/_actor_form_fields.html" with actor_form=actor_formset.empty_form prefix="actors-__prefix__-"%}
+              {% include "metadata/entity_creation/partials/_role_form_fields.html" with role_form=role_formset.empty_form prefix="roles-__prefix__-"%}
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -436,6 +436,11 @@ class TripleRelationshipService:
             location_value, location_entity_id = _extract_property(properties, event_location_predicate)
             wikidata_value, _ = _extract_property(properties, event_location_wikidata_predicate)
 
+            if location_entity_id and not event_info.get('location_id'):
+                event_info['location_id'] = location_entity_id
+            if location_value:
+                event_info['location'] = location_value
+
             def _parse_qids(raw: Optional[str]) -> List[str]:
                 if not raw:
                     return []
@@ -472,7 +477,21 @@ class TripleRelationshipService:
 
             if normalized_qids:
                 event_info['location_id'] = normalized_qids[0]
-                event_info['location'] = ', '.join(normalized_qids)
+                if not event_info.get('location'):
+                    resolved_label = self._resolve_location_label(normalized_qids[0])
+                    event_info['location'] = resolved_label or ', '.join(normalized_qids)
+            elif location_entity_id and not event_info.get('location'):
+                resolved_label = self._resolve_entity_labels(
+                    [location_entity_id],
+                    (
+                        "http://arkumu.org/data/properties/deutscher-name-des-ortes",
+                        "http://arkumu.org/data/properties/deutscher-name",
+                        "http://arkumu.org/data/properties/name",
+                    ),
+                    organization_code=organization_code,
+                ).get(location_entity_id)
+                if resolved_label:
+                    event_info['location'] = resolved_label
 
             event_type_value, event_type_entity_id = _extract_property(properties, event_type_predicate)
             if not event_type_value and event_type_entity_id:
@@ -735,10 +754,12 @@ class TripleRelationshipService:
 
         # First find crosstables that link TO these events (reverse lookup)
         im_ereignis_predicate = 'http://arkumu.org/data/properties/im-ereignis'
-        crosstable_triples = self._fetch_triples(
-            object_ids=list(event_ids),
-            predicate_uris=[im_ereignis_predicate],
-            organization_code=organization_code,
+        crosstable_triples = list(
+            self._fetch_triples(
+                object_ids=list(event_ids),
+                predicate_uris=[im_ereignis_predicate],
+                organization_code=organization_code,
+            )
         )
 
         crosstable_ids: set[str] = set()
@@ -749,9 +770,33 @@ class TripleRelationshipService:
             crosstable_ids.add(crosstable_id)
             crosstable_to_events[crosstable_id].add(event_id)
 
+        if crosstable_ids:
+            filtered_ids = self._filter_crosstables_by_project(
+                crosstable_ids,
+                project_id,
+                organization_code=organization_code,
+            )
+            if filtered_ids is not None:
+                crosstable_ids = filtered_ids
+                if crosstable_ids:
+                    crosstable_triples = [
+                        triple
+                        for triple in crosstable_triples
+                        if str(triple.subject_id) in crosstable_ids
+                    ]
+                    crosstable_to_events = {
+                        crosstable_id: events
+                        for crosstable_id, events in crosstable_to_events.items()
+                        if crosstable_id in crosstable_ids
+                    }
+                else:
+                    crosstable_triples = []
+                    crosstable_to_events = {}
+
         if not crosstable_ids:
             event_results = self._actors_from_event_edges(
                 event_ids,
+                project_id=project_id,
                 actor_link_predicate=actor_link_predicate,
                 role_link_predicate=role_link_predicate,
                 actor_name_predicate=actor_name_predicate,
@@ -821,6 +866,7 @@ class TripleRelationshipService:
         if not crosstable_actor_map:
             event_results = self._actors_from_event_edges(
                 event_ids,
+                project_id=project_id,
                 actor_link_predicate=actor_link_predicate,
                 role_link_predicate=role_link_predicate,
                 actor_name_predicate=actor_name_predicate,
@@ -918,6 +964,7 @@ class TripleRelationshipService:
 
         event_results = self._actors_from_event_edges(
             event_ids,
+            project_id=project_id,
             actor_link_predicate=actor_link_predicate,
             role_link_predicate=role_link_predicate,
             actor_name_predicate=actor_name_predicate,
@@ -938,6 +985,7 @@ class TripleRelationshipService:
         self,
         event_ids: Sequence[str],
         *,
+        project_id: str,
         actor_link_predicate: str,
         role_link_predicate: Optional[str],
         actor_name_predicate: Optional[str],
@@ -972,6 +1020,34 @@ class TripleRelationshipService:
             target_id = str(obj.id)
             object_ids.add(target_id)
             direct_event_actor_map[event_id].add(target_id)
+
+        project_actor_ids: set[str] = set()
+        normalized_project_id = str(project_id) if project_id is not None else ""
+        if normalized_project_id and actor_link_predicate:
+            project_actor_triples = list(
+                self._fetch_triples(
+                    subject_ids=[normalized_project_id],
+                    predicate_uris=canonical_predicate_candidates("project_actor", actor_link_predicate),
+                    organization_code=organization_code,
+                )
+            )
+            project_actor_ids = {
+                str(triple.object_id)
+                for triple in project_actor_triples
+                if triple.object.resource_type != ResourceType.LITERAL
+            }
+
+        if project_actor_ids:
+            for event_id in list(direct_event_actor_map.keys()):
+                filtered_targets = {
+                    actor_id
+                    for actor_id in direct_event_actor_map[event_id]
+                    if actor_id in project_actor_ids
+                }
+                if filtered_targets:
+                    direct_event_actor_map[event_id] = filtered_targets
+                else:
+                    del direct_event_actor_map[event_id]
 
         actor_names = self._collect_literal_values(
             subject_ids=list(object_ids),
@@ -1207,6 +1283,47 @@ class TripleRelationshipService:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _filter_crosstables_by_project(
+        self,
+        crosstable_ids: Iterable[str],
+        project_id: str,
+        *,
+        organization_code: Optional[str] = None,
+    ) -> Optional[set[str]]:
+        """Restrict crosstable rows to those explicitly linked to the project."""
+
+        normalized_project_id = str(project_id) if project_id is not None else ""
+        if not normalized_project_id:
+            return None
+
+        crosstable_ids = {str(crosstable_id) for crosstable_id in crosstable_ids if crosstable_id}
+        if not crosstable_ids:
+            return None
+
+        project_predicates = canonical_predicate_candidates(
+            "project",
+            "http://arkumu.org/data/properties/projekt",
+        )
+        if not project_predicates:
+            project_predicates = ["http://arkumu.org/data/properties/projekt"]
+
+        project_triples = list(
+            self._fetch_triples(
+                subject_ids=list(crosstable_ids),
+                predicate_uris=project_predicates,
+                organization_code=organization_code,
+            )
+        )
+        if not project_triples:
+            return None
+
+        matching_ids = {
+            str(triple.subject_id)
+            for triple in project_triples
+            if str(triple.object_id) == normalized_project_id
+        }
+        return matching_ids
+
     def _collect_literal_values(
         self,
         *,
@@ -1294,3 +1411,7 @@ class TripleRelationshipService:
     @staticmethod
     def _is_entity(entry: Dict[str, Any]) -> bool:
         return entry.get('resource_type') != ResourceType.LITERAL
+def _is_grundereignis_uri(uri: Optional[str]) -> bool:
+    if not uri:
+        return False
+    return "/01-grundereignis/" in uri

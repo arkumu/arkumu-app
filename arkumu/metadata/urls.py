@@ -1,5 +1,15 @@
 from django.urls import path
 from arkumu.metadata.views import dashboard_views, resource_views, triple_views, bulk_editor_views, data_discovery_views, data_explorer_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
+from arkumu.metadata.views import metadata_entry_views
+# Temporarily disabled bulk arkumu mapping views
+# from arkumu.metadata.views.bulk_arkumu_mapping_views import (
+#     BulkArkumuMappingView,
+#     BulkArkumuMappingPreviewView,
+#     BulkArkumuMappingExecutionDetailView,
+#     BulkArkumuMappingSortView,
+#     BulkArkumuMappingRemoveView,
+#     BulkArkumuMappingDeleteView
+# )
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 
@@ -21,12 +31,14 @@ from arkumu.metadata.views.csv_mapping.views.execution_views import (
     ValidateMappingExecutionView
 )
 from arkumu.metadata.views.csv_mapping.views import mapping_analysis_views
+from arkumu.metadata.views import entity_creation_views
 
 app_name = 'metadata'
 
 urlpatterns = [
     # Dashboard
     path('dashboard/', dashboard_views.metadata_dashboard, name='metadata_dashboard'),
+    path('dashboard/publish-projects/', dashboard_views.publish_projects_visibility, name='metadata_dashboard_publish_projects'),
     path('dashboard/cache-refresh/', dashboard_views.trigger_cache_refresh, name='metadata_dashboard_cache_refresh'),
     path('dashboard/checksum-refresh/', dashboard_views.trigger_checksum_refresh, name='metadata_dashboard_checksum_refresh'),
     path('dashboard/mark-missing/', dashboard_views.trigger_mark_missing, name='metadata_dashboard_mark_missing'),
@@ -41,6 +53,7 @@ urlpatterns = [
     path('dashboard/upload-stats/<uuid:session_id>/', dashboard_views.upload_session_stats, name='upload_session_stats'),
     path('dashboard/upload-session/<uuid:session_id>/verify/', dashboard_views.trigger_upload_verification, name='upload_session_verify'),
     path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
+    path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
 
     # Data Explorer (unified resource and triple browsing)
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
@@ -122,6 +135,12 @@ urlpatterns = [
     # Cross-Dataset Relationship Discovery
     path('direct-analysis/relationship-discovery/', direct_data_views.direct_relationship_discovery_view, name='direct_relationship_discovery'),
     path('direct-analysis/dataset-linking/', direct_data_views.direct_dataset_linking_view, name='direct_dataset_linking'),
+
+    # Canonical metadata entry (HTMX)
+    path('metadata-entry/', metadata_entry_views.MetadataEntryDashboardView.as_view(), name='metadata_entry'),
+    path('metadata-entry/section/', metadata_entry_views.MetadataEntrySectionView.as_view(), name='metadata_entry_section'),
+    path('metadata-entry/submit/', metadata_entry_views.MetadataEntrySubmitView.as_view(), name='metadata_entry_submit'),
+    path('metadata-entry/latest/', metadata_entry_views.MetadataEntryLatestProjectsView.as_view(), name='metadata_entry_latest'),
 
     # Manual Relationship Builder
     path('add-column-to-workspace/', direct_data_views.add_column_to_workspace, name='add_column_to_workspace'),
@@ -293,5 +312,28 @@ urlpatterns = [
     # path('harmonization/executions/', harmonization_views.HarmonizationListView.as_view(), name='harmonization_executions_list'),
 
     # Bulk Arkumu Mapping URLs (Temporarily disabled)
+    # path('bulk-arkumu-mapping/', BulkArkumuMappingView.as_view(), name='bulk_arkumu_mapping'),
+    # path('bulk-arkumu-mapping/preview/', BulkArkumuMappingPreviewView.as_view(), name='bulk_arkumu_mapping_preview'),
+    # path('bulk-arkumu-mapping/execution/<uuid:pk>/', BulkArkumuMappingExecutionDetailView.as_view(), name='bulk_arkumu_mapping_execution'),
+    # path('bulk-arkumu-mapping/sort/', BulkArkumuMappingSortView.as_view(), name='bulk_arkumu_mapping_sort'),
+    # path('bulk-arkumu-mapping/remove/', BulkArkumuMappingRemoveView.as_view(), name='bulk_arkumu_mapping_remove'),
+    # path('bulk-arkumu-mapping/delete/<uuid:pk>/', BulkArkumuMappingDeleteView.as_view(), name='bulk_arkumu_mapping_delete'),
+
+
+    # Entity creation endpoints
+    path('create/project/', entity_creation_views.create_project, name='create_project'),
+    path('project/details/', entity_creation_views.get_project_details, name='project_details'),
+    path('create/event/', entity_creation_views.create_event, name='create_event'),
+    path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
+    path('actor/details/', entity_creation_views.get_actor_details, name='actor_details'),
+    path('create/role/', entity_creation_views.create_role, name='create_role'),
+    path('role/details/', entity_creation_views.get_role_details, name='role_details'),
+    path('create/digital-object/', entity_creation_views.create_digital_object, name='create_digital_object'),
+    path('create/institution/', entity_creation_views.create_institution, name='create_institution'),
+    path('create/project-category/', entity_creation_views.create_project_category, name='create_project_category'),
+    path('create/project-type/', entity_creation_views.create_project_type, name='create_project_type'),
+    path('create/alternate-title/', entity_creation_views.create_alternate_title, name='create_alternate_title'),
+    path('create/description/', entity_creation_views.create_description, name='create_description'),
+    path('create/catchphrase/', entity_creation_views.create_catchphrase, name='create_catchphrase'),
 
     ]

@@ -21,6 +21,11 @@ from .data_discovery_views import DataDiscoveryView, search_resources, link_file
 
 # Direct data views
 from .direct_data_views import direct_split_table_graph_view
+from .metadata_entry_views import (
+    MetadataEntryDashboardView,
+    MetadataEntrySectionView,
+    MetadataEntrySubmitView,
+)
 
 __all__ = [
     # Dashboard
@@ -49,4 +54,9 @@ __all__ = [
     
     # Direct data views
     'direct_split_table_graph_view',
+
+    # Metadata entry
+    'MetadataEntryDashboardView',
+    'MetadataEntrySectionView',
+    'MetadataEntrySubmitView',
 ] 

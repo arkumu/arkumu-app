@@ -333,6 +333,7 @@ AGENTS.md
 
 # Markdown tracking policy: keep only README variants under version control
 *.md
+!arkumu/pages/content/impressum.md
 !README.md
 !*/README.md
 *.xml
@@ -341,3 +342,5 @@ AGENTS.md
 !data/mappings/hmt_tonband_labels.csv
 
 missing_fks/
+.playwright-mcp/
+data/*_fixity.tsv

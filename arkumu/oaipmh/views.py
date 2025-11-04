@@ -5,7 +5,7 @@ import binascii
 import logging
 import mimetypes
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime, timezone as dt_timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
@@ -24,8 +24,15 @@ from django.db.models import Q
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.metadata.services.oai_stats import classify_project_access
 from arkumu.users.models import Organization
-from arkumu.projects import ProjectDigitalObject, ProjectEvent, ProjectRecord, ProjectSnapshot
+from arkumu.projects import (
+    ProjectDigitalObject,
+    ProjectDigitalObjectLicense,
+    ProjectEvent,
+    ProjectRecord,
+    ProjectSnapshot,
+)
 from arkumu.projects.fixity import parse_fixity
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.projects.services.s3_key_index import lookup_dump_storage_key
@@ -50,6 +57,12 @@ from arkumu.oaipmh.oai_project import (
     OAIProjectBuilder,
 )
 from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
+from arkumu.common.arkumu_license import (
+    ARKUMU_LICENSE_LABELS,
+    ARKUMU_LICENSE_TEXTS,
+    ARKUMU_LICENSE_URIS,
+    license_token_from_license_info,
+)
 
 
 # Minimal repository config (can be moved to settings)
@@ -95,6 +108,8 @@ METS_NSMAP = {
 _DIGITAL_OBJECT_ORG_DEFAULT = ("fuk", "det", "rsh")
 _DIGITAL_OBJECT_URI_REGEX = r'/entities/digitales-objekt/[0-9]+$'
 
+_KHM_HMT_LICENSE_ORGS: set[str] = {"khm", "hmt"}
+
 
 def _digital_object_orgs() -> set[str]:
     configured = getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", _DIGITAL_OBJECT_ORG_DEFAULT)
@@ -103,6 +118,70 @@ def _digital_object_orgs() -> set[str]:
         for code in configured
         if code
     }
+
+
+def _normalized_org_code(
+    resource: Resource,
+    project: Optional[OAIProject] = None,
+) -> Optional[str]:
+    candidates: List[Optional[str]] = []
+    org = getattr(resource, "organization", None)
+    candidates.append(getattr(org, "code", None))
+    if project is not None:
+        candidates.append(getattr(project, "institution_code", None))
+        institution = getattr(project.record, "institution", None) if getattr(project, "record", None) else None
+        candidates.append(getattr(institution, "code", None))
+    for candidate in candidates:
+        if not candidate:
+            continue
+        normalized = str(candidate).strip().lower()
+        if normalized:
+            return normalized
+    return None
+
+
+def _should_apply_khm_hmt_license_rights(resource: Resource, project: Optional[OAIProject] = None) -> bool:
+    code = _normalized_org_code(resource, project)
+    return code in _KHM_HMT_LICENSE_ORGS
+
+
+def _normalize_fixity_type(label: Optional[str]) -> Optional[str]:
+    """
+    Rosetta requires SHA-256 to be spelled without the hyphen (SHA256) for fixityType.
+    Keep other algorithms untouched to avoid masking unexpected values.
+    """
+    if label and label.upper().replace("-", "") == "SHA256":
+        return "SHA256"
+    return label
+
+
+def _original_storage_path(obj: NormalizedDigitalObject) -> Optional[str]:
+    """
+    Return the path representing Arkumu-managed storage.
+
+    Rosetta-specific paths must not be exposed via fileOriginalPath, so we filter
+    out any value that matches the Rosetta location candidates.
+    """
+    rosetta_refs = {
+        candidate.strip()
+        for candidate in (
+            *(obj.rosetta_candidates or ()),
+            obj.rosetta_path,
+        )
+        if candidate
+    }
+    for candidate in (obj.storage_key, obj.original_path):
+        if not candidate:
+            continue
+        normalized = candidate.strip()
+        if not normalized:
+            continue
+        if normalized in rosetta_refs:
+            continue
+        if normalized.startswith("/rosetta/"):
+            continue
+        return normalized
+    return None
 
 
 def _metadata_element_is_valid(
@@ -1047,7 +1126,36 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
     for proj in harvestable.values():
         org = proj.institution_code or 'unknown'
         org_counts[org] = org_counts.get(org, 0) + 1
-    logger.info("OAI harvestable projects: %d total from snapshot, by org: %s", len(harvestable), dict(sorted(org_counts.items())))
+
+    accessible_uris, blocked_uris, missing_resource_uris = classify_project_access(harvestable.values())
+
+    accessible_counts = Counter()
+    blocked_counts = Counter()
+
+    for uri in accessible_uris:
+        project = harvestable.get(uri)
+        if not project:
+            continue
+        code = (project.institution_code or 'unknown').lower()
+        accessible_counts[code] += 1
+
+    for uri in blocked_uris:
+        project = harvestable.get(uri)
+        if not project:
+            continue
+        code = (project.institution_code or 'unknown').lower()
+        blocked_counts[code] += 1
+
+    logger.info(
+        "OAI harvestable projects: %d total (accessible=%d, blocked=%d, missing_resources=%d), by org total=%s accessible=%s blocked=%s",
+        len(harvestable),
+        len(accessible_uris),
+        len(blocked_uris),
+        len(missing_resource_uris),
+        dict(sorted(org_counts.items())),
+        dict(sorted(accessible_counts.items())),
+        dict(sorted(blocked_counts.items())),
+    )
 
     if not harvestable:
         fallback_records: List[ProjectRecord] = []
@@ -1086,6 +1194,8 @@ def _add_dc_value(
     value: Optional[str],
     namespace: str = 'dc',
     attrs: Optional[Dict[ET.QName, str]] = None,
+    *,
+    allow_duplicates: bool = False,
 ) -> None:
     if value is None:
         return
@@ -1096,13 +1206,14 @@ def _add_dc_value(
     entries = payload.setdefault(key, [])
     entry = {'value': normalized, 'attrs': attrs or {}} if attrs else normalized
 
-    for existing in entries:
-        if isinstance(existing, dict):
-            if existing.get('value') == normalized and (existing.get('attrs') or {}) == (attrs or {}):
-                return
-        else:
-            if not attrs and existing == normalized:
-                return
+    if not allow_duplicates:
+        for existing in entries:
+            if isinstance(existing, dict):
+                if existing.get('value') == normalized and (existing.get('attrs') or {}) == (attrs or {}):
+                    return
+            else:
+                if not attrs and existing == normalized:
+                    return
 
     entries.append(entry)
 
@@ -1110,6 +1221,16 @@ def _add_dc_value(
 def _normalize_reference(value: Optional[str]) -> Optional[str]:
     """Return the reference as-is; S3 keys already encode the desired path."""
     return value
+
+
+def _escape_flocat_href(value: Optional[str]) -> Optional[str]:
+    """Percent-encode square brackets for METS FLocat href values."""
+    if not value:
+        return value
+    text = str(value)
+    if not text:
+        return text
+    return text.replace('[', '%5B').replace(']', '%5D')
 
 
 def _boolean_token(value: Optional[bool]) -> Optional[str]:
@@ -1301,6 +1422,54 @@ def _collect_collection_labels(resource: Resource, record: ProjectRecord) -> Lis
     return labels
 
 
+def _select_primary_event_actors(record: ProjectRecord) -> List[Dict[str, Any]]:
+    """Pick the actor records that should surface as creators/contributors."""
+
+    grund_events = [
+        event
+        for event in record.events
+        if (
+            (getattr(event, "uri", None) and "/01-grundereignis/" in event.uri)
+            or (getattr(event, "type", None) and "herstellung" in str(event.type).lower())
+            or (getattr(event, "name", None) and "herstellung" in str(event.name).lower())
+        )
+    ]
+
+    selected: List[Dict[str, Any]] = []
+    seen_names: set[str] = set()
+
+    for event in grund_events:
+        for actor in getattr(event, "actors", []) or []:
+            name = getattr(actor, "name", None) if not isinstance(actor, dict) else actor.get("name")
+            if name and name in seen_names:
+                continue
+            actor_dict = {
+                "name": name,
+                "roles": list(getattr(actor, "roles", []) or []) if not isinstance(actor, dict) else actor.get("roles", []),
+            }
+            selected.append(actor_dict)
+            if name:
+                seen_names.add(name)
+
+    if selected:
+        return selected
+
+    fallback: List[Dict[str, Any]] = []
+    for actor in record.actors:
+        name = getattr(actor, "name", None)
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        fallback.append(
+            {
+                "name": name,
+                "roles": list(getattr(actor, "roles", []) or []),
+            }
+        )
+
+    return fallback
+
+
 def _build_dc_payload_from_project(
     project: OAIProject,
     resource: Resource,
@@ -1328,13 +1497,17 @@ def _build_dc_payload_from_project(
         _add_dc_value(payload, 'publisher', record.institution.label)
         _add_dc_value(payload, 'contributor', record.institution.label)
 
-    for actor in record.actors:
-        name = getattr(actor, 'name', None)
-        if name:
+    primary_actors = _select_primary_event_actors(record)
+    seen_creators: set[str] = set()
+    for actor in primary_actors:
+        name = actor.get('name')
+        if name and name not in seen_creators:
             _add_dc_value(payload, 'creator', name)
-        if getattr(actor, 'roles', None):
-            for role in actor.roles:
-                _add_dc_value(payload, 'contributor', f"{name} ({role})" if name else role)
+            seen_creators.add(name)
+
+        for role in actor.get('roles') or []:
+            contributor_value = f"{name} ({role})" if name else role
+            _add_dc_value(payload, 'contributor', contributor_value)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
@@ -1381,30 +1554,74 @@ def _build_dc_payload_from_project(
         if language:
             _add_dc_value(payload, 'language', language)
 
-    license_rights: set[str] = set()
+    apply_khm_licensing = _should_apply_khm_hmt_license_rights(resource, project)
+    arkumu_tokens: set[str] = set()
+    fallback_rights: set[str] = set()
+
+    def _scan_license(license_obj: Optional[Any]) -> None:
+        if not license_obj:
+            return
+        token = license_token_from_license_info(license_obj)
+        if token and token in ARKUMU_LICENSE_LABELS:
+            arkumu_tokens.add(token)
+            return
+        candidates = [
+            getattr(license_obj, "rights_statement", None),
+            getattr(license_obj, "label_de", None),
+            getattr(license_obj, "label_en", None),
+        ]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            normalized = str(candidate).strip()
+            if not normalized:
+                continue
+            if apply_khm_licensing and normalized in {"1", "2"}:
+                continue
+            fallback_rights.add(normalized)
+
     for obj in project.digital_objects:
-        license_info = getattr(obj, "license", None)
-        if license_info and getattr(license_info, "rights_statement", None):
-            normalized = str(license_info.rights_statement).strip()
-            if normalized:
-                license_rights.add(normalized)
-    for rights_value in sorted(license_rights):
-        _add_dc_value(payload, 'rights', rights_value)
+        _scan_license(getattr(obj, "license", None))
 
-    if not rights_meta:
-        rights_meta = _default_rights_metadata(resource, record)
+    if getattr(record, "digital_objects", None):
+        for raw_obj in record.digital_objects:
+            _scan_license(getattr(raw_obj, "license", None))
 
-    if rights_meta:
-        _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
-        _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
-        for text in rights_meta.get("disclaimers_de", []):
-            _add_dc_value(payload, 'rights', text)
-        for text in rights_meta.get("disclaimers_en", []):
-            _add_dc_value(payload, 'rights', text)
-    elif not payload.get('dc:rights'):
-        rights = _rights_label_for_resource(resource)
-        if rights:
-            _add_dc_value(payload, 'rights', rights)
+    if "1" in ARKUMU_LICENSE_LABELS:
+        arkumu_tokens = {"1"}
+    else:
+        arkumu_tokens.clear()
+
+    canonical_values: set[str] = set()
+    for token in sorted(arkumu_tokens):
+        label = ARKUMU_LICENSE_LABELS[token]
+        text = ARKUMU_LICENSE_TEXTS[token]
+        _add_dc_value(payload, 'rights', label, allow_duplicates=True)
+        _add_dc_value(payload, 'rights', text, allow_duplicates=True)
+        canonical_values.update({label, text})
+
+    if arkumu_tokens:
+        fallback_rights.clear()
+    else:
+        fallback_rights.difference_update(canonical_values)
+        for rights_value in sorted(fallback_rights):
+            _add_dc_value(payload, 'rights', rights_value)
+
+    if not arkumu_tokens:
+        if not rights_meta:
+            rights_meta = _default_rights_metadata(resource, record)
+
+        if rights_meta:
+            _add_dc_value(payload, 'rights', rights_meta.get("status_de"))
+            _add_dc_value(payload, 'rights', rights_meta.get("status_en"))
+            for text in rights_meta.get("disclaimers_de", []):
+                _add_dc_value(payload, 'rights', text)
+            for text in rights_meta.get("disclaimers_en", []):
+                _add_dc_value(payload, 'rights', text)
+        elif not payload.get('dc:rights'):
+            rights = _rights_label_for_resource(resource)
+            if rights:
+                _add_dc_value(payload, 'rights', rights)
 
     return payload
 
@@ -1421,6 +1638,8 @@ def _build_event_dc_payloads(record: ProjectRecord) -> List[Dict[str, List[Any]]
     xml_lang_attr = ET.QName(XML_NS, "lang")
 
     for event in record.events:
+        if getattr(event, "is_reference_only", False):
+            continue
         payload: Dict[str, List[Any]] = {}
         event_name_de = getattr(event, 'name_de', None) or getattr(event, 'name', None)
         if event_name_de:
@@ -1639,6 +1858,8 @@ def _build_mets_from_project(
     _register_rosetta_namespaces()
 
     record = project.record
+    normalized_org_code = _normalized_org_code(resource, project)
+    apply_khm_licensing = normalized_org_code in _KHM_HMT_LICENSE_ORGS
 
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
@@ -1700,21 +1921,20 @@ def _build_mets_from_project(
         _create_dnx_element(record_elem, "key", {"id": "grantedRightsStatementValue"}, granted_value)
 
     event_payloads = dc_source_payloads if dc_source_payloads is not None else _build_event_dc_payloads(record)
-    if not event_payloads:
-        event_payloads = [{}]
-    multiple_source_sections = len(event_payloads) > 1
-    for index, event_payload in enumerate(event_payloads, start=1):
-        source_id = "ie-amd-source-dc" if not multiple_source_sections else f"ie-amd-source-dc-{index}"
-        source_dc_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": source_id})
-        source_dc_wrap = ET.SubElement(source_dc_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
-        source_dc_xml = ET.SubElement(source_dc_wrap, ET.QName(METS_NS, "xmlData"))
-        for ns_uri, term, text, attrs in _iter_dc_entries(event_payload):
-            elem = ET.SubElement(source_dc_xml, ET.QName(ns_uri, term))
-            elem.text = text
-            for attr_name, attr_value in attrs.items():
-                if attr_value is None:
-                    continue
-                elem.set(attr_name, attr_value)
+    if event_payloads:
+        multiple_source_sections = len(event_payloads) > 1
+        for index, event_payload in enumerate(event_payloads, start=1):
+            source_id = "ie-amd-source-dc" if not multiple_source_sections else f"ie-amd-source-dc-{index}"
+            source_dc_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": source_id})
+            source_dc_wrap = ET.SubElement(source_dc_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+            source_dc_xml = ET.SubElement(source_dc_wrap, ET.QName(METS_NS, "xmlData"))
+            for ns_uri, term, text, attrs in _iter_dc_entries(event_payload):
+                elem = ET.SubElement(source_dc_xml, ET.QName(ns_uri, term))
+                elem.text = text
+                for attr_name, attr_value in attrs.items():
+                    if attr_value is None:
+                        continue
+                    elem.set(attr_name, attr_value)
     source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
     source_wrap = ET.SubElement(
         source_md,
@@ -1738,16 +1958,28 @@ def _build_mets_from_project(
     digiprov_xml = ET.SubElement(digiprov_wrap, ET.QName(METS_NS, "xmlData"))
     _create_dnx_element(digiprov_xml, "dnx")
 
+    project_license_tokens: set[str] = set()
+    for candidate_obj in project.digital_objects:
+        token = license_token_from_license_info(getattr(candidate_obj, "license", None))
+        if token:
+            project_license_tokens.add(token)
+    if not project_license_tokens:
+        project_license_tokens.add("1")
+
     harvestable_objects = [
         obj for obj in project.digital_objects
         if obj.harvestable and obj.preferred_location
     ]
+    logger.info(f"METS generation: project has {len(project.digital_objects)} digital objects, {len(harvestable_objects)} harvestable")
     rep_groups = _group_digital_objects_for_rosetta(harvestable_objects)
+    logger.info(f"METS generation: {len(rep_groups)} representation groups with {sum(len(objs) for _, objs in rep_groups)} total objects")
 
     file_sec_entries: List[Dict[str, Any]] = []
 
     events_by_uri: Dict[str, ProjectEvent] = {}
     for event in record.events:
+        if getattr(event, "is_reference_only", False):
+            continue
         if event.uri:
             events_by_uri[event.uri] = event
 
@@ -1852,12 +2084,9 @@ def _build_mets_from_project(
                 general_keys.append(("label", label_value))
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
-            if preferred_location:
-                general_keys.append(("fileOriginalPath", preferred_location))
-            elif obj.storage_key:
-                general_keys.append(("fileOriginalPath", obj.storage_key))
-            elif obj.original_path:
-                general_keys.append(("fileOriginalPath", obj.original_path))
+            storage_path = _original_storage_path(obj)
+            if storage_path:
+                general_keys.append(("fileOriginalPath", storage_path))
             if obj.content_type:
                 general_keys.append(("fileMIMEType", obj.content_type))
             if obj.size_bytes is not None:
@@ -1872,6 +2101,7 @@ def _build_mets_from_project(
             checksum_algorithm, checksum_value = obj.checksum_tuple()
             checksum_label = obj.checksum_label() if checksum_algorithm else None
             fallback_label = checksum_label or ("MD5" if obj.source == "s3" else "SHA-256")
+            fixity_type_value = _normalize_fixity_type(fallback_label)
             if checksum_value:
                 fixity_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixity"})
                 fixity_record = _create_dnx_element(fixity_section, "record")
@@ -1879,7 +2109,7 @@ def _build_mets_from_project(
                     fixity_record,
                     "key",
                     {"id": "fixityType"},
-                    fallback_label,
+                    fixity_type_value,
                 )
                 _create_dnx_element(
                     fixity_record,
@@ -1887,7 +2117,7 @@ def _build_mets_from_project(
                     {"id": "fixityValue"},
                     checksum_value,
                 )
-                if checksum_label and checksum_label != fallback_label:
+                if checksum_label and _normalize_fixity_type(checksum_label) != fixity_type_value:
                     _create_dnx_element(
                         fixity_record,
                         "key",
@@ -1896,6 +2126,13 @@ def _build_mets_from_project(
                     )
 
             license_info = getattr(obj, "license", None)
+            license_uri: Optional[str] = None
+            license_identifier: Optional[str] = None
+            license_rights_statement: Optional[str] = None
+            license_label_de: Optional[str] = None
+            license_label_en: Optional[str] = None
+            license_token: Optional[str] = None
+
             if license_info:
                 def _normalize_license_value(value: Optional[Any]) -> Optional[str]:
                     if value is None:
@@ -1908,13 +2145,37 @@ def _build_mets_from_project(
                 license_rights_statement = _normalize_license_value(getattr(license_info, "rights_statement", None))
                 license_label_de = _normalize_license_value(getattr(license_info, "label_de", None))
                 license_label_en = _normalize_license_value(getattr(license_info, "label_en", None))
+                license_token = license_token_from_license_info(license_info)
+
+            if not license_info or not license_token:
+                fallback_token = sorted(project_license_tokens)[0]
+                canonical_uri = ARKUMU_LICENSE_URIS.get(fallback_token)
+                if not license_info:
+                    license_info = ProjectDigitalObjectLicense(
+                        uri=canonical_uri,
+                        identifier=fallback_token,
+                        label_de=ARKUMU_LICENSE_LABELS[fallback_token],
+                        rights_statement=ARKUMU_LICENSE_TEXTS[fallback_token],
+                    )
+                else:
+                    license_info = ProjectDigitalObjectLicense(
+                        uri=license_uri or canonical_uri,
+                        identifier=fallback_token,
+                        label_de=ARKUMU_LICENSE_LABELS[fallback_token],
+                        rights_statement=ARKUMU_LICENSE_TEXTS[fallback_token],
+                    )
+                license_token = fallback_token
+                license_uri = license_info.uri
+                license_identifier = license_info.identifier
+                license_rights_statement = license_info.rights_statement
+                license_label_de = license_info.label_de
+                license_label_en = None
 
                 granted_statement_value = license_rights_statement or license_label_de or license_label_en
-                requires_rights_md = any([
-                    license_uri,
-                    license_identifier,
-                    granted_statement_value,
-                ])
+                requires_rights_md = (
+                    not apply_khm_licensing
+                    and any([license_uri, license_identifier, granted_statement_value])
+                )
 
                 if requires_rights_md:
                     file_rights = ET.SubElement(
@@ -2013,25 +2274,43 @@ def _build_mets_from_project(
                 sig_en_elem.text = obj.significant_properties_en
                 sig_en_elem.set(ET.QName(XML_NS, "type"), "significant-properties-english")
 
-            if license_info and license_info.label_de:
-                lic_de_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                lic_de_elem.text = license_info.label_de
-                lic_de_elem.set(ET.QName(XML_NS, "lang"), "ger")
+            if license_info:
+                xml_lang_attr = ET.QName(XML_NS, "lang")
+                rights_signatures: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
 
-            if license_info and license_info.label_en:
-                lic_en_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                lic_en_elem.text = license_info.label_en
-                lic_en_elem.set(ET.QName(XML_NS, "lang"), "eng")
+                def _append_rights_value(
+                    value: Optional[str],
+                    attrs: Optional[Dict[ET.QName, str]] = None,
+                ) -> None:
+                    if value is None:
+                        return
+                    normalized = str(value).strip()
+                    if not normalized:
+                        return
+                    signature_attrs = tuple(sorted((str(key), val) for key, val in (attrs or {}).items()))
+                    signature = (normalized, signature_attrs)
+                    if signature in rights_signatures:
+                        return
+                    elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "rights"))
+                    elem.text = normalized
+                    for key, val in (attrs or {}).items():
+                        elem.set(key, val)
+                    rights_signatures.add(signature)
 
-            if license_info and license_info.uri:
-                lic_uri_elem = ET.SubElement(file_source_record, ET.QName(DCTERMS_NS, "license"))
-                lic_uri_elem.text = license_info.uri
-                lic_uri_elem.set(ET.QName(XML_NS, "type"), "dcterms:URI")
+                has_canonical_mapping = bool(license_token and license_token in ARKUMU_LICENSE_LABELS)
+                if has_canonical_mapping:
+                    _append_rights_value(ARKUMU_LICENSE_LABELS[license_token])
+                    _append_rights_value(ARKUMU_LICENSE_TEXTS[license_token])
+
+                include_additional_rights = not has_canonical_mapping
+                if include_additional_rights:
+                    _append_rights_value(license_label_de)
+                    _append_rights_value(license_label_en)
+                    _append_rights_value(license_rights_statement)
 
             raw_path = (
                 obj.storage_key
                 or obj.original_path
-                or obj.rosetta_path
                 or preferred_location
             )
             path_parts: List[str] = []
@@ -2045,6 +2324,15 @@ def _build_mets_from_project(
                 ]
             else:
                 folder_segments = []
+
+            # Organization-specific structMap path normalization
+            # - HMT: omit intermediate folders entirely
+            # - KHM: keep only the last two folders (closest to the file)
+            if normalized_org_code == "hmt":
+                folder_segments = []
+            elif normalized_org_code == "khm":
+                if len(folder_segments) > 2:
+                    folder_segments = folder_segments[-2:]
 
             rep_files.append({
                 "file_id": file_id,
@@ -2095,6 +2383,7 @@ def _build_mets_from_project(
             normalized_href = _normalize_reference(href)
             if normalized_href:
                 href = normalized_href
+            href = _escape_flocat_href(href)
             if href:
                 flocat_attrs = {
                     "LOCTYPE": "URL",
@@ -2147,39 +2436,30 @@ def _build_mets_from_project(
             files_by_event.setdefault(key, []).append(file_info)
             event_meta.setdefault(key, event_obj)
 
-        folder_nodes: Dict[str, Dict[tuple[str, ...], ET._Element]] = {}
+        folder_nodes: Dict[tuple[str, ...], ET._Element] = {}
 
-        def _event_label(event_obj: Optional[ProjectEvent]) -> str:
+        def _event_label(event_obj: Optional[ProjectEvent]) -> Optional[str]:
             if event_obj is None:
-                return "Projektdateien"
+                return None
             return event_obj.name or event_obj.location or event_obj.uri or "Ereignis"
 
-        event_position = 1
         for key in event_order:
             event_files = files_by_event.get(key)
             if not event_files:
                 continue
             event_obj = event_meta.get(key)
             event_label = _event_label(event_obj)
-            # Event div - simplified per Rosetta example (no ORDER on intermediate divs)
-            event_div = ET.SubElement(
-                rep_div,
-                ET.QName(METS_NS, "div"),
-                {
-                    "LABEL": event_label,
-                    "ORDERLABEL": event_label,
-                },
-            )
-            folder_nodes[key] = {}
-            event_position += 1
 
             for file_info in event_files:
-                parent = event_div
+                parent = rep_div
                 folder_key_prefix: List[str] = []
-                for segment in file_info.get("folders", []):
+                segments = list(file_info.get("folders") or [])
+                if not segments and event_label:
+                    segments = [event_label]
+                for segment in segments:
                     folder_key_prefix.append(segment)
                     folder_key = tuple(folder_key_prefix)
-                    existing = folder_nodes[key].get(folder_key)
+                    existing = folder_nodes.get(folder_key)
                     if not existing:
                         existing = ET.SubElement(
                             parent,
@@ -2189,7 +2469,7 @@ def _build_mets_from_project(
                                 "ORDERLABEL": segment,
                             },
                         )
-                        folder_nodes[key][folder_key] = existing
+                        folder_nodes[folder_key] = existing
                     parent = existing
 
                 # File div per Rosetta example - TYPE="FILE", LABEL, ORDERLABEL (no ORDER)
@@ -2266,7 +2546,7 @@ def _build_metadata_element(
                     message = getattr(issue, "message", None)
                     messages.append(str(message) if message is not None else str(issue))
                 issue_summary = "; ".join(messages) or "unknown reason"
-                logger.warning(
+                logger.error(
                     "Generated METS payload failed validation for %s: %s; trying next candidate",
                     getattr(resource, "uri", "unknown"),
                     issue_summary,

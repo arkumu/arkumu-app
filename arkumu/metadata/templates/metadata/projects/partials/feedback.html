@@ -1,0 +1,23 @@
+{% load i18n %}
+{% if level == 'success' %}
+  {% with css='alert-success' icon='✅' %}
+    <div class="alert {{ css }} shadow-sm">
+      <span>{{ icon }}</span>
+      <span>{{ message }}</span>
+    </div>
+  {% endwith %}
+{% elif level == 'error' %}
+  {% with css='alert-error' icon='⚠️' %}
+    <div class="alert {{ css }} shadow-sm">
+      <span>{{ icon }}</span>
+      <span>{{ message }}</span>
+    </div>
+  {% endwith %}
+{% else %}
+  {% with css='alert-info' icon='ℹ️' %}
+    <div class="alert {{ css }} shadow-sm">
+      <span>{{ icon }}</span>
+      <span>{{ message }}</span>
+    </div>
+  {% endwith %}
+{% endif %}

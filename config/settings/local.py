@@ -94,4 +94,6 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024 * 1024  # 100GB total request si
 
 # Cache settings for development
 # ------------------------------------------------------------------------------
-WARM_CACHE_ON_STARTUP = True  # Enable cache warming for better development experience
+WARM_CACHE_ON_STARTUP = False
+WARM_CROSS_INSTITUTIONAL_CACHE_ON_STARTUP = False
+OAI_SKIP_CACHE_WARMUP = True

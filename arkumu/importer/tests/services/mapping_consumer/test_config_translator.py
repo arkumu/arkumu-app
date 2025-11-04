@@ -6,6 +6,7 @@ to execution engine format.
 """
 
 import pytest
+from copy import deepcopy
 from unittest.mock import Mock, patch
 from datetime import datetime
 
@@ -231,6 +232,63 @@ class TestConfigTranslator:
         assert ontology.uri_template == 'https://orcid.org/{identifier}'
         assert ontology.identifier_column == 'orcid_id'
         assert ontology.validation_enabled is True
+
+    def test_translate_external_ontologies_list_support(self, config_translator, sample_gui_config):
+        """Columns using the new external_ontologies list are normalised correctly."""
+        config = deepcopy(sample_gui_config)
+        column = config['workspace_columns']['people']['orcid_id']
+        column.pop('external_ontology', None)
+        column['external_ontologies'] = [
+            {
+                'ontology_type': 'wikidata',
+                'uri_template': 'https://www.wikidata.org/entity/{identifier}',
+                'identifier_column': 'wikidata_id',
+                'validation_enabled': True,
+            },
+            {
+                'ontology_type': 'gnd',
+                'uri_template': 'https://d-nb.info/gnd/{identifier}',
+                'identifier_column': 'gnd_id',
+                'validation_enabled': False,
+            },
+        ]
+        config['external_ontologies'] = {}
+
+        execution_config = config_translator.translate_mapping_config(config)
+        orcid_config = execution_config.column_configurations['people.orcid_id']
+
+        assert orcid_config.is_external_ontology is True
+        assert len(orcid_config.external_ontology_configs) == 2
+        assert orcid_config.external_ontology_config == orcid_config.external_ontology_configs[0]
+
+        assert len(execution_config.external_ontologies) == 2
+        assert execution_config.external_ontologies[0].ontology_type == 'wikidata'
+        assert execution_config.external_ontologies[0].uri_template == 'https://www.wikidata.org/entity/{identifier}'
+        assert execution_config.external_ontologies[1].ontology_type == 'gnd'
+        assert execution_config.external_ontologies[1].uri_template == 'https://d-nb.info/gnd/{identifier}'
+
+    def test_external_ontology_without_template_is_skipped(self, config_translator, sample_gui_config):
+        """External ontology entries without a template are ignored during translation."""
+        config = deepcopy(sample_gui_config)
+        column = config['workspace_columns']['people']['orcid_id']
+        column.pop('external_ontology', None)
+        column['external_ontologies'] = [
+            {
+                'ontology_type': 'wikidata',
+                'uri_template': '',
+                'identifier_column': 'wikidata_id',
+                'validation_enabled': True,
+            }
+        ]
+        config['external_ontologies'] = {}
+
+        execution_config = config_translator.translate_mapping_config(config)
+        orcid_config = execution_config.column_configurations['people.orcid_id']
+
+        assert orcid_config.is_external_ontology is True
+        assert len(orcid_config.external_ontology_configs) == 1
+        assert orcid_config.external_ontology_config == orcid_config.external_ontology_configs[0]
+        assert execution_config.external_ontologies == []
 
     def test_translate_import_strategy(self, config_translator, sample_gui_config):
         """Test translation of import strategy"""

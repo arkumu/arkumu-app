@@ -6,17 +6,19 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.management import call_command
 from django.db import models
-from django.db.models import Count
+from django.db.models import Count, Q
+from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import escape
 from django.views.decorators.http import require_POST
 from django.test import RequestFactory
 from io import StringIO
 
 from arkumu.importer.models import IngestSession
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.storage.models.upload_tracking import AsyncUploadSession
 from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
@@ -26,11 +28,13 @@ from arkumu.users.models import Organization
 from arkumu.oaipmh.views import oai_endpoint
 from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
 from arkumu.cache.services.project_cache_service import ProjectCacheService
+from arkumu.projects.services import ProjectSnapshotService
 
 from .dashboard_helpers import (
     build_session_entry,
     build_upload_display,
     summarize_upload_stats,
+    UploadSessionDisplay,
 )
 
 
@@ -126,15 +130,146 @@ def metadata_dashboard(request):
 
 
 @general_login_required
+def publish_projects_visibility(request):
+    """Set all project resources for an organization to public visibility."""
+    is_htmx = request.headers.get("HX-Request") == "true"
+
+    if request.method != "POST":
+        if is_htmx:
+            return HttpResponse('<div class="alert alert-error">Invalid request method.</div>', status=400)
+        return redirect("metadata:metadata_dashboard")
+
+    if not request.user.is_superuser:
+        error_msg = "Only superusers can publish organization projects."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-error">{error_msg}</div>', status=403)
+        messages.error(request, error_msg)
+        return redirect("metadata:metadata_dashboard")
+
+    organization_id = request.POST.get("organization_id")
+    if not organization_id:
+        error_msg = "Select an organization to publish its projects."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-warning">{error_msg}</div>', status=400)
+        messages.error(request, error_msg)
+        return redirect("metadata:metadata_dashboard")
+
+    try:
+        organization = Organization.objects.get(id=organization_id)
+    except Organization.DoesNotExist:
+        error_msg = "The selected organization does not exist."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-error">{error_msg}</div>', status=404)
+        messages.error(request, error_msg)
+        return redirect("metadata:metadata_dashboard")
+
+    # Query projects directly from database using canonical URIs (same approach as CanonicalGraphService)
+    # Projects are identified by rdf:type with canonical_uri = http://arkumu.org/data/types/projekt
+    RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    PROJECT_CANONICAL_TYPE = "http://arkumu.org/data/types/projekt"  # CardURIs.PROJECT_TYPE
+
+    project_resources = Resource.objects.filter(
+        organization=organization,
+        subject_triples__predicate__uri=RDF_TYPE_URI,
+        subject_triples__object__canonical_uri=PROJECT_CANONICAL_TYPE,
+    ).distinct()
+
+    project_count = project_resources.count()
+
+    if project_count == 0:
+        warning_msg = f"No projects were found for {organization.name}."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-warning">{warning_msg}</div>')
+        messages.warning(request, warning_msg)
+        return redirect("metadata:metadata_dashboard")
+
+    now = timezone.now()
+    updated = project_resources.update(
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+        is_public=True,
+        public_approved_by=request.user,
+        public_approved_at=now,
+    )
+
+    if updated == 0:
+        warning_msg = f"Projects for {organization.name} were already public or no matching resources existed."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-warning">{warning_msg}</div>')
+        messages.warning(request, warning_msg)
+    else:
+        success_msg = f"Published {updated} project resources for {organization.name}. Use the dashboard refresh control when you want to rebuild the project snapshot."
+        if is_htmx:
+            return HttpResponse(f'<div class="alert alert-success">{success_msg}</div>')
+        messages.success(request, success_msg)
+
+    if is_htmx:
+        return HttpResponse('')
+    return redirect("metadata:metadata_dashboard")
+
+
+@general_login_required
 def all_upload_sessions(request):
     """Displays a list of all upload sessions with their files."""
 
-    entries = [
-        build_session_entry(session)
-        for session in AsyncUploadSession.objects.select_related("user")
-        .prefetch_related("files")
+    page_number = request.GET.get("page", 1)
+    per_page = 25
+
+    sessions_qs = (
+        AsyncUploadSession.objects.select_related("user")
+        .annotate(
+            total_files_agg=Count("files"),
+            completed_files_agg=Count("files", filter=Q(files__status="completed")),
+            failed_files_agg=Count("files", filter=Q(files__status="failed")),
+            uploading_files_agg=Count("files", filter=Q(files__status="uploading")),
+            processing_files_agg=Count("files", filter=Q(files__status="processing")),
+            pending_files_agg=Count("files", filter=Q(files__status="pending")),
+        )
         .order_by("-created_at")
-    ]
+    )
+
+    paginator = Paginator(sessions_qs, per_page)
+    try:
+        page_obj = paginator.page(page_number)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages or 1)
+
+    # Build lightweight session displays without loading per-file rows
+    entries = []
+    for session in page_obj.object_list:
+        uploaded_count = (getattr(session, "uploading_files_agg", 0) or 0) + (
+            getattr(session, "processing_files_agg", 0) or 0
+        )
+        pending_count = getattr(session, "pending_files_agg", 0) or 0
+
+        display = UploadSessionDisplay(
+            id=str(session.id),
+            created_at=session.created_at,
+            completed_at=session.completed_at,
+            status=session.status,
+            status_display=session.get_status_display(),
+            user=session.user,
+            institution=session.organization or "Not specified",
+            organization=session.organization or "",
+            folder_name=session.base_folder or "",
+            total_files=(getattr(session, "total_files_agg", None) or session.total_files or 0),
+            completed_files=getattr(session, "completed_files_agg", 0) or 0,
+            failed_files=getattr(session, "failed_files_agg", 0) or 0,
+            uploaded_files=uploaded_count,
+            pending_files=pending_count,
+            import_stats={"duration_seconds": 0, "total_size": 0, "total_size_formatted": "0 B", "summary": {}, "error_count": 0, "error": None},
+        )
+
+        entries.append(
+            {
+                "session": display,
+                "files": [],  # defer file details to modal/HTMX
+                "file_count": display.total_files,
+                "completed_files": display.completed_files,
+                "failed_files": display.failed_files,
+            }
+        )
+
     total_stats = summarize_upload_stats(entries)
 
     return render(
@@ -143,6 +278,7 @@ def all_upload_sessions(request):
         {
             "enhanced_sessions": entries,
             "total_stats": total_stats,
+            "page_obj": page_obj,
         },
     )
 
@@ -654,3 +790,23 @@ def trigger_external_sources_refresh(request):
         'Reload of external sources started.',
     )
     return redirect('metadata:metadata_dashboard')
+
+
+@general_login_required
+def oai_widget(request):
+    """Return the OAI snapshot widget content on demand (HTMX-friendly)."""
+
+    oai_snapshot = None
+    try:
+        oai_snapshot = build_oai_dashboard_snapshot()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
+
+    template_name = "partials/oai_widget_card.html"
+    return render(
+        request,
+        template_name,
+        {
+            "oai_snapshot": oai_snapshot,
+        },
+    )

@@ -51,6 +51,7 @@ class ColumnConfig:
     # External ontology configuration
     is_external_ontology: bool = False
     external_ontology_config: Optional[Dict[str, Any]] = None
+    external_ontology_configs: List[Dict[str, Any]] = field(default_factory=list)
     
     # Original GUI configuration (for debugging)
     original_config: Optional[Dict[str, Any]] = None
@@ -265,6 +266,23 @@ class ConfigTranslator:
                 separator = raw_separator if raw_separator not in (None, "") else ','
 
                 # Create column configuration with normalized dataset name
+                # Normalise external ontology configs (new multi-entry + legacy single entry)
+                raw_external_list = list(column_config.get('external_ontologies') or [])
+                legacy_config = column_config.get('external_ontology')
+                if isinstance(legacy_config, dict) and legacy_config:
+                    if not any(
+                        isinstance(cfg, dict)
+                        and cfg.get('ontology_type') == legacy_config.get('ontology_type')
+                        and cfg.get('uri_template') == legacy_config.get('uri_template')
+                    for cfg in raw_external_list
+                    ):
+                        raw_external_list.append(legacy_config)
+                normalized_external_configs = [
+                    cfg for cfg in raw_external_list if isinstance(cfg, dict) and cfg
+                ]
+                primary_external_config = normalized_external_configs[0] if normalized_external_configs else None
+                external_flag = column_config.get('is_external_ontology', False) or bool(normalized_external_configs)
+
                 col_config = ColumnConfig(
                     column_name=normalize_string_nfc(column_name),
                     dataset_name=normalized_dataset_name,
@@ -276,8 +294,9 @@ class ConfigTranslator:
                     confidence=column_config.get('confidence'),
                     is_fk=column_config.get('is_fk', False) or bool(column_config.get('fk_config')),
                     fk_config=column_config.get('fk_config'),
-                    is_external_ontology=column_config.get('is_external_ontology', False),
-                    external_ontology_config=column_config.get('external_ontology'),
+                    is_external_ontology=external_flag,
+                    external_ontology_config=primary_external_config,
+                    external_ontology_configs=normalized_external_configs,
                     original_config=column_config
                 )
                 
@@ -303,7 +322,7 @@ class ConfigTranslator:
                     self._process_fk_from_workspace_column(key, col_config, execution_config)
                 
                 # Process external ontology directly from workspace column
-                if col_config.is_external_ontology and col_config.external_ontology_config:
+                if col_config.is_external_ontology:
                     self._process_external_ontology_from_workspace_column(key, col_config, execution_config)
                 
                 # Process relationship context directly from workspace column
@@ -332,19 +351,38 @@ class ConfigTranslator:
     
     def _process_external_ontology_from_workspace_column(self, column_key: str, col_config: ColumnConfig, execution_config: ExecutionConfig):
         """Process external ontology directly from workspace column configuration"""
-        ontology_config = col_config.external_ontology_config
-        
-        # Create ExternalOntology from workspace column data
-        external_ontology = ExternalOntology(
-            column_name=normalize_string_nfc(col_config.column_name),
-            dataset_name=normalize_string_nfc(col_config.dataset_name),
-            ontology_type=ontology_config.get('ontology_type', ''),
-            uri_template=ontology_config.get('uri_template', ''),
-            identifier_column=ontology_config.get('identifier_column'),
-            validation_enabled=ontology_config.get('validation_enabled', True)
-        )
-        
-        execution_config.external_ontologies.append(external_ontology)
+        configs = col_config.external_ontology_configs or []
+        if not configs and col_config.external_ontology_config:
+            configs = [col_config.external_ontology_config]
+
+        if not configs:
+            logger.warning(
+                "Skipping external ontology column '%s.%s' because no configuration is present",
+                col_config.dataset_name,
+                col_config.column_name,
+            )
+            return
+
+        for ontology_config in configs:
+            uri_template = ontology_config.get('uri_template', '')
+            if not uri_template:
+                logger.warning(
+                    "External ontology column '%s.%s' missing uri_template; configuration ignored",
+                    col_config.dataset_name,
+                    col_config.column_name,
+                )
+                continue
+
+            external_ontology = ExternalOntology(
+                column_name=normalize_string_nfc(col_config.column_name),
+                dataset_name=normalize_string_nfc(col_config.dataset_name),
+                ontology_type=ontology_config.get('ontology_type', ''),
+                uri_template=uri_template,
+                identifier_column=ontology_config.get('identifier_column'),
+                validation_enabled=ontology_config.get('validation_enabled', True)
+            )
+
+            execution_config.external_ontologies.append(external_ontology)
     
     def _process_relationship_context_from_workspace_column(self, column_key: str, col_config: ColumnConfig, column_config: dict, execution_config: ExecutionConfig):
         """Process relationship context directly from workspace column configuration"""

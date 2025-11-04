@@ -21,62 +21,8 @@ from arkumu.metadata.models import Triple
 from time import perf_counter
 import uuid
 from functools import singledispatchmethod
-
-
-
-
-class Entity:
-    @singledispatchmethod
-    def __init__(self, arg):
-        raise NotImplementedError("Not implemented for these arguments")
-
-    @__init__.register
-    def _(self, arg: Resource):
-        self.uri = arg.uri
-        self.init_helper(arg.id)
-
-    @__init__.register
-    def _(self, arg: Triple):
-        self.uri = Resource.objects.get(id = arg.subject_id).uri
-        self.init_helper(arg.subject_id)
-
-    @__init__.register
-    def _(self, arg: str):
-        self.uri = arg
-        subject = Resource.objects.get(uri=arg)
-        self.init_helper(subject.id)
-    
-    @__init__.register
-    def _(self, arg: uuid.UUID):
-        self.uri = Resource.objects.get(id=arg).uri
-        self.init_helper(arg)
-
-    def init_helper(self, subject_id):
-        self.id = subject_id
-        self.name = Resource.objects.get(id=subject_id).name
-        self.resources = {}
-        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
-            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.resources:
-                self.resources[Resource.objects.get(id=entity_field_triple.predicate_id).name] = [Resource.objects.get(id=entity_field_triple.object_id)]
-            else:
-                self.resources[Resource.objects.get(id=entity_field_triple.predicate_id).name].append(Resource.objects.get(id=entity_field_triple.object_id))
-        self.properties = {}
-        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
-            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.properties:
-                self.properties[Resource.objects.get(id=entity_field_triple.predicate_id).name] = [Resource.objects.get(id=entity_field_triple.predicate_id)]
-            else:
-                self.properties[Resource.objects.get(id=entity_field_triple.predicate_id).name].append(Resource.objects.get(id=entity_field_triple.predicate_id))
-        self.field_names = []
-        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
-            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.field_names:
-                self.field_names.append(Resource.objects.get(id=entity_field_triple.predicate_id).name)
-
-    def __repr__(self):
-        ret = {field_name : [resource.value for resource in self.resources[field_name]] if self.resources[field_name][0].resource_type == ResourceType.LITERAL else [resource.uri for resource in self.resources[field_name]] for field_name in self.field_names}
-        return f"Entity with id: {self.id} \nvalues: {ret}"
-
-    def __str__(self):
-        return self.__repr__()
+# Using the newly created Entity class from metadata models
+from arkumu.metadata.models.entity import Entity
 
 def split_breadcrumb(breadcrumb: str):
     return breadcrumb.split(">")[-1].strip()
@@ -95,7 +41,7 @@ def search_algo(search_string, search_fields = ["Bevorzugter Titel", "Bevorzugte
 
     if search_string == "":
         return  [Entity(triple) for triple in Triple.objects.filter(predicate=Resource.objects.filter(name="Bevorzugter Titel").last()).all()[:10]]
-    
+
    # all_predicates = list(title_predicates) + list(keyword_predicates) + list(description_predicates)
 
 
@@ -106,14 +52,14 @@ def search_algo(search_string, search_fields = ["Bevorzugter Titel", "Bevorzugte
     ).filter(
         similarity__gt=0.1
     ).order_by('-similarity')[:10]
-    
+
     return [Entity(triple) for triple in results]
 
 
 
 # Hier wäre django.core.cache besonders gut
 class Projekt:
-    
+
     def __init__(self, proj: Entity):
         self.proj = proj
 
@@ -124,20 +70,20 @@ class Projekt:
     @property
     def title(self):
         return self.proj.resources["Bevorzugter Titel"][0].value
-    
+
     @property
     def alternative_title_set(self):
         if "Alternativer Titel-Set" in self.proj.resources:
             return [Entity(alt_title_resource).resources["Alternativer Titel"][0].value for alt_title_resource in self.proj.resources["Alternativer Titel-Set"]]
         else:
-            return ""                
+            return ""
 
     @property
     def projektart(self):
         if "Projektart" in self.proj.resources:
             return [Entity(alt_title_resource).resources["Deutscher Name der Projektart"][0].value for alt_title_resource in self.proj.resources["Projektart"]]
         else:
-            return "" 
+            return ""
 
 
     @property
@@ -150,7 +96,7 @@ class Projekt:
     @property
     def uri(self):
         return self.proj.uri
-    
+
     def __calcActor(self):
         pred_im_ereignis = Im_ereignis_singleton().get_pred_im_ereignis(self.uri.split("/")[4])
         self.akteur_role_dict = {}
@@ -158,7 +104,7 @@ class Projekt:
         self.max_date = -99999999999999
         if "Ereignis" in self.proj.resources:
             for ereignis_resource in self.proj.resources["Ereignis"]:
-                
+
                 ereignis = Entity(ereignis_resource)
                 if "Ereignisbeginn" in ereignis.resources:
                     self.min_date = min(self.min_date, int(ereignis.resources["Ereignisbeginn"][0].value.split('-')[0]))
@@ -198,9 +144,9 @@ class Projekt:
 
         if self.min_date == 99999999999999 and self.max_date == -99999999999999:
             return  "?"
-        else: 
+        else:
             return f"{self.min_date if self.min_date != 99999999999999 else "?"} bis {self.max_date if self.max_date != -99999999999999 else "?"}" if self.min_date != self.max_date else f"{self.min_date}"
-        
+
     @property
     def actors(self):
         if "akteur_role_dict" not in self.__dict__:
@@ -211,25 +157,25 @@ class Projekt:
     def categories(self):
         project_categories = [Entity(proj_cat) for proj_cat in self.proj.resources["Projektkategorie"]]
         return [split_breadcrumb(category.resources["Deutscher Name der Projektkategorie (Breadcrumb)"][0].value) for category in project_categories]
-    
+
     @property
     def descriptions(self):
         if "Beschreibung" in self.proj.resources:
             return [Entity(alt_title_resource).resources["Beschreibung"][0].value for alt_title_resource in self.proj.resources["Beschreibung"]]
         else:
-            return "" 
+            return ""
 
     @property
     def catchphrases(self):
         if "Schlagwort" in self.proj.resources:
             return [Entity(alt_title_resource).resources["Deutsches Wikidata-Label"][0].value for alt_title_resource in self.proj.resources["Schlagwort"]]
         else:
-            return "" 
-        
+            return ""
+
 
 class Im_ereignis_singleton:
     _instance = None
-    
+
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -241,8 +187,8 @@ class Im_ereignis_singleton:
         if str not in self.data:
                 self.data.update({str: Resource.objects.get(uri=f"http://arkumu.org/data/{str}/properties/im-ereignis")})
         return self.data[str]
-    
-        
+
+
 class Card:
 
     def search_cards(request):
@@ -269,7 +215,7 @@ class Card:
             for i, (name, value) in enumerate(proj_entity.actors.items()):
                 project_ret[j][f"contributor{i+1}_name"] = name
                 project_ret[j][f"contributor{i+1}_role"] = ", ".join(value)
-            
+
             for i, category in enumerate(proj_entity.categories):
                 project_ret[j][f"category{i+1}"] = category
 
@@ -278,15 +224,15 @@ class Card:
 
             if (len(proj_entity.categories) > 4):
                 project_ret[j]["additional_categories"] = f"{len(proj_entity.categories)-4} weitere{'s' if len(proj_entity.categories)-4 == 1 else ''}"
-            
+
 
         context = {'query': query,
             'results': project_ret}
-        
+
         return render(request, 'catalog/card_grid_template.html', context)
-    
+
 class ProjektShow:
-    
+
     def projekt(request):
         prt = "<Nothing to Print>"
         prt2 = "<Nothing to Print>"
@@ -294,8 +240,8 @@ class ProjektShow:
         projekt_uri = request.GET.get('projekt', None)
         project_resource = Resource.objects.get(uri=projekt_uri)
         project = Entity(project_resource)
-        
-        
+
+
         proj_entity = Projekt(project)
 
         project_ret = {
@@ -313,12 +259,12 @@ class ProjektShow:
 
 
         #TODO Python fixen das es schneller wird
-        
+
         prt = keyword_cloud(10) # project_ret
         prt2 = proj_entity.alternative_title_set
         context = {'project': project_ret, "print": prt, "print2": prt2, "print3": prt3}
-        
-        
+
+
         return render(request, 'catalog/projekt.html', context)
 
 # Temporary REST-API functions have been moved to arkumu/catalog/services/catalog_insights_service.py

@@ -14,6 +14,7 @@ from django.db.models import Q
 from arkumu.metadata.canonical import canonical_uri
 from arkumu.metadata.derivations.kreuz_config import (
     DCTERMS_IS_PART_OF,
+    SUBJECT_PLACEHOLDER,
     all_configured_canonical_properties,
     iter_applicable_patterns,
 )
@@ -30,6 +31,7 @@ ACTOR_IN_EVENT = canonical_uri("actor_in_event")
 class SubjectContext:
     """Canonical predicate objects collected for a junction subject."""
 
+    subject_id: str
     dataset_name: Optional[str]
     canonical_objects: Dict[str, Set[str]] = field(default_factory=dict)
 
@@ -141,7 +143,10 @@ class Command(BaseCommand):
         )
 
         contexts: Dict[str, SubjectContext] = {
-            str(subject_id): SubjectContext(dataset_name=dataset_map.get(str(subject_id)))
+            str(subject_id): SubjectContext(
+                subject_id=str(subject_id),
+                dataset_name=dataset_map.get(str(subject_id)),
+            )
             for subject_id in junction_subjects
         }
 
@@ -285,10 +290,18 @@ class Command(BaseCommand):
         dry_run: bool,
     ) -> int:
         created = 0
+
+        def _resolve_values(property_key: str | None) -> Optional[Set[str]]:
+            if not property_key:
+                return None
+            if property_key == SUBJECT_PLACEHOLDER:
+                return {context.subject_id}
+            return context.canonical_objects.get(property_key)
+
         for pattern in patterns:
             for recipe in pattern.recipes:
-                subjects = context.canonical_objects.get(recipe.subject_property)
-                targets = context.canonical_objects.get(recipe.object_property)
+                subjects = _resolve_values(recipe.subject_property)
+                targets = _resolve_values(recipe.object_property)
                 if not subjects or not targets:
                     continue
                 for derived_subject_id in subjects:

@@ -16,6 +16,7 @@ services:
     image: arkumu_local_django
     container_name: arkumu_local_django
     restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       - postgres
       - minio
@@ -33,6 +34,8 @@ services:
       - OAI_S3_ROSETTA_BASE_FUK=/rosetta/fudk/sandbox/input/arkumu/daten
       - OAI_S3_ROSETTA_BASE_RSH=/rosetta/rsh/sandbox/input/arkumu/daten
       - OAI_S3_ROSETTA_BASE_DET=/rosetta/hfmdt/sandbox/input/arkumu/daten
+      - PROJECT_SNAPSHOT_ORG_CODES=${PROJECT_SNAPSHOT_ORG_CODES:-}
+      - PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS=${PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS:-false}
     networks:
       - arkumu_network
 
@@ -104,6 +107,7 @@ services:
       dockerfile: ./compose/local/django/Dockerfile
     image: arkumu_local_huey
     container_name: arkumu_local_huey
+    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       - django
       - redis
@@ -116,6 +120,8 @@ services:
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_DET: /rosetta/hfmdt/sandbox/input/arkumu/daten
+      PROJECT_SNAPSHOT_ORG_CODES: ${PROJECT_SNAPSHOT_ORG_CODES:-}
+      PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS: ${PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS:-false}
     command: /bin/sh -c "python manage.py run_huey"
     # No ports exposed - only accessible internally
     networks:

@@ -49,6 +49,10 @@ class ProjectDigitalObject:
     media_type: Optional[str] = None
     significant_properties_de: Optional[str] = None
     significant_properties_en: Optional[str] = None
+    resource_id: Optional[str] = None
+    source: Optional[str] = None
+    source_event_ids: List[str] = field(default_factory=list)
+    source_event_uris: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.license and isinstance(self.license, dict):
@@ -93,6 +97,7 @@ class ProjectEventActor:
 @dataclass
 class ProjectEvent:
     id: Optional[str] = None
+    owning_project_uris: List[str] = field(default_factory=list)
     uri: Optional[str] = None
     name: Optional[str] = None
     description: Optional[str] = None
@@ -118,6 +123,7 @@ class ProjectEvent:
     start_estimated: Optional[bool] = None
     end_estimated: Optional[bool] = None
     actors: List[ProjectEventActor] = field(default_factory=list)
+    is_reference_only: bool = False
 
 
 @dataclass
@@ -140,6 +146,15 @@ class ProjectRecord:
     institution_codes: List[str] = field(default_factory=list)
     category_slugs: List[str] = field(default_factory=list)
     rights_status: Optional[str] = None
+    reference_events: List[ProjectEvent] = field(default_factory=list)
+    event_sources: Dict[str, List[str]] = field(default_factory=dict)
+    filtered_event_ids: List[str] = field(default_factory=list)
+    digital_object_sources: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    filtered_digital_object_ids: List[str] = field(default_factory=list)
+    reference_project_uris: List[str] = field(default_factory=list)
+    ownership_filtered: bool = False
+    reference_only: bool = False
+    harvestable: bool = True
 
     @property
     def slug(self) -> str:
@@ -162,6 +177,33 @@ class ProjectRecord:
                 return []
             return [factory(**item) for item in items]
 
+        def _build_events(items: Optional[List[Dict[str, Any]]]) -> List[ProjectEvent]:
+            if not items:
+                return []
+            return [
+                ProjectEvent(
+                    **{
+                        **item,
+                        "owning_project_uris": list(item.get("owning_project_uris", [])),
+                        "actors": _build_list(item.get("actors"), ProjectEventActor),
+                    }
+                )
+                for item in items
+            ]
+
+        def _build_digital_objects(items: Optional[List[Dict[str, Any]]]) -> List[ProjectDigitalObject]:
+            if not items:
+                return []
+            materialized: List[ProjectDigitalObject] = []
+            for item in items:
+                normalized = {
+                    **item,
+                    "source_event_ids": list(item.get("source_event_ids", [])),
+                    "source_event_uris": list(item.get("source_event_uris", [])),
+                }
+                materialized.append(ProjectDigitalObject(**normalized))
+            return materialized
+
         record = cls(
             subject_id=payload["subject_id"],
             uri=payload["uri"],
@@ -171,16 +213,33 @@ class ProjectRecord:
             image=payload.get("image"),
             institution=institution,
             categories=_build_list(payload.get("categories"), ProjectCategory),
-            events=_build_list(payload.get("events"), ProjectEvent),
+            events=_build_events(payload.get("events")),
             actors=_build_list(payload.get("actors"), ProjectActor),
             alternative_titles=_build_list(payload.get("alternative_titles"), ProjectAlternateTitle),
             catchphrases=_build_list(payload.get("catchphrases"), ProjectCatchphrase),
             project_type=ProjectType(**payload["project_type"]) if payload.get("project_type") else None,
-            digital_objects=_build_list(payload.get("digital_objects"), ProjectDigitalObject),
+            digital_objects=_build_digital_objects(payload.get("digital_objects")),
             year_range=payload.get("year_range"),
             institution_codes=payload.get("institution_codes", []),
             category_slugs=payload.get("category_slugs", []),
             rights_status=payload.get("rights_status"),
+            reference_events=_build_events(payload.get("reference_events")),
+            event_sources={key: list(value) for key, value in (payload.get("event_sources") or {}).items()},
+            filtered_event_ids=list(payload.get("filtered_event_ids", [])),
+            digital_object_sources={
+                key: {
+                    **value,
+                    "event_ids": list(value.get("event_ids", [])),
+                    "event_uris": list(value.get("event_uris", [])),
+                    "filtered_event_ids": list(value.get("filtered_event_ids", [])),
+                }
+                for key, value in (payload.get("digital_object_sources") or {}).items()
+            },
+            filtered_digital_object_ids=list(payload.get("filtered_digital_object_ids", [])),
+            reference_project_uris=list(payload.get("reference_project_uris", [])),
+            ownership_filtered=bool(payload.get("ownership_filtered", False)),
+            reference_only=bool(payload.get("reference_only", False)),
+            harvestable=bool(payload.get("harvestable", True)),
         )
         return record
 

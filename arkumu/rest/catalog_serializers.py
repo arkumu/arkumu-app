@@ -219,3 +219,27 @@ class ProjectRecordSerializer(serializers.Serializer):
     catchphrases = serializers.ListField(child=serializers.CharField())
     digital_objects = serializers.ListField(child=serializers.CharField())
     events = ProjectEventSerializer(many=True)
+    reference_events = ProjectEventSerializer(many=True, required=False)
+    reference_only = serializers.BooleanField(required=False)
+    ownership_filtered = serializers.BooleanField(required=False)
+    harvestable = serializers.BooleanField(required=False)
+    filtered_event_ids = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+    )
+    filtered_digital_object_ids = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+    )
+    reference_project_uris = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+    )
+    event_sources = serializers.DictField(
+        child=serializers.ListField(child=serializers.CharField()),
+        required=False,
+    )
+    digital_object_sources = serializers.DictField(
+        child=serializers.DictField(child=serializers.JSONField()),
+        required=False,
+    )
