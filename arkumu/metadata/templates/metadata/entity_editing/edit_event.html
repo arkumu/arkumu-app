@@ -1,0 +1,167 @@
+{% extends "base.html" %} {% load static %} {% block content %}
+<div class="max-w-4xl mx-auto py-8">
+  <div class="card bg-base-100 shadow-xl border border-base-200">
+    <div class="card-body p-8">
+      <div class="flex items-center mb-6">
+        <div class="p-3 rounded-xl mr-4 bg-secondary/10">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-8 w-8 text-secondary"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+            />
+          </svg>
+        </div>
+        <div>
+          <h1 class="card-title text-2xl font-bold">edit New Event</h1>
+          <p class="text-base-content/70 mt-1">
+            Fill in the details to edit a new archival event
+          </p>
+        </div>
+      </div>
+
+      <form
+        action="{% url 'metadata:edit_event' %}"
+        method="post"
+        class="space-y-8"
+      >
+        {% csrf_token %} {% include "metadata/entity_creation/partials/_event_form_fields.html" %}
+
+        <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
+          <a
+            href="{% url 'metadata:metadata_entry' %}"
+            class="btn btn-outline"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4 mr-2"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M10 19l-7-7m0 0l7-7m-7 7h18"
+              />
+            </svg>
+            Cancel
+          </a>
+          <button type="submit" class="btn btn-primary px-8">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4 mr-2"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+            edit Event
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock content %} {% block javascript %} {{ block.super }}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+
+      document.querySelector("#id_uri").closest(".form-control").style.display = 'none';
+
+      // Handle dynamic addition of actor-event forms
+      document.querySelectorAll(".add-actor-event").forEach(function (button) {
+        button.addEventListener("click", function (e) {
+          e.preventDefault();
+
+          const container = document.querySelector(".actor-event-container");
+          const template = document
+            .querySelector("#actor-event-template")
+            .content.cloneNode(true);
+
+          // Find the management form fields
+          const actors_managementFormTotal = document.querySelector(
+            '[name="actors-TOTAL_FORMS"]',
+          );
+          const roles_managementFormTotal = document.querySelector(
+            '[name="roles-TOTAL_FORMS"]',
+          );
+
+          if (!actors_managementFormTotal) {
+            console.error(
+              "Management form not found. Make sure it's properly rendered in the template.",
+            );
+            return;
+          }
+
+          // Get current form count
+          let formCount = parseInt(actors_managementFormTotal.value);
+
+          // Update the new form HTML to replace __prefix__ with the new index
+          const actor_newFormHTML = template
+            .querySelector(".actor-form")
+            .innerHTML.replace(/actors-__prefix__-/g, `actors-${formCount}-`)
+            .replace(/actors__prefix__/g, `actors][${formCount}][`);
+          
+          const actor_script = template
+            .querySelector(".actor-form script")
+            .textContent.replace(/actors-__prefix__-/g, `actors-${formCount}-`)
+            .replace(/actors__prefix__/g, `actors][${formCount}][`);
+
+          const role_newFormHTML = template
+            .querySelector(".role-form")
+            .innerHTML.replace(/roles-__prefix__-/g, `roles-${formCount}-`)
+            .replace(/roles__prefix__/g, `roles][${formCount}][`);
+
+          const role_script = template
+            .querySelector(".role-form script")
+            .textContent.replace(/roles-__prefix__-/g, `roles-${formCount}-`)
+            .replace(/roles__prefix__/g, `roles][${formCount}][`)
+            .replace('add_uri_fill_in_handler', 'role_add_uri_fill_in_handler');
+          
+          console.log(role_script)
+          // Create a new div for the form
+          const actor_role_newFormDiv = document.createElement("div");
+          actor_role_newFormDiv.className =
+            `actor-event-${formCount}-form p-4 bg-base-100 rounded-lg border border-base-200`;
+          actor_role_newFormDiv.innerHTML = `<h4 class="text-base font-medium">Akteur ${formCount + 1}</h4> \n` + actor_newFormHTML + '\n' + role_newFormHTML;
+
+          // Add the new form to the container
+          container.appendChild(actor_role_newFormDiv);
+
+          const actor_scriptElement = document.createElement('script');
+          actor_scriptElement.textContent = actor_script;
+          document.head.appendChild(actor_scriptElement);
+
+          //function from inside script
+          add_uri_fill_in_handler()
+
+          const role_scriptElement = document.createElement('script');
+          role_scriptElement.textContent = role_script;
+          document.head.appendChild(role_scriptElement);
+
+          //function from inside script
+          role_add_uri_fill_in_handler()
+
+          // Update the total form count
+          actors_managementFormTotal.value = formCount + 1;
+          roles_managementFormTotal.value = formCount + 1;
+        });
+      });
+    });
+  </script>
+{% endblock javascript %}

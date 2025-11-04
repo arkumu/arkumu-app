@@ -50,7 +50,20 @@
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Bevorzugter Untertitel</span>
+              <span class="label-text font-medium">Bevorzugter Titel Sprache</span>
+              
+              <span class="label-text-alt text-error"></span>
+             
+            </label>
+            
+            <div class="text-xs text-base-content/60 mt-1"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Untertitel</span>
               {% if project_form.bevorzugter_untertitel.errors %}
               <span class="label-text-alt text-error">{{ project_form.bevorzugter_untertitel.errors.0 }}</span>
               {% endif %}
@@ -58,103 +71,42 @@
             {{ project_form.bevorzugter_untertitel }}
             <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_untertitel.help_text }}</div>
           </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Untertitel Sprache</span>
+              
+              <span class="label-text-alt text-error"></span>
+              
+            </label>
+            
+          </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Ereignis</span>
-              {% if project_form.ereignis_uri.errors %}
-              <span class="label-text-alt text-error">{{ project_form.ereignis_uri.errors.0 }}</span>
-              {% endif %}
+              <span class="label-text font-medium">Alternative Titel</span>
+              
+              <span class="label-text-alt text-error"></span>
+              
             </label>
-            {{ project_form.ereignis_uri }}
+            
+            <div class="text-xs text-base-content/60 mt-1"></div>
           </div>
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Einliefernde Hochschule</span>
-              {% if project_form.einliefernde_hochschule_uri.errors %}
-              <span class="label-text-alt text-error">{{ project_form.einliefernde_hochschule_uri.errors.0 }}</span>
-              {% endif %}
+              <span class="label-text font-medium">Titel hinzufügen BUTTON</span>
+              
+              <span class="label-text-alt text-error"></span>
+              
             </label>
-            {{ project_form.einliefernde_hochschule_uri }}
-          </div>
-
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Projektkategorie</span>
-              {% if project_form.projektkategorie_uri.errors %}
-              <span class="label-text-alt text-error">{{ project_form.projektkategorie_uri.errors.0 }}</span>
-              {% endif %}
-            </label>
-            {{ project_form.projektkategorie_uri }}
+            
           </div>
         </div>
 
-        <div class="form-control">
-          <label class="label">
-            <div class="flex justify-between items-center">
-              <h3 class="text-base font-medium">Beschreibung</h3>
-              <button type="button" class="btn btn-sm btn-primary add-description">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Add Description
-              </button>
-            </div>
-            {% if description_formset.errors %}
-            <span class="label-text-alt text-error">{{ description_formset.errors.0 }}</span>
-            {% endif %}
-          </label>
-          <!-- This renders the management form fields that Django needs -->
-          {{ description_formset.management_form }}
 
-          <div class="description-container space-y-4">
-            {% for form in description_formset %}
-              {% include "metadata/entity_creation/partials/_description_form_fields.html" with description_form=form %}
-            {% endfor %}
-          </div>
-
-          <template id="description-template">
-              {% include "metadata/entity_creation/partials/_description_form_fields.html" with description_form=description_formset.empty_form %}
-          </template>
-          <div class="text-xs text-base-content/60 mt-1">{{ project_form.beschreibung_uri.help_text }}</div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Schlagwörter</span>
-              {% if project_form.schlagwort_uris.errors %}
-              <span class="label-text-alt text-error">{{ project_form.schlagwort_uris.errors.0 }}</span>
-              {% endif %}
-            </label>
-            {{ project_form.schlagwort_uris }}
-            <div class="text-xs text-base-content/60 mt-1">Select one or more keywords</div>
-          </div>
-
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Projektart</span>
-              {% if project_form.projektart_uri.errors %}
-              <span class="label-text-alt text-error">{{ project_form.projektart_uri.errors.0 }}</span>
-              {% endif %}
-            </label>
-            {{ project_form.projektart_uri }}
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label">
-            <span class="label-text font-medium">Vorschaubild</span>
-            {% if project_form.vorschaubild_uri.errors %}
-            <span class="label-text-alt text-error">{{ project_form.vorschaubild_uri.errors.0 }}</span>
-            {% endif %}
-          </label>
-          {{ project_form.vorschaubild_uri }}
-          <div class="text-xs text-base-content/60 mt-1">{{ project_form.vorschaubild_uri.help_text }}</div>
-        </div>
       </div>
     </div>
     <script>
