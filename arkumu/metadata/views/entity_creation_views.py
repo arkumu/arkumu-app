@@ -25,6 +25,72 @@ from arkumu.users.models import Organization
 
 logger = logging.getLogger(__name__)
 
+BASE_URI = "http://arkumu.org/data"
+def get_properties(org_code):
+    return {
+    "Projekt":{
+                "title_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/bevorzugter-titel",
+                    name="Bevorzugter Titel",
+                )[0],
+                "subtitle_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/bevorzugter-untertitel",
+                    name="Bevorzugter Untertitel",
+                )[0],
+                "institution_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/einliefernde-hochschule",
+                    name="Einliefernde Hochschule",
+                )[0],
+                "category_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/projektkategorie",
+                    name="Projektkategorie",
+                )[0],
+                "catchphrase_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/schlagwort", name="Schlagwort"
+                )[0],
+                "project_type_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/projektart", name="Projektart"
+                )[0],
+                "preview_image_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/vorschaubild", name="Vorschaubild"
+                )[0],
+            },
+    "Ereignis":{
+                "event_name_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/ereignisname", name="Ereignisname"
+                )[0],
+                "event_place_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/ereignisort", name="Ereignisort"
+                )[0],
+                "description_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/beschreibung", name="Beschreibung"
+                )[0],
+                "begin_date_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/ereignisbeginn", name="Ereignisbeginn"
+                )[0],
+                "end_date_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/ereignisende", name="Ereignisende"
+                )[0],
+            },
+    "Akteurin":{
+                "german_name_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/deutscher-name", name="Deutscher Name"
+                )[0],
+            },
+    "Rolle":{
+                "german_name_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/deutscher-name-der-rolle-breadcrumb",
+                    name="Deutscher Name der Rolle Breadcrumb",
+                )[0],
+            },
+    "Beschreibung":{
+                "description_prop": PropertyResource.get_or_create(
+                    uri=f"{BASE_URI}/{org_code}/properties/beschreibung", name="Beschreibung"
+                )[0],
+            },
+}
+
+
 class BaseEntityForm(forms.Form):
     """Base form for both projects and events."""
 
@@ -118,36 +184,8 @@ class ProjectForm(BaseEntityForm):
             if created:
                 return
             
-            base_uri = "http://arkumu.org/data/" + entity.uri.split("/")[4]
-            
-            properties = {
-                "title_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-titel",
-                    name="Bevorzugter Titel",
-                )[0],
-                "subtitle_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-untertitel",
-                    name="Bevorzugter Untertitel",
-                )[0],
-                "institution_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/einliefernde-hochschule",
-                    name="Einliefernde Hochschule",
-                )[0],
-                "category_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektkategorie",
-                    name="Projektkategorie",
-                )[0],
-                "catchphrase_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/schlagwort", name="Schlagwort"
-                )[0],
-                "project_type_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektart", name="Projektart"
-                )[0],
-                "preview_image_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/vorschaubild", name="Vorschaubild"
-                )[0],
-            }
-
+            org_code = entity.uri.split("/")[4]
+            properties = get_properties(org_code)["Projekt"]
 
             # Pre-fill form fields with existing entity data
             self.fields["bevorzugter_titel"].initial = entity.get_property(properties["title_prop"]) if entity.get_property(properties["title_prop"]) else ""
@@ -420,33 +458,7 @@ def form_init_resources(base_uri, dataset_name, organization):
             cls, _ = ClassResource.get_or_create(
                 uri=f"{base_uri}/types/projekt", name=dataset_name
             )
-            properties = {
-                "title_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-titel",
-                    name="Bevorzugter Titel",
-                )[0],
-                "subtitle_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/bevorzugter-untertitel",
-                    name="Bevorzugter Untertitel",
-                )[0],
-                "institution_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/einliefernde-hochschule",
-                    name="Einliefernde Hochschule",
-                )[0],
-                "category_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektkategorie",
-                    name="Projektkategorie",
-                )[0],
-                "catchphrase_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/schlagwort", name="Schlagwort"
-                )[0],
-                "project_type_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektart", name="Projektart"
-                )[0],
-                "preview_image_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/vorschaubild", name="Vorschaubild"
-                )[0],
-            }
+            properties = get_properties(organization.code)["Projekt"]
             return (entity, cls, properties)
         case "Ereignis":
             entity, _ = EntityResource.create_by_organization_and_dataset_name(
@@ -455,23 +467,7 @@ def form_init_resources(base_uri, dataset_name, organization):
             cls, _ = ClassResource.get_or_create(
                 uri=f"{base_uri}/types/ereignis", name=dataset_name
             )
-            properties = {
-                "event_name_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisname", name="Ereignisname"
-                )[0],
-                "event_place_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisort", name="Ereignisort"
-                )[0],
-                "description_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )[0],
-                "begin_date_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisbeginn", name="Ereignisbeginn"
-                )[0],
-                "end_date_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignisende", name="Ereignisende"
-                )[0],
-            }
+            properties = get_properties(organization.code)["Ereignis"]
             return (entity, cls, properties)
         case "Akteurin":
             entity, _ = EntityResource.create_by_organization_and_dataset_name(
@@ -480,11 +476,7 @@ def form_init_resources(base_uri, dataset_name, organization):
             cls, _ = ClassResource.get_or_create(
                 uri=f"{base_uri}/types/akteurin", name=dataset_name
             )
-            properties = {
-                "german_name_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name", name="Deutscher Name"
-                )[0],
-            }
+            properties = get_properties(organization.code)["Akteurin"]
             return (entity, cls, properties)
         case "Rolle":
             entity, _ = EntityResource.create_by_organization_and_dataset_name(
@@ -493,12 +485,7 @@ def form_init_resources(base_uri, dataset_name, organization):
             cls, _ = ClassResource.get_or_create(
                 uri=f"{base_uri}/types/rolle", name=dataset_name
             )
-            properties = {
-                "german_name_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/deutscher-name-der-rolle-breadcrumb",
-                    name="Deutscher Name der Rolle Breadcrumb",
-                )[0],
-            }
+            properties = get_properties(organization.code)["Rolle"]
             return (entity, cls, properties)
         case "Beschreibung":
             entity, _ = EntityResource.create_by_organization_and_dataset_name(
@@ -507,11 +494,7 @@ def form_init_resources(base_uri, dataset_name, organization):
             cls, _ = ClassResource.get_or_create(
                 uri=f"{base_uri}/types/beschreibung", name=dataset_name
             )
-            properties = {
-                "description_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/beschreibung", name="Beschreibung"
-                )[0],
-            }
+            properties = get_properties(organization.code)["Beschreibung"]
             return (entity, cls, properties)
 
 
