@@ -264,6 +264,7 @@ class ProjectView(LoginRequiredMixin, View):
 
         institution_label = record.institution.label if record.institution and record.institution.label else ''
         project_type = record.project_type.label if record.project_type and record.project_type.label else ''
+        rights_status = record.project_type.label if record.rights_status and record.project_type.label else ''
         catchphrase_labels = [item.label for item in record.catchphrases if item.label]
         category_labels = [item.label for item in record.categories if item.label]
         digital_object_paths = [item.path for item in record.digital_objects if item.path]
@@ -291,6 +292,7 @@ class ProjectView(LoginRequiredMixin, View):
             _entry('Kommentar EN', comment_en),
             _entry('Sprache Titel', lang_title),
             _entry('Sprache Untertitel', lang_sub_title),
+            _entry("Rechtsstatus",rights_status),
         ]
 
         if record.events:
