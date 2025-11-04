@@ -115,6 +115,40 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
                 property_label="Vorschaubild",
                 value_type="entity",
             ),
+            FieldConfig(
+                field_name="organisationseinheit_uri",
+                property_path="properties/organisationseinheit",
+                property_label="Organisationseinheit",
+                value_type="entity",
+            ),
+            FieldConfig(
+                field_name="erstellungsdatum_uri",
+                property_path="properties/erstellungsdatum",
+                property_label="Erstellungsdatum",
+            ),
+            FieldConfig(
+                field_name="letzteModifikation_uri",
+                property_path="properties/letzteModifikation",
+                property_label="Letzte Modifikation",       
+            ),
+            FieldConfig(
+                field_name="projektStatus_uri",
+                property_path="properties/projektStatus",
+                property_label="Status",
+                value_type="entity",
+            ),
+            FieldConfig(
+                field_name="signatur",
+                property_path="properties/signatur",
+                property_label="Signatur",
+                value_type="literal",   
+            ),
+            FieldConfig(
+                field_name="signaturEinlieferer",
+                property_path="properties/signaturEinlieferer",
+                property_label="Signatur beim Einlieferer",
+                value_type="literal",
+            ),
         ),
     ),
     "event": EntityCreationConfig(

@@ -54,6 +54,38 @@ def get_properties(org_code):
                 "preview_image_prop": PropertyResource.get_or_create(
                     uri=f"{BASE_URI}/{org_code}/properties/vorschaubild", name="Vorschaubild"
                 )[0],
+                "hochschule_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/hochschule",
+                    name="Hochschule",
+                )[0],
+                "organisationseinheit_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/organisationseinheit",
+                    name="Organisationseinheit",
+                )[0],
+                "erstellungsdatum_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/erstellungsdatum",
+                    name="Erstellungsdatum",
+                )[0],
+                "letzteModifikation_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/letzteModifikation",
+                    name="Letzte Modifikation",
+                )[0],
+                "projektStatus_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/projektStatus",
+                    name="Projekt Status",
+                )[0],
+                "signatur_prop": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/signatur",
+                    name="Signatur",
+                )[0],
+                "signaturEinlieferer_prop": PropertyResource.get_or_create(  
+                    uri=f"{base_uri}/properties/signaturEinlieferer",
+                    name="Signatur beim Einlieferer",
+                )[0],
+                "verzeichnisnummern": PropertyResource.get_or_create(
+                    uri=f"{base_uri}/properties/verzeichnisnummern",
+                    name="Werkverzeichnis-Nr",
+                )[0],
             },
     "Ereignis":{
                 "event_name_prop": PropertyResource.get_or_create(
@@ -159,6 +191,96 @@ class ProjectForm(BaseEntityForm):
         help_text="URI of the preview image",
     )
 
+    hochschule_uri = forms.ChoiceField(
+        label="Hochschule",
+        required=True,
+        choices=[],
+    )
+    organisationseinheit_uri = forms.ChoiceField(
+        label="Organisationseinheit",
+        required=False,
+        choices=[],
+    )
+    erstellungsdatum = forms.DateField(
+        label="Erstellungsdatum",
+        widget=forms.DateTimeInput(attrs={"type": "date"}),
+        required=False,
+        help_text="Das Erstellungsdatum des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen. ",
+    )
+    letzteModifikation = forms.DateField(
+        label="Letzte Projektmodifikation beim Einlieferer",
+        widget=forms.DateTimeInput(attrs={"type": "date"}),
+        required=False,
+        help_text="Das Datum der letzten Modifikation des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen.",
+    )
+
+    projektStatus_uri = forms.ChoiceField( 
+        label="Status", 
+        required=True,
+        choices=[],
+    )
+    signatur = forms.CharField(
+        label="Signatur",
+        required=False,
+        help_text="Eine vom System automatisch erstellte Signatur für das Projekt.",
+    )
+    signaturEinlieferer = forms.CharField(
+        label="Signatur beim Einlieferer",
+        required=False,
+        help_text="Eine vom Einlieferer vergebene Signatur für das Projekt.",
+    )
+    verzeichnisnummern = forms.CharField(
+        label="Werkverzeichnis-Nr",
+        required=False,
+        help_text="Eine Nummer, die in einem bestehenden Werkverzeichnis vergeben wurde, zum Beispiel 'BWV 1010'. Wenn mehrere Nummern eingetragen werden, müssen sie mit einem Semikolon getrennt werden.",
+    )
+
+
+    hochschule_uri = forms.ChoiceField(
+        label="Hochschule",
+        required=True,
+        choices=[],
+    )
+    organisationseinheit_uri = forms.ChoiceField(
+        label="Organisationseinheit",
+        required=False,
+        choices=[],
+    )
+    erstellungsdatum = forms.DateField(
+        label="Erstellungsdatum",
+        widget=forms.DateTimeInput(attrs={"type": "date"}),
+        required=False,
+        help_text="Das Erstellungsdatum des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen. ",
+    )
+    letzteModifikation = forms.DateField(
+        label="Letzte Projektmodifikation beim Einlieferer",
+        widget=forms.DateTimeInput(attrs={"type": "date"}),
+        required=False,
+        help_text="Das Datum der letzten Modifikation des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen.",
+    )
+
+    projektStatus_uri = forms.ChoiceField( 
+        label="Status", 
+        required=True,
+        choices=[],
+    )
+    signatur = forms.CharField(
+        label="Signatur",
+        required=False,
+        help_text="Eine vom System automatisch erstellte Signatur für das Projekt.",
+    )
+    signaturEinlieferer = forms.CharField(
+        label="Signatur beim Einlieferer",
+        required=False,
+        help_text="Eine vom Einlieferer vergebene Signatur für das Projekt.",
+    )
+    verzeichnisnummern = forms.CharField(
+        label="Werkverzeichnis-Nr",
+        required=False,
+        help_text="Eine Nummer, die in einem bestehenden Werkverzeichnis vergeben wurde, zum Beispiel 'BWV 1010'. Wenn mehrere Nummern eingetragen werden, müssen sie mit einem Semikolon getrennt werden.",
+    )
+
+
     def __init__(self, *args, metadata_options=None, uri=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
@@ -178,6 +300,24 @@ class ProjectForm(BaseEntityForm):
         self.fields["vorschaubild_uri"].choices = [
             ("", "Select the URI of a preview image")
         ] + options.get("digital_object", [])
+
+        self.fields["hochschule_uri"].choices = [
+            ("", "Select an institution")
+        ] + options.get("institution", [])
+        self.fields["organisationseinheit_uri"].choices = [
+            ("", "Select an organisationseinheit")
+        ] + options.get("organisationseinheit", [])
+        self.fields["erstellungsdatum"].choices = [
+            ("", "Select the description of the event")
+        ] + options.get("erstellungsdatum", [])
+        self.fields["letzteModifikation"].choices = [
+            ("", "Select the description of the event")
+        ] + options.get("letzteModifikation", [])
+        
+        self.fields["projektStatus_uri"].choices = [
+            ("", "Select the status of the project")
+        ] + options.get("projektStatus", [])
+        
 
         if uri:
             entity, created = EntityResource.get_or_create(uri)
@@ -524,6 +664,31 @@ def entity_set_values_from_form(
             from_form_set_property_entity(
                 form, entity, "vorschaubild_uri", kwargs["preview_image_prop"]
             )
+            from_form_set_property_entity(
+                form, entity, "hochschule_prop", kwargs["hochschule_prop"]
+            )
+            from_form_set_property_entity(
+                form, entity, "organisationseinheit_prop", kwargs["organisationseinheit_prop"]
+            )
+            from_form_set_property_entity(
+                form, entity, "erstellungsdatum", kwargs["erstellungsdatum"]
+            )
+            from_form_set_property_entity(
+                form, entity, "letzteModifikation", kwargs["letzteModifikation"]
+            )
+
+            from_form_set_property_entity(
+                form, entity, "projektStatus_uri", kwargs["projektStatus_uri"]
+            )
+            from_form_set_property_literal(
+                form, entity, "signatur", kwargs["signatur"]
+            )   
+            from_form_set_property_literal(
+                form, entity, "signaturEinlieferer", kwargs["signaturEinlieferer"]
+            )   
+            from_form_set_property_literal(
+                form, entity, "verzeichnisnummern", kwargs["verzeichnisnummern"]
+            )   
         case "Ereignis":
             from_form_set_property_literal(
                 form, entity, "ereignisname", kwargs["event_name_prop"]
