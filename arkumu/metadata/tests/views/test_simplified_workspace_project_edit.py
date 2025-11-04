@@ -42,8 +42,10 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
                 "column_name": "Projektart",
                 "property_label": "Projektart",
                 "is_multi_value": True,
+                "is_external_ontology": True,
                 "fk_relationship": {
                     "target_dataset": "Projektart",
+                    "target_property_uri": "http://example.org/properties/code",
                 },
             }
         }
@@ -81,8 +83,10 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
                 "column_name": "Ereignistyp",
                 "property_label": "Ereignistyp",
                 "is_multi_value": True,
+                "is_external_ontology": True,
                 "fk_relationship": {
                     "target_dataset": "Ereignistyp",
+                    "target_property_uri": "http://example.org/properties/code",
                 },
             }
         }
@@ -167,7 +171,9 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     assert 'data-multi-value="true"' in content
     assert "Suchen nach" not in content
     assert 'select id="relationship-property' not in content
-    assert "property=http%3A//example.org/properties/label" in content
+    assert "property=http%3A//example.org/properties/code" in content
+    assert 'name="relationship_property_Projektart"' in content
+    assert 'value="http://example.org/properties/code"' in content
 
 
 @pytest.mark.django_db
@@ -202,7 +208,9 @@ def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_e
     assert 'data-multi-value="true"' in content
     assert "Suchen nach" not in content
     assert 'select id="relationship-property' not in content
-    assert "property=http%3A//example.org/properties/label" in content
+    assert "property=http%3A//example.org/properties/code" in content
+    assert 'name="relationship_property_Ereignistyp"' in content
+    assert 'value="http://example.org/properties/code"' in content
 
 
 @pytest.mark.django_db

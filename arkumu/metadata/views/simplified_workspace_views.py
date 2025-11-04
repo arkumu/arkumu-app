@@ -134,12 +134,40 @@ def _filter_field_metadata(
 
 def _select_primary_search_property(meta: Dict[str, Any]) -> Optional[str]:
     """Pick a single search property to use for simplified multi-select widgets."""
+    existing = meta.get("selected_property")
+    if existing:
+        return str(existing)
+
+    fk_info = meta.get("fk_relationship") or {}
+    if meta.get("is_external_ontology") and fk_info.get("target_property_uri"):
+        return str(fk_info.get("target_property_uri"))
+
+    search_properties = meta.get("search_properties") or []
+    preferred_tokens = ("name", "titel", "title", "label", "bezeichnung", "beschreibung")
+
+    for prop in search_properties:
+        column = str(prop.get("column") or "").lower()
+        if any(token in column for token in preferred_tokens):
+            uri = prop.get("uri")
+            if uri:
+                return str(uri)
+
+    for prop in search_properties:
+        uri = prop.get("uri")
+        if uri:
+            return str(uri)
+
+    return None
+
+
+def _select_display_property(meta: Dict[str, Any]) -> Optional[str]:
+    """Choose the best property for human-readable labels."""
     display_uri = meta.get("display_property")
     if display_uri:
         return str(display_uri)
 
     search_properties = meta.get("search_properties") or []
-    preferred_tokens = ("name", "titel", "title", "label", "bezeichnung", "beschreibung")
+    preferred_tokens = ("label", "name", "bezeichnung", "titel", "title", "beschreibung")
 
     for prop in search_properties:
         column = str(prop.get("column") or "").lower()
@@ -237,6 +265,10 @@ def _enrich_fk_metadata(
             else:
                 parsed_values = []
 
+            display_property_uri = _select_display_property(meta)
+            if display_property_uri:
+                meta["display_property"] = display_property_uri
+
             normalized: List[Dict[str, str]] = []
             for entry in parsed_values:
                 if isinstance(entry, dict):
@@ -249,6 +281,7 @@ def _enrich_fk_metadata(
                     schema_service,
                     uri,
                     target_dataset,
+                    display_property_uri=display_property_uri,
                 )
 
                 resource_entry = {"label": label, "uri": uri}

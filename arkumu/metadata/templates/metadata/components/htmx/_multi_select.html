@@ -20,6 +20,11 @@
         {% endfor %}
       </select>
     </div>
+  {% else %}
+    <input type="hidden"
+           id="{{ property_select_id }}"
+           name="{{ property_input_name }}"
+           value="{{ selected_property }}">
   {% endif %}
 
   <div id="{{ chip_container_id }}" class="flex flex-wrap gap-2" data-chip-container>

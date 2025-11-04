@@ -202,6 +202,7 @@ def _build_relationship_widget_context(
     suggestions_id = f"multi-select-suggestions-{field_name}"
     chip_container_id = f"multi-select-chips-{field_name}"
     property_select_id = f"relationship-property-{field_name}"
+    property_input_name = f"relationship_property_{field_name}"
 
     selected_items = _build_selected_items(field_name, selected_value_items)
 
@@ -212,6 +213,7 @@ def _build_relationship_widget_context(
         "search_properties": search_properties,
         "selected_property": selected_property,
         "property_select_id": property_select_id,
+        "property_input_name": property_input_name,
         "wrapper_id": wrapper_id,
         "search_input_id": search_input_id,
         "suggestions_id": suggestions_id,

@@ -43,12 +43,18 @@ def infer_entity_label(
         parts = uri_tail.split("-label-")
         if len(parts) == 2:
             actual_label = parts[1]
-            logger.info(
-                "[infer_entity_label] Extracted label from malformed URI %s -> %s",
+            if actual_label and "resource-id" not in actual_label.lower():
+                logger.info(
+                    "[infer_entity_label] Extracted label from malformed URI %s -> %s",
+                    entity_uri,
+                    actual_label,
+                )
+                return actual_label
+            logger.debug(
+                "[infer_entity_label] Skipping malformed URI label for %s (value=%s)",
                 entity_uri,
                 actual_label,
             )
-            return actual_label
 
     try:
         entity = Resource.objects.get(uri=entity_uri)
