@@ -59,35 +59,35 @@ def get_properties(org_code):
                     uri=f"{BASE_URI}/{org_code}/properties/vorschaubild", name="Vorschaubild"
                 )[0],
                 "hochschule_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/hochschule",
+                    uri=f"{BASE_URI}/properties/hochschule",
                     name="Hochschule",
                 )[0],
                 "organisationseinheit_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/organisationseinheit",
+                    uri=f"{BASE_URI}/{org_code}/properties/organisationseinheit",
                     name="Organisationseinheit",
                 )[0],
                 "erstellungsdatum_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/erstellungsdatum",
+                    uri=f"{BASE_URI}/{org_code}/properties/erstellungsdatum",
                     name="Erstellungsdatum",
                 )[0],
                 "letzteModifikation_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/letzteModifikation",
+                    uri=f"{BASE_URI}/{org_code}/properties/letzteModifikation",
                     name="Letzte Modifikation",
                 )[0],
                 "projektStatus_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/projektStatus",
+                    uri=f"{BASE_URI}/{org_code}/properties/projektStatus",
                     name="Projekt Status",
                 )[0],
                 "signatur_prop": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/signatur",
+                    uri=f"{BASE_URI}/{org_code}/properties/signatur",
                     name="Signatur",
                 )[0],
                 "signaturEinlieferer_prop": PropertyResource.get_or_create(  
-                    uri=f"{base_uri}/properties/signaturEinlieferer",
+                    uri=f"{BASE_URI}/{org_code}/properties/signaturEinlieferer",
                     name="Signatur beim Einlieferer",
                 )[0],
                 "verzeichnisnummern": PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/verzeichnisnummern",
+                    uri=f"{BASE_URI}/{org_code}/properties/verzeichnisnummern",
                     name="Werkverzeichnis-Nr",
                 )[0],
             },
