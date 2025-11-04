@@ -97,21 +97,6 @@
                     {% endif %}
                   </div>
                 {% endif %}
-                {% if item.field.name == "Einliefernde Hochschule" %}
-                  <div class="form-control">
-                    <label class="label">
-                      <span class="label-text font-medium">Hochschule<span class="text-error">*</span></span>
-                      {% if item.field.errors %}
-                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
-                      {% endif %}
-                    </label>
-                    {% if item.meta.resolved_uri %}
-                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
-                    {% else %}
-                      {{ item.field }}
-                    {% endif %}
-                  </div>
-                {% endif %}
                 {% if item.field.name == "Projektart" %}
                   <div class="form-control">
                     <label class="label">

@@ -32,7 +32,7 @@ SIMPLIFIED_FIELD_CONFIG = {
         "Bevorzugter Titel",
         "Bevorzugter Untertitel",
         "Deutscher Kommentar",  # Maps to "beschreibung"
-        "Einliefernde Hochschule",
+        # "Einliefernde Hochschule" - automatic based on organization
         "Organisationseinheit",
         "Projektkategorie",
         "Projektart",
@@ -161,6 +161,7 @@ def _enrich_fk_metadata(
             search_url = base_url + "&" + urlencode(query_params)
             meta["search_url"] = search_url
             meta["base_suggestion_url"] = base_url
+            logger.info(f"🔍 FK field '{field.name}': search_url={search_url}, target_id={target_id}")
 
         # Handle single FK fields (not multi-value)
         if fk_info and not meta.get("is_multi_value"):
