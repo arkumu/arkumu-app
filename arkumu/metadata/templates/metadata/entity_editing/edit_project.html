@@ -12,7 +12,7 @@
           </svg>
         </div>
         <div>
-          <h1 class="card-title text-2xl font-bold">edit New Project</h1>
+          <h1 class="card-title text-2xl font-bold">Projekt bearbeiten</h1>
           <p class="text-base-content/70 mt-1">Fill in the details to edit a new archival project</p>
         </div>
       </div>
@@ -20,11 +20,25 @@
       <form action="{% url 'metadata:edit_project' %}" method="post" class="space-y-8">
         {% csrf_token %}
 
-        {% include "metadata/entity_creation/partials/_project_form_fields.html" %}
+        {% include "metadata/entity_editing/partials/_project_form_fields.html" %}
 
-        {% include "metadata/entity_creation/partials//_project_form_status_and_signatures_fields.html" %}
+        {% include "metadata/entity_editing/partials/_project_form_status_and_signatures_fields.html" %}
 
-        {% include "metadata/entity_creation/partials/_project_form_creator_and_submitter_fields.html" %}
+        {% include "metadata/entity_editing/partials/_project_form_creator_and_submitter_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_project_form_project_categorization_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_project_form_descriptions_and_comments_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_project_form_standard_data_and_external_links_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_project_form_events_and_relationships_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_project_form_project_properties_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_project_form_rights_management_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_project_form_content_warnings_fields.html" %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">

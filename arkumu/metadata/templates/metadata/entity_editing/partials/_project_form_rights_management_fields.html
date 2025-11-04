@@ -1,14 +1,4 @@
 <div class="project-form">
-  <div class="form-control">
-    <label class="label">
-      <span class="label-text font-medium">Wähle oder erstelle ein Projekt</span>
-      {% if project_form.uri.errors %}
-        <span class="label-text-alt text-error">{{ project_form.uri.errors.0 }}</span>
-      {% endif %}
-    </label>
-    {{ project_form.uri }}
-    <div class="text-xs text-base-content/60 mt-1">{{ project_form.uri.help_text }}</div>
-  </div>
 
   <div id="{{prefix}}fields">
     {% if project_form.non_field_errors %}
@@ -27,35 +17,54 @@
     {% endif %}
 
     <div class="space-y-6">
-      <!-- Project Details Section -->
-      <div class="space-y-4">
+      <!-- Rechteverwaltung Section -->
+      <div class="space-y-4 mt-6">
         <h2 class="text-lg font-semibold flex items-center border-b pb-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
           </svg>
-          Project Details
+          Rechteverwaltung
         </h2>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Bevorzugter Titel</span>
-              {% if project_form.bevorzugter_titel.errors %}
-              <span class="label-text-alt text-error">{{ project_form.bevorzugter_titel.errors.0 }}</span>
+              <span class="label-text font-medium">Rechtsstatus*</span>
+              {% if project_form.rechtsstatus_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.rechtsstatus_uri.errors.0 }}</span>
               {% endif %}
             </label>
-            {{ project_form.bevorzugter_titel }}
-            <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_titel.help_text }}</div>
+            {{ project_form.rechtsstatus_uri }}
           </div>
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Bevorzugter Titel Sprache</span>
-              
-              <span class="label-text-alt text-error"></span>
-             
+              <span class="label-text font-medium">Art des Lizenzvertrages</span>
+              {% if project_form.artLizenzvertrag_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.artLizenzvertrag_uri.errors.0 }}</span>
+              {% endif %}
             </label>
-            
+            {{ project_form.artLizenzvertrag_uri }}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bestehender Lizenzvertrag</span>
+              {% if project_form.bestehenderLizenzvertrag_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.bestehenderLizenzvertrag_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.bestehenderLizenzvertrag_uri }}
+          </div>
+          
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Dokumentation des bestehenden Lizenzvertrages FILEUPLOAD</span>
+              <span class="label-text-alt text-error"></span>
+            </label>
             <div class="text-xs text-base-content/60 mt-1"></div>
           </div>
         </div>
@@ -63,49 +72,48 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Untertitel</span>
-              {% if project_form.bevorzugter_untertitel.errors %}
-              <span class="label-text-alt text-error">{{ project_form.bevorzugter_untertitel.errors.0 }}</span>
-              {% endif %}
-            </label>
-            {{ project_form.bevorzugter_untertitel }}
-            <div class="text-xs text-base-content/60 mt-1">{{ project_form.bevorzugter_untertitel.help_text }}</div>
+                <span class="label-text font-medium">Neuer Lizenzvertrag (Digi-Kunst-Formular) FILEUPLOAD</span>
+                <span class="label-text-alt text-error"></span>
+              </label>
           </div>
+          
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Untertitel Sprache</span>
-              
+              <span class="label-text font-medium">Sonderregelung</span>
               <span class="label-text-alt text-error"></span>
-              
             </label>
-            
+            <div class="text-xs text-base-content/60 mt-1"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-1">
+          <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Angegebene Nutzungsrechte CHECKBOXES</span>
+                <span class="label-text-alt text-error"></span>
+            </label>
+            <div class="text-xs text-base-content/60 mt-1">A - Langzeitarchivierung , B - Öffentliche Zugänglichmachung , C - Weitergabe an Portale für Kultur und Wissen </div>
           </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Alternative Titel</span>
-              
+              <span class="label-text font-medium">Weitere Rechtsdokumente FILEUPLOAD</span>
               <span class="label-text-alt text-error"></span>
-              
             </label>
-            
-            <div class="text-xs text-base-content/60 mt-1"></div>
           </div>
+          
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Titel hinzufügen BUTTON</span>
-              
+              <span class="label-text font-medium">Dateiabfrage-Dokument FILEUPLOAD</span>
               <span class="label-text-alt text-error"></span>
-              
             </label>
-            
+            <div class="text-xs text-base-content/60 mt-1"></div>
           </div>
         </div>
-
 
       </div>
     </div>
@@ -114,22 +122,14 @@
         console.log("this is a test uri_fill_in")
         const prefix = "{{prefix}}"
         const uriSelect = document.querySelector(`#id_${prefix}uri`);
-        const bevorzugter_titel_input = document.querySelector(`#id_${prefix}bevorzugter_titel`);
-        const bevorzugter_untertitel_input = document.querySelector(`#id_${prefix}bevorzugter_untertitel`);
-        const einliefernde_hochschule_uri_input = document.querySelector(`#id_${prefix}einliefernde_hochschule_uri`);
-        const projektkategorie_uri_input = document.querySelector(`#id_${prefix}projektkategorie_uri`);
-        const beschreibung_uri_input = document.querySelector(`#id_${prefix}beschreibung_uri`);
-        const schlagwort_uris_input = document.querySelector(`#id_${prefix}schlagwort_uris`);
-        const projektart_uri_input = document.querySelector(`#id_${prefix}projektart_uri`);
-        const vorschaubild_uri_input = document.querySelector(`#id_${prefix}vorschaubild_uri`);
-        const fields = {bevorzugter_titel : bevorzugter_titel_input 
-        ,bevorzugter_untertitel : bevorzugter_untertitel_input
-        ,einliefernde_hochschule_uri : einliefernde_hochschule_uri_input
-        ,projektkategorie_uri : projektkategorie_uri_input
-        ,beschreibung_uri : beschreibung_uri_input
-        ,schlagwort_uris : schlagwort_uris_input
-        ,projektart_uri : projektart_uri_input
-        ,vorschaubild_uri : vorschaubild_uri_input
+        const projectStatus_uri_input = document.querySelector(`#id_${prefix}projektStatus_uri`);
+        const signatur_uri_input = document.querySelector(`#id_${prefix}signatur`);
+        const signaturEinlieferer_uri_input = document.querySelector(`#id_${prefix}signaturEinlieferer`);
+        const verzeichnisnummern_uri_input = document.querySelector(`#id_${prefix}verzeichnisnummern`);
+        const fields = {projectStatus_uri : projectStatus_uri_input
+        ,signatur : signatur_uri_input  
+        ,signaturEinlieferer: signaturEinlieferer_uri_input
+        ,verzeichnisnummern: verzeichnisnummern_uri_input
         }
         
         uriSelect.addEventListener('change', function() {
