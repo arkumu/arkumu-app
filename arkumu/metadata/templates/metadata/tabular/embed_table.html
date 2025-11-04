@@ -31,22 +31,41 @@
     <table class="table table-zebra table-sm w-full">
       <thead>
         <tr>
-          <th class="bg-base-200 sticky left-0 z-10">#</th>
+          {% if columns|length and columns.0.name == 'Aktionen' %}
+          <th class="bg-base-200 sticky left-0 z-10">Aktionen</th>
+          {% endif %}
+          <th class="bg-base-200">#</th>
           {% for column in columns %}
+          {% if column.name != 'Aktionen' %}
           <th class="bg-base-200 whitespace-nowrap">
             {{ column.name }}
             {% if column.is_fk %}
             <span class="badge badge-xs badge-info ml-1" title="Foreign Key">FK</span>
             {% endif %}
           </th>
+          {% endif %}
           {% endfor %}
         </tr>
       </thead>
       <tbody>
         {% for row in page_obj %}
         <tr>
-          <td class="font-mono text-xs sticky left-0 z-10 bg-base-100">{{ page_obj.start_index|add:forloop.counter|add:"-1" }}</td>
+          {% if columns|length and columns.0.name == 'Aktionen' %}
+          <td class="sticky left-0 z-10 bg-base-100">
+            {% with action=row|get_item:'Aktionen' %}
+              {% if action and action.href %}
+                <a href="{{ action.href }}" class="btn btn-xs btn-primary">
+                  {{ action.label|default:"Bearbeiten" }}
+                </a>
+              {% else %}
+                <span class="text-base-content/30">—</span>
+              {% endif %}
+            {% endwith %}
+          </td>
+          {% endif %}
+          <td class="font-mono text-xs bg-base-100">{{ page_obj.start_index|add:forloop.counter|add:"-1" }}</td>
           {% for column in columns %}
+          {% if column.name != 'Aktionen' %}
           <td class="whitespace-nowrap" title="{{ row|get_item:column.name }}">
             {% with value=row|get_item:column.name %}
               {% if value %}
@@ -56,6 +75,7 @@
               {% endif %}
             {% endwith %}
           </td>
+          {% endif %}
           {% endfor %}
         </tr>
         {% empty %}
@@ -69,5 +89,4 @@
     </table>
   </div>
 </div>
-
 

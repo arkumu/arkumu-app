@@ -27,8 +27,10 @@
         {% if columns|length and columns.0.name == 'Aktionen' %}
         <td class="w-28">
           {% with action=row|get_item:'Aktionen' %}
-            {% if action %}
-              {{ action|safe }}
+            {% if action and action.href %}
+              <a href="{{ action.href }}" class="btn btn-sm btn-primary">
+                {{ action.label|default:"Bearbeiten" }}
+              </a>
             {% else %}
               <span class="text-base-content/30">—</span>
             {% endif %}

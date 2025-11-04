@@ -8,7 +8,6 @@ from urllib.parse import urlencode
 from django.core.paginator import Paginator
 from django.shortcuts import render
 from django.urls import reverse
-from django.utils.html import format_html
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -1377,14 +1376,12 @@ def _build_rows_for_subjects(
         if add_actions:
             if s.uri:
                 query = urlencode({'uri': s.uri})
-                action_html = format_html(
-                    '<a href="{}?{}" class="btn btn-sm btn-primary">Bearbeiten</a>',
-                    edit_url,
-                    query,
-                )
+                row['Aktionen'] = {
+                    "href": f"{edit_url}?{query}",
+                    "label": "Bearbeiten",
+                }
             else:
-                action_html = ''
-            row['Aktionen'] = action_html
+                row['Aktionen'] = None
 
         rows.append(row)
 
