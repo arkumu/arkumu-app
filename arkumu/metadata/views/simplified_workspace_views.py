@@ -41,7 +41,6 @@ SIMPLIFIED_FIELD_CONFIG = {
         "Alternativer Titel-Set",
 
         # 2. Beschreibungen und Kommentare
-        "Beschreibung",
         "Deutscher Kommentar",
         "Englischer Kommentar",
         "Interner Kommentar",
@@ -62,6 +61,23 @@ SIMPLIFIED_FIELD_CONFIG = {
         "Rechtsstatus",
         "Signatur beim Einlieferer",
         "Werkverzeichnis-Nummer",
+    ],
+    "Ereignis": [
+        # 1. Grundinformationen
+        "Ereignistyp",
+        "Ereignisname",
+
+        # 2. Zeit und Ort
+        "Ereignisbeginn",
+        "Ereignisende",
+        "Ereignisort",
+
+        # 3. Beschreibung
+        "Ereignisbeschreibung",
+
+        # 4. Technische Ressourcen
+        "Equipment und Software",
+        "Digitales Objekt",
     ],
 }
 
@@ -262,30 +278,40 @@ def _enrich_fk_metadata(
 
                     logger.info(f"✅ Resolved FK field '{field.name}': {raw_value} → {resolved_label}")
 
-        # Build rows for multi-value fields
-        rows = []
-        if initial_labels:
-            import uuid
-            for label_data in initial_labels:
-                row_id = f"multi-value-row-{field.name}-{uuid.uuid4().hex[:8]}"
-                input_id = f"input-{row_id}"
-                suggestions_id = f"suggestions-{row_id}"
+        # Build widget context for multi-value fields
+        widget_context = None
+        if fk_info and meta.get("is_multi_value"):
+            # Use the same widget builder as legacy workspace
+            from arkumu.metadata.views.schema_workspace_views import _build_relationship_widget_context
 
-                display_value = label_data.get("label", "")
-                stored_value = label_data.get("uri", "")
-                resource_id = label_data.get("resource_id")
+            widget_context = _build_relationship_widget_context(
+                service=schema_service,
+                dataset_name=dataset_name,
+                field_name=field.name,
+                field_meta=meta,
+                selected_value_items=initial_labels,  # Can be empty list
+                selected_property="",
+            )
 
-                row_data = {
-                    "row_id": row_id,
-                    "input_id": input_id,
-                    "suggestions_id": suggestions_id,
-                    "display_value": display_value,
-                    "stored_value": stored_value,
-                    "suggestion_url": meta.get("base_suggestion_url", ""),
-                }
-                if resource_id:
-                    row_data["resource_id"] = str(resource_id)
-                rows.append(row_data)
+            # Pre-render chips to bypass Django nested include bug
+            pre_rendered_chips: List[str] = []
+            for item in widget_context.get("selected_items", []):
+                chip_html = render_to_string(
+                    "metadata/components/htmx/_multi_select_chip.html",
+                    {
+                        "chip_id": item["chip_id"],
+                        "hidden_input_id": item["hidden_input_id"],
+                        "uri": item["uri"],
+                        "label": item["label"],
+                        "resource_id": item.get("resource_id", ""),
+                        "field_name": field.name,
+                        "mapping_id": schema_service.mapping.id,
+                    }
+                )
+                pre_rendered_chips.append(chip_html)
+
+            widget_context["pre_rendered_chips"] = pre_rendered_chips
+            logger.info(f"✅ Pre-rendered {len(pre_rendered_chips)} chips for {field.name}")
 
         fields_with_metadata.append({
             "field": field,
@@ -293,7 +319,7 @@ def _enrich_fk_metadata(
             "search_url": search_url,
             "target_id": target_id,
             "initial_labels": initial_labels,
-            "rows": rows,
+            "widget_context": widget_context,
         })
 
     return fields_with_metadata
@@ -322,12 +348,14 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
 
         # Get field metadata from schema
         field_metadata = schema_service.get_field_metadata(dataset_name)
+
+        # Augment with joins BEFORE filtering (to convert multi-value FKs to relationships)
         field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
         )
 
-        # Filter to only show simplified fields
+        # Filter to only show simplified fields (AFTER augmentation)
         field_metadata = _filter_field_metadata(field_metadata, visible_fields)
 
         # Load existing entity data (same as legacy workspace)
@@ -413,10 +441,14 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if not entity_uri:
             return HttpResponseBadRequest("Missing entity_uri")
 
-        # Get field metadata
+        # Get field metadata and augment with joins (for relationship handling)
         field_metadata = schema_service.get_field_metadata(dataset_name)
         visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
         field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
 
         # Create form with POST data
         form = DatasetEntityForm(
@@ -429,7 +461,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             try:
                 entity_data = form.cleaned_entity_data()
 
-                # Save using schema service (same as legacy workspace)
+                # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(
                     dataset_name=dataset_name,
                     entity_data=entity_data,
@@ -463,3 +495,175 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                 "title": "Projekt bearbeiten",
             }
             return render(request, "metadata/simplified_workspace/edit_project.html", context)
+
+
+class SimplifiedEreignisEditView(LoginRequiredMixin, View):
+    """
+    Simplified ereignis edit view using legacy workspace infrastructure.
+
+    Shows only a subset of fields but uses the same relationship handling,
+    URI resolution, and search capabilities as the full workspace.
+    """
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        """Render the edit form with existing ereignis data."""
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return HttpResponseRedirect("/metadata/metadata-entry/")
+
+        entity_uri = request.GET.get("uri", "")
+        if not entity_uri:
+            return HttpResponseBadRequest("Missing uri parameter")
+
+        dataset_name = "Ereignis"
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+
+        # Get field metadata from schema
+        field_metadata = schema_service.get_field_metadata(dataset_name)
+
+        # Augment with joins BEFORE filtering (to convert multi-value FKs to relationships)
+        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+
+        # Filter to only show simplified fields (AFTER augmentation)
+        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+
+        # Load existing entity data (same as legacy workspace)
+        initial_data: Optional[Dict[str, object]] = None
+        entity_label: Optional[str] = None
+        load_error = False
+
+        try:
+            logger.info(f"=" * 80)
+            logger.info(f"Loading ereignis: {entity_uri}")
+            logger.info(f"=" * 80)
+
+            loaded = schema_service.load_entity_by_uri(dataset_name, entity_uri)
+            if loaded:
+                initial_data = loaded
+                entity_label = _infer_entity_label(schema_service, entity_uri, dataset_name)
+                logger.info(f"✅ Loaded {len(loaded)} fields")
+                logger.info(f"   Entity label: {entity_label}")
+            else:
+                load_error = True
+                logger.warning(f"❌ No data loaded for {entity_uri}")
+        except Exception as e:
+            load_error = True
+            logger.exception(f"❌ Error loading ereignis: {e}")
+
+        # Create form with loaded data (same as legacy workspace)
+        form = DatasetEntityForm(
+            field_metadata=field_metadata,
+            initial=initial_data,
+            disable_anchors=True,  # We're editing, not creating
+        )
+
+        # Collect relationship values (same as legacy workspace)
+        read_only_relationships: List[Dict[str, Any]] = []
+        if entity_uri:
+            relationships = schema_service.collect_relationship_values(
+                dataset_name=dataset_name,
+                entity_uri=entity_uri,
+                field_metadata=field_metadata,
+                join_field_map=join_field_map,
+            )
+            # Apply relationship initial values to form
+            from arkumu.metadata.views.schema_workspace_views import _apply_relationship_initials
+            read_only_relationships = _apply_relationship_initials(
+                service=schema_service,
+                form=form,
+                relationships=relationships,
+            )
+
+        # Enrich FK field metadata with resolved labels (same as legacy workspace)
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+        )
+
+        # Render the form
+        context = {
+            "form": form,
+            "fields_with_metadata": fields_with_metadata,
+            "entity_uri": entity_uri,
+            "entity_label": entity_label,
+            "dataset_name": dataset_name,
+            "mapping_id": schema_service.mapping.id,
+            "load_error": load_error,
+            "read_only_relationships": read_only_relationships,
+            "title": "Ereignis bearbeiten",
+            "description": "Aktualisiere die wichtigsten Angaben für dieses Ereignis.",
+        }
+
+        return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        """Save the edited ereignis data."""
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return HttpResponseRedirect("/metadata/metadata-entry/")
+
+        dataset_name = "Ereignis"
+        entity_uri = request.POST.get("entity_uri") or None
+
+        if not entity_uri:
+            return HttpResponseBadRequest("Missing entity_uri")
+
+        # Get field metadata and augment with joins (for relationship handling)
+        field_metadata = schema_service.get_field_metadata(dataset_name)
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+
+        # Create form with POST data
+        form = DatasetEntityForm(
+            request.POST,
+            field_metadata=field_metadata,
+            disable_anchors=True,
+        )
+
+        if form.is_valid():
+            try:
+                entity_data = form.cleaned_entity_data()
+
+                # Save entity (includes FK fields and relationships)
+                saved_uri, created = schema_service.save_entity(
+                    dataset_name=dataset_name,
+                    entity_data=entity_data,
+                    entity_uri=entity_uri,
+                )
+
+                logger.info(f"✅ Saved ereignis: {saved_uri} (created={created})")
+
+                # Redirect back to metadata entry
+                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+
+            except Exception as e:
+                logger.exception(f"❌ Error saving ereignis: {e}")
+                # Re-render form with error
+                context = {
+                    "form": form,
+                    "entity_uri": entity_uri,
+                    "dataset_name": dataset_name,
+                    "error": str(e),
+                    "title": "Ereignis bearbeiten",
+                }
+                return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
+
+        else:
+            # Form validation failed
+            logger.warning(f"Form validation failed: {form.errors}")
+            context = {
+                "form": form,
+                "entity_uri": entity_uri,
+                "dataset_name": dataset_name,
+                "title": "Ereignis bearbeiten",
+            }
+            return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)

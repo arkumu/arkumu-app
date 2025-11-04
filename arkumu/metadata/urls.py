@@ -371,6 +371,7 @@ urlpatterns = [
     # Entity edit endpoints
     # New simplified workspace views (uses legacy infrastructure with subset of fields)
     path('edit/project/', simplified_workspace_views.SimplifiedProjectEditView.as_view(), name='edit_project'),
+    path('edit/ereignis/', simplified_workspace_views.SimplifiedEreignisEditView.as_view(), name='edit_ereignis'),
     # Old version (keeping for reference)
     path('edit/project/old/', entity_creation_views.edit_project, name='edit_project_old'),
     path('edit/event/', entity_creation_views.edit_event, name='edit_event'),

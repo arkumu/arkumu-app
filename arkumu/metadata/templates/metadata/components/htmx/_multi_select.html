@@ -23,16 +23,24 @@
   {% endif %}
 
   <div id="{{ chip_container_id }}" class="flex flex-wrap gap-2" data-chip-container>
-    {% for item in selected_items %}
-      {% include "metadata/components/htmx/_multi_select_chip.html" with
-        chip_id=item.chip_id
-        hidden_input_id=item.hidden_input_id
-        uri=item.uri
-        label=item.label
-        resource_id=item.resource_id
-        field_name=field_name
-        mapping_id=mapping_id %}
-    {% endfor %}
+    {% if pre_rendered_chips %}
+      {% autoescape off %}
+        {% for chip_html in pre_rendered_chips %}
+          {{ chip_html }}
+        {% endfor %}
+      {% endautoescape %}
+    {% elif selected_items %}
+      {% for item in selected_items %}
+        {% include "metadata/components/htmx/_multi_select_chip.html" with
+          chip_id=item.chip_id
+          hidden_input_id=item.hidden_input_id
+          uri=item.uri
+          label=item.label
+          resource_id=item.resource_id
+          field_name=field_name
+          mapping_id=mapping_id %}
+      {% endfor %}
+    {% endif %}
   </div>
 
   <div class="space-y-2">

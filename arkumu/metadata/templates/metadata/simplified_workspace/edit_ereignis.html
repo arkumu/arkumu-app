@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8">
+  <div class="card bg-base-100 shadow-xl border border-base-200">
+    <div class="card-body p-8">
+      <div class="flex items-center mb-6">
+        <div class="p-3 rounded-xl mr-4 bg-primary/10">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="card-title text-2xl font-bold">{{ title }}</h1>
+          <p class="text-base-content/70 mt-1">{{ description }}</p>
+        </div>
+      </div>
+
+      {# Display the URI prominently #}
+      {% if entity_uri %}
+      <div class="alert alert-info mb-6">
+        <div class="flex items-start gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div class="flex-1">
+            <div class="font-semibold">Ereignis-URI</div>
+            <div class="text-sm font-mono break-all">{{ entity_uri }}</div>
+            {% if entity_label %}
+            <div class="text-sm mt-1">{{ entity_label }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if load_error %}
+      <div class="alert alert-error mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>Fehler beim Laden der Ereignisdaten.</span>
+      </div>
+      {% endif %}
+
+      {% if error %}
+      <div class="alert alert-error mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+
+      <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
+
+        {# 1. Grundinformationen Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Grundinformationen</span>
+            <span class="badge badge-outline">Typ und Name</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="space-y-4">
+              {% for item in fields_with_metadata %}
+                {% if item.field.name == "Ereignistyp" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Ereignistyp<span class="text-error">*</span></span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.is_multi_value and item.widget_context %}
+                      {{ item.field }}
+                      {# Multi-value field with HTMX widget #}
+                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                    {% elif item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Ereignisname" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Ereignisname<span class="text-error">*</span></span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# 2. Zeit und Ort Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Zeit und Ort</span>
+            <span class="badge badge-outline">Zeitliche und räumliche Daten</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="space-y-4">
+              {% for item in fields_with_metadata %}
+                {% if item.field.name == "Ereignisbeginn" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Ereignisbeginn</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Ereignisende" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Ereignisende</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Ereignisort" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Ereignisort</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# 3. Beschreibung Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Beschreibung</span>
+            <span class="badge badge-outline">Textuelle Informationen</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="space-y-4">
+              {% for item in fields_with_metadata %}
+                {% if item.field.name == "Ereignisbeschreibung" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Ereignisbeschreibung</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# 4. Technische Ressourcen Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Technische Ressourcen</span>
+            <span class="badge badge-outline">Equipment und Digitale Objekte</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="space-y-4">
+              {% for item in fields_with_metadata %}
+                {% if item.field.name == "Equipment und Software" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Equipment und Software</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.is_multi_value and item.widget_context %}
+                      {{ item.field }}
+                      {# Multi-value field with HTMX widget #}
+                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                    {% elif item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Digitales Objekt" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Digitales Objekt</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.is_multi_value and item.widget_context %}
+                      {{ item.field }}
+                      {# Multi-value field with HTMX widget #}
+                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                    {% elif item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# Display read-only relationships #}
+        {% if read_only_relationships %}
+        <details class="bg-base-100 border border-base-200 rounded-box">
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Verknüpfte Datensätze</span>
+            <span class="badge badge-outline">Nur Lesezugriff</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            {% for rel in read_only_relationships %}
+              <div class="border border-base-200 rounded-lg p-4">
+                <div class="font-semibold mb-2">{{ rel.field_name }}</div>
+                <div class="flex flex-wrap gap-2">
+                  {% for item in rel.values %}
+                    <span class="badge badge-outline">{{ item.label }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+
+        <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
+          <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Abbrechen
+          </a>
+          <button type="submit" class="btn btn-primary px-8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Speichern
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock content %}
