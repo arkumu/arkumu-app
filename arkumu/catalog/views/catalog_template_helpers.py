@@ -54,15 +54,6 @@ class CatalogTemplateHelperMixin:
             'csrf_token': get_token(request)
         }
 
-        print(" ")
-        print(" ")
-        print(" ")
-        print(" ")
-        print(f"{str(results)}")
-        print(" ")
-        print(" ")
-        print(" ")
-        print(" ")
 
         return render_to_string(
             'catalog/partials/results_container.html',
