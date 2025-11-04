@@ -21,6 +21,7 @@ from arkumu.metadata.models.resources import (
     PropertyResource,
     EntityResource,
 )
+from arkumu.metadata.entity_creation import EntityCreationService
 from arkumu.users.models import Organization
 
 logger = logging.getLogger(__name__)
@@ -152,8 +153,13 @@ class BaseEntityForm(forms.Form):
 
 
 class ProjectForm(BaseEntityForm):
+    """Single project form shared by create and edit flows."""
+
+    MODE_CREATE = "create"
+    MODE_EDIT = "edit"
+
     uri = forms.ChoiceField(
-        label="choose an existing project, or create one",
+        label="Projekt",
         required=False,
         choices=[],
     )
@@ -162,14 +168,34 @@ class ProjectForm(BaseEntityForm):
         required=True,
         help_text="Primary title of the project",
     )
+    titel_sprache = forms.CharField(
+        label="Sprache Titel",
+        required=False,
+        help_text="Language of the preferred title",
+    )
     bevorzugter_untertitel = forms.CharField(
         label="Bevorzugter Untertitel",
         required=False,
         help_text="Optional subtitle for the project",
     )
+    beschreibung = forms.CharField(
+        label="Beschreibung",
+        required=False,
+        widget=forms.Textarea,
+    )
     einliefernde_hochschule_uri = forms.ChoiceField(
         label="Einliefernde Hochschule",
         required=True,
+        choices=[],
+    )
+    hochschule_uri = forms.ChoiceField(
+        label="Hochschule",
+        required=True,
+        choices=[],
+    )
+    organisationseinheit_uri = forms.ChoiceField(
+        label="Organisationseinheit",
+        required=False,
         choices=[],
     )
     ereignis_uri = forms.ChoiceField(
@@ -199,32 +225,20 @@ class ProjectForm(BaseEntityForm):
         choices=[],
         help_text="URI of the preview image",
     )
-
-    hochschule_uri = forms.ChoiceField(
-        label="Hochschule",
-        required=True,
-        choices=[],
-    )
-    organisationseinheit_uri = forms.ChoiceField(
-        label="Organisationseinheit",
-        required=False,
-        choices=[],
-    )
     erstellungsdatum = forms.DateField(
         label="Erstellungsdatum",
-        widget=forms.DateTimeInput(attrs={"type": "date"}),
+        widget=forms.DateInput(attrs={"type": "date"}),
         required=False,
-        help_text="Das Erstellungsdatum des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen. ",
+        help_text="Erstellungsdatum beim Einlieferer",
     )
     letzteModifikation = forms.DateField(
         label="Letzte Projektmodifikation beim Einlieferer",
-        widget=forms.DateTimeInput(attrs={"type": "date"}),
+        widget=forms.DateInput(attrs={"type": "date"}),
         required=False,
-        help_text="Das Datum der letzten Modifikation des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen.",
+        help_text="Letzte Modifikation beim Einlieferer",
     )
-
-    projektStatus_uri = forms.ChoiceField( 
-        label="Status", 
+    projektStatus_uri = forms.ChoiceField(
+        label="Status",
         required=True,
         choices=[],
     )
@@ -241,77 +255,64 @@ class ProjectForm(BaseEntityForm):
     verzeichnisnummern = forms.CharField(
         label="Werkverzeichnis-Nr",
         required=False,
-        help_text="Eine Nummer, die in einem bestehenden Werkverzeichnis vergeben wurde, zum Beispiel 'BWV 1010'. Wenn mehrere Nummern eingetragen werden, müssen sie mit einem Semikolon getrennt werden.",
+        help_text="Mehrere Nummern mit Semikolon trennen, z. B. „BWV 1010; BWV 1011“.",
     )
 
-
-    def __init__(self, *args, metadata_options=None, uri=None, **kwargs):
+    def __init__(self, *args, metadata_options=None, mode: str = MODE_CREATE, **kwargs):
+        if mode not in {self.MODE_CREATE, self.MODE_EDIT}:
+            raise ValueError(f"Unsupported project form mode '{mode}'")
+        self.mode = mode
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
-        options = self.metadata_options
-        self.fields["uri"].choices = [("", "Select a project")] + options.get(
-            "project", []
-        )
-        self.fields["einliefernde_hochschule_uri"].choices = [
-            ("", "Select an institution")
-        ] + options.get("institution", [])
-        self.fields["ereignis_uri"].choices = [
-            ("", "Select an event")
-        ] + options.get("event", [])
-        self.fields["projektkategorie_uri"].choices = [
-            ("", "Select a category")
-        ] + options.get("project_category", [])
-        self.fields["schlagwort_uris"].choices = options.get("catchphrase", [])
-        self.fields["projektart_uri"].choices = [
-            ("", "Select a project type")
-        ] + options.get("project_type", [])
-        self.fields["vorschaubild_uri"].choices = [
-            ("", "Select the URI of a preview image")
-        ] + options.get("digital_object", [])
 
-        self.fields["hochschule_uri"].choices = [
-            ("", "Select an institution")
-        ] + options.get("institution", [])
-        self.fields["organisationseinheit_uri"].choices = [
-            ("", "Select an organisationseinheit")
-        ] + options.get("organisationseinheit", [])
-        self.fields["erstellungsdatum"].choices = [
-            ("", "Select the description of the event")
-        ] + options.get("erstellungsdatum", [])
-        self.fields["letzteModifikation"].choices = [
-            ("", "Select the description of the event")
-        ] + options.get("letzteModifikation", [])
-        
-        self.fields["projektStatus_uri"].choices = [
-            ("", "Select the status of the project")
-        ] + options.get("projektStatus", [])
-        
+        options = self.metadata_options or {}
+        project_choices = list(options.get("project", []))
 
-        if uri:
-            entity, created = EntityResource.get_or_create(uri)
-            if created:
+        if self.mode == self.MODE_EDIT:
+            self.fields["uri"].required = True
+            self.fields["uri"].choices = [("", "Bitte Projekt wählen"), *project_choices]
+        else:
+            self.fields["uri"].required = False
+            self.fields["uri"].choices = [("", "Select a project"), *project_choices]
+
+        def _set_choices(field_name: str, placeholder: str | None, option_key: str) -> None:
+            if field_name not in self.fields:
                 return
-            
-            org_code = entity.uri.split("/")[4]
-            properties = get_properties(org_code)["Projekt"]
+            choices = list(options.get(option_key, []))
+            if placeholder is not None:
+                self.fields[field_name].choices = [("", placeholder), *choices]
+            else:
+                self.fields[field_name].choices = choices
 
-            # Pre-fill form fields with existing entity data
-            self.fields["uri"].initial = uri
-            self.fields["bevorzugter_titel"].initial = entity.get_property(properties["title_prop"])[0] if entity.get_property(properties["title_prop"]) else ""
-            self.fields["bevorzugter_untertitel"].initial = entity.get_property(properties["subtitle_prop"])[0] if entity.get_property(properties["subtitle_prop"]) else ""
-            self.fields["einliefernde_hochschule_uri"].initial = entity.get_property(properties["institution_prop"])[0].uri if entity.get_property(properties["institution_prop"]) else ""
-            self.fields["ereignis_uri"].initial = entity.get_property(properties["event_prop"])[0].uri if entity.get_property(properties["event_prop"]) else ""
-            self.fields["projektkategorie_uri"].initial = entity.get_property(properties["category_prop"])[0].uri if entity.get_property(properties["category_prop"]) else ""
-            self.fields["schlagwort_uris"].initial = entity.get_property(properties["catchphrase_prop"])[0].uri if entity.get_property(properties["catchphrase_prop"]) else ""
-            self.fields["projektart_uri"].initial = entity.get_property(properties["project_type_prop"])[0].uri if entity.get_property(properties["project_type_prop"]) else ""
-            self.fields["vorschaubild_uri"].initial = entity.get_property(properties["preview_image_prop"])[0].uri if entity.get_property(properties["preview_image_prop"]) else ""
-            self.fields["hochschule_uri"].initial = entity.get_property(properties["hochschule_prop"])[0].uri if entity.get_property(properties["hochschule_prop"]) else ""
-            self.fields["organisationseinheit_uri"].initial = entity.get_property(properties["organisationseinheit_prop"])[0].uri if entity.get_property(properties["organisationseinheit_prop"]) else ""
-            self.fields["erstellungsdatum"].initial = entity.get_property(properties["erstellungsdatum_prop"])[0].uri if entity.get_property(properties["erstellungsdatum_prop"]) else ""
-            self.fields["letzteModifikation"].initial = entity.get_property(properties["letzteModifikation_prop"])[0].uri if entity.get_property(properties["letzteModifikation_prop"]) else ""
-            self.fields["projektStatus_uri"].initial = entity.get_property(properties["projektStatus_prop"])[0].uri if entity.get_property(properties["projektStatus_prop"]) else ""
-            self.fields["signatur"].initial = entity.get_property(properties["signatur_prop"])[0].uri if entity.get_property(properties["signatur_prop"]) else ""
-            self.fields["signaturEinlieferer"].initial = entity.get_property(properties["signaturEinlieferer_prop"])[0].uri if entity.get_property(properties["signaturEinlieferer_prop"]) else ""
-            self.fields["verzeichnisnummern"].initial = entity.get_property(properties["verzeichnisnummern"])[0].uri if entity.get_property(properties["verzeichnisnummern"]) else ""
+        if "einliefernde_hochschule_uri" in self.fields:
+            placeholder = "Select an institution" if self.mode == self.MODE_CREATE else "Bitte Institution wählen"
+            _set_choices("einliefernde_hochschule_uri", placeholder, "institution")
+        if "hochschule_uri" in self.fields:
+            placeholder = "Select an institution" if self.mode == self.MODE_CREATE else "Bitte Institution wählen"
+            _set_choices("hochschule_uri", placeholder, "institution")
+        _set_choices("organisationseinheit_uri", "Select an organisationseinheit", "organisationseinheit")
+        _set_choices("ereignis_uri", "Select an event", "event")
+        _set_choices("projektkategorie_uri", "Select a category", "project_category")
+        _set_choices("projektart_uri", "Select a project type", "project_type")
+        _set_choices("vorschaubild_uri", "Select the URI of a preview image", "digital_object")
+
+        status_choices = list(options.get("projektStatus") or options.get("project_status") or [])
+        self.fields["projektStatus_uri"].choices = [("", "Select the status of the project"), *status_choices]
+
+        schlagwort_choices = list(options.get("catchphrase", []))
+        self.fields["schlagwort_uris"].choices = schlagwort_choices
+        self.fields["schlagwort_uris"].widget.attrs.setdefault("class", "select select-bordered w-full")
+        self.fields["schlagwort_uris"].widget.attrs.setdefault("size", "6")
+
+        if self.mode == self.MODE_EDIT:
+            for field_name in (
+                "einliefernde_hochschule_uri",
+                "hochschule_uri",
+                "projektkategorie_uri",
+                "projektart_uri",
+                "projektStatus_uri",
+            ):
+                if field_name in self.fields:
+                    self.fields[field_name].required = False
 
 
 class EventForm(BaseEntityForm):
@@ -525,6 +526,41 @@ class ProjectTypeForm(BaseEntityForm):
         )
 
 
+class EventEditForm(BaseEntityForm):
+    uri = forms.ChoiceField(
+        label="Ereignis auswählen",
+        required=True,
+        choices=[],
+    )
+    ereignisname = forms.CharField(
+        label="Titel",
+        required=True,
+    )
+    ereignisbeschreibung = forms.CharField(
+        label="Ereignisbeschreibung",
+        required=False,
+        widget=forms.Textarea,
+    )
+    ereignisort = forms.CharField(
+        label="Ort",
+        required=False,
+    )
+    ereignisbeginn = forms.DateField(
+        label="Beginn",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    ereignisende = forms.DateField(
+        label="Ende",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+
+    def __init__(self, *args, metadata_options=None, **kwargs):
+        super().__init__(*args, metadata_options=metadata_options, **kwargs)
+        options = self.metadata_options
+        self.fields["uri"].choices = [("", "Bitte Ereignis wählen")] + options.get("event", [])
+
 class AlternateTitleForm(BaseEntityForm):
     alternativer_titel = forms.CharField(
         label="Alternativer Titel",
@@ -734,6 +770,7 @@ def create_project(request):
             project_form = ProjectForm(
                 request.POST,
                 metadata_options=metadata_options,
+                mode=ProjectForm.MODE_CREATE,
             )
 
             description_formset = DescriptionFormSet(
@@ -756,7 +793,7 @@ def create_project(request):
                 # Continue with the rest of the project creation workflow
                 return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
-            project_form = ProjectForm(metadata_options=metadata_options)
+            project_form = ProjectForm(metadata_options=metadata_options, mode=ProjectForm.MODE_CREATE)
             description_formset = DescriptionFormSet(
                 prefix="descriptions",
                 form_kwargs={"metadata_options": metadata_options},
@@ -1296,124 +1333,162 @@ def create_catchphrase(request):
 @login_required
 def edit_project(request):
     organization = getattr(request.user, "organization", None)
-    # logger.info(f"🔄 {request.user._wrapped.__dict__}")
-    # logger.info(f"🔄 {organization}")
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
+    if not organization:
+        return HttpResponseRedirect("/metadata/metadata-entry/")
 
-        if request.method == "POST":
-            base_uri = f"http://arkumu.org/data/{organization.code}"
-            project_form = ProjectForm(
-                request.POST,
-                metadata_options=metadata_options,
-            )
+    metadata_options = get_default_metadata_option_map(organization=organization)
+    service = EntityCreationService.for_key("project", organization)
 
-            if project_form.is_valid():
-                project_entity = form_to_entity(project_form, "Projekt", organization)
+    def _resolve_resource(uri: str) -> Resource | None:
+        if not uri:
+            return None
+        try:
+            resource = Resource.objects.get(uri=uri)
+        except Resource.DoesNotExist:
+            return None
+        if resource.organization_id and resource.organization_id != organization.id:
+            return None
+        return resource
 
-                # The RDF resources are now created and linked automatically
-                # Continue with the rest of the project creation workflow
-                return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            project_form = ProjectForm(metadata_options=metadata_options, uri=request.GET.get("uri", ""))
-            description_formset = DescriptionFormSet(
-                prefix="descriptions",
-                form_kwargs={"metadata_options": metadata_options},
-            )
-        return render(
-            request,
-            "metadata/entity_editing/edit_project.html",
-            {
-                "project_form": project_form,
-                "description_formset": description_formset,
-                "entity_type": "project",
-                "title": "edit New Project",
-                "description": "Fill in the details to edit a new archival project",
-            },
+    def _build_initial(uri: str) -> dict:
+        resource = _resolve_resource(uri)
+        if resource is None:
+            return {}
+        entity = EntityResource(resource)
+        initial = service.build_initial_data(entity) or {}
+        initial["uri"] = uri
+        if initial.get("schlagwort_uris") and not isinstance(initial["schlagwort_uris"], (list, tuple)):
+            initial["schlagwort_uris"] = [initial["schlagwort_uris"]]
+        for key in (
+            "einliefernde_hochschule_uri",
+            "projektkategorie_uri",
+            "projektart_uri",
+            "vorschaubild_uri",
+            "projektStatus_uri",
+        ):
+            value = initial.get(key)
+            if isinstance(value, (list, tuple)):
+                initial[key] = value[0] if value else ""
+        return initial
+
+    if request.method == "POST":
+        project_form = ProjectForm(
+            request.POST,
+            metadata_options=metadata_options,
+            mode=ProjectForm.MODE_EDIT,
         )
+        if project_form.is_valid():
+            selected_uri = project_form.cleaned_data.get("uri")
+            if not selected_uri:
+                project_form.add_error("uri", "Bitte ein Projekt auswählen.")
+            else:
+                resource = _resolve_resource(selected_uri)
+                if resource is None:
+                    project_form.add_error("uri", "Projekt konnte nicht gefunden werden.")
+                else:
+                    entity = EntityResource(resource)
+                    service.update_entity_from_form(entity=entity, form=project_form)
+                    return HttpResponseRedirect("/metadata/metadata-entry/")
+    else:
+        selected_uri = request.GET.get("uri") or ""
+        initial = _build_initial(selected_uri) if selected_uri else {}
+        project_form = ProjectForm(
+            metadata_options=metadata_options,
+            initial=initial,
+            mode=ProjectForm.MODE_EDIT,
+        )
+
+    return render(
+        request,
+        "metadata/entity_editing/edit_project.html",
+        {
+            "project_form": project_form,
+            "entity_type": "project",
+            "title": "Projekt bearbeiten",
+            "description": "Felder ausfüllen, um das Projekt zu aktualisieren.",
+        },
+    )
 
 
 @login_required
 def edit_event(request):
     organization = getattr(request.user, "organization", None)
 
-    if organization:
-        metadata_options = get_default_metadata_option_map(organization=organization)
+    if not organization:
+        return HttpResponseRedirect("/metadata/metadata-entry/")
 
-        if request.method == "POST":
-            base_uri = f"http://arkumu.org/data/{organization.code}"
-            event_form = EventForm(
-                request.POST,
-                metadata_options=metadata_options,
-            )
-            if event_form.is_valid():
-                event_entity = form_to_entity(event_form, "Ereignis", organization)
+    metadata_options = get_default_metadata_option_map(organization=organization)
+    service = EntityCreationService.for_key("event", organization)
 
-                event_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignis", name="Ereignis"
-                )
-                project_uri = event_form.cleaned_data.get("project_uri", "")
-                if project_uri:
-                    project_entity, _ = EntityResource.get_or_create(uri=project_uri)
-                    project_entity.set_property(event_prop, event_entity)
+    def _resolve_resource(uri: str) -> Resource | None:
+        if not uri:
+            return None
+        try:
+            resource = Resource.objects.get(uri=uri)
+        except Resource.DoesNotExist:
+            return None
+        if resource.organization_id and resource.organization_id != organization.id:
+            return None
+        return resource
 
-                # for actor_form, role_form in zip(actor_formset, role_formset):
-                #     if actor_form.is_valid() and role_form.is_valid():
-                #         actor_entity = form_to_entity(actor_form, "Akteurin", organization)
-                #         role_entity = form_to_entity(role_form, "Rolle", organization)
-                #         actor_event_entity, _ = (
-                #             EntityResource.create_by_organization_and_dataset_name(
-                #                 dataset_name="AkteurIn_Ereignis_Kreuztabelle",
-                #                 organization=organization,
-                #             )
-                #         )
+    def _parse_date(value: object):
+        if not value:
+            return value
+        if isinstance(value, (str,)):
+            try:
+                from datetime import date
 
-                #         cls, _ = ClassResource.get_or_create(
-                #             uri=f"{base_uri}/types/akteurin-ereignis-kreuztabelle",
-                #             name="AkteurIn_Ereignis_Kreuztabelle",
-                #         )
+                return date.fromisoformat(value)
+            except ValueError:
+                return value
+        return value
 
-                #         actor_event_actor_prop, _ = PropertyResource.get_or_create(
-                #             uri=f"{base_uri}/properties/akteurin-im-ereignis",
-                #             name="AkteurIn im Ereignis",
-                #         )
-                #         actor_event_event_prop, _ = PropertyResource.get_or_create(
-                #             uri=f"{base_uri}/properties/im-ereignis", name="im Ereignis"
-                #         )
-                #         actor_event_role_prop, _ = PropertyResource.get_or_create(
-                #             uri=f"{base_uri}/properties/rollen-der-akteurin-im-ereignis",
-                #             name="Rollen der AkteurIn im Ereignis",
-                #         )
+    def _build_initial(uri: str) -> dict:
+        resource = _resolve_resource(uri)
+        if resource is None:
+            return {}
+        entity = EntityResource(resource)
+        initial = service.build_initial_data(entity) or {}
+        initial["uri"] = uri
+        for key in ("ereignisbeginn", "ereignisende"):
+            initial[key] = _parse_date(initial.get(key))
+        return initial
 
-                #         actor_event_entity.set_type(cls)
-
-                #         actor_event_entity.set_property(
-                #             actor_event_actor_prop, actor_entity
-                #         )
-                #         actor_event_entity.set_property(
-                #             actor_event_event_prop, event_entity
-                #         )
-                #         actor_event_entity.set_property(
-                #             actor_event_role_prop, role_entity
-                #         )
-
-            # The RDF resources are now created and linked automatically
-            # Continue with the rest of the event creation workflow
-
-            return HttpResponseRedirect("/metadata/metadata-entry/")
-        else:
-            event_form = EventForm(metadata_options=metadata_options, uri=request.GET.get("uri", ""))
-
-        return render(
-            request,
-            "metadata/entity_editing/edit_event.html",
-            {
-                "event_form": event_form,
-                "entity_type": "event",
-                "title": "edit New Event",
-                "description": "Fill in the details to edit a new archival event",
-            },
+    if request.method == "POST":
+        event_form = EventEditForm(
+            request.POST,
+            metadata_options=metadata_options,
         )
+        if event_form.is_valid():
+            selected_uri = event_form.cleaned_data.get("uri")
+            if not selected_uri:
+                event_form.add_error("uri", "Bitte ein Ereignis auswählen.")
+            else:
+                resource = _resolve_resource(selected_uri)
+                if resource is None:
+                    event_form.add_error("uri", "Ereignis konnte nicht gefunden werden.")
+                else:
+                    entity = EntityResource(resource)
+                    service.update_entity_from_form(entity=entity, form=event_form)
+                    return HttpResponseRedirect("/metadata/metadata-entry/")
+    else:
+        selected_uri = request.GET.get("uri") or ""
+        initial = _build_initial(selected_uri) if selected_uri else {}
+        event_form = EventEditForm(
+            metadata_options=metadata_options,
+            initial=initial,
+        )
+
+    return render(
+        request,
+        "metadata/entity_editing/edit_event.html",
+        {
+            "event_form": event_form,
+            "entity_type": "event",
+            "title": "Ereignis bearbeiten",
+            "description": "Felder ausfüllen, um das Ereignis zu aktualisieren.",
+        },
+    )
 
 
 @login_required

@@ -1,0 +1,541 @@
+{# Harmonised project form sections shared by create/edit workflows #}
+<div class="space-y-6">
+  {% if project_form.fields.uri %}
+    <div class="form-control">
+      <label class="label">
+        <span class="label-text font-medium">
+          {% if project_form.fields.uri.required %}
+            Projekt auswählen
+          {% else %}
+            Projekt auswählen oder neu anlegen
+          {% endif %}
+        </span>
+        {% if project_form.uri.errors %}
+          <span class="label-text-alt text-error">{{ project_form.uri.errors.0 }}</span>
+        {% endif %}
+      </label>
+      {{ project_form.uri }}
+      {% if project_form.uri.help_text %}
+        <div class="text-xs text-base-content/60 mt-1">{{ project_form.uri.help_text }}</div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if project_form.non_field_errors %}
+    <div class="alert alert-error shadow-lg">
+      <div class="flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-4a.75.75 0 01.75.75v3.5a.75.75 0 11-1.5 0v-3.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+        </svg>
+        <div>
+          {% for error in project_form.non_field_errors %}
+            <div>{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Basisinformationen</span>
+      <span class="badge badge-outline">Zugriffsbeschränkung</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      <p class="text-sm text-base-content/60">Nur für den Ersteller und Manager sichtbar.</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {% if project_form.fields.bevorzugter_titel %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bevorzugter Titel<span class="text-error">*</span></span>
+              {% if project_form.bevorzugter_titel.errors %}
+                <span class="label-text-alt text-error">{{ project_form.bevorzugter_titel.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.bevorzugter_titel }}
+          </div>
+        {% endif %}
+        {% if project_form.fields.titel_sprache %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Sprache Titel<span class="text-error">*</span></span>
+              {% if project_form.titel_sprache.errors %}
+                <span class="label-text-alt text-error">{{ project_form.titel_sprache.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.titel_sprache }}
+          </div>
+        {% else %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Sprache Titel<span class="text-error">*</span></span>
+            </label>
+            <div class="text-sm text-base-content/60">Dieses Feld wird in Kürze angebunden.</div>
+          </div>
+        {% endif %}
+        {% if project_form.fields.projektStatus_uri %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Status<span class="text-error">*</span></span>
+              {% if project_form.projektStatus_uri.errors %}
+                <span class="label-text-alt text-error">{{ project_form.projektStatus_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.projektStatus_uri }}
+          </div>
+        {% endif %}
+        {% if project_form.fields.einliefernde_hochschule_uri %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Hochschule<span class="text-error">*</span></span>
+              {% if project_form.einliefernde_hochschule_uri.errors %}
+                <span class="label-text-alt text-error">{{ project_form.einliefernde_hochschule_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.einliefernde_hochschule_uri }}
+          </div>
+        {% endif %}
+        {% if project_form.fields.projektart_uri %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Projektart<span class="text-error">*</span></span>
+              {% if project_form.projektart_uri.errors %}
+                <span class="label-text-alt text-error">{{ project_form.projektart_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.projektart_uri }}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Status und Signaturen</span>
+      <span class="badge badge-outline">Verwaltungsangaben</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.signatur or project_form.fields.signaturEinlieferer or project_form.fields.verzeichnisnummern %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {% if project_form.fields.signatur %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Signatur</span>
+                {% if project_form.signatur.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.signatur.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.signatur }}
+              {% if project_form.signatur.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.signatur.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if project_form.fields.signaturEinlieferer %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Signatur beim Einlieferer</span>
+                {% if project_form.signaturEinlieferer.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.signaturEinlieferer.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.signaturEinlieferer }}
+            </div>
+          {% endif %}
+          {% if project_form.fields.verzeichnisnummern %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Werkverzeichnis-Nr</span>
+                {% if project_form.verzeichnisnummern.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.verzeichnisnummern.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.verzeichnisnummern }}
+              {% if project_form.verzeichnisnummern.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.verzeichnisnummern.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Felder für Signaturen werden demnächst ergänzt.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Ersteller und Einlieferer</span>
+      <span class="badge badge-outline">Herkunft</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.hochschule_uri or project_form.fields.organisationseinheit_uri or project_form.fields.erstellungsdatum or project_form.fields.letzteModifikation %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {% if project_form.fields.hochschule_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Hochschule</span>
+                {% if project_form.hochschule_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.hochschule_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.hochschule_uri }}
+            </div>
+          {% endif %}
+          {% if project_form.fields.organisationseinheit_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Organisationseinheit</span>
+                {% if project_form.organisationseinheit_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.organisationseinheit_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.organisationseinheit_uri }}
+            </div>
+          {% endif %}
+          {% if project_form.fields.erstellungsdatum %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Erstellungsdatum (Einlieferer)</span>
+                {% if project_form.erstellungsdatum.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.erstellungsdatum.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.erstellungsdatum }}
+              {% if project_form.erstellungsdatum.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.erstellungsdatum.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if project_form.fields.letzteModifikation %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Letzte Projektmodifikation (Einlieferer)</span>
+                {% if project_form.letzteModifikation.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.letzteModifikation.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.letzteModifikation }}
+              {% if project_form.letzteModifikation.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.letzteModifikation.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Angaben zur Herkunft werden später ergänzt.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Projektkategorisierung</span>
+      <span class="badge badge-outline">Einordnung</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.projektkategorie_uri or project_form.fields.schlagwort_uris %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {% if project_form.fields.projektkategorie_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Projektkategorie</span>
+                {% if project_form.projektkategorie_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.projektkategorie_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.projektkategorie_uri }}
+            </div>
+          {% endif %}
+        </div>
+        {% if project_form.fields.schlagwort_uris %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Schlagwörter</span>
+              {% if project_form.schlagwort_uris.errors %}
+                <span class="label-text-alt text-error">{{ project_form.schlagwort_uris.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.schlagwort_uris }}
+            {% if project_form.schlagwort_uris.help_text %}
+              <div class="text-xs text-base-content/60 mt-1">{{ project_form.schlagwort_uris.help_text }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% else %}
+        <p class="text-sm text-base-content/60">Kategorisierungsfelder folgen.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Beschreibungen und Kommentare</span>
+      <span class="badge badge-outline">Kontext</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.beschreibung %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Beschreibung</span>
+            {% if project_form.beschreibung.errors %}
+              <span class="label-text-alt text-error">{{ project_form.beschreibung.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ project_form.beschreibung }}
+          {% if project_form.beschreibung.help_text %}
+            <div class="text-xs text-base-content/60 mt-1">{{ project_form.beschreibung.help_text }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if description_formset %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Zusätzliche Beschreibungen</span>
+            {% if description_formset.non_form_errors %}
+              <span class="label-text-alt text-error">{{ description_formset.non_form_errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ description_formset.management_form }}
+          <div class="space-y-4" id="description-formset-container">
+            {% for form in description_formset %}
+              <div class="p-4 bg-base-200 rounded-lg border border-base-300 space-y-3 description-card" data-form-index="{{ forloop.counter0 }}">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-base font-medium">Beschreibung {{ forloop.counter }}</h4>
+                  <button type="button" class="btn btn-ghost btn-xs js-remove-description" data-form-index="{{ forloop.counter0 }}">Entfernen</button>
+                </div>
+                <div class="form-control">
+                  {{ form.beschreibung }}
+                  {% if form.beschreibung.errors %}
+                    <div class="text-xs text-error mt-1">{{ form.beschreibung.errors.0 }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            {% empty %}
+              <div class="text-sm text-base-content/70">Noch keine zusätzlichen Beschreibungen vorhanden.</div>
+            {% endfor %}
+          </div>
+          <template id="description-form-template">
+            {% include "metadata/entity_creation/partials/_description_form_fields.html" with description_form=description_formset.empty_form %}
+          </template>
+          <div class="mt-3">
+            <button type="button" class="btn btn-sm btn-outline js-add-description">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M10 5a.75.75 0 01.75.75v3.5h3.5a.75.75 0 010 1.5h-3.5v3.5a.75.75 0 01-1.5 0v-3.5h-3.5a.75.75 0 010-1.5h3.5v-3.5A.75.75 0 0110 5z" clip-rule="evenodd" />
+              </svg>
+              Beschreibung hinzufügen
+            </button>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if not project_form.fields.beschreibung and not description_formset %}
+        <p class="text-sm text-base-content/60">Beschreibungs- und Kommentarfelder werden noch verknüpft.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Normdaten und Externe-Links</span>
+      <span class="badge badge-outline">Referenzen</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.wikidataID or project_form.fields.gndID or project_form.fields.normdatei or project_form.fields.externeProjektWebseite %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {% if project_form.fields.wikidataID %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Wikidata ID</span>
+                {% if project_form.wikidataID.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.wikidataID.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.wikidataID }}
+              {% if project_form.wikidataID.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.wikidataID.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if project_form.fields.gndID %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">GND ID</span>
+                {% if project_form.gndID.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.gndID.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.gndID }}
+            </div>
+          {% endif %}
+          {% if project_form.fields.normdatei %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Weitere Normdaten</span>
+                {% if project_form.normdatei.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.normdatei.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.normdatei }}
+              {% if project_form.normdatei.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.normdatei.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if project_form.fields.externeProjektWebseite %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Externe Projektwebseiten</span>
+                {% if project_form.externeProjektWebseite.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.externeProjektWebseite.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.externeProjektWebseite }}
+              {% if project_form.externeProjektWebseite.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.externeProjektWebseite.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Normdaten- und Linkfelder folgen.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Ereignisse und Relationen</span>
+      <span class="badge badge-outline">Verknüpfungen</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.ereignis_uri or project_form.fields.vorschaubild_uri %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {% if project_form.fields.ereignis_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Zugehöriges Ereignis</span>
+                {% if project_form.ereignis_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.ereignis_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.ereignis_uri }}
+            </div>
+          {% endif %}
+          {% if project_form.fields.vorschaubild_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Vorschaubild</span>
+                {% if project_form.vorschaubild_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.vorschaubild_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.vorschaubild_uri }}
+              {% if project_form.vorschaubild_uri.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.vorschaubild_uri.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Relationen werden später unterstützt.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Projekteigenschaften</span>
+      <span class="badge badge-outline">Grunddaten</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.bevorzugter_untertitel %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bevorzugter Untertitel</span>
+              {% if project_form.bevorzugter_untertitel.errors %}
+                <span class="label-text-alt text-error">{{ project_form.bevorzugter_untertitel.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.bevorzugter_untertitel }}
+          </div>
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Weitere Projekteigenschaften werden später ergänzt.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Rechteverwaltung</span>
+      <span class="badge badge-outline">Lizenzierung</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.rechtsstatus_uri or project_form.fields.artLizenzvertrag_uri or project_form.fields.bestehenderLizenzvertrag_uri %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {% if project_form.fields.rechtsstatus_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Rechtsstatus</span>
+                {% if project_form.rechtsstatus_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.rechtsstatus_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.rechtsstatus_uri }}
+            </div>
+          {% endif %}
+          {% if project_form.fields.artLizenzvertrag_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Art des Lizenzvertrages</span>
+                {% if project_form.artLizenzvertrag_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.artLizenzvertrag_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.artLizenzvertrag_uri }}
+            </div>
+          {% endif %}
+          {% if project_form.fields.bestehenderLizenzvertrag_uri %}
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Bestehender Lizenzvertrag</span>
+                {% if project_form.bestehenderLizenzvertrag_uri.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.bestehenderLizenzvertrag_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.bestehenderLizenzvertrag_uri }}
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Felder zur Rechteverwaltung werden vorbereitet.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Inhaltswarnungen</span>
+      <span class="badge badge-outline">Sensibler Inhalt</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if project_form.fields.inhaltswarnung %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Warnhinweise</span>
+            {% if project_form.inhaltswarnung.errors %}
+              <span class="label-text-alt text-error">{{ project_form.inhaltswarnung.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ project_form.inhaltswarnung }}
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Inhaltswarnungen können bald gepflegt werden.</p>
+      {% endif %}
+    </div>
+  </details>
+</div>
