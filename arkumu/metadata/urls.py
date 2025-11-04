@@ -47,7 +47,7 @@ from arkumu.metadata.views.csv_mapping.views.execution_views import (
     ValidateMappingExecutionView
 )
 from arkumu.metadata.views.csv_mapping.views import mapping_analysis_views
-from arkumu.metadata.views import entity_creation_views
+from arkumu.metadata.views import entity_creation_views, simplified_workspace_views
 
 app_name = 'metadata'
 
@@ -369,7 +369,10 @@ urlpatterns = [
     path('create/catchphrase/', entity_creation_views.create_catchphrase, name='create_catchphrase'),
 
     # Entity edit endpoints
-    path('edit/project/', entity_creation_views.edit_project, name='edit_project'),
+    # New simplified workspace views (uses legacy infrastructure with subset of fields)
+    path('edit/project/', simplified_workspace_views.SimplifiedProjectEditView.as_view(), name='edit_project'),
+    # Old version (keeping for reference)
+    path('edit/project/old/', entity_creation_views.edit_project, name='edit_project_old'),
     path('edit/event/', entity_creation_views.edit_event, name='edit_event'),
     path('edit/actor/', entity_creation_views.edit_actor, name='edit_actor'),
     path('edit/role/', entity_creation_views.edit_role, name='edit_role'),

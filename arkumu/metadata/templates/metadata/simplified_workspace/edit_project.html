@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8">
+  <div class="card bg-base-100 shadow-xl border border-base-200">
+    <div class="card-body p-8">
+      <div class="flex items-center mb-6">
+        <div class="p-3 rounded-xl mr-4 bg-primary/10">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="card-title text-2xl font-bold">{{ title }}</h1>
+          <p class="text-base-content/70 mt-1">{{ description }}</p>
+        </div>
+      </div>
+
+      {# Display the URI prominently #}
+      {% if entity_uri %}
+      <div class="alert alert-info mb-6">
+        <div class="flex items-start gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div class="flex-1">
+            <div class="font-semibold">Projekt-URI</div>
+            <div class="text-sm font-mono break-all">{{ entity_uri }}</div>
+            {% if entity_label %}
+            <div class="text-sm mt-1">{{ entity_label }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if load_error %}
+      <div class="alert alert-error mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>Fehler beim Laden der Projektdaten.</span>
+      </div>
+      {% endif %}
+
+      {% if error %}
+      <div class="alert alert-error mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+
+      <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
+
+        {# Basisinformationen Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Basisinformationen</span>
+            <span class="badge badge-outline">Zugriffsbeschränkung</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <p class="text-sm text-base-content/60">Nur für den Ersteller und Manager sichtbar.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {% for field in form %}
+                {% if field.name == "Bevorzugter Titel" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Bevorzugter Titel<span class="text-error">*</span></span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Rechtsstatus" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Status<span class="text-error">*</span></span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Einliefernde Hochschule" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Hochschule<span class="text-error">*</span></span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Projektart" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Projektart<span class="text-error">*</span></span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# Status und Signaturen Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Status und Signaturen</span>
+            <span class="badge badge-outline">Verwaltungsangaben</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {% for field in form %}
+                {% if field.name == "Signatur beim Einlieferer" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Signatur beim Einlieferer</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Werkverzeichnis-Nummer" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Werkverzeichnis-Nr</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                    {% if field.help_text %}
+                      <div class="text-xs text-base-content/60 mt-1">{{ field.help_text }}</div>
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# Ersteller und Einlieferer Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Ersteller und Einlieferer</span>
+            <span class="badge badge-outline">Herkunft</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {% for field in form %}
+                {% if field.name == "Organisationseinheit" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Organisationseinheit</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Projekterstellung beim Einlieferer" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Erstellungsdatum (Einlieferer)</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Letzte Projektmodifikation beim Einlieferer" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Letzte Projektmodifikation (Einlieferer)</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# Projektkategorisierung Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Projektkategorisierung</span>
+            <span class="badge badge-outline">Einordnung</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {% for field in form %}
+                {% if field.name == "Projektkategorie" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Projektkategorie</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Schlagwort" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Schlagwörter</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# Beschreibungen und Kommentare Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Beschreibungen und Kommentare</span>
+            <span class="badge badge-outline">Kontext</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            {% for field in form %}
+              {% if field.name == "Deutscher Kommentar" %}
+                <div class="form-control">
+                  <label class="label">
+                    <span class="label-text font-medium">Beschreibung</span>
+                    {% if field.errors %}
+                      <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                    {% endif %}
+                  </label>
+                  {{ field }}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </details>
+
+        {# Ereignisse und Relationen Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Ereignisse und Relationen</span>
+            <span class="badge badge-outline">Verknüpfungen</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {% for field in form %}
+                {% if field.name == "Ereignis" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Zugehöriges Ereignis</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+                {% if field.name == "Vorschaubild" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Vorschaubild</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# Projekteigenschaften Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Projekteigenschaften</span>
+            <span class="badge badge-outline">Grunddaten</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {% for field in form %}
+                {% if field.name == "Bevorzugter Untertitel" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Bevorzugter Untertitel</span>
+                      {% if field.errors %}
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {{ field }}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# Display read-only relationships #}
+        {% if read_only_relationships %}
+          <details class="bg-base-100 border border-base-200 rounded-box" open>
+            <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+              <span class="text-lg font-semibold">Zusätzliche Verknüpfungen</span>
+              <span class="badge badge-outline">Readonly</span>
+            </summary>
+            <div class="px-5 pb-5 pt-3 space-y-4">
+              {% for rel in read_only_relationships %}
+                <div class="form-control">
+                  <label class="label">
+                    <span class="label-text font-semibold">{{ rel.label }}</span>
+                  </label>
+                  <div class="p-4 bg-base-200 rounded-lg">
+                    {% for item in rel.items %}
+                      <div class="badge badge-outline mr-2 mb-2">{{ item }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </details>
+        {% endif %}
+
+        <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
+          <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Abbrechen
+          </a>
+          <button type="submit" class="btn btn-primary px-8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Speichern
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock content %}
