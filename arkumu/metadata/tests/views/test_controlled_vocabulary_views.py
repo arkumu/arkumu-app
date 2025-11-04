@@ -76,6 +76,8 @@ def test_create_role_entry(client, django_user_model):
     assert "Test Role" in content
     assert 'Pre-selects "ist Urheber:in" automatically' in content
     assert "Yes" in content
+    graph_url = reverse("metadata:resource_graph", args=[resource.id])
+    assert graph_url in content
 
 
 @pytest.mark.django_db
@@ -132,4 +134,6 @@ def test_edit_project_category_updates_filmportal(client, django_user_model):
     assert "filmportal.de Category ID" in content
     assert "fp-updated" in content
     assert "Überkategorie" in content
+    graph_url = reverse("metadata:resource_graph", args=[child_resource.id])
+    assert graph_url in content
     assert "Überkategorie" in content

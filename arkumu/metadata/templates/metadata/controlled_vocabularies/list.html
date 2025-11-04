@@ -59,7 +59,10 @@
                 {% endif %}
               </td>
               </td>
-              <td class="text-right">
+              <td class="flex flex-wrap gap-2 justify-end">
+                <a href="{% url 'metadata:resource_graph' entry.resource.id %}" class="btn btn-sm btn-ghost" target="_blank" rel="noopener">
+                  Graph
+                </a>
                 <a href="{% url 'metadata:controlled_vocab_edit' vocab_key entry.resource.id %}" class="btn btn-sm btn-outline">
                   Edit
                 </a>
