@@ -292,7 +292,31 @@
                         <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
                       {% endif %}
                     </label>
-                    {% if item.meta.resolved_uri %}
+                    {% if item.meta.is_multi_value %}
+                      {% if item.initial_labels %}
+                        <div class="flex flex-wrap gap-2 mb-2">
+                          {% for choice in item.initial_labels %}
+                            <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                      {{ item.field }}
+                      <div id="multi-value-rows-{{ item.field.name }}" class="space-y-2 mt-2">
+                        {% for row in item.rows %}
+                          {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=item.field.name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url mapping_id=mapping_id resource_id=row.resource_id %}
+                        {% endfor %}
+                      </div>
+                      <button type="button"
+                              class="btn btn-ghost btn-sm mt-2"
+                              hx-post="{% url 'metadata:entity_workspace_relationship_row' mapping_id %}?dataset={{ dataset_name|urlencode }}&field_name={{ item.field.name }}"
+                              hx-target="#multi-value-rows-{{ item.field.name }}"
+                              hx-swap="beforeend">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Weiteren Wert hinzufügen
+                      </button>
+                    {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
                       {{ item.field }}
@@ -307,7 +331,31 @@
                         <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
                       {% endif %}
                     </label>
-                    {% if item.meta.resolved_uri %}
+                    {% if item.meta.is_multi_value %}
+                      {% if item.initial_labels %}
+                        <div class="flex flex-wrap gap-2 mb-2">
+                          {% for choice in item.initial_labels %}
+                            <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                      {{ item.field }}
+                      <div id="multi-value-rows-{{ item.field.name }}" class="space-y-2 mt-2">
+                        {% for row in item.rows %}
+                          {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=item.field.name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url mapping_id=mapping_id resource_id=row.resource_id %}
+                        {% endfor %}
+                      </div>
+                      <button type="button"
+                              class="btn btn-ghost btn-sm mt-2"
+                              hx-post="{% url 'metadata:entity_workspace_relationship_row' mapping_id %}?dataset={{ dataset_name|urlencode }}&field_name={{ item.field.name }}"
+                              hx-target="#multi-value-rows-{{ item.field.name }}"
+                              hx-swap="beforeend">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Weiteren Wert hinzufügen
+                      </button>
+                    {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
                       {{ item.field }}
@@ -322,7 +370,31 @@
                         <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
                       {% endif %}
                     </label>
-                    {% if item.meta.resolved_uri %}
+                    {% if item.meta.is_multi_value %}
+                      {% if item.initial_labels %}
+                        <div class="flex flex-wrap gap-2 mb-2">
+                          {% for choice in item.initial_labels %}
+                            <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                      {{ item.field }}
+                      <div id="multi-value-rows-{{ item.field.name }}" class="space-y-2 mt-2">
+                        {% for row in item.rows %}
+                          {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=item.field.name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url mapping_id=mapping_id resource_id=row.resource_id %}
+                        {% endfor %}
+                      </div>
+                      <button type="button"
+                              class="btn btn-ghost btn-sm mt-2"
+                              hx-post="{% url 'metadata:entity_workspace_relationship_row' mapping_id %}?dataset={{ dataset_name|urlencode }}&field_name={{ item.field.name }}"
+                              hx-target="#multi-value-rows-{{ item.field.name }}"
+                              hx-swap="beforeend">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Weiteren Wert hinzufügen
+                      </button>
+                    {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
                       {{ item.field }}
@@ -351,7 +423,31 @@
                         <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
                       {% endif %}
                     </label>
-                    {% if item.meta.resolved_uri %}
+                    {% if item.meta.is_multi_value %}
+                      {% if item.initial_labels %}
+                        <div class="flex flex-wrap gap-2 mb-2">
+                          {% for choice in item.initial_labels %}
+                            <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                      {{ item.field }}
+                      <div id="multi-value-rows-{{ item.field.name }}" class="space-y-2 mt-2">
+                        {% for row in item.rows %}
+                          {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=item.field.name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url mapping_id=mapping_id resource_id=row.resource_id %}
+                        {% endfor %}
+                      </div>
+                      <button type="button"
+                              class="btn btn-ghost btn-sm mt-2"
+                              hx-post="{% url 'metadata:entity_workspace_relationship_row' mapping_id %}?dataset={{ dataset_name|urlencode }}&field_name={{ item.field.name }}"
+                              hx-target="#multi-value-rows-{{ item.field.name }}"
+                              hx-swap="beforeend">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Weiteren Wert hinzufügen
+                      </button>
+                    {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
                       {{ item.field }}
