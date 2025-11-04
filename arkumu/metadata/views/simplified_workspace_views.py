@@ -132,6 +132,30 @@ def _filter_field_metadata(
     return filtered
 
 
+def _select_primary_search_property(meta: Dict[str, Any]) -> Optional[str]:
+    """Pick a single search property to use for simplified multi-select widgets."""
+    display_uri = meta.get("display_property")
+    if display_uri:
+        return str(display_uri)
+
+    search_properties = meta.get("search_properties") or []
+    preferred_tokens = ("name", "titel", "title", "label", "bezeichnung", "beschreibung")
+
+    for prop in search_properties:
+        column = str(prop.get("column") or "").lower()
+        if any(token in column for token in preferred_tokens):
+            uri = prop.get("uri")
+            if uri:
+                return str(uri)
+
+    for prop in search_properties:
+        uri = prop.get("uri")
+        if uri:
+            return str(uri)
+
+    return None
+
+
 def _enrich_fk_metadata(
     form: DatasetEntityForm,
     field_metadata: Dict[str, Any],
@@ -281,6 +305,8 @@ def _enrich_fk_metadata(
         # Build widget context for multi-value fields
         widget_context = None
         if fk_info and meta.get("is_multi_value"):
+            primary_property_uri = _select_primary_search_property(meta)
+
             # Use the same widget builder as legacy workspace
             from arkumu.metadata.views.schema_workspace_views import _build_relationship_widget_context
 
@@ -290,8 +316,18 @@ def _enrich_fk_metadata(
                 field_name=field.name,
                 field_meta=meta,
                 selected_value_items=initial_labels,  # Can be empty list
-                selected_property="",
+                selected_property=primary_property_uri or "",
             )
+
+            if primary_property_uri:
+                filtered_properties = [
+                    prop for prop in widget_context.get("search_properties", [])
+                    if str(prop.get("uri")) == primary_property_uri
+                ]
+                if filtered_properties:
+                    widget_context["search_properties"] = filtered_properties
+                widget_context["selected_property"] = primary_property_uri
+                meta["selected_property"] = primary_property_uri
 
             # Pre-render chips to bypass Django nested include bug
             pre_rendered_chips: List[str] = []

@@ -53,6 +53,7 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
             return {
                 "properties": {
                     "label": SimpleNamespace(uri="http://example.org/properties/label", name="Label"),
+                    "code": SimpleNamespace(uri="http://example.org/properties/code", name="Code"),
                 }
             }
         return {"properties": {}}
@@ -91,6 +92,7 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
             return {
                 "properties": {
                     "label": SimpleNamespace(uri="http://example.org/properties/label", name="Label"),
+                    "code": SimpleNamespace(uri="http://example.org/properties/code", name="Code"),
                 }
             }
         return {"properties": {}}
@@ -163,6 +165,9 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     content = response.content.decode()
     assert 'name="Projektart"' in content
     assert 'data-multi-value="true"' in content
+    assert "Suchen nach" not in content
+    assert 'select id="relationship-property' not in content
+    assert "property=http%3A//example.org/properties/label" in content
 
 
 @pytest.mark.django_db
@@ -195,6 +200,9 @@ def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_e
     content = response.content.decode()
     assert 'name="Ereignistyp"' in content
     assert 'data-multi-value="true"' in content
+    assert "Suchen nach" not in content
+    assert 'select id="relationship-property' not in content
+    assert "property=http%3A//example.org/properties/label" in content
 
 
 @pytest.mark.django_db
