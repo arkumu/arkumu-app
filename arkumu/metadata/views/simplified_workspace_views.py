@@ -7,13 +7,17 @@ but only show a subset of fields for a simplified user experience.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.views import View
+from django.views.decorators.http import require_http_methods
 
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.schema_workspace import (
@@ -177,8 +181,54 @@ def _enrich_fk_metadata(
             meta["base_suggestion_url"] = base_url
             logger.info(f"🔍 FK field '{field.name}': search_url={search_url}, target_id={target_id}")
 
+        # Handle multi-value FK fields
+        initial_labels: List[Dict[str, str]] = []
+        if fk_info and meta.get("is_multi_value"):
+            raw_initial = form.initial.get(field.name, field.value())
+            parsed_values: List[Any]
+            if isinstance(raw_initial, str) and raw_initial:
+                try:
+                    loaded = json.loads(raw_initial)
+                    parsed_values = loaded if isinstance(loaded, list) else [raw_initial]
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed_values = [raw_initial]
+            elif isinstance(raw_initial, list):
+                parsed_values = raw_initial
+            else:
+                parsed_values = []
+
+            normalized: List[Dict[str, str]] = []
+            for entry in parsed_values:
+                if isinstance(entry, dict):
+                    uri = (entry.get("uri") or entry.get("value") or "").strip()
+                else:
+                    uri = str(entry).strip()
+                if not uri:
+                    continue
+                label = _infer_entity_label(
+                    schema_service,
+                    uri,
+                    target_dataset,
+                )
+
+                resource_entry = {"label": label, "uri": uri}
+                # Try to get resource ID for graph view
+                from arkumu.metadata.models.resource import Resource
+                target_resource = Resource.objects.filter(uri=uri).first()
+                if target_resource:
+                    resource_entry["resource_id"] = str(target_resource.id)
+                normalized.append(resource_entry)
+
+            if normalized:
+                labelled_json = json.dumps(normalized)
+                form.initial[field.name] = labelled_json
+                if hasattr(field, 'form'):
+                    field.form.initial[field.name] = labelled_json
+                initial_labels.extend(normalized)
+                logger.info(f"✅ Resolved multi-value FK field '{field.name}': {len(normalized)} values")
+
         # Handle single FK fields (not multi-value)
-        if fk_info and not meta.get("is_multi_value"):
+        elif fk_info and not meta.get("is_multi_value"):
             raw_value = form.initial.get(field.name, field.value())
             if raw_value:
                 display_prop_uri = meta.get("display_property")
@@ -212,11 +262,38 @@ def _enrich_fk_metadata(
 
                     logger.info(f"✅ Resolved FK field '{field.name}': {raw_value} → {resolved_label}")
 
+        # Build rows for multi-value fields
+        rows = []
+        if initial_labels:
+            import uuid
+            for label_data in initial_labels:
+                row_id = f"multi-value-row-{field.name}-{uuid.uuid4().hex[:8]}"
+                input_id = f"input-{row_id}"
+                suggestions_id = f"suggestions-{row_id}"
+
+                display_value = label_data.get("label", "")
+                stored_value = label_data.get("uri", "")
+                resource_id = label_data.get("resource_id")
+
+                row_data = {
+                    "row_id": row_id,
+                    "input_id": input_id,
+                    "suggestions_id": suggestions_id,
+                    "display_value": display_value,
+                    "stored_value": stored_value,
+                    "suggestion_url": meta.get("base_suggestion_url", ""),
+                }
+                if resource_id:
+                    row_data["resource_id"] = str(resource_id)
+                rows.append(row_data)
+
         fields_with_metadata.append({
             "field": field,
             "meta": meta,
             "search_url": search_url,
             "target_id": target_id,
+            "initial_labels": initial_labels,
+            "rows": rows,
         })
 
     return fields_with_metadata
@@ -315,6 +392,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             "entity_uri": entity_uri,
             "entity_label": entity_label,
             "dataset_name": dataset_name,
+            "mapping_id": schema_service.mapping.id,
             "load_error": load_error,
             "read_only_relationships": read_only_relationships,
             "title": "Projekt bearbeiten",
