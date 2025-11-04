@@ -20,7 +20,13 @@
       <form action="{% url 'metadata:edit_digital_object' %}" method="post" class="space-y-8">
         {% csrf_token %}
 
-        {% include "metadata/entity_creation/partials/_digital_object_form_fields.html" %}
+        {% include "metadata/entity_editing/partials/_digital_object_form_fields.html" %}
+        {% include "metadata/entity_editing/partials/_digital_object_form_institution_fields.html" %}
+        {% include "metadata/entity_editing/partials/_digital_object_form_comments.html" %}
+        {% include "metadata/entity_editing/partials/_digital_object_form_describing_metadata.html" %}
+        {% include "metadata/entity_editing/partials/_digital_object_form_technical_metadata.html" %}
+        {% include "metadata/entity_editing/partials/_digital_object_form_linked_datasets.html" %}
+        
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
