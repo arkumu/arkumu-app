@@ -38,6 +38,17 @@
 
         <div class="form-control">
           <label class="label">
+            <span class="label-text font-medium">Dateiname</span>
+            {% if digital_object_form.dateiname.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.dateiname.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.dateiname }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.dateiname.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
             <span class="label-text font-medium">Dateipfad</span>
             {% if digital_object_form.dateipfad.errors %}
             <span class="label-text-alt text-error">{{ digital_object_form.dateipfad.errors.0 }}</span>
@@ -45,6 +56,94 @@
           </label>
           {{ digital_object_form.dateipfad }}
           <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.dateipfad.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Medientyp</span>
+            {% if digital_object_form.medientyp.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.medientyp.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.medientyp }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.medientyp.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Objekttyp</span>
+            {% if digital_object_form.objekttyp.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.objekttyp.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.objekttyp }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.objekttyp.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Erhaltungstyp</span>
+            {% if digital_object_form.erhaltungstyp.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.erhaltungstyp.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.erhaltungstyp }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.erhaltungstyp.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Entstehungstyp</span>
+            {% if digital_object_form.entstehungstyp.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.entstehungstyp.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.entstehungstyp }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.entstehungstyp.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Dateipaket</span>
+            {% if digital_object_form.dateipaket.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.dateipaket.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.dateipaket }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.dateipaket.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Als Vorschau nutzen</span>
+            {% if digital_object_form.als_vorschau_nutzen.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.als_vorschau_nutzen.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.als_vorschau_nutzen }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.als_vorschau_nutzen.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Lizenzstatus</span>
+            {% if digital_object_form.lizenzstatus.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.lizenzstatus.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.lizenzstatus }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.lizenzstatus.help_text }}</div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Derivatkopie-Nummer</span>
+            {% if digital_object_form.derivatkopie_nummer.errors %}
+            <span class="label-text-alt text-error">{{ digital_object_form.derivatkopie_nummer.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ digital_object_form.derivatkopie_nummer }}
+          <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.derivatkopie_nummer.help_text }}</div>
         </div>
       </div>
     </div>
