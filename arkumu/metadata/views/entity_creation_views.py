@@ -296,8 +296,8 @@ class ProjectForm(BaseEntityForm):
 
             # Pre-fill form fields with existing entity data
             self.fields["uri"].initial = uri
-            self.fields["bevorzugter_titel"].initial = entity.get_property(properties["title_prop"]) if entity.get_property(properties["title_prop"]) else ""
-            self.fields["bevorzugter_untertitel"].initial = entity.get_property(properties["subtitle_prop"]) if entity.get_property(properties["subtitle_prop"]) else ""
+            self.fields["bevorzugter_titel"].initial = entity.get_property(properties["title_prop"])[0] if entity.get_property(properties["title_prop"]) else ""
+            self.fields["bevorzugter_untertitel"].initial = entity.get_property(properties["subtitle_prop"])[0] if entity.get_property(properties["subtitle_prop"]) else ""
             self.fields["einliefernde_hochschule_uri"].initial = entity.get_property(properties["institution_prop"])[0].uri if entity.get_property(properties["institution_prop"]) else ""
             self.fields["ereignis_uri"].initial = entity.get_property(properties["event_prop"])[0].uri if entity.get_property(properties["event_prop"]) else ""
             self.fields["projektkategorie_uri"].initial = entity.get_property(properties["category_prop"])[0].uri if entity.get_property(properties["category_prop"]) else ""
@@ -324,11 +324,6 @@ class EventForm(BaseEntityForm):
         label="Ereignisname",
         required=True,
         help_text="Name of the event",
-    )
-    project_uri = forms.ChoiceField(
-        label="Associated Project",
-        required=True,
-        choices=[],
     )
     ereignisbeschreibung_uri = forms.ChoiceField(
         label="Beschreibung",
@@ -359,9 +354,6 @@ class EventForm(BaseEntityForm):
         self.fields["uri"].choices = [("", "Select an event")] + options.get(
             "event", []
         )
-        self.fields["project_uri"].choices = [("", "Select a project")] + options.get(
-            "project", []
-        )
         self.fields["ereignisbeschreibung_uri"].choices = [
             ("", "Select the description of the event")
         ] + options.get("event_description", [])
@@ -376,12 +368,11 @@ class EventForm(BaseEntityForm):
 
             # Pre-fill form fields with existing entity data
             self.fields["uri"].initial = uri
-            self.fields["ereignisname"].initial = entity.get_property(properties["event_name_prop"]) if entity.get_property(properties["event_name_prop"]) else ""
-            self.fields["project_uri"].initial = entity.get_property(properties["subtitle_prop"]) if entity.get_property(properties["subtitle_prop"]) else ""
+            self.fields["ereignisname"].initial = entity.get_property(properties["event_name_prop"])[0] if entity.get_property(properties["event_name_prop"]) else ""
             self.fields["ereignisbeschreibung_uri"].initial = entity.get_property(properties["description_prop"])[0].uri if entity.get_property(properties["description_prop"]) else ""
-            self.fields["ereignisort"].initial = entity.get_property(properties["event_place_prop"])[0].uri if entity.get_property(properties["event_place_prop"]) else ""
-            self.fields["ereignisbeginn"].initial = entity.get_property(properties["begin_date_prop"])[0].uri if entity.get_property(properties["begin_date_prop"]) else ""
-            self.fields["ereignisende"].initial = entity.get_property(properties["end_date_prop"])[0].uri if entity.get_property(properties["end_date_prop"]) else ""
+            self.fields["ereignisort"].initial = entity.get_property(properties["event_place_prop"])[0] if entity.get_property(properties["event_place_prop"]) else ""
+            self.fields["ereignisbeginn"].initial = entity.get_property(properties["begin_date_prop"])[0] if entity.get_property(properties["begin_date_prop"]) else ""
+            self.fields["ereignisende"].initial = entity.get_property(properties["end_date_prop"])[0] if entity.get_property(properties["end_date_prop"]) else ""
 
 
 class ActorForm(BaseEntityForm):
@@ -1411,7 +1402,7 @@ def edit_event(request):
 
             return HttpResponseRedirect("/metadata/metadata-entry/")
         else:
-            event_form = EventForm(metadata_options=metadata_options)
+            event_form = EventForm(metadata_options=metadata_options, uri=request.GET.get("uri", ""))
 
         return render(
             request,
