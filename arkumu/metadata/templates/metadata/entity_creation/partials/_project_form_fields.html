@@ -63,6 +63,16 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="form-control">
             <label class="label">
+              <span class="label-text font-medium">Ereignis</span>
+              {% if project_form.ereignis_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.ereignis_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.ereignis_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
               <span class="label-text font-medium">Einliefernde Hochschule</span>
               {% if project_form.einliefernde_hochschule_uri.errors %}
               <span class="label-text-alt text-error">{{ project_form.einliefernde_hochschule_uri.errors.0 }}</span>

@@ -647,6 +647,9 @@ def entity_set_values_from_form(
                 form, entity, "einliefernde_hochschule_uri", kwargs["institution_prop"]
             )
             from_form_set_property_entity(
+                form, entity, "ereignis_uri", kwargs["event_prop"]
+            )
+            from_form_set_property_entity(
                 form, entity, "projektkategorie_uri", kwargs["category_prop"]
             )
             from_form_set_property_entity(
@@ -797,13 +800,17 @@ def create_event(request):
             if event_form.is_valid():
                 event_entity = form_to_entity(event_form, "Ereignis", organization)
 
-                event_prop, _ = PropertyResource.get_or_create(
-                    uri=f"{base_uri}/properties/ereignis", name="Ereignis"
-                )
-                project_uri = event_form.cleaned_data.get("project_uri", "")
-                if project_uri:
-                    project_entity, _ = EntityResource.get_or_create(uri=project_uri)
-                    project_entity.set_property(event_prop, event_entity)
+
+                ####THIS SHOULD BE REPLACED BY THE ENTITY URI FIELD IN PROJECT
+                # event_prop, _ = PropertyResource.get_or_create(
+                #     uri=f"{base_uri}/properties/ereignis", name="Ereignis"
+                # )
+                # project_uri = event_form.cleaned_data.get("project_uri", "")
+                # if project_uri:
+                #     project_entity, _ = EntityResource.get_or_create(uri=project_uri)
+                #     project_entity.set_property(event_prop, event_entity)
+
+
             # The RDF resources are now created and linked automatically
             # Continue with the rest of the event creation workflow
 
