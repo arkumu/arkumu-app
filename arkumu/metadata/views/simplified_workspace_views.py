@@ -29,19 +29,33 @@ logger = logging.getLogger(__name__)
 # Define which fields to show for each entity type
 SIMPLIFIED_FIELD_CONFIG = {
     "Projekt": [
+        # 1. Grundinformationen
         "Bevorzugter Titel",
+        "Sprache des bevorzugten Titels",
         "Bevorzugter Untertitel",
-        "Deutscher Kommentar",  # Maps to "beschreibung"
-        # "Einliefernde Hochschule" - automatic based on organization
-        "Organisationseinheit",
-        "Projektkategorie",
+        "Sprache des bevorzugten Untertitels",
+        "Alternativer Titel-Set",
+
+        # 2. Beschreibungen und Kommentare
+        "Beschreibung",
+        "Deutscher Kommentar",
+        "Englischer Kommentar",
+        "Interner Kommentar",
+        "Inhaltswarnung",
+
+        # 3. Klassifikation
         "Projektart",
+        "Projektkategorie",
         "Schlagwort",
-        "Vorschaubild",
+        "Organisationseinheit",
+
+        # 4. Ereignisse
         "Ereignis",
+        "Externe Projektwebseite",
+        "Vorschaubild",
+
+        # 5. Verwaltung und Signaturen
         "Rechtsstatus",
-        "Projekterstellung beim Einlieferer",
-        "Letzte Projektmodifikation beim Einlieferer",
         "Signatur beim Einlieferer",
         "Werkverzeichnis-Nummer",
     ],

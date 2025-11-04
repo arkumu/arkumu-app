@@ -57,15 +57,14 @@
         {% csrf_token %}
         <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
 
-        {# Basisinformationen Section #}
+        {# 1. Grundinformationen Section #}
         <details class="bg-base-100 border border-base-200 rounded-box" open>
           <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Basisinformationen</span>
-            <span class="badge badge-outline">Zugriffsbeschränkung</span>
+            <span class="text-lg font-semibold">Grundinformationen</span>
+            <span class="badge badge-outline">Titel und Identifikation</span>
           </summary>
           <div class="px-5 pb-5 pt-3 space-y-4">
-            <p class="text-sm text-base-content/60">Nur für den Ersteller und Manager sichtbar.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-4">
               {% for item in fields_with_metadata %}
                 {% if item.field.name == "Bevorzugter Titel" %}
                   <div class="form-control">
@@ -82,10 +81,10 @@
                     {% endif %}
                   </div>
                 {% endif %}
-                {% if item.field.name == "Rechtsstatus" %}
+                {% if item.field.name == "Sprache des bevorzugten Titels" %}
                   <div class="form-control">
                     <label class="label">
-                      <span class="label-text font-medium">Status<span class="text-error">*</span></span>
+                      <span class="label-text font-medium">Sprache des bevorzugten Titels</span>
                       {% if item.field.errors %}
                         <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
                       {% endif %}
@@ -97,6 +96,154 @@
                     {% endif %}
                   </div>
                 {% endif %}
+                {% if item.field.name == "Bevorzugter Untertitel" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Bevorzugter Untertitel</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Sprache des bevorzugten Untertitels" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Sprache des bevorzugten Untertitels</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Alternativer Titel-Set" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Alternativer Titel-Set</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# 2. Beschreibungen und Kommentare Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Beschreibungen und Kommentare</span>
+            <span class="badge badge-outline">Texte</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="space-y-4">
+              {% for item in fields_with_metadata %}
+                {% if item.field.name == "Beschreibung" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Beschreibung</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Deutscher Kommentar" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Deutscher Kommentar</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Englischer Kommentar" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Englischer Kommentar</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Interner Kommentar" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Interner Kommentar</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Inhaltswarnung" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Inhaltswarnung</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {# 3. Klassifikation Section #}
+        <details class="bg-base-100 border border-base-200 rounded-box" open>
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Klassifikation</span>
+            <span class="badge badge-outline">Kategorien</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            <div class="space-y-4">
+              {% for item in fields_with_metadata %}
                 {% if item.field.name == "Projektart" %}
                   <div class="form-control">
                     <label class="label">
@@ -112,126 +259,6 @@
                     {% endif %}
                   </div>
                 {% endif %}
-              {% endfor %}
-            </div>
-          </div>
-        </details>
-
-        {# Status und Signaturen Section #}
-        <details class="bg-base-100 border border-base-200 rounded-box" open>
-          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Status und Signaturen</span>
-            <span class="badge badge-outline">Verwaltungsangaben</span>
-          </summary>
-          <div class="px-5 pb-5 pt-3 space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {% for item in fields_with_metadata %}
-                {% if item.field.name == "Signatur beim Einlieferer" %}
-                  <div class="form-control">
-                    <label class="label">
-                      <span class="label-text font-medium">Signatur beim Einlieferer</span>
-                      {% if item.field.errors %}
-                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
-                      {% endif %}
-                    </label>
-                    {% if item.meta.resolved_uri %}
-                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
-                    {% else %}
-                      {{ item.field }}
-                    {% endif %}
-                  </div>
-                {% endif %}
-                {% if item.field.name == "Werkverzeichnis-Nummer" %}
-                  <div class="form-control">
-                    <label class="label">
-                      <span class="label-text font-medium">Werkverzeichnis-Nr</span>
-                      {% if item.field.errors %}
-                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
-                      {% endif %}
-                    </label>
-                    {% if item.meta.resolved_uri %}
-                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
-                    {% else %}
-                      {{ item.field }}
-                    {% endif %}
-                    {% if item.field.help_text %}
-                      <div class="text-xs text-base-content/60 mt-1">{{ item.field.help_text }}</div>
-                    {% endif %}
-                  </div>
-                {% endif %}
-              {% endfor %}
-            </div>
-          </div>
-        </details>
-
-        {# Ersteller und Einlieferer Section #}
-        <details class="bg-base-100 border border-base-200 rounded-box" open>
-          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Ersteller und Einlieferer</span>
-            <span class="badge badge-outline">Herkunft</span>
-          </summary>
-          <div class="px-5 pb-5 pt-3 space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {% for item in fields_with_metadata %}
-                {% if item.field.name == "Organisationseinheit" %}
-                  <div class="form-control">
-                    <label class="label">
-                      <span class="label-text font-medium">Organisationseinheit</span>
-                      {% if item.field.errors %}
-                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
-                      {% endif %}
-                    </label>
-                    {% if item.meta.resolved_uri %}
-                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
-                    {% else %}
-                      {{ item.field }}
-                    {% endif %}
-                  </div>
-                {% endif %}
-                {% if item.field.name == "Projekterstellung beim Einlieferer" %}
-                  <div class="form-control">
-                    <label class="label">
-                      <span class="label-text font-medium">Erstellungsdatum (Einlieferer)</span>
-                      {% if item.field.errors %}
-                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
-                      {% endif %}
-                    </label>
-                    {% if item.meta.resolved_uri %}
-                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
-                    {% else %}
-                      {{ item.field }}
-                    {% endif %}
-                  </div>
-                {% endif %}
-                {% if item.field.name == "Letzte Projektmodifikation beim Einlieferer" %}
-                  <div class="form-control">
-                    <label class="label">
-                      <span class="label-text font-medium">Letzte Projektmodifikation (Einlieferer)</span>
-                      {% if item.field.errors %}
-                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
-                      {% endif %}
-                    </label>
-                    {% if item.meta.resolved_uri %}
-                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
-                    {% else %}
-                      {{ item.field }}
-                    {% endif %}
-                  </div>
-                {% endif %}
-              {% endfor %}
-            </div>
-          </div>
-        </details>
-
-        {# Projektkategorisierung Section #}
-        <details class="bg-base-100 border border-base-200 rounded-box" open>
-          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Projektkategorisierung</span>
-            <span class="badge badge-outline">Einordnung</span>
-          </summary>
-          <div class="px-5 pb-5 pt-3 space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {% for item in fields_with_metadata %}
                 {% if item.field.name == "Projektkategorie" %}
                   <div class="form-control">
                     <label class="label">
@@ -262,51 +289,54 @@
                     {% endif %}
                   </div>
                 {% endif %}
+                {% if item.field.name == "Organisationseinheit" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Organisationseinheit</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
               {% endfor %}
             </div>
           </div>
         </details>
 
-        {# Beschreibungen und Kommentare Section #}
+        {# 4. Ereignisse Section #}
         <details class="bg-base-100 border border-base-200 rounded-box" open>
           <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Beschreibungen und Kommentare</span>
-            <span class="badge badge-outline">Kontext</span>
+            <span class="text-lg font-semibold">Ereignisse</span>
+            <span class="badge badge-outline">Verweise</span>
           </summary>
           <div class="px-5 pb-5 pt-3 space-y-4">
-            {% for item in fields_with_metadata %}
-              {% if item.field.name == "Deutscher Kommentar" %}
-                <div class="form-control">
-                  <label class="label">
-                    <span class="label-text font-medium">Beschreibung</span>
-                    {% if item.field.errors %}
-                      <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
-                    {% endif %}
-                  </label>
-                  {% if item.meta.resolved_uri %}
-                    {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
-                  {% else %}
-                    {{ item.field }}
-                  {% endif %}
-                </div>
-              {% endif %}
-            {% endfor %}
-          </div>
-        </details>
-
-        {# Ereignisse und Relationen Section #}
-        <details class="bg-base-100 border border-base-200 rounded-box" open>
-          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Ereignisse und Relationen</span>
-            <span class="badge badge-outline">Verknüpfungen</span>
-          </summary>
-          <div class="px-5 pb-5 pt-3 space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-4">
               {% for item in fields_with_metadata %}
                 {% if item.field.name == "Ereignis" %}
                   <div class="form-control">
                     <label class="label">
                       <span class="label-text font-medium">Zugehöriges Ereignis</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Externe Projektwebseite" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Externe Projektwebseite</span>
                       {% if item.field.errors %}
                         <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
                       {% endif %}
@@ -338,19 +368,49 @@
           </div>
         </details>
 
-        {# Projekteigenschaften Section #}
+        {# 5. Verwaltung und Signaturen Section #}
         <details class="bg-base-100 border border-base-200 rounded-box" open>
           <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Projekteigenschaften</span>
-            <span class="badge badge-outline">Grunddaten</span>
+            <span class="text-lg font-semibold">Verwaltung und Signaturen</span>
+            <span class="badge badge-outline">Administrative Daten</span>
           </summary>
           <div class="px-5 pb-5 pt-3 space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-4">
               {% for item in fields_with_metadata %}
-                {% if item.field.name == "Bevorzugter Untertitel" %}
+                {% if item.field.name == "Rechtsstatus" %}
                   <div class="form-control">
                     <label class="label">
-                      <span class="label-text font-medium">Bevorzugter Untertitel</span>
+                      <span class="label-text font-medium">Rechtsstatus<span class="text-error">*</span></span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Signatur beim Einlieferer" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Signatur beim Einlieferer</span>
+                      {% if item.field.errors %}
+                        <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
+                      {% endif %}
+                    </label>
+                    {% if item.meta.resolved_uri %}
+                      {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
+                    {% else %}
+                      {{ item.field }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if item.field.name == "Werkverzeichnis-Nummer" %}
+                  <div class="form-control">
+                    <label class="label">
+                      <span class="label-text font-medium">Werkverzeichnis-Nummer</span>
                       {% if item.field.errors %}
                         <span class="label-text-alt text-error">{{ item.field.errors.0 }}</span>
                       {% endif %}
@@ -369,26 +429,24 @@
 
         {# Display read-only relationships #}
         {% if read_only_relationships %}
-          <details class="bg-base-100 border border-base-200 rounded-box" open>
-            <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-              <span class="text-lg font-semibold">Zusätzliche Verknüpfungen</span>
-              <span class="badge badge-outline">Readonly</span>
-            </summary>
-            <div class="px-5 pb-5 pt-3 space-y-4">
-              {% for rel in read_only_relationships %}
-                <div class="form-control">
-                  <label class="label">
-                    <span class="label-text font-semibold">{{ rel.label }}</span>
-                  </label>
-                  <div class="p-4 bg-base-200 rounded-lg">
-                    {% for item in rel.items %}
-                      <div class="badge badge-outline mr-2 mb-2">{{ item }}</div>
-                    {% endfor %}
-                  </div>
+        <details class="bg-base-100 border border-base-200 rounded-box">
+          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+            <span class="text-lg font-semibold">Verknüpfte Datensätze</span>
+            <span class="badge badge-outline">Nur Lesezugriff</span>
+          </summary>
+          <div class="px-5 pb-5 pt-3 space-y-4">
+            {% for rel in read_only_relationships %}
+              <div class="border border-base-200 rounded-lg p-4">
+                <div class="font-semibold mb-2">{{ rel.field_name }}</div>
+                <div class="flex flex-wrap gap-2">
+                  {% for item in rel.values %}
+                    <span class="badge badge-outline">{{ item.label }}</span>
+                  {% endfor %}
                 </div>
-              {% endfor %}
-            </div>
-          </details>
+              </div>
+            {% endfor %}
+          </div>
+        </details>
         {% endif %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
