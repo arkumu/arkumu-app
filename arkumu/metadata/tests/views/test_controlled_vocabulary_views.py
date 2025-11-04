@@ -1,3 +1,5 @@
+import html
+
 import pytest
 from django.urls import reverse
 
@@ -66,6 +68,15 @@ def test_create_role_entry(client, django_user_model):
     )
     assert boolean_triple.object.value == "true"
 
+    list_response = client.get(reverse("metadata:controlled_vocab_list", args=[vocab_key]))
+    content = html.unescape(list_response.content.decode())
+    assert "German Name" in content
+    assert "Testrolle" in content
+    assert "English Name" in content
+    assert "Test Role" in content
+    assert 'Pre-selects "ist Urheber:in" automatically' in content
+    assert "Yes" in content
+
 
 @pytest.mark.django_db
 def test_edit_project_category_updates_filmportal(client, django_user_model):
@@ -116,3 +127,9 @@ def test_edit_project_category_updates_filmportal(client, django_user_model):
     )
     assert triple.object.value == "fp-updated"
 
+    list_response = client.get(reverse("metadata:controlled_vocab_list", args=["project_categories"]))
+    content = html.unescape(list_response.content.decode())
+    assert "filmportal.de Category ID" in content
+    assert "fp-updated" in content
+    assert "Überkategorie" in content
+    assert "Überkategorie" in content

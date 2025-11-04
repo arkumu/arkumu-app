@@ -32,6 +32,7 @@ class VocabularyEntrySummary:
     slug: str
     synonyms: List[str]
     synonyms_by_language: Dict[str, List[str]]
+    field_values: List[Tuple[str, List[str]]]
 
 
 class ControlledVocabularyService:
@@ -76,6 +77,7 @@ class ControlledVocabularyService:
             label = resource.name or self._derive_label_from_triples(resource)
             slug = self.extract_slug(resource.uri or "")
             synonyms_map = self._collect_synonyms(resource)
+            field_values = self._collect_field_values(resource)
             synonyms = [value for values in synonyms_map.values() for value in values]
             entries.append(
                 VocabularyEntrySummary(
@@ -84,6 +86,7 @@ class ControlledVocabularyService:
                     slug=slug,
                     synonyms=synonyms,
                     synonyms_by_language=synonyms_map,
+                    field_values=field_values,
                 )
             )
         entries.sort(key=lambda item: item.label.lower())
@@ -279,6 +282,17 @@ class ControlledVocabularyService:
             values.sort(key=lambda item: item.lower())
         return synonyms
 
+    def _collect_field_values(self, resource: Resource) -> List[Tuple[str, List[str]]]:
+        predicate_map = self._collect_predicate_map(resource)
+        field_values: List[Tuple[str, List[str]]] = []
+        for column, config in self.config.columns.items():
+            objects = predicate_map.get(config.predicate_uri, [])
+            formatted = self._format_objects(config, objects)
+            if formatted:
+                label = (config.label or column).strip()
+                field_values.append((label, formatted))
+        return field_values
+
     def _derive_label_from_triples(self, resource: Resource) -> str:
         predicate_map = self._collect_predicate_map(resource)
         for column in self.config.label_priority:
@@ -358,6 +372,27 @@ class ControlledVocabularyService:
         if not tokens and config.split_delimiter:
             tokens.extend(item.strip() for item in raw_value.split(config.split_delimiter) if item.strip())
         return [val for val in tokens if val]
+
+    def _format_objects(self, config: ColumnConfig, objects: List[Resource]) -> List[str]:
+        if not objects:
+            return []
+
+        formatted: List[str] = []
+        for obj in objects:
+            if config.value_type == "boolean":
+                value = (obj.value or "").strip().lower()
+                formatted.append("Yes" if value == "true" else "No")
+            elif config.value_type == "reference":
+                label = obj.name or self.extract_slug(obj.uri or "")
+                formatted.append(label or obj.uri or str(obj.id))
+            elif config.value_type == "iri":
+                formatted.append(obj.uri or "")
+            else:
+                value = self._object_to_value(obj)
+                if value:
+                    formatted.append(value)
+
+        return [value for value in formatted if value]
 
     def _ensure_triple(self, subject: Resource, predicate: Resource, obj: Resource) -> None:
         Triple.objects.update_or_create(

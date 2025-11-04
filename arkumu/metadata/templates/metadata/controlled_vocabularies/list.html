@@ -32,7 +32,7 @@
           <tr>
             <th class="w-1/4">Label</th>
             <th>Slug</th>
-            <th>Synonyms</th>
+            <th>Fields</th>
             <th class="w-32 text-right">Actions</th>
           </tr>
         </thead>
@@ -46,19 +46,18 @@
                 </div>
               </td>
               <td><code class="kbd kbd-sm">{{ entry.slug }}</code></td>
-              <td class="text-sm text-base-content/70 space-y-1">
-                {% if entry.synonyms_by_language %}
-                  {% for lang, values in entry.synonyms_by_language.items %}
+              <td class="text-sm text-base-content/80 space-y-1">
+                {% if entry.field_values %}
+                  {% for label, values in entry.field_values %}
                     <div>
-                      <span class="badge badge-sm badge-outline mr-2">
-                        {{ lang|upper }}
-                      </span>
-                      {{ values|join:", " }}
+                      <span class="font-semibold text-xs uppercase text-base-content/60">{{ label }}</span>
+                      <span class="ml-2">{{ values|join:', ' }}</span>
                     </div>
                   {% endfor %}
                 {% else %}
                   <span class="opacity-60">—</span>
                 {% endif %}
+              </td>
               </td>
               <td class="text-right">
                 <a href="{% url 'metadata:controlled_vocab_edit' vocab_key entry.resource.id %}" class="btn btn-sm btn-outline">
