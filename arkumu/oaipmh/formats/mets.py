@@ -26,6 +26,16 @@ DCTERMS_NS = "http://purl.org/dc/terms/"
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
 
+def _escape_flocat_href(value: Optional[str]) -> Optional[str]:
+    """Percent-encode square brackets for METS FLocat href values."""
+    if not value:
+        return value
+    text = str(value)
+    if not text:
+        return text
+    return text.replace('[', '%5B').replace(']', '%5D')
+
+
 class METSSerializer:
     """
     METS serializer for complete project graphs.
@@ -246,12 +256,13 @@ class METSSerializer:
                     url = f.s3_url
 
                 if url:
+                    href = _escape_flocat_href(url)
                     ET.SubElement(
                         file_elem,
                         f"{{{METS_NS}}}FLocat",
                         {
                             "LOCTYPE": "URL",
-                            f"{{{XLINK_NS}}}href": url,
+                            f"{{{XLINK_NS}}}href": href,
                         },
                     )
 

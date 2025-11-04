@@ -1,7 +1,22 @@
 from django.urls import path
-from arkumu.metadata.views import dashboard_views, resource_views, triple_views, bulk_editor_views, data_discovery_views, data_explorer_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
+from arkumu.metadata.views import (
+    dashboard_views,
+    resource_views,
+    triple_views,
+    bulk_editor_views,
+    data_discovery_views,
+    data_explorer_views,
+    direct_data_views,
+    model_graph_views,
+    resource_relationship_views,
+    mapping_visualizer_graphviz,
+    database_structure_visualizer,
+    blueprint_visualizer_graphviz,
+    simplified_resource_views,
+)
 from arkumu.metadata.views import metadata_entry_views, tabular_views, schema_workspace_views
 from arkumu.metadata.views import workspace_quick_create_views
+from arkumu.metadata.views import controlled_vocabulary_views
 # Temporarily disabled bulk arkumu mapping views
 # from arkumu.metadata.views.bulk_arkumu_mapping_views import (
 #     BulkArkumuMappingView,
@@ -54,7 +69,13 @@ urlpatterns = [
     path('dashboard/upload-session/<uuid:session_id>/verify/', dashboard_views.trigger_upload_verification, name='upload_session_verify'),
     path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
     path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
-    
+
+    # Controlled vocabularies
+    path('controlled-vocabularies/', controlled_vocabulary_views.ControlledVocabularyOverviewView.as_view(), name='controlled_vocab_overview'),
+    path('controlled-vocabularies/<str:vocab_key>/', controlled_vocabulary_views.ControlledVocabularyEntryListView.as_view(), name='controlled_vocab_list'),
+    path('controlled-vocabularies/<str:vocab_key>/new/', controlled_vocabulary_views.ControlledVocabularyEntryManageView.as_view(), name='controlled_vocab_create'),
+    path('controlled-vocabularies/<str:vocab_key>/<uuid:resource_id>/edit/', controlled_vocabulary_views.ControlledVocabularyEntryManageView.as_view(), name='controlled_vocab_edit'),
+
     # Data Explorer (unified resource and triple browsing)
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
     path('data-explorer/results/', DataExplorerResultsView.as_view(), name='data_explorer_results'),
