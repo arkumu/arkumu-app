@@ -98,6 +98,115 @@ def _filter_field_metadata(
     return filtered
 
 
+def _enrich_fk_metadata(
+    form: DatasetEntityForm,
+    field_metadata: Dict[str, Any],
+    schema_service: SchemaWorkspaceService,
+    dataset_name: str,
+) -> List[Dict[str, Any]]:
+    """
+    Enrich FK field metadata with resolved labels and search URLs.
+
+    This mirrors the logic from schema_workspace_views.py lines 419-620.
+    For single FK fields, resolves the URI to a human-readable label
+    and provides search/autocomplete functionality.
+    """
+    from django.urls import reverse
+    from django.utils.http import urlencode
+    from django.utils.text import slugify
+
+    fields_with_metadata: List[Dict[str, Any]] = []
+
+    # Build base suggestion URL for autocomplete
+    base_suggestion_url = reverse(
+        "metadata:entity_workspace_field_values",
+        args=[schema_service.mapping.id],
+    )
+
+    for index, field in enumerate(form):
+        meta = dict(field_metadata.get(field.name, {}))
+        fk_info = meta.get("fk_relationship") or {}
+        target_dataset = fk_info.get("target_dataset") if fk_info else None
+
+        # Build search properties for target dataset
+        if target_dataset:
+            try:
+                target_schema = schema_service.get_dataset_schema(target_dataset)
+                properties: List[Dict[str, str]] = []
+                for column, prop in (target_schema.get("properties", {}) or {}).items():
+                    uri = getattr(prop, "uri", None)
+                    if not uri:
+                        continue
+                    label = getattr(prop, "name", column) or column
+                    properties.append({"uri": uri, "label": label, "column": column})
+                properties.sort(key=lambda item: item["label"].lower())
+                meta["search_properties"] = properties
+            except ValueError:
+                logger.warning(f"Could not load schema for target dataset: {target_dataset}")
+                meta["search_properties"] = []
+
+        # Build search URL and target ID for autocomplete
+        search_url: Optional[str] = None
+        target_id: Optional[str] = None
+
+        if fk_info:
+            target_id = f"field-suggestions-{index}-{slugify(field.name) or index}"
+            input_id = field.auto_id or f"id_{slugify(field.name) or index}"
+            meta["input_id"] = input_id
+            meta["target_id"] = target_id
+
+            base_params = {"dataset": dataset_name, "column": field.name}
+            base_url = f"{base_suggestion_url}?{urlencode(base_params)}"
+            query_params = {"input_id": input_id, "target_id": target_id}
+            search_url = base_url + "&" + urlencode(query_params)
+            meta["search_url"] = search_url
+            meta["base_suggestion_url"] = base_url
+
+        # Handle single FK fields (not multi-value)
+        if fk_info and not meta.get("is_multi_value"):
+            raw_value = form.initial.get(field.name, field.value())
+            if raw_value:
+                display_prop_uri = meta.get("display_property")
+
+                # Auto-select best display property if not set
+                if not display_prop_uri and target_dataset:
+                    preferred_names = ["name", "titel", "title", "label", "bezeichnung", "beschreibung"]
+                    for prop in meta.get("search_properties", []):
+                        prop_name_lower = prop.get("column", "").lower()
+                        if any(pref in prop_name_lower for pref in preferred_names):
+                            display_prop_uri = prop.get("uri")
+                            meta["display_property"] = display_prop_uri
+                            meta["display_property_label"] = prop.get("label")
+                            logger.info(f"Auto-selected display property for {field.name}: {meta['display_property_label']}")
+                            break
+
+                # Resolve URI to human-readable label
+                resolved_label = _infer_entity_label(
+                    schema_service,
+                    str(raw_value),
+                    target_dataset,
+                    display_property_uri=display_prop_uri,
+                )
+
+                if resolved_label and resolved_label != raw_value:
+                    meta["resolved_label"] = resolved_label
+                    meta["resolved_uri"] = str(raw_value)
+                    form.initial[field.name] = resolved_label
+                    if field.name in form.fields:
+                        form.fields[field.name].initial = resolved_label
+
+                    logger.info(f"✅ Resolved FK field '{field.name}': {raw_value} → {resolved_label}")
+
+        fields_with_metadata.append({
+            "field": field,
+            "meta": meta,
+            "search_url": search_url,
+            "target_id": target_id,
+        })
+
+    return fields_with_metadata
+
+
 class SimplifiedProjectEditView(LoginRequiredMixin, View):
     """
     Simplified project edit view using legacy workspace infrastructure.
@@ -176,9 +285,18 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                 relationships=relationships,
             )
 
+        # Enrich FK field metadata with resolved labels (same as legacy workspace)
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+        )
+
         # Render the form
         context = {
             "form": form,
+            "fields_with_metadata": fields_with_metadata,
             "entity_uri": entity_uri,
             "entity_label": entity_label,
             "dataset_name": dataset_name,
