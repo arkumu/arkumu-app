@@ -69,6 +69,10 @@
                    class="{% if current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
               Metadata Workspace
             </a></li>
+            <li><a href="{% url 'metadata:controlled_vocab_overview' %}"
+                   class="{% if current_url_name in 'controlled_vocab_overview controlled_vocab_list controlled_vocab_create controlled_vocab_edit' %}active{% endif %}">
+              Controlled Vocabularies
+            </a></li>
             <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener"
                    class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">
               Metadata Legacy
@@ -103,6 +107,10 @@
           <li><a href="{% url 'metadata:metadata_entry' %}"
                  class="{% if current_url_name == 'metadata_entry' %}active{% endif %}">
             Metadata Tabular
+          </a></li>
+          <li><a href="{% url 'metadata:controlled_vocab_overview' %}"
+                 class="{% if current_url_name in 'controlled_vocab_overview controlled_vocab_list controlled_vocab_create controlled_vocab_edit' %}active{% endif %}">
+            Controlled Vocabularies
           </a></li>
           <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener"
                  class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">
@@ -201,25 +209,9 @@
            class="btn btn-sm {% if current_url_name == 'create_actor' %}btn-primary{% else %}btn-outline{% endif %}">
           Actor
         </a>
-        <a href="{% url 'metadata:create_role' %}"
-           class="btn btn-sm {% if current_url_name == 'create_role' %}btn-primary{% else %}btn-outline{% endif %}">
-          Role
-        </a>
         <a href="{% url 'metadata:create_digital_object' %}"
            class="btn btn-sm {% if current_url_name == 'create_digital_object' %}btn-primary{% else %}btn-outline{% endif %}">
           Digital Object
-        </a>
-        <a href="{% url 'metadata:create_institution' %}"
-           class="btn btn-sm {% if current_url_name == 'create_institution' %}btn-primary{% else %}btn-outline{% endif %}">
-          Institution
-        </a>
-        <a href="{% url 'metadata:create_project_category' %}"
-           class="btn btn-sm {% if current_url_name == 'create_project_category' %}btn-primary{% else %}btn-outline{% endif %}">
-          Project Category
-        </a>
-        <a href="{% url 'metadata:create_project_type' %}"
-           class="btn btn-sm {% if current_url_name == 'create_project_type' %}btn-primary{% else %}btn-outline{% endif %}">
-          Project Type
         </a>
         <a href="{% url 'metadata:create_alternate_title' %}"
            class="btn btn-sm {% if current_url_name == 'create_alternate_title' %}btn-primary{% else %}btn-outline{% endif %}">
