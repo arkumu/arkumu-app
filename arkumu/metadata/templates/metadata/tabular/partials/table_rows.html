@@ -5,23 +5,40 @@
   <table class="table table-zebra table-sm">
     <thead>
       <tr>
+        {% if columns|length and columns.0.name == 'Aktionen' %}
+        <th class="bg-base-200 w-28">Aktionen</th>
+        {% endif %}
         <th class="bg-base-200">#</th>
         {% for column in columns %}
+        {% if column.name != 'Aktionen' %}
         <th class="bg-base-200">
           {{ column.name }}
           {% if column.is_fk %}
           <span class="badge badge-xs badge-info ml-1" title="Foreign Key">FK</span>
           {% endif %}
         </th>
+        {% endif %}
         {% endfor %}
       </tr>
     </thead>
     <tbody>
       {% for row in page_obj %}
       <tr>
+        {% if columns|length and columns.0.name == 'Aktionen' %}
+        <td class="w-28">
+          {% with action=row|get_item:'Aktionen' %}
+            {% if action %}
+              {{ action|safe }}
+            {% else %}
+              <span class="text-base-content/30">—</span>
+            {% endif %}
+          {% endwith %}
+        </td>
+        {% endif %}
         <td class="font-mono text-xs">{{ forloop.counter|add:page_obj.start_index|add:"-1" }}</td>
         {% for column in columns %}
-        <td class="max-w-xs truncate" title="{{ row|get_item:column.name }}">
+        {% if column.name != 'Aktionen' %}
+        <td class="max-w-xs truncate"{% if column.name != 'Aktionen' %} title="{{ row|get_item:column.name }}"{% endif %}>
           {% with value=row|get_item:column.name %}
             {% if value %}
               {{ value }}
@@ -30,6 +47,7 @@
             {% endif %}
           {% endwith %}
         </td>
+        {% endif %}
         {% endfor %}
       </tr>
       {% empty %}

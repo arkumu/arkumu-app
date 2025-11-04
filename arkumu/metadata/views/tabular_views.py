@@ -3,9 +3,12 @@
 import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
 from django.shortcuts import render
+from django.urls import reverse
+from django.utils.html import format_html
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -1255,8 +1258,18 @@ def _build_rows_for_subjects(
     """
     column_specs = _build_column_specs(desired_columns)
 
+    edit_url_names = {
+        'project': 'metadata:edit_project',
+        'actor': 'metadata:edit_actor',
+        'digital_object': 'metadata:edit_digital_object',
+    }
+    add_actions = entity_type in edit_url_names
+
     if not subjects:
-        return [], [{'name': spec['label'], 'is_fk': False} for spec in column_specs]
+        columns = [{'name': spec['label'], 'is_fk': False} for spec in column_specs]
+        if add_actions:
+            columns.insert(0, {'name': 'Aktionen', 'is_fk': False})
+        return [], columns
 
     subject_ids = [s.id for s in subjects]
     triples = (
@@ -1313,6 +1326,9 @@ def _build_rows_for_subjects(
     column_is_fk: Dict[str, bool] = {spec['label']: False for spec in column_specs}
 
     rows: List[Dict[str, str]] = []
+    if add_actions:
+        edit_url = reverse(edit_url_names[entity_type])
+
     for s in subjects:
         row: Dict[str, str] = {spec['label']: '' for spec in column_specs}
         
@@ -1357,12 +1373,28 @@ def _build_rows_for_subjects(
                         column_is_fk[spec['label']] = True
                         break
         
+        if add_actions:
+            if s.uri:
+                query = urlencode({'uri': s.uri})
+                action_html = format_html(
+                    '<a href="{}?{}" class="btn btn-sm btn-primary">Bearbeiten</a>',
+                    edit_url,
+                    query,
+                )
+            else:
+                action_html = ''
+            row['Aktionen'] = action_html
+
         rows.append(row)
 
     columns_meta = [
         {'name': spec['label'], 'is_fk': column_is_fk.get(spec['label'], False)}
         for spec in column_specs
     ]
+
+    if add_actions:
+        columns_meta.insert(0, {'name': 'Aktionen', 'is_fk': False})
+
     return rows, columns_meta
 
 

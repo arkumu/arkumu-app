@@ -22,7 +22,7 @@
         <div>
           <h1 class="card-title text-2xl font-bold">Ereignis bearbeiten</h1>
           <p class="text-base-content/70 mt-1">
-            Fill in the details to edit a new archival event
+            Aktualisiere die wichtigsten Angaben für dieses Ereignis.
           </p>
         </div>
       </div>
@@ -30,21 +30,7 @@
       <form action="{% url 'metadata:edit_event' %}" method="post" class="space-y-8">
         {% csrf_token %} 
         
-        {% include "metadata/entity_editing/partials/_event_form_fields.html" %}
-
-        {% include "metadata/entity_editing/partials/_event_form_actors_and_roles_fields.html" %}
-
-        {% include "metadata/entity_editing/partials/_event_form_descriptions_and_comments_fields.html" %}
-
-        {% include "metadata/entity_editing/partials/_event_form_digital_and_physical_objects_fields.html" %}
-
-        {% include "metadata/entity_editing/partials/_event_form_related_projects_and_events_fields.html" %}
-
-        {% include "metadata/entity_editing/partials/_event_form_other_properties_fields.html" %}
-
-        {% include "metadata/entity_editing/partials/_event_form_official_data_fields.html" %}
-
-        {% include "metadata/entity_editing/partials/_event_form_collections_fields.html" %}
+        {% include "metadata/entity_creation/partials/_event_form_sections_v2.html" %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a
@@ -90,92 +76,3 @@
   </div>
 </div>
 {% endblock content %} 
-
-{% block javascript %} {{ block.super }}
-  <script>
-    document.addEventListener("DOMContentLoaded", function () {
-
-      document.querySelector("#id_uri").closest(".form-control").style.display = 'none';
-
-      // Handle dynamic addition of actor-event forms
-      document.querySelectorAll(".add-actor-event").forEach(function (button) {
-        button.addEventListener("click", function (e) {
-          e.preventDefault();
-
-          const container = document.querySelector(".actor-event-container");
-          const template = document
-            .querySelector("#actor-event-template")
-            .content.cloneNode(true);
-
-          // Find the management form fields
-          const actors_managementFormTotal = document.querySelector(
-            '[name="actors-TOTAL_FORMS"]',
-          );
-          const roles_managementFormTotal = document.querySelector(
-            '[name="roles-TOTAL_FORMS"]',
-          );
-
-          if (!actors_managementFormTotal) {
-            console.error(
-              "Management form not found. Make sure it's properly rendered in the template.",
-            );
-            return;
-          }
-
-          // Get current form count
-          let formCount = parseInt(actors_managementFormTotal.value);
-
-          // Update the new form HTML to replace __prefix__ with the new index
-          const actor_newFormHTML = template
-            .querySelector(".actor-form")
-            .innerHTML.replace(/actors-__prefix__-/g, `actors-${formCount}-`)
-            .replace(/actors__prefix__/g, `actors][${formCount}][`);
-          
-          const actor_script = template
-            .querySelector(".actor-form script")
-            .textContent.replace(/actors-__prefix__-/g, `actors-${formCount}-`)
-            .replace(/actors__prefix__/g, `actors][${formCount}][`);
-
-          const role_newFormHTML = template
-            .querySelector(".role-form")
-            .innerHTML.replace(/roles-__prefix__-/g, `roles-${formCount}-`)
-            .replace(/roles__prefix__/g, `roles][${formCount}][`);
-
-          const role_script = template
-            .querySelector(".role-form script")
-            .textContent.replace(/roles-__prefix__-/g, `roles-${formCount}-`)
-            .replace(/roles__prefix__/g, `roles][${formCount}][`)
-            .replace('add_uri_fill_in_handler', 'role_add_uri_fill_in_handler');
-          
-          console.log(role_script)
-          // Create a new div for the form
-          const actor_role_newFormDiv = document.createElement("div");
-          actor_role_newFormDiv.className =
-            `actor-event-${formCount}-form p-4 bg-base-100 rounded-lg border border-base-200`;
-          actor_role_newFormDiv.innerHTML = `<h4 class="text-base font-medium">Akteur ${formCount + 1}</h4> \n` + actor_newFormHTML + '\n' + role_newFormHTML;
-
-          // Add the new form to the container
-          container.appendChild(actor_role_newFormDiv);
-
-          const actor_scriptElement = document.createElement('script');
-          actor_scriptElement.textContent = actor_script;
-          document.head.appendChild(actor_scriptElement);
-
-          //function from inside script
-          add_uri_fill_in_handler()
-
-          const role_scriptElement = document.createElement('script');
-          role_scriptElement.textContent = role_script;
-          document.head.appendChild(role_scriptElement);
-
-          //function from inside script
-          role_add_uri_fill_in_handler()
-
-          // Update the total form count
-          actors_managementFormTotal.value = formCount + 1;
-          roles_managementFormTotal.value = formCount + 1;
-        });
-      });
-    });
-  </script>
-{% endblock javascript %}

@@ -1,0 +1,139 @@
+{# Unified event form sections using real form fields #}
+<div class="space-y-6">
+  {% if event_form.fields.uri %}
+    <div class="form-control">
+      <label class="label">
+        <span class="label-text font-medium">
+          {% if event_form.fields.uri.required %}Ereignis auswählen{% else %}Ereignis auswählen oder neu anlegen{% endif %}
+        </span>
+        {% if event_form.uri.errors %}
+          <span class="label-text-alt text-error">{{ event_form.uri.errors.0 }}</span>
+        {% endif %}
+      </label>
+      {{ event_form.uri }}
+      {% if event_form.uri.help_text %}
+        <div class="text-xs text-base-content/60 mt-1">{{ event_form.uri.help_text }}</div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if event_form.non_field_errors %}
+    <div class="alert alert-error shadow-lg">
+      <div class="flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-4a.75.75 0 01.75.75v3.5a.75.75 0 11-1.5 0v-3.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+        </svg>
+        <div>
+          {% for error in event_form.non_field_errors %}
+            <div>{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Ereignisdetails</span>
+      <span class="badge badge-outline">Titel &amp; Beschreibung</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      {% if event_form.fields.ereignisname %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Titel</span>
+            {% if event_form.ereignisname.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisname.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ event_form.ereignisname }}
+          {% if event_form.ereignisname.help_text %}
+            <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisname.help_text }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if event_form.fields.ereignisbeschreibung %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Beschreibung</span>
+            {% if event_form.ereignisbeschreibung.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisbeschreibung.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ event_form.ereignisbeschreibung }}
+          {% if event_form.ereignisbeschreibung.help_text %}
+            <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisbeschreibung.help_text }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if event_form.fields.project_uri %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Zugehöriges Projekt</span>
+            {% if event_form.project_uri.errors %}
+              <span class="label-text-alt text-error">{{ event_form.project_uri.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ event_form.project_uri }}
+        </div>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="bg-base-100 border border-base-200 rounded-box" open>
+    <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
+      <span class="text-lg font-semibold">Zeit &amp; Ort</span>
+      <span class="badge badge-outline">Kontext</span>
+    </summary>
+    <div class="px-5 pb-5 pt-3 space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {% if event_form.fields.ereignisbeginn %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Beginn</span>
+              {% if event_form.ereignisbeginn.errors %}
+                <span class="label-text-alt text-error">{{ event_form.ereignisbeginn.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.ereignisbeginn }}
+            {% if event_form.ereignisbeginn.help_text %}
+              <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisbeginn.help_text }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        {% if event_form.fields.ereignisende %}
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Ende</span>
+              {% if event_form.ereignisende.errors %}
+                <span class="label-text-alt text-error">{{ event_form.ereignisende.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ event_form.ereignisende }}
+            {% if event_form.ereignisende.help_text %}
+              <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisende.help_text }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if event_form.fields.ereignisort %}
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Ort</span>
+            {% if event_form.ereignisort.errors %}
+              <span class="label-text-alt text-error">{{ event_form.ereignisort.errors.0 }}</span>
+            {% endif %}
+          </label>
+          {{ event_form.ereignisort }}
+          {% if event_form.ereignisort.help_text %}
+            <div class="text-xs text-base-content/60 mt-1">{{ event_form.ereignisort.help_text }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </details>
+</div>
