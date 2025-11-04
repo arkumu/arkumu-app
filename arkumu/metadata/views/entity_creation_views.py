@@ -245,51 +245,6 @@ class ProjectForm(BaseEntityForm):
     )
 
 
-    hochschule_uri = forms.ChoiceField(
-        label="Hochschule",
-        required=True,
-        choices=[],
-    )
-    organisationseinheit_uri = forms.ChoiceField(
-        label="Organisationseinheit",
-        required=False,
-        choices=[],
-    )
-    erstellungsdatum = forms.DateField(
-        label="Erstellungsdatum",
-        widget=forms.DateTimeInput(attrs={"type": "date"}),
-        required=False,
-        help_text="Das Erstellungsdatum des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen. ",
-    )
-    letzteModifikation = forms.DateField(
-        label="Letzte Projektmodifikation beim Einlieferer",
-        widget=forms.DateTimeInput(attrs={"type": "date"}),
-        required=False,
-        help_text="Das Datum der letzten Modifikation des Projekts in einer lokalen Datenbank der einliefernden Hochschule. Wird in der Regel beim Import automatisch übertragen.",
-    )
-
-    projektStatus_uri = forms.ChoiceField( 
-        label="Status", 
-        required=True,
-        choices=[],
-    )
-    signatur = forms.CharField(
-        label="Signatur",
-        required=False,
-        help_text="Eine vom System automatisch erstellte Signatur für das Projekt.",
-    )
-    signaturEinlieferer = forms.CharField(
-        label="Signatur beim Einlieferer",
-        required=False,
-        help_text="Eine vom Einlieferer vergebene Signatur für das Projekt.",
-    )
-    verzeichnisnummern = forms.CharField(
-        label="Werkverzeichnis-Nr",
-        required=False,
-        help_text="Eine Nummer, die in einem bestehenden Werkverzeichnis vergeben wurde, zum Beispiel 'BWV 1010'. Wenn mehrere Nummern eingetragen werden, müssen sie mit einem Semikolon getrennt werden.",
-    )
-
-
     def __init__(self, *args, metadata_options=None, uri=None, **kwargs):
         super().__init__(*args, metadata_options=metadata_options, **kwargs)
         options = self.metadata_options
@@ -349,6 +304,14 @@ class ProjectForm(BaseEntityForm):
             self.fields["schlagwort_uris"].initial = entity.get_property(properties["catchphrase_prop"])[0].uri if entity.get_property(properties["catchphrase_prop"]) else ""
             self.fields["projektart_uri"].initial = entity.get_property(properties["project_type_prop"])[0].uri if entity.get_property(properties["project_type_prop"]) else ""
             self.fields["vorschaubild_uri"].initial = entity.get_property(properties["preview_image_prop"])[0].uri if entity.get_property(properties["preview_image_prop"]) else ""
+            self.fields["hochschule_uri"].initial = entity.get_property(properties["hochschule_prop"])[0].uri if entity.get_property(properties["hochschule_prop"]) else ""
+            self.fields["organisationseinheit_uri"].initial = entity.get_property(properties["organisationseinheit_prop"])[0].uri if entity.get_property(properties["organisationseinheit_prop"]) else ""
+            self.fields["erstellungsdatum"].initial = entity.get_property(properties["erstellungsdatum_prop"])[0].uri if entity.get_property(properties["erstellungsdatum_prop"]) else ""
+            self.fields["letzteModifikation"].initial = entity.get_property(properties["letzteModifikation_prop"])[0].uri if entity.get_property(properties["letzteModifikation_prop"]) else ""
+            self.fields["projektStatus_uri"].initial = entity.get_property(properties["projektStatus_prop"])[0].uri if entity.get_property(properties["projektStatus_prop"]) else ""
+            self.fields["signatur"].initial = entity.get_property(properties["signatur_prop"])[0].uri if entity.get_property(properties["signatur_prop"]) else ""
+            self.fields["signaturEinlieferer"].initial = entity.get_property(properties["signaturEinlieferer_prop"])[0].uri if entity.get_property(properties["signaturEinlieferer_prop"]) else ""
+            self.fields["verzeichnisnummern"].initial = entity.get_property(properties["verzeichnisnummern"])[0].uri if entity.get_property(properties["verzeichnisnummern"]) else ""
 
 
 class EventForm(BaseEntityForm):
