@@ -20,19 +20,31 @@
           </svg>
         </div>
         <div>
-          <h1 class="card-title text-2xl font-bold">edit New Event</h1>
+          <h1 class="card-title text-2xl font-bold">Ereignis bearbeiten</h1>
           <p class="text-base-content/70 mt-1">
             Fill in the details to edit a new archival event
           </p>
         </div>
       </div>
 
-      <form
-        action="{% url 'metadata:edit_event' %}"
-        method="post"
-        class="space-y-8"
-      >
-        {% csrf_token %} {% include "metadata/entity_creation/partials/_event_form_fields.html" %}
+      <form action="{% url 'metadata:edit_event' %}" method="post" class="space-y-8">
+        {% csrf_token %} 
+        
+        {% include "metadata/entity_editing/partials/_event_form_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_event_form_actors_and_roles_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_event_form_descriptions_and_comments_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_event_form_digital_and_physical_objects_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_event_form_related_projects_and_events_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_event_form_other_properties_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_event_form_official_data_fields.html" %}
+
+        {% include "metadata/entity_editing/partials/_event_form_collections_fields.html" %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a
@@ -53,7 +65,7 @@
                 d="M10 19l-7-7m0 0l7-7m-7 7h18"
               />
             </svg>
-            Cancel
+            Abbrechen
           </a>
           <button type="submit" class="btn btn-primary px-8">
             <svg
@@ -70,14 +82,16 @@
                 d="M5 13l4 4L19 7"
               />
             </svg>
-            edit Event
+            Speichern
           </button>
         </div>
       </form>
     </div>
   </div>
 </div>
-{% endblock content %} {% block javascript %} {{ block.super }}
+{% endblock content %} 
+
+{% block javascript %} {{ block.super }}
   <script>
     document.addEventListener("DOMContentLoaded", function () {
 
