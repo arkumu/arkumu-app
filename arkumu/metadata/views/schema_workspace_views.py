@@ -31,7 +31,6 @@ from arkumu.metadata.schema_workspace import (
 from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 from arkumu.users.models import Organization
-from arkumu.metadata.services.entity_label_service import infer_entity_label as _infer_entity_label
 
 STEP_LABELS: Dict[str, str] = {
     "project": "Projekt",
@@ -320,6 +319,247 @@ def _get_schema_service(request: HttpRequest, mapping_id: Optional[str] = None) 
 
     return SchemaWorkspaceService(mapping=mapping, organization=organization)
 
+
+def _infer_entity_label(
+    service: SchemaWorkspaceService,
+    entity_uri: str,
+    target_dataset: Optional[str] = None,
+    include_rich_context: bool = False,
+    display_property_uri: Optional[str] = None,
+) -> str:
+    logger.debug(f"[_infer_entity_label] Called with entity_uri={entity_uri}, target_dataset={target_dataset}, display_property_uri={display_property_uri}")
+
+    # Handle malformed URIs from old data (pattern: uri-{uri}-label-{label})
+    uri_tail = entity_uri.split("/")[-1]
+    if uri_tail.startswith("uri-") and "-label-" in uri_tail:
+        # Extract the actual label from the malformed pattern
+        # Pattern: uri-http-arkumu-org-data-fuk-entities-ereignis-1-label-1
+        # Extract: 1
+        parts = uri_tail.split("-label-")
+        if len(parts) == 2:
+            actual_label = parts[1]
+            logger.info(f"[_infer_entity_label] Extracted label from malformed URI: {actual_label} (from {uri_tail})")
+            return actual_label
+
+    try:
+        entity = Resource.objects.get(uri=entity_uri)
+    except Resource.DoesNotExist:
+        logger.warning(f"[_infer_entity_label] Resource not found for URI: {entity_uri}")
+        return uri_tail
+
+    # Detect and resolve through join/junction tables
+    # Join tables typically have "Kreuz" (cross) in their dataset name or multiple FK relationships
+    if target_dataset and ("kreuz" in target_dataset.lower() or "junction" in target_dataset.lower()):
+        logger.debug(f"[_infer_entity_label] Detected join table: {target_dataset}, attempting to resolve through it")
+
+        # Find FK relationships from this join entity (excluding the one pointing back to current context)
+        related_entities = Triple.objects.filter(
+            subject=entity,
+            object__resource_type=ResourceType.ENTITY,
+        ).exclude(
+            predicate__uri__icontains="ispartof"
+        ).select_related('predicate', 'object')[:5]
+
+        # Try to find a good label from one of the related entities
+        # Prioritize certain entity types: Events > Actors/Persons > Digital Objects
+        candidates_by_priority = []
+
+        for rel_triple in related_entities:
+            related_uri = rel_triple.object.uri
+            related_name = rel_triple.object.name or ""
+            pred_uri = rel_triple.predicate.uri if rel_triple.predicate else ""
+
+            # Skip if this looks like it points back to a project/werk (the source we came from)
+            if "projekt" in pred_uri.lower() or "werk" in pred_uri.lower():
+                continue
+
+            # Determine priority based on entity type in URI
+            priority = 3  # Default low priority
+            if "ereignis" in related_uri.lower() or "event" in related_uri.lower():
+                priority = 1  # High priority for events
+            elif "akteur" in related_uri.lower() or "person" in related_uri.lower() or "koerperschaft" in related_uri.lower():
+                priority = 2  # Medium priority for actors/persons/organizations
+            elif "digital" in related_uri.lower() or "objekt" in related_uri.lower():
+                priority = 4  # Low priority for digital objects
+
+            # Try to infer dataset name from the related entity's URI
+            # Pattern: http://arkumu.org/data/hmt/entities/02-hfm-ereignis/319
+            uri_parts = related_uri.split("/entities/")
+            if len(uri_parts) == 2:
+                dataset_part = uri_parts[1].split("/")[0]  # e.g., "02-hfm-ereignis"
+                # Convert to dataset name format: "02_hfm_Ereignis"
+                inferred_dataset = dataset_part.replace("-", "_")
+                # Capitalize first letter of last part
+                parts = inferred_dataset.rsplit("_", 1)
+                if len(parts) == 2:
+                    inferred_dataset = f"{parts[0]}_{parts[1].capitalize()}"
+
+                candidates_by_priority.append((priority, related_uri, inferred_dataset, related_name))
+
+        # Sort by priority and try each candidate
+        candidates_by_priority.sort(key=lambda x: x[0])
+        for priority, related_uri, inferred_dataset, related_name in candidates_by_priority:
+            logger.debug(f"[_infer_entity_label] Resolving through join table to {related_uri} (priority {priority}, inferred dataset: {inferred_dataset})")
+
+            # Recursively get label for the related entity
+            related_label = _infer_entity_label(service, related_uri, inferred_dataset)
+
+            # If we got a good label (not just a number/ID), use it
+            if related_label and not related_label.isdigit() and related_label != related_name:
+                logger.info(f"[_infer_entity_label] Resolved join entity {entity_uri} -> {related_label} (priority {priority})")
+                return related_label
+
+    # If specific display property requested, fetch that first
+    if display_property_uri:
+        try:
+            prop_resource = Resource.objects.get(uri=display_property_uri)
+            triple = (
+                Triple.objects.filter(
+                    subject=entity,
+                    predicate=prop_resource,
+                    object__resource_type=ResourceType.LITERAL,
+                )
+                .select_related("object")
+                .first()
+            )
+            if triple:
+                value = triple.object.value or triple.object.literal_value or triple.object.name
+                if value:
+                    logger.debug(f"[_infer_entity_label] Found value via display_property_uri: {value}")
+                    return str(value)
+        except Resource.DoesNotExist:
+            logger.warning(f"[_infer_entity_label] Display property resource not found: {display_property_uri}")
+
+    if target_dataset:
+        try:
+            target_schema = service.get_dataset_schema(target_dataset)
+        except ValueError:
+            target_schema = None
+        if target_schema:
+            properties = target_schema.get("properties", {}) or {}
+            anchor_columns = [
+                col.get("column_name")
+                for col in target_schema.get("anchor_columns", [])
+                if col.get("column_name")
+            ]
+            candidate_columns = anchor_columns or list(properties.keys())
+            for column in candidate_columns:
+                prop_resource = properties.get(column)
+                if not prop_resource:
+                    continue
+                triple = (
+                    Triple.objects.filter(
+                        subject=entity,
+                        predicate=prop_resource,
+                        object__resource_type=ResourceType.LITERAL,
+                    )
+                    .select_related("object")
+                    .first()
+                )
+                if triple:
+                    value = (
+                        triple.object.value
+                        or triple.object.literal_value
+                        or triple.object.name
+                    )
+                    if value:
+                        # Skip anchor columns that are just numeric IDs - continue to smarter pattern matching
+                        value_str = str(value).strip()
+                        if not value_str.isdigit():
+                            logger.debug(f"[_infer_entity_label] Found label via anchor column '{column}': {value_str}")
+                            return value_str
+                        else:
+                            logger.debug(f"[_infer_entity_label] Skipping numeric anchor column '{column}': {value_str}")
+
+    # Try exact suffix matches first (most specific)
+    label_predicates_exact = [
+        "bevorzugter-titel",
+        "bevorzugtertitel",
+        "titel",
+        "title",
+        "name",
+        "label",
+    ]
+
+    for suffix in label_predicates_exact:
+        triple = (
+            Triple.objects.filter(
+                subject=entity,
+                predicate__uri__iendswith=suffix,
+                object__resource_type=ResourceType.LITERAL,
+            )
+            .select_related("object")
+            .first()
+        )
+        if triple:
+            value = triple.object.value or triple.object.literal_value or triple.object.name
+            if value:
+                logger.debug(f"[_infer_entity_label] Found label via exact suffix '{suffix}': {value}")
+                return str(value)
+
+    # Try "contains" matches for common patterns (e.g., "Ereignis_DeutscherName" contains "Name")
+    label_patterns_contains = [
+        ("titel", 1),  # Priority 1 (highest)
+        ("title", 1),
+        ("name", 2),   # Priority 2
+        ("label", 2),
+        ("beschreibung", 3),  # Priority 3
+        ("description", 3),
+        ("kommentar", 4),  # Priority 4 (lowest)
+        ("comment", 4),
+    ]
+
+    # Collect all matching triples with their priority
+    candidates = []
+    for pattern, priority in label_patterns_contains:
+        triples = Triple.objects.filter(
+            subject=entity,
+            predicate__uri__icontains=pattern,
+            object__resource_type=ResourceType.LITERAL,
+        ).select_related("object", "predicate")[:5]
+
+        for triple in triples:
+            value = triple.object.value or triple.object.literal_value or triple.object.name
+            if value and str(value).strip():
+                # Skip if it's just a number or ID
+                if not str(value).strip().isdigit():
+                    candidates.append((priority, triple, str(value)))
+
+    # Return the highest priority candidate
+    if candidates:
+        candidates.sort(key=lambda x: x[0])  # Sort by priority (lowest number = highest priority)
+        _, best_triple, best_value = candidates[0]
+        pred_name = best_triple.predicate.name if best_triple.predicate else "unknown"
+        logger.debug(f"[_infer_entity_label] Found label via pattern match (predicate: {pred_name}): {best_value}")
+        return best_value
+
+    if entity.name and entity.name != entity_uri:
+        tail = entity_uri.split("/")[-1]
+        if entity.name != tail:
+            return entity.name
+
+    anchor = (
+        Triple.objects.filter(
+            subject=entity,
+            object__resource_type=ResourceType.LITERAL,
+        )
+        .select_related("object")
+        .first()
+    )
+    if anchor:
+        value = anchor.object.value or anchor.object.literal_value or anchor.object.name
+        if value:
+            if include_rich_context:
+                # Include ID for context: "Deutsch (110)"
+                final_label = f"{value} ({entity_uri.split('/')[-1]})"
+            else:
+                final_label = str(value)
+            logger.debug(f"[_infer_entity_label] Returning anchor-based label: {final_label}")
+            return final_label
+
+    final_label = entity_uri.split('/')[-1]
+    logger.info(f"[_infer_entity_label] No good label found, returning URI tail: {final_label} for {entity_uri}")
+    return final_label
 
 
 def _build_project_access_context(
@@ -708,47 +948,61 @@ def _render_dataset_panel(
         key=lambda item: item["field"].label.lower(),
     )
 
+    # Prepare relationship rows data for pure HTMX rendering
+    import uuid
     for rel_item in relationship_fields_sorted:
         field = rel_item["field"]
         meta = rel_item["meta"]
         field_name = field.name
 
+        # Ensure search_properties is always a list
+        if "search_properties" not in meta or meta["search_properties"] is None:
+            meta["search_properties"] = []
+
+        # Get initial labels/values
         initial_labels = rel_item.get("initial_labels", [])
-        value_items: List[Dict[str, Any]] = []
-        for label_data in initial_labels:
-            if isinstance(label_data, dict):
-                value_items.append(
-                    {
-                        "uri": str(label_data.get("uri") or ""),
-                        "label": str(label_data.get("label") or label_data.get("uri") or ""),
-                        "resource_id": label_data.get("resource_id"),
-                    }
-                )
-            else:
-                string_value = str(label_data)
-                value_items.append({"uri": string_value, "label": string_value})
 
-        selected_property = (
-            request.GET.get(f"relationship_property_{field_name}", "")
-            or request.POST.get(f"relationship_property_{field_name}", "")
-            or ""
-        )
+        # Generate rows for existing values
+        rows = []
+        if initial_labels:
+            for label_data in initial_labels:
+                row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+                input_id = f"input-{row_id}"
+                suggestions_id = f"suggestions-{row_id}"
 
-        widget_context = _build_relationship_widget_context(
-            service=service,
-            dataset_name=dataset_name,
-            field_name=field_name,
-            field_meta=meta,
-            selected_value_items=value_items,
-            selected_property=selected_property,
-        )
-        multi_select_html = render_to_string(
-            "metadata/components/htmx/_multi_select.html",
-            widget_context,
-            request=request,
-        )
-        rel_item.update(widget_context)
-        rel_item["multi_select_html"] = multi_select_html
+                display_value = label_data.get("label", "")
+                stored_value = label_data.get("uri", "")
+                resource_id = label_data.get("resource_id")
+
+                row_data = {
+                    "row_id": row_id,
+                    "input_id": input_id,
+                    "suggestions_id": suggestions_id,
+                    "display_value": display_value,
+                    "stored_value": stored_value,
+                    "suggestion_url": meta.get("base_suggestion_url", ""),
+                }
+                if resource_id:
+                    # Ensure resource_id is string (might already be from JSON)
+                    row_data["resource_id"] = str(resource_id) if resource_id else None
+                rows.append(row_data)
+        else:
+            # Create one empty row if no initial values
+            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+            input_id = f"input-{row_id}"
+            suggestions_id = f"suggestions-{row_id}"
+            rows.append({
+                "row_id": row_id,
+                "input_id": input_id,
+                "suggestions_id": suggestions_id,
+                "display_value": "",
+                "stored_value": "",
+                "suggestion_url": meta.get("base_suggestion_url", ""),
+            })
+
+        rel_item["rows"] = rows
+        rel_item["property_select_id"] = f"relationship-property-{field_name}"
+        rel_item["selected_property"] = ""
 
     template_context = {
         "dataset_summary": dataset_summary,
@@ -2228,9 +2482,6 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         target_id = request.GET.get("target_id")
         property_uri = request.GET.get("property")
         property_select_id = request.GET.get("property_select_id", "")
-        chip_container_id = request.GET.get("chip_container_id", "")
-        widget_mode = request.GET.get("widget", "")
-        field_name_param = request.GET.get("field_name", column_name)
 
         logger.info(f"[DatasetFieldValueOptionsView.GET] dataset={dataset_name}, column={column_name}, property={property_uri}")
 
@@ -2293,9 +2544,6 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             "property_uri": property_uri or "",
             "property_select_id": property_select_id,
             "suggestion_url": suggestion_url,
-            "chip_container_id": chip_container_id,
-            "widget": widget_mode,
-            "field_name_param": field_name_param,
         }
         logger.info(f"[DatasetFieldValueOptionsView.GET] Returning {len(context['suggestions'])} suggestions for target={target_id}")
         logger.debug(f"[DatasetFieldValueOptionsView.GET] Suggestions: {context['suggestions'][:3]}")  # Log first 3
@@ -2526,11 +2774,11 @@ class RelationshipRowView(LoginRequiredMixin, View):
     """
 
     def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
-        """Re-render the multi-select widget (legacy compatibility)."""
-        dataset_name = request.GET.get("dataset") or request.POST.get("dataset")
-        field_name = request.GET.get("field_name") or request.POST.get("field_name")
+        """Add a new relationship row."""
+        dataset_name = request.GET.get("dataset")
+        field_name = request.GET.get("field_name")
 
-        logger.info(f"[RelationshipRowView.POST] Refresh widget: dataset={dataset_name}, field={field_name}")
+        logger.info(f"[RelationshipRowView.POST] Adding row: dataset={dataset_name}, field={field_name}")
 
         if not dataset_name or not field_name:
             logger.error("[RelationshipRowView.POST] Missing dataset or field_name parameter")
@@ -2552,46 +2800,44 @@ class RelationshipRowView(LoginRequiredMixin, View):
             logger.error(f"[RelationshipRowView.POST] Unknown field: {field_name}")
             return HttpResponseBadRequest("Unknown field")
 
-        selected_property = request.POST.get(f"relationship_property_{field_name}", "") or ""
+        selected_property = request.POST.get(f"relationship_property_{field_name}", "")
+        logger.info(f"[RelationshipRowView.POST] Selected property: {selected_property}")
 
-        raw_values = [
-            value.strip()
-            for value in request.POST.getlist(f"{field_name}[]")
-            if value and value.strip()
-        ]
+        # Generate unique IDs for this row
+        import uuid
+        row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+        input_id = f"input-{row_id}"
+        suggestions_id = f"suggestions-{row_id}"
 
-        relationship = join_field_map.get(field_name)
-        fk_info = field_meta.get("fk_relationship") or {}
-        target_dataset = None
-        if relationship:
-            target_dataset = relationship.other_dataset
-        elif fk_info:
-            target_dataset = fk_info.get("target_dataset")
-
-        value_items: List[Dict[str, Any]] = []
-        for value in raw_values:
-            label = _infer_entity_label(
-                service,
-                value,
-                target_dataset,
-            ) or value
-            resource = Resource.objects.filter(uri=value).first()
-            resource_id = str(resource.id) if resource else ""
-            value_items.append({"uri": value, "label": label, "resource_id": resource_id})
-
-        widget_context = _build_relationship_widget_context(
-            service=service,
-            dataset_name=dataset_name,
-            field_name=field_name,
-            field_meta=field_meta,
-            selected_value_items=value_items,
-            selected_property=selected_property,
+        # Build suggestion URL
+        base_suggestion_url = reverse(
+            "metadata:entity_workspace_field_values",
+            args=[service.mapping.id],
         )
+        base_params = {"dataset": dataset_name, "column": field_name}
+        suggestion_url = f"{base_suggestion_url}?{urlencode(base_params)}"
 
+        # Determine property select ID
+        property_select_id = f"relationship-property-{field_name}"
+
+        context = {
+            "row_id": row_id,
+            "input_id": input_id,
+            "suggestions_id": suggestions_id,
+            "field_name": field_name,
+            "display_value": "",
+            "stored_value": "",
+            "suggestion_url": suggestion_url,
+            "selected_property": selected_property,
+            "property_select_id": property_select_id,
+            "mapping_id": mapping_id,
+        }
+
+        logger.info(f"[RelationshipRowView.POST] Rendering row: {row_id}")
         return render(
             request,
-            "metadata/components/htmx/_multi_select.html",
-            widget_context,
+            "metadata/entity_creation/partials/_relationship_row.html",
+            context,
         )
 
     def delete(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
@@ -2606,7 +2852,7 @@ class RelationshipRowsView(LoginRequiredMixin, View):
     """
 
     def get(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
-        """Re-render the multi-select widget when filters change."""
+        """Re-render all rows with new property selection."""
         dataset_name = request.GET.get("dataset")
         field_name = request.GET.get("field_name")
 
@@ -2627,54 +2873,81 @@ class RelationshipRowsView(LoginRequiredMixin, View):
             dataset_name,
             field_metadata,
         )
-        field_meta = field_metadata.get(field_name)
-        if not field_meta:
-            logger.error(f"[RelationshipRowsView.GET] Unknown field: {field_name}")
-            return HttpResponseBadRequest("Unknown field")
 
-        selected_property = request.GET.get(f"relationship_property_{field_name}", "") or ""
+        selected_property = request.GET.get(f"relationship_property_{field_name}", "")
         logger.info(f"[RelationshipRowsView.GET] Selected property: {selected_property}")
 
-        existing_values = [
-            value.strip()
-            for value in request.GET.getlist(f"{field_name}[]")
-            if value and value.strip()
-        ]
+        # Collect existing values from the form
+        existing_values = request.GET.getlist(f"{field_name}[]")
         logger.info(f"[RelationshipRowsView.GET] Existing values: {existing_values}")
 
-        relationship = join_field_map.get(field_name)
-        fk_info = field_meta.get("fk_relationship") or {}
-        target_dataset = None
-        if relationship:
-            target_dataset = relationship.other_dataset
-        elif fk_info:
-            target_dataset = fk_info.get("target_dataset")
+        # Build suggestion URL
+        base_suggestion_url = reverse(
+            "metadata:entity_workspace_field_values",
+            args=[service.mapping.id],
+        )
+        base_params = {"dataset": dataset_name, "column": field_name}
+        suggestion_url = f"{base_suggestion_url}?{urlencode(base_params)}"
 
-        value_items: List[Dict[str, Any]] = []
+        # Determine property select ID
+        property_select_id = f"relationship-property-{field_name}"
+
+        # Generate rows for existing values
+        rows = []
+        import uuid
         for value in existing_values:
-            label = _infer_entity_label(
-                service,
-                value,
-                target_dataset,
-            ) or value
-            resource = Resource.objects.filter(uri=value).first()
-            resource_id = str(resource.id) if resource else ""
-            value_items.append({"uri": value, "label": label, "resource_id": resource_id})
+            if not value.strip():
+                continue
+            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+            input_id = f"input-{row_id}"
+            suggestions_id = f"suggestions-{row_id}"
 
-        widget_context = _build_relationship_widget_context(
-            service=service,
-            dataset_name=dataset_name,
-            field_name=field_name,
-            field_meta=field_meta,
-            selected_value_items=value_items,
-            selected_property=selected_property,
-        )
+            rows.append({
+                "row_id": row_id,
+                "input_id": input_id,
+                "suggestions_id": suggestions_id,
+                "display_value": value,
+                "stored_value": value,
+                "suggestion_url": suggestion_url,
+            })
 
-        return render(
-            request,
-            "metadata/components/htmx/_multi_select.html",
-            widget_context,
-        )
+        # If no existing values, create one empty row
+        if not rows:
+            row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+            input_id = f"input-{row_id}"
+            suggestions_id = f"suggestions-{row_id}"
+            rows.append({
+                "row_id": row_id,
+                "input_id": input_id,
+                "suggestions_id": suggestions_id,
+                "display_value": "",
+                "stored_value": "",
+                "suggestion_url": suggestion_url,
+            })
+
+        logger.info(f"[RelationshipRowsView.GET] Rendering {len(rows)} rows")
+
+        context = {
+            "rows": rows,
+            "field_name": field_name,
+            "selected_property": selected_property,
+            "property_select_id": property_select_id,
+            "mapping_id": mapping_id,
+        }
+
+        # Render all rows
+        html = "".join([
+            render_to_string(
+                "metadata/entity_creation/partials/_relationship_row.html",
+                {**row, "field_name": field_name, "selected_property": selected_property,
+                 "property_select_id": property_select_id, "mapping_id": mapping_id},
+                request=request,
+            )
+            for row in rows
+        ])
+
+        logger.info(f"[RelationshipRowsView.GET] Rendered HTML length: {len(html)}")
+        return HttpResponse(html)
 
 
 class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHelperMixin, View):
@@ -2696,9 +2969,6 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         label = request.POST.get("label", value) or ""
         selected_property = request.POST.get("property") or ""
         property_select_id = request.POST.get("property_select_id") or ""
-        widget_mode = request.POST.get("widget") or ""
-        chip_container_id = request.POST.get("chip_container_id") or ""
-        field_name = request.POST.get("field_name") or column_name
 
         if not input_id or not target_id or not dataset_name or not column_name:
             logger.warning(
@@ -2723,67 +2993,6 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         suggestion_url = f"{suggestion_base_url}?{suggestion_params}"
         property_param = f"&property={escape(selected_property)}" if selected_property else ""
         property_select_param = f"&property_select_id={escape(property_select_id)}" if property_select_id else ""
-
-        if widget_mode == "multi_select" and chip_container_id:
-            existing_values = [
-                item.strip()
-                for item in request.POST.getlist(f"{field_name}[]")
-                if item and item.strip()
-            ]
-            if value and value.strip() in existing_values:
-                logger.info(
-                    "[RelationshipSelectSuggestionView.POST] Value already selected; skipping chip append"
-                )
-                chip_fragment = ""
-            else:
-                import uuid
-
-                chip_suffix = uuid.uuid4().hex[:8]
-                chip_id = f"relationship-chip-{field_name}-{chip_suffix}"
-                hidden_input_id = f"{chip_id}-hidden"
-                resource = Resource.objects.filter(uri=value).first() if value else None
-                resource_id = str(resource.id) if resource else ""
-
-                chip_fragment_inner = render_to_string(
-                    "metadata/components/htmx/_multi_select_chip.html",
-                    {
-                        "chip_id": chip_id,
-                        "hidden_input_id": hidden_input_id,
-                        "uri": value,
-                        "label": label,
-                        "resource_id": resource_id,
-                        "field_name": field_name,
-                        "mapping_id": mapping_id,
-                    },
-                    request=request,
-                )
-                chip_fragment = (
-                    f'<div id="{escape(chip_container_id)}" '
-                    f'hx-swap-oob="beforeend">{chip_fragment_inner}</div>'
-                )
-
-            include_property = (
-                f", #{escape(property_select_id)}" if property_select_id else ""
-            )
-            search_input_html = f'''<input type="text"
-           id="{escape(input_id)}"
-           name="q"
-           class="input input-bordered w-full"
-           placeholder="Wert suchen und auswählen..."
-           value=""
-           hx-get="{escape(suggestion_url)}&input_id={escape(input_id)}&target_id={escape(target_id)}{property_select_param}{property_param}&chip_container_id={escape(chip_container_id)}&field_name={escape(field_name)}&widget=multi_select"
-           hx-trigger="input changed delay:200ms"
-           hx-target="#{escape(target_id)}"
-           hx-include="this{include_property}"
-           autocomplete="off"
-           hx-swap-oob="outerHTML">'''
-
-            dropdown_html = f'<div id="{escape(target_id)}" hx-swap-oob="innerHTML"></div>'
-
-            fragments = [fragment for fragment in [chip_fragment, search_input_html, dropdown_html] if fragment]
-            response_html = "\n".join(fragments)
-            logger.debug(f"[RelationshipSelectSuggestionView.POST] Multi-select response length: {len(response_html)}")
-            return HttpResponse(response_html)
 
         # Create OOB updates for individual inputs
         # 1. Update hidden input with the URI value
