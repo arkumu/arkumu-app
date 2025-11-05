@@ -196,61 +196,6 @@ def test_post_preserves_multi_value_relationships(client, user, dummy_service):
 
 
 @pytest.mark.django_db
-def test_get_normalizes_placeholder_chips(client, user, dummy_service, monkeypatch):
-    placeholder = "uri-http-arkumu-org-data-fuk-entities-schlagwort-q13716-label-Schlagwort-Alpha"
-    canonical = "http://arkumu.org/data/fuk/entities/schlagwort/q13716"
-
-    def load_with_placeholder(self, dataset_name: str, entity_uri: str):
-        return {"Projektart": json.dumps([{"uri": placeholder}])}
-
-    monkeypatch.setattr(DummyProjektSchemaService, "load_entity_by_uri", load_with_placeholder)
-    monkeypatch.setattr(
-        simplified_workspace_views,
-        "_infer_entity_label",
-        lambda *args, **kwargs: canonical,
-    )
-
-    client.force_login(user)
-    response = client.get(
-        reverse("metadata:edit_project"),
-        {"uri": dummy_service.entity_uri},
-    )
-    assert response.status_code == 200
-    content = response.content.decode()
-    assert placeholder not in content
-    assert canonical in content
-    assert "Schlagwort Alpha" in content
-
-
-@pytest.mark.django_db
-def test_post_normalizes_placeholder_uris(client, user, dummy_service):
-    client.force_login(user)
-    placeholder = "uri-http-arkumu-org-data-fuk-entities-schlagwort-q13716-label-Schlagwort-Alpha"
-    canonical = "http://arkumu.org/data/fuk/entities/schlagwort/q13716"
-    payload = [
-        {"uri": placeholder, "label": "Schlagwort Alpha"},
-        {"uri": "http://example.org/project-type/c", "label": "Project Type C"},
-    ]
-    response = client.post(
-        reverse("metadata:edit_project"),
-        {
-            "entity_uri": dummy_service.entity_uri,
-            "Projektart": json.dumps(payload),
-        },
-    )
-    assert response.status_code == 302
-    saved = dummy_service.saved_entity_data
-    assert saved is not None
-    raw_value = saved.get("Projektart")
-    assert raw_value
-    assert placeholder not in raw_value
-    parsed = json.loads(raw_value)
-    assert parsed[0]["uri"] == canonical
-    assert parsed[0]["label"] == "Schlagwort Alpha"
-    assert parsed[1]["uri"] == "http://example.org/project-type/c"
-
-
-@pytest.mark.django_db
 def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_ereignis_service):
     client.force_login(user)
     response = client.get(

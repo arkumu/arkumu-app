@@ -25,7 +25,6 @@ from arkumu.metadata.schema_workspace import (
     SchemaWorkspaceService,
 )
 from arkumu.metadata.services.entity_label_service import infer_entity_label as _infer_entity_label
-from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.users.models import Organization
 
 logger = logging.getLogger(__name__)
@@ -81,78 +80,6 @@ SIMPLIFIED_FIELD_CONFIG = {
         "Digitales Objekt",
     ],
 }
-
-
-def _canonicalize_multi_value_payload(value: Any) -> Any:
-    """Normalize multi-value submissions by decoding placeholder URIs."""
-    def _canonicalize_entries(entries: List[Any]) -> List[Any]:
-        canonical: List[Any] = []
-        for entry in entries:
-            if isinstance(entry, dict):
-                data = dict(entry)
-                raw_uri = str(data.get("uri") or data.get("value") or "").strip()
-                canonical_uri, label_hint = decode_placeholder_uri(raw_uri)
-                if canonical_uri:
-                    data["uri"] = canonical_uri
-                if label_hint and (not data.get("label") or data["label"] in {raw_uri, canonical_uri}):
-                    data["label"] = label_hint
-                canonical.append(data)
-            else:
-                raw_value = str(entry).strip()
-                canonical_value, _ = decode_placeholder_uri(raw_value)
-                canonical.append(canonical_value)
-        return canonical
-
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return value
-        if stripped.startswith("["):
-            try:
-                parsed = json.loads(stripped)
-            except (TypeError, ValueError, json.JSONDecodeError):
-                canonical_value, _ = decode_placeholder_uri(stripped)
-                return canonical_value
-            canonical_entries = _canonicalize_entries(parsed if isinstance(parsed, list) else [parsed])
-            return json.dumps(canonical_entries if isinstance(parsed, list) else canonical_entries[0])
-        canonical_value, _ = decode_placeholder_uri(stripped)
-        return canonical_value
-
-    if isinstance(value, (list, tuple)):
-        canonical_entries = _canonicalize_entries(list(value))
-        return canonical_entries
-
-    if isinstance(value, dict):
-        canonical_entry = _canonicalize_entries([value])
-        return canonical_entry[0]
-
-    canonical_value, _ = decode_placeholder_uri(str(value).strip())
-    return canonical_value
-
-
-def _canonicalize_fk_payload(
-    entity_data: Dict[str, Any],
-    field_metadata: Dict[str, Any],
-) -> None:
-    """Mutate entity_data so FK submissions carry canonical URIs."""
-    for field_name, meta in field_metadata.items():
-        fk_info = meta.get("fk_relationship") or {}
-        if not fk_info:
-            continue
-
-        if field_name not in entity_data:
-            continue
-
-        value = entity_data[field_name]
-        if value in (None, "", []):
-            continue
-
-        if meta.get("is_multi_value"):
-            entity_data[field_name] = _canonicalize_multi_value_payload(value)
-            continue
-
-        canonical_value, _ = decode_placeholder_uri(str(value).strip())
-        entity_data[field_name] = canonical_value
 
 
 def _get_organization(request: HttpRequest) -> Optional[Organization]:
@@ -350,15 +277,12 @@ def _enrich_fk_metadata(
                     uri = str(entry).strip()
                 if not uri:
                     continue
-                uri, label_hint = decode_placeholder_uri(uri)
                 label = _infer_entity_label(
                     schema_service,
                     uri,
                     target_dataset,
                     display_property_uri=display_property_uri,
                 )
-                if label_hint and (not label or label == uri):
-                    label = label_hint
 
                 resource_entry = {"label": label, "uri": uri}
                 # Try to get resource ID for graph view
@@ -373,7 +297,6 @@ def _enrich_fk_metadata(
                 form.initial[field.name] = labelled_json
                 if hasattr(field, 'form'):
                     field.form.initial[field.name] = labelled_json
-                field.field.initial = labelled_json
                 initial_labels.extend(normalized)
                 logger.info(f"✅ Resolved multi-value FK field '{field.name}': {len(normalized)} values")
 
@@ -517,7 +440,6 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             loaded = schema_service.load_entity_by_uri(dataset_name, entity_uri)
             if loaded:
                 initial_data = loaded
-                _canonicalize_fk_payload(initial_data, field_metadata)
                 entity_label = _infer_entity_label(schema_service, entity_uri, dataset_name)
                 logger.info(f"✅ Loaded {len(loaded)} fields")
                 logger.info(f"   Entity label: {entity_label}")
@@ -607,7 +529,6 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
-                _canonicalize_fk_payload(entity_data, field_metadata)
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(
@@ -691,7 +612,6 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             loaded = schema_service.load_entity_by_uri(dataset_name, entity_uri)
             if loaded:
                 initial_data = loaded
-                _canonicalize_fk_payload(initial_data, field_metadata)
                 entity_label = _infer_entity_label(schema_service, entity_uri, dataset_name)
                 logger.info(f"✅ Loaded {len(loaded)} fields")
                 logger.info(f"   Entity label: {entity_label}")
@@ -781,7 +701,6 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
-                _canonicalize_fk_payload(entity_data, field_metadata)
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(
