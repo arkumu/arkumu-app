@@ -33,4 +33,5 @@ urlpatterns = [
     path('datenschutz/', login_required(TemplateView.as_view(template_name="catalog/datenschutz.html")), name='datenschutz'),
     path('university_page_FUK/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_FUK.html")), name='university_page_FUK'),
     path('university_page_RSH/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_RSH.html")), name='university_page_RSH'),
+    path('university_page_KHM/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_KHM.html")), name='university_page_KHM'),
 ]
