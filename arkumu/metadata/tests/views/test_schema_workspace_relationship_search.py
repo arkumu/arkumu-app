@@ -24,6 +24,9 @@ MAPPING_FIXTURE_PATH = (
     Path(__file__).resolve().parents[4] / "data/mappings/fuk_mapping_20250930.json"
 )
 
+PROJECT_DATASET = "Projekt"
+EVENT_DATASET = "Ereignis"
+
 
 @pytest.fixture
 def organization(db):
@@ -76,6 +79,13 @@ class StubWorkspaceService:
                 "titel": {
                     "column_name": "titel",
                     "property_uri": "http://arkumu.org/properties/titel",
+                },
+                "sprache": {
+                    "column_name": "sprache",
+                    "property_label": "Sprache",
+                    "fk_relationship": {
+                        "target_dataset": "Sprache",
+                    },
                 },
             }
         if dataset_name == "Person":
@@ -146,6 +156,9 @@ class StubWorkspaceService:
                     "titel": Resource.objects.filter(
                         uri="http://arkumu.org/properties/titel"
                     ).first(),
+                    "sprache": Resource.objects.filter(
+                        uri="http://arkumu.org/properties/sprache"
+                    ).first(),
                 },
                 "fk_relationships": [],
                 "dataset_resource": dataset_resource,
@@ -156,6 +169,17 @@ class StubWorkspaceService:
                 "properties": {
                     "name": Resource.objects.filter(
                         uri="http://arkumu.org/properties/name"
+                    ).first(),
+                },
+                "fk_relationships": [],
+                "dataset_resource": dataset_resource,
+            }
+        if dataset_name == "Sprache":
+            return {
+                "entity_type": type("EntityType", (), {"name": "Sprache"}),
+                "properties": {
+                    "label": Resource.objects.filter(
+                        uri="http://arkumu.org/properties/sprache"
                     ).first(),
                 },
                 "fk_relationships": [],
@@ -196,6 +220,87 @@ def stub_schema_service(monkeypatch, organization, mapping):
 
     monkeypatch.setattr(schema_workspace_views, "_get_schema_service", _stub)
     yield
+
+
+@pytest.mark.django_db
+def test_single_fk_suggestion_updates_hidden_input_name(client, user, mapping):
+    client.force_login(user)
+    url = reverse("metadata:entity_workspace_select_suggestion", args=[mapping.id])
+    response = client.post(
+        url,
+        {
+            "input_id": "id_sprache",
+            "target_id": "suggestions-sprache",
+            "dataset": PROJECT_DATASET,
+            "column": "sprache",
+            "value": "http://arkumu.org/data/fuk/sprache/de",
+            "label": "Deutsch",
+        },
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'name="sprache"' in content
+    assert 'name="sprache[]"' not in content
+
+
+@pytest.mark.django_db
+def test_multi_select_suggestion_adds_chip(client, user, mapping):
+    client.force_login(user)
+    url = reverse("metadata:entity_workspace_select_suggestion", args=[mapping.id])
+    response = client.post(
+        url,
+        {
+            "input_id": "multi-select-search-projekt_ref",
+            "target_id": "multi-select-suggestions-projekt_ref",
+            "dataset": "Mitarbeit",
+            "column": "projekt_ref",
+            "field_name": "projekt_ref",
+            "chip_container_id": "multi-select-chips-projekt_ref",
+            "widget": "multi_select",
+            "value": "http://arkumu.org/data/fuk/projekt/p1",
+            "label": "Projekt P1",
+        },
+        HTTP_HX_REQUEST="true",
+    )
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'hx-swap-oob="beforeend:#multi-select-chips-projekt_ref"' in content
+    assert 'name="projekt_ref[]"' in content
+    assert 'value="http://arkumu.org/data/fuk/projekt/p1"' in content
+    assert 'id="multi-select-suggestions-projekt_ref"' in content
+    assert 'id="multi-select-search-projekt_ref"' in content
+    assert 'value=""' in content  # input reset
+
+
+@pytest.mark.django_db
+def test_multi_select_suggestion_deduplicates_existing(client, user, mapping):
+    client.force_login(user)
+    url = reverse("metadata:entity_workspace_select_suggestion", args=[mapping.id])
+    response = client.post(
+        url,
+        {
+            "input_id": "multi-select-search-projekt_ref",
+            "target_id": "multi-select-suggestions-projekt_ref",
+            "dataset": "Mitarbeit",
+            "column": "projekt_ref",
+            "field_name": "projekt_ref",
+            "chip_container_id": "multi-select-chips-projekt_ref",
+            "widget": "multi_select",
+            "value": "http://arkumu.org/data/fuk/projekt/p1",
+            "label": "Projekt P1",
+            "projekt_ref[]": ["http://arkumu.org/data/fuk/projekt/p1"],
+        },
+        HTTP_HX_REQUEST="true",
+    )
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'hx-swap-oob="beforeend:#multi-select-chips-projekt_ref"' not in content
+    assert 'id="multi-select-search-projekt_ref"' in content
+    assert 'id="multi-select-suggestions-projekt_ref"' in content
+    assert 'hx-swap-oob="innerHTML"' in content
 
 
 @pytest.fixture

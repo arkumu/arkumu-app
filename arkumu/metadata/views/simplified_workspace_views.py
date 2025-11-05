@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -25,6 +25,7 @@ from arkumu.metadata.schema_workspace import (
     SchemaWorkspaceService,
 )
 from arkumu.metadata.services.entity_label_service import infer_entity_label as _infer_entity_label
+from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.users.models import Organization
 
 logger = logging.getLogger(__name__)
@@ -116,29 +117,67 @@ def _get_schema_service(request: HttpRequest) -> Optional[SchemaWorkspaceService
     return SchemaWorkspaceService(mapping=mapping, organization=organization)
 
 
-def _extract_multi_fk_payloads(post_data: Any, field_metadata: Dict[str, Any]) -> Dict[str, str]:
-    """Collect multi-select relationship payloads from POST data."""
-    if not hasattr(post_data, "getlist"):
-        return {}
+def _normalize_uri_list(values: List[str]) -> List[str]:
+    """Normalize a list of raw URI values, removing placeholders and duplicates."""
+    normalized: List[str] = []
+    seen = set()
+    for raw in values:
+        cleaned = str(raw or "").strip()
+        if not cleaned:
+            continue
+        canonical, _ = decode_placeholder_uri(cleaned)
+        if canonical and canonical not in seen:
+            normalized.append(canonical)
+            seen.add(canonical)
+    return normalized
 
-    payloads: Dict[str, str] = {}
+
+def _collect_relationship_payloads(
+    request: HttpRequest,
+    entity_data: Dict[str, Any],
+    field_metadata: Dict[str, Dict[str, Any]],
+    join_field_map: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Dict[str, List[str]], Dict[str, List[str]]]:
+    """
+    Extract join and multi-FK payloads from the POST body, mirroring legacy behaviour.
+
+    Returns the sanitized entity_data plus dictionaries mapping field names to
+    canonical URI lists for join relationships and multi-FK relationships.
+    """
+    filtered_join_map = {
+        name: relationship
+        for name, relationship in (join_field_map or {}).items()
+        if name in field_metadata
+    }
+
+    join_payloads: Dict[str, List[str]] = {}
+    multi_fk_payloads: Dict[str, List[str]] = {}
+
+    for field_name, relationship in filtered_join_map.items():
+        array_key = f"{field_name}[]"
+        entity_data.pop(field_name, None)
+        raw_array = request.POST.getlist(array_key)
+        if raw_array:
+            join_payloads[field_name] = _normalize_uri_list(raw_array)
+        else:
+            join_payloads[field_name] = []
+
     for field_name, meta in field_metadata.items():
+        if field_name in join_payloads:
+            continue
         fk_info = meta.get("fk_relationship") or {}
         if not fk_info or not meta.get("is_multi_value"):
             continue
 
-        key = f"{field_name}[]"
-        if key not in post_data:
-            continue
+        array_key = f"{field_name}[]"
+        entity_data.pop(field_name, None)
+        raw_array = request.POST.getlist(array_key)
+        if raw_array:
+            multi_fk_payloads[field_name] = _normalize_uri_list(raw_array)
+        else:
+            multi_fk_payloads[field_name] = []
 
-        values = [
-            value.strip()
-            for value in post_data.getlist(key)
-            if value and value.strip()
-        ]
-        payloads[field_name] = json.dumps([{"uri": uri} for uri in values]) if values else json.dumps([])
-
-    return payloads
+    return entity_data, join_payloads, multi_fk_payloads
 
 
 def _filter_field_metadata(
@@ -274,7 +313,7 @@ def _enrich_fk_metadata(
             meta["base_suggestion_url"] = base_url
             logger.info(f"🔍 FK field '{field.name}': search_url={search_url}, target_id={target_id}")
 
-        # Handle multi-value FK fields
+        # Prepare data for multi-value FK fields using legacy relationship rows
         initial_labels: List[Dict[str, str]] = []
         if fk_info and meta.get("is_multi_value"):
             raw_initial = form.initial.get(field.name, field.value())
@@ -320,11 +359,10 @@ def _enrich_fk_metadata(
             if normalized:
                 labelled_json = json.dumps(normalized)
                 form.initial[field.name] = labelled_json
-                if hasattr(field, 'form'):
+                if hasattr(field, "form"):
                     field.form.initial[field.name] = labelled_json
                 initial_labels.extend(normalized)
                 logger.info(f"✅ Resolved multi-value FK field '{field.name}': {len(normalized)} values")
-
         # Handle single FK fields (not multi-value)
         elif fk_info and not meta.get("is_multi_value"):
             raw_value = form.initial.get(field.name, field.value())
@@ -360,52 +398,67 @@ def _enrich_fk_metadata(
 
                     logger.info(f"✅ Resolved FK field '{field.name}': {raw_value} → {resolved_label}")
 
-        # Build widget context for multi-value fields
+        # Build widget context for multi-value fields using relationship rows
         widget_context = None
         if fk_info and meta.get("is_multi_value"):
             primary_property_uri = _select_primary_search_property(meta)
 
-            # Use the same widget builder as legacy workspace
-            from arkumu.metadata.views.schema_workspace_views import _build_relationship_widget_context
+            import uuid
 
-            widget_context = _build_relationship_widget_context(
-                service=schema_service,
-                dataset_name=dataset_name,
-                field_name=field.name,
-                field_meta=meta,
-                selected_value_items=initial_labels,  # Can be empty list
-                selected_property=primary_property_uri or "",
-            )
-
-            if primary_property_uri:
-                filtered_properties = [
-                    prop for prop in widget_context.get("search_properties", [])
-                    if str(prop.get("uri")) == primary_property_uri
-                ]
-                if filtered_properties:
-                    widget_context["search_properties"] = filtered_properties
-                widget_context["selected_property"] = primary_property_uri
-                meta["selected_property"] = primary_property_uri
-
-            # Pre-render chips to bypass Django nested include bug
-            pre_rendered_chips: List[str] = []
-            for item in widget_context.get("selected_items", []):
-                chip_html = render_to_string(
-                    "metadata/components/htmx/_multi_select_chip.html",
+            rows: List[Dict[str, str]] = []
+            if initial_labels:
+                for entry in initial_labels:
+                    row_id = f"relationship-row-{slugify(field.name) or field.name}-{uuid.uuid4().hex[:8]}"
+                    input_id = f"input-{row_id}"
+                    suggestions_id = f"suggestions-{row_id}"
+                    rows.append(
+                        {
+                            "row_id": row_id,
+                            "input_id": input_id,
+                            "suggestions_id": suggestions_id,
+                            "display_value": entry.get("label", ""),
+                            "stored_value": entry.get("uri", ""),
+                            "suggestion_url": meta.get("base_suggestion_url", ""),
+                            "resource_id": entry.get("resource_id"),
+                        }
+                    )
+            else:
+                row_id = f"relationship-row-{slugify(field.name) or field.name}-{uuid.uuid4().hex[:8]}"
+                input_id = f"input-{row_id}"
+                suggestions_id = f"suggestions-{row_id}"
+                rows.append(
                     {
-                        "chip_id": item["chip_id"],
-                        "hidden_input_id": item["hidden_input_id"],
-                        "uri": item["uri"],
-                        "label": item["label"],
-                        "resource_id": item.get("resource_id", ""),
-                        "field_name": field.name,
-                        "mapping_id": schema_service.mapping.id,
+                        "row_id": row_id,
+                        "input_id": input_id,
+                        "suggestions_id": suggestions_id,
+                        "display_value": "",
+                        "stored_value": "",
+                        "suggestion_url": meta.get("base_suggestion_url", ""),
                     }
                 )
-                pre_rendered_chips.append(chip_html)
 
-            widget_context["pre_rendered_chips"] = pre_rendered_chips
-            logger.info(f"✅ Pre-rendered {len(pre_rendered_chips)} chips for {field.name}")
+            property_select_id = f"relationship-property-{slugify(field.name) or field.name}"
+            meta["selected_property"] = primary_property_uri or ""
+
+            # Ensure hidden form field does not submit stale JSON payloads
+            form.initial[field.name] = ""
+            if hasattr(field, "form"):
+                field.form.initial[field.name] = ""
+            if field.name in form.fields:
+                form.fields[field.name].initial = ""
+                widget_attrs = getattr(form.fields[field.name].widget, "attrs", None)
+                if isinstance(widget_attrs, dict):
+                    widget_attrs["value"] = ""
+
+            widget_context = {
+                "field_name": field.name,
+                "dataset_name": dataset_name,
+                "mapping_id": schema_service.mapping.id,
+                "rows": rows,
+                "search_properties": meta.get("search_properties", []),
+                "selected_property": primary_property_uri or "",
+                "property_select_id": property_select_id,
+            }
 
         fields_with_metadata.append({
             "field": field,
@@ -537,12 +590,17 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
 
         # Get field metadata and augment with joins (for relationship handling)
         field_metadata = schema_service.get_field_metadata(dataset_name)
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
-        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
         field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
         )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+        join_field_map = {
+            name: relationship
+            for name, relationship in join_field_map.items()
+            if name in field_metadata
+        }
 
         # Create form with POST data
         form = DatasetEntityForm(
@@ -554,7 +612,12 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
-                entity_data.update(_extract_multi_fk_payloads(request.POST, field_metadata))
+                entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
+                    request,
+                    entity_data,
+                    field_metadata,
+                    join_field_map,
+                )
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(
@@ -562,6 +625,27 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                     entity_data=entity_data,
                     entity_uri=entity_uri,
                 )
+
+                for field_name, related_uris in join_payloads.items():
+                    relationship = join_field_map.get(field_name)
+                    if relationship is None:
+                        continue
+                    schema_service.sync_join_relationship(
+                        entity_uri=saved_uri,
+                        relationship=relationship,
+                        related_uris=related_uris,
+                    )
+
+                for field_name, related_uris in multi_fk_payloads.items():
+                    meta = field_metadata.get(field_name, {})
+                    property_uri = meta.get("property_uri")
+                    if not property_uri:
+                        continue
+                    schema_service.save_multi_fk_relationship(
+                        entity_uri=saved_uri,
+                        property_uri=property_uri,
+                        related_uris=related_uris,
+                    )
 
                 logger.info(f"✅ Saved project: {saved_uri} (created={created})")
 
@@ -710,12 +794,17 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
 
         # Get field metadata and augment with joins (for relationship handling)
         field_metadata = schema_service.get_field_metadata(dataset_name)
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
-        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
         field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
         )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+        join_field_map = {
+            name: relationship
+            for name, relationship in join_field_map.items()
+            if name in field_metadata
+        }
 
         # Create form with POST data
         form = DatasetEntityForm(
@@ -727,7 +816,12 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
-                entity_data.update(_extract_multi_fk_payloads(request.POST, field_metadata))
+                entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
+                    request,
+                    entity_data,
+                    field_metadata,
+                    join_field_map,
+                )
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(
@@ -735,6 +829,27 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                     entity_data=entity_data,
                     entity_uri=entity_uri,
                 )
+
+                for field_name, related_uris in join_payloads.items():
+                    relationship = join_field_map.get(field_name)
+                    if relationship is None:
+                        continue
+                    schema_service.sync_join_relationship(
+                        entity_uri=saved_uri,
+                        relationship=relationship,
+                        related_uris=related_uris,
+                    )
+
+                for field_name, related_uris in multi_fk_payloads.items():
+                    meta = field_metadata.get(field_name, {})
+                    property_uri = meta.get("property_uri")
+                    if not property_uri:
+                        continue
+                    schema_service.save_multi_fk_relationship(
+                        entity_uri=saved_uri,
+                        property_uri=property_uri,
+                        related_uris=related_uris,
+                    )
 
                 logger.info(f"✅ Saved ereignis: {saved_uri} (created={created})")
 

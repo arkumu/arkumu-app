@@ -254,8 +254,9 @@
                     </label>
                     {% if item.meta.is_multi_value and item.widget_context %}
                       {{ item.field }}
-                      {# Multi-value field with HTMX widget #}
-                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id property_input_name=item.widget_context.property_input_name wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                      <div id="multi-value-{{ item.widget_context.field_name }}">
+                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=item.widget_context.mapping_id %}
+                      </div>
                     {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
@@ -273,8 +274,9 @@
                     </label>
                     {% if item.meta.is_multi_value and item.widget_context %}
                       {{ item.field }}
-                      {# Multi-value field with HTMX widget #}
-                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id property_input_name=item.widget_context.property_input_name wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                      <div id="multi-value-{{ item.widget_context.field_name }}">
+                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=item.widget_context.mapping_id %}
+                      </div>
                     {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
@@ -292,8 +294,9 @@
                     </label>
                     {% if item.meta.is_multi_value and item.widget_context %}
                       {{ item.field }}
-                      {# Multi-value field with HTMX widget #}
-                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id property_input_name=item.widget_context.property_input_name wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                      <div id="multi-value-{{ item.widget_context.field_name }}">
+                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=item.widget_context.mapping_id %}
+                      </div>
                     {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
@@ -311,8 +314,9 @@
                     </label>
                     {% if item.meta.is_multi_value and item.widget_context %}
                       {{ item.field }}
-                      {# Multi-value field with HTMX widget #}
-                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id property_input_name=item.widget_context.property_input_name wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                      <div id="multi-value-{{ item.widget_context.field_name }}">
+                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=item.widget_context.mapping_id %}
+                      </div>
                     {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}
@@ -344,8 +348,9 @@
                     </label>
                     {% if item.meta.is_multi_value and item.widget_context %}
                       {{ item.field }}
-                      {# Multi-value field with HTMX widget #}
-                      {% include "metadata/components/htmx/_multi_select.html" with field_name=item.widget_context.field_name mapping_id=item.widget_context.mapping_id dataset_name=item.widget_context.dataset_name search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id property_input_name=item.widget_context.property_input_name wrapper_id=item.widget_context.wrapper_id search_input_id=item.widget_context.search_input_id suggestions_id=item.widget_context.suggestions_id chip_container_id=item.widget_context.chip_container_id rows_url=item.widget_context.rows_url suggestion_url=item.widget_context.suggestion_url selected_items=item.widget_context.selected_items pre_rendered_chips=item.widget_context.pre_rendered_chips %}
+                      <div id="multi-value-{{ item.widget_context.field_name }}">
+                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=item.widget_context.mapping_id %}
+                      </div>
                     {% elif item.meta.resolved_uri %}
                       {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}
                     {% else %}

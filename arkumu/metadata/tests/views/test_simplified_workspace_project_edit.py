@@ -18,6 +18,8 @@ class _BaseDummySchemaService:
         self.organization = SimpleNamespace(code="test-org")
         self.entity_uri = f"http://example.org/data/{self.organization.code}/{entity_uri_suffix}"
         self.saved_entity_data = None
+        self.multi_fk_calls = []
+        self.join_sync_calls = []
 
     def augment_field_metadata_with_joins(self, dataset_name, metadata):
         return metadata, {}
@@ -26,12 +28,20 @@ class _BaseDummySchemaService:
         return []
 
     def save_entity(self, *, dataset_name: str, entity_data: dict, entity_uri: str):
-        self.saved_entity_data = entity_data
+        self.saved_entity_data = dict(entity_data)
         return entity_uri or self.entity_uri, False
+
+    def save_multi_fk_relationship(self, *, entity_uri: str, property_uri: str, related_uris):
+        self.multi_fk_calls.append((entity_uri, property_uri, list(related_uris)))
+
+    def sync_join_relationship(self, *, entity_uri: str, relationship, related_uris):
+        self.join_sync_calls.append((entity_uri, relationship, list(related_uris)))
 
 
 class DummyProjektSchemaService(_BaseDummySchemaService):
     """Stub service focused on Projekt dataset interactions."""
+
+    PROPERTY_URI = "http://example.org/properties/project-type"
 
     def __init__(self) -> None:
         super().__init__("projekt/PROJ-1")
@@ -43,6 +53,7 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
                 "property_label": "Projektart",
                 "is_multi_value": True,
                 "is_external_ontology": True,
+                "property_uri": self.PROPERTY_URI,
                 "fk_relationship": {
                     "target_dataset": "Projektart",
                     "target_property_uri": "http://example.org/properties/code",
@@ -74,6 +85,8 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
 class DummyEreignisSchemaService(_BaseDummySchemaService):
     """Stub service focused on Ereignis dataset interactions."""
 
+    PROPERTY_URI = "http://example.org/properties/event-type"
+
     def __init__(self) -> None:
         super().__init__("ereignis/EVT-1")
 
@@ -84,6 +97,7 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
                 "property_label": "Ereignistyp",
                 "is_multi_value": True,
                 "is_external_ontology": True,
+                "property_uri": self.PROPERTY_URI,
                 "fk_relationship": {
                     "target_dataset": "Ereignistyp",
                     "target_property_uri": "http://example.org/properties/code",
@@ -110,6 +124,47 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
                 ]
             )
         }
+
+
+class DummyJoinSchemaService(_BaseDummySchemaService):
+    """Stub service that surfaces a join relationship for Projekt dataset."""
+
+    PROPERTY_URI = "http://example.org/properties/org-unit"
+
+    def __init__(self) -> None:
+        super().__init__("projekt/PROJ-2")
+        self.relationship = SimpleNamespace(
+            join_dataset="projekt__organisationseinheit",
+            join_dataset_schema={},
+            self_column="Organisationseinheit",
+            self_property_uri=self.PROPERTY_URI,
+            other_dataset="Organisationseinheit",
+            other_column="Organisationseinheit",
+            other_property_uri=self.PROPERTY_URI,
+            other_display_label="Organisationseinheit",
+        )
+
+    def get_field_metadata(self, dataset_name: str):
+        return {
+            "Organisationseinheit": {
+                "column_name": "Organisationseinheit",
+                "property_label": "Organisationseinheit",
+                "is_multi_value": True,
+                "fk_relationship": {
+                    "target_dataset": "Organisationseinheit",
+                },
+                "property_uri": self.PROPERTY_URI,
+            }
+        }
+
+    def get_dataset_schema(self, dataset_name: str):
+        return {"properties": {}}
+
+    def augment_field_metadata_with_joins(self, dataset_name, metadata):
+        return metadata, {"Organisationseinheit": self.relationship}
+
+    def load_entity_by_uri(self, dataset_name: str, entity_uri: str):
+        return {}
 
 
 @pytest.fixture
@@ -143,6 +198,22 @@ def dummy_service(monkeypatch):
 
 
 @pytest.fixture
+def dummy_join_service(monkeypatch):
+    service = DummyJoinSchemaService()
+    monkeypatch.setattr(
+        simplified_workspace_views,
+        "_get_schema_service",
+        lambda request: service,
+    )
+    monkeypatch.setattr(
+        simplified_workspace_views,
+        "_infer_entity_label",
+        lambda *args, **kwargs: "Dummy Join",
+    )
+    return service
+
+
+@pytest.fixture
 def dummy_ereignis_service(monkeypatch):
     service = DummyEreignisSchemaService()
     monkeypatch.setattr(
@@ -169,34 +240,13 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     content = response.content.decode()
     assert 'name="Projektart"' in content
     assert 'data-multi-value="true"' in content
-    assert "Suchen nach" not in content
-    assert 'select id="relationship-property' not in content
-    assert "property=http%3A//example.org/properties/code" in content
-    assert 'name="relationship_property_Projektart"' in content
-    assert 'value="http://example.org/properties/code"' in content
+    assert 'data-htmx-multi-select' not in content
+    assert 'id="relationship-container-Projektart"' in content
+    assert 'name="Projektart[]"' in content
 
 
 @pytest.mark.django_db
 def test_post_preserves_multi_value_relationships(client, user, dummy_service):
-    client.force_login(user)
-    payload = [
-        {"uri": "http://example.org/project-type/a"},
-        {"uri": "http://example.org/project-type/c"},
-    ]
-    response = client.post(
-        reverse("metadata:edit_project"),
-        {
-            "entity_uri": dummy_service.entity_uri,
-            "Projektart": json.dumps(payload),
-        },
-    )
-    assert response.status_code == 302
-    assert dummy_service.saved_entity_data is not None
-    assert dummy_service.saved_entity_data.get("Projektart") == json.dumps(payload)
-
-
-@pytest.mark.django_db
-def test_post_accepts_array_payloads(client, user, dummy_service):
     client.force_login(user)
     response = client.post(
         reverse("metadata:edit_project"),
@@ -210,14 +260,64 @@ def test_post_accepts_array_payloads(client, user, dummy_service):
         },
     )
     assert response.status_code == 302
+    assert dummy_service.saved_entity_data is not None
+    assert "Projektart" not in dummy_service.saved_entity_data
+    assert dummy_service.multi_fk_calls == [
+        (
+            dummy_service.entity_uri,
+            DummyProjektSchemaService.PROPERTY_URI,
+            [
+                "http://example.org/project-type/a",
+                "http://example.org/project-type/c",
+            ],
+        )
+    ]
+
+
+@pytest.mark.django_db
+def test_post_accepts_array_payloads(client, user, dummy_service):
+    client.force_login(user)
+    response = client.post(
+        reverse("metadata:edit_project"),
+        {
+            "entity_uri": dummy_service.entity_uri,
+            "Projektart[]": [
+                "http://example.org/project-type/a",
+                "http://example.org/project-type/c",
+            ],
+        },
+    )
+    assert response.status_code == 302
     saved = dummy_service.saved_entity_data
     assert saved is not None
-    parsed = json.loads(saved.get("Projektart"))
-    uris = {entry["uri"] for entry in parsed}
-    assert uris == {
-        "http://example.org/project-type/a",
-        "http://example.org/project-type/c",
-    }
+    assert "Projektart" not in saved
+    assert dummy_service.multi_fk_calls == [
+        (
+            dummy_service.entity_uri,
+            DummyProjektSchemaService.PROPERTY_URI,
+            [
+                "http://example.org/project-type/a",
+                "http://example.org/project-type/c",
+            ],
+        )
+    ]
+
+
+@pytest.mark.django_db
+def test_post_clears_multi_value_relationships(client, user, dummy_service):
+    client.force_login(user)
+    response = client.post(
+        reverse("metadata:edit_project"),
+        {"entity_uri": dummy_service.entity_uri},
+    )
+    assert response.status_code == 302
+    assert dummy_service.multi_fk_calls == [
+        (
+            dummy_service.entity_uri,
+            DummyProjektSchemaService.PROPERTY_URI,
+            [],
+        )
+    ]
 
 
 @pytest.mark.django_db
@@ -231,30 +331,38 @@ def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_e
     content = response.content.decode()
     assert 'name="Ereignistyp"' in content
     assert 'data-multi-value="true"' in content
-    assert "Suchen nach" not in content
-    assert 'select id="relationship-property' not in content
-    assert "property=http%3A//example.org/properties/code" in content
-    assert 'name="relationship_property_Ereignistyp"' in content
-    assert 'value="http://example.org/properties/code"' in content
+    assert 'data-htmx-multi-select' not in content
+    assert 'id="relationship-container-Ereignistyp"' in content
+    assert 'name="Ereignistyp[]"' in content
 
 
 @pytest.mark.django_db
 def test_post_preserves_multi_value_relationships_for_ereignis(client, user, dummy_ereignis_service):
     client.force_login(user)
-    payload = [
-        {"uri": "http://example.org/event-type/a"},
-        {"uri": "http://example.org/event-type/c"},
-    ]
     response = client.post(
         reverse("metadata:edit_ereignis"),
         {
             "entity_uri": dummy_ereignis_service.entity_uri,
-            "Ereignistyp": json.dumps(payload),
+            "Ereignistyp": "",
+            "Ereignistyp[]": [
+                "http://example.org/event-type/a",
+                "http://example.org/event-type/c",
+            ],
         },
     )
     assert response.status_code == 302
     assert dummy_ereignis_service.saved_entity_data is not None
-    assert dummy_ereignis_service.saved_entity_data.get("Ereignistyp") == json.dumps(payload)
+    assert "Ereignistyp" not in dummy_ereignis_service.saved_entity_data
+    assert dummy_ereignis_service.multi_fk_calls == [
+        (
+            dummy_ereignis_service.entity_uri,
+            DummyEreignisSchemaService.PROPERTY_URI,
+            [
+                "http://example.org/event-type/a",
+                "http://example.org/event-type/c",
+            ],
+        )
+    ]
 
 
 @pytest.mark.django_db
@@ -264,7 +372,6 @@ def test_post_accepts_array_payloads_for_ereignis(client, user, dummy_ereignis_s
         reverse("metadata:edit_ereignis"),
         {
             "entity_uri": dummy_ereignis_service.entity_uri,
-            "Ereignistyp": "",
             "Ereignistyp[]": [
                 "http://example.org/event-type/a",
                 "http://example.org/event-type/d",
@@ -274,9 +381,42 @@ def test_post_accepts_array_payloads_for_ereignis(client, user, dummy_ereignis_s
     assert response.status_code == 302
     saved = dummy_ereignis_service.saved_entity_data
     assert saved is not None
-    parsed = json.loads(saved.get("Ereignistyp"))
-    uris = {entry["uri"] for entry in parsed}
-    assert uris == {
-        "http://example.org/event-type/a",
-        "http://example.org/event-type/d",
-    }
+    assert "Ereignistyp" not in saved
+    assert dummy_ereignis_service.multi_fk_calls == [
+        (
+            dummy_ereignis_service.entity_uri,
+            DummyEreignisSchemaService.PROPERTY_URI,
+            [
+                "http://example.org/event-type/a",
+                "http://example.org/event-type/d",
+            ],
+        )
+    ]
+
+
+@pytest.mark.django_db
+def test_post_syncs_join_relationships(client, user, dummy_join_service):
+    client.force_login(user)
+    response = client.post(
+        reverse("metadata:edit_project"),
+        {
+            "entity_uri": dummy_join_service.entity_uri,
+            "Organisationseinheit": "",
+            "Organisationseinheit[]": [
+                "http://example.org/org-unit/1",
+                "http://example.org/org-unit/2",
+            ],
+        },
+    )
+    assert response.status_code == 302
+    assert dummy_join_service.join_sync_calls == [
+        (
+            dummy_join_service.entity_uri,
+            dummy_join_service.relationship,
+            [
+                "http://example.org/org-unit/1",
+                "http://example.org/org-unit/2",
+            ],
+        )
+    ]
+    assert dummy_join_service.multi_fk_calls == []

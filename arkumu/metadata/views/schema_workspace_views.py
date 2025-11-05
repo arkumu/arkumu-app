@@ -3000,6 +3000,7 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
     def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
         """Handle suggestion selection using targeted OOB swaps for input elements."""
         import re
+        import uuid
         from django.utils.html import escape
 
         input_id = request.POST.get("input_id")
@@ -3016,6 +3017,9 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
             label = value or value_candidate or raw_value.strip()
         selected_property = request.POST.get("property") or ""
         property_select_id = request.POST.get("property_select_id") or ""
+        widget_type = request.POST.get("widget") or ""
+        chip_container_id = request.POST.get("chip_container_id") or ""
+        field_name_param = request.POST.get("field_name") or column_name
 
         if not input_id or not target_id or not dataset_name or not column_name:
             logger.warning(
@@ -3024,14 +3028,6 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
             )
             return HttpResponseBadRequest("Missing required parameters")
 
-        hidden_input_id = f"{input_id}-hidden"
-
-        logger.info(
-            "[RelationshipSelectSuggestionView.POST] Updating inputs: "
-            f"visible={input_id}, hidden={hidden_input_id}, value={value}, label={label}"
-        )
-
-        # Build suggestion URL for the visible input
         suggestion_base_url = reverse(
             "metadata:entity_workspace_field_values",
             args=[mapping_id],
@@ -3039,19 +3035,124 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         suggestion_params = urlencode({"dataset": dataset_name, "column": column_name})
         suggestion_url = f"{suggestion_base_url}?{suggestion_params}"
         property_param = f"&property={escape(selected_property)}" if selected_property else ""
-        property_select_param = f"&property_select_id={escape(property_select_id)}" if property_select_id else ""
+        property_select_param = (
+            f"&property_select_id={escape(property_select_id)}" if property_select_id else ""
+        )
+        include_fragment = "this"
+        if property_select_id:
+            include_fragment = f"{include_fragment}, #{property_select_id}"
+        include_fragment = escape(include_fragment)
 
-        # Create OOB updates for individual inputs
-        # 1. Update hidden input with the URI value
+        if widget_type == "multi_select" and chip_container_id:
+            canonical_value = value or value_candidate
+            normalized_existing: Set[str] = set()
+            for raw_existing in request.POST.getlist(f"{field_name_param}[]"):
+                cleaned = (raw_existing or "").strip()
+                if not cleaned:
+                    continue
+                canonical_existing, _ = decode_placeholder_uri(cleaned)
+                if canonical_existing:
+                    normalized_existing.add(canonical_existing)
+
+            chip_fragment = ""
+            if canonical_value and canonical_value not in normalized_existing:
+                try:
+                    service = _get_schema_service(request, mapping_id)
+                except ValueError as exc:
+                    logger.error(f"[RelationshipSelectSuggestionView.POST] Service error: {exc}")
+                    return HttpResponseBadRequest(str(exc))
+
+                field_metadata = service.get_field_metadata(dataset_name)
+                field_metadata, join_field_map = service.augment_field_metadata_with_joins(
+                    dataset_name,
+                    field_metadata,
+                )
+                field_meta = field_metadata.get(field_name_param, {})
+                relationship = join_field_map.get(field_name_param)
+                target_dataset = None
+                if relationship:
+                    target_dataset = relationship.other_dataset
+                else:
+                    fk_info = field_meta.get("fk_relationship") or {}
+                    target_dataset = fk_info.get("target_dataset")
+
+                if not label:
+                    label = _infer_entity_label(
+                        service,
+                        canonical_value,
+                        target_dataset,
+                    ) or canonical_value
+
+                resource_id = ""
+                resource = Resource.objects.filter(uri=canonical_value).first()
+                if resource:
+                    resource_id = str(resource.id)
+
+                chip_id = f"chip-{slugify(field_name_param) or uuid.uuid4().hex[:6]}-{uuid.uuid4().hex[:6]}"
+                hidden_input_id = f"{chip_id}-hidden"
+                chip_html = render_to_string(
+                    "metadata/components/htmx/_multi_select_chip.html",
+                    {
+                        "chip_id": chip_id,
+                        "hidden_input_id": hidden_input_id,
+                        "uri": canonical_value,
+                        "label": label,
+                        "resource_id": resource_id,
+                        "field_name": field_name_param,
+                        "mapping_id": mapping_id,
+                    },
+                )
+                chip_fragment = (
+                    f'<div hx-swap-oob="beforeend:#{escape(chip_container_id)}">{chip_html}</div>'
+                )
+                logger.info(
+                    "[RelationshipSelectSuggestionView.POST] Added multi-select chip: "
+                    f"field={field_name_param}, value={canonical_value}"
+                )
+            else:
+                logger.info(
+                    "[RelationshipSelectSuggestionView.POST] Skipping duplicate multi-select value: "
+                    f"field={field_name_param}, value={canonical_value}"
+                )
+
+            reset_input_html = f'''<input type="text"
+           id="{escape(input_id)}"
+           name="q"
+           class="input input-bordered w-full"
+           placeholder="Wert suchen und auswählen..."
+           value=""
+           hx-get="{escape(suggestion_url)}&input_id={escape(input_id)}&target_id={escape(target_id)}{property_select_param}{property_param}&chip_container_id={escape(chip_container_id)}&field_name={escape(field_name_param)}&widget=multi_select"
+           hx-trigger="input changed delay:200ms"
+           hx-target="#{escape(target_id)}"
+           hx-include="{include_fragment}"
+           autocomplete="off"
+           hx-swap-oob="outerHTML">'''
+
+            dropdown_html = f'<div id="{escape(target_id)}" hx-swap-oob="innerHTML"></div>'
+
+            response_parts = [part for part in (chip_fragment, reset_input_html, dropdown_html) if part]
+            response_html = "\n".join(response_parts)
+            logger.debug(
+                "[RelationshipSelectSuggestionView.POST] Multi-select response: %s",
+                response_html[:200],
+            )
+            return HttpResponse(response_html)
+
+        hidden_input_id = f"{input_id}-hidden"
+
+        logger.info(
+            "[RelationshipSelectSuggestionView.POST] Updating inputs: "
+            f"visible={input_id}, hidden={hidden_input_id}, value={value}, label={label}"
+        )
+
         hidden_input_html = f'''<input type="hidden"
-           name="{escape(column_name)}[]"
+           name="{escape(column_name)}"
            id="{escape(hidden_input_id)}"
            value="{escape(value)}"
            data-uri="{escape(value)}"
            data-label="{escape(label)}"
            hx-swap-oob="outerHTML">'''
 
-        # 2. Update visible input with the display label
         visible_input_html = f'''<input type="text"
            id="{escape(input_id)}"
            name="q"
@@ -3061,11 +3162,10 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
            hx-get="{escape(suggestion_url)}&input_id={escape(input_id)}&target_id={escape(target_id)}{property_select_param}{property_param}"
            hx-trigger="focus, keyup changed delay:200ms"
            hx-target="#{escape(target_id)}"
-           hx-include="this{', #' + escape(property_select_id) if property_select_id else ''}"
+           hx-include="{include_fragment}"
            autocomplete="off"
            hx-swap-oob="outerHTML">'''
 
-        # 3. Clear the dropdown
         dropdown_html = f'<div id="{escape(target_id)}" hx-swap-oob="innerHTML"></div>'
 
         response_html = f"{hidden_input_html}\n{visible_input_html}\n{dropdown_html}"
