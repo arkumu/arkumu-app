@@ -247,133 +247,180 @@
     </div>
     {% endif %}
 
-    <!-- Database Management -->
+    <!-- Database Management (Superuser Only) -->
+    {% if request.user.is_superuser %}
     <div class="mb-4">
         <h3 class="text-lg font-semibold mb-2">Database Management</h3>
         <p class="text-sm text-base-content/70 mb-4">High-impact actions that write to PostgreSQL. Use these when you need to remove or reset imported data; every button requires confirmation.</p>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <!-- Delete Organization Data -->
-        <div class="card bg-base-100 shadow-md">
-          <div class="card-body p-4">
-            <h4 class="card-title text-sm">Delete Organization Data</h4>
-            <p class="text-xs text-base-content/70 mb-3">Delete triples from a specific organization only</p>
-            {% if organizations_with_data %}
-              <select id="org-select" name="organization_id" class="select select-bordered select-sm w-full mb-2">
-                <option value="">Select Organization</option>
-                {% for org in organizations_with_data %}
-                  <option value="{{ org.id }}">
-                    {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
-                  </option>
-                {% endfor %}
-              </select>
-              <button id="delete-org-btn"
-                      class="btn btn-warning btn-sm w-full"
-                      hx-post="{% url 'importer:delete_organization_triples' %}"
-                      hx-target="#delete-org-result"
-                      hx-swap="innerHTML"
-                      hx-indicator="#delete-org-spinner"
-                      hx-include="#org-select"
-                      onclick="if (!document.getElementById('org-select').value) { alert('Please select an organization first.'); return false; } return confirm('Are you sure you want to delete data from the selected organization? This cannot be undone!');"
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                   stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-              </svg>
-              Delete Organization Data
-              <span id="delete-org-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-              </button>
-            {% else %}
-              <p class="text-xs text-base-content/50">No organization data available for deletion</p>
-              <button disabled class="btn btn-warning btn-sm w-full btn-disabled">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                     stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                </svg>
-                Delete Organization Data
-              </button>
-            {% endif %}
-          </div>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <!-- Delete Organization Data -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Publish Organization Projects</h4>
+                    <p class="text-xs text-base-content/70 mb-3">
+                        Set every project for an organization to public &amp; approved visibility so they appear in the catalog and OAI feeds.
+                    </p>
+                    {% if organizations_with_data %}
+                        <form method="post"
+                              hx-post="{% url 'metadata:metadata_dashboard_publish_projects' %}"
+                              hx-target="#publish-projects-result"
+                              hx-swap="innerHTML"
+                              hx-indicator="#publish-projects-spinner">
+                            {% csrf_token %}
+                            <select name="organization_id" class="select select-bordered select-sm w-full mb-2" required>
+                                <option value="">Select Organization</option>
+                                {% for org in organizations_with_data %}
+                                <option value="{{ org.id }}">
+                                    {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if request.user.is_superuser %}
+                                <button type="submit" class="btn btn-success btn-sm w-full">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Publish Projects
+                                    <span id="publish-projects-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                                </button>
+                            {% else %}
+                                <button type="button" class="btn btn-success btn-sm w-full btn-disabled" disabled title="Only superusers can publish projects">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Publish Projects
+                                </button>
+                            {% endif %}
+                        </form>
+                        <div id="publish-projects-result" class="mt-2"></div>
+                    {% else %}
+                        <p class="text-xs text-base-content/50">No organization data available to publish.</p>
+                        <button disabled class="btn btn-success btn-sm w-full btn-disabled">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Publish Projects
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Delete Organization Data -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Delete Organization Data</h4>
+                    <p class="text-xs text-base-content/70 mb-3">Delete triples from a specific organization only</p>
+                    {% if organizations_with_data %}
+                        <select id="org-select" name="organization_id" class="select select-bordered select-sm w-full mb-2">
+                            <option value="">Select Organization</option>
+                            {% for org in organizations_with_data %}
+                            <option value="{{ org.id }}">
+                                {{ org.name }} ({{ org.triple_count }} triples, {{ org.resource_count }} resources)
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button id="delete-org-btn"
+                                class="btn btn-warning btn-sm w-full"
+                                hx-post="{% url 'importer:delete_organization_triples' %}"
+                                hx-target="#delete-org-result"
+                                hx-swap="innerHTML"
+                                hx-indicator="#delete-org-spinner"
+                                hx-include="#org-select"
+                                onclick="if (!document.getElementById('org-select').value) { alert('Please select an organization first.'); return false; } return confirm('Are you sure you want to delete data from the selected organization? This cannot be undone!');"
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete Organization Data
+                            <span id="delete-org-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                        </button>
+                    {% else %}
+                        <p class="text-xs text-base-content/50">No organization data available for deletion</p>
+                        <button disabled class="btn btn-warning btn-sm w-full btn-disabled">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete Organization Data
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Reset Database -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Reset All Data</h4>
+                    <p class="text-xs text-base-content/70 mb-3">Delete all imported data (Resources and Triples)</p>
+                    <button id="reset-db-btn"
+                            class="btn btn-error btn-sm w-full"
+                            hx-post="{% url 'importer:reset_database' %}"
+                            hx-target="#reset-db-result"
+                            hx-swap="innerHTML"
+                            hx-indicator="#reset-db-spinner"
+                            onclick="return confirm('Are you sure you want to delete ALL imported data? This cannot be undone!')">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Reset Database
+                        <span id="reset-db-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clear Upload Sessions -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Clear Upload Sessions</h4>
+                    <p class="text-xs text-base-content/70 mb-3">Delete all upload session records and history</p>
+                    <button id="clear-uploads-btn"
+                            class="btn btn-warning btn-sm w-full"
+                            hx-post="{% url 'importer:clear_upload_sessions' %}"
+                            hx-target="#clear-uploads-result"
+                            hx-swap="innerHTML"
+                            hx-indicator="#clear-uploads-spinner"
+                            onclick="return confirm('Are you sure you want to delete all upload session records?')">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Clear Uploads
+                        <span id="clear-uploads-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clear Ingest Sessions -->
+            <div class="card bg-base-100 shadow-md">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-sm">Clear Ingest Sessions</h4>
+                    <p class="text-xs text-base-content/70 mb-3">Delete all ingest session records and history</p>
+                    <button id="clear-ingests-btn"
+                            class="btn btn-warning btn-sm w-full"
+                            hx-post="{% url 'importer:clear_ingest_sessions' %}"
+                            hx-target="#clear-ingests-result"
+                            hx-swap="innerHTML"
+                            hx-indicator="#clear-ingests-spinner"
+                            onclick="return confirm('Are you sure you want to delete all ingest session records?')">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                        </svg>
+                        Clear Ingests
+                        <span id="clear-ingests-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <!-- Reset Database -->
-        <div class="card bg-base-100 shadow-md">
-          <div class="card-body p-4">
-            <h4 class="card-title text-sm">Reset All Data</h4>
-            <p class="text-xs text-base-content/70 mb-3">Delete all imported data (Resources and Triples)</p>
-            <button id="reset-db-btn"
-                    class="btn btn-error btn-sm w-full"
-                    hx-post="{% url 'importer:reset_database' %}"
-                    hx-target="#reset-db-result"
-                    hx-swap="innerHTML"
-                    hx-indicator="#reset-db-spinner"
-                    onclick="return confirm('Are you sure you want to delete ALL imported data? This cannot be undone!')">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                   stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-              </svg>
-              Reset Database
-              <span id="reset-db-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-            </button>
-          </div>
+        <!-- Results containers -->
+        <div class="mt-4 space-y-2">
+            <div id="delete-org-result"></div>
+            <div id="reset-db-result"></div>
+            <div id="clear-uploads-result"></div>
+            <div id="clear-ingests-result"></div>
         </div>
+    </div>
+    {% endif %}
 
-        <!-- Clear Upload Sessions -->
-        <div class="card bg-base-100 shadow-md">
-          <div class="card-body p-4">
-            <h4 class="card-title text-sm">Clear Upload Sessions</h4>
-            <p class="text-xs text-base-content/70 mb-3">Delete all upload session records and history</p>
-            <button id="clear-uploads-btn"
-                    class="btn btn-warning btn-sm w-full"
-                    hx-post="{% url 'importer:clear_upload_sessions' %}"
-                    hx-target="#clear-uploads-result"
-                    hx-swap="innerHTML"
-                    hx-indicator="#clear-uploads-spinner"
-                    onclick="return confirm('Are you sure you want to delete all upload session records?')">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                   stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-              </svg>
-              Clear Uploads
-              <span id="clear-uploads-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-            </button>
-          </div>
-        </div>
 
-        <!-- Clear Ingest Sessions -->
-        <div class="card bg-base-100 shadow-md">
-          <div class="card-body p-4">
-            <h4 class="card-title text-sm">Clear Ingest Sessions</h4>
-            <p class="text-xs text-base-content/70 mb-3">Delete all ingest session records and history</p>
-            <button id="clear-ingests-btn"
-                    class="btn btn-warning btn-sm w-full"
-                    hx-post="{% url 'importer:clear_ingest_sessions' %}"
-                    hx-target="#clear-ingests-result"
-                    hx-swap="innerHTML"
-                    hx-indicator="#clear-ingests-spinner"
-                    onclick="return confirm('Are you sure you want to delete all ingest session records?')">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                   stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
-              </svg>
-              Clear Ingests
-              <span id="clear-ingests-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Results containers -->
-      <div class="mt-4 space-y-2">
-        <div id="delete-org-result"></div>
-        <div id="reset-db-result"></div>
-        <div id="clear-uploads-result"></div>
-        <div id="clear-ingests-result"></div>
-      </div>
-        {% if request.user.is_staff %}
+  {% if request.user.is_staff %}
         <div class="mt-6">
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4 space-y-3">
