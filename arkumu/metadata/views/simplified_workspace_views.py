@@ -116,6 +116,31 @@ def _get_schema_service(request: HttpRequest) -> Optional[SchemaWorkspaceService
     return SchemaWorkspaceService(mapping=mapping, organization=organization)
 
 
+def _extract_multi_fk_payloads(post_data: Any, field_metadata: Dict[str, Any]) -> Dict[str, str]:
+    """Collect multi-select relationship payloads from POST data."""
+    if not hasattr(post_data, "getlist"):
+        return {}
+
+    payloads: Dict[str, str] = {}
+    for field_name, meta in field_metadata.items():
+        fk_info = meta.get("fk_relationship") or {}
+        if not fk_info or not meta.get("is_multi_value"):
+            continue
+
+        key = f"{field_name}[]"
+        if key not in post_data:
+            continue
+
+        values = [
+            value.strip()
+            for value in post_data.getlist(key)
+            if value and value.strip()
+        ]
+        payloads[field_name] = json.dumps([{"uri": uri} for uri in values]) if values else json.dumps([])
+
+    return payloads
+
+
 def _filter_field_metadata(
     field_metadata: Dict[str, Any],
     visible_fields: List[str]
@@ -529,6 +554,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data.update(_extract_multi_fk_payloads(request.POST, field_metadata))
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(
@@ -701,6 +727,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data.update(_extract_multi_fk_payloads(request.POST, field_metadata))
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(

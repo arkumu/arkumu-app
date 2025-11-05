@@ -196,6 +196,31 @@ def test_post_preserves_multi_value_relationships(client, user, dummy_service):
 
 
 @pytest.mark.django_db
+def test_post_accepts_array_payloads(client, user, dummy_service):
+    client.force_login(user)
+    response = client.post(
+        reverse("metadata:edit_project"),
+        {
+            "entity_uri": dummy_service.entity_uri,
+            "Projektart": "",
+            "Projektart[]": [
+                "http://example.org/project-type/a",
+                "http://example.org/project-type/c",
+            ],
+        },
+    )
+    assert response.status_code == 302
+    saved = dummy_service.saved_entity_data
+    assert saved is not None
+    parsed = json.loads(saved.get("Projektart"))
+    uris = {entry["uri"] for entry in parsed}
+    assert uris == {
+        "http://example.org/project-type/a",
+        "http://example.org/project-type/c",
+    }
+
+
+@pytest.mark.django_db
 def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_ereignis_service):
     client.force_login(user)
     response = client.get(
@@ -230,3 +255,28 @@ def test_post_preserves_multi_value_relationships_for_ereignis(client, user, dum
     assert response.status_code == 302
     assert dummy_ereignis_service.saved_entity_data is not None
     assert dummy_ereignis_service.saved_entity_data.get("Ereignistyp") == json.dumps(payload)
+
+
+@pytest.mark.django_db
+def test_post_accepts_array_payloads_for_ereignis(client, user, dummy_ereignis_service):
+    client.force_login(user)
+    response = client.post(
+        reverse("metadata:edit_ereignis"),
+        {
+            "entity_uri": dummy_ereignis_service.entity_uri,
+            "Ereignistyp": "",
+            "Ereignistyp[]": [
+                "http://example.org/event-type/a",
+                "http://example.org/event-type/d",
+            ],
+        },
+    )
+    assert response.status_code == 302
+    saved = dummy_ereignis_service.saved_entity_data
+    assert saved is not None
+    parsed = json.loads(saved.get("Ereignistyp"))
+    uris = {entry["uri"] for entry in parsed}
+    assert uris == {
+        "http://example.org/event-type/a",
+        "http://example.org/event-type/d",
+    }
