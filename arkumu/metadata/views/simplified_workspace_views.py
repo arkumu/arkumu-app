@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -85,28 +85,35 @@ SIMPLIFIED_FIELD_CONFIG = {
 
 def _canonicalize_multi_value_payload(value: Any) -> Any:
     """Normalize multi-value submissions by decoding placeholder URIs."""
-    def _canonicalize_entries(entries: List[Any]) -> List[Any]:
-        canonical: List[Any] = []
-        for entry in entries:
-            if isinstance(entry, dict):
-                data = dict(entry)
-                raw_uri = str(data.get("uri") or data.get("value") or "").strip()
-                canonical_uri, label_hint = decode_placeholder_uri(raw_uri)
-                if canonical_uri:
-                    data["uri"] = canonical_uri
-                if label_hint and (not data.get("label") or data["label"] in {raw_uri, canonical_uri}):
-                    data["label"] = label_hint
-                canonical.append(data)
+
+    def _build_entries(raw_values: Sequence[Any]) -> List[Dict[str, str]]:
+        canonical: List[Dict[str, str]] = []
+        seen: set[str] = set()
+        for raw_item in raw_values:
+            if isinstance(raw_item, dict):
+                candidate = raw_item.get("uri") or raw_item.get("value") or ""
             else:
-                raw_value = str(entry).strip()
-                canonical_value, _ = decode_placeholder_uri(raw_value)
-                canonical.append(canonical_value)
+                candidate = raw_item
+            item_str = str(candidate).strip()
+            if not item_str:
+                continue
+            canonical_uri, label_hint = decode_placeholder_uri(item_str)
+            if not canonical_uri or canonical_uri in seen:
+                continue
+            entry = {"uri": canonical_uri}
+            if label_hint:
+                entry["label"] = label_hint
+            canonical.append(entry)
+            seen.add(canonical_uri)
         return canonical
+
+    def _canonicalize_entries(entries: List[Any]) -> List[Any]:
+        return _build_entries(entries)
 
     if isinstance(value, str):
         stripped = value.strip()
         if not stripped:
-            return value
+            return json.dumps([])
         if stripped.startswith("["):
             try:
                 parsed = json.loads(stripped)
@@ -126,28 +133,72 @@ def _canonicalize_multi_value_payload(value: Any) -> Any:
         canonical_entry = _canonicalize_entries([value])
         return canonical_entry[0]
 
-    canonical_value, _ = decode_placeholder_uri(str(value).strip())
-    return canonical_value
+    canonical_value, label_hint = decode_placeholder_uri(str(value).strip())
+    if not canonical_value:
+        return json.dumps([])
+    entry = {"uri": canonical_value}
+    if label_hint:
+        entry["label"] = label_hint
+    return json.dumps([entry])
 
 
 def _canonicalize_fk_payload(
     entity_data: Dict[str, Any],
     field_metadata: Dict[str, Any],
+    post_data: Optional[Any] = None,
 ) -> None:
     """Mutate entity_data so FK submissions carry canonical URIs."""
+    query_data = post_data
+
     for field_name, meta in field_metadata.items():
         fk_info = meta.get("fk_relationship") or {}
         if not fk_info:
             continue
 
         if field_name not in entity_data:
-            continue
+            entity_data[field_name] = ""
 
         value = entity_data[field_name]
         if value in (None, "", []):
-            continue
+            if query_data is None:
+                continue
 
         if meta.get("is_multi_value"):
+            array_key = f"{field_name}[]"
+            handled_array = False
+            if query_data is not None:
+                raw_array: List[str] = []
+                if hasattr(query_data, "getlist"):
+                    if array_key in query_data:  # type: ignore[operator]
+                        raw_array = query_data.getlist(array_key)
+                        handled_array = True
+                else:
+                    raw = query_data.get(array_key) if hasattr(query_data, "get") else None  # type: ignore[attr-defined]
+                    if raw is not None:
+                        handled_array = True
+                        if isinstance(raw, (list, tuple, set)):
+                            raw_array = list(raw)
+                        else:
+                            raw_array = [raw]
+
+                if handled_array:
+                    entries = []
+                    seen: set[str] = set()
+                    for raw_item in raw_array:
+                        raw_str = str(raw_item).strip()
+                        if not raw_str:
+                            continue
+                        canonical_uri, label_hint = decode_placeholder_uri(raw_str)
+                        if not canonical_uri or canonical_uri in seen:
+                            continue
+                        entry = {"uri": canonical_uri}
+                        if label_hint:
+                            entry["label"] = label_hint
+                        entries.append(entry)
+                        seen.add(canonical_uri)
+                    entity_data[field_name] = json.dumps(entries)
+                    continue
+
             entity_data[field_name] = _canonicalize_multi_value_payload(value)
             continue
 
@@ -607,7 +658,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
-                _canonicalize_fk_payload(entity_data, field_metadata)
+                _canonicalize_fk_payload(entity_data, field_metadata, request.POST)
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(
@@ -781,7 +832,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
-                _canonicalize_fk_payload(entity_data, field_metadata)
+                _canonicalize_fk_payload(entity_data, field_metadata, request.POST)
 
                 # Save entity (includes FK fields and relationships)
                 saved_uri, created = schema_service.save_entity(

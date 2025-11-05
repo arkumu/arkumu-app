@@ -251,6 +251,32 @@ def test_post_normalizes_placeholder_uris(client, user, dummy_service):
 
 
 @pytest.mark.django_db
+def test_post_handles_array_payloads(client, user, dummy_service):
+    client.force_login(user)
+    placeholder = "uri-http-arkumu-org-data-fuk-entities-schlagwort-q222-label-Beta"
+    canonical = "http://arkumu.org/data/fuk/entities/schlagwort/q222"
+    response = client.post(
+        reverse("metadata:edit_project"),
+        {
+            "entity_uri": dummy_service.entity_uri,
+            "Projektart": "",
+            "Projektart[]": [
+                "http://example.org/project-type/a",
+                placeholder,
+            ],
+        },
+    )
+    assert response.status_code == 302
+    saved = dummy_service.saved_entity_data
+    assert saved is not None
+    payload = saved.get("Projektart")
+    assert payload
+    parsed = json.loads(payload)
+    uris = {entry["uri"] if isinstance(entry, dict) else entry for entry in parsed}
+    assert uris == {"http://example.org/project-type/a", canonical}
+
+
+@pytest.mark.django_db
 def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_ereignis_service):
     client.force_login(user)
     response = client.get(
