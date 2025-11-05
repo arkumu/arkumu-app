@@ -32,6 +32,7 @@ from arkumu.metadata.schema_workspace.services import JoinRelationship, Relation
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 from arkumu.users.models import Organization
 from arkumu.metadata.services.entity_label_service import infer_entity_label as _infer_entity_label
+from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 
 STEP_LABELS: Dict[str, str] = {
     "project": "Projekt",
@@ -2635,12 +2636,23 @@ class RelationshipRowsView(LoginRequiredMixin, View):
         selected_property = request.GET.get(f"relationship_property_{field_name}", "") or ""
         logger.info(f"[RelationshipRowsView.GET] Selected property: {selected_property}")
 
-        existing_values = [
+        raw_values = [
             value.strip()
             for value in request.GET.getlist(f"{field_name}[]")
             if value and value.strip()
         ]
-        logger.info(f"[RelationshipRowsView.GET] Existing values: {existing_values}")
+        normalized_values: List[Tuple[str, Optional[str]]] = []
+        seen_uris: Set[str] = set()
+        for raw_value in raw_values:
+            canonical_value, label_hint = decode_placeholder_uri(raw_value)
+            if canonical_value in seen_uris:
+                continue
+            seen_uris.add(canonical_value)
+            normalized_values.append((canonical_value, label_hint))
+        logger.info(
+            "[RelationshipRowsView.GET] Existing values: %s",
+            [value for value, _ in normalized_values],
+        )
 
         relationship = join_field_map.get(field_name)
         fk_info = field_meta.get("fk_relationship") or {}
@@ -2651,12 +2663,14 @@ class RelationshipRowsView(LoginRequiredMixin, View):
             target_dataset = fk_info.get("target_dataset")
 
         value_items: List[Dict[str, Any]] = []
-        for value in existing_values:
+        for value, label_hint in normalized_values:
             label = _infer_entity_label(
                 service,
                 value,
                 target_dataset,
             ) or value
+            if label_hint and (not label or label == value):
+                label = label_hint
             resource = Resource.objects.filter(uri=value).first()
             resource_id = str(resource.id) if resource else ""
             value_items.append({"uri": value, "label": label, "resource_id": resource_id})
@@ -2692,8 +2706,14 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         target_id = request.POST.get("target_id")
         dataset_name = request.POST.get("dataset")
         column_name = request.POST.get("column")
-        value = request.POST.get("value", "") or ""
-        label = request.POST.get("label", value) or ""
+        raw_value = request.POST.get("value", "") or ""
+        value_candidate = raw_value.strip()
+        label = (request.POST.get("label", raw_value) or "").strip()
+        value, label_hint = decode_placeholder_uri(value_candidate)
+        if label_hint and (not label or label in {raw_value.strip(), value_candidate, value}):
+            label = label_hint
+        if not label:
+            label = value or value_candidate or raw_value.strip()
         selected_property = request.POST.get("property") or ""
         property_select_id = request.POST.get("property_select_id") or ""
         widget_mode = request.POST.get("widget") or ""
@@ -2725,12 +2745,17 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         property_select_param = f"&property_select_id={escape(property_select_id)}" if property_select_id else ""
 
         if widget_mode == "multi_select" and chip_container_id:
-            existing_values = [
+            raw_existing_values = [
                 item.strip()
                 for item in request.POST.getlist(f"{field_name}[]")
                 if item and item.strip()
             ]
-            if value and value.strip() in existing_values:
+            normalized_existing = {
+                decode_placeholder_uri(existing)[0]
+                for existing in raw_existing_values
+                if existing
+            }
+            if value and value in normalized_existing:
                 logger.info(
                     "[RelationshipSelectSuggestionView.POST] Value already selected; skipping chip append"
                 )

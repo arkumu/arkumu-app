@@ -11,6 +11,7 @@ from django.utils.text import slugify
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService
+from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 
 logger = logging.getLogger(__name__)
 
@@ -38,29 +39,21 @@ def infer_entity_label(
         display_property_uri,
     )
 
-    uri_tail = entity_uri.split("/")[-1]
-    if uri_tail.startswith("uri-") and "-label-" in uri_tail:
-        parts = uri_tail.split("-label-")
-        if len(parts) == 2:
-            actual_label = parts[1]
-            if actual_label and "resource-id" not in actual_label.lower():
-                logger.info(
-                    "[infer_entity_label] Extracted label from malformed URI %s -> %s",
-                    entity_uri,
-                    actual_label,
-                )
-                return actual_label
-            logger.debug(
-                "[infer_entity_label] Skipping malformed URI label for %s (value=%s)",
-                entity_uri,
-                actual_label,
-            )
+    normalized_uri, placeholder_label = decode_placeholder_uri(entity_uri)
+    if normalized_uri != entity_uri:
+        logger.debug(
+            "[infer_entity_label] Normalized placeholder URI %s -> %s",
+            entity_uri,
+            normalized_uri,
+        )
+        entity_uri = normalized_uri
 
+    uri_tail = entity_uri.rstrip("/").split("/")[-1]
     try:
         entity = Resource.objects.get(uri=entity_uri)
     except Resource.DoesNotExist:
         logger.warning("[infer_entity_label] Resource not found for URI %s", entity_uri)
-        return uri_tail
+        return placeholder_label or entity_uri
 
     if target_dataset and ("kreuz" in target_dataset.lower() or "junction" in target_dataset.lower()):
         logger.debug(
@@ -273,13 +266,21 @@ def infer_entity_label(
             logger.debug("[infer_entity_label] Fallback literal anchor label %s", final_label)
             return final_label
 
+    if placeholder_label:
+        logger.debug(
+            "[infer_entity_label] Falling back to placeholder label '%s' for %s",
+            placeholder_label,
+            entity_uri,
+        )
+        return placeholder_label
+
     final = entity_uri.split("/")[-1]
     logger.info(
         "[infer_entity_label] Returning URI tail fallback %s for %s",
         final,
         entity_uri,
     )
-    return final
+    return entity_uri
 
 
 @dataclass

@@ -18,6 +18,7 @@ from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.resources import ClassResource, EntityResource, PropertyResource
 from arkumu.users.models import Organization
+from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 
 
 def generate_auto_id(dataset_name: str) -> str:
@@ -1054,10 +1055,17 @@ class SchemaWorkspaceService:
         normalized: List[str] = []
         seen = set()
         for item in raw_values:
-            item_str = str(item).strip()
-            if item_str and item_str not in seen:
-                normalized.append(item_str)
-                seen.add(item_str)
+            if isinstance(item, dict):
+                candidate = item.get("uri") or item.get("value") or ""
+            else:
+                candidate = item
+            item_str = str(candidate).strip()
+            if not item_str:
+                continue
+            canonical, _ = decode_placeholder_uri(item_str)
+            if canonical and canonical not in seen:
+                normalized.append(canonical)
+                seen.add(canonical)
         return normalized
 
     # ------------------------------------------------------------------ #
