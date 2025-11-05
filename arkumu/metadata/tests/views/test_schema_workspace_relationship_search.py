@@ -488,6 +488,29 @@ class TestRelationshipRowView:
         content = response.content.decode()
         assert "relationship-row-projekt_ref" in content
 
+    def test_get_normalizes_placeholder_values(self, client, user, mapping):
+        """Existing placeholder URIs should render using canonical URIs and readable labels."""
+        client.force_login(user)
+        url = reverse("metadata:entity_workspace_relationship_rows", args=[mapping.id])
+
+        placeholder = "uri-http-arkumu-org-data-fuk-entities-schlagwort-q13716-label-Schlagwort-Alpha"
+        canonical = "http://arkumu.org/data/fuk/entities/schlagwort/q13716"
+
+        response = client.get(
+            url,
+            {
+                "dataset": "Mitarbeit",
+                "field_name": "projekt_ref",
+                "projekt_ref[]": placeholder,
+            },
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert canonical in content
+        assert "Schlagwort Alpha" in content
+        assert placeholder not in content
+
     def test_delete_removes_row(self, client, user, mapping):
         """Test deleting a relationship row returns empty response."""
         client.force_login(user)
@@ -574,6 +597,38 @@ class TestRelationshipSelectSuggestionView:
 
         # Should contain empty target div
         assert f'<div id="{target_id}" hx-swap-oob="innerHTML"></div>' in content
+
+    def test_select_suggestion_normalizes_placeholder(self, client, user, mapping):
+        """Placeholder URIs should be converted to canonical values when selected."""
+        client.force_login(user)
+        url = reverse("metadata:entity_workspace_select_suggestion", args=[mapping.id])
+
+        placeholder = "uri-http-arkumu-org-data-fuk-entities-schlagwort-q555-label-Schlagwort-Beta"
+        canonical = "http://arkumu.org/data/fuk/entities/schlagwort/q555"
+        label_hint = "Schlagwort Beta"
+        row_suffix = "relationship-row-projekt_ref-xyz123"
+        input_id = f"input-{row_suffix}"
+        hidden_input_id = f"{input_id}-hidden"
+        target_id = f"suggestions-{row_suffix}"
+
+        response = client.post(
+            url,
+            {
+                "input_id": input_id,
+                "target_id": target_id,
+                "dataset": "Mitarbeit",
+                "column": "projekt_ref",
+                "value": placeholder,
+                "label": placeholder,
+            },
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert canonical in content
+        assert placeholder not in content
+        assert label_hint in content
+        assert f'id="{hidden_input_id}"' in content
 
     def test_requires_input_id(self, client, user, mapping):
         """Test that missing input_id returns 400."""

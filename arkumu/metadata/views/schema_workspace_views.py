@@ -29,6 +29,7 @@ from arkumu.metadata.schema_workspace import (
     SchemaWorkspaceCoordinator,
 )
 from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
+from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 from arkumu.users.models import Organization
 
@@ -114,18 +115,30 @@ def _parse_join_payload(raw_value) -> List[str]:
         parsed = raw_value
 
     uris: List[str] = []
+    seen: Set[str] = set()
     if isinstance(parsed, list):
         for item in parsed:
             if isinstance(item, dict):
                 uri = item.get("uri") or item.get("value")
                 if uri:
-                    uris.append(str(uri))
+                    canonical, _ = decode_placeholder_uri(str(uri))
+                    if canonical and canonical not in seen:
+                        uris.append(canonical)
+                        seen.add(canonical)
             elif isinstance(item, str):
-                if item.strip():
-                    uris.append(item.strip())
+                cleaned = item.strip()
+                if not cleaned:
+                    continue
+                canonical, _ = decode_placeholder_uri(cleaned)
+                if canonical and canonical not in seen:
+                    uris.append(canonical)
+                    seen.add(canonical)
     elif isinstance(parsed, str):
-        if parsed.strip():
-            uris.append(parsed.strip())
+        cleaned = parsed.strip()
+        if cleaned:
+            canonical, _ = decode_placeholder_uri(cleaned)
+            if canonical:
+                uris.append(canonical)
 
     return uris
 
@@ -2877,9 +2890,33 @@ class RelationshipRowsView(LoginRequiredMixin, View):
         selected_property = request.GET.get(f"relationship_property_{field_name}", "")
         logger.info(f"[RelationshipRowsView.GET] Selected property: {selected_property}")
 
-        # Collect existing values from the form
-        existing_values = request.GET.getlist(f"{field_name}[]")
-        logger.info(f"[RelationshipRowsView.GET] Existing values: {existing_values}")
+        raw_values = [
+            value.strip()
+            for value in request.GET.getlist(f"{field_name}[]")
+            if value and value.strip()
+        ]
+        logger.info(f"[RelationshipRowsView.GET] Existing values (raw): {raw_values}")
+
+        relationship = join_field_map.get(field_name)
+        fk_info = field_metadata.get(field_name, {}).get("fk_relationship") or {}
+        target_dataset = None
+        if relationship:
+            target_dataset = relationship.other_dataset
+        elif fk_info:
+            target_dataset = fk_info.get("target_dataset")
+
+        normalized_values: List[Tuple[str, Optional[str]]] = []
+        seen: Set[str] = set()
+        for raw_value in raw_values:
+            canonical_value, label_hint = decode_placeholder_uri(raw_value)
+            if not canonical_value or canonical_value in seen:
+                continue
+            seen.add(canonical_value)
+            normalized_values.append((canonical_value, label_hint))
+        logger.info(
+            "[RelationshipRowsView.GET] Normalized values: %s",
+            [value for value, _ in normalized_values],
+        )
 
         # Build suggestion URL
         base_suggestion_url = reverse(
@@ -2895,18 +2932,22 @@ class RelationshipRowsView(LoginRequiredMixin, View):
         # Generate rows for existing values
         rows = []
         import uuid
-        for value in existing_values:
-            if not value.strip():
-                continue
+        for value, label_hint in normalized_values:
             row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
             input_id = f"input-{row_id}"
             suggestions_id = f"suggestions-{row_id}"
+            inferred_label = _infer_entity_label(
+                service,
+                value,
+                target_dataset,
+            ) if target_dataset else ""
+            display_value = label_hint or inferred_label or value
 
             rows.append({
                 "row_id": row_id,
                 "input_id": input_id,
                 "suggestions_id": suggestions_id,
-                "display_value": value,
+                "display_value": display_value,
                 "stored_value": value,
                 "suggestion_url": suggestion_url,
             })
@@ -2965,8 +3006,14 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
         target_id = request.POST.get("target_id")
         dataset_name = request.POST.get("dataset")
         column_name = request.POST.get("column")
-        value = request.POST.get("value", "") or ""
-        label = request.POST.get("label", value) or ""
+        raw_value = request.POST.get("value", "") or ""
+        value_candidate = raw_value.strip()
+        label = (request.POST.get("label", raw_value) or "").strip()
+        value, label_hint = decode_placeholder_uri(value_candidate)
+        if label_hint and (not label or label in {raw_value.strip(), value_candidate, value}):
+            label = label_hint
+        if not label:
+            label = value or value_candidate or raw_value.strip()
         selected_property = request.POST.get("property") or ""
         property_select_id = request.POST.get("property_select_id") or ""
 
@@ -3165,7 +3212,17 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                     if raw_array:
                         # Pure HTMX: got array of values directly
                         logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': raw_array={raw_array}")
-                        join_payloads[field_name] = [v.strip() for v in raw_array if v.strip()]
+                        normalized = []
+                        seen_values: Set[str] = set()
+                        for item in raw_array:
+                            cleaned = item.strip()
+                            if not cleaned:
+                                continue
+                            canonical, _ = decode_placeholder_uri(cleaned)
+                            if canonical and canonical not in seen_values:
+                                normalized.append(canonical)
+                                seen_values.add(canonical)
+                        join_payloads[field_name] = normalized
                     else:
                         # Fallback: check form data (for JSON string or single value)
                         raw = entity_data.pop(field_name, None)
@@ -3187,15 +3244,25 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                         if raw_array:
                             # Pure HTMX: got array of values directly
                             logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': raw_array={raw_array}")
-                            join_payloads[field_name] = [v.strip() for v in raw_array if v.strip()]
-                        else:
-                            # Fallback: check form data (for JSON string or single value)
-                            raw = entity_data.pop(field_name, None)
-                            logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': raw_value={raw}")
-                            parsed = _parse_join_payload(raw)
-                            logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': parsed={parsed}")
-                            # Store for later processing
-                            join_payloads[field_name] = parsed
+                            normalized = []
+                            seen_values: Set[str] = set()
+                            for item in raw_array:
+                                cleaned = item.strip()
+                                if not cleaned:
+                                    continue
+                                canonical, _ = decode_placeholder_uri(cleaned)
+                                if canonical and canonical not in seen_values:
+                                    normalized.append(canonical)
+                                    seen_values.add(canonical)
+                            join_payloads[field_name] = normalized
+                            continue
+
+                        # Fallback: check form data (for JSON string or single value)
+                        raw = entity_data.pop(field_name, None)
+                        logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': raw_value={raw}")
+                        parsed = _parse_join_payload(raw)
+                        logger.info(f"[SchemaDatasetFragmentView.POST] Multi-FK field '{field_name}': parsed={parsed}")
+                        join_payloads[field_name] = parsed
 
                 saved_uri, created = service.save_entity(
                     dataset_name, entity_data, entity_uri=entity_uri
