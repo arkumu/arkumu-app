@@ -64,6 +64,8 @@ class JoinRelationship:
     other_property_uri: str
     other_display_label: str
     context_columns: List[Dict[str, Optional[str]]] = field(default_factory=list)
+    search_property_uris: List[str] = field(default_factory=list)
+    widget_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -242,14 +244,168 @@ class SchemaWorkspaceService:
             entity_count=entity_count,
         )
 
+    def _get_configured_join_relationships(self, dataset_name: str) -> List[JoinRelationship]:
+        config_root = (self.mapping.mapping_config or {}).get("junction_widgets") or {}
+        if not config_root:
+            return []
+
+        config_list: List[Dict[str, Any]] = []
+        if dataset_name in config_root:
+            config_list = config_root.get(dataset_name) or []
+        else:
+            slug = slugify(dataset_name)
+            config_list = config_root.get(slug) or []
+
+        relationships: List[JoinRelationship] = []
+        if not config_list:
+            return relationships
+
+        for entry in config_list:
+            if not isinstance(entry, dict):
+                continue
+            join_dataset = entry.get("join_dataset") or entry.get("join_table") or entry.get("dataset")
+            if not join_dataset:
+                continue
+            try:
+                join_schema = self.get_dataset_schema(join_dataset)
+            except ValueError:
+                continue
+
+            properties = join_schema.get("properties", {}) or {}
+            junction_meta = join_schema.get("junction_schema") or {}
+
+            self_column = entry.get("self_column") or entry.get("fk1") or entry.get("source_column")
+            other_column = entry.get("other_column") or entry.get("fk2") or entry.get("target_column")
+            if not self_column or not other_column:
+                # Fall back to junction schema defaults if available
+                if dataset_name == junction_meta.get("primary_dataset"):
+                    self_column = junction_meta.get("primary_fk")
+                    other_column = junction_meta.get("secondary_fk")
+                elif dataset_name == junction_meta.get("secondary_dataset"):
+                    self_column = junction_meta.get("secondary_fk")
+                    other_column = junction_meta.get("primary_fk")
+            if not self_column or not other_column:
+                continue
+
+            other_dataset = entry.get("other_dataset")
+            if not other_dataset:
+                other_dataset = (
+                    junction_meta.get("secondary_dataset")
+                    if dataset_name == junction_meta.get("primary_dataset")
+                    else junction_meta.get("primary_dataset")
+                )
+            if not other_dataset:
+                continue
+
+            self_property = properties.get(self_column)
+            other_property = properties.get(other_column)
+            if not self_property or not other_property:
+                continue
+
+            try:
+                other_summary = self.get_dataset_summary(other_dataset)
+            except ValueError:
+                other_summary = DatasetSummary(
+                    dataset_name=other_dataset,
+                    display_label=other_dataset,
+                    anchor_columns=[],
+                    property_count=0,
+                    relationship_count=0,
+                )
+
+            context_columns_config = entry.get("context_columns") or entry.get("context_fields") or []
+            context_specs: List[Dict[str, Optional[str]]] = []
+            if not context_columns_config and junction_meta.get("context_columns"):
+                context_columns_config = junction_meta.get("context_columns")
+
+            for context_column in context_columns_config:
+                column_name = context_column
+                property_uri = None
+                label = None
+                if isinstance(context_column, dict):
+                    column_name = context_column.get("column") or context_column.get("name")
+                    property_uri = context_column.get("property_uri")
+                    label = context_column.get("label")
+                if not column_name:
+                    continue
+                context_prop = properties.get(column_name)
+                property_uri = property_uri or getattr(context_prop, "uri", None)
+                slug = slugify(column_name or "").replace("-", "_")
+                context_specs.append(
+                    {
+                        "column": column_name,
+                        "property_uri": property_uri,
+                        "label": label or getattr(context_prop, "name", column_name),
+                        "slug": slug,
+                    }
+                )
+
+            search_columns = entry.get("search_columns") or entry.get("search_properties") or []
+            search_property_uris: List[str] = []
+            if search_columns:
+                try:
+                    target_schema = self.get_dataset_schema(other_dataset)
+                except ValueError:
+                    target_schema = {}
+                target_properties = target_schema.get("properties", {}) or {}
+
+                for item in search_columns:
+                    uri_candidate = None
+                    if isinstance(item, dict):
+                        column_name = item.get("column")
+                        uri_candidate = item.get("property_uri") or item.get("uri")
+                        if column_name and not uri_candidate:
+                            prop = target_properties.get(column_name)
+                            uri_candidate = getattr(prop, "uri", None)
+                    else:
+                        column_name = str(item)
+                        if column_name.startswith("http://") or column_name.startswith("https://"):
+                            uri_candidate = column_name
+                        else:
+                            prop = target_properties.get(column_name)
+                            uri_candidate = getattr(prop, "uri", None)
+                    if uri_candidate:
+                        search_property_uris.append(uri_candidate)
+
+            widget_name = entry.get("widget") or entry.get("widget_name") or "JunctionRelationshipWidget"
+
+            relationships.append(
+                JoinRelationship(
+                    join_dataset=join_dataset,
+                    join_dataset_schema=join_schema,
+                    self_column=self_column,
+                    self_property_uri=getattr(self_property, "uri", None),
+                    other_dataset=other_dataset,
+                    other_column=other_column,
+                    other_property_uri=getattr(other_property, "uri", None),
+                    other_display_label=entry.get("label") or other_summary.display_label,
+                    context_columns=context_specs,
+                    search_property_uris=search_property_uris,
+                    widget_name=widget_name,
+                )
+            )
+
+        return relationships
+
     def list_join_relationships(self, dataset_name: str) -> List[JoinRelationship]:
         """Return junction definitions that relate the given dataset to others."""
 
         relationships: List[JoinRelationship] = []
         seen: Set[Tuple[str, str, str]] = set()
 
+        configured_relationships = self._get_configured_join_relationships(dataset_name)
+        for rel in configured_relationships:
+            key = (rel.join_dataset, dataset_name, rel.other_dataset)
+            if key not in seen:
+                relationships.append(rel)
+                seen.add(key)
+
         dataset_names = self._schema_service.list_datasets()
         for candidate in dataset_names:
+            if candidate == dataset_name:
+                continue
+            if any(rel.join_dataset == candidate for rel in configured_relationships):
+                continue
             schema = self.get_dataset_schema(candidate)
             junction = schema.get("junction_schema") or {}
 
@@ -523,7 +679,7 @@ class SchemaWorkspaceService:
         }
 
         for relationship in self.list_join_relationships(dataset_name):
-            if relationship.other_dataset in direct_multi_targets:
+            if relationship.other_dataset in direct_multi_targets and not relationship.widget_name:
                 continue
             metadata.pop(relationship.self_column, None)
 
@@ -543,6 +699,11 @@ class SchemaWorkspaceService:
                 )
                 if relationship.context_columns:
                     metadata[field_name]["context_columns"] = relationship.context_columns
+                if relationship.search_property_uris:
+                    metadata[field_name]["search_property_uris"] = relationship.search_property_uris
+                    metadata[field_name].setdefault("selected_property", relationship.search_property_uris[0])
+                if relationship.widget_name:
+                    metadata[field_name]["widget"] = relationship.widget_name
                 continue
 
             metadata[field_name] = {
@@ -559,6 +720,11 @@ class SchemaWorkspaceService:
             }
             if relationship.context_columns:
                 metadata[field_name]["context_columns"] = relationship.context_columns
+            if relationship.search_property_uris:
+                metadata[field_name]["search_property_uris"] = relationship.search_property_uris
+                metadata[field_name]["selected_property"] = relationship.search_property_uris[0]
+            if relationship.widget_name:
+                metadata[field_name]["widget"] = relationship.widget_name
 
         return metadata, join_map
 

@@ -90,6 +90,12 @@ def workspace_setup(monkeypatch, organization, mapping):
         organization=organization,
         name="Ereignis",
     )
+    event_name_property = Resource.objects.create(
+        uri="http://example.org/properties/event_name",
+        resource_type=ResourceType.PROPERTY,
+        organization=organization,
+        name="Event Name",
+    )
     project_fk_property = Resource.objects.create(
         uri="http://example.org/properties/project_fk",
         resource_type=ResourceType.PROPERTY,
@@ -132,8 +138,12 @@ def workspace_setup(monkeypatch, organization, mapping):
 
     ereignis_schema = {
         "entity_type": event_class,
-        "properties": {},
-        "column_metadata": {},
+        "properties": {
+            "event_name": event_name_property,
+        },
+        "column_metadata": {
+            "event_name": {"column_type": "text", "is_multi_value": False},
+        },
         "anchor_columns": [],
         "fk_relationships": [],
     }
@@ -219,6 +229,41 @@ def test_list_join_relationships_handles_junction_schema(workspace_setup):
     assert relationship.other_dataset == "Ereignis"
     assert relationship.self_column == "project_fk"
     assert relationship.other_property_uri.endswith("event_fk")
+
+
+@pytest.mark.django_db
+def test_list_join_relationships_uses_configured_widget(workspace_setup):
+    service = workspace_setup["service"]
+    mapping = service.mapping
+    mapping.mapping_config = {
+        "junction_widgets": {
+            "Projekt": [
+                {
+                    "widget": "JunctionRelationshipWidget",
+                    "join_dataset": "Projekt_Ereignis",
+                    "self_column": "project_fk",
+                    "other_column": "event_fk",
+                    "other_dataset": "Ereignis",
+                    "search_columns": ["event_name"],
+                }
+            ]
+        }
+    }
+
+    relationships = service.list_join_relationships("Projekt")
+    assert len(relationships) == 1
+    relationship = relationships[0]
+    assert relationship.widget_name == "JunctionRelationshipWidget"
+    assert relationship.search_property_uris == ["http://example.org/properties/event_name"]
+
+    field_metadata = service.get_field_metadata("Projekt")
+    metadata, join_map = service.augment_field_metadata_with_joins("Projekt", field_metadata)
+    field_name = "__join__Projekt_Ereignis__Ereignis"
+    assert field_name in metadata
+    assert metadata[field_name]["selected_property"] == "http://example.org/properties/event_name"
+    assert metadata[field_name]["search_property_uris"] == ["http://example.org/properties/event_name"]
+    assert metadata[field_name]["widget"] == "JunctionRelationshipWidget"
+    assert join_map[field_name] == relationship
 
 
 @pytest.mark.django_db

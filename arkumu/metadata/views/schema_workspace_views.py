@@ -734,7 +734,15 @@ def _render_dataset_panel(
                         properties.append({"uri": uri, "label": label, "column": column})
                     properties.sort(key=lambda item: item["label"].lower())
                     target_property_cache[target_dataset] = properties
-            meta["search_properties"] = target_property_cache[target_dataset]
+            properties = list(target_property_cache[target_dataset])
+            if relationship and getattr(relationship, "search_property_uris", None):
+                order = {uri: idx for idx, uri in enumerate(relationship.search_property_uris)}
+                filtered = [prop for prop in properties if prop["uri"] in order]
+                if filtered:
+                    filtered.sort(key=lambda item: order.get(item["uri"], len(order)))
+                    properties = filtered
+                meta.setdefault("selected_property", relationship.search_property_uris[0])
+            meta["search_properties"] = properties
             meta["target_dataset"] = target_dataset
 
         context_meta = meta.get("context_columns") or []
@@ -1090,7 +1098,21 @@ def _render_dataset_panel(
 
         rel_item["rows"] = rows
         rel_item["property_select_id"] = f"relationship-property-{field_name}"
-        rel_item["selected_property"] = ""
+        rel_item["selected_property"] = meta.get("selected_property", "")
+        rel_item["multi_select_html"] = render_to_string(
+            "metadata/entity_editing/partials/_relationship_rows_container.html",
+            {
+                "field_name": field_name,
+                "rows": rows,
+                "search_properties": meta.get("search_properties", []),
+                "selected_property": rel_item["selected_property"],
+                "property_select_id": rel_item["property_select_id"],
+                "dataset_name": dataset_name,
+                "mapping_id": service.mapping.id,
+                "meta": meta,
+            },
+            request=request,
+        )
 
     template_context = {
         "dataset_summary": dataset_summary,
@@ -2599,6 +2621,9 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             or ""
         ).strip()
 
+        if not property_uri:
+            property_uri = field_meta.get("selected_property") or ""
+
         fk_info = field_meta.get("fk_relationship")
         if field_meta.get("is_join"):
             relationship = join_field_map.get(column_name)
@@ -2888,7 +2913,7 @@ class RelationshipRowView(LoginRequiredMixin, View):
             logger.error(f"[RelationshipRowView.POST] Unknown field: {field_name}")
             return HttpResponseBadRequest("Unknown field")
 
-        selected_property = request.POST.get(f"relationship_property_{field_name}", "")
+        selected_property = request.POST.get(f"relationship_property_{field_name}", "") or field_meta.get("selected_property", "")
         logger.info(f"[RelationshipRowView.POST] Selected property: {selected_property}")
 
         # Generate unique IDs for this row
@@ -2962,7 +2987,9 @@ class RelationshipRowsView(LoginRequiredMixin, View):
             field_metadata,
         )
 
-        selected_property = request.GET.get(f"relationship_property_{field_name}", "")
+        field_meta = field_metadata.get(field_name, {})
+
+        selected_property = request.GET.get(f"relationship_property_{field_name}", "") or field_meta.get("selected_property", "")
         logger.info(f"[RelationshipRowsView.GET] Selected property: {selected_property}")
 
         raw_values = [
@@ -3165,6 +3192,16 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
             or join_field_map.get(column_name)
         )
         fk_info = field_meta.get("fk_relationship") or {}
+
+        if not selected_property:
+            selected_property = (
+                field_meta.get("selected_property")
+                or (
+                    relationship.search_property_uris[0]
+                    if relationship and getattr(relationship, "search_property_uris", None)
+                    else ""
+                )
+            )
 
         if widget_type == "multi_select" and chip_container_id:
             canonical_value = value or value_candidate

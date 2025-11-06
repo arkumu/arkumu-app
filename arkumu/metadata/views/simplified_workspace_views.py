@@ -809,7 +809,7 @@ def _enrich_fk_metadata(
                 "mapping_id": schema_service.mapping.id,
                 "rows": join_rows,
                 "search_properties": meta.get("search_properties", []),
-                "selected_property": "",
+                "selected_property": meta.get("selected_property", ""),
                 "property_select_id": property_select_id,
             }
 

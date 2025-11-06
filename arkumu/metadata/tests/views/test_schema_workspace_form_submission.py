@@ -144,6 +144,7 @@ class StubWorkspaceService:
                 "join_relationship": join_map[projekt_field_name],
                 "join_other_dataset": "Projekt",
                 "join_key": "Mitarbeit::Projekt",
+                "widget": "JunctionRelationshipWidget",
             }
 
             # Create join field for Person with proper naming
@@ -168,6 +169,7 @@ class StubWorkspaceService:
                 "join_relationship": join_map[person_field_name],
                 "join_other_dataset": "Person",
                 "join_key": "Mitarbeit::Person",
+                "widget": "JunctionRelationshipWidget",
             }
 
         return metadata, join_map
@@ -495,6 +497,7 @@ class TestFormRendering:
 
         # Check that the hidden inputs have data-multi-value attribute
         assert 'data-multi-value="true"' in content, "Hidden inputs should have data-multi-value attribute"
+        assert 'data-widget="JunctionRelationshipWidget"' in content, "Join widgets should identify themselves for front-end handling"
 
         # Check that the relationship rows use the correct name pattern (field_name + [])
         # The dynamic rows should have name="__join__Mitarbeit__Person[]"
