@@ -605,7 +605,8 @@ class ResourceManager:
         if not dataset_name:
             return False
         slug = slugify_uri_part(str(dataset_name)).lower()
-        return slug in {"projekt", "project"}
+        # Projekt entities should be private by default
+        return False
     
     def create_external_resource(self, external_uri: str, ontology_type: str) -> Resource:
         """Create or get an external ontology resource."""
