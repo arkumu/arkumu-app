@@ -53,12 +53,12 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
     """Stub service focused on Projekt dataset interactions."""
 
     PROJECT_TYPE_PROPERTY_URI = "http://example.org/properties/project-type"
-    PROJECT_RELATION_URIS = {
-        "Projekt hat Teil": "http://example.org/properties/projekt-hat-teil",
-        "Projekt ist Teil von": "http://example.org/properties/projekt-ist-teil-von",
-        "Projekt hat Bezug zu": "http://example.org/properties/projekt-hat-bezug-zu",
-        "Projekt basiert auf": "http://example.org/properties/projekt-basiert-auf",
-        "Projekt ist vorbereitend für": "http://example.org/properties/projekt-ist-vorbereitend-fuer",
+    PROJECT_RELATION_FIELDS = {
+        "Projekt hat Teil": ("projekt-hat-teil", "http://example.org/properties/projekt-hat-teil", "child"),
+        "Projekt ist Teil von": ("projekt-ist-teil-von", "http://example.org/properties/projekt-ist-teil-von", "parent"),
+        "Projekt hat Bezug zu": ("projekt-hat-bezug-zu", "http://example.org/properties/projekt-hat-bezug-zu", "related"),
+        "Projekt basiert auf": ("projekt-basiert-auf", "http://example.org/properties/projekt-basiert-auf", "source"),
+        "Projekt ist vorbereitend für": ("projekt-ist-vorbereitend-fuer", "http://example.org/properties/projekt-ist-vorbereitend-fuer", "followup"),
     }
 
     def __init__(self) -> None:
@@ -98,14 +98,14 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
                 "is_multi_value": True,
             },
             **{
-                label: {
-                    "column_name": label,
+                slug: {
+                    "column_name": slug,
                     "property_label": label,
                     "is_multi_value": True,
                     "property_uri": uri,
                     "fk_relationship": {"target_dataset": "Projekt"},
                 }
-                for label, uri in self.PROJECT_RELATION_URIS.items()
+                for label, (slug, uri, _) in self.PROJECT_RELATION_FIELDS.items()
             },
         }
 
@@ -128,19 +128,13 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
                 ]
             ),
             **{
-                label: json.dumps(
+                slug: json.dumps(
                     [
-                        {"uri": f"http://example.org/project/{slug}-1"},
-                        {"uri": f"http://example.org/project/{slug}-2"},
+                        {"uri": f"http://example.org/project/{sample}-1"},
+                        {"uri": f"http://example.org/project/{sample}-2"},
                     ]
                 )
-                for label, slug in (
-                    ("Projekt hat Teil", "child"),
-                    ("Projekt ist Teil von", "parent"),
-                    ("Projekt hat Bezug zu", "related"),
-                    ("Projekt basiert auf", "source"),
-                    ("Projekt ist vorbereitend für", "followup"),
-                )
+                for label, (slug, _, sample) in self.PROJECT_RELATION_FIELDS.items()
             },
         }
 
@@ -256,7 +250,7 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     assert 'name="Wikidata-ID"' in content
     assert 'name="Andere Normdaten"' in content
     assert 'name="Externe Projektwebseite"' in content
-    assert 'name="Projekt hat Teil[]"' in content
+    assert 'name="projekt-hat-teil[]"' in content
 
 
 @pytest.mark.django_db
@@ -284,8 +278,8 @@ def test_post_preserves_multi_value_relationships(client, user, dummy_service):
         "http://example.org/project-type/a",
         "http://example.org/project-type/c",
     ]
-    for uri in DummyProjektSchemaService.PROJECT_RELATION_URIS.values():
-        assert calls[uri] == []
+    for _, uri, _ in DummyProjektSchemaService.PROJECT_RELATION_FIELDS.values():
+        assert calls.get(uri, []) == []
 
 
 @pytest.mark.django_db
@@ -313,8 +307,8 @@ def test_post_accepts_array_payloads(client, user, dummy_service):
         "http://example.org/project-type/a",
         "http://example.org/project-type/c",
     ]
-    for uri in DummyProjektSchemaService.PROJECT_RELATION_URIS.values():
-        assert calls[uri] == []
+    for _, uri, _ in DummyProjektSchemaService.PROJECT_RELATION_FIELDS.values():
+        assert calls.get(uri, []) == []
 
 
 @pytest.mark.django_db
@@ -330,8 +324,8 @@ def test_post_clears_multi_value_relationships(client, user, dummy_service):
         for _, property_uri, related in dummy_service.multi_fk_calls
     }
     assert calls[DummyProjektSchemaService.PROJECT_TYPE_PROPERTY_URI] == []
-    for uri in DummyProjektSchemaService.PROJECT_RELATION_URIS.values():
-        assert calls[uri] == []
+    for _, uri, _ in DummyProjektSchemaService.PROJECT_RELATION_FIELDS.values():
+        assert calls.get(uri, []) == []
 
 
 @pytest.mark.django_db
@@ -341,8 +335,8 @@ def test_post_filters_self_from_linked_projects(client, user, dummy_service):
         reverse("metadata:edit_project"),
         {
             "entity_uri": dummy_service.entity_uri,
-            "Projekt hat Teil": "",
-            "Projekt hat Teil[]": [
+            "projekt-hat-teil": "",
+            "projekt-hat-teil[]": [
                 "http://example.org/project/child-1",
                 dummy_service.entity_uri,
                 "http://example.org/project/child-3",
@@ -354,7 +348,8 @@ def test_post_filters_self_from_linked_projects(client, user, dummy_service):
         property_uri: related
         for _, property_uri, related in dummy_service.multi_fk_calls
     }
-    assert calls[DummyProjektSchemaService.PROJECT_RELATION_URIS["Projekt hat Teil"]] == [
+    relation_uri = DummyProjektSchemaService.PROJECT_RELATION_FIELDS["Projekt hat Teil"][1]
+    assert calls[relation_uri] == [
         "http://example.org/project/child-1",
         "http://example.org/project/child-3",
     ]
@@ -436,6 +431,3 @@ def test_post_accepts_array_payloads_for_ereignis(client, user, dummy_ereignis_s
             ],
         )
     ]
-
-
-

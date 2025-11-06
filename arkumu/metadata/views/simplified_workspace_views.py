@@ -94,23 +94,28 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                 },
                 "Vorschaubild",
                 {
-                    "name": "Projekt hat Teil",
+                    "name": "projekt-hat-teil",
+                    "label": "Projekt hat Teil",
                     "help_text": "Projekte auswählen, die als Teil dieses Projekts geführt werden.",
                 },
-                {
-                    "name": "Projekt ist Teil von",
+            {
+                    "name": "projekt-ist-teil-von",
+                    "label": "Projekt ist Teil von",
                     "help_text": "Übergeordnete Projekte auswählen, zu denen dieses Projekt gehört.",
                 },
                 {
-                    "name": "Projekt hat Bezug zu",
+                    "name": "projekt-hat-bezug-zu",
+                    "label": "Projekt hat Bezug zu",
                     "help_text": "Weitere Projekte verknüpfen, zu denen ein thematischer Bezug besteht.",
                 },
                 {
-                    "name": "Projekt basiert auf",
+                    "name": "projekt-basiert-auf",
+                    "label": "Projekt basiert auf",
                     "help_text": "Quellenprojekte angeben, auf denen dieses Projekt aufbaut.",
                 },
                 {
-                    "name": "Projekt ist vorbereitend für",
+                    "name": "projekt-ist-vorbereitend-fuer",
+                    "label": "Projekt ist vorbereitend für",
                     "help_text": "Folgeprojekte angeben, die mit diesem Projekt vorbereitet werden.",
                 },
             ],
