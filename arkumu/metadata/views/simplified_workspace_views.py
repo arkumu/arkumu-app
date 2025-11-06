@@ -175,6 +175,19 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             ],
         },
         {
+            "key": "akteure",
+            "title": "Akteur:innen & Rollen",
+            "badge": "Beteiligte",
+            "fields": [
+                {
+                    "name": "ereignis-hat-akteurin",
+                    "label": "Verknüpfte Akteur:innen",
+                    "help_text": "Wähle Akteur:innen und ihre Rollen im Ereignis aus.",
+                    "search_property": "Deutscher Name",
+                },
+            ],
+        },
+        {
             "key": "zeit-ort",
             "title": "Zeit und Ort",
             "badge": "Zeitliche und räumliche Daten",
@@ -196,17 +209,42 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             ],
         },
         {
+            "key": "objekte-medien",
+            "title": "Verknüpfte Objekte & Medien",
+            "badge": "Sammlungsobjekte",
+            "fields": [
+                {
+                    "name": "Physisches Objekt",
+                    "label": "Physische Objekte",
+                    "search_property": "Bezeichnung",
+                },
+                {
+                    "name": "Informationsträger",
+                    "label": "Informationsträger",
+                    "search_property": "Bezeichnung",
+                },
+            ],
+        },
+        {
+            "key": "digitale-objekte",
+            "title": "Digitale Objekte",
+            "badge": "Medien",
+            "fields": [
+                {
+                    "name": "Digitales Objekt",
+                    "label": "Digitale Objekte",
+                    "search_property": "Titel",
+                },
+            ],
+        },
+        {
             "key": "technische-ressourcen",
             "title": "Technische Ressourcen",
-            "badge": "Equipment und Digitale Objekte",
+            "badge": "Equipment & Software",
             "fields": [
                 {
                     "name": "Equipment und Software",
                     "search_property": "Bezeichnung",
-                },
-                {
-                    "name": "Digitales Objekt",
-                    "search_property": "Titel",
                 },
             ],
         },
