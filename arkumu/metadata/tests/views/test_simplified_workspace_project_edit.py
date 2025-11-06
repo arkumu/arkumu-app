@@ -53,7 +53,13 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
     """Stub service focused on Projekt dataset interactions."""
 
     PROJECT_TYPE_PROPERTY_URI = "http://example.org/properties/project-type"
-    PROJECT_LINK_PROPERTY_URI = "http://example.org/properties/verknuepftes-projekt"
+    PROJECT_RELATION_URIS = {
+        "Projekt hat Teil": "http://example.org/properties/projekt-hat-teil",
+        "Projekt ist Teil von": "http://example.org/properties/projekt-ist-teil-von",
+        "Projekt hat Bezug zu": "http://example.org/properties/projekt-hat-bezug-zu",
+        "Projekt basiert auf": "http://example.org/properties/projekt-basiert-auf",
+        "Projekt ist vorbereitend für": "http://example.org/properties/projekt-ist-vorbereitend-fuer",
+    }
 
     def __init__(self) -> None:
         super().__init__("projekt/PROJ-1")
@@ -91,14 +97,15 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
                 "property_label": "Externe Projektwebseite",
                 "is_multi_value": True,
             },
-            "Verknüpftes Projekt": {
-                "column_name": "Verknüpftes Projekt",
-                "property_label": "Verknüpftes Projekt",
-                "is_multi_value": True,
-                "property_uri": self.PROJECT_LINK_PROPERTY_URI,
-                "fk_relationship": {
-                    "target_dataset": "Projekt",
-                },
+            **{
+                label: {
+                    "column_name": label,
+                    "property_label": label,
+                    "is_multi_value": True,
+                    "property_uri": uri,
+                    "fk_relationship": {"target_dataset": "Projekt"},
+                }
+                for label, uri in self.PROJECT_RELATION_URIS.items()
             },
         }
 
@@ -120,12 +127,21 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
                     {"uri": "http://example.org/project-type/b"},
                 ]
             ),
-            "Verknüpftes Projekt": json.dumps(
-                [
-                    {"uri": "http://example.org/project/linked-1"},
-                    {"uri": "http://example.org/project/linked-2"},
-                ]
-            ),
+            **{
+                label: json.dumps(
+                    [
+                        {"uri": f"http://example.org/project/{slug}-1"},
+                        {"uri": f"http://example.org/project/{slug}-2"},
+                    ]
+                )
+                for label, slug in (
+                    ("Projekt hat Teil", "child"),
+                    ("Projekt ist Teil von", "parent"),
+                    ("Projekt hat Bezug zu", "related"),
+                    ("Projekt basiert auf", "source"),
+                    ("Projekt ist vorbereitend für", "followup"),
+                )
+            },
         }
 
 
@@ -173,78 +189,6 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
         }
 
 
-from arkumu.metadata.schema_workspace.services import JoinRelationship
-
-
-class DummyJoinSchemaService(_BaseDummySchemaService):
-    """Stub service that surfaces a join relationship for Projekt dataset."""
-
-    PROPERTY_URI = "http://example.org/properties/verknuepftes-projekt"
-    CONTEXT_PROPERTY_URI = "http://example.org/properties/beziehung"
-    FIELD_NAME = "__join__Projekt_Projekt_Kreuztabelle__Projekt"
-
-    def __init__(self) -> None:
-        super().__init__("projekt/PROJ-2")
-        self.relationship = JoinRelationship(
-            join_dataset="Projekt_Projekt_Kreuztabelle",
-            join_dataset_schema={
-                "junction_schema": {"context_columns": ["Beziehung"]},
-            },
-            self_column="Ausgangsprojekt",
-            self_property_uri=self.PROPERTY_URI,
-            other_dataset="Projekt",
-            other_column="Verknüpftes Projekt",
-            other_property_uri=self.PROPERTY_URI,
-            other_display_label="Projekt",
-            context_columns=[
-                {
-                    "column": "Beziehung",
-                    "property_uri": self.CONTEXT_PROPERTY_URI,
-                    "slug": "beziehung",
-                }
-            ],
-        )
-
-    def get_field_metadata(self, dataset_name: str):
-        return {
-            self.FIELD_NAME: {
-                "column_name": self.FIELD_NAME,
-                "column_type": "join",
-                "property_label": "Projekt",
-                "is_multi_value": True,
-                "is_join": True,
-                "join_relationship": self.relationship,
-                "join_other_dataset": "Projekt",
-                "property_uri": self.PROPERTY_URI,
-                "help_text": "Verknüpfte Projekte",
-                "context_columns": [
-                    {
-                        "column": "Beziehung",
-                        "property_uri": self.CONTEXT_PROPERTY_URI,
-                        "slug": "beziehung",
-                    }
-                ],
-                "context_options": {
-                    "Beziehung": ["ist Teil von", "hat Teil"],
-                },
-            }
-        }
-
-    def get_dataset_schema(self, dataset_name: str):
-        return {"properties": {}}
-
-    def augment_field_metadata_with_joins(self, dataset_name, metadata):
-        # Return a fresh copy so tests can mutate without side-effects
-        meta = self.get_field_metadata(dataset_name)
-        return meta, {self.FIELD_NAME: self.relationship}
-
-    def load_entity_by_uri(self, dataset_name: str, entity_uri: str):
-        return {}
-
-    def get_context_value_options(self, property_uri, limit=200):
-        return ["ist Teil von", "hat Teil"]
-
-
 @pytest.fixture
 def user(db):
     organization = Organization.objects.create(code="test-org", name="Test Org")
@@ -271,22 +215,6 @@ def dummy_service(monkeypatch):
         simplified_workspace_views,
         "_infer_entity_label",
         lambda *args, **kwargs: "Dummy Label",
-    )
-    return service
-
-
-@pytest.fixture
-def dummy_join_service(monkeypatch):
-    service = DummyJoinSchemaService()
-    monkeypatch.setattr(
-        simplified_workspace_views,
-        "_get_schema_service",
-        lambda request: service,
-    )
-    monkeypatch.setattr(
-        simplified_workspace_views,
-        "_infer_entity_label",
-        lambda *args, **kwargs: "Dummy Join",
     )
     return service
 
@@ -328,7 +256,7 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     assert 'name="Wikidata-ID"' in content
     assert 'name="Andere Normdaten"' in content
     assert 'name="Externe Projektwebseite"' in content
-    assert 'name="Verknüpftes Projekt[]"' in content
+    assert 'name="Projekt hat Teil[]"' in content
 
 
 @pytest.mark.django_db
@@ -356,7 +284,8 @@ def test_post_preserves_multi_value_relationships(client, user, dummy_service):
         "http://example.org/project-type/a",
         "http://example.org/project-type/c",
     ]
-    assert calls[DummyProjektSchemaService.PROJECT_LINK_PROPERTY_URI] == []
+    for uri in DummyProjektSchemaService.PROJECT_RELATION_URIS.values():
+        assert calls[uri] == []
 
 
 @pytest.mark.django_db
@@ -384,7 +313,8 @@ def test_post_accepts_array_payloads(client, user, dummy_service):
         "http://example.org/project-type/a",
         "http://example.org/project-type/c",
     ]
-    assert calls[DummyProjektSchemaService.PROJECT_LINK_PROPERTY_URI] == []
+    for uri in DummyProjektSchemaService.PROJECT_RELATION_URIS.values():
+        assert calls[uri] == []
 
 
 @pytest.mark.django_db
@@ -400,7 +330,8 @@ def test_post_clears_multi_value_relationships(client, user, dummy_service):
         for _, property_uri, related in dummy_service.multi_fk_calls
     }
     assert calls[DummyProjektSchemaService.PROJECT_TYPE_PROPERTY_URI] == []
-    assert calls[DummyProjektSchemaService.PROJECT_LINK_PROPERTY_URI] == []
+    for uri in DummyProjektSchemaService.PROJECT_RELATION_URIS.values():
+        assert calls[uri] == []
 
 
 @pytest.mark.django_db
@@ -410,11 +341,11 @@ def test_post_filters_self_from_linked_projects(client, user, dummy_service):
         reverse("metadata:edit_project"),
         {
             "entity_uri": dummy_service.entity_uri,
-            "Verknüpftes Projekt": "",
-            "Verknüpftes Projekt[]": [
-                "http://example.org/project/linked-1",
+            "Projekt hat Teil": "",
+            "Projekt hat Teil[]": [
+                "http://example.org/project/child-1",
                 dummy_service.entity_uri,
-                "http://example.org/project/linked-3",
+                "http://example.org/project/child-3",
             ],
         },
     )
@@ -423,9 +354,9 @@ def test_post_filters_self_from_linked_projects(client, user, dummy_service):
         property_uri: related
         for _, property_uri, related in dummy_service.multi_fk_calls
     }
-    assert calls[DummyProjektSchemaService.PROJECT_LINK_PROPERTY_URI] == [
-        "http://example.org/project/linked-1",
-        "http://example.org/project/linked-3",
+    assert calls[DummyProjektSchemaService.PROJECT_RELATION_URIS["Projekt hat Teil"]] == [
+        "http://example.org/project/child-1",
+        "http://example.org/project/child-3",
     ]
     assert calls[DummyProjektSchemaService.PROJECT_TYPE_PROPERTY_URI] == []
 
@@ -507,52 +438,4 @@ def test_post_accepts_array_payloads_for_ereignis(client, user, dummy_ereignis_s
     ]
 
 
-@pytest.mark.django_db
-def test_get_renders_project_link_join_field(client, user, dummy_join_service):
-    client.force_login(user)
-    response = client.get(
-        reverse("metadata:edit_project"),
-        {"uri": dummy_join_service.entity_uri},
-    )
-    assert response.status_code == 200
-    fields = response.context["fields_with_metadata"]
-    field_names = [item["field"].name for item in fields]
-    assert DummyJoinSchemaService.FIELD_NAME in field_names
-    content = response.content.decode()
-    assert "Verknüpfte Projekte" in content
-    assert "__context__" in content
-    assert "ist Teil von" in content
 
-
-@pytest.mark.django_db
-def test_post_syncs_join_relationships(client, user, dummy_join_service):
-    client.force_login(user)
-    response = client.post(
-        reverse("metadata:edit_project"),
-        {
-            "entity_uri": dummy_join_service.entity_uri,
-            DummyJoinSchemaService.FIELD_NAME: "",
-            f"{DummyJoinSchemaService.FIELD_NAME}[]": [
-                "http://example.org/project/alpha",
-                dummy_join_service.entity_uri,
-                "http://example.org/project/beta",
-            ],
-            f"{DummyJoinSchemaService.FIELD_NAME}__context__beziehung[]": [
-                "ist Teil von",
-                "hat Teil",
-                "hat Teil",
-            ],
-        },
-    )
-    assert response.status_code == 302
-    assert dummy_join_service.join_sync_calls == [
-        (
-            dummy_join_service.entity_uri,
-            dummy_join_service.relationship,
-            [
-                {"uri": "http://example.org/project/alpha", "context": {"Beziehung": "ist Teil von"}},
-                {"uri": "http://example.org/project/beta", "context": {"Beziehung": "hat Teil"}},
-            ],
-        )
-    ]
-    assert dummy_join_service.multi_fk_calls == []

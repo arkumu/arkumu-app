@@ -84,20 +84,34 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
         },
         {
             "key": "ereignisse",
-            "title": "Ereignisse",
+            "title": "Verknüpfte Ereignisse & Projekte",
             "badge": "Verweise",
             "fields": [
-                {"name": "Ereignis", "label": "Zugehöriges Ereignis"},
+                {
+                    "name": "Ereignis",
+                    "label": "Verknüpfte Ereignisse",
+                    "help_text": "Ereignisse auswählen, die diesem Projekt zugeordnet sind.",
+                },
                 "Vorschaubild",
                 {
-                    "name": "Verknüpftes Projekt",
-                    "label": "Verknüpfte Projekte",
-                    "help_text": "Weitere Projekte auswählen, die fachlich mit diesem Projekt verbunden sind.",
+                    "name": "Projekt hat Teil",
+                    "help_text": "Projekte auswählen, die als Teil dieses Projekts geführt werden.",
                 },
                 {
-                    "name": "__join__Projekt_Projekt_Kreuztabelle__Projekt",
-                    "label": "Verknüpfte Projekte (Junktion)",
-                    "help_text": "Zusätzliche Projektbeziehungen aus Kreuztabellen bearbeiten.",
+                    "name": "Projekt ist Teil von",
+                    "help_text": "Übergeordnete Projekte auswählen, zu denen dieses Projekt gehört.",
+                },
+                {
+                    "name": "Projekt hat Bezug zu",
+                    "help_text": "Weitere Projekte verknüpfen, zu denen ein thematischer Bezug besteht.",
+                },
+                {
+                    "name": "Projekt basiert auf",
+                    "help_text": "Quellenprojekte angeben, auf denen dieses Projekt aufbaut.",
+                },
+                {
+                    "name": "Projekt ist vorbereitend für",
+                    "help_text": "Folgeprojekte angeben, die mit diesem Projekt vorbereitet werden.",
                 },
             ],
         },
