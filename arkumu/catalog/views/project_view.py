@@ -10,6 +10,7 @@ from django.http import HttpResponseBadRequest, HttpResponseNotFound
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Mapping
 
+from arkumu.catalog.services.wikidata_service import WikidataService
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
@@ -147,6 +148,15 @@ class ProjectView(LoginRequiredMixin, View):
         categories = [item.label for item in record.categories if item.label]
         digital_objects = [item.path for item in record.digital_objects if item.path]
         actors = []
+
+        categories_name = []
+        for i,w in enumerate(categories):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        categories = [
+            {"id": cid, "name": cname}
+            for cid, cname in zip(categories, categories_name)
+        ]
+
         for actor in record.actors or []:
             if not actor:
                 continue
