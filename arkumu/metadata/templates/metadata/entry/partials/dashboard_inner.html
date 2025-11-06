@@ -43,79 +43,62 @@
                 <div class="card bg-base-100">
                     <div class="card-body">
                         <!-- All entity tabs -->
-                        <div class="mb-4">
-                            <style>
-                                .entity-tabs-container[role="tablist"] {
-                                    display: flex !important;
-                                    flex-wrap: wrap !important;
-                                    white-space: normal !important;
-                                    max-width: 100% !important;
-                                }
-                                .entity-tabs-container[role="tablist"] .tab {
-                                    flex-shrink: 0 !important;
-                                    min-width: fit-content !important;
-                                }
-                            </style>
-                            <div role="tablist" class="tabs tabs-lifted tabs-sm entity-tabs-container">
-                                <!-- Main entity tabs only -->
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Projekte" 
-                                       checked
-                                       hx-get="{% url 'metadata:tabular_projects' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Ereignisse"
-                                       hx-get="{% url 'metadata:tabular_ereignis' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Akteure"
-                                       hx-get="{% url 'metadata:tabular_akteur' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Orte"
-                                       hx-get="{% url 'metadata:tabular_ort' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Digitale Objekte"
-                                       hx-get="{% url 'metadata:tabular_digitales_objekt' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Informationstraeger"
-                                       hx-get="{% url 'metadata:tabular_informationstraeger' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Physische Objekte"
-                                       hx-get="{% url 'metadata:tabular_physisches_objekt' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipment Software"
-                                       hx-get="{% url 'metadata:tabular_equipment_software' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                                <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipmentart"
-                                       hx-get="{% url 'metadata:tabular_equipmentart' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                       hx-target="#workspace-browse-panel"
-                                       hx-swap="innerHTML"
-                                       hx-trigger="click" />
-                            </div>
+                        <div role="tablist" class="tabs tabs-boxed mb-4">
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Projekte"
+                                   checked
+                                   hx-get="{% url 'metadata:tabular_projects' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Ereignisse"
+                                   hx-get="{% url 'metadata:tabular_ereignis' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Akteure"
+                                   hx-get="{% url 'metadata:tabular_akteur' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Orte"
+                                   hx-get="{% url 'metadata:tabular_ort' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Digitale Objekte"
+                                   hx-get="{% url 'metadata:tabular_digitales_objekt' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Informationstraeger"
+                                   hx-get="{% url 'metadata:tabular_informationstraeger' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Physische Objekte"
+                                   hx-get="{% url 'metadata:tabular_physisches_objekt' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipment Software"
+                                   hx-get="{% url 'metadata:tabular_equipment_software' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
+                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipmentart"
+                                   hx-get="{% url 'metadata:tabular_equipmentart' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                   hx-target="#workspace-browse-panel"
+                                   hx-swap="innerHTML"
+                                   hx-trigger="click" />
                         </div>
-                        <h2 class="text-lg font-semibold">Browse</h2>
 
-                        <!-- Browse pane -->
-                        <section id="pane-browse" class="mt-4 w-full">
+                        <!-- Shared content area for all tabs -->
+                        <div class="bg-base-100 border border-base-300 rounded-lg overflow-hidden p-6">
                             <div id="workspace-browse-panel"
                                  hx-get="{% url 'metadata:tabular_projects' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
                                  hx-trigger="load"
                                  hx-target="this" hx-swap="innerHTML"></div>
-                        </section>
-
+                        </div>
                     </div>
                 </div>
             </main>

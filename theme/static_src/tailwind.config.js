@@ -10,26 +10,26 @@ module.exports = {
     extend: {
       colors: {
         arkumu: {
-          // Primitive_Main
+          // Primitive_Main (used by catalog only)
           dark: '#1E1E1E',
           light: '#FAF9F6',
           blue: '#2B7EF2',
-          
+
           // Primitive_Hover
           'dark-hover': '#393939',
           'light-hover': '#D9D9D9',
           'blue-hover': '#5498F7',
-          
+
           // Primitive_Soft
           'dark-soft': '#434343',
           'light-soft': '#EBEBEB',
           'blue-soft': '#E4EFFF',
-          
+
           // Primitive_Passive
           'dark-passive': '#666666',
           'light-passive': '#AFAFAF',
           'blue-passive': '#74ADFC',
-          
+
           // Keep existing color schemes
           'blau': '#4285F4',
           'hell': '#F8F7F4',
@@ -39,6 +39,35 @@ module.exports = {
       fontFamily: {
         sans: ['Roboto Mono', 'monospace'],
         mono: ['Roboto Mono', 'monospace'],
+      },
+      // Standardized spacing scale following design system
+      spacing: {
+        '18': '4.5rem',   // 72px
+        '88': '22rem',    // 352px
+        '92': '23rem',    // 368px
+        '104': '26rem',   // 416px
+        '128': '32rem',   // 512px
+      },
+      // Standardized border radius
+      borderRadius: {
+        'sm': '0.25rem',   // 4px
+        DEFAULT: '0.5rem', // 8px
+        'md': '0.75rem',   // 12px
+        'lg': '1rem',      // 16px
+        'xl': '1.5rem',    // 24px
+        '2xl': '2rem',     // 32px
+      },
+      // Standardized transitions
+      transitionDuration: {
+        DEFAULT: '200ms',
+        'fast': '150ms',
+        'slow': '300ms',
+      },
+      // Standardized shadows for components
+      boxShadow: {
+        'card': '0 2px 8px rgba(0, 0, 0, 0.1)',
+        'card-hover': '0 4px 12px rgba(0, 0, 0, 0.15)',
+        'dropdown': '0 4px 16px rgba(0, 0, 0, 0.12)',
       },
     },
   },
@@ -83,6 +112,49 @@ module.exports = {
     }
   ],
   daisyui: {
-    themes: ["light", "corporate", "dark"], // Enable light theme alongside corporate and dark
+    themes: [
+      {
+        // Custom "arkumu-backend" theme - use this for all backend development
+        light: {
+          "primary": "#2B7EF2",           // Professional blue
+          "primary-content": "#ffffff",   // White text on primary
+          "secondary": "#666666",         // Neutral gray
+          "secondary-content": "#ffffff", // White text on secondary
+          "accent": "#5498F7",            // Light blue for highlights
+          "accent-content": "#ffffff",    // White text on accent
+          "neutral": "#1E1E1E",           // Dark neutral
+          "neutral-content": "#ffffff",   // White text on neutral
+          "base-100": "#ffffff",          // White background
+          "base-200": "#F8F7F4",          // Light gray background
+          "base-300": "#EBEBEB",          // Slightly darker gray
+          "base-content": "#1E1E1E",      // Dark text on base
+          "info": "#3ABFF8",              // Info blue
+          "success": "#36D399",           // Success green
+          "warning": "#FBBD23",           // Warning yellow
+          "error": "#F87272",             // Error red
+        },
+      },
+      {
+        // Dark theme for backend
+        dark: {
+          "primary": "#2B7EF2",
+          "primary-content": "#ffffff",
+          "secondary": "#AFAFAF",
+          "secondary-content": "#1E1E1E",
+          "accent": "#74ADFC",
+          "accent-content": "#1E1E1E",
+          "neutral": "#FAF9F6",
+          "neutral-content": "#1E1E1E",
+          "base-100": "#1E1E1E",
+          "base-200": "#2A2A2A",
+          "base-300": "#393939",
+          "base-content": "#FAF9F6",
+          "info": "#3ABFF8",
+          "success": "#36D399",
+          "warning": "#FBBD23",
+          "error": "#F87272",
+        },
+      },
+    ],
   },
 }
