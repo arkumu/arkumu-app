@@ -134,7 +134,10 @@ class ExecutionConfig:
     
     # Import strategy settings
     import_strategy: Dict[str, Any] = field(default_factory=dict)
-    
+
+    # Schema manifest (for promoted manifest column metadata like widgets)
+    schema_manifest: Dict[str, Any] = field(default_factory=dict)
+
     def get_dataset_config(self, dataset_name: str) -> Optional[DatasetConfig]:
         """Get configuration for a specific dataset"""
         for dataset in self.datasets:
@@ -182,9 +185,10 @@ class ConfigTranslator:
             mapping_id=metadata.get('mapping_id', 0),
             mapping_name=metadata.get('mapping_name', 'Unknown'),
             organization=metadata.get('organization', 'Unknown'),
-            version=mapping_config.get('version', '1.1')
+            version=mapping_config.get('version', '1.1'),
+            schema_manifest=mapping_config.get('schema_manifest', {})
         )
-        
+
         # Translate workspace columns
         workspace_columns = mapping_config.get('workspace_columns', {})
         # Support both old 'selected_datasets' and new 'workspace_datasets'

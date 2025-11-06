@@ -343,6 +343,11 @@ def _collect_relationship_payloads(
     for field_name, meta in field_metadata.items():
         if field_name in join_payloads:
             continue
+
+        # Skip TripleCreatorWidget fields - they are managed via HTMX endpoints
+        if meta.get("widget") == "TripleCreatorWidget":
+            continue
+
         fk_info = meta.get("fk_relationship") or {}
         if not fk_info or not meta.get("is_multi_value"):
             continue
