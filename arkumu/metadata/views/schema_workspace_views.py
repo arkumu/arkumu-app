@@ -2973,6 +2973,8 @@ class TripleRelationshipSuggestionsView(LoginRequiredMixin, View):
         query = request.GET.get("q", "").strip()
         list_id = request.GET.get("list_id", "").strip() or f"triple-list-{field_name}"
 
+        logger.info(f"🔍 Triple suggestions query: '{query}' for field: {field_name}")
+
         if not subject_uri or not predicate_uri or not target_dataset or not field_name:
             return HttpResponseBadRequest("Missing subject_uri, predicate_uri, target_dataset, or field_name")
 

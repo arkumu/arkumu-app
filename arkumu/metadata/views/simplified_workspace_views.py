@@ -91,32 +91,38 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                     "name": "Ereignis",
                     "label": "Verknüpfte Ereignisse",
                     "help_text": "Ereignisse auswählen, die diesem Projekt zugeordnet sind.",
+                    "search_property": "Ereignisname",
                 },
                 "Vorschaubild",
                 {
                     "name": "projekt-hat-teil",
                     "label": "Projekt hat Teil",
                     "help_text": "Projekte auswählen, die als Teil dieses Projekts geführt werden.",
+                    "search_property": "Bevorzugter Titel",
                 },
             {
                     "name": "projekt-ist-teil-von",
                     "label": "Projekt ist Teil von",
                     "help_text": "Übergeordnete Projekte auswählen, zu denen dieses Projekt gehört.",
+                    "search_property": "Bevorzugter Titel",
                 },
                 {
                     "name": "projekt-hat-bezug-zu",
                     "label": "Projekt hat Bezug zu",
                     "help_text": "Weitere Projekte verknüpfen, zu denen ein thematischer Bezug besteht.",
+                    "search_property": "Bevorzugter Titel",
                 },
                 {
                     "name": "projekt-basiert-auf",
                     "label": "Projekt basiert auf",
                     "help_text": "Quellenprojekte angeben, auf denen dieses Projekt aufbaut.",
+                    "search_property": "Bevorzugter Titel",
                 },
                 {
                     "name": "projekt-ist-vorbereitend-fuer",
                     "label": "Projekt ist vorbereitend für",
                     "help_text": "Folgeprojekte angeben, die mit diesem Projekt vorbereitet werden.",
+                    "search_property": "Bevorzugter Titel",
                 },
             ],
         },
@@ -195,9 +201,27 @@ def _flatten_section_fields(section_config: List[Dict[str, Any]]) -> List[str]:
     return [name for name in names if name]
 
 
+def _extract_field_config(section_config: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Extract field-level configuration (search_property, label, help_text) from sections."""
+    config: Dict[str, Dict[str, Any]] = {}
+    for section in section_config:
+        for field in section.get("fields", []):
+            if isinstance(field, dict):
+                field_name = field.get("name", "")
+                if field_name:
+                    config[field_name] = field
+    return config
+
+
 # Backwards compatible mapping used for metadata filtering logic.
 SIMPLIFIED_FIELD_CONFIG: Dict[str, List[str]] = {
     dataset: _flatten_section_fields(sections)
+    for dataset, sections in SIMPLIFIED_SECTION_CONFIG.items()
+}
+
+# Field-level configuration extracted from sections (search_property, label, help_text)
+SIMPLIFIED_FIELD_PROPS: Dict[str, Dict[str, Dict[str, Any]]] = {
+    dataset: _extract_field_config(sections)
     for dataset, sections in SIMPLIFIED_SECTION_CONFIG.items()
 }
 
@@ -486,7 +510,8 @@ def _select_display_property(meta: Dict[str, Any]) -> Optional[str]:
         return str(display_uri)
 
     search_properties = meta.get("search_properties") or []
-    preferred_tokens = ("label", "name", "bezeichnung", "titel", "title", "beschreibung")
+    # Prefer "bevorzugter" titles over "alternativer" titles
+    preferred_tokens = ("bevorzugter", "label", "name", "bezeichnung", "titel", "title", "beschreibung")
 
     for prop in search_properties:
         column = str(prop.get("column") or "").lower()
@@ -596,8 +621,29 @@ def _enrich_fk_metadata(
             if candidate_slugs.intersection(PROJECT_TRIPLE_PREDICATE_SLUGS) and target_dataset == "Projekt":
                 widget_name = "TripleCreatorWidget"
                 meta["widget"] = widget_name
-                meta["display_property"] = meta.get("display_property") or _select_display_property(meta)
+
         if widget_name == "TripleCreatorWidget":
+            # Get configured search_property from field config
+            field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
+            configured_search_property = field_config.get("search_property")
+
+            # Ensure display_property is set for all triple creator widgets
+            if not meta.get("display_property"):
+                if configured_search_property:
+                    # Look up the property URI for the configured search property name
+                    search_props = meta.get("search_properties", [])
+                    for prop in search_props:
+                        if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property:
+                            meta["display_property"] = prop.get("uri")
+                            logger.info(f"✅ Using configured search_property '{configured_search_property}' -> {prop.get('uri')}")
+                            break
+                    if not meta.get("display_property"):
+                        logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found in search_properties")
+                        meta["display_property"] = _select_display_property(meta)
+                else:
+                    # Fallback to heuristic selection
+                    meta["display_property"] = _select_display_property(meta)
+
             property_uri = (
                 meta.get("property_uri")
                 or fk_info.get("source_property_uri")
@@ -607,6 +653,9 @@ def _enrich_fk_metadata(
             list_id = f"triple-list-{slug}"
             suggestions_id = f"triple-suggestions-{slug}"
             input_id = f"triple-input-{slug}"
+            display_prop = meta.get("display_property") or ""
+            logger.info(f"🎯 Triple creator for {field.name}: display_property={display_prop}, predicate={property_uri}")
+
             widget_context = {
                 "component": "triple_creator",
                 "field_name": field.name,
@@ -615,6 +664,7 @@ def _enrich_fk_metadata(
                 "predicate_uri": property_uri or "",
                 "target_dataset": target_dataset or "",
                 "property_uri": property_uri or "",
+                "display_property": display_prop,
                 "list_id": list_id,
                 "suggestions_id": suggestions_id,
                 "input_id": input_id,

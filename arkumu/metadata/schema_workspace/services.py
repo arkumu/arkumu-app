@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import secrets
 import string
@@ -12,6 +13,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils.text import slugify
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 from arkumu.common.uri_utils import mint_uri, slugify_uri_part
 from arkumu.importer.services.schema_service import SchemaService
@@ -1883,9 +1886,15 @@ class SchemaWorkspaceService:
             )
             if property_uri:
                 literal_qs = literal_qs.filter(predicate__uri=property_uri)
+                logger.info(f"🔍 Filtering triples by property: {property_uri}")
+            else:
+                logger.info(f"⚠️  No property_uri provided, searching ALL literal properties")
+
             literal_qs = literal_qs.filter(
                 Q(object__value__icontains=query) | Q(object__name__icontains=query)
             ).values_list("subject__uri", "object__value", "object__name")
+
+            logger.info(f"🔍 Found {literal_qs.count()} matches for query '{query}'")
 
             for subject_uri, value, name in literal_qs[: limit * 5]:
                 label_candidate = next(

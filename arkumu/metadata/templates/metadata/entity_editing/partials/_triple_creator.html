@@ -18,7 +18,7 @@
              hx-trigger="input changed delay:250ms"
              hx-target="#{{ triple_context.suggestions_id }}"
              hx-include="this"
-             hx-vals='{"subject_uri": "{{ triple_context.subject_uri|escapejs }}", "predicate_uri": "{{ triple_context.predicate_uri|escapejs }}", "target_dataset": "{{ triple_context.target_dataset|escapejs }}", "property_uri": "{{ triple_context.property_uri|escapejs }}", "field_name": "{{ triple_context.field_name|escapejs }}", "list_id": "{{ triple_context.list_id|escapejs }}", "suggestions_id": "{{ triple_context.suggestions_id|escapejs }}", "input_id": "{{ triple_context.input_id|escapejs }}"}'
+             hx-vals='{"subject_uri": "{{ triple_context.subject_uri|escapejs }}", "predicate_uri": "{{ triple_context.predicate_uri|escapejs }}", "target_dataset": "{{ triple_context.target_dataset|escapejs }}", "property_uri": "{{ triple_context.display_property|default:triple_context.property_uri|escapejs }}", "field_name": "{{ triple_context.field_name|escapejs }}", "list_id": "{{ triple_context.list_id|escapejs }}", "suggestions_id": "{{ triple_context.suggestions_id|escapejs }}", "input_id": "{{ triple_context.input_id|escapejs }}"}'
            {% endif %}>
     {% if triple_context.disabled %}
       <p class="text-xs text-base-content/60 mt-1">Bitte speichere den Datensatz, bevor Verknüpfungen hinzugefügt werden.</p>
