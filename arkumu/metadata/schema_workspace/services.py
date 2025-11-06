@@ -1142,7 +1142,15 @@ class SchemaWorkspaceService:
                     )
 
             # Clear existing property triples for update scenarios
-            property_ids = [res.id for res in properties.values()]
+            # But exclude TripleCreatorWidget fields which are managed via HTMX
+            property_ids = []
+            for column_name, res in properties.items():
+                col_meta = column_metadata.get(column_name, {})
+                # Skip TripleCreatorWidget fields - they are managed separately via HTMX endpoints
+                if col_meta.get("widget") == "TripleCreatorWidget":
+                    continue
+                property_ids.append(res.id)
+
             if property_ids:
                 Triple.objects.filter(
                     subject=entity_resource, predicate_id__in=property_ids

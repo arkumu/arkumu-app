@@ -345,7 +345,9 @@ def _collect_relationship_payloads(
             continue
 
         # Skip TripleCreatorWidget fields - they are managed via HTMX endpoints
-        if meta.get("widget") == "TripleCreatorWidget":
+        widget = meta.get("widget")
+        if widget == "TripleCreatorWidget":
+            logger.info(f"⏭️  Skipping TripleCreatorWidget field: {field_name}")
             continue
 
         fk_info = meta.get("fk_relationship") or {}
@@ -529,6 +531,9 @@ def _enrich_fk_metadata(
 
     for index, field in enumerate(form):
         meta = dict(field_metadata.get(field.name, {}))
+        widget_before = meta.get("widget")
+        if "projekt" in field.name and "teil" in field.name:
+            logger.info(f"🔍 Field {field.name} initial widget: {widget_before}")
         fk_info = meta.get("fk_relationship") or {}
         target_dataset = fk_info.get("target_dataset") if fk_info else None
 
