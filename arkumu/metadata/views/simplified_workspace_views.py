@@ -42,9 +42,15 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "badge": "Titel und Identifikation",
             "fields": [
                 "Bevorzugter Titel",
-                "Sprache des bevorzugten Titels",
+                {
+                    "name": "Sprache des bevorzugten Titels",
+                    "search_property": "Sprachbezeichnung",
+                },
                 "Bevorzugter Untertitel",
-                "Sprache des bevorzugten Untertitels",
+                {
+                    "name": "Sprache des bevorzugten Untertitels",
+                    "search_property": "Sprachbezeichnung",
+                },
                 "Alternativer Titel-Set",
             ],
         },
@@ -65,10 +71,22 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "title": "Klassifikation",
             "badge": "Kategorien",
             "fields": [
-                "Projektart",
-                "Projektkategorie",
-                "Schlagwort",
-                "Organisationseinheit",
+                {
+                    "name": "Projektart",
+                    "search_property": "Bezeichnung",
+                },
+                {
+                    "name": "Projektkategorie",
+                    "search_property": "Bezeichnung",
+                },
+                {
+                    "name": "Schlagwort",
+                    "search_property": "Bezeichnung",
+                },
+                {
+                    "name": "Organisationseinheit",
+                    "search_property": "Bezeichnung",
+                },
             ],
         },
         {
@@ -93,7 +111,10 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                     "help_text": "Ereignisse auswählen, die diesem Projekt zugeordnet sind.",
                     "search_property": "Ereignisname",
                 },
-                "Vorschaubild",
+                {
+                    "name": "Vorschaubild",
+                    "search_property": "Titel",
+                },
                 {
                     "name": "projekt-hat-teil",
                     "label": "Projekt hat Teil",
@@ -143,7 +164,10 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "title": "Grundinformationen",
             "badge": "Typ und Name",
             "fields": [
-                "Ereignistyp",
+                {
+                    "name": "Ereignistyp",
+                    "search_property": "Bezeichnung",
+                },
                 "Ereignisname",
             ],
         },
@@ -154,7 +178,10 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "fields": [
                 "Ereignisbeginn",
                 "Ereignisende",
-                "Ereignisort",
+                {
+                    "name": "Ereignisort",
+                    "search_property": "Ortsname",
+                },
             ],
         },
         {
@@ -170,8 +197,14 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "title": "Technische Ressourcen",
             "badge": "Equipment und Digitale Objekte",
             "fields": [
-                "Equipment und Software",
-                "Digitales Objekt",
+                {
+                    "name": "Equipment und Software",
+                    "search_property": "Bezeichnung",
+                },
+                {
+                    "name": "Digitales Objekt",
+                    "search_property": "Titel",
+                },
             ],
         },
     ],
@@ -579,7 +612,28 @@ def _enrich_fk_metadata(
                     label = getattr(prop, "name", column) or column
                     properties.append({"uri": uri, "label": label, "column": column})
                 properties.sort(key=lambda item: item["label"].lower())
-                meta["search_properties"] = properties
+
+                # Get configured search_property from field config
+                field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
+                configured_search_property = field_config.get("search_property")
+
+                # If search_property is configured, only include that one property
+                if configured_search_property:
+                    filtered_properties = [
+                        prop for prop in properties
+                        if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property
+                    ]
+                    if filtered_properties:
+                        meta["search_properties"] = filtered_properties
+                        meta["search_property_configured"] = True
+                        logger.info(f"🔒 Locked search to configured property '{configured_search_property}' for {field.name}")
+                    else:
+                        # Configured property not found, show all but warn
+                        meta["search_properties"] = properties
+                        logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found for {field.name}")
+                else:
+                    # No configuration, show all properties
+                    meta["search_properties"] = properties
             except ValueError:
                 logger.warning(f"Could not load schema for target dataset: {target_dataset}")
                 meta["search_properties"] = []
@@ -730,7 +784,26 @@ def _enrich_fk_metadata(
             else:
                 parsed_values = []
 
-            display_property_uri = _select_display_property(meta)
+            # Get configured search_property from field config
+            field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
+            configured_search_property = field_config.get("search_property")
+
+            display_property_uri = None
+            if configured_search_property:
+                # Look up the property URI for the configured search property name
+                search_props = meta.get("search_properties", [])
+                for prop in search_props:
+                    if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property:
+                        display_property_uri = prop.get("uri")
+                        logger.info(f"✅ Using configured search_property '{configured_search_property}' for {field.name}")
+                        break
+                if not display_property_uri:
+                    logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found, falling back to heuristic")
+                    display_property_uri = _select_display_property(meta)
+            else:
+                # Fallback to heuristic selection
+                display_property_uri = _select_display_property(meta)
+
             if display_property_uri:
                 meta["display_property"] = display_property_uri
 
@@ -771,17 +844,36 @@ def _enrich_fk_metadata(
             raw_value_str = str(raw_value).strip() if raw_value else ""
             display_prop_uri = meta.get("display_property")
 
-            # Auto-select best display property if not set
+            # Get configured search_property from field config
+            field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
+            configured_search_property = field_config.get("search_property")
+
+            # Use configured search property if available
             if not display_prop_uri and target_dataset:
-                preferred_names = ["name", "titel", "title", "label", "bezeichnung", "beschreibung"]
-                for prop in meta.get("search_properties", []):
-                    prop_name_lower = prop.get("column", "").lower()
-                    if any(pref in prop_name_lower for pref in preferred_names):
-                        display_prop_uri = prop.get("uri")
-                        meta["display_property"] = display_prop_uri
-                        meta["display_property_label"] = prop.get("label")
-                        logger.info(f"Auto-selected display property for {field.name}: {meta['display_property_label']}")
-                        break
+                if configured_search_property:
+                    # Look up the property URI for the configured search property name
+                    search_props = meta.get("search_properties", [])
+                    for prop in search_props:
+                        if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property:
+                            display_prop_uri = prop.get("uri")
+                            meta["display_property"] = display_prop_uri
+                            meta["display_property_label"] = prop.get("label")
+                            logger.info(f"✅ Using configured search_property '{configured_search_property}' for {field.name}")
+                            break
+                    if not display_prop_uri:
+                        logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found, falling back to heuristic")
+
+                # Fallback to auto-select best display property if not set
+                if not display_prop_uri:
+                    preferred_names = ["name", "titel", "title", "label", "bezeichnung", "beschreibung"]
+                    for prop in meta.get("search_properties", []):
+                        prop_name_lower = prop.get("column", "").lower()
+                        if any(pref in prop_name_lower for pref in preferred_names):
+                            display_prop_uri = prop.get("uri")
+                            meta["display_property"] = display_prop_uri
+                            meta["display_property_label"] = prop.get("label")
+                            logger.info(f"Auto-selected display property for {field.name}: {meta['display_property_label']}")
+                            break
 
             resolved_label = ""
             if raw_value_str and target_dataset:

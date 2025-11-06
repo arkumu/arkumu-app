@@ -23,6 +23,11 @@
           {% endfor %}
         </select>
       </div>
+    {% elif search_properties and search_properties|length == 1 %}
+      {# Single configured search property - show info message #}
+      <div class="text-xs text-base-content/60 mb-1">
+        Suche nach: <span class="font-medium">{{ search_properties.0.label }}</span>
+      </div>
     {% endif %}
 
     {# Visible input for search/display - NOT submitted (name starts with q_) #}
