@@ -1320,6 +1320,246 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
 
+class SimplifiedProjectCreateView(LoginRequiredMixin, View):
+    """
+    Simplified project create view using the same infrastructure as edit view.
+
+    Shows only a subset of fields but uses the same relationship handling,
+    URI resolution, and search capabilities as the full workspace.
+    """
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        """Render the create form for a new project."""
+        # Get organization from query parameter or user
+        org_code = request.GET.get("organization")
+        if org_code:
+            try:
+                organization = Organization.objects.get(code=org_code)
+            except Organization.DoesNotExist:
+                organization = getattr(request.user, "organization", None)
+        else:
+            organization = getattr(request.user, "organization", None)
+
+        if not organization:
+            return HttpResponseRedirect("/metadata/metadata-entry/")
+
+        # Get mapping using workspace coordinator (gets promoted/derived mapping from session)
+        from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
+        workspace_coordinator = BaseCoordinatorMixin()
+
+        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
+        mapping_data = workspace_coordinator.get_current_mapping(request)
+        if mapping_data:
+            mapping = queryset.filter(id=mapping_data.get("id")).first()
+        else:
+            mapping = queryset.first()
+
+        if not mapping:
+            return HttpResponseRedirect("/metadata/metadata-entry/")
+
+        schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
+
+        dataset_name = "Projekt"
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+
+        # Debug logging
+        logger.info(f"🔍 Create view - Organization: {organization.code}")
+        logger.info(f"🔍 Create view - Mapping: {mapping.id}")
+        logger.info(f"🔍 Create view - Visible fields count: {len(visible_fields)}")
+
+        # Get field metadata from schema
+        field_metadata = schema_service.get_field_metadata(dataset_name)
+        if dataset_name == PROJECT_DATASET_NAME:
+            field_metadata = _ensure_project_link_field(field_metadata)
+
+        # Augment with joins BEFORE filtering (to convert multi-value FKs to relationships)
+        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+
+        # Filter to only show simplified fields (AFTER augmentation)
+        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+
+        # Create empty form (no initial data)
+        form = DatasetEntityForm(
+            field_metadata=field_metadata,
+            initial=None,
+            disable_anchors=False,  # Enable anchors for creating
+        )
+
+        # Enrich FK field metadata with resolved labels
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+            entity_uri=None,
+        )
+        relationship_fields_sorted = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+
+        # Render the form
+        context = {
+            "form": form,
+            "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
+            "entity_uri": None,
+            "entity_label": None,
+            "dataset_name": dataset_name,
+            "mapping_id": schema_service.mapping.id,
+            "load_error": False,
+            "read_only_relationships": [],
+            "title": "Neues Projekt erstellen",
+            "description": "Füge ein neues Projekt hinzu.",
+        }
+
+        return render(request, "metadata/simplified_workspace/edit_project.html", context)
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        """Save the new project data."""
+        # Get organization from query parameter or user (same as GET)
+        org_code = request.GET.get("organization")
+        if org_code:
+            try:
+                organization = Organization.objects.get(code=org_code)
+            except Organization.DoesNotExist:
+                organization = getattr(request.user, "organization", None)
+        else:
+            organization = getattr(request.user, "organization", None)
+
+        if not organization:
+            return HttpResponseRedirect("/metadata/metadata-entry/")
+
+        # Get mapping using workspace coordinator (gets promoted/derived mapping from session)
+        from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
+        workspace_coordinator = BaseCoordinatorMixin()
+
+        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
+        mapping_data = workspace_coordinator.get_current_mapping(request)
+        if mapping_data:
+            mapping = queryset.filter(id=mapping_data.get("id")).first()
+        else:
+            mapping = queryset.first()
+
+        if not mapping:
+            return HttpResponseRedirect("/metadata/metadata-entry/")
+
+        schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
+
+        dataset_name = "Projekt"
+
+        # Get field metadata and augment with joins (for relationship handling)
+        field_metadata = schema_service.get_field_metadata(dataset_name)
+        if dataset_name == PROJECT_DATASET_NAME:
+            field_metadata = _ensure_project_link_field(field_metadata)
+        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+        join_field_map = {
+            name: relationship
+            for name, relationship in join_field_map.items()
+            if name in field_metadata
+        }
+
+        # Create form with POST data
+        form = DatasetEntityForm(
+            request.POST,
+            field_metadata=field_metadata,
+            disable_anchors=False,
+        )
+
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+            entity_uri=None,
+        )
+        relationship_fields_sorted = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+
+        if form.is_valid():
+            try:
+                entity_data = form.cleaned_entity_data()
+                entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
+                    request,
+                    entity_data,
+                    field_metadata,
+                    join_field_map,
+                    entity_uri=None,
+                )
+
+                # Save entity (creates new entity with auto-generated URI)
+                saved_uri, created = schema_service.save_entity(
+                    dataset_name=dataset_name,
+                    entity_data=entity_data,
+                    entity_uri=None,
+                )
+
+                for field_name, related_records in join_payloads.items():
+                    relationship = join_field_map.get(field_name)
+                    if relationship is None:
+                        continue
+                    schema_service.sync_join_relationship(
+                        entity_uri=saved_uri,
+                        relationship=relationship,
+                        related_items=related_records,
+                    )
+
+                for field_name, related_uris in multi_fk_payloads.items():
+                    meta = field_metadata.get(field_name, {})
+                    property_uri = meta.get("property_uri")
+                    if not property_uri:
+                        continue
+                    schema_service.save_multi_fk_relationship(
+                        entity_uri=saved_uri,
+                        property_uri=property_uri,
+                        related_uris=related_uris,
+                    )
+
+                logger.info(f"✅ Created project: {saved_uri}")
+
+                # Redirect back to metadata entry
+                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+
+            except Exception as e:
+                logger.exception(f"❌ Error creating project: {e}")
+                # Re-render form with error
+                context = {
+                    "form": form,
+                    "fields_with_metadata": fields_with_metadata,
+                    "tab_sections": tab_sections,
+                    "entity_uri": None,
+                    "dataset_name": dataset_name,
+                    "error": str(e),
+                    "title": "Neues Projekt erstellen",
+                    "mapping_id": schema_service.mapping.id,
+                }
+                return render(request, "metadata/simplified_workspace/edit_project.html", context)
+
+        else:
+            # Form validation failed
+            logger.warning(f"Form validation failed: {form.errors}")
+            context = {
+                "form": form,
+                "fields_with_metadata": fields_with_metadata,
+                "tab_sections": tab_sections,
+                "entity_uri": None,
+                "dataset_name": dataset_name,
+                "title": "Neues Projekt erstellen",
+                "mapping_id": schema_service.mapping.id,
+            }
+            return render(request, "metadata/simplified_workspace/edit_project.html", context)
+
+
 class SimplifiedEreignisEditView(LoginRequiredMixin, View):
     """
     Simplified ereignis edit view using legacy workspace infrastructure.

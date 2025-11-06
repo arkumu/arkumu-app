@@ -357,8 +357,8 @@ urlpatterns = [
     # path('bulk-arkumu-mapping/delete/<uuid:pk>/', BulkArkumuMappingDeleteView.as_view(), name='bulk_arkumu_mapping_delete'),
     
 
-    # Entity creation endpoints
-    path('create/project/', entity_creation_views.create_project, name='create_project'),
+    # Entity creation endpoints (OLD - kept for reference)
+    # path('create/project/', entity_creation_views.create_project, name='create_project_old_view'),
     path('create/event/', entity_creation_views.create_event, name='create_event'),
     path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
     path('create/role/', entity_creation_views.create_role, name='create_role'),
@@ -369,6 +369,10 @@ urlpatterns = [
     path('create/alternate-title/', entity_creation_views.create_alternate_title, name='create_alternate_title'),
     path('create/description/', entity_creation_views.create_description, name='create_description'),
     path('create/catchphrase/', entity_creation_views.create_catchphrase, name='create_catchphrase'),
+
+    # Entity creation endpoints
+    # New simplified workspace views (uses legacy infrastructure with subset of fields)
+    path('create/project/', simplified_workspace_views.SimplifiedProjectCreateView.as_view(), name='create_project'),
 
     # Entity edit endpoints
     # New simplified workspace views (uses legacy infrastructure with subset of fields)

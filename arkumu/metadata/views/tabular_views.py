@@ -1514,6 +1514,7 @@ def _tabular_view(request, entity_type: str):
         'columns': columns_meta,
         'page_obj': rows_page,
         'url_name': url_name,  # URL name for pagination links
+        'organization_code': org.code if org else None,
     }
 
     # Embed compact table inside other pages
