@@ -65,6 +65,23 @@
         {% csrf_token %}
         <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
 
+        {# Visibility selector #}
+        {% if visibility_choices %}
+        <div class="card bg-base-100 border border-base-300">
+          <div class="card-body">
+            <h3 class="card-title text-lg">Sichtbarkeit</h3>
+            <p class="text-sm text-base-content/70 mb-3">Bestimme, wer dieses Projekt sehen kann</p>
+            <select name="visibility" class="select select-bordered w-full max-w-md">
+              {% for choice in visibility_choices %}
+              <option value="{{ choice.value }}" {% if choice.value == current_visibility %}selected{% endif %}>
+                {{ choice.label }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        {% endif %}
+
         {% include "metadata/simplified_workspace/partials/_tabbed_sections.html" with sections=tab_sections tab_group_name="project-sections" %}
 
         {# Display read-only relationships #}

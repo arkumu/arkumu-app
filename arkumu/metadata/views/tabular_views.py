@@ -1392,6 +1392,16 @@ def _build_rows_for_subjects(
 
     if add_actions:
         columns_meta.insert(0, {'name': 'Aktionen', 'is_fk': False})
+        # Add visibility column after actions for project entities
+        columns_meta.insert(1, {'name': 'Sichtbarkeit', 'is_fk': False})
+        # Add visibility to rows
+        for row, subject_res in zip(rows, subjects):
+            visibility_label = {
+                'private': 'Private',
+                'restricted': 'Restricted',
+                'public': 'Public'
+            }.get(subject_res.public_access_level, subject_res.public_access_level)
+            row['Sichtbarkeit'] = visibility_label
 
     return rows, columns_meta
 

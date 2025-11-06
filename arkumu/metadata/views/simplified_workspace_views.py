@@ -1401,6 +1401,14 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
         ]
         tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
 
+        # Get visibility choices
+        from arkumu.metadata.models.resource import PublicAccessLevel
+        visibility_choices = [
+            {"value": PublicAccessLevel.PRIVATE.value, "label": "Private - Nur Organisation"},
+            {"value": PublicAccessLevel.RESTRICTED.value, "label": "Restricted - Authentifizierte Nutzer"},
+            {"value": PublicAccessLevel.PUBLIC.value, "label": "Public - Öffentlich im Katalog"},
+        ]
+
         # Render the form
         context = {
             "form": form,
@@ -1414,6 +1422,8 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
             "read_only_relationships": [],
             "title": "Neues Projekt erstellen",
             "description": "Füge ein neues Projekt hinzu.",
+            "visibility_choices": visibility_choices,
+            "current_visibility": PublicAccessLevel.PRIVATE.value,  # Default to private
         }
 
         return render(request, "metadata/simplified_workspace/edit_project.html", context)
@@ -1524,6 +1534,15 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                         property_uri=property_uri,
                         related_uris=related_uris,
                     )
+
+                # Set visibility on the Resource
+                visibility = request.POST.get("visibility", "private")
+                from arkumu.metadata.models.resource import Resource
+                resource = Resource.objects.filter(uri=saved_uri).first()
+                if resource:
+                    resource.public_access_level = visibility
+                    resource.save()
+                    logger.info(f"✅ Set visibility to {visibility} for {saved_uri}")
 
                 logger.info(f"✅ Created project: {saved_uri}")
 
