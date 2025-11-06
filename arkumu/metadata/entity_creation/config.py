@@ -116,6 +116,12 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
                 value_type="entity",
             ),
             FieldConfig(
+                field_name="verknuepfte_projekt_uris",
+                property_path="properties/verknuepftes-projekt",
+                property_label="Verknüpftes Projekt",
+                value_type="entity_multi",
+            ),
+            FieldConfig(
                 field_name="organisationseinheit_uri",
                 property_path="properties/organisationseinheit",
                 property_label="Organisationseinheit",

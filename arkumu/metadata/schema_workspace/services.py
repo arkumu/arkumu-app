@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import secrets
 import string
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Set, Pattern
 from urllib.parse import urlparse, urlencode
@@ -63,6 +63,7 @@ class JoinRelationship:
     other_column: str
     other_property_uri: str
     other_display_label: str
+    context_columns: List[Dict[str, Optional[str]]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ class RelationshipValues:
     target_dataset: Optional[str] = None
     property_uri: Optional[str] = None
     editable: bool = True
+    records: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class SchemaWorkspaceService:
@@ -104,6 +106,7 @@ class SchemaWorkspaceService:
         self._schema_service._ensure_schema_loaded()
         self._processor = self._schema_service._processor
         self._external_template_regex_cache: Dict[str, Pattern[str]] = {}
+        self._context_value_cache: Dict[str, List[str]] = {}
 
     # ------------------------------------------------------------------ #
     # Blueprint inspection helpers
@@ -248,23 +251,54 @@ class SchemaWorkspaceService:
         dataset_names = self._schema_service.list_datasets()
         for candidate in dataset_names:
             schema = self.get_dataset_schema(candidate)
-            junction = schema.get("junction_schema")
-            if not junction:
-                continue
+            junction = schema.get("junction_schema") or {}
 
             primary_dataset = junction.get("primary_dataset")
             secondary_dataset = junction.get("secondary_dataset")
-            if dataset_name not in {primary_dataset, secondary_dataset}:
-                continue
+            self_column: Optional[str] = None
+            other_dataset: Optional[str] = None
+            other_column: Optional[str] = None
 
-            if dataset_name == primary_dataset:
-                self_column = junction.get("primary_fk")
-                other_dataset = secondary_dataset
-                other_column = junction.get("secondary_fk")
+            if dataset_name in {primary_dataset, secondary_dataset}:
+                if dataset_name == primary_dataset:
+                    self_column = junction.get("primary_fk")
+                    other_dataset = secondary_dataset
+                    other_column = junction.get("secondary_fk")
+                else:
+                    self_column = junction.get("secondary_fk")
+                    other_dataset = primary_dataset
+                    other_column = junction.get("primary_fk")
             else:
-                self_column = junction.get("secondary_fk")
-                other_dataset = primary_dataset
-                other_column = junction.get("primary_fk")
+                fk_relationships = schema.get("fk_relationships", []) or []
+                self_rel = None
+                other_rel = None
+                for rel in fk_relationships:
+                    rel_target = rel.get("target_dataset")
+                    if rel_target == dataset_name:
+                        if self_rel is None:
+                            self_rel = rel
+                        elif other_rel is None:
+                            other_rel = rel
+                    else:
+                        if other_rel is None:
+                            other_rel = rel
+                if self_rel is None and fk_relationships:
+                    self_rel = fk_relationships[0]
+                if other_rel is None and fk_relationships:
+                    for rel in fk_relationships:
+                        if rel is not self_rel:
+                            other_rel = rel
+                            break
+                if self_rel is None:
+                    continue
+                if other_rel is None:
+                    continue
+                self_column = self_rel.get("source_column")
+                other_column = other_rel.get("source_column")
+                other_dataset = other_rel.get("target_dataset") or dataset_name
+
+            if not self_column or not other_column:
+                continue
 
             if not other_dataset or not self_column or not other_column:
                 continue
@@ -278,6 +312,16 @@ class SchemaWorkspaceService:
             self_property = properties.get(self_column)
             other_property = properties.get(other_column)
             other_summary = self.get_dataset_summary(other_dataset)
+            context_specs: List[Dict[str, Optional[str]]] = []
+            for context_column in junction.get("context_columns", []) or []:
+                context_prop = properties.get(context_column)
+                context_specs.append(
+                    {
+                        "column": context_column,
+                        "property_uri": getattr(context_prop, "uri", None),
+                        "slug": slugify(context_column or "").replace("-", "_"),
+                    }
+                )
 
             relationships.append(
                 JoinRelationship(
@@ -289,6 +333,7 @@ class SchemaWorkspaceService:
                     other_column=other_column,
                     other_property_uri=getattr(other_property, "uri", None),
                     other_display_label=other_summary.display_label,
+                    context_columns=context_specs,
                 )
             )
 
@@ -361,6 +406,43 @@ class SchemaWorkspaceService:
         candidate = str(value).strip()
         extracted = self._extract_external_identifier(template=template, candidate=candidate)
         return extracted or candidate
+
+    def get_context_value_options(
+        self,
+        property_uri: Optional[str],
+        limit: int = 200,
+    ) -> List[str]:
+        if not property_uri:
+            return []
+        cached = self._context_value_cache.get(property_uri)
+        if cached is not None:
+            return cached
+
+        triples = Triple.objects.filter(
+            predicate__uri=property_uri,
+        ).select_related("object")
+
+        seen: Set[str] = set()
+        values: List[str] = []
+        for triple in triples.iterator():
+            obj = triple.object
+            if obj is None:
+                continue
+            text = obj.value or obj.name or obj.uri or ""
+            text = text.strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            values.append(text)
+            if len(values) >= limit:
+                break
+
+        values.sort(key=lambda item: item.lower())
+        self._context_value_cache[property_uri] = values
+        return values
 
     def _prepare_form_value(
         self,
@@ -459,6 +541,8 @@ class SchemaWorkspaceService:
                     metadata[field_name].get("property_label")
                     or relationship.other_display_label
                 )
+                if relationship.context_columns:
+                    metadata[field_name]["context_columns"] = relationship.context_columns
                 continue
 
             metadata[field_name] = {
@@ -473,6 +557,8 @@ class SchemaWorkspaceService:
                 "join_key": f"{relationship.join_dataset}::{relationship.other_dataset}",
                 "help_text": f"Verknüpfte {relationship.other_display_label}",
             }
+            if relationship.context_columns:
+                metadata[field_name]["context_columns"] = relationship.context_columns
 
         return metadata, join_map
 
@@ -494,10 +580,37 @@ class SchemaWorkspaceService:
         collected: List[RelationshipValues] = []
 
         for field_name, relationship in join_field_map.items():
-            uris = self.get_join_values(relationship, entity_uri)
-            if not uris:
+            backend_records = self._get_join_entity_records(relationship, entity_uri)
+            if not backend_records:
                 continue
             other_label = relationship.other_display_label or relationship.other_dataset
+            uris = [
+                record.get("related_uri")
+                for record in backend_records
+                if record.get("related_uri")
+            ]
+            if not uris:
+                continue
+            ui_records: List[Dict[str, Any]] = []
+            for record in backend_records:
+                related_uri = record.get("related_uri")
+                if not related_uri:
+                    continue
+                context_values = record.get("context") if isinstance(record.get("context"), dict) else {}
+                normalized_context: Dict[str, str] = {}
+                for key, value in context_values.items():
+                    slug = slugify(str(key or "")).replace("-", "_")
+                    if not slug:
+                        continue
+                    normalized_context[slug] = "" if value is None else str(value)
+                ui_records.append(
+                    {
+                        "uri": related_uri,
+                        "context": normalized_context,
+                        "context_display": context_values,
+                        "join_resource_id": record.get("join_resource_id"),
+                    }
+                )
             collected.append(
                 RelationshipValues(
                     field_name=field_name,
@@ -506,6 +619,7 @@ class SchemaWorkspaceService:
                     is_join=True,
                     target_dataset=relationship.other_dataset,
                     property_uri=relationship.other_property_uri,
+                    records=ui_records,
                 )
             )
 
@@ -1088,19 +1202,19 @@ class SchemaWorkspaceService:
             )
         return PropertyResource(resource)
 
-    def _get_join_entity_map(
+    def _get_join_entity_records(
         self,
         relationship: JoinRelationship,
         entity_uri: str,
-    ) -> Dict[str, str]:
+    ) -> List[Dict[str, Any]]:
         entity_resource = Resource.objects.filter(uri=entity_uri).first()
         if entity_resource is None:
-            return {}
+            return []
 
         self_property = self._get_property_resource(relationship.self_property_uri)
         other_property = self._get_property_resource(relationship.other_property_uri)
         if self_property is None or other_property is None:
-            return {}
+            return []
 
         join_subject_ids = Triple.objects.filter(
             predicate=self_property._resource,
@@ -1108,22 +1222,76 @@ class SchemaWorkspaceService:
         ).values_list("subject_id", flat=True)
 
         if not join_subject_ids:
-            return {}
+            return []
 
-        join_map: Dict[str, str] = {}
-        for subject_id, other_uri in Triple.objects.filter(
+        context_property_map: Dict[str, PropertyResource] = {}
+        for context_spec in relationship.context_columns:
+            property_uri = context_spec.get("property_uri")
+            if not property_uri:
+                continue
+            property_resource = self._get_property_resource(property_uri)
+            if property_resource:
+                context_property_map[context_spec["column"]] = property_resource
+
+        target_triples = Triple.objects.filter(
             subject_id__in=join_subject_ids,
             predicate=other_property._resource,
             object__resource_type=ResourceType.ENTITY,
-        ).values_list("subject_id", "object__uri"):
-            join_map[str(subject_id)] = other_uri
-        return join_map
+        ).values_list("subject_id", "object__uri")
+
+        records: List[Dict[str, Any]] = []
+        triples_by_subject: Dict[str, str] = {str(subject_id): other_uri for subject_id, other_uri in target_triples}
+
+        for subject_id in join_subject_ids:
+            subject_key = str(subject_id)
+            related_uri = triples_by_subject.get(subject_key)
+            if not related_uri:
+                continue
+
+            context_values: Dict[str, str] = {}
+            for column_name, property_resource in context_property_map.items():
+                value = ""
+                context_triples = Triple.objects.filter(
+                    subject_id=subject_id,
+                    predicate=property_resource._resource,
+                ).select_related("object")
+                for triple in context_triples:
+                    obj = triple.object
+                    if obj is None:
+                        continue
+                    value = obj.value or obj.name or obj.uri or ""
+                    if value:
+                        break
+                context_values[column_name] = value
+
+            records.append(
+                {
+                    "join_resource_id": subject_key,
+                    "related_uri": related_uri,
+                    "context": context_values,
+                }
+            )
+
+        return records
+
+    def _get_join_entity_map(
+        self,
+        relationship: JoinRelationship,
+        entity_uri: str,
+    ) -> Dict[str, str]:
+        records = self._get_join_entity_records(relationship, entity_uri)
+        return {
+            record["join_resource_id"]: record["related_uri"]
+            for record in records
+            if record.get("join_resource_id") and record.get("related_uri")
+        }
 
     def _create_join_entity(
         self,
         relationship: JoinRelationship,
         entity_uri: str,
         related_uri: str,
+        context: Optional[Dict[str, Any]] = None,
     ) -> None:
         self_resource = Resource.objects.filter(uri=entity_uri).first()
         if self_resource is None:
@@ -1149,25 +1317,120 @@ class SchemaWorkspaceService:
 
         join_entity.set_property(self_property, self_entity)
         join_entity.set_property(other_property, other_entity)
+        self._apply_join_context(join_entity, relationship, context or {})
+
+    def _apply_join_context(
+        self,
+        join_entity: EntityResource,
+        relationship: JoinRelationship,
+        context: Dict[str, Any],
+    ) -> None:
+        if not relationship.context_columns:
+            return
+
+        for context_spec in relationship.context_columns:
+            column_name = context_spec.get("column")
+            property_uri = context_spec.get("property_uri")
+            if not column_name or not property_uri:
+                continue
+
+            property_resource = self._get_property_resource(property_uri)
+            if property_resource is None:
+                continue
+
+            value = context.get(column_name)
+            Triple.objects.filter(
+                subject=join_entity._resource,
+                predicate=property_resource._resource,
+            ).delete()
+
+            if value in (None, ""):
+                continue
+
+            join_entity.set_property(property_resource, str(value))
 
     def sync_join_relationship(
         self,
         *,
         entity_uri: str,
         relationship: JoinRelationship,
-        related_uris: List[str],
+        related_items: List[Any],
     ) -> None:
-        desired = {uri for uri in related_uris if uri}
-        existing = self._get_join_entity_map(relationship, entity_uri)
+        normalized_items: List[Dict[str, Any]] = []
+        for item in related_items:
+            if isinstance(item, str):
+                uri = item.strip()
+                if uri:
+                    normalized_items.append({"uri": uri, "context": {}})
+            elif isinstance(item, dict):
+                uri = str(item.get("uri") or "").strip()
+                if not uri:
+                    continue
+                context = item.get("context") or {}
+                if not isinstance(context, dict):
+                    context = {}
+                normalized_items.append(
+                    {
+                        "uri": uri,
+                        "context": {str(k): ("" if v is None else str(v)) for k, v in context.items()},
+                    }
+                )
 
-        for join_id, uri in existing.items():
-            if uri not in desired:
-                Resource.objects.filter(id=join_id).delete()
+        existing_records = self._get_join_entity_records(relationship, entity_uri)
+        used_indices: Set[int] = set()
 
-        existing_uris = set(existing.values())
-        for uri in desired:
-            if uri not in existing_uris:
-                self._create_join_entity(relationship, entity_uri, uri)
+        def context_dict(record: Dict[str, Any]) -> Dict[str, str]:
+            ctx = record.get("context") or {}
+            if isinstance(ctx, dict):
+                return {str(k): ("" if v is None else str(v)) for k, v in ctx.items()}
+            return {}
+
+        # Delete or update existing records as needed
+        for desired in normalized_items:
+            uri = desired["uri"]
+            context = context_dict(desired)
+
+            exact_match_index = None
+            for idx, record in enumerate(existing_records):
+                if idx in used_indices:
+                    continue
+                if record.get("related_uri") == uri and context_dict(record) == context:
+                    exact_match_index = idx
+                    break
+
+            if exact_match_index is not None:
+                used_indices.add(exact_match_index)
+                continue
+
+            # Try to find record with same URI and update context
+            updated = False
+            for idx, record in enumerate(existing_records):
+                if idx in used_indices:
+                    continue
+                if record.get("related_uri") == uri:
+                    join_resource = Resource.objects.filter(id=record.get("join_resource_id")).first()
+                    if join_resource:
+                        join_entity = EntityResource(join_resource)
+                        self._apply_join_context(join_entity, relationship, context)
+                    used_indices.add(idx)
+                    updated = True
+                    break
+
+            if not updated:
+                self._create_join_entity(
+                    relationship,
+                    entity_uri,
+                    uri,
+                    context=context,
+                )
+
+        # Delete any remaining existing relationships that were not matched
+        for idx, record in enumerate(existing_records):
+            if idx in used_indices:
+                continue
+            join_resource_id = record.get("join_resource_id")
+            if join_resource_id:
+                Resource.objects.filter(id=join_resource_id).delete()
 
     def get_join_values(self, relationship: JoinRelationship, entity_uri: str) -> List[str]:
         return list(self._get_join_entity_map(relationship, entity_uri).values())

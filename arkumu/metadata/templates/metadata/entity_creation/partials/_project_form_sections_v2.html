@@ -411,7 +411,7 @@
       <span class="badge badge-outline">Verknüpfungen</span>
     </summary>
     <div class="px-5 pb-5 pt-3 space-y-4">
-      {% if project_form.fields.ereignis_uri or project_form.fields.vorschaubild_uri %}
+      {% if project_form.fields.ereignis_uri or project_form.fields.vorschaubild_uri or project_form.fields.verknuepfte_projekt_uris %}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           {% if project_form.fields.ereignis_uri %}
             <div class="form-control">
@@ -435,6 +435,20 @@
               {{ project_form.vorschaubild_uri }}
               {% if project_form.vorschaubild_uri.help_text %}
                 <div class="text-xs text-base-content/60 mt-1">{{ project_form.vorschaubild_uri.help_text }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if project_form.fields.verknuepfte_projekt_uris %}
+            <div class="form-control md:col-span-2">
+              <label class="label">
+                <span class="label-text font-medium">Verknüpfte Projekte</span>
+                {% if project_form.verknuepfte_projekt_uris.errors %}
+                  <span class="label-text-alt text-error">{{ project_form.verknuepfte_projekt_uris.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.verknuepfte_projekt_uris }}
+              {% if project_form.verknuepfte_projekt_uris.help_text %}
+                <div class="text-xs text-base-content/60 mt-1">{{ project_form.verknuepfte_projekt_uris.help_text }}</div>
               {% endif %}
             </div>
           {% endif %}

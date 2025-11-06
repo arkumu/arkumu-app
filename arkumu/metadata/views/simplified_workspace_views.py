@@ -16,6 +16,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import render
 from django.template.loader import render_to_string
+from django.utils.text import slugify
 from django.views import View
 from django.views.decorators.http import require_http_methods
 
@@ -31,56 +32,159 @@ from arkumu.users.models import Organization
 logger = logging.getLogger(__name__)
 
 
-# Define which fields to show for each entity type
-SIMPLIFIED_FIELD_CONFIG = {
+# Section configuration shared by simplified edit views. Each section defines
+# label metadata plus the ordered list of fields shown within the tab.
+SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
     "Projekt": [
-        # 1. Grundinformationen
-        "Bevorzugter Titel",
-        "Sprache des bevorzugten Titels",
-        "Bevorzugter Untertitel",
-        "Sprache des bevorzugten Untertitels",
-        "Alternativer Titel-Set",
-
-        # 2. Beschreibungen und Kommentare
-        "Deutscher Kommentar",
-        "Englischer Kommentar",
-        "Interner Kommentar",
-        "Inhaltswarnung",
-
-        # 3. Klassifikation
-        "Projektart",
-        "Projektkategorie",
-        "Schlagwort",
-        "Organisationseinheit",
-
-        # 4. Ereignisse
-        "Ereignis",
-        "Externe Projektwebseite",
-        "Vorschaubild",
-
-        # 5. Verwaltung und Signaturen
-        "Rechtsstatus",
-        "Signatur beim Einlieferer",
-        "Werkverzeichnis-Nummer",
+        {
+            "key": "grundinformationen",
+            "title": "Grundinformationen",
+            "badge": "Titel und Identifikation",
+            "fields": [
+                "Bevorzugter Titel",
+                "Sprache des bevorzugten Titels",
+                "Bevorzugter Untertitel",
+                "Sprache des bevorzugten Untertitels",
+                "Alternativer Titel-Set",
+            ],
+        },
+        {
+            "key": "beschreibungen",
+            "title": "Beschreibungen und Kommentare",
+            "badge": "Texte",
+            "fields": [
+                "Beschreibung",
+                "Deutscher Kommentar",
+                "Englischer Kommentar",
+                "Interner Kommentar",
+                "Inhaltswarnung",
+            ],
+        },
+        {
+            "key": "klassifikation",
+            "title": "Klassifikation",
+            "badge": "Kategorien",
+            "fields": [
+                "Projektart",
+                "Projektkategorie",
+                "Schlagwort",
+                "Organisationseinheit",
+            ],
+        },
+        {
+            "key": "normdaten",
+            "title": "Normdaten und Links",
+            "badge": "Kennungen",
+            "fields": [
+                "Wikidata-ID",
+                "GND-Nummer",
+                "Andere Normdaten",
+                "Externe Projektwebseite",
+            ],
+        },
+        {
+            "key": "ereignisse",
+            "title": "Ereignisse",
+            "badge": "Verweise",
+            "fields": [
+                {"name": "Ereignis", "label": "Zugehöriges Ereignis"},
+                "Vorschaubild",
+                {
+                    "name": "Verknüpftes Projekt",
+                    "label": "Verknüpfte Projekte",
+                    "help_text": "Weitere Projekte auswählen, die fachlich mit diesem Projekt verbunden sind.",
+                },
+                {
+                    "name": "__join__Projekt_Projekt_Kreuztabelle__Projekt",
+                    "label": "Verknüpfte Projekte (Junktion)",
+                    "help_text": "Zusätzliche Projektbeziehungen aus Kreuztabellen bearbeiten.",
+                },
+            ],
+        },
+        {
+            "key": "verwaltung",
+            "title": "Verwaltung und Signaturen",
+            "badge": "Administrative Daten",
+            "fields": [
+                "Rechtsstatus",
+                "Signatur beim Einlieferer",
+                "Werkverzeichnis-Nummer",
+            ],
+        },
     ],
     "Ereignis": [
-        # 1. Grundinformationen
-        "Ereignistyp",
-        "Ereignisname",
-
-        # 2. Zeit und Ort
-        "Ereignisbeginn",
-        "Ereignisende",
-        "Ereignisort",
-
-        # 3. Beschreibung
-        "Ereignisbeschreibung",
-
-        # 4. Technische Ressourcen
-        "Equipment und Software",
-        "Digitales Objekt",
+        {
+            "key": "grundinformationen",
+            "title": "Grundinformationen",
+            "badge": "Typ und Name",
+            "fields": [
+                "Ereignistyp",
+                "Ereignisname",
+            ],
+        },
+        {
+            "key": "zeit-ort",
+            "title": "Zeit und Ort",
+            "badge": "Zeitliche und räumliche Daten",
+            "fields": [
+                "Ereignisbeginn",
+                "Ereignisende",
+                "Ereignisort",
+            ],
+        },
+        {
+            "key": "beschreibung",
+            "title": "Beschreibung",
+            "badge": "Textuelle Informationen",
+            "fields": [
+                "Ereignisbeschreibung",
+            ],
+        },
+        {
+            "key": "technische-ressourcen",
+            "title": "Technische Ressourcen",
+            "badge": "Equipment und Digitale Objekte",
+            "fields": [
+                "Equipment und Software",
+                "Digitales Objekt",
+            ],
+        },
     ],
 }
+
+PROJECT_LINK_FIELD_NAME = "Verknüpftes Projekt"
+PROJECT_LINK_PROPERTY_URI = "http://arkumu.org/data/properties/verknuepftes-projekt"
+PROJECT_DATASET_NAME = "Projekt"
+
+
+def _flatten_section_fields(section_config: List[Dict[str, Any]]) -> List[str]:
+    """Flatten section definitions to a list of field names."""
+    names: List[str] = []
+    for section in section_config:
+        for field in section.get("fields", []):
+            if isinstance(field, dict):
+                names.append(field.get("name", ""))
+            else:
+                names.append(str(field))
+    return [name for name in names if name]
+
+
+# Backwards compatible mapping used for metadata filtering logic.
+SIMPLIFIED_FIELD_CONFIG: Dict[str, List[str]] = {
+    dataset: _flatten_section_fields(sections)
+    for dataset, sections in SIMPLIFIED_SECTION_CONFIG.items()
+}
+
+
+def _ensure_project_link_field(metadata: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """
+    Ensure the project metadata always includes a multi-value field for linked projects.
+
+    Some mappings omit the `Verknüpftes Projekt` property from their schema manifest.
+    The schema workspace service now provides a fallback join relationship, so no
+    additional metadata synthesis is required here.
+    """
+    return metadata
 
 
 def _get_organization(request: HttpRequest) -> Optional[Organization]:
@@ -137,12 +241,13 @@ def _collect_relationship_payloads(
     entity_data: Dict[str, Any],
     field_metadata: Dict[str, Dict[str, Any]],
     join_field_map: Dict[str, Any],
-) -> Tuple[Dict[str, Any], Dict[str, List[str]], Dict[str, List[str]]]:
+    entity_uri: Optional[str] = None,
+) -> Tuple[Dict[str, Any], Dict[str, List[Dict[str, Any]]], Dict[str, List[str]]]:
     """
     Extract join and multi-FK payloads from the POST body, mirroring legacy behaviour.
 
     Returns the sanitized entity_data plus dictionaries mapping field names to
-    canonical URI lists for join relationships and multi-FK relationships.
+    join payload records (URI + optional context) and multi-FK URI lists.
     """
     filtered_join_map = {
         name: relationship
@@ -150,17 +255,64 @@ def _collect_relationship_payloads(
         if name in field_metadata
     }
 
-    join_payloads: Dict[str, List[str]] = {}
+    join_payloads: Dict[str, List[Dict[str, Any]]] = {}
     multi_fk_payloads: Dict[str, List[str]] = {}
 
     for field_name, relationship in filtered_join_map.items():
         array_key = f"{field_name}[]"
         entity_data.pop(field_name, None)
-        raw_array = request.POST.getlist(array_key)
-        if raw_array:
-            join_payloads[field_name] = _normalize_uri_list(raw_array)
-        else:
-            join_payloads[field_name] = []
+        raw_values = request.POST.getlist(array_key)
+        field_meta = field_metadata.get(field_name, {})
+        context_specs = field_meta.get("context_columns") or []
+        context_values_by_slug: Dict[str, List[str]] = {}
+        for context_spec in context_specs:
+            column_name = context_spec.get("column") or context_spec.get("column_name") or ""
+            slug = context_spec.get("slug") or slugify(column_name).replace("-", "_")
+            context_key = f"{field_name}__context__{slug}[]"
+            context_values_by_slug[slug] = request.POST.getlist(context_key)
+
+        records: List[Dict[str, Any]] = []
+        for index, raw_value in enumerate(raw_values):
+            cleaned_value = str(raw_value or "").strip()
+            if not cleaned_value:
+                continue
+            canonical_value, _ = decode_placeholder_uri(cleaned_value)
+            if not canonical_value:
+                continue
+
+            context_payload: Dict[str, str] = {}
+            for context_spec in context_specs:
+                column_name = context_spec.get("column") or context_spec.get("column_name") or ""
+                slug = context_spec.get("slug") or slugify(column_name).replace("-", "_")
+                values = context_values_by_slug.get(slug, [])
+                context_value = values[index] if index < len(values) else ""
+                context_payload[column_name] = str(context_value or "").strip()
+
+            records.append(
+                {
+                    "uri": canonical_value,
+                    "context": context_payload,
+                }
+            )
+
+        join_payloads[field_name] = records
+
+    canonical_entity_uri = None
+    if entity_uri:
+        canonical_entity_uri, _ = decode_placeholder_uri(entity_uri)
+        canonical_entity_uri = canonical_entity_uri or entity_uri
+
+    if canonical_entity_uri:
+        for field_name, records in list(join_payloads.items()):
+            filtered_records = []
+            for record in records:
+                uri = record.get("uri")
+                if not uri:
+                    continue
+                if uri in {canonical_entity_uri, entity_uri}:
+                    continue
+                filtered_records.append(record)
+            join_payloads[field_name] = filtered_records
 
     for field_name, meta in field_metadata.items():
         if field_name in join_payloads:
@@ -177,7 +329,77 @@ def _collect_relationship_payloads(
         else:
             multi_fk_payloads[field_name] = []
 
+    if canonical_entity_uri:
+        for field_name, uris in list(multi_fk_payloads.items()):
+            filtered = [
+                uri
+                for uri in uris
+                if uri
+                and uri != canonical_entity_uri
+                and uri != entity_uri
+            ]
+            multi_fk_payloads[field_name] = filtered
+
     return entity_data, join_payloads, multi_fk_payloads
+
+
+def _build_tab_sections(
+    dataset_name: str,
+    fields_with_metadata: List[Dict[str, Any]],
+    relationship_fields: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Group enriched field metadata into UI sections."""
+    sections_config = SIMPLIFIED_SECTION_CONFIG.get(dataset_name, [])
+    field_lookup = {item["field"].name: item for item in fields_with_metadata}
+    for rel_item in relationship_fields or []:
+        field_lookup[rel_item["field"].name] = rel_item
+    tab_sections: List[Dict[str, Any]] = []
+
+    for index, section in enumerate(sections_config):
+        section_fields: List[Dict[str, Any]] = []
+        for field_entry in section.get("fields", []):
+            if isinstance(field_entry, dict):
+                field_name = field_entry.get("name", "")
+                overrides = field_entry
+            else:
+                field_name = str(field_entry)
+                overrides = {}
+
+            if not field_name:
+                continue
+
+            item = field_lookup.get(field_name)
+            if not item:
+                continue
+
+            item_copy = dict(item)
+            label_override = overrides.get("label")
+            help_override = overrides.get("help_text")
+
+            if label_override:
+                item_copy["label_override"] = label_override
+            if help_override:
+                item_copy["help_text_override"] = help_override
+
+            section_fields.append(item_copy)
+
+        if not section_fields:
+            continue
+
+        section_identifier = section.get("key") or section.get("title") or f"section-{index}"
+        section_slug = slugify(section_identifier) or f"section-{index}"
+
+        tab_sections.append(
+            {
+                "id": section_slug,
+                "title": section.get("title", section_identifier),
+                "badge": section.get("badge"),
+                "description": section.get("description"),
+                "fields": section_fields,
+            }
+        )
+
+    return tab_sections
 
 
 def _filter_field_metadata(
@@ -320,6 +542,17 @@ def _enrich_fk_metadata(
 
         # Prepare data for multi-value FK fields using legacy relationship rows
         initial_labels: List[Dict[str, str]] = []
+        context_specs = meta.get("context_columns") or []
+        if context_specs:
+            context_options: Dict[str, List[str]] = {}
+            for spec in context_specs:
+                column_name = spec.get("column") or spec.get("column_name") or ""
+                property_uri = spec.get("property_uri")
+                options = schema_service.get_context_value_options(property_uri)
+                context_options[column_name] = options
+            meta["context_options"] = context_options
+
+        join_rows: List[Dict[str, Any]] = []
         if fk_info and meta.get("is_multi_value"):
             raw_initial = form.initial.get(field.name, field.value())
             parsed_values: List[Any]
@@ -414,6 +647,99 @@ def _enrich_fk_metadata(
             if display_value:
                 form.initial[field.name] = display_value
 
+        elif meta.get("is_join"):
+            raw_initial = form.initial.get(field.name, field.value())
+            try:
+                parsed = json.loads(raw_initial) if raw_initial else []
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = [raw_initial] if raw_initial else []
+
+            if isinstance(parsed, list):
+                for entry in parsed:
+                    if isinstance(entry, dict):
+                        label = entry.get("label") or entry.get("uri") or ""
+                        uri = (entry.get("uri") or entry.get("related_uri") or "").strip()
+                        resource_id = entry.get("resource_id")
+                        join_resource_id = entry.get("join_resource_id")
+                        context_payload = entry.get("context") if isinstance(entry.get("context"), dict) else {}
+                    else:
+                        label = str(entry)
+                        uri = str(entry)
+                        resource_id = None
+                        join_resource_id = None
+                        context_payload = {}
+                    if not uri:
+                        continue
+                    initial_entry = {
+                        "label": label or uri,
+                        "uri": uri,
+                        "resource_id": resource_id,
+                        "join_resource_id": join_resource_id,
+                        "context": context_payload,
+                    }
+                    initial_labels.append(initial_entry)
+
+            import uuid
+            rows: List[Dict[str, Any]] = []
+            if initial_labels:
+                for entry in initial_labels:
+                    row_id = f"relationship-row-{slugify(field.name) or field.name}-{uuid.uuid4().hex[:8]}"
+                    input_id = f"input-{row_id}"
+                    suggestions_id = f"suggestions-{row_id}"
+                    context_payload = entry.get("context") if isinstance(entry.get("context"), dict) else {}
+                    row_data = {
+                        "row_id": row_id,
+                        "input_id": input_id,
+                        "suggestions_id": suggestions_id,
+                        "display_value": entry.get("label", ""),
+                        "stored_value": entry.get("uri", ""),
+                        "suggestion_url": meta.get("base_suggestion_url", ""),
+                        "resource_id": entry.get("resource_id"),
+                        "join_resource_id": entry.get("join_resource_id"),
+                        "context": context_payload,
+                    }
+                    rows.append(row_data)
+            else:
+                row_id = f"relationship-row-{slugify(field.name) or field.name}-{uuid.uuid4().hex[:8]}"
+                input_id = f"input-{row_id}"
+                suggestions_id = f"suggestions-{row_id}"
+                rows.append({
+                    "row_id": row_id,
+                    "input_id": input_id,
+                    "suggestions_id": suggestions_id,
+                    "display_value": "",
+                    "stored_value": "",
+                    "suggestion_url": meta.get("base_suggestion_url", ""),
+                    "context": {},
+                })
+            if context_specs:
+                context_options_map = meta.get("context_options") or {}
+                for row_data in rows:
+                    normalized_context = row_data.get("context") if isinstance(row_data.get("context"), dict) else {}
+                    context_items: List[Dict[str, Any]] = []
+                    for spec in context_specs:
+                        column_name = spec.get("column") or spec.get("column_name") or ""
+                        slug = spec.get("slug") or slugify(column_name).replace("-", "_")
+                        value = (
+                            normalized_context.get(slug)
+                            or normalized_context.get(column_name)
+                            or ""
+                        )
+                        options = context_options_map.get(column_name) or context_options_map.get(slug) or []
+                        context_items.append(
+                            {
+                                "label": column_name,
+                                "slug": slug,
+                                "value": value,
+                                "options": options,
+                            }
+                        )
+                    row_data["context_items"] = context_items
+            else:
+                for row_data in rows:
+                    row_data.setdefault("context_items", [])
+            join_rows = rows
+
         # Build widget context for multi-value fields using relationship rows
         widget_context = None
         if fk_info and meta.get("is_multi_value"):
@@ -475,6 +801,23 @@ def _enrich_fk_metadata(
                 "selected_property": primary_property_uri or "",
                 "property_select_id": property_select_id,
             }
+        elif meta.get("is_join"):
+            property_select_id = f"relationship-property-{slugify(field.name) or field.name}"
+            widget_context = {
+                "field_name": field.name,
+                "dataset_name": dataset_name,
+                "mapping_id": schema_service.mapping.id,
+                "rows": join_rows,
+                "search_properties": meta.get("search_properties", []),
+                "selected_property": "",
+                "property_select_id": property_select_id,
+            }
+
+        rows_for_item = []
+        if meta.get("is_join"):
+            rows_for_item = join_rows
+        elif widget_context:
+            rows_for_item = widget_context.get("rows", [])
 
         fields_with_metadata.append({
             "field": field,
@@ -483,6 +826,7 @@ def _enrich_fk_metadata(
             "target_id": target_id,
             "initial_labels": initial_labels,
             "widget_context": widget_context,
+            "rows": rows_for_item,
         })
 
     return fields_with_metadata
@@ -511,6 +855,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
 
         # Get field metadata from schema
         field_metadata = schema_service.get_field_metadata(dataset_name)
+        if dataset_name == PROJECT_DATASET_NAME:
+            field_metadata = _ensure_project_link_field(field_metadata)
 
         # Augment with joins BEFORE filtering (to convert multi-value FKs to relationships)
         field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
@@ -575,11 +921,16 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             schema_service=schema_service,
             dataset_name=dataset_name,
         )
+        relationship_fields_sorted = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         # Render the form
         context = {
             "form": form,
             "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
             "entity_uri": entity_uri,
             "entity_label": entity_label,
             "dataset_name": dataset_name,
@@ -606,6 +957,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
 
         # Get field metadata and augment with joins (for relationship handling)
         field_metadata = schema_service.get_field_metadata(dataset_name)
+        if dataset_name == PROJECT_DATASET_NAME:
+            field_metadata = _ensure_project_link_field(field_metadata)
         field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
@@ -625,6 +978,17 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             disable_anchors=True,
         )
 
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+        )
+        relationship_fields_sorted = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
@@ -633,6 +997,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                     entity_data,
                     field_metadata,
                     join_field_map,
+                    entity_uri=entity_uri,
                 )
 
                 # Save entity (includes FK fields and relationships)
@@ -642,14 +1007,14 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                     entity_uri=entity_uri,
                 )
 
-                for field_name, related_uris in join_payloads.items():
+                for field_name, related_records in join_payloads.items():
                     relationship = join_field_map.get(field_name)
                     if relationship is None:
                         continue
                     schema_service.sync_join_relationship(
                         entity_uri=saved_uri,
                         relationship=relationship,
-                        related_uris=related_uris,
+                        related_items=related_records,
                     )
 
                 for field_name, related_uris in multi_fk_payloads.items():
@@ -673,10 +1038,13 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                 # Re-render form with error
                 context = {
                     "form": form,
+                    "fields_with_metadata": fields_with_metadata,
+                    "tab_sections": tab_sections,
                     "entity_uri": entity_uri,
                     "dataset_name": dataset_name,
                     "error": str(e),
                     "title": "Projekt bearbeiten",
+                    "mapping_id": schema_service.mapping.id,
                 }
                 return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
@@ -685,9 +1053,12 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             logger.warning(f"Form validation failed: {form.errors}")
             context = {
                 "form": form,
+                "fields_with_metadata": fields_with_metadata,
+                "tab_sections": tab_sections,
                 "entity_uri": entity_uri,
                 "dataset_name": dataset_name,
                 "title": "Projekt bearbeiten",
+                "mapping_id": schema_service.mapping.id,
             }
             return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
@@ -779,11 +1150,16 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             schema_service=schema_service,
             dataset_name=dataset_name,
         )
+        relationship_fields_sorted = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         # Render the form
         context = {
             "form": form,
             "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
             "entity_uri": entity_uri,
             "entity_label": entity_label,
             "dataset_name": dataset_name,
@@ -829,6 +1205,17 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             disable_anchors=True,
         )
 
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+        )
+        relationship_fields_sorted = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
@@ -837,6 +1224,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                     entity_data,
                     field_metadata,
                     join_field_map,
+                    entity_uri=entity_uri,
                 )
 
                 # Save entity (includes FK fields and relationships)
@@ -846,14 +1234,14 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                     entity_uri=entity_uri,
                 )
 
-                for field_name, related_uris in join_payloads.items():
+                for field_name, related_records in join_payloads.items():
                     relationship = join_field_map.get(field_name)
                     if relationship is None:
                         continue
                     schema_service.sync_join_relationship(
                         entity_uri=saved_uri,
                         relationship=relationship,
-                        related_uris=related_uris,
+                        related_items=related_records,
                     )
 
                 for field_name, related_uris in multi_fk_payloads.items():
@@ -877,10 +1265,13 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                 # Re-render form with error
                 context = {
                     "form": form,
+                    "fields_with_metadata": fields_with_metadata,
+                    "tab_sections": tab_sections,
                     "entity_uri": entity_uri,
                     "dataset_name": dataset_name,
                     "error": str(e),
                     "title": "Ereignis bearbeiten",
+                    "mapping_id": schema_service.mapping.id,
                 }
                 return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
 
@@ -889,8 +1280,11 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             logger.warning(f"Form validation failed: {form.errors}")
             context = {
                 "form": form,
+                "fields_with_metadata": fields_with_metadata,
+                "tab_sections": tab_sections,
                 "entity_uri": entity_uri,
                 "dataset_name": dataset_name,
                 "title": "Ereignis bearbeiten",
+                "mapping_id": schema_service.mapping.id,
             }
             return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)

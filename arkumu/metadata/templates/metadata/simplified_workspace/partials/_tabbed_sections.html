@@ -59,10 +59,12 @@
                     </div>
 
                     <div class="space-y-2">
-                      {% if item.meta.is_multi_value and item.widget_context %}
+                      {% if item.meta.is_join %}
+                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.field.name rows=item.rows search_properties=item.meta.search_properties selected_property=item.selected_property property_select_id=item.property_select_id dataset_name=dataset_summary.dataset_name mapping_id=mapping_id %}
+                      {% elif item.meta.is_multi_value and item.widget_context %}
                         {{ item.field }}
                         <div id="multi-value-{{ item.widget_context.field_name }}">
-                          {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=item.widget_context.mapping_id %}
+                          {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=mapping_id %}
                         </div>
                       {% elif item.meta.use_single_fk_widget %}
                         {% include "metadata/entity_creation/partials/_single_fk_field.html" with field_name=item.field.name input_id=item.meta.input_id uri_value=item.meta.resolved_uri display_value=item.meta.resolved_label css_class=item.field.field.widget.attrs.class required=item.field.field.required search_url=item.search_url target_id=item.target_id search_properties=item.meta.search_properties display_property=item.meta.display_property %}

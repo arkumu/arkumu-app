@@ -261,7 +261,7 @@ class StubWorkspaceService:
 
             return new_uri, created
 
-    def sync_join_relationship(self, entity_uri: str, relationship: JoinRelationship, related_uris: list):
+    def sync_join_relationship(self, entity_uri: str, relationship: JoinRelationship, related_items: list):
         """Stub sync for join relationships."""
         entity = Resource.objects.get(uri=entity_uri)
         predicate, _ = Resource.objects.get_or_create(
@@ -273,7 +273,10 @@ class StubWorkspaceService:
         Triple.objects.filter(subject=entity, predicate=predicate).delete()
 
         # Create new relationships
-        for related_uri in related_uris:
+        for item in related_items:
+            related_uri = item if isinstance(item, str) else item.get("uri")
+            if not related_uri:
+                continue
             related_resource, _ = Resource.objects.get_or_create(
                 uri=related_uri,
                 defaults={"resource_type": ResourceType.ENTITY, "name": related_uri.split("/")[-1]}
