@@ -84,6 +84,9 @@ JUNCTION_SPECS: Sequence[JunctionSpec] = (
 ACTOR_EVENT_DATASET = "AkteurIn_Ereignis_Kreuztabelle"
 ACTOR_EVENT_ACTOR_PREDICATE = "http://arkumu.org/data/properties/akteurin-im-ereignis"
 ACTOR_EVENT_EVENT_PREDICATE = "http://arkumu.org/data/properties/im-ereignis"
+ACTOR_EVENT_ROLE_PREDICATE = "http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+ACTOR_EVENT_ROLE_LABEL = "hat Rolle im Ereignis"
+ACTOR_EVENT_ROLE_PREFIX = "akteurin"
 
 
 
@@ -155,6 +158,7 @@ class JunctionPromoter:
         self.stdout = stdout
         self.style = style
         self.predicate_service = PredicateMintingService(organization, self.base_uri)
+        self._resource_cache: Dict[str, Optional[Resource]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -220,6 +224,16 @@ class JunctionPromoter:
 
         actor_to_event_pred = self.predicate_service.ensure_predicate("akteurin", "im Ereignis")
         event_to_actor_pred = self.predicate_service.ensure_predicate("ereignis", "hat AkteurIn")
+        role_predicate = self.predicate_service.ensure_predicate(
+            ACTOR_EVENT_ROLE_PREFIX,
+            ACTOR_EVENT_ROLE_LABEL,
+        )
+
+        role_map = self._collect_context_map(
+            ACTOR_EVENT_ROLE_PREDICATE,
+            subject_ids,
+            expect_literals=False,
+        )
 
         created = 0
         processed_pairs: Set[tuple[str, str]] = set()
@@ -260,7 +274,60 @@ class JunctionPromoter:
 
             processed_pairs.add(pair_key)
 
+            created += self._promote_roles_for_participation(
+                subject_id,
+                role_predicate,
+                role_map,
+                dry_run=dry_run,
+            )
+
         return created
+
+    def _promote_roles_for_participation(
+        self,
+        subject_id: str,
+        predicate: Resource,
+        role_map: Mapping[str, Set[str]],
+        *,
+        dry_run: bool,
+    ) -> int:
+        role_ids = role_map.get(subject_id)
+        if not role_ids:
+            return 0
+
+        subject_resource = self._get_resource(subject_id)
+        if not subject_resource:
+            return 0
+
+        created = 0
+        for role_id in role_ids:
+            role_resource = self._get_resource(role_id)
+            if not role_resource:
+                continue
+
+            message = (
+                f"{subject_resource.uri or subject_resource.id} --[{predicate.uri}]-->"
+                f" {role_resource.uri or role_resource.id}"
+                f" (pattern=actor_event_role_projection, junction={subject_id})"
+            )
+
+            created += self._persist_derived_triple(
+                subject_resource,
+                predicate,
+                role_resource,
+                dry_run=dry_run,
+                message=message,
+            )
+
+        return created
+
+    def _get_resource(self, resource_id: str) -> Optional[Resource]:
+        if resource_id in self._resource_cache:
+            return self._resource_cache[resource_id]
+
+        resource = Resource.objects.filter(id=resource_id).first()
+        self._resource_cache[resource_id] = resource
+        return resource
 
     def _collect_entity_map(self, canonical_predicate: str) -> Dict[str, Resource]:
         predicate_filter = self._predicate_filter(canonical_predicate)
@@ -275,7 +342,11 @@ class JunctionPromoter:
         return entity_map
 
     def _collect_context_map(
-        self, canonical_predicate: str, subject_ids: Iterable[str]
+        self,
+        canonical_predicate: str,
+        subject_ids: Iterable[str],
+        *,
+        expect_literals: bool = True,
     ) -> Dict[str, Set[str]]:
         predicate_filter = self._predicate_filter(canonical_predicate)
         triples = (
@@ -286,12 +357,17 @@ class JunctionPromoter:
 
         context_map: Dict[str, Set[str]] = {}
         for triple in triples:
-            if triple.object.resource_type != ResourceType.LITERAL:
-                continue
-            label = normalize_text_input(triple.object.value, blank_to_none=True)
-            if not label:
-                continue
-            context_map.setdefault(str(triple.subject_id), set()).add(label)
+            if expect_literals:
+                if triple.object.resource_type != ResourceType.LITERAL:
+                    continue
+                label = normalize_text_input(triple.object.value, blank_to_none=True)
+                if not label:
+                    continue
+                context_map.setdefault(str(triple.subject_id), set()).add(label)
+            else:
+                if triple.object.resource_type != ResourceType.ENTITY:
+                    continue
+                context_map.setdefault(str(triple.subject_id), set()).add(str(triple.object_id))
         return context_map
 
     # ------------------------------------------------------------------

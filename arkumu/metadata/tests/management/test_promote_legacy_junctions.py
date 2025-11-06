@@ -155,6 +155,10 @@ class PromoteLegacyJunctionsCommandTests(TestCase):
         event_actor_triple = Triple.objects.get(subject=event, predicate=event_actor_pred, object=actor)
         self.assertTrue(event_actor_triple.is_derived)
 
+        role_predicate = Resource.objects.get(uri=f"{BASE_URI}/test/properties/akteurin-hat-rolle-im-ereignis")
+        role_triple = Triple.objects.get(subject=junction, predicate=role_predicate, object=role)
+        self.assertTrue(role_triple.is_derived)
+
     def test_all_hat_beziehung_junctions_in_mapping_are_covered(self):
         with FIXTURE_PATH.open("r", encoding="utf-8") as handle:
             mapping = json.load(handle)
