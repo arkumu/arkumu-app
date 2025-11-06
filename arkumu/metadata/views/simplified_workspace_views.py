@@ -278,6 +278,11 @@ def _enrich_fk_metadata(
         fk_info = meta.get("fk_relationship") or {}
         target_dataset = fk_info.get("target_dataset") if fk_info else None
 
+        # Ensure common metadata keys exist for template access
+        meta.setdefault("resolved_label", "")
+        meta.setdefault("resolved_uri", "")
+        meta["use_single_fk_widget"] = False
+
         # Build search properties for target dataset
         if target_dataset:
             try:
@@ -365,38 +370,49 @@ def _enrich_fk_metadata(
                 logger.info(f"✅ Resolved multi-value FK field '{field.name}': {len(normalized)} values")
         # Handle single FK fields (not multi-value)
         elif fk_info and not meta.get("is_multi_value"):
+            meta["use_single_fk_widget"] = True
             raw_value = form.initial.get(field.name, field.value())
-            if raw_value:
-                display_prop_uri = meta.get("display_property")
+            raw_value_str = str(raw_value).strip() if raw_value else ""
+            display_prop_uri = meta.get("display_property")
 
-                # Auto-select best display property if not set
-                if not display_prop_uri and target_dataset:
-                    preferred_names = ["name", "titel", "title", "label", "bezeichnung", "beschreibung"]
-                    for prop in meta.get("search_properties", []):
-                        prop_name_lower = prop.get("column", "").lower()
-                        if any(pref in prop_name_lower for pref in preferred_names):
-                            display_prop_uri = prop.get("uri")
-                            meta["display_property"] = display_prop_uri
-                            meta["display_property_label"] = prop.get("label")
-                            logger.info(f"Auto-selected display property for {field.name}: {meta['display_property_label']}")
-                            break
+            # Auto-select best display property if not set
+            if not display_prop_uri and target_dataset:
+                preferred_names = ["name", "titel", "title", "label", "bezeichnung", "beschreibung"]
+                for prop in meta.get("search_properties", []):
+                    prop_name_lower = prop.get("column", "").lower()
+                    if any(pref in prop_name_lower for pref in preferred_names):
+                        display_prop_uri = prop.get("uri")
+                        meta["display_property"] = display_prop_uri
+                        meta["display_property_label"] = prop.get("label")
+                        logger.info(f"Auto-selected display property for {field.name}: {meta['display_property_label']}")
+                        break
 
-                # Resolve URI to human-readable label
+            resolved_label = ""
+            if raw_value_str and target_dataset:
                 resolved_label = _infer_entity_label(
                     schema_service,
-                    str(raw_value),
+                    raw_value_str,
                     target_dataset,
                     display_property_uri=display_prop_uri,
                 )
 
-                if resolved_label and resolved_label != raw_value:
-                    meta["resolved_label"] = resolved_label
-                    meta["resolved_uri"] = str(raw_value)
-                    form.initial[field.name] = resolved_label
-                    if field.name in form.fields:
-                        form.fields[field.name].initial = resolved_label
+            canonical_value = ""
+            label_hint = ""
+            if raw_value_str:
+                canonical_value, label_hint = decode_placeholder_uri(raw_value_str)
 
-                    logger.info(f"✅ Resolved FK field '{field.name}': {raw_value} → {resolved_label}")
+            # Prefer canonical URI if available, otherwise fall back to raw value
+            uri_value = canonical_value or raw_value_str
+            display_value = resolved_label or label_hint or raw_value_str
+
+            meta["resolved_uri"] = uri_value
+            meta["resolved_label"] = display_value
+
+            # Keep the form's initial value in sync so validation errors redisplay the label
+            if display_value and field.name in form.fields:
+                form.fields[field.name].initial = display_value
+            if display_value:
+                form.initial[field.name] = display_value
 
         # Build widget context for multi-value fields using relationship rows
         widget_context = None
