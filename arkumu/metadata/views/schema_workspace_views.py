@@ -3043,6 +3043,30 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
             include_fragment = f"{include_fragment}, #{property_select_id}"
         include_fragment = escape(include_fragment)
 
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            logger.error(f"[RelationshipSelectSuggestionView.POST] Service error: {exc}")
+            return HttpResponseBadRequest(str(exc))
+
+        field_metadata = service.get_field_metadata(dataset_name)
+        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+
+        field_meta = field_metadata.get(field_name_param)
+        if field_meta is None and field_name_param != column_name:
+            field_meta = field_metadata.get(column_name)
+        if field_meta is None:
+            field_meta = {}
+
+        relationship = (
+            join_field_map.get(field_name_param)
+            or join_field_map.get(column_name)
+        )
+        fk_info = field_meta.get("fk_relationship") or {}
+
         if widget_type == "multi_select" and chip_container_id:
             canonical_value = value or value_candidate
             normalized_existing: Set[str] = set()
@@ -3056,24 +3080,10 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
 
             chip_fragment = ""
             if canonical_value and canonical_value not in normalized_existing:
-                try:
-                    service = _get_schema_service(request, mapping_id)
-                except ValueError as exc:
-                    logger.error(f"[RelationshipSelectSuggestionView.POST] Service error: {exc}")
-                    return HttpResponseBadRequest(str(exc))
-
-                field_metadata = service.get_field_metadata(dataset_name)
-                field_metadata, join_field_map = service.augment_field_metadata_with_joins(
-                    dataset_name,
-                    field_metadata,
-                )
-                field_meta = field_metadata.get(field_name_param, {})
-                relationship = join_field_map.get(field_name_param)
                 target_dataset = None
                 if relationship:
                     target_dataset = relationship.other_dataset
                 else:
-                    fk_info = field_meta.get("fk_relationship") or {}
                     target_dataset = fk_info.get("target_dataset")
 
                 if not label:
@@ -3135,18 +3145,28 @@ class RelationshipSelectSuggestionView(LoginRequiredMixin, CSVMappingTemplateHel
             logger.debug(
                 "[RelationshipSelectSuggestionView.POST] Multi-select response: %s",
                 response_html[:200],
-            )
+                )
             return HttpResponse(response_html)
 
         hidden_input_id = f"{input_id}-hidden"
 
+        is_multi_field = False
+        if relationship is not None:
+            is_multi_field = True
+        elif field_meta.get("is_multi_value"):
+            is_multi_field = True
+
+        input_name = column_name
+        if is_multi_field:
+            input_name = f"{column_name}[]"
+
         logger.info(
             "[RelationshipSelectSuggestionView.POST] Updating inputs: "
-            f"visible={input_id}, hidden={hidden_input_id}, value={value}, label={label}"
+            f"visible={input_id}, hidden={hidden_input_id}, value={value}, label={label}, multi={is_multi_field}"
         )
 
         hidden_input_html = f'''<input type="hidden"
-           name="{escape(column_name)}"
+           name="{escape(input_name)}"
            id="{escape(hidden_input_id)}"
            value="{escape(value)}"
            data-uri="{escape(value)}"

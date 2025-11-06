@@ -664,6 +664,7 @@ class TestRelationshipSelectSuggestionView:
         # 1. Hidden input with OOB swap
         assert f'id="{hidden_input_id}"' in content
         assert 'hx-swap-oob="outerHTML"' in content
+        assert 'name="projekt_ref[]"' in content
         assert f'value="{test_uri}"' in content
         assert f'data-uri="{test_uri}"' in content
         assert f'data-label="{test_label}"' in content
