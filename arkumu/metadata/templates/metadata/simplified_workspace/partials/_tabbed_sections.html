@@ -59,7 +59,10 @@
                     </div>
 
                     <div class="space-y-2">
-                      {% if item.meta.is_join %}
+                      {% if item.widget_context and item.widget_context.component == "triple_creator" %}
+                        {{ item.field }}
+                        {% include "metadata/entity_editing/partials/_triple_creator.html" with triple_context=item.widget_context %}
+                      {% elif item.meta.is_join %}
                         {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.field.name rows=item.rows search_properties=item.meta.search_properties selected_property=item.selected_property property_select_id=item.property_select_id dataset_name=dataset_summary.dataset_name mapping_id=mapping_id %}
                       {% elif item.meta.is_multi_value and item.widget_context %}
                         {{ item.field }}

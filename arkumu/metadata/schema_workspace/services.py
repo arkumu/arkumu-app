@@ -5,10 +5,11 @@ import secrets
 import string
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Set, Pattern
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Set, Pattern
 from urllib.parse import urlparse, urlencode
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils.text import slugify
 from django.conf import settings
 
@@ -1726,3 +1727,207 @@ class SchemaWorkspaceService:
             if uri
         ]
         return uris
+
+    def list_triple_relationships(
+        self,
+        *,
+        subject_uri: str,
+        predicate_uri: str,
+        target_dataset: Optional[str] = None,
+        display_property_uri: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return existing triple relationships for a subject/predicate combination.
+        """
+        if not subject_uri or not predicate_uri:
+            return []
+
+        subject = Resource.objects.filter(uri=subject_uri).first()
+        if subject is None:
+            return []
+
+        triples_qs = (
+            Triple.objects.filter(
+                subject=subject,
+                predicate__uri=predicate_uri,
+            )
+            .filter(Q(source=self.organization) | Q(source__isnull=True))
+            .select_related("object")
+            .order_by("object__name", "object__uri")
+        )
+
+        from arkumu.metadata.services.entity_label_service import infer_entity_label
+
+        results: List[Dict[str, Any]] = []
+        for triple in triples_qs:
+            obj = triple.object
+            if obj is None:
+                continue
+            object_uri = getattr(obj, "uri", "")
+            if not object_uri:
+                continue
+            label = infer_entity_label(
+                self,
+                object_uri,
+                target_dataset=target_dataset,
+                display_property_uri=display_property_uri,
+            )
+            results.append(
+                {
+                    "id": str(triple.id),
+                    "uri": object_uri,
+                    "label": label or object_uri,
+                    "source_id": getattr(triple.source, "id", None),
+                }
+            )
+        return results
+
+    def create_triple_relationship(
+        self,
+        *,
+        subject_uri: str,
+        predicate_uri: str,
+        object_uri: str,
+    ) -> Tuple[bool, Optional[Triple]]:
+        """
+        Create or retrieve a triple for the provided subject/predicate/object.
+        """
+        if not subject_uri or not predicate_uri or not object_uri:
+            return False, None
+
+        if subject_uri == object_uri:
+            return False, None
+
+        subject = Resource.objects.filter(uri=subject_uri).first()
+        predicate = Resource.objects.filter(uri=predicate_uri).first()
+        target = Resource.objects.filter(uri=object_uri).first()
+
+        if subject is None or predicate is None or target is None:
+            return False, None
+
+        triple, created = Triple.objects.get_or_create(
+            subject=subject,
+            predicate=predicate,
+            object=target,
+            source=self.organization,
+            defaults={"is_derived": False},
+        )
+        if not created and triple.source != self.organization:
+            triple.source = self.organization
+            triple.save(update_fields=["source"])
+        return True, triple
+
+    def delete_triple_relationship(
+        self,
+        *,
+        subject_uri: str,
+        predicate_uri: str,
+        object_uri: str,
+    ) -> int:
+        """
+        Delete a triple belonging to the current organisation.
+        Returns the number of rows removed.
+        """
+        if not subject_uri or not predicate_uri or not object_uri:
+            return 0
+        return Triple.objects.filter(
+            subject__uri=subject_uri,
+            predicate__uri=predicate_uri,
+            object__uri=object_uri,
+            source=self.organization,
+        ).delete()[0]
+
+    def suggest_triple_targets(
+        self,
+        *,
+        target_dataset: str,
+        query: str = "",
+        property_uri: Optional[str] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, str]]:
+        """
+        Suggest entity targets for a triple based on dataset membership and literals.
+        """
+        if not target_dataset:
+            return []
+
+        try:
+            schema = self.get_dataset_schema(target_dataset)
+        except ValueError:
+            return []
+
+        dataset_resource = self._resolve_dataset_resource(target_dataset, schema)
+        if not dataset_resource:
+            return []
+
+        is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
+        entities_qs = Triple.objects.filter(
+            predicate__uri=is_part_of_uri,
+            object=dataset_resource,
+        ).values_list("subject__uri", flat=True)
+
+        literal_label_map: Dict[str, str] = {}
+        uri_matches: List[str] = []
+        if query:
+            literal_qs = Triple.objects.filter(
+                subject__uri__in=entities_qs,
+                object__resource_type=ResourceType.LITERAL,
+            )
+            if property_uri:
+                literal_qs = literal_qs.filter(predicate__uri=property_uri)
+            literal_qs = literal_qs.filter(
+                Q(object__value__icontains=query) | Q(object__name__icontains=query)
+            ).values_list("subject__uri", "object__value", "object__name")
+
+            for subject_uri, value, name in literal_qs[: limit * 5]:
+                label_candidate = next(
+                    (str(val).strip() for val in (value, name) if val not in (None, "")),
+                    "",
+                )
+                if not label_candidate:
+                    continue
+                literal_label_map.setdefault(subject_uri, label_candidate)
+                if len(literal_label_map) >= limit:
+                    break
+
+            uri_matches = list(
+                Triple.objects.filter(
+                    predicate__uri=is_part_of_uri,
+                    object=dataset_resource,
+                    subject__uri__icontains=query,
+                ).values_list("subject__uri", flat=True)[: limit * 2]
+            )
+
+        def append_unique(results: List[str], items: Iterable[str]) -> List[str]:
+            collected = list(results)
+            seen = set(collected)
+            for item in items:
+                if len(collected) >= limit:
+                    break
+                if item not in seen:
+                    collected.append(item)
+                    seen.add(item)
+            return collected
+
+        ordered_uris = append_unique([], literal_label_map.keys())
+        if len(ordered_uris) < limit:
+            ordered_uris = append_unique(ordered_uris, uri_matches)
+        if len(ordered_uris) < limit:
+            ordered_uris = append_unique(ordered_uris, list(entities_qs[:limit]))
+
+        from arkumu.metadata.services.entity_label_service import infer_entity_label
+
+        suggestions: List[Dict[str, str]] = []
+        for uri in ordered_uris:
+            label = literal_label_map.get(uri, "")
+            inferred = infer_entity_label(self, uri, target_dataset=target_dataset)
+            identifier = uri.rstrip("/").split("/")[-1]
+            display_label = label or inferred or identifier
+            suggestions.append(
+                {
+                    "uri": uri,
+                    "label": display_label,
+                    "identifier": identifier,
+                }
+            )
+        return suggestions

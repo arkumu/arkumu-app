@@ -38,6 +38,8 @@ PROMOTED_RELATIONS = [
         "target_column": "Projekt-ID",
         "is_multi_value": True,
         "id_suffix": "projekt-hat-teil",
+        "widget": "TripleCreatorWidget",
+        "search_columns": ["Bevorzugter Titel"],
     },
     {
         "dataset": "Projekt",
@@ -47,6 +49,8 @@ PROMOTED_RELATIONS = [
         "target_column": "Projekt-ID",
         "is_multi_value": True,
         "id_suffix": "projekt-ist-teil-von",
+        "widget": "TripleCreatorWidget",
+        "search_columns": ["Bevorzugter Titel"],
     },
     {
         "dataset": "Projekt",
@@ -56,6 +60,8 @@ PROMOTED_RELATIONS = [
         "target_column": "Projekt-ID",
         "is_multi_value": True,
         "id_suffix": "projekt-hat-bezug-zu",
+        "widget": "TripleCreatorWidget",
+        "search_columns": ["Bevorzugter Titel"],
     },
     {
         "dataset": "Projekt",
@@ -65,6 +71,8 @@ PROMOTED_RELATIONS = [
         "target_column": "Projekt-ID",
         "is_multi_value": True,
         "id_suffix": "projekt-basiert-auf",
+        "widget": "TripleCreatorWidget",
+        "search_columns": ["Bevorzugter Titel"],
     },
     {
         "dataset": "Projekt",
@@ -74,6 +82,8 @@ PROMOTED_RELATIONS = [
         "target_column": "Projekt-ID",
         "is_multi_value": True,
         "id_suffix": "projekt-ist-vorbereitend-fuer",
+        "widget": "TripleCreatorWidget",
+        "search_columns": ["Bevorzugter Titel"],
     },
     {
         "dataset": "Ereignis",
@@ -83,6 +93,7 @@ PROMOTED_RELATIONS = [
         "target_column": "AkteurIn-ID",
         "is_multi_value": True,
         "id_suffix": "ereignis-hat-akteurin",
+        "search_columns": ["Bevorzugter Titel", "Name"],
     },
     {
         "dataset": "AkteurIn",
@@ -92,6 +103,7 @@ PROMOTED_RELATIONS = [
         "target_column": "Ereignis-ID",
         "is_multi_value": True,
         "id_suffix": "akteurin-im-ereignis",
+        "search_columns": ["Bezeichnung", "Ereignistitel"],
     },
     {
         "dataset": "AkteurIn_Ereignis_Kreuztabelle",
@@ -101,6 +113,7 @@ PROMOTED_RELATIONS = [
         "target_column": "Rolle-ID",
         "is_multi_value": True,
         "id_suffix": "akteurin-hat-rolle-im-ereignis",
+        "search_columns": ["Bezeichnung"],
     },
 ]
 
@@ -157,13 +170,15 @@ class Command(BaseCommand):
                 )
                 continue
 
-            column_id = f"promoted::{spec['dataset']}::{spec['id_suffix']}"
+            column_slug = spec.get("column_slug") or spec["id_suffix"]
+            column_id = f"promoted::{spec['dataset']}::{column_slug}"
             if column_id in promoted_workspace_columns:
                 continue
 
             promoted_workspace_columns[column_id] = {
                 "id": column_id,
                 "name": spec["column_name"],
+                "column_slug": column_slug,
                 "type": "string",
                 "is_fk": True,
                 "source": spec["dataset"],
@@ -171,10 +186,12 @@ class Command(BaseCommand):
                 "added_at": timestamp,
                 "is_anchor": False,
                 "is_multi_value": spec["is_multi_value"],
+                "widget": spec.get("widget"),
                 "fk_config": {
                     "direction": "outbound",
                     "target_column": spec["target_column"],
                     "target_dataset": spec["target_dataset"],
+                    "predicate_uri": property_resource.uri,
                 },
             }
 
@@ -184,12 +201,13 @@ class Command(BaseCommand):
                 property_resource.uri,
                 property_resource.canonical_uri,
                 organization,
+                column_slug,
             )
 
             fk_key = column_id
             promoted_fk_relationships[fk_key] = {
                 "direction": "outbound",
-                "source_column": spec["column_name"],
+                "source_column": column_slug,
                 "source_dataset": spec["dataset"],
                 "target_column": spec["target_column"],
                 "target_dataset": spec["target_dataset"],
@@ -240,16 +258,35 @@ class Command(BaseCommand):
         property_uri: str,
         canonical_uri: str,
         organization: Organization,
+        column_slug: str,
     ) -> None:
         dataset_entry = manifest.get(spec["dataset"])
         if not dataset_entry:
             return
 
-        dataset_entry.setdefault("properties", {})[spec["column_name"]] = {
+        dataset_entry.setdefault("properties", {})[column_slug] = {
             "uri": property_uri,
             "name": spec["column_name"],
             "canonical_uri": canonical_uri,
         }
+
+        column_metadata = dataset_entry.setdefault("column_metadata", {})
+        metadata_entry = {
+            "column_name": column_slug,
+            "property_label": spec["column_name"],
+            "column_type": "multi_value_foreign_key" if spec["is_multi_value"] else "foreign_key",
+            "is_multi_value": spec["is_multi_value"],
+            "is_anchor": False,
+            "is_required": False,
+            "is_external_ontology": False,
+            "has_fk": True,
+        }
+        search_columns = spec.get("search_columns")
+        if search_columns:
+            metadata_entry["search_columns"] = list(search_columns)
+        if spec.get("widget"):
+            metadata_entry["widget"] = spec["widget"]
+        column_metadata[column_slug] = metadata_entry
 
         target_canonical = TARGET_ID_CANONICAL.get(spec["target_dataset"])
         target_property_uri = None
@@ -258,7 +295,7 @@ class Command(BaseCommand):
             target_property_uri = target_prop.uri if target_prop else None
 
         fk_entry = {
-            "source_column": spec["column_name"],
+            "source_column": column_slug,
             "target_column": spec["target_column"],
             "is_multi_value": spec["is_multi_value"],
             "source_dataset": spec["dataset"],
@@ -273,5 +310,5 @@ class Command(BaseCommand):
 
         fk_list = dataset_entry.setdefault("fk_relationships", [])
         # Avoid duplicates
-        if not any(entry.get("source_column") == spec["column_name"] for entry in fk_list):
+        if not any(entry.get("source_column") == column_slug for entry in fk_list):
             fk_list.append(fk_entry)

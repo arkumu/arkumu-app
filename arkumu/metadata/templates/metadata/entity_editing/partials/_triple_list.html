@@ -1,0 +1,24 @@
+{% load static %}
+<div id="{{ list_id }}" class="space-y-2">
+  {% if triples %}
+    {% for triple in triples %}
+      <div class="flex items-center justify-between gap-3 bg-base-200/50 border border-base-200 rounded-lg px-3 py-2">
+        <div class="min-w-0">
+          <p class="text-sm font-medium truncate">{{ triple.label }}</p>
+          <p class="text-xs text-base-content/60 truncate">{{ triple.uri }}</p>
+        </div>
+        <button type="button"
+                class="btn btn-ghost btn-xs"
+                hx-delete="{% url 'metadata:entity_workspace_triple_manage' mapping_id %}"
+                hx-vals='{"subject_uri": "{{ subject_uri|escapejs }}", "predicate_uri": "{{ predicate_uri|escapejs }}", "object_uri": "{{ triple.uri|escapejs }}", "target_dataset": "{{ target_dataset|escapejs }}", "property_uri": "{{ property_uri|escapejs }}", "field_name": "{{ field_name|escapejs }}", "list_id": "{{ list_id|escapejs }}"}'
+                hx-target="#{{ list_id }}"
+                hx-swap="outerHTML"
+                title="Verknüpfung entfernen">
+          Entfernen
+        </button>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-sm text-base-content/60">Keine Verknüpfungen vorhanden.</p>
+  {% endif %}
+</div>

@@ -48,6 +48,18 @@ class _BaseDummySchemaService:
                 serialized.append({"uri": item, "context": {}})
         self.join_sync_calls.append((entity_uri, relationship, serialized))
 
+    def list_triple_relationships(self, **kwargs):
+        return []
+
+    def suggest_triple_targets(self, **kwargs):
+        return []
+
+    def create_triple_relationship(self, **kwargs):
+        return True, SimpleNamespace(id=uuid.uuid4())
+
+    def delete_triple_relationship(self, **kwargs):
+        return 1
+
 
 class DummyProjektSchemaService(_BaseDummySchemaService):
     """Stub service focused on Projekt dataset interactions."""
@@ -104,6 +116,7 @@ class DummyProjektSchemaService(_BaseDummySchemaService):
                     "is_multi_value": True,
                     "property_uri": uri,
                     "fk_relationship": {"target_dataset": "Projekt"},
+                    "widget": "TripleCreatorWidget",
                 }
                 for label, (slug, uri, _) in self.PROJECT_RELATION_FIELDS.items()
             },
@@ -250,7 +263,7 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     assert 'name="Wikidata-ID"' in content
     assert 'name="Andere Normdaten"' in content
     assert 'name="Externe Projektwebseite"' in content
-    assert 'name="projekt-hat-teil[]"' in content
+    assert 'id="triple-component-projekt-hat-teil"' in content
 
 
 @pytest.mark.django_db

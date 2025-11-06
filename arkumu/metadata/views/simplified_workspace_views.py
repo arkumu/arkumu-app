@@ -174,6 +174,13 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
 PROJECT_LINK_FIELD_NAME = "Verknüpftes Projekt"
 PROJECT_LINK_PROPERTY_URI = "http://arkumu.org/data/properties/verknuepftes-projekt"
 PROJECT_DATASET_NAME = "Projekt"
+PROJECT_TRIPLE_PREDICATE_SLUGS = {
+    "projekt-hat-teil",
+    "projekt-ist-teil-von",
+    "projekt-hat-bezug-zu",
+    "projekt-basiert-auf",
+    "projekt-ist-vorbereitend-fuer",
+}
 
 
 def _flatten_section_fields(section_config: List[Dict[str, Any]]) -> List[str]:
@@ -494,6 +501,7 @@ def _enrich_fk_metadata(
     field_metadata: Dict[str, Any],
     schema_service: SchemaWorkspaceService,
     dataset_name: str,
+    entity_uri: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Enrich FK field metadata with resolved labels and search URLs.
@@ -558,6 +566,82 @@ def _enrich_fk_metadata(
             meta["search_url"] = search_url
             meta["base_suggestion_url"] = base_url
             logger.info(f"🔍 FK field '{field.name}': search_url={search_url}, target_id={target_id}")
+
+        widget_name = str(meta.get("widget") or "")
+        if widget_name != "TripleCreatorWidget":
+            candidate_property_uris = [
+                meta.get("property_uri"),
+                fk_info.get("source_property_uri") if fk_info else None,
+                fk_info.get("source_canonical_property") if fk_info else None,
+            ]
+            normalized_candidates = {
+                str(uri)
+                for uri in candidate_property_uris
+                if uri
+            }
+            candidate_slugs = {
+                str(uri).rstrip("/").split("/")[-1]
+                for uri in normalized_candidates
+            }
+            if candidate_slugs.intersection(PROJECT_TRIPLE_PREDICATE_SLUGS) and target_dataset == "Projekt":
+                widget_name = "TripleCreatorWidget"
+                meta["widget"] = widget_name
+                meta["display_property"] = meta.get("display_property") or _select_display_property(meta)
+        if widget_name == "TripleCreatorWidget":
+            property_uri = (
+                meta.get("property_uri")
+                or fk_info.get("source_property_uri")
+                or fk_info.get("source_canonical_property")
+            )
+            slug = slugify(field.name) or field.name
+            list_id = f"triple-list-{slug}"
+            suggestions_id = f"triple-suggestions-{slug}"
+            input_id = f"triple-input-{slug}"
+            widget_context = {
+                "component": "triple_creator",
+                "field_name": field.name,
+                "mapping_id": schema_service.mapping.id,
+                "subject_uri": entity_uri or "",
+                "predicate_uri": property_uri or "",
+                "target_dataset": target_dataset or "",
+                "property_uri": property_uri or "",
+                "list_id": list_id,
+                "suggestions_id": suggestions_id,
+                "input_id": input_id,
+                "component_id": f"triple-component-{slug}",
+                "suggestions_url": reverse(
+                    "metadata:entity_workspace_triple_suggestions",
+                    args=[schema_service.mapping.id],
+                ),
+                "triples": [],
+                "disabled": not (entity_uri and property_uri),
+            }
+
+            if entity_uri and property_uri:
+                triples = schema_service.list_triple_relationships(
+                    subject_uri=entity_uri,
+                    predicate_uri=property_uri,
+                    target_dataset=target_dataset,
+                    display_property_uri=meta.get("display_property"),
+                )
+                widget_context["triples"] = triples
+
+            form.initial[field.name] = ""
+            if hasattr(field, "form"):
+                field.form.initial[field.name] = ""
+            if field.name in form.fields:
+                form.fields[field.name].initial = ""
+
+            fields_with_metadata.append({
+                "field": field,
+                "meta": meta,
+                "search_url": search_url,
+                "target_id": target_id,
+                "initial_labels": [],
+                "widget_context": widget_context,
+                "rows": [],
+            })
+            continue
 
         # Prepare data for multi-value FK fields using legacy relationship rows
         initial_labels: List[Dict[str, str]] = []
@@ -939,6 +1023,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             field_metadata=field_metadata,
             schema_service=schema_service,
             dataset_name=dataset_name,
+            entity_uri=entity_uri,
         )
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
@@ -1002,6 +1087,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             field_metadata=field_metadata,
             schema_service=schema_service,
             dataset_name=dataset_name,
+            entity_uri=entity_uri,
         )
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
@@ -1168,6 +1254,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             field_metadata=field_metadata,
             schema_service=schema_service,
             dataset_name=dataset_name,
+            entity_uri=entity_uri,
         )
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
@@ -1229,6 +1316,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             field_metadata=field_metadata,
             schema_service=schema_service,
             dataset_name=dataset_name,
+            entity_uri=entity_uri,
         )
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")

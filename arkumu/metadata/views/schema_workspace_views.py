@@ -2959,6 +2959,154 @@ class RelationshipRowView(LoginRequiredMixin, View):
         return HttpResponse("")
 
 
+class TripleRelationshipSuggestionsView(LoginRequiredMixin, View):
+    """Return candidate objects for canonical triple relationships."""
+
+    def get(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        subject_uri = request.GET.get("subject_uri", "").strip()
+        predicate_uri = request.GET.get("predicate_uri", "").strip()
+        target_dataset = request.GET.get("target_dataset", "").strip()
+        property_uri = request.GET.get("property_uri") or None
+        field_name = request.GET.get("field_name", "").strip()
+        suggestions_id = request.GET.get("suggestions_id", "").strip()
+        input_id = request.GET.get("input_id", "").strip()
+        query = request.GET.get("q", "").strip()
+        list_id = request.GET.get("list_id", "").strip() or f"triple-list-{field_name}"
+
+        if not subject_uri or not predicate_uri or not target_dataset or not field_name:
+            return HttpResponseBadRequest("Missing subject_uri, predicate_uri, target_dataset, or field_name")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+
+        suggestions = service.suggest_triple_targets(
+            target_dataset=target_dataset,
+            query=query,
+            property_uri=property_uri,
+        )
+
+        context = {
+            "suggestions": suggestions,
+            "mapping_id": mapping_id,
+            "field_name": field_name,
+            "subject_uri": subject_uri,
+            "predicate_uri": predicate_uri,
+            "target_dataset": target_dataset,
+            "property_uri": property_uri or "",
+            "suggestions_id": suggestions_id,
+            "input_id": input_id,
+            "list_id": list_id,
+            "suggestion_url": request.get_full_path(),
+        }
+        return render(
+            request,
+            "metadata/entity_editing/partials/_triple_suggestions.html",
+            context,
+        )
+
+
+class TripleRelationshipManageView(LoginRequiredMixin, View):
+    """Create or delete canonical triple relationships via HTMX."""
+
+    def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        subject_uri = request.POST.get("subject_uri", "").strip()
+        predicate_uri = request.POST.get("predicate_uri", "").strip()
+        object_uri = request.POST.get("object_uri", "").strip()
+        target_dataset = request.POST.get("target_dataset", "").strip()
+        property_uri = request.POST.get("property_uri") or None
+        field_name = request.POST.get("field_name", "").strip()
+        list_id = request.POST.get("list_id", "").strip()
+
+        if not subject_uri or not predicate_uri or not object_uri or not field_name:
+            return HttpResponseBadRequest("Missing subject_uri, predicate_uri, object_uri, or field_name")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+
+        success, triple = service.create_triple_relationship(
+            subject_uri=subject_uri,
+            predicate_uri=predicate_uri,
+            object_uri=object_uri,
+        )
+        if not success or triple is None:
+            return HttpResponseBadRequest("Unable to create triple relationship")
+
+        triples = service.list_triple_relationships(
+            subject_uri=subject_uri,
+            predicate_uri=predicate_uri,
+            target_dataset=target_dataset or None,
+            display_property_uri=property_uri,
+        )
+
+        context = {
+            "triples": triples,
+            "field_name": field_name,
+            "list_id": list_id or f"triple-list-{field_name}",
+            "mapping_id": mapping_id,
+            "subject_uri": subject_uri,
+            "predicate_uri": predicate_uri,
+            "target_dataset": target_dataset,
+            "property_uri": property_uri or "",
+        }
+        html = render_to_string(
+            "metadata/entity_editing/partials/_triple_list.html",
+            context,
+            request=request,
+        )
+        return HttpResponse(html)
+
+    def delete(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        subject_uri = request.GET.get("subject_uri", "").strip()
+        predicate_uri = request.GET.get("predicate_uri", "").strip()
+        object_uri = request.GET.get("object_uri", "").strip()
+        target_dataset = request.GET.get("target_dataset", "").strip()
+        property_uri = request.GET.get("property_uri") or None
+        field_name = request.GET.get("field_name", "").strip()
+        list_id = request.GET.get("list_id", "").strip()
+
+        if not subject_uri or not predicate_uri or not object_uri or not field_name:
+            return HttpResponseBadRequest("Missing subject_uri, predicate_uri, object_uri, or field_name")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+
+        service.delete_triple_relationship(
+            subject_uri=subject_uri,
+            predicate_uri=predicate_uri,
+            object_uri=object_uri,
+        )
+
+        triples = service.list_triple_relationships(
+            subject_uri=subject_uri,
+            predicate_uri=predicate_uri,
+            target_dataset=target_dataset or None,
+            display_property_uri=property_uri,
+        )
+
+        context = {
+            "triples": triples,
+            "field_name": field_name,
+            "list_id": list_id or f"triple-list-{field_name}",
+            "mapping_id": mapping_id,
+            "subject_uri": subject_uri,
+            "predicate_uri": predicate_uri,
+            "target_dataset": target_dataset,
+            "property_uri": property_uri or "",
+        }
+        html = render_to_string(
+            "metadata/entity_editing/partials/_triple_list.html",
+            context,
+            request=request,
+        )
+        return HttpResponse(html)
+
+
 class RelationshipRowsView(LoginRequiredMixin, View):
     """
     HTMX endpoint for re-rendering all relationship rows when property changes.

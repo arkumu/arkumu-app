@@ -33,7 +33,14 @@ class CreatePromotedSchemaManifestTests(TestCase):
 
         schema_manifest = promoted_config["schema_manifest"]
         projekt_fk = schema_manifest["Projekt"]["fk_relationships"]
-        self.assertTrue(any(entry["source_column"] == "Projekt hat Teil" for entry in projekt_fk))
+        self.assertTrue(any(entry["source_column"] == "projekt-hat-teil" for entry in projekt_fk))
+
+        projekt_properties = schema_manifest["Projekt"]["properties"]
+        self.assertIn("projekt-hat-teil", projekt_properties)
+
+        column_metadata = schema_manifest["Projekt"]["column_metadata"]
+        self.assertIn("projekt-hat-teil", column_metadata)
+        self.assertTrue(column_metadata["projekt-hat-teil"]["is_multi_value"])
 
     def test_idempotent(self):
         call_command("create_promoted_schema_manifest", "--organization", "test")

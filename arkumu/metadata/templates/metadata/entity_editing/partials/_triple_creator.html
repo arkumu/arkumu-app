@@ -1,0 +1,28 @@
+<div id="{{ triple_context.component_id }}" class="space-y-3">
+  {% include "metadata/entity_editing/partials/_triple_list.html" with triples=triple_context.triples field_name=triple_context.field_name list_id=triple_context.list_id mapping_id=triple_context.mapping_id subject_uri=triple_context.subject_uri predicate_uri=triple_context.predicate_uri target_dataset=triple_context.target_dataset property_uri=triple_context.property_uri %}
+
+  <div class="space-y-2">
+    <label class="label p-0" for="{{ triple_context.input_id }}">
+      <span class="label-text text-sm font-medium">Neuen Eintrag hinzufügen</span>
+    </label>
+    <input type="text"
+           id="{{ triple_context.input_id }}"
+           name="q"
+           class="input input-bordered w-full"
+           placeholder="Nach Datensätzen suchen…"
+           autocomplete="off"
+           {% if triple_context.disabled %}
+             disabled
+           {% else %}
+             hx-get="{{ triple_context.suggestions_url }}"
+             hx-trigger="input changed delay:250ms"
+             hx-target="#{{ triple_context.suggestions_id }}"
+             hx-vals='{"subject_uri": "{{ triple_context.subject_uri|escapejs }}", "predicate_uri": "{{ triple_context.predicate_uri|escapejs }}", "target_dataset": "{{ triple_context.target_dataset|escapejs }}", "property_uri": "{{ triple_context.property_uri|escapejs }}", "field_name": "{{ triple_context.field_name|escapejs }}", "list_id": "{{ triple_context.list_id|escapejs }}", "suggestions_id": "{{ triple_context.suggestions_id|escapejs }}", "input_id": "{{ triple_context.input_id|escapejs }}"}'
+           {% endif %}>
+    {% if triple_context.disabled %}
+      <p class="text-xs text-base-content/60 mt-1">Bitte speichere den Datensatz, bevor Verknüpfungen hinzugefügt werden.</p>
+    {% endif %}
+  </div>
+
+  <div id="{{ triple_context.suggestions_id }}" class="space-y-1"></div>
+</div>

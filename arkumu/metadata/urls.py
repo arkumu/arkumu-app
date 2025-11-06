@@ -174,6 +174,8 @@ urlpatterns = [
     path('workspace/legacy/<uuid:mapping_id>/search/', schema_workspace_views.EntitySearchView.as_view(), name='entity_workspace_search'),
     path('workspace/legacy/<uuid:mapping_id>/relationship-row/', schema_workspace_views.RelationshipRowView.as_view(), name='entity_workspace_relationship_row'),
     path('workspace/legacy/<uuid:mapping_id>/relationship-rows/', schema_workspace_views.RelationshipRowsView.as_view(), name='entity_workspace_relationship_rows'),
+    path('workspace/legacy/<uuid:mapping_id>/triple-suggestions/', schema_workspace_views.TripleRelationshipSuggestionsView.as_view(), name='entity_workspace_triple_suggestions'),
+    path('workspace/legacy/<uuid:mapping_id>/triple/', schema_workspace_views.TripleRelationshipManageView.as_view(), name='entity_workspace_triple_manage'),
     path('workspace/legacy/<uuid:mapping_id>/select-suggestion/', schema_workspace_views.RelationshipSelectSuggestionView.as_view(), name='entity_workspace_select_suggestion'),
     path('workspace/legacy/<uuid:mapping_id>/flow/', schema_workspace_views.SchemaWorkspaceFlowView.as_view(), name='entity_workspace_flow'),
 

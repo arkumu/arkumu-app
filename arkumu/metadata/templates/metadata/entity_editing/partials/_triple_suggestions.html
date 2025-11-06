@@ -1,0 +1,28 @@
+{% if suggestions %}
+<div class="border border-base-300 rounded-lg shadow-sm bg-base-100">
+  <div class="flex justify-between items-center px-3 py-2 border-b border-base-200">
+    <span class="text-xs uppercase tracking-wide text-base-content/60">Vorschläge</span>
+    <button type="button"
+            class="btn btn-ghost btn-xs"
+            onclick="const target = document.getElementById('{{ suggestions_id }}'); if (target) { target.innerHTML=''; }">
+      Schließen
+    </button>
+  </div>
+  <ul class="menu menu-sm p-2 space-y-1">
+    {% for suggestion in suggestions %}
+      <li>
+        <button type="button"
+                class="btn btn-outline btn-xs justify-start w-full text-left"
+                hx-post="{% url 'metadata:entity_workspace_triple_manage' mapping_id %}"
+                hx-vals='{"subject_uri": "{{ subject_uri|escapejs }}", "predicate_uri": "{{ predicate_uri|escapejs }}", "object_uri": "{{ suggestion.uri|escapejs }}", "target_dataset": "{{ target_dataset|escapejs }}", "property_uri": "{{ property_uri|escapejs }}", "field_name": "{{ field_name|escapejs }}", "list_id": "{{ list_id|escapejs }}"}'
+                hx-target="#{{ list_id }}"
+                hx-swap="outerHTML"
+                hx-on:htmx:afterRequest="const target = document.getElementById('{{ suggestions_id }}'); if(target){target.innerHTML='';} const inputEl = document.getElementById('{{ input_id }}'); if(inputEl){inputEl.value='';}"
+                title="{{ suggestion.uri }}">
+          <span class="truncate">{{ suggestion.label }}</span>
+        </button>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
