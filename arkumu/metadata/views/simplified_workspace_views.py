@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import render
 from django.template.loader import render_to_string
+from django.db.models import Q
 from django.utils.text import slugify
 from django.views import View
 from django.views.decorators.http import require_http_methods
@@ -28,6 +29,8 @@ from arkumu.metadata.schema_workspace import (
 from arkumu.metadata.services.entity_label_service import infer_entity_label as _infer_entity_label
 from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.users.models import Organization
+from arkumu.storage.models import S3FileObject
+from arkumu.metadata.models.resource import Resource
 
 logger = logging.getLogger(__name__)
 
@@ -561,6 +564,142 @@ def _select_display_property(meta: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _resolve_preview_file_metadata(
+    *,
+    selected_uri: str,
+    organization_code: Optional[str],
+    fallback_label: str = "",
+) -> Tuple[str, str]:
+    """Return (label, key) for a verified S3 file linked to the URI."""
+
+    if not selected_uri:
+        return "", ""
+
+    queryset = (
+        S3FileObject.objects.filter(
+            status="verified",
+            s3_key=selected_uri,
+        )
+        .order_by("-updated_at", "-created_at")
+    )
+
+    if organization_code:
+        queryset = queryset.filter(
+            Q(organization__iexact=organization_code)
+            | Q(related_resource__organization__code__iexact=organization_code)
+        )
+
+    file_obj = queryset.first()
+    if not file_obj:
+        return fallback_label, ""
+
+    label = file_obj.file_name or fallback_label or file_obj.s3_key
+    return label or fallback_label, file_obj.s3_key or selected_uri
+
+
+def _extract_single_uri(value: Union[str, Dict[str, Any], List[Any], None]) -> str:
+    """Normalize various form value representations to a single URI string."""
+
+    if not value:
+        return ""
+
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return ""
+        if trimmed.startswith("["):
+            try:
+                parsed = json.loads(trimmed)
+            except json.JSONDecodeError:
+                return trimmed
+            return _extract_single_uri(parsed)
+        return trimmed
+
+    if isinstance(value, dict):
+        uri = value.get("uri") or value.get("value")
+        return str(uri or "").strip()
+
+    if isinstance(value, list):
+        for item in value:
+            candidate = _extract_single_uri(item)
+            if candidate:
+                return candidate
+        return ""
+
+    return str(value).strip()
+
+
+def _get_preview_field_name(fields_with_metadata: List[Dict[str, Any]]) -> Optional[str]:
+    for item in fields_with_metadata:
+        preview_meta = item.get("meta", {}).get("preview_picker")
+        if preview_meta:
+            return preview_meta.get("field_name") or getattr(item.get("field"), "name", None)
+    return None
+
+
+def _update_project_preview_link(
+    *,
+    project_uri: str,
+    preview_key: str,
+    organization_code: Optional[str],
+) -> None:
+    """Ensure the selected S3 object is linked to the project resource."""
+
+    logger.info(
+        "📷 Preview link requested | project=%s | key=%s | org=%s",
+        project_uri,
+        preview_key,
+        organization_code,
+    )
+
+    if not project_uri:
+        logger.info("📷 Preview link skipped: missing project URI")
+        return
+
+    project_resource = Resource.objects.filter(uri=project_uri).first()
+    if project_resource is None:
+        logger.warning("📷 Preview link skipped: project resource %s not found", project_uri)
+        return
+
+    # Clear previous links that no longer match
+    stale_queryset = S3FileObject.objects.filter(related_resource=project_resource)
+    if preview_key:
+        stale_queryset = stale_queryset.exclude(s3_key=preview_key)
+    stale_count = stale_queryset.update(related_resource=None)
+    if stale_count:
+        logger.info("📷 Cleared %s stale preview link(s) for %s", stale_count, project_uri)
+
+    if not preview_key:
+        logger.info("📷 Preview cleared for %s", project_uri)
+        return
+
+    file_obj = (
+        S3FileObject.objects.filter(status="verified", s3_key=preview_key)
+        .order_by("-updated_at", "-created_at")
+        .first()
+    )
+
+    if file_obj is None:
+        logger.warning("📷 Preview link skipped: verified S3 key %s not found", preview_key)
+        return
+
+    update_fields = ["related_resource"]
+    if organization_code:
+        new_org = organization_code.lower()
+        if file_obj.organization != new_org:
+            file_obj.organization = new_org
+            update_fields.append("organization")
+
+    file_obj.related_resource = project_resource
+    file_obj.save(update_fields=update_fields)
+    logger.info(
+        "📷 Preview linked | file=%s | project=%s | org=%s",
+        file_obj.s3_key,
+        project_uri,
+        file_obj.organization,
+    )
+
+
 def _enrich_fk_metadata(
     form: DatasetEntityForm,
     field_metadata: Dict[str, Any],
@@ -599,6 +738,45 @@ def _enrich_fk_metadata(
         meta.setdefault("resolved_label", "")
         meta.setdefault("resolved_uri", "")
         meta["use_single_fk_widget"] = False
+
+        field_slug = slugify(field.name or "")
+        if field_slug in {"vorschaubild", "vorschaubild_uri"}:
+            organization = getattr(schema_service, "organization", None)
+            org_code = getattr(organization, "code", None)
+            raw_value = form.data.get(field.name) if form.is_bound else None
+            if not raw_value:
+                raw_value = form.initial.get(field.name, field.value())
+            selected_uri = _extract_single_uri(raw_value)
+            fallback_label = meta.get("resolved_label") or ""
+            label, key = _resolve_preview_file_metadata(
+                selected_uri=selected_uri,
+                organization_code=org_code,
+                fallback_label=fallback_label,
+            )
+
+            meta["preview_picker"] = {
+                "selected_uri": selected_uri,
+                "selected_label": label,
+                "selected_key": key,
+                "organization_code": org_code or "",
+                "field_name": field.name,
+            }
+            meta["input_id"] = field.auto_id or f"id_{slugify(field.name) or index}"
+            meta["target_id"] = None
+            meta["search_url"] = None
+
+            fields_with_metadata.append(
+                {
+                    "field": field,
+                    "meta": meta,
+                    "search_url": None,
+                    "target_id": None,
+                    "initial_labels": [],
+                    "widget_context": None,
+                    "rows": [],
+                }
+            )
+            continue
 
         # Build search properties for target dataset
         if target_dataset:
@@ -1285,6 +1463,16 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                         related_uris=related_uris,
                     )
 
+                preview_field_name = _get_preview_field_name(fields_with_metadata)
+                preview_key = ""
+                if preview_field_name:
+                    preview_key = form.cleaned_data.get(preview_field_name, "") or ""
+                _update_project_preview_link(
+                    project_uri=saved_uri,
+                    preview_key=preview_key,
+                    organization_code=schema_service.organization.code,
+                )
+
                 logger.info(f"✅ Saved project: {saved_uri} (created={created})")
 
                 # Redirect back to metadata entry
@@ -1537,12 +1725,21 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
 
                 # Set visibility on the Resource
                 visibility = request.POST.get("visibility", "private")
-                from arkumu.metadata.models.resource import Resource
                 resource = Resource.objects.filter(uri=saved_uri).first()
                 if resource:
                     resource.public_access_level = visibility
                     resource.save()
                     logger.info(f"✅ Set visibility to {visibility} for {saved_uri}")
+
+                preview_field_name = _get_preview_field_name(fields_with_metadata)
+                preview_key = ""
+                if preview_field_name:
+                    preview_key = form.cleaned_data.get(preview_field_name, "") or ""
+                _update_project_preview_link(
+                    project_uri=saved_uri,
+                    preview_key=preview_key,
+                    organization_code=schema_service.organization.code,
+                )
 
                 logger.info(f"✅ Created project: {saved_uri}")
 

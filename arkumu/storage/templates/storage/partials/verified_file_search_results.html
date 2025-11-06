@@ -1,0 +1,33 @@
+{% load i18n %}
+
+{% if error %}
+  <div class="alert alert-warning text-sm">{{ error }}</div>
+{% elif files %}
+  <ul class="menu bg-base-100 rounded-box border border-base-300 max-h-60 overflow-y-auto">
+    {% for file in files %}
+      <li>
+        <button type="button"
+                class="w-full text-left px-3 py-2 hover:bg-base-200 rounded-lg transition flex flex-col gap-1 {% if file.s3_key == selected_value %}bg-primary/10{% endif %}"
+                data-preview-option
+                data-preview-uri="{{ file.s3_key }}"
+                data-preview-label="{{ file.file_name|default:file.s3_key }}"
+                data-preview-key="{{ file.s3_key }}"
+                data-preview-input="{{ input_id }}">
+          <span class="font-medium text-sm truncate">{{ file.file_name|default:file.s3_key }}</span>
+          <span class="text-xs text-base-content/70 truncate">{{ file.s3_key }}</span>
+          {% if file.original_path %}
+            <span class="text-xs text-base-content/50 truncate">{{ file.original_path }}</span>
+          {% endif %}
+        </button>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="text-sm text-base-content/70 py-4 text-center">
+    {% if query %}
+      {% blocktrans %}Keine Treffer für „{{ query }}“.{% endblocktrans %}
+    {% else %}
+      {% trans "Keine verifizierten Dateien gefunden." %}
+    {% endif %}
+  </div>
+{% endif %}

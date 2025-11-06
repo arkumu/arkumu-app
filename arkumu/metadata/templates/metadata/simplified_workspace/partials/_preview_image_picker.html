@@ -1,0 +1,179 @@
+{% load i18n %}
+
+{% with picker=meta.preview_picker %}
+  {% with picker_id=field.id_for_label|add:"-picker" %}
+    {% with results_id=field.id_for_label|add:"-results" %}
+      <div class="space-y-2"
+           id="{{ picker_id }}"
+           data-preview-picker
+           data-preview-hidden-id="{{ field.id_for_label }}"
+           data-preview-initial-uri="{{ picker.selected_uri|default:''|escape }}"
+           data-preview-initial-label="{{ picker.selected_label|default:''|escape }}"
+           data-preview-initial-key="{{ picker.selected_key|default:''|escape }}">
+        {{ field.as_hidden }}
+        <input type="hidden" name="selected" value="{{ picker.selected_uri|default:''|escape }}" data-preview-selected>
+        <input type="hidden" name="input_id" value="{{ field.id_for_label }}">
+        {% if picker.organization_code %}
+          <input type="hidden" name="organization" value="{{ picker.organization_code }}">
+        {% endif %}
+
+        <div class="flex items-center gap-2">
+          <input type="search"
+                 name="q"
+                 class="input input-bordered input-sm flex-1"
+         placeholder="{% trans 'S3-Key suchen' %}"
+                 hx-get="{% url 'storage:verified_file_search' %}"
+                 hx-trigger="input changed delay:300ms, search"
+                 hx-target="#{{ results_id }}"
+                 hx-indicator="#{{ picker_id }}-indicator"
+                 hx-include="#{{ picker_id }} [name]"
+                 hx-params="q,selected,input_id"
+                 autocomplete="off"
+                 data-preview-query>
+          <span id="{{ picker_id }}-indicator" class="htmx-indicator loading loading-spinner loading-xs"></span>
+        </div>
+
+        <div class="flex items-center justify-between text-xs text-base-content/60">
+          <div class="flex-1 truncate" data-preview-label></div>
+          <button type="button" class="btn btn-ghost btn-xs" data-preview-clear>{% trans "Auswahl entfernen" %}</button>
+        </div>
+
+        <div id="{{ results_id }}" class="space-y-1" data-preview-results></div>
+
+        {% if field.help_text %}
+          <div class="text-xs text-base-content/60">{{ field.help_text }}</div>
+        {% endif %}
+      </div>
+    {% endwith %}
+  {% endwith %}
+{% endwith %}
+
+<script>
+  (function () {
+    if (window.arkumuPreviewPickerInitialized) {
+      return;
+    }
+    window.arkumuPreviewPickerInitialized = true;
+
+    function setSummary(container, label, key) {
+      const labelNode = container.querySelector('[data-preview-label]');
+      if (!labelNode) {
+        return;
+      }
+      while (labelNode.firstChild) {
+        labelNode.removeChild(labelNode.firstChild);
+      }
+
+      const primary = label && label.trim();
+      const secondary = key && key.trim();
+
+      if (!primary && !secondary) {
+        const empty = document.createElement('span');
+        empty.className = 'italic text-base-content/50';
+        empty.textContent = 'Kein Vorschaubild ausgewählt';
+        labelNode.appendChild(empty);
+        return;
+      }
+
+      if (primary) {
+        const main = document.createElement('span');
+        main.className = 'font-medium';
+        main.textContent = primary;
+        labelNode.appendChild(main);
+      }
+
+      if (secondary) {
+        const secondarySpan = document.createElement('span');
+        secondarySpan.className = 'block text-base-content/60';
+        secondarySpan.textContent = secondary;
+        labelNode.appendChild(secondarySpan);
+      }
+    }
+
+    function attachPreviewPicker(container) {
+      if (!container || container.dataset.previewPickerAttached === 'true') {
+        return;
+      }
+      container.dataset.previewPickerAttached = 'true';
+
+      const hiddenId = container.dataset.previewHiddenId;
+      const hiddenInput = hiddenId ? document.getElementById(hiddenId) : null;
+      const selectedInput = container.querySelector('[data-preview-selected]');
+      const queryInput = container.querySelector('[data-preview-query]');
+      const resultsContainer = container.querySelector('[data-preview-results]');
+      const clearButton = container.querySelector('[data-preview-clear]');
+
+      function setSelection(uri, label, key) {
+        if (hiddenInput) {
+          hiddenInput.value = uri || '';
+        }
+        if (selectedInput) {
+          selectedInput.value = uri || '';
+        }
+        container.dataset.previewInitialUri = uri || '';
+        container.dataset.previewInitialLabel = label || '';
+        container.dataset.previewInitialKey = key || '';
+        setSummary(container, label, key || uri);
+      }
+
+      function clearSelection() {
+        setSelection('', '', '');
+        if (resultsContainer) {
+          resultsContainer.innerHTML = '';
+        }
+        if (queryInput) {
+          queryInput.value = '';
+        }
+      }
+
+      setSummary(
+        container,
+        container.dataset.previewInitialLabel || '',
+        container.dataset.previewInitialKey || container.dataset.previewInitialUri || ''
+      );
+      if (hiddenInput) {
+        hiddenInput.value = container.dataset.previewInitialUri || '';
+      }
+      if (selectedInput) {
+        selectedInput.value = container.dataset.previewInitialUri || '';
+      }
+
+      container.addEventListener('click', function (event) {
+        const option = event.target.closest('[data-preview-option]');
+        if (!option || !container.contains(option)) {
+          return;
+        }
+        event.preventDefault();
+        const uri = option.dataset.previewUri || '';
+        const label = option.dataset.previewLabel || '';
+        const key = option.dataset.previewKey || '';
+        setSelection(uri, label, key);
+        if (resultsContainer) {
+          resultsContainer.innerHTML = '';
+        }
+      });
+
+      if (clearButton) {
+        clearButton.addEventListener('click', function (event) {
+          event.preventDefault();
+          clearSelection();
+        });
+      }
+    }
+
+    function bootstrap(scope) {
+      const context = scope || document;
+      context.querySelectorAll('[data-preview-picker]').forEach(attachPreviewPicker);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      bootstrap(document);
+    });
+
+    if (window.htmx) {
+      document.body.addEventListener('htmx:afterSwap', function (event) {
+        bootstrap(event.target);
+      });
+    }
+  })();
+</script>

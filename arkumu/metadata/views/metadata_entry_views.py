@@ -39,6 +39,11 @@ class MetadataEntryMixin(BaseCoordinatorMixin, MetadataEditorMixin, CSVMappingTe
         raw_code = request.POST.get("organization") or request.GET.get("organization")
         if raw_code and raw_code.lower() in self.allowed_org_codes:
             return raw_code.lower()
+        session_org = self.get_current_organization(request)
+        if session_org:
+            code = (session_org.get("code") or "").lower()
+            if code in self.allowed_org_codes:
+                return code
         user_org = getattr(request.user, "organization", None)
         if user_org and user_org.code in self.allowed_org_codes:
             return user_org.code

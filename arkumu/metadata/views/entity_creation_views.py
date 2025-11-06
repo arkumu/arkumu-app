@@ -27,6 +27,16 @@ from arkumu.users.models import Organization
 logger = logging.getLogger(__name__)
 
 BASE_URI = "http://arkumu.org/data"
+
+
+def _choice_label(bound_field, value: str | None) -> str:
+    if not value:
+        return ""
+    choices = getattr(bound_field.field, "choices", [])
+    for option_value, option_label in choices:
+        if option_value == value:
+            return str(option_label)
+    return ""
 def get_properties(org_code):
     return {
     "Projekt":{
@@ -799,6 +809,10 @@ def create_project(request):
                 form_kwargs={"metadata_options": metadata_options},
             )
 
+        preview_field = project_form["vorschaubild_uri"]
+        preview_uri = preview_field.value()
+        preview_label = _choice_label(preview_field, preview_uri)
+
         return render(
             request,
             "metadata/entity_creation/create_project.html",
@@ -808,6 +822,8 @@ def create_project(request):
                 "entity_type": "project",
                 "title": "Create New Project",
                 "description": "Fill in the details to create a new archival project",
+                "preview_image_uri": preview_uri or "",
+                "preview_image_label": preview_label,
             },
         )
 
@@ -1398,6 +1414,10 @@ def edit_project(request):
             mode=ProjectForm.MODE_EDIT,
         )
 
+    preview_field = project_form["vorschaubild_uri"]
+    preview_uri = preview_field.value()
+    preview_label = _choice_label(preview_field, preview_uri)
+
     return render(
         request,
         "metadata/entity_editing/edit_project.html",
@@ -1406,6 +1426,8 @@ def edit_project(request):
             "entity_type": "project",
             "title": "Projekt bearbeiten",
             "description": "Felder ausfüllen, um das Projekt zu aktualisieren.",
+            "preview_image_uri": preview_uri or "",
+            "preview_image_label": preview_label,
         },
     )
 
