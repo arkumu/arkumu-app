@@ -98,7 +98,7 @@ class DatasetEntityForm(forms.Form):
                 required=required,
                 widget=forms.TextInput(
                     attrs={
-                        "class": "input input-bordered",
+                        "class": "input input-bordered w-full",
                         "data-column": column_name,
                         "data-column-type": meta.get("column_type"),
                     }

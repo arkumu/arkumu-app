@@ -238,6 +238,9 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     )
     assert response.status_code == 200
     content = response.content.decode()
+    assert 'tabs tabs-bordered' in content
+    assert 'role="tab"' in content
+    assert 'role="tabpanel"' in content
     assert 'name="Projektart"' in content
     assert 'data-multi-value="true"' in content
     assert 'data-htmx-multi-select' not in content
@@ -329,6 +332,9 @@ def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_e
     )
     assert response.status_code == 200
     content = response.content.decode()
+    assert 'tabs tabs-bordered' in content
+    assert 'role="tab"' in content
+    assert 'role="tabpanel"' in content
     assert 'name="Ereignistyp"' in content
     assert 'data-multi-value="true"' in content
     assert 'data-htmx-multi-select' not in content
