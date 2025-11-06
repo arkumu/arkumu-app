@@ -490,6 +490,9 @@ OAI_EXTERNAL_ROSETTA_ROOTS = {
     ),
 }
 
+# Prefer promoted schema manifest (if present) when loading mappings for metadata UI
+METADATA_SCHEMA_MANIFEST_KEY = env("METADATA_SCHEMA_MANIFEST_KEY", default="promoted_manifest")
+
 _default_hmt_prefixes = env(
     "OAI_EXTERNAL_PATH_PREFIXES_HMT",
     default="/Volumes/18TB1,/rosetta/hfmt/sandbox/input/arkumu/daten",

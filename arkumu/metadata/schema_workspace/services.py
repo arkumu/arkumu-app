@@ -10,6 +10,7 @@ from urllib.parse import urlparse, urlencode
 
 from django.db import transaction
 from django.utils.text import slugify
+from django.conf import settings
 
 from arkumu.common.uri_utils import mint_uri, slugify_uri_part
 from arkumu.importer.services.schema_service import SchemaService
@@ -99,10 +100,13 @@ class SchemaWorkspaceService:
         self.mapping = mapping
         self.organization = organization
         self.base_uri = base_uri
+        schema_variant_key = getattr(settings, "METADATA_SCHEMA_MANIFEST_KEY", "promoted_manifest")
+
         self._schema_service = SchemaService(
             mapping_id=str(mapping.id),
             institution=organization.code,
             base_uri=base_uri,
+            schema_variant_key=schema_variant_key,
         )
         # Ensure processor and dataset blueprints are available once up front
         self._schema_service._ensure_schema_loaded()
