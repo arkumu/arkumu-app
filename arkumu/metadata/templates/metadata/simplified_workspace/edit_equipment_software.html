@@ -10,7 +10,7 @@
         <div class="flex items-center gap-4">
           <div class="p-4 rounded-2xl bg-primary/10">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v4h2m0 0h3m-3 0v6h5m4-10h5m0 0v4m0-4a2 2 0 00-2-2h-3m5 6h-3m3 0v6h-5" />
           </svg>
           </div>
           <div>
@@ -23,7 +23,7 @@
         </div>
         {% if entity_uri %}
         <div class="hidden lg:flex flex-col items-end gap-3 max-w-md">
-          <span class="badge badge-lg badge-outline">Ereignis-URI</span>
+          <span class="badge badge-lg badge-outline">Equipment &amp; Software-URI</span>
           <code class="text-sm font-mono break-all text-right text-base-content/80">{{ entity_uri }}</code>
         </div>
         {% endif %}
@@ -31,7 +31,7 @@
 
       {% if entity_uri %}
       <div class="lg:hidden text-sm text-base-content/70 leading-relaxed">
-        <span class="font-semibold">Ereignis-URI:</span>
+        <span class="font-semibold">Equipment &amp; Software-URI:</span>
         <code class="block font-mono break-all mt-1 text-base-content/80">{{ entity_uri }}</code>
       </div>
       {% endif %}
@@ -41,7 +41,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <span>Fehler beim Laden der Ereignisdaten.</span>
+        <span>Fehler beim Laden der technischen Ressource.</span>
       </div>
       {% endif %}
 
@@ -58,7 +58,7 @@
         {% csrf_token %}
         <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
 
-        {% include "metadata/simplified_workspace/partials/_tabbed_sections.html" with sections=tab_sections tab_group_name="event-sections" %}
+        {% include "metadata/simplified_workspace/partials/_tabbed_sections.html" with sections=tab_sections tab_group_name="equipment-software-sections" %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a href="{{ metadata_entry_return_url|default:metadata_entry_default_url }}" class="btn btn-outline">

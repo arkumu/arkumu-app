@@ -365,7 +365,7 @@ urlpatterns = [
     path('create/event/', entity_creation_views.create_event, name='create_event'),
     path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
     path('create/role/', entity_creation_views.create_role, name='create_role'),
-    path('create/digital-object/', entity_creation_views.create_digital_object, name='create_digital_object'),
+    path('create/digital-object/legacy/', entity_creation_views.create_digital_object, name='create_digital_object_old'),
     path('create/institution/', entity_creation_views.create_institution, name='create_institution'),
     path('create/project-category/', entity_creation_views.create_project_category, name='create_project_category'),
     path('create/project-type/', entity_creation_views.create_project_type, name='create_project_type'),
@@ -378,12 +378,18 @@ urlpatterns = [
     path('create/project/', simplified_workspace_views.SimplifiedProjectCreateView.as_view(), name='create_project'),
     path('create/ereignis/', simplified_workspace_views.SimplifiedEreignisCreateView.as_view(), name='create_ereignis'),
     path('create/akteur/', simplified_workspace_views.SimplifiedAkteurCreateView.as_view(), name='create_akteur'),
+    path('create/ort/', simplified_workspace_views.SimplifiedOrtCreateView.as_view(), name='create_ort'),
+    path('create/digital-object/', simplified_workspace_views.SimplifiedDigitalesObjektCreateView.as_view(), name='create_digital_object'),
+    path('create/equipment-software/', simplified_workspace_views.SimplifiedEquipmentSoftwareCreateView.as_view(), name='create_equipment_software'),
 
     # Entity edit endpoints
     # New simplified workspace views (uses legacy infrastructure with subset of fields)
     path('edit/project/', simplified_workspace_views.SimplifiedProjectEditView.as_view(), name='edit_project'),
     path('edit/ereignis/', simplified_workspace_views.SimplifiedEreignisEditView.as_view(), name='edit_ereignis'),
     path('edit/akteur/', simplified_workspace_views.SimplifiedAkteurEditView.as_view(), name='edit_akteur'),
+    path('edit/ort/', simplified_workspace_views.SimplifiedOrtEditView.as_view(), name='edit_ort'),
+    path('edit/digital-object/', simplified_workspace_views.SimplifiedDigitalesObjektEditView.as_view(), name='edit_digital_object'),
+    path('edit/equipment-software/', simplified_workspace_views.SimplifiedEquipmentSoftwareEditView.as_view(), name='edit_equipment_software'),
     path(
         'edit/ereignis/actor-card/',
         simplified_workspace_views.ActorParticipationCardView.as_view(),
@@ -396,7 +402,7 @@ urlpatterns = [
     path('edit/event/', entity_creation_views.edit_event, name='edit_event'),
     path('edit/actor/', entity_creation_views.edit_actor, name='edit_actor'),
     path('edit/role/', entity_creation_views.edit_role, name='edit_role'),
-    path('edit/digital-object/', entity_creation_views.edit_digital_object, name='edit_digital_object'),
+    path('edit/digital-object/legacy/', entity_creation_views.edit_digital_object, name='edit_digital_object_old'),
     path('edit/institution/', entity_creation_views.edit_institution, name='edit_institution'),
     path('edit/project-category/', entity_creation_views.edit_project_category, name='edit_project_category'),
     path('edit/project-type/', entity_creation_views.edit_project_type, name='edit_project_type'),

@@ -65,8 +65,8 @@
             </a></li>
             <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">Mapping Editor</a></li>
             <li><a href="{% url 'metadata:data_explorer' %}" class="{% if current_url_name == 'data_explorer' %}active{% endif %}">Metadata Explorer</a></li>
-            <li><a href="{% url 'metadata:create_project' %}"
-                   class="{% if current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
+            <li><a href="{% url 'metadata:metadata_entry' %}"
+                   class="{% if current_url_name in 'metadata_entry metadata_entry_section metadata_entry_submit metadata_entry_latest create_project create_event create_actor create_ort create_role create_digital_object create_equipment_software create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
               Metadata Workspace
             </a></li>
             <li><a href="{% url 'metadata:controlled_vocab_overview' %}"
@@ -100,8 +100,8 @@
           </a></li>
           <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">Mapping Editor</a></li>
           <li><a href="{% url 'metadata:data_explorer' %}" class="{% if current_url_name == 'data_explorer' %}active{% endif %}">Metadata Explorer</a></li>
-          <li><a href="{% url 'metadata:create_project' %}"
-                 class="{% if current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
+          <li><a href="{% url 'metadata:metadata_entry' %}"
+                 class="{% if current_url_name in 'metadata_entry metadata_entry_section metadata_entry_submit metadata_entry_latest create_project create_event create_actor create_ort create_role create_digital_object create_equipment_software create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
             Metadata Workspace
           </a></li>
           <li><a href="{% url 'metadata:controlled_vocab_overview' %}"
@@ -189,7 +189,7 @@
   </div>
 
   {# Keep first sub-navbar (entity create shortcuts), remove only the second line #}
-  {% if request.user.is_authenticated and current_namespace == 'metadata' and current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}
+{% if request.user.is_authenticated and current_namespace == 'metadata' and current_url_name in 'create_project create_event create_actor create_ort create_role create_digital_object create_equipment_software create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}
   <div class="bg-base-200 border-b border-base-300">
     <div class="max-w-7xl mx-auto px-4">
       <div class="flex flex-wrap gap-2 py-3">
@@ -205,9 +205,17 @@
            class="btn btn-sm {% if current_url_name == 'create_actor' %}btn-primary{% else %}btn-outline{% endif %}">
           Actor
         </a>
+        <a href="{% url 'metadata:create_ort' %}"
+           class="btn btn-sm {% if current_url_name == 'create_ort' %}btn-primary{% else %}btn-outline{% endif %}">
+          Ort
+        </a>
         <a href="{% url 'metadata:create_digital_object' %}"
            class="btn btn-sm {% if current_url_name == 'create_digital_object' %}btn-primary{% else %}btn-outline{% endif %}">
           Digital Object
+        </a>
+        <a href="{% url 'metadata:create_equipment_software' %}"
+           class="btn btn-sm {% if current_url_name == 'create_equipment_software' %}btn-primary{% else %}btn-outline{% endif %}">
+          Equipment &amp; Software
         </a>
         <a href="{% url 'metadata:create_alternate_title' %}"
            class="btn btn-sm {% if current_url_name == 'create_alternate_title' %}btn-primary{% else %}btn-outline{% endif %}">

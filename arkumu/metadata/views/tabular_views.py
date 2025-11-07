@@ -1263,6 +1263,9 @@ def _build_rows_for_subjects(
         'akteur': 'metadata:edit_akteur',
         'actor': 'metadata:edit_actor',
         'digital_object': 'metadata:edit_digital_object',
+        'digitales_objekt': 'metadata:edit_digital_object',
+        'equipment_software': 'metadata:edit_equipment_software',
+        'ort': 'metadata:edit_ort',
     }
     entity_param_map = {
         'project': 'project',
@@ -1271,6 +1274,9 @@ def _build_rows_for_subjects(
         'akteur': 'akteur',
         'actor': 'akteur',
         'digital_object': 'digitales_objekt',
+        'digitales_objekt': 'digitales_objekt',
+        'equipment_software': 'equipment_software',
+        'ort': 'ort',
     }
     add_actions = entity_type in edit_url_names
 

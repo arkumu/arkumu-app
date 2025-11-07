@@ -1,15 +1,7 @@
-{% extends "base.html" %}
+{% extends "metadata/simplified_workspace/base_form.html" %}
 {% load static %}
 
-{% block container_type %}
-<div class="w-full py-6">
-{% endblock container_type %}
-
-{% block container_type_end %}
-</div>
-{% endblock container_type_end %}
-
-{% block content %}
+{% block simplified_content %}
 {% url 'metadata:metadata_entry' as metadata_entry_default_url %}
 <div class="w-full px-2 sm:px-4 lg:px-6 xl:px-10 py-6">
   <div class="card bg-base-100 shadow-2xl border border-base-300 rounded-2xl w-full max-w-none">
@@ -86,4 +78,4 @@
     </div>
   </div>
 </div>
-{% endblock content %}
+{% endblock simplified_content %}

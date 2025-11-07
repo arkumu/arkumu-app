@@ -13,6 +13,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from django import forms
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
@@ -343,6 +344,171 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                 "Wikidata-ID",
                 "Webseite der AkteurIn",
                 "Andere Normdaten",
+            ],
+        },
+    ],
+    "Ort": [
+        {
+            "key": "grundinformationen",
+            "title": "Grundinformationen",
+            "badge": "Name & Lage",
+            "fields": [
+                "Deutscher Name des Ortes",
+                {
+                    "name": "Englischer Name des Ortes",
+                    "label": "Englischer Name",
+                },
+                "Kategorie",
+                "Neuer Ort",
+                "Parent",
+                "Children",
+            ],
+        },
+        {
+            "key": "geodaten",
+            "title": "Geodaten",
+            "badge": "Koordinaten",
+            "fields": [
+                "Latitude",
+                "Longitude",
+                "Hierarchie",
+            ],
+        },
+        {
+            "key": "kennungen",
+            "title": "Kennungen",
+            "badge": "Identifier",
+            "fields": [
+                "Ort-ID",
+                "GND-Nummer",
+                "VIAF-ID",
+                "Wikidata-ID",
+                "BreadcrumbEntries",
+            ],
+        },
+    ],
+    "Digitales_Objekt": [
+        {
+            "key": "basis",
+            "title": "Basisdaten",
+            "badge": "Datei & Typ",
+            "fields": [
+                "Digitales Objekt-ID",
+                "Dateiname",
+                "Dateipfad",
+                "Medientyp",
+                "Objekttyp",
+                "Entstehung",
+                "Einlieferer",
+                "Dateipaket",
+            ],
+        },
+        {
+            "key": "beschreibung",
+            "title": "Beschreibung",
+            "badge": "Inhalte",
+            "fields": [
+                "Deutsche inhaltliche Beschreibung",
+                "Englische inhaltliche Beschreibung",
+                "Bildbeschreibung (deutsch)",
+                "Bildbeschreibung (englisch)",
+                "Deutscher Kommentar",
+                "Englischer Kommentar",
+                "Interner Kommentar",
+                "Projektkompilation",
+                "Wesentliche Eigenschaften (deutsch)",
+                "Wesentliche Eigenschaften (englisch)",
+            ],
+        },
+        {
+            "key": "technik",
+            "title": "Technische Angaben",
+            "badge": "Metadaten",
+            "fields": [
+                "EQ",
+                "DCP-Art",
+                "Tonformat",
+                "Tonmischfassung",
+                "Sprachfassung",
+                "Originalsprache",
+                "Untertitelsprache",
+                "Systemvoraussetzungen",
+                "Erhaltungstyp",
+                "Lizenzstatus",
+                "Anzeigestatus",
+                "Derivatkopie-Nummer",
+                "Wird im Loop abgespielt",
+                "ist arkumu-Preview",
+                "KHM-Internetfreigabestufe",
+                "Datensatzerstellung beim Einlieferer",
+                "Letzte Datensatzmodifikation beim Einlieferer",
+            ],
+        },
+        {
+            "key": "verknuepfungen",
+            "title": "Verknüpfungen",
+            "badge": "Bezüge",
+            "fields": [
+                {
+                    "name": "Ereignisse",
+                    "label": "Verknüpfte Ereignisse",
+                },
+                {
+                    "name": "Sammlungen",
+                    "label": "Verknüpfte Sammlungen",
+                },
+                {
+                    "name": "Informationsträger",
+                    "label": "Informationsträger",
+                },
+            ],
+        },
+    ],
+    "Equipment_und_Software": [
+        {
+            "key": "produkt",
+            "title": "Produktinformationen",
+            "badge": "Bezeichnungen",
+            "fields": [
+                "Equipment und Software-ID",
+                "Deutsche (Produkt-Bezeichnung)",
+                "Englische (Produkt-Bezeichnung)",
+                "Hersteller",
+                "Equipmentart",
+            ],
+        },
+        {
+            "key": "beschreibung",
+            "title": "Beschreibungen",
+            "badge": "Texte",
+            "fields": [
+                "Deutsche Beschreibung",
+                "Englische Beschreibung",
+                "Andere Normdaten",
+            ],
+        },
+        {
+            "key": "normdaten",
+            "title": "Kennungen",
+            "badge": "Identifier",
+            "fields": [
+                "GND-Nummer",
+                "Wikidata-ID",
+            ],
+        },
+        {
+            "key": "verknuepfungen",
+            "title": "Verknüpfungen",
+            "badge": "Einsatz",
+            "fields": [
+                {
+                    "name": "Ereignisse",
+                    "label": "Verknüpfte Ereignisse",
+                },
+                {
+                    "name": "Sammlungen",
+                    "label": "Verknüpfte Sammlungen",
+                },
             ],
         },
     ],
@@ -3210,6 +3376,484 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
 
         return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
+
+class _SimplifiedDatasetMixin:
+    dataset_name: str = ""
+    metadata_entry_entity: str = ""
+
+    def _prepare_field_metadata(
+        self,
+        schema_service: SchemaWorkspaceService,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        try:
+            field_metadata = schema_service.get_field_metadata(self.dataset_name)
+        except ValueError as exc:
+            raise MissingDatasetSchema(str(exc)) from exc
+        if self.dataset_name == PROJECT_DATASET_NAME:
+            field_metadata = _ensure_project_link_field(field_metadata)
+        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
+            self.dataset_name,
+            field_metadata,
+        )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(self.dataset_name, [])
+        if visible_fields:
+            field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+        allowed_fields = set(field_metadata.keys())
+        join_field_map = {
+            name: relationship
+            for name, relationship in (join_field_map or {}).items()
+            if name in allowed_fields
+        }
+        return field_metadata, join_field_map
+
+    def _build_tab_sections_for_form(
+        self,
+        form: DatasetEntityForm,
+        field_metadata: Dict[str, Any],
+        schema_service: SchemaWorkspaceService,
+        *,
+        entity_uri: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=self.dataset_name,
+            entity_uri=entity_uri,
+        )
+        relationship_fields = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(
+            self.dataset_name,
+            fields_with_metadata,
+            relationship_fields,
+        )
+        return fields_with_metadata, tab_sections
+
+
+class _BaseSimplifiedCreateView(LoginRequiredMixin, _SimplifiedDatasetMixin, View):
+    template_name: str = ""
+    page_title: str = ""
+    page_description: str = ""
+
+    def _resolve_organization(self, request: HttpRequest) -> Optional[Organization]:
+        org_code = request.GET.get("organization")
+        if org_code:
+            try:
+                return Organization.objects.get(code=org_code)
+            except Organization.DoesNotExist:
+                return getattr(request.user, "organization", None)
+        return getattr(request.user, "organization", None)
+
+    def _get_schema_service(
+        self,
+        request: HttpRequest,
+    ) -> Tuple[Optional[SchemaWorkspaceService], Optional[Organization]]:
+        organization = self._resolve_organization(request)
+        if not organization:
+            return None, None
+
+        workspace_coordinator = BaseCoordinatorMixin()
+        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
+        mapping_data = workspace_coordinator.get_current_mapping(request)
+        if mapping_data:
+            mapping = queryset.filter(id=mapping_data.get("id")).first()
+        else:
+            mapping = queryset.first()
+
+        if not mapping:
+            return None, organization
+
+        try:
+            schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return None, organization
+
+        return schema_service, organization
+
+    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        schema_service, organization = self._get_schema_service(request)
+        if not schema_service or not organization:
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+
+        try:
+            field_metadata, join_field_map = self._prepare_field_metadata(schema_service)
+        except MissingDatasetSchema as exc:
+            messages.error(request, str(exc))
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+        form = DatasetEntityForm(
+            field_metadata=field_metadata,
+            initial=None,
+            disable_anchors=False,
+        )
+        fields_with_metadata, tab_sections = self._build_tab_sections_for_form(
+            form,
+            field_metadata,
+            schema_service,
+        )
+
+        context = {
+            "form": form,
+            "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
+            "entity_uri": None,
+            "entity_label": None,
+            "dataset_name": self.dataset_name,
+            "mapping_id": schema_service.mapping.id,
+            "load_error": False,
+            "read_only_relationships": [],
+            "title": self.page_title,
+            "description": self.page_description,
+        }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
+        return render(request, self.template_name, context)
+
+    def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        schema_service, organization = self._get_schema_service(request)
+        if not schema_service or not organization:
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+
+        try:
+            field_metadata, join_field_map = self._prepare_field_metadata(schema_service)
+        except MissingDatasetSchema as exc:
+            messages.error(request, str(exc))
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+        form = DatasetEntityForm(
+            request.POST,
+            field_metadata=field_metadata,
+            disable_anchors=False,
+        )
+        fields_with_metadata, tab_sections = self._build_tab_sections_for_form(
+            form,
+            field_metadata,
+            schema_service,
+        )
+
+        if form.is_valid():
+            try:
+                entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
+                entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
+                    request,
+                    entity_data,
+                    field_metadata,
+                    join_field_map,
+                    entity_uri=None,
+                )
+
+                saved_uri, _created = schema_service.save_entity(
+                    dataset_name=self.dataset_name,
+                    entity_data=entity_data,
+                    entity_uri=None,
+                )
+
+                for field_name, related_records in join_payloads.items():
+                    relationship = join_field_map.get(field_name)
+                    if relationship is None:
+                        continue
+                    schema_service.sync_join_relationship(
+                        entity_uri=saved_uri,
+                        relationship=relationship,
+                        related_items=related_records,
+                    )
+
+                for field_name, related_uris in multi_fk_payloads.items():
+                    meta = field_metadata.get(field_name, {})
+                    property_uri = meta.get("property_uri")
+                    if not property_uri:
+                        continue
+                    schema_service.save_multi_fk_relationship(
+                        entity_uri=saved_uri,
+                        property_uri=property_uri,
+                        related_uris=related_uris,
+                    )
+
+                logger.info(f"✅ Created {self.dataset_name}: {saved_uri}")
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
+
+            except Exception as exc:
+                logger.exception("❌ Error creating %s", self.dataset_name, exc_info=True)
+                context = {
+                    "form": form,
+                    "fields_with_metadata": fields_with_metadata,
+                    "tab_sections": tab_sections,
+                    "entity_uri": None,
+                    "dataset_name": self.dataset_name,
+                    "error": str(exc),
+                    "title": self.page_title,
+                    "description": self.page_description,
+                    "mapping_id": schema_service.mapping.id,
+                }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
+                return render(request, self.template_name, context)
+
+        logger.warning("Form validation failed for %s: %s", self.dataset_name, form.errors)
+        context = {
+            "form": form,
+            "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
+            "entity_uri": None,
+            "dataset_name": self.dataset_name,
+            "title": self.page_title,
+            "description": self.page_description,
+            "mapping_id": schema_service.mapping.id,
+        }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
+        return render(request, self.template_name, context)
+
+
+class _BaseSimplifiedEditView(LoginRequiredMixin, _SimplifiedDatasetMixin, View):
+    template_name: str = ""
+    page_title: str = ""
+    page_description: str = ""
+
+    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+
+        entity_uri = request.GET.get("uri", "")
+        if not entity_uri:
+            return HttpResponseBadRequest("Missing uri parameter")
+
+        try:
+            field_metadata, join_field_map = self._prepare_field_metadata(schema_service)
+        except MissingDatasetSchema as exc:
+            messages.error(request, str(exc))
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+
+        initial_data: Optional[Dict[str, object]] = None
+        entity_label: Optional[str] = None
+        load_error = False
+        try:
+            initial_data = schema_service.load_entity_by_uri(self.dataset_name, entity_uri)
+            if initial_data:
+                entity_label = _infer_entity_label(schema_service, entity_uri, self.dataset_name)
+            else:
+                load_error = True
+        except Exception:
+            load_error = True
+            logger.exception("❌ Error loading %s", entity_uri)
+
+        form = DatasetEntityForm(
+            field_metadata=field_metadata,
+            initial=initial_data,
+            disable_anchors=True,
+        )
+
+        read_only_relationships: List[Dict[str, Any]] = []
+        if entity_uri:
+            relationships = schema_service.collect_relationship_values(
+                dataset_name=self.dataset_name,
+                entity_uri=entity_uri,
+                field_metadata=field_metadata,
+                join_field_map=join_field_map,
+            )
+            from arkumu.metadata.views.schema_workspace_views import _apply_relationship_initials
+
+            read_only_relationships = _apply_relationship_initials(
+                service=schema_service,
+                form=form,
+                relationships=relationships,
+            )
+
+        fields_with_metadata, tab_sections = self._build_tab_sections_for_form(
+            form,
+            field_metadata,
+            schema_service,
+            entity_uri=entity_uri,
+        )
+
+        context = {
+            "form": form,
+            "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
+            "entity_uri": entity_uri,
+            "entity_label": entity_label,
+            "dataset_name": self.dataset_name,
+            "mapping_id": schema_service.mapping.id,
+            "load_error": load_error,
+            "read_only_relationships": read_only_relationships,
+            "title": self.page_title,
+            "description": self.page_description,
+        }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
+        return render(request, self.template_name, context)
+
+    def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+
+        entity_uri = request.POST.get("entity_uri") or None
+        if not entity_uri:
+            return HttpResponseBadRequest("Missing entity_uri")
+
+        try:
+            field_metadata, join_field_map = self._prepare_field_metadata(schema_service)
+        except MissingDatasetSchema as exc:
+            messages.error(request, str(exc))
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+        form = DatasetEntityForm(
+            request.POST,
+            field_metadata=field_metadata,
+            disable_anchors=True,
+        )
+        fields_with_metadata, tab_sections = self._build_tab_sections_for_form(
+            form,
+            field_metadata,
+            schema_service,
+            entity_uri=entity_uri,
+        )
+
+        if form.is_valid():
+            try:
+                entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
+                entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
+                    request,
+                    entity_data,
+                    field_metadata,
+                    join_field_map,
+                    entity_uri=entity_uri,
+                )
+
+                saved_uri, _ = schema_service.save_entity(
+                    dataset_name=self.dataset_name,
+                    entity_data=entity_data,
+                    entity_uri=entity_uri,
+                )
+
+                for field_name, related_records in join_payloads.items():
+                    relationship = join_field_map.get(field_name)
+                    if relationship is None:
+                        continue
+                    schema_service.sync_join_relationship(
+                        entity_uri=saved_uri,
+                        relationship=relationship,
+                        related_items=related_records,
+                    )
+
+                for field_name, related_uris in multi_fk_payloads.items():
+                    meta = field_metadata.get(field_name, {})
+                    property_uri = meta.get("property_uri")
+                    if not property_uri:
+                        continue
+                    schema_service.save_multi_fk_relationship(
+                        entity_uri=saved_uri,
+                        property_uri=property_uri,
+                        related_uris=related_uris,
+                    )
+
+                logger.info(f"✅ Updated {self.dataset_name}: {saved_uri}")
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
+
+            except Exception as exc:
+                logger.exception("❌ Error updating %s", self.dataset_name, exc_info=True)
+                context = {
+                    "form": form,
+                    "fields_with_metadata": fields_with_metadata,
+                    "tab_sections": tab_sections,
+                    "entity_uri": entity_uri,
+                    "dataset_name": self.dataset_name,
+                    "error": str(exc),
+                    "title": self.page_title,
+                    "description": self.page_description,
+                    "mapping_id": schema_service.mapping.id,
+                    "read_only_relationships": [],
+                }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
+                return render(request, self.template_name, context)
+
+        logger.warning("Form validation failed for %s: %s", self.dataset_name, form.errors)
+        context = {
+            "form": form,
+            "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
+            "entity_uri": entity_uri,
+            "dataset_name": self.dataset_name,
+            "title": self.page_title,
+            "description": self.page_description,
+            "mapping_id": schema_service.mapping.id,
+            "read_only_relationships": [],
+        }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
+        return render(request, self.template_name, context)
+
+
+class SimplifiedOrtCreateView(_BaseSimplifiedCreateView):
+    dataset_name = "Ort"
+    metadata_entry_entity = "ort"
+    template_name = "metadata/simplified_workspace/edit_ort.html"
+    page_title = "Neuen Ort erstellen"
+    page_description = "Pflege die wichtigsten Angaben zu diesem Ort."
+
+
+class SimplifiedOrtEditView(_BaseSimplifiedEditView):
+    dataset_name = "Ort"
+    metadata_entry_entity = "ort"
+    template_name = "metadata/simplified_workspace/edit_ort.html"
+    page_title = "Ort bearbeiten"
+    page_description = "Aktualisiere die wichtigsten Angaben zu diesem Ort."
+
+
+class SimplifiedDigitalesObjektCreateView(_BaseSimplifiedCreateView):
+    dataset_name = "Digitales_Objekt"
+    metadata_entry_entity = "digitales_objekt"
+    template_name = "metadata/simplified_workspace/edit_digitales_objekt.html"
+    page_title = "Neues Digitales Objekt erstellen"
+    page_description = "Füge ein neues digitales Objekt hinzu."
+
+
+class SimplifiedDigitalesObjektEditView(_BaseSimplifiedEditView):
+    dataset_name = "Digitales_Objekt"
+    metadata_entry_entity = "digitales_objekt"
+    template_name = "metadata/simplified_workspace/edit_digitales_objekt.html"
+    page_title = "Digitales Objekt bearbeiten"
+    page_description = "Aktualisiere die wichtigsten Angaben zu diesem digitalen Objekt."
+
+
+class SimplifiedEquipmentSoftwareCreateView(_BaseSimplifiedCreateView):
+    dataset_name = "Equipment_und_Software"
+    metadata_entry_entity = "equipment_software"
+    template_name = "metadata/simplified_workspace/edit_equipment_software.html"
+    page_title = "Neues Equipment & Software erstellen"
+    page_description = "Erfasse die wichtigsten Informationen zu dieser technischen Ressource."
+
+
+class SimplifiedEquipmentSoftwareEditView(_BaseSimplifiedEditView):
+    dataset_name = "Equipment_und_Software"
+    metadata_entry_entity = "equipment_software"
+    template_name = "metadata/simplified_workspace/edit_equipment_software.html"
+    page_title = "Equipment & Software bearbeiten"
+    page_description = "Aktualisiere die wichtigsten Informationen zu dieser technischen Ressource."
+
     def post(self, request: HttpRequest) -> HttpResponse:
         """Save the edited akteur data."""
         schema_service = _get_schema_service(request)
@@ -3509,3 +4153,5 @@ class ContextEntitySelectView(LoginRequiredMixin, View):
 
         response_html = "\n".join([hidden_input_html, visible_input_html, dropdown_html])
         return HttpResponse(response_html)
+class MissingDatasetSchema(Exception):
+    """Raised when no schema blueprint exists for the requested dataset."""

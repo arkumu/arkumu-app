@@ -25,6 +25,27 @@
         </svg>
         Create Akteur
       </a>
+      {% elif entity_type == 'digitales_objekt' or entity_type == 'digital_object' %}
+      <a href="{% url 'metadata:create_digital_object' %}?entity=digitales_objekt{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Digitales Objekt
+      </a>
+      {% elif entity_type == 'ort' %}
+      <a href="{% url 'metadata:create_ort' %}?entity=ort{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Ort
+      </a>
+      {% elif entity_type == 'equipment_software' %}
+      <a href="{% url 'metadata:create_equipment_software' %}?entity=equipment_software{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Equipment &amp; Software
+      </a>
       {% endif %}
     </div>
     <div class="join hidden sm:inline-flex">
