@@ -8,6 +8,7 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from django.middleware.csrf import get_token
 from django.db.models import Q
+from django.urls import reverse
 import graphviz
 import logging
 import json
@@ -618,6 +619,8 @@ class ResourceGraphService:
             
             # Add tooltip attribute for GraphViz
             style_attrs['tooltip'] = full_tooltip
+            style_attrs['URL'] = self._build_node_url(resource)
+            style_attrs['target'] = '_top'
             
             # Add node to graph
             dot.node(
@@ -754,6 +757,10 @@ class ResourceGraphService:
         
         # Use space-separated format instead of newlines for better compatibility
         return " | ".join(tooltip_parts)
+
+    def _build_node_url(self, resource: Resource) -> str:
+        """Return the graph view URL for a resource."""
+        return reverse('metadata:resource_graph', args=[resource.id])
     
     def _add_svg_styling(self, svg_content):
         """Add custom CSS styling to SVG"""
@@ -781,6 +788,14 @@ class ResourceGraphService:
             .resource-graph polygon, .resource-graph ellipse, .resource-graph path {{
                 cursor: pointer;
                 transition: opacity 0.2s ease;
+            }}
+            
+            .resource-graph a {{
+                text-decoration: none;
+            }}
+            
+            .resource-graph a:hover text {{
+                text-decoration: underline;
             }}
             
             .resource-graph polygon:hover, .resource-graph ellipse:hover {{
