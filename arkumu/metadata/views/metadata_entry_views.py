@@ -25,11 +25,11 @@ from arkumu.metadata.views.csv_mapping.mixins.template_helpers import (
     CSVMappingTemplateHelperMixin,
 )
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
-from arkumu.users.mixins import MetadataEditorMixin
+from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.users.models import Organization
 
 
-class MetadataEntryMixin(BaseCoordinatorMixin, MetadataEditorMixin, CSVMappingTemplateHelperMixin):
+class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin):
     """Shared helpers for metadata entry views."""
 
     allowed_org_codes = {"fuk", "det", "rsh", "hmt", "khm"}
