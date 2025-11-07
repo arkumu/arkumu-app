@@ -6,6 +6,8 @@ ACTOR_EVENT_ROLE_CONTEXT_COLUMN = "Rollen der AkteurIn im Ereignis"
 ACTOR_EVENT_ROLE_DATASET = "Rolle"
 ACTOR_EVENT_ROLE_SEARCH_PROPERTY = "Bezeichnung"
 ACTOR_EVENT_ROLE_PROPERTY_URI = "http://arkumu.org/data/fuk/properties/rollen-der-akteurin-im-ereignis"
+ACTOR_EVENT_ACTOR_DATASET = "AkteurIn"
+ACTOR_EVENT_ACTOR_SEARCH_PROPERTY = "Deutscher Name"
 
 ACTOR_EVENT_FLAG_CONTEXT_SPECS = [
     {

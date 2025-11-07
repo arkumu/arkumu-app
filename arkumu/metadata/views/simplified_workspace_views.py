@@ -31,11 +31,14 @@ from arkumu.metadata.schema_workspace import (
     SchemaWorkspaceService,
 )
 from arkumu.metadata.constants import (
+    ACTOR_EVENT_ACTOR_DATASET,
+    ACTOR_EVENT_ACTOR_SEARCH_PROPERTY,
     ACTOR_EVENT_FIELD_NAME,
     ACTOR_EVENT_FLAG_CONTEXT_SPECS,
     ACTOR_EVENT_JOIN_DATASET,
     ACTOR_EVENT_ROLE_CONTEXT_COLUMN,
     ACTOR_EVENT_ROLE_DATASET,
+    ACTOR_EVENT_ROLE_PROPERTY_URI,
     ACTOR_EVENT_ROLE_SEARCH_PROPERTY,
 )
 from arkumu.metadata.services.entity_label_service import infer_entity_label as _infer_entity_label
@@ -381,6 +384,48 @@ def _context_slug(column_name: str) -> str:
     return slugify(str(column_name or "")).replace("-", "_")
 
 
+def _ensure_actor_event_context_specs(field_meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Make sure the actor/event join exposes role + flag context columns."""
+
+    relationship = field_meta.get("join_relationship")
+    if relationship is None:
+        return field_meta.get("context_columns") or []
+
+    join_dataset = getattr(relationship, "join_dataset", "") or ""
+    other_dataset = getattr(relationship, "other_dataset", "") or ""
+    if join_dataset != ACTOR_EVENT_JOIN_DATASET or other_dataset.lower() != ACTOR_EVENT_ROLE_DATASET.lower():
+        return field_meta.get("context_columns") or []
+
+    context_specs = list(field_meta.get("context_columns") or [])
+    existing = {spec.get("column") for spec in context_specs}
+
+    if ACTOR_EVENT_ROLE_CONTEXT_COLUMN not in existing:
+        context_specs.append(
+            {
+                "column": ACTOR_EVENT_ROLE_CONTEXT_COLUMN,
+                "property_uri": ACTOR_EVENT_ROLE_PROPERTY_URI,
+                "slug": ACTOR_EVENT_ROLE_CONTEXT_SLUG,
+            }
+        )
+        existing.add(ACTOR_EVENT_ROLE_CONTEXT_COLUMN)
+
+    for flag_spec in ACTOR_EVENT_FLAG_CONTEXT_SPECS:
+        column_name = flag_spec.get("column") or ""
+        if not column_name or column_name in existing:
+            continue
+        context_specs.append(
+            {
+                "column": column_name,
+                "property_uri": flag_spec.get("property_uri"),
+                "slug": _context_slug(column_name),
+            }
+        )
+        existing.add(column_name)
+
+    field_meta["context_columns"] = context_specs
+    return context_specs
+
+
 def _prop_attr(prop: Any, attr: str, default: str = "") -> str:
     if isinstance(prop, dict):
         return str(prop.get(attr, default) or "")
@@ -469,6 +514,7 @@ def _serialize_actor_participation_card(
     field_name: str,
     row_data: Dict[str, Any],
     role_property_uri: str,
+    actor_property_uri: str,
 ) -> Dict[str, Any]:
     """Transform a join row into the card context consumed by the template."""
 
@@ -477,6 +523,9 @@ def _serialize_actor_participation_card(
     actor_hidden_input_id = row_data.get("hidden_input_id") or f"{actor_input_id}-hidden"
     actor_suggestions_id = row_data.get("suggestions_id") or f"suggestions-{row_id}"
     suggestion_url = row_data.get("suggestion_url") or ""
+    if suggestion_url and actor_property_uri:
+        connector = "&" if "?" in suggestion_url else "?"
+        suggestion_url = f"{suggestion_url}{connector}{urlencode({'property': actor_property_uri})}"
 
     context_values = _extract_context_values(row_data)
     role_value = context_values.get(ACTOR_EVENT_ROLE_CONTEXT_SLUG) or context_values.get(ACTOR_EVENT_ROLE_CONTEXT_COLUMN, "")
@@ -502,6 +551,18 @@ def _serialize_actor_participation_card(
             }
         )
 
+    actor_stored_value = row_data.get("stored_value", "")
+    actor_display_value = row_data.get("display_value", "")
+    if actor_stored_value and actor_property_uri:
+        inferred_actor_label = _infer_entity_label(
+            schema_service,
+            actor_stored_value,
+            ACTOR_EVENT_ACTOR_DATASET,
+            display_property_uri=actor_property_uri,
+        )
+        if inferred_actor_label:
+            actor_display_value = inferred_actor_label
+
     return {
         "row_id": row_id,
         "join_resource_id": row_data.get("join_resource_id"),
@@ -510,9 +571,10 @@ def _serialize_actor_participation_card(
             "hidden_input_id": actor_hidden_input_id,
             "suggestions_id": actor_suggestions_id,
             "suggestion_url": suggestion_url,
-            "display_value": row_data.get("display_value", ""),
-            "stored_value": row_data.get("stored_value", ""),
+            "display_value": actor_display_value,
+            "stored_value": actor_stored_value,
             "resource_id": row_data.get("resource_id"),
+            "search_property": actor_property_uri,
         },
         "role": {
             "hidden_name": f"{field_name}__context__{ACTOR_EVENT_ROLE_CONTEXT_SLUG}[]",
@@ -549,6 +611,21 @@ def _build_actor_participation_widget_context(
     if dataset_name != "Ereignis":
         return None
 
+    field_meta["context_columns"] = _ensure_actor_event_context_specs(field_meta)
+
+    actor_property_uri = _resolve_actor_search_property_uri(schema_service)
+    if actor_property_uri:
+        actor_search_entry = {
+            "uri": actor_property_uri,
+            "label": ACTOR_EVENT_ACTOR_SEARCH_PROPERTY,
+            "column": ACTOR_EVENT_ACTOR_SEARCH_PROPERTY,
+        }
+        search_props = list(field_meta.get("search_properties") or [])
+        if not any(prop.get("uri") == actor_property_uri for prop in search_props):
+            search_props.insert(0, actor_search_entry)
+        field_meta["search_properties"] = search_props
+        field_meta["selected_property"] = actor_property_uri
+
     rows: List[Dict[str, Any]] = list(join_rows or [])
     if not rows:
         rows.append(_build_empty_actor_join_row(field_name, field_meta))
@@ -560,6 +637,7 @@ def _build_actor_participation_widget_context(
             field_name=field_name,
             row_data=row,
             role_property_uri=role_property_uri,
+            actor_property_uri=actor_property_uri,
         )
         for row in rows
     ]
@@ -601,7 +679,7 @@ def _collect_relationship_payloads(
         entity_data.pop(field_name, None)
         raw_values = request.POST.getlist(array_key)
         field_meta = field_metadata.get(field_name, {})
-        context_specs = field_meta.get("context_columns") or []
+        context_specs = _ensure_actor_event_context_specs(field_meta)
         context_values_by_slug: Dict[str, List[str]] = {}
         for context_spec in context_specs:
             column_name = context_spec.get("column") or context_spec.get("column_name") or ""

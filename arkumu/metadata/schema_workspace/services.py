@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 from arkumu.common.uri_utils import mint_uri, slugify_uri_part
 from arkumu.importer.services.schema_service import SchemaService
 from arkumu.metadata.models.mappings import Mapping
-from arkumu.metadata.constants import ACTOR_EVENT_JOIN_DATASET
+from arkumu.metadata.constants import (
+    ACTOR_EVENT_JOIN_DATASET,
+    ACTOR_EVENT_ROLE_CONTEXT_COLUMN,
+    ACTOR_EVENT_ROLE_PROPERTY_URI,
+    ACTOR_EVENT_FLAG_CONTEXT_SPECS,
+)
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.resources import ClassResource, EntityResource, PropertyResource
@@ -86,6 +91,33 @@ class RelationshipValues:
     property_uri: Optional[str] = None
     editable: bool = True
     records: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def _extend_actor_event_context_columns(
+    context_specs: List[Dict[str, Optional[str]]],
+) -> List[Dict[str, Optional[str]]]:
+    """Ensure actor↔event joins expose role + rights context columns."""
+
+    specs = list(context_specs or [])
+    existing = {spec.get("column") for spec in specs if spec.get("column")}
+
+    def _add(column: Optional[str], property_uri: Optional[str]) -> None:
+        if not column or column in existing:
+            return
+        specs.append(
+            {
+                "column": column,
+                "property_uri": property_uri,
+                "slug": slugify(column).replace("-", "_"),
+            }
+        )
+        existing.add(column)
+
+    _add(ACTOR_EVENT_ROLE_CONTEXT_COLUMN, ACTOR_EVENT_ROLE_PROPERTY_URI)
+    for flag_spec in ACTOR_EVENT_FLAG_CONTEXT_SPECS:
+        _add(flag_spec.get("column"), flag_spec.get("property_uri"))
+
+    return specs
 
 
 class SchemaWorkspaceService:
@@ -349,6 +381,9 @@ class SchemaWorkspaceService:
                     }
                 )
 
+            if join_dataset == ACTOR_EVENT_JOIN_DATASET and dataset_name.lower() == "ereignis":
+                context_specs = _extend_actor_event_context_columns(context_specs)
+
             search_columns = entry.get("search_columns") or entry.get("search_properties") or []
             search_property_uris: List[str] = []
             if search_columns:
@@ -487,6 +522,9 @@ class SchemaWorkspaceService:
                         "slug": slugify(context_column or "").replace("-", "_"),
                     }
                 )
+
+            if candidate == ACTOR_EVENT_JOIN_DATASET and dataset_name.lower() == "ereignis":
+                context_specs = _extend_actor_event_context_columns(context_specs)
 
             widget_name = None
             if candidate == ACTOR_EVENT_JOIN_DATASET and dataset_name.lower() == "ereignis".lower():
