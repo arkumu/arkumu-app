@@ -1260,6 +1260,7 @@ def _build_rows_for_subjects(
     edit_url_names = {
         'project': 'metadata:edit_project',
         'ereignis': 'metadata:edit_ereignis',
+        'akteur': 'metadata:edit_akteur',
         'actor': 'metadata:edit_actor',
         'digital_object': 'metadata:edit_digital_object',
     }

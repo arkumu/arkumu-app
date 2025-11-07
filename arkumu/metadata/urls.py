@@ -376,11 +376,14 @@ urlpatterns = [
     # Entity creation endpoints
     # New simplified workspace views (uses legacy infrastructure with subset of fields)
     path('create/project/', simplified_workspace_views.SimplifiedProjectCreateView.as_view(), name='create_project'),
+    path('create/ereignis/', simplified_workspace_views.SimplifiedEreignisCreateView.as_view(), name='create_ereignis'),
+    path('create/akteur/', simplified_workspace_views.SimplifiedAkteurCreateView.as_view(), name='create_akteur'),
 
     # Entity edit endpoints
     # New simplified workspace views (uses legacy infrastructure with subset of fields)
     path('edit/project/', simplified_workspace_views.SimplifiedProjectEditView.as_view(), name='edit_project'),
     path('edit/ereignis/', simplified_workspace_views.SimplifiedEreignisEditView.as_view(), name='edit_ereignis'),
+    path('edit/akteur/', simplified_workspace_views.SimplifiedAkteurEditView.as_view(), name='edit_akteur'),
     path(
         'edit/ereignis/actor-card/',
         simplified_workspace_views.ActorParticipationCardView.as_view(),
