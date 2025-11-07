@@ -1701,7 +1701,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         """Render the edit form with existing project data."""
         schema_service = _get_schema_service(request)
         if not schema_service:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return HttpResponseRedirect("/metadata/"
+                                        "workspace/legacy/")
 
         entity_uri = request.GET.get("uri", "")
         if not entity_uri:
@@ -1805,7 +1806,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         """Save the edited project data."""
         schema_service = _get_schema_service(request)
         if not schema_service:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return HttpResponseRedirect("/metadata/workspace/legacy/")
 
         dataset_name = "Projekt"
         entity_uri = request.POST.get("entity_uri") or None

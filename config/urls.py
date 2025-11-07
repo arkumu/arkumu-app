@@ -46,7 +46,7 @@ urlpatterns = [
     # APPLICATION MODULES
     # ============================================================================
     # Your stuff: custom urls includes go here
-    path('metadata/', include('arkumu.metadata.urls', namespace='metadata')),
+    path('metadata/', include(('arkumu.metadata.urls', 'metadata'), namespace='metadata')),
     path('storage/', include('arkumu.storage.urls', namespace='storage')),
     path('importer/', include('arkumu.importer.urls', namespace='importer')),
     path('catalog/', include('arkumu.catalog.urls', namespace='catalog')),
