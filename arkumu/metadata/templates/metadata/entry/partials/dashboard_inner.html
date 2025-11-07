@@ -75,11 +75,6 @@
                                    hx-target="#workspace-browse-panel"
                                    hx-swap="innerHTML"
                                    hx-trigger="click" />
-                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipmentart"
-                                   hx-get="{% url 'metadata:tabular_equipmentart' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                   hx-target="#workspace-browse-panel"
-                                   hx-swap="innerHTML"
-                                   hx-trigger="click" />
                         </div>
 
                         <!-- Shared content area for all tabs -->
