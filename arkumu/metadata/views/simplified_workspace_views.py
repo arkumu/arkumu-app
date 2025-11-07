@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Set
 
 from django import forms
 from django.contrib import messages
@@ -351,39 +351,10 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
         {
             "key": "grundinformationen",
             "title": "Grundinformationen",
-            "badge": "Name & Lage",
+            "badge": "Name & Kennungen",
             "fields": [
                 "Deutscher Name des Ortes",
-                {
-                    "name": "Englischer Name des Ortes",
-                    "label": "Englischer Name",
-                },
-                "Kategorie",
-                "Neuer Ort",
-                "Parent",
-                "Children",
-            ],
-        },
-        {
-            "key": "geodaten",
-            "title": "Geodaten",
-            "badge": "Koordinaten",
-            "fields": [
-                "Latitude",
-                "Longitude",
-                "Hierarchie",
-            ],
-        },
-        {
-            "key": "kennungen",
-            "title": "Kennungen",
-            "badge": "Identifier",
-            "fields": [
-                "Ort-ID",
-                "GND-Nummer",
-                "VIAF-ID",
                 "Wikidata-ID",
-                "BreadcrumbEntries",
             ],
         },
     ],
@@ -393,7 +364,6 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "title": "Basisdaten",
             "badge": "Datei & Typ",
             "fields": [
-                "Digitales Objekt-ID",
                 "Dateiname",
                 "Dateipfad",
                 "Medientyp",
@@ -470,7 +440,6 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "title": "Produktinformationen",
             "badge": "Bezeichnungen",
             "fields": [
-                "Equipment und Software-ID",
                 "Deutsche (Produkt-Bezeichnung)",
                 "Englische (Produkt-Bezeichnung)",
                 "Hersteller",
@@ -579,6 +548,9 @@ SIMPLIFIED_FIELD_CONFIG: Dict[str, List[str]] = {
     dataset: _flatten_section_fields(sections)
     for dataset, sections in SIMPLIFIED_SECTION_CONFIG.items()
 }
+
+# Datasets where anchor fields should be visible/editable in simplified forms
+SIMPLIFIED_VISIBLE_ANCHORS: Set[str] = {"Ort"}
 
 # Field-level configuration extracted from sections (search_property, label, help_text)
 SIMPLIFIED_FIELD_PROPS: Dict[str, Dict[str, Dict[str, Any]]] = {
@@ -3487,6 +3459,7 @@ class _BaseSimplifiedCreateView(LoginRequiredMixin, _SimplifiedDatasetMixin, Vie
             field_metadata=field_metadata,
             initial=None,
             disable_anchors=False,
+            hide_anchors=self.dataset_name not in SIMPLIFIED_VISIBLE_ANCHORS,
         )
         fields_with_metadata, tab_sections = self._build_tab_sections_for_form(
             form,
@@ -3527,6 +3500,7 @@ class _BaseSimplifiedCreateView(LoginRequiredMixin, _SimplifiedDatasetMixin, Vie
             request.POST,
             field_metadata=field_metadata,
             disable_anchors=False,
+            hide_anchors=self.dataset_name not in SIMPLIFIED_VISIBLE_ANCHORS,
         )
         fields_with_metadata, tab_sections = self._build_tab_sections_for_form(
             form,
@@ -3649,10 +3623,12 @@ class _BaseSimplifiedEditView(LoginRequiredMixin, _SimplifiedDatasetMixin, View)
             load_error = True
             logger.exception("❌ Error loading %s", entity_uri)
 
+        show_anchors = self.dataset_name in SIMPLIFIED_VISIBLE_ANCHORS
         form = DatasetEntityForm(
             field_metadata=field_metadata,
             initial=initial_data,
-            disable_anchors=True,
+            disable_anchors=not show_anchors,
+            hide_anchors=not show_anchors,
         )
 
         read_only_relationships: List[Dict[str, Any]] = []
@@ -3711,10 +3687,12 @@ class _BaseSimplifiedEditView(LoginRequiredMixin, _SimplifiedDatasetMixin, View)
         except MissingDatasetSchema as exc:
             messages.error(request, str(exc))
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+        show_anchors = self.dataset_name in SIMPLIFIED_VISIBLE_ANCHORS
         form = DatasetEntityForm(
             request.POST,
             field_metadata=field_metadata,
-            disable_anchors=True,
+            disable_anchors=not show_anchors,
+            hide_anchors=not show_anchors,
         )
         fields_with_metadata, tab_sections = self._build_tab_sections_for_form(
             form,
