@@ -23,29 +23,23 @@
           <div>
             <h1 class="text-3xl font-bold tracking-tight">{{ title }}</h1>
             <p class="text-base-content/70 mt-2 leading-relaxed">{{ description }}</p>
-          </div>
-        </div>
-        <div class="hidden lg:flex flex-col items-end gap-2">
-          <span class="badge badge-lg badge-outline">Ereignisformular</span>
-          <div class="text-sm text-base-content/60">Mapping-ID: <span class="font-mono">{{ mapping_id }}</span></div>
-        </div>
-      </div>
-
-      {# Display the URI prominently #}
-      {% if entity_uri %}
-      <div class="alert alert-info rounded-xl shadow-sm">
-        <div class="flex items-start gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div class="flex-1">
-            <div class="font-semibold">Ereignis-URI</div>
-            <div class="text-sm font-mono break-all">{{ entity_uri }}</div>
             {% if entity_label %}
-            <div class="text-sm mt-1">{{ entity_label }}</div>
+              <p class="text-sm text-base-content/60 mt-1">Aktuelle Bezeichnung: <span class="font-semibold">{{ entity_label }}</span></p>
             {% endif %}
           </div>
         </div>
+        {% if entity_uri %}
+        <div class="hidden lg:flex flex-col items-end gap-3 max-w-md">
+          <span class="badge badge-lg badge-outline">Ereignis-URI</span>
+          <code class="text-sm font-mono break-all text-right text-base-content/80">{{ entity_uri }}</code>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if entity_uri %}
+      <div class="lg:hidden text-sm text-base-content/70 leading-relaxed">
+        <span class="font-semibold">Ereignis-URI:</span>
+        <code class="block font-mono break-all mt-1 text-base-content/80">{{ entity_uri }}</code>
       </div>
       {% endif %}
 
@@ -72,28 +66,6 @@
         <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
 
         {% include "metadata/simplified_workspace/partials/_tabbed_sections.html" with sections=tab_sections tab_group_name="event-sections" %}
-
-        {# Display read-only relationships #}
-        {% if read_only_relationships %}
-        <details class="bg-base-100 border border-base-200 rounded-box">
-          <summary class="px-5 py-3 cursor-pointer flex items-center justify-between gap-3">
-            <span class="text-lg font-semibold">Verknüpfte Datensätze</span>
-            <span class="badge badge-outline">Nur Lesezugriff</span>
-          </summary>
-          <div class="px-5 pb-5 pt-3 space-y-4">
-            {% for rel in read_only_relationships %}
-              <div class="border border-base-200 rounded-lg p-4">
-                <div class="font-semibold mb-2">{{ rel.field_name }}</div>
-                <div class="flex flex-wrap gap-2">
-                  {% for item in rel.values %}
-                    <span class="badge badge-outline">{{ item.label }}</span>
-                  {% endfor %}
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        </details>
-        {% endif %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
           <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
