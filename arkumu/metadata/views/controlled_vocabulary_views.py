@@ -26,6 +26,12 @@ def user_can_edit_vocabularies(user) -> bool:
     )
 
 
+def _derive_label_from_uri(class_uri: str) -> str:
+    slug = (class_uri or "").rstrip("/").split("/")[-1]
+    humanized = slug.replace("-", " ").replace("_", " ").strip()
+    return humanized.title() if humanized else slug
+
+
 class ControlledVocabularyPermissionMixin(GeneralLoginRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         if not user_can_edit_vocabularies(request.user):
@@ -51,9 +57,10 @@ class ControlledVocabularyOverviewView(ControlledVocabularyPermissionMixin, Temp
                     "key": key,
                     "config": config,
                     "count": count,
+                    "label": _derive_label_from_uri(config.class_uri) or config.display_name,
                 }
             )
-        vocabularies.sort(key=lambda item: item["config"].display_name.lower())
+        vocabularies.sort(key=lambda item: item["label"].lower())
         context["vocabularies"] = vocabularies
         return context
 
