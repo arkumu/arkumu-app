@@ -12,6 +12,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from django import forms
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
@@ -267,61 +268,81 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
     ],
     "AkteurIn": [
         {
-            "key": "grundinformationen",
-            "title": "Grundinformationen",
+            "key": "identitaet",
+            "title": "Identität",
             "badge": "Name und Identifikation",
             "fields": [
                 "Deutscher Name",
                 "Englischer Name",
-                "Vorname",
-                "Nachname",
-                {
-                    "name": "Akteurtyp",
-                    "search_property": "Bezeichnung",
-                },
+                "Alternativer Name",
+                "Vorangestellter Titel",
+                "Nachgestellter Titel",
+                "Geschlecht",
+                "Nicht-öffentlicher Name",
+                "Nicht-öffentlicher Name (Begründung)",
             ],
         },
         {
             "key": "lebensdaten",
-            "title": "Lebensdaten",
+            "title": "Lebensdaten & Orte",
             "badge": "Zeitliche Daten",
             "fields": [
-                "Geburtsdatum",
-                "Todesdatum",
+                "Frühestes Geburtsdatum",
+                "Spätestes Geburtsdatum",
+                "Frühestes Sterbedatum",
+                "Spätestes Sterbedatum",
                 {
                     "name": "Geburtsort",
                     "search_property": "Ortsname",
                 },
                 {
-                    "name": "Todesort",
+                    "name": "Sterbeort",
+                    "search_property": "Ortsname",
+                },
+                {
+                    "name": "Gründungsort",
+                    "search_property": "Ortsname",
+                },
+                {
+                    "name": "Auflösungsort",
+                    "search_property": "Ortsname",
+                },
+                "Wirkungsbeginn",
+                "Wirkungsende",
+                {
+                    "name": "Wirkungsort",
                     "search_property": "Ortsname",
                 },
             ],
         },
         {
-            "key": "weitere-informationen",
-            "title": "Weitere Informationen",
-            "badge": "Zusätzliche Details",
-            "fields": [
-                "Biografische Angaben",
-                "Weitere Namen",
-                {
-                    "name": "Nationalität",
-                    "search_property": "Bezeichnung",
-                },
-            ],
-        },
-        {
-            "key": "ereignisse",
-            "title": "Verknüpfte Ereignisse",
+            "key": "rollen-und-texte",
+            "title": "Rollen & Beschreibungen",
             "badge": "Beteiligungen",
             "fields": [
                 {
-                    "name": ACTOR_EVENT_FIELD_NAME,
-                    "label": "Ereignisse mit Beteiligung",
-                    "help_text": "Ereignisse, an denen diese:r Akteur:in beteiligt war.",
-                    "search_property": "Ereignisname",
+                    "name": "Beruf und Tätigkeit",
+                    "search_property": "Bezeichnung",
                 },
+                "Deutsche Kurzbiografie",
+                "Englische Kurzbiografie",
+                "Deutscher Kommentar",
+                "Englischer Kommentar",
+                "Interner Kommentar",
+            ],
+        },
+        {
+            "key": "normdaten",
+            "title": "Normdaten & Links",
+            "badge": "Identifier",
+            "fields": [
+                "GND-Nummer",
+                "VIAF-ID",
+                "LCCN-ID",
+                "OrcID",
+                "Wikidata-ID",
+                "Webseite der AkteurIn",
+                "Andere Normdaten",
             ],
         },
     ],
@@ -867,6 +888,59 @@ def _collect_relationship_payloads(
             multi_fk_payloads[field_name] = filtered
 
     return entity_data, join_payloads, multi_fk_payloads
+
+
+def _decode_plain_multi_values(raw_value: Any) -> List[str]:
+    if raw_value is None:
+        return []
+
+    if isinstance(raw_value, str):
+        trimmed = raw_value.strip()
+        if not trimmed:
+            return []
+        if trimmed.startswith("["):
+            try:
+                loaded = json.loads(trimmed)
+                if isinstance(loaded, list):
+                    return [str(item).strip() for item in loaded if str(item).strip()]
+            except json.JSONDecodeError:
+                pass
+        normalized = trimmed.replace("\r\n", "\n")
+        if "\n" in normalized:
+            parts = normalized.split("\n")
+        elif ";" in normalized:
+            parts = normalized.split(";")
+        else:
+            parts = [normalized]
+        return [part.strip() for part in parts if part.strip()]
+
+    if isinstance(raw_value, list):
+        return [str(item).strip() for item in raw_value if str(item).strip()]
+
+    return [str(raw_value).strip()] if str(raw_value).strip() else []
+
+
+def _encode_plain_multi_values(raw_value: Any) -> str:
+    values = _decode_plain_multi_values(raw_value)
+    return json.dumps(values) if values else ""
+
+
+def _normalize_plain_multi_value_fields(
+    entity_data: Dict[str, Any],
+    field_metadata: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    for field_name, meta in field_metadata.items():
+        if not meta.get("is_multi_value"):
+            continue
+        if meta.get("fk_relationship"):
+            continue
+        raw_value = entity_data.get(field_name)
+        if raw_value in (None, ""):
+            entity_data[field_name] = ""
+            continue
+        serialized = _encode_plain_multi_values(raw_value)
+        entity_data[field_name] = serialized
+    return entity_data
 
 
 def _build_tab_sections(
@@ -1694,6 +1768,26 @@ def _enrich_fk_metadata(
                     "property_select_id": property_select_id,
                 }
 
+        elif meta.get("is_multi_value"):
+            literal_values = _decode_plain_multi_values(
+                form.initial.get(field.name, field.value())
+            )
+            textarea_value = "\n".join(literal_values)
+            form_field = form.fields.get(field.name)
+            if form_field:
+                form_field.widget = forms.Textarea(
+                    attrs={
+                        "class": "textarea textarea-bordered w-full",
+                        "rows": max(3, min(8, len(literal_values) + 1)),
+                        "placeholder": "Ein Wert pro Zeile",
+                    }
+                )
+                if not form.is_bound:
+                    form.initial[field.name] = textarea_value
+                    form_field.initial = textarea_value
+            meta["plain_multi_value"] = True
+            widget_context = None
+
         rows_for_item = []
         if meta.get("is_join"):
             rows_for_item = join_rows
@@ -1882,6 +1976,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
                 entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
                     request,
                     entity_data,
@@ -2157,6 +2252,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
                 entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
                     request,
                     entity_data,
@@ -2421,6 +2517,7 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
                 entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
                     request,
                     entity_data,
@@ -2667,6 +2764,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
                 entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
                     request,
                     entity_data,
@@ -2913,6 +3011,7 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
                 entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
                     request,
                     entity_data,
@@ -3159,6 +3258,7 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
                 entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
                     request,
                     entity_data,
