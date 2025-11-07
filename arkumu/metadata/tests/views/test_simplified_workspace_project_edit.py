@@ -5,7 +5,14 @@ from types import SimpleNamespace
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils.text import slugify
 
+from arkumu.metadata.constants import (
+    ACTOR_EVENT_FIELD_NAME,
+    ACTOR_EVENT_FLAG_CONTEXT_SPECS,
+    ACTOR_EVENT_ROLE_CONTEXT_COLUMN,
+)
+from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
 from arkumu.metadata.views import simplified_workspace_views
 from arkumu.users.models import Organization
 
@@ -156,9 +163,56 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
     """Stub service focused on Ereignis dataset interactions."""
 
     PROPERTY_URI = "http://example.org/properties/event-type"
+    ACTOR_FIELD = ACTOR_EVENT_FIELD_NAME
+
+    _context_columns = [
+        {
+            "column": ACTOR_EVENT_ROLE_CONTEXT_COLUMN,
+            "property_uri": "http://example.org/properties/rollen-der-akteurin",
+            "slug": slugify(ACTOR_EVENT_ROLE_CONTEXT_COLUMN).replace("-", "_"),
+        },
+        *[
+            {
+                "column": flag_spec["column"],
+                "property_uri": flag_spec.get("property_uri") or f"http://example.org/properties/{slugify(flag_spec['column'])}",
+                "slug": slugify(flag_spec["column"]).replace("-", "_"),
+            }
+            for flag_spec in ACTOR_EVENT_FLAG_CONTEXT_SPECS
+        ],
+    ]
+
+    ACTOR_RELATIONSHIP = JoinRelationship(
+        join_dataset="AkteurIn_Ereignis_Kreuztabelle",
+        join_dataset_schema={"entity_type": None},
+        self_column="im Ereignis",
+        self_property_uri="http://example.org/properties/im-ereignis",
+        other_dataset="AkteurIn",
+        other_column="AkteurIn im Ereignis",
+        other_property_uri="http://example.org/properties/akteurin-im-ereignis",
+        other_display_label="AkteurIn",
+        context_columns=_context_columns,
+        search_property_uris=["http://example.org/properties/name"],
+        widget_name=None,
+    )
 
     def __init__(self) -> None:
         super().__init__("ereignis/EVT-1")
+        self._context_slugs = {
+            column_spec["column"]: column_spec.get("slug") or slugify(column_spec["column"]).replace("-", "_")
+            for column_spec in self._context_columns
+        }
+        existing_role_uri = "http://example.org/role/kuratorin"
+        self.participations = [
+            {
+                "uri": "http://example.org/actor/alex",
+                "context": {
+                    self._context_slugs[ACTOR_EVENT_ROLE_CONTEXT_COLUMN]: existing_role_uri,
+                    ACTOR_EVENT_ROLE_CONTEXT_COLUMN: existing_role_uri,
+                    self._context_slugs[ACTOR_EVENT_FLAG_CONTEXT_SPECS[0]["column"]]: "1",
+                },
+                "join_resource_id": str(uuid.uuid4()),
+            }
+        ]
 
     def get_field_metadata(self, dataset_name: str):
         return {
@@ -172,7 +226,17 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
                     "target_dataset": "Ereignistyp",
                     "target_property_uri": "http://example.org/properties/code",
                 },
-            }
+            },
+            self.ACTOR_FIELD: {
+                "column_name": self.ACTOR_FIELD,
+                "property_label": "Ereignis hat AkteurIn",
+                "is_join": True,
+                "is_multi_value": True,
+                "context_columns": self._context_columns,
+                "search_properties": [
+                    {"uri": "http://example.org/properties/name", "label": "Name", "column": "Name"}
+                ],
+            },
         }
 
     def get_dataset_schema(self, dataset_name: str):
@@ -181,6 +245,12 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
                 "properties": {
                     "label": SimpleNamespace(uri="http://example.org/properties/label", name="Label"),
                     "code": SimpleNamespace(uri="http://example.org/properties/code", name="Code"),
+                }
+            }
+        if dataset_name == "Rolle":
+            return {
+                "properties": {
+                    "Bezeichnung": SimpleNamespace(uri="http://example.org/properties/role-label", name="Bezeichnung"),
                 }
             }
         return {"properties": {}}
@@ -194,6 +264,49 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
                 ]
             )
         }
+
+    def augment_field_metadata_with_joins(self, dataset_name, metadata):
+        metadata = dict(metadata)
+        metadata[self.ACTOR_FIELD] = metadata.get(self.ACTOR_FIELD, {})
+        metadata[self.ACTOR_FIELD].update(
+            {
+                "column_name": self.ACTOR_FIELD,
+                "property_label": "Ereignis hat AkteurIn",
+                "is_join": True,
+                "is_multi_value": True,
+                "context_columns": self._context_columns,
+                "join_relationship": self.ACTOR_RELATIONSHIP,
+            }
+        )
+        return metadata, {self.ACTOR_FIELD: self.ACTOR_RELATIONSHIP}
+
+    def collect_relationship_values(self, **kwargs):
+        dataset_name = kwargs.get("dataset_name")
+        entity_uri = kwargs.get("entity_uri")
+        if dataset_name != "Ereignis" or entity_uri != self.entity_uri:
+            return []
+
+        return [
+            RelationshipValues(
+                field_name=self.ACTOR_FIELD,
+                display_label="AkteurIn",
+                uris=[item["uri"] for item in self.participations],
+                is_join=True,
+                target_dataset="AkteurIn",
+                property_uri="http://example.org/properties/akteurin-im-ereignis",
+                records=[
+                    {
+                        "uri": item["uri"],
+                        "context": item.get("context", {}),
+                        "join_resource_id": item.get("join_resource_id"),
+                    }
+                    for item in self.participations
+                ],
+            )
+        ]
+
+    def get_context_value_options(self, property_uri: str):  # pragma: no cover - simple stub
+        return []
 
 
 @pytest.fixture
@@ -234,12 +347,21 @@ def dummy_ereignis_service(monkeypatch):
         "_get_schema_service",
         lambda request: service,
     )
+    def _label_stub(_service, uri, *_args, **_kwargs):
+        tail = uri.rsplit("/", 1)[-1]
+        return tail.replace("-", " ").title()
+
     monkeypatch.setattr(
         simplified_workspace_views,
         "_infer_entity_label",
-        lambda *args, **kwargs: "Dummy Ereignis",
+        _label_stub,
     )
     return service
+
+
+def _context_input_name(column_label: str) -> str:
+    slug = slugify(column_label).replace("-", "_")
+    return f"{DummyEreignisSchemaService.ACTOR_FIELD}__context__{slug}[]"
 
 
 @pytest.mark.django_db
@@ -444,3 +566,74 @@ def test_post_accepts_array_payloads_for_ereignis(client, user, dummy_ereignis_s
             ],
         )
     ]
+
+
+@pytest.mark.django_db
+def test_actor_participation_card_endpoint_returns_card(client, user, dummy_ereignis_service):
+    client.force_login(user)
+    response = client.post(
+        reverse("metadata:actor_participation_card"),
+        {
+            "dataset": "Ereignis",
+            "field_name": DummyEreignisSchemaService.ACTOR_FIELD,
+        },
+    )
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'data-testid="actor-participation-card"' in content
+    assert f'name="{DummyEreignisSchemaService.ACTOR_FIELD}[]"' in content
+
+
+@pytest.mark.django_db
+def test_event_get_renders_actor_participation_cards(client, user, dummy_ereignis_service):
+    client.force_login(user)
+    response = client.get(
+        reverse("metadata:edit_ereignis"),
+        {"uri": dummy_ereignis_service.entity_uri},
+    )
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'data-testid="actor-participation-card"' in content
+    assert _context_input_name(ACTOR_EVENT_ROLE_CONTEXT_COLUMN) in content
+    for flag_spec in ACTOR_EVENT_FLAG_CONTEXT_SPECS:
+        assert _context_input_name(flag_spec["column"]) in content
+
+
+@pytest.mark.django_db
+def test_event_post_updates_actor_participations(client, user, dummy_ereignis_service):
+    client.force_login(user)
+    field_name = DummyEreignisSchemaService.ACTOR_FIELD
+    payload = {
+        "entity_uri": dummy_ereignis_service.entity_uri,
+        f"{field_name}[]": [
+            "http://example.org/actor/a",
+            "http://example.org/actor/b",
+        ],
+        _context_input_name(ACTOR_EVENT_ROLE_CONTEXT_COLUMN): [
+            "http://example.org/role/regie",
+            "http://example.org/role/produktion",
+        ],
+    }
+    flag_values = {
+        ACTOR_EVENT_FLAG_CONTEXT_SPECS[0]["column"]: ["1", ""],
+        ACTOR_EVENT_FLAG_CONTEXT_SPECS[1]["column"]: ["0", "1"],
+        ACTOR_EVENT_FLAG_CONTEXT_SPECS[2]["column"]: ["", "0"],
+    }
+    for column_label, values in flag_values.items():
+        payload[_context_input_name(column_label)] = values
+
+    response = client.post(reverse("metadata:edit_ereignis"), payload)
+    assert response.status_code == 302
+
+    assert len(dummy_ereignis_service.join_sync_calls) == 1
+    entity_uri, relationship, serialized = dummy_ereignis_service.join_sync_calls[0]
+    assert entity_uri == dummy_ereignis_service.entity_uri
+    assert relationship == DummyEreignisSchemaService.ACTOR_RELATIONSHIP
+    assert [item["uri"] for item in serialized] == payload[f"{field_name}[]"]
+
+    contexts = [item.get("context", {}) for item in serialized]
+    assert contexts[0][ACTOR_EVENT_ROLE_CONTEXT_COLUMN] == "http://example.org/role/regie"
+    assert contexts[1][ACTOR_EVENT_ROLE_CONTEXT_COLUMN] == "http://example.org/role/produktion"
+    for column_label, values in flag_values.items():
+        assert contexts[0][column_label] == values[0]
+        assert contexts[1][column_label] == values[1]

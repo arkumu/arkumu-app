@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 from arkumu.common.uri_utils import mint_uri, slugify_uri_part
 from arkumu.importer.services.schema_service import SchemaService
 from arkumu.metadata.models.mappings import Mapping
+from arkumu.metadata.constants import ACTOR_EVENT_JOIN_DATASET
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.resources import ClassResource, EntityResource, PropertyResource
@@ -487,6 +488,10 @@ class SchemaWorkspaceService:
                     }
                 )
 
+            widget_name = None
+            if candidate == ACTOR_EVENT_JOIN_DATASET and dataset_name.lower() == "ereignis".lower():
+                widget_name = "ActorParticipationWidget"
+
             relationships.append(
                 JoinRelationship(
                     join_dataset=candidate,
@@ -498,6 +503,7 @@ class SchemaWorkspaceService:
                     other_property_uri=getattr(other_property, "uri", None),
                     other_display_label=other_summary.display_label,
                     context_columns=context_specs,
+                    widget_name=widget_name,
                 )
             )
 

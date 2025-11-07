@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from django.contrib.auth.decorators import login_required
@@ -17,6 +18,9 @@ from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpR
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.db.models import Q
+from django.urls import reverse
+from django.utils.html import escape
+from django.utils.http import urlencode
 from django.utils.text import slugify
 from django.views import View
 from django.views.decorators.http import require_http_methods
@@ -25,6 +29,14 @@ from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.schema_workspace import (
     DatasetEntityForm,
     SchemaWorkspaceService,
+)
+from arkumu.metadata.constants import (
+    ACTOR_EVENT_FIELD_NAME,
+    ACTOR_EVENT_FLAG_CONTEXT_SPECS,
+    ACTOR_EVENT_JOIN_DATASET,
+    ACTOR_EVENT_ROLE_CONTEXT_COLUMN,
+    ACTOR_EVENT_ROLE_DATASET,
+    ACTOR_EVENT_ROLE_SEARCH_PROPERTY,
 )
 from arkumu.metadata.services.entity_label_service import infer_entity_label as _infer_entity_label
 from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
@@ -180,7 +192,7 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "badge": "Beteiligte",
             "fields": [
                 {
-                    "name": "ereignis-hat-akteurin",
+                    "name": ACTOR_EVENT_FIELD_NAME,
                     "label": "Verknüpfte Akteur:innen",
                     "help_text": "Wähle Akteur:innen und ihre Rollen im Ereignis aus.",
                     "search_property": "Deutscher Name",
@@ -358,6 +370,208 @@ def _normalize_uri_list(values: List[str]) -> List[str]:
             normalized.append(canonical)
             seen.add(canonical)
     return normalized
+
+
+ACTOR_EVENT_ROLE_CONTEXT_SLUG = slugify(ACTOR_EVENT_ROLE_CONTEXT_COLUMN).replace("-", "_")
+
+
+def _context_slug(column_name: str) -> str:
+    """Return a normalized slug for a context column label."""
+
+    return slugify(str(column_name or "")).replace("-", "_")
+
+
+def _prop_attr(prop: Any, attr: str, default: str = "") -> str:
+    if isinstance(prop, dict):
+        return str(prop.get(attr, default) or "")
+    return str(getattr(prop, attr, default) or "")
+
+
+def _resolve_role_search_property_uri(schema_service: SchemaWorkspaceService) -> str:
+    """Determine the property URI used for role search suggestions."""
+
+    try:
+        schema = schema_service.get_dataset_schema(ACTOR_EVENT_ROLE_DATASET)
+    except ValueError:
+        return ""
+
+    for column_name, prop in (schema.get("properties", {}) or {}).items():
+        label = _prop_attr(prop, "name", column_name)
+        uri = _prop_attr(prop, "uri", "")
+        if not uri:
+            continue
+        if label == ACTOR_EVENT_ROLE_SEARCH_PROPERTY or column_name == ACTOR_EVENT_ROLE_SEARCH_PROPERTY:
+            return uri
+    return ""
+
+
+def _build_empty_actor_join_row(field_name: str, field_meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a blank join row for the actor participation widget."""
+
+    slug = slugify(field_name) or field_name
+    row_id = f"relationship-row-{slug}-{uuid.uuid4().hex[:8]}"
+    input_id = f"input-{row_id}"
+    suggestions_id = f"suggestions-{row_id}"
+    context_specs = field_meta.get("context_columns") or []
+    context_options = field_meta.get("context_options") or {}
+    context_items: List[Dict[str, Any]] = []
+    for spec in context_specs:
+        column_name = spec.get("column") or spec.get("column_name") or ""
+        slug_value = spec.get("slug") or _context_slug(column_name)
+        options = context_options.get(column_name) or context_options.get(slug_value) or []
+        context_items.append(
+            {
+                "label": column_name,
+                "slug": slug_value,
+                "value": "",
+                "options": options,
+            }
+        )
+    return {
+        "row_id": row_id,
+        "input_id": input_id,
+        "suggestions_id": suggestions_id,
+        "display_value": "",
+        "stored_value": "",
+        "suggestion_url": field_meta.get("base_suggestion_url", ""),
+        "resource_id": None,
+        "join_resource_id": None,
+        "context": {},
+        "context_items": context_items,
+    }
+
+
+def _extract_context_values(row_data: Dict[str, Any]) -> Dict[str, str]:
+    """Combine stored context payloads into a slugged dictionary."""
+
+    values: Dict[str, str] = {}
+    raw_context = row_data.get("context") if isinstance(row_data.get("context"), dict) else {}
+    for key, value in raw_context.items():
+        normalized_key = _context_slug(str(key))
+        cleaned = str(value or "")
+        values[normalized_key] = cleaned
+        values[str(key)] = cleaned
+
+    for item in row_data.get("context_items", []) or []:
+        slug_value = item.get("slug")
+        label = item.get("label")
+        cleaned = str(item.get("value") or "")
+        if slug_value:
+            values.setdefault(slug_value, cleaned)
+        if label:
+            values.setdefault(label, cleaned)
+    return values
+
+
+def _serialize_actor_participation_card(
+    *,
+    schema_service: SchemaWorkspaceService,
+    field_name: str,
+    row_data: Dict[str, Any],
+    role_property_uri: str,
+) -> Dict[str, Any]:
+    """Transform a join row into the card context consumed by the template."""
+
+    row_id = row_data.get("row_id") or f"actor-card-{uuid.uuid4().hex[:8]}"
+    actor_input_id = row_data.get("input_id") or f"input-{row_id}"
+    actor_hidden_input_id = row_data.get("hidden_input_id") or f"{actor_input_id}-hidden"
+    actor_suggestions_id = row_data.get("suggestions_id") or f"suggestions-{row_id}"
+    suggestion_url = row_data.get("suggestion_url") or ""
+
+    context_values = _extract_context_values(row_data)
+    role_value = context_values.get(ACTOR_EVENT_ROLE_CONTEXT_SLUG) or context_values.get(ACTOR_EVENT_ROLE_CONTEXT_COLUMN, "")
+    role_label = ""
+    if role_value:
+        role_label = _infer_entity_label(
+            schema_service,
+            role_value,
+            ACTOR_EVENT_ROLE_DATASET,
+        )
+
+    flags: List[Dict[str, Any]] = []
+    for flag_spec in ACTOR_EVENT_FLAG_CONTEXT_SPECS:
+        column_label = flag_spec.get("column") or ""
+        slug_value = _context_slug(column_label)
+        flag_value = context_values.get(slug_value) or context_values.get(column_label) or ""
+        flags.append(
+            {
+                "label": column_label,
+                "input_name": f"{field_name}__context__{slug_value}[]",
+                "value": flag_value,
+                "choices": flag_spec.get("choices", []),
+            }
+        )
+
+    return {
+        "row_id": row_id,
+        "join_resource_id": row_data.get("join_resource_id"),
+        "actor": {
+            "input_id": actor_input_id,
+            "hidden_input_id": actor_hidden_input_id,
+            "suggestions_id": actor_suggestions_id,
+            "suggestion_url": suggestion_url,
+            "display_value": row_data.get("display_value", ""),
+            "stored_value": row_data.get("stored_value", ""),
+            "resource_id": row_data.get("resource_id"),
+        },
+        "role": {
+            "hidden_name": f"{field_name}__context__{ACTOR_EVENT_ROLE_CONTEXT_SLUG}[]",
+            "hidden_input_id": f"{row_id}-role-hidden",
+            "input_id": f"{row_id}-role-input",
+            "suggestions_id": f"{row_id}-role-suggestions",
+            "display_value": role_label,
+            "value": role_value,
+            "target_dataset": ACTOR_EVENT_ROLE_DATASET,
+            "search_property": role_property_uri,
+            "slug": ACTOR_EVENT_ROLE_CONTEXT_SLUG,
+        },
+        "flags": flags,
+    }
+
+
+def _build_actor_participation_widget_context(
+    *,
+    schema_service: SchemaWorkspaceService,
+    dataset_name: str,
+    field_name: str,
+    field_meta: Dict[str, Any],
+    join_rows: Optional[List[Dict[str, Any]]],
+) -> Optional[Dict[str, Any]]:
+    """Return widget context for the AkteurIn↔Ereignis cards."""
+
+    relationship = field_meta.get("join_relationship")
+    if relationship is None:
+        return None
+
+    if relationship.join_dataset != ACTOR_EVENT_JOIN_DATASET:
+        return None
+
+    if dataset_name != "Ereignis":
+        return None
+
+    rows: List[Dict[str, Any]] = list(join_rows or [])
+    if not rows:
+        rows.append(_build_empty_actor_join_row(field_name, field_meta))
+
+    role_property_uri = _resolve_role_search_property_uri(schema_service)
+    cards = [
+        _serialize_actor_participation_card(
+            schema_service=schema_service,
+            field_name=field_name,
+            row_data=row,
+            role_property_uri=role_property_uri,
+        )
+        for row in rows
+    ]
+
+    return {
+        "component": "actor_participation",
+        "field_name": field_name,
+        "dataset_name": dataset_name,
+        "mapping_id": schema_service.mapping.id,
+        "cards": cards,
+        "add_url": reverse("metadata:actor_participation_card"),
+    }
 
 
 def _collect_relationship_payloads(
@@ -752,10 +966,6 @@ def _enrich_fk_metadata(
     For single FK fields, resolves the URI to a human-readable label
     and provides search/autocomplete functionality.
     """
-    from django.urls import reverse
-    from django.utils.http import urlencode
-    from django.utils.text import slugify
-
     fields_with_metadata: List[Dict[str, Any]] = []
 
     # Build base suggestion URL for autocomplete
@@ -871,6 +1081,10 @@ def _enrich_fk_metadata(
             meta["search_url"] = search_url
             meta["base_suggestion_url"] = base_url
             logger.info(f"🔍 FK field '{field.name}': search_url={search_url}, target_id={target_id}")
+        elif meta.get("is_join"):
+            base_params = {"dataset": dataset_name, "column": field.name}
+            base_url = f"{base_suggestion_url}?{urlencode(base_params)}"
+            meta["base_suggestion_url"] = base_url
 
         widget_name = str(meta.get("widget") or "")
         if widget_name != "TripleCreatorWidget":
@@ -1211,6 +1425,8 @@ def _enrich_fk_metadata(
                     row_data.setdefault("context_items", [])
             join_rows = rows
 
+        actor_widget_context: Optional[Dict[str, Any]] = None
+
         # Build widget context for multi-value fields using relationship rows
         widget_context = None
         if fk_info and meta.get("is_multi_value"):
@@ -1273,16 +1489,26 @@ def _enrich_fk_metadata(
                 "property_select_id": property_select_id,
             }
         elif meta.get("is_join"):
-            property_select_id = f"relationship-property-{slugify(field.name) or field.name}"
-            widget_context = {
-                "field_name": field.name,
-                "dataset_name": dataset_name,
-                "mapping_id": schema_service.mapping.id,
-                "rows": join_rows,
-                "search_properties": meta.get("search_properties", []),
-                "selected_property": meta.get("selected_property", ""),
-                "property_select_id": property_select_id,
-            }
+            actor_widget_context = _build_actor_participation_widget_context(
+                schema_service=schema_service,
+                dataset_name=dataset_name,
+                field_name=field.name,
+                field_meta=meta,
+                join_rows=join_rows,
+            )
+            if actor_widget_context:
+                widget_context = actor_widget_context
+            else:
+                property_select_id = f"relationship-property-{slugify(field.name) or field.name}"
+                widget_context = {
+                    "field_name": field.name,
+                    "dataset_name": dataset_name,
+                    "mapping_id": schema_service.mapping.id,
+                    "rows": join_rows,
+                    "search_properties": meta.get("search_properties", []),
+                    "selected_property": meta.get("selected_property", ""),
+                    "property_select_id": property_select_id,
+                }
 
         rows_for_item = []
         if meta.get("is_join"):
@@ -2041,3 +2267,173 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                 "mapping_id": schema_service.mapping.id,
             }
             return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
+
+
+class ActorParticipationCardView(LoginRequiredMixin, View):
+    """HTMX endpoint to add a blank actor participation card."""
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        dataset_name = request.POST.get("dataset")
+        field_name = request.POST.get("field_name")
+
+        if not dataset_name or not field_name:
+            return HttpResponseBadRequest("Missing dataset or field_name parameter")
+
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return HttpResponseBadRequest("Session expired")
+
+        field_metadata = schema_service.get_field_metadata(dataset_name)
+        field_metadata, _ = schema_service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+        field_meta = field_metadata.get(field_name)
+        if not field_meta or not field_meta.get("is_join"):
+            return HttpResponseBadRequest("Unknown join field")
+
+        if not field_meta.get("base_suggestion_url"):
+            base_params = {"dataset": dataset_name, "column": field_name}
+            base_url = f"{reverse('metadata:entity_workspace_field_values', args=[schema_service.mapping.id])}?{urlencode(base_params)}"
+            field_meta["base_suggestion_url"] = base_url
+
+        widget_context = _build_actor_participation_widget_context(
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+            field_name=field_name,
+            field_meta=field_meta,
+            join_rows=None,
+        )
+        if not widget_context or not widget_context.get("cards"):
+            return HttpResponseBadRequest("Field does not support actor participation")
+
+        card = widget_context["cards"][0]
+        context = {
+            "card": card,
+            "widget": widget_context,
+        }
+        return render(
+            request,
+            "metadata/simplified_workspace/partials/_actor_participation_card.html",
+            context,
+        )
+
+
+class ContextEntitySuggestionsView(LoginRequiredMixin, View):
+    """Return suggestions for context (role) entity selectors via HTMX."""
+
+    max_suggestions = 20
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        if request.GET.get("clear"):
+            return HttpResponse("")
+
+        dataset_name = request.GET.get("dataset")
+        search_property = request.GET.get("search_property") or ""
+        input_id = request.GET.get("input_id")
+        hidden_id = request.GET.get("hidden_id")
+        hidden_name = request.GET.get("hidden_name")
+        target_id = request.GET.get("target_id")
+        field_name = request.GET.get("field_name")
+        context_slug = request.GET.get("context_slug")
+
+        required = [dataset_name, input_id, hidden_id, hidden_name, target_id, field_name, context_slug]
+        if any(not value for value in required):
+            return HttpResponseBadRequest("Missing required parameters")
+
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return HttpResponseBadRequest("Session expired")
+
+        query = request.GET.get("q", "").strip()
+
+        from arkumu.metadata.views.schema_workspace_views import DatasetFieldValueOptionsView
+
+        helper = DatasetFieldValueOptionsView()
+        helper.max_suggestions = self.max_suggestions
+        suggestions = helper._collect_dataset_entity_suggestions(  # pylint: disable=protected-access
+            schema_service,
+            dataset_name,
+            query,
+            search_property or None,
+        )
+
+        context = {
+            "suggestions": suggestions[: self.max_suggestions],
+            "input_id": input_id,
+            "hidden_id": hidden_id,
+            "hidden_name": hidden_name,
+            "target_id": target_id,
+            "dataset": dataset_name,
+            "search_property": search_property,
+            "field_name": field_name,
+            "context_slug": context_slug,
+        }
+        return render(
+            request,
+            "metadata/simplified_workspace/partials/_context_entity_suggestions.html",
+            context,
+        )
+
+
+class ContextEntitySelectView(LoginRequiredMixin, View):
+    """Apply a role/context selection using HTMX out-of-band swaps."""
+
+    ROLE_PLACEHOLDER = "Rolle wählen…"
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        dataset_name = request.POST.get("dataset")
+        input_id = request.POST.get("input_id")
+        hidden_id = request.POST.get("hidden_id")
+        hidden_name = request.POST.get("hidden_name")
+        target_id = request.POST.get("target_id")
+        field_name = request.POST.get("field_name")
+        context_slug = request.POST.get("context_slug")
+        search_property = request.POST.get("search_property") or ""
+
+        required = [dataset_name, input_id, hidden_id, hidden_name, target_id, field_name, context_slug]
+        if any(not value for value in required):
+            return HttpResponseBadRequest("Missing required parameters")
+
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return HttpResponseBadRequest("Session expired")
+
+        raw_value = (request.POST.get("value") or "").strip()
+        value, label_hint = decode_placeholder_uri(raw_value)
+        value = value or raw_value
+        label = (request.POST.get("label") or "").strip() or label_hint
+        if value and not label:
+            label = _infer_entity_label(schema_service, value, dataset_name)
+
+        suggestion_url = reverse("metadata:simplified_context_entity_suggestions")
+        query_params = urlencode(
+            {
+                "dataset": dataset_name,
+                "search_property": search_property,
+                "input_id": input_id,
+                "hidden_id": hidden_id,
+                "hidden_name": hidden_name,
+                "target_id": target_id,
+                "field_name": field_name,
+                "context_slug": context_slug,
+            }
+        )
+        hx_url = f"{suggestion_url}?{query_params}"
+
+        hidden_input_html = (
+            f'<input type="hidden" name="{escape(hidden_name)}" '
+            f'id="{escape(hidden_id)}" value="{escape(value)}" hx-swap-oob="outerHTML">'
+        )
+        visible_input_html = (
+            f'<input type="text" id="{escape(input_id)}" name="q" '
+            f'class="input input-bordered w-full" placeholder="{self.ROLE_PLACEHOLDER}" '
+            f'value="{escape(label)}" '
+            f'hx-get="{escape(hx_url)}" hx-trigger="input changed delay:200ms" '
+            f'hx-target="#{escape(target_id)}" hx-include="#{escape(hidden_id)}" '
+            f'autocomplete="off" hx-swap-oob="outerHTML">'
+        )
+        dropdown_html = f'<div id="{escape(target_id)}" hx-swap-oob="innerHTML"></div>'
+
+        response_html = "\n".join([hidden_input_html, visible_input_html, dropdown_html])
+        return HttpResponse(response_html)
