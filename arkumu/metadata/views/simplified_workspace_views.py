@@ -330,6 +330,30 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
 PROJECT_LINK_FIELD_NAME = "Verknüpftes Projekt"
 PROJECT_LINK_PROPERTY_URI = "http://arkumu.org/data/properties/verknuepftes-projekt"
 PROJECT_DATASET_NAME = "Projekt"
+
+
+METADATA_ENTRY_PATH = "/metadata/metadata-entry/"
+
+
+def _build_metadata_entry_url(
+    organization_code: str | None = None,
+    entity: str | None = None,
+) -> str:
+    params: Dict[str, str] = {}
+    if organization_code:
+        params["organization"] = organization_code
+    if entity:
+        params["entity"] = entity
+    if not params:
+        return METADATA_ENTRY_PATH
+    return f"{METADATA_ENTRY_PATH}?{urlencode(params)}"
+
+
+def _redirect_to_metadata_entry(
+    organization_code: str | None = None,
+    entity: str | None = None,
+) -> HttpResponseRedirect:
+    return HttpResponseRedirect(_build_metadata_entry_url(organization_code, entity))
 PROJECT_TRIPLE_PREDICATE_SLUGS = {
     "projekt-hat-teil",
     "projekt-ist-teil-von",
@@ -1697,6 +1721,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
     URI resolution, and search capabilities as the full workspace.
     """
 
+    metadata_entry_entity = "project"
+
     def get(self, request: HttpRequest) -> HttpResponse:
         """Render the edit form with existing project data."""
         schema_service = _get_schema_service(request)
@@ -1799,6 +1825,10 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             "title": "Projekt bearbeiten",
             "description": "Aktualisiere die wichtigsten Angaben für dieses Projekt.",
         }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
 
         return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
@@ -1901,7 +1931,10 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                 logger.info(f"✅ Saved project: {saved_uri} (created={created})")
 
                 # Redirect back to metadata entry
-                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
 
             except Exception as e:
                 logger.exception(f"❌ Error saving project: {e}")
@@ -1916,6 +1949,10 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                     "title": "Projekt bearbeiten",
                     "mapping_id": schema_service.mapping.id,
                 }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
                 return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
         else:
@@ -1930,6 +1967,10 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                 "title": "Projekt bearbeiten",
                 "mapping_id": schema_service.mapping.id,
             }
+            context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                schema_service.organization.code,
+                self.metadata_entry_entity,
+            )
             return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
 
@@ -1940,6 +1981,8 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
     Shows only a subset of fields but uses the same relationship handling,
     URI resolution, and search capabilities as the full workspace.
     """
+
+    metadata_entry_entity = "project"
 
     def get(self, request: HttpRequest) -> HttpResponse:
         """Render the create form for a new project."""
@@ -1954,7 +1997,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
             organization = getattr(request.user, "organization", None)
 
         if not organization:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         # Get mapping using workspace coordinator (gets promoted/derived mapping from session)
         workspace_coordinator = BaseCoordinatorMixin()
@@ -1967,7 +2010,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
             mapping = queryset.first()
 
         if not mapping:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
 
@@ -2037,6 +2080,10 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
             "visibility_choices": visibility_choices,
             "current_visibility": PublicAccessLevel.PRIVATE.value,  # Default to private
         }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
 
         return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
@@ -2053,7 +2100,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
             organization = getattr(request.user, "organization", None)
 
         if not organization:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         # Get mapping using workspace coordinator (gets promoted/derived mapping from session)
         workspace_coordinator = BaseCoordinatorMixin()
@@ -2066,7 +2113,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
             mapping = queryset.first()
 
         if not mapping:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
 
@@ -2167,7 +2214,10 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                 logger.info(f"✅ Created project: {saved_uri}")
 
                 # Redirect back to metadata entry
-                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
 
             except Exception as e:
                 logger.exception(f"❌ Error creating project: {e}")
@@ -2182,6 +2232,10 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                     "title": "Neues Projekt erstellen",
                     "mapping_id": schema_service.mapping.id,
                 }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
                 return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
         else:
@@ -2196,6 +2250,10 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                 "title": "Neues Projekt erstellen",
                 "mapping_id": schema_service.mapping.id,
             }
+            context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                schema_service.organization.code,
+                self.metadata_entry_entity,
+            )
             return render(request, "metadata/simplified_workspace/edit_project.html", context)
 
 
@@ -2206,6 +2264,8 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
     Shows only a subset of fields but uses the same relationship handling,
     URI resolution, and search capabilities as the full workspace.
     """
+
+    metadata_entry_entity = "ereignis"
 
     def get(self, request: HttpRequest) -> HttpResponse:
         """Render the create form for a new ereignis."""
@@ -2220,7 +2280,7 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
             organization = getattr(request.user, "organization", None)
 
         if not organization:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         # Get mapping using workspace coordinator
         workspace_coordinator = BaseCoordinatorMixin()
@@ -2233,7 +2293,7 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
             mapping = queryset.first()
 
         if not mapping:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
 
@@ -2286,6 +2346,10 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
             "title": "Neues Ereignis erstellen",
             "description": "Füge ein neues Ereignis hinzu.",
         }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
 
         return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
 
@@ -2302,7 +2366,7 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
             organization = getattr(request.user, "organization", None)
 
         if not organization:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         # Get mapping using workspace coordinator
         workspace_coordinator = BaseCoordinatorMixin()
@@ -2315,7 +2379,7 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
             mapping = queryset.first()
 
         if not mapping:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
 
@@ -2396,7 +2460,10 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
                 logger.info(f"✅ Created ereignis: {saved_uri}")
 
                 # Redirect back to metadata entry
-                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
 
             except Exception as e:
                 logger.exception(f"❌ Error creating ereignis: {e}")
@@ -2411,6 +2478,10 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
                     "title": "Neues Ereignis erstellen",
                     "mapping_id": schema_service.mapping.id,
                 }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
                 return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
 
         else:
@@ -2425,6 +2496,10 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
                 "title": "Neues Ereignis erstellen",
                 "mapping_id": schema_service.mapping.id,
             }
+            context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                schema_service.organization.code,
+                self.metadata_entry_entity,
+            )
             return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
 
 
@@ -2436,11 +2511,13 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
     URI resolution, and search capabilities as the full workspace.
     """
 
+    metadata_entry_entity = "ereignis"
+
     def get(self, request: HttpRequest) -> HttpResponse:
         """Render the edit form with existing ereignis data."""
         schema_service = _get_schema_service(request)
         if not schema_service:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         entity_uri = request.GET.get("uri", "")
         if not entity_uri:
@@ -2535,6 +2612,10 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             "title": "Ereignis bearbeiten",
             "description": "Aktualisiere die wichtigsten Angaben für dieses Ereignis.",
         }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
 
         return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
 
@@ -2542,7 +2623,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         """Save the edited ereignis data."""
         schema_service = _get_schema_service(request)
         if not schema_service:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         dataset_name = "Ereignis"
         entity_uri = request.POST.get("entity_uri") or None
@@ -2625,7 +2706,10 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                 logger.info(f"✅ Saved ereignis: {saved_uri} (created={created})")
 
                 # Redirect back to metadata entry
-                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
 
             except Exception as e:
                 logger.exception(f"❌ Error saving ereignis: {e}")
@@ -2640,6 +2724,10 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                     "title": "Ereignis bearbeiten",
                     "mapping_id": schema_service.mapping.id,
                 }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
                 return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
 
         else:
@@ -2654,6 +2742,10 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
                 "title": "Ereignis bearbeiten",
                 "mapping_id": schema_service.mapping.id,
             }
+            context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                schema_service.organization.code,
+                self.metadata_entry_entity,
+            )
             return render(request, "metadata/simplified_workspace/edit_ereignis.html", context)
 
 
@@ -2664,6 +2756,8 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
     Shows only a subset of fields but uses the same relationship handling,
     URI resolution, and search capabilities as the full workspace.
     """
+
+    metadata_entry_entity = "akteur"
 
     def get(self, request: HttpRequest) -> HttpResponse:
         """Render the create form for a new akteur."""
@@ -2678,7 +2772,7 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
             organization = getattr(request.user, "organization", None)
 
         if not organization:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         # Get mapping using workspace coordinator
         workspace_coordinator = BaseCoordinatorMixin()
@@ -2691,7 +2785,7 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
             mapping = queryset.first()
 
         if not mapping:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
 
@@ -2744,6 +2838,10 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
             "title": "Neue:n Akteur:in erstellen",
             "description": "Füge eine:n neue:n Akteur:in hinzu.",
         }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
 
         return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
@@ -2760,7 +2858,7 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
             organization = getattr(request.user, "organization", None)
 
         if not organization:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         # Get mapping using workspace coordinator
         workspace_coordinator = BaseCoordinatorMixin()
@@ -2773,7 +2871,7 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
             mapping = queryset.first()
 
         if not mapping:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         schema_service = SchemaWorkspaceService(mapping=mapping, organization=organization)
 
@@ -2854,7 +2952,10 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
                 logger.info(f"✅ Created akteur: {saved_uri}")
 
                 # Redirect back to metadata entry
-                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
 
             except Exception as e:
                 logger.exception(f"❌ Error creating akteur: {e}")
@@ -2869,6 +2970,10 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
                     "title": "Neue:n Akteur:in erstellen",
                     "mapping_id": schema_service.mapping.id,
                 }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
                 return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
         else:
@@ -2883,6 +2988,10 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
                 "title": "Neue:n Akteur:in erstellen",
                 "mapping_id": schema_service.mapping.id,
             }
+            context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                schema_service.organization.code,
+                self.metadata_entry_entity,
+            )
             return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
 
@@ -2894,11 +3003,13 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
     URI resolution, and search capabilities as the full workspace.
     """
 
+    metadata_entry_entity = "akteur"
+
     def get(self, request: HttpRequest) -> HttpResponse:
         """Render the edit form with existing akteur data."""
         schema_service = _get_schema_service(request)
         if not schema_service:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         entity_uri = request.GET.get("uri", "")
         if not entity_uri:
@@ -2993,6 +3104,10 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
             "title": "Akteur:in bearbeiten",
             "description": "Aktualisiere die wichtigsten Angaben für diese:n Akteur:in.",
         }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
 
         return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
@@ -3000,7 +3115,7 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
         """Save the edited akteur data."""
         schema_service = _get_schema_service(request)
         if not schema_service:
-            return HttpResponseRedirect("/metadata/metadata-entry/")
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
         dataset_name = "AkteurIn"
         entity_uri = request.POST.get("entity_uri") or None
@@ -3083,7 +3198,10 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
                 logger.info(f"✅ Saved akteur: {saved_uri} (created={created})")
 
                 # Redirect back to metadata entry
-                return HttpResponseRedirect("/metadata/metadata-entry/?organization=" + schema_service.organization.code)
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
 
             except Exception as e:
                 logger.exception(f"❌ Error saving akteur: {e}")
@@ -3098,6 +3216,10 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
                     "title": "Akteur:in bearbeiten",
                     "mapping_id": schema_service.mapping.id,
                 }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
                 return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
         else:
@@ -3112,6 +3234,10 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
                 "title": "Akteur:in bearbeiten",
                 "mapping_id": schema_service.mapping.id,
             }
+            context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                schema_service.organization.code,
+                self.metadata_entry_entity,
+            )
             return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
 

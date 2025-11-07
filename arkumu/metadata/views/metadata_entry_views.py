@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from typing import Dict, Iterable, List
+from urllib.parse import urlencode
 
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render
 from django.views import View
 from django.views.generic import TemplateView
+from django.urls import reverse
 
 from arkumu.metadata.services.metadata_entry_service import (
     EntryResult,
@@ -31,6 +33,40 @@ class MetadataEntryMixin(BaseCoordinatorMixin, MetadataEditorMixin, CSVMappingTe
     """Shared helpers for metadata entry views."""
 
     allowed_org_codes = {"fuk", "det", "rsh", "hmt", "khm"}
+
+    tab_config = (
+        (
+            "project",
+            "Projekte",
+            "metadata:tabular_projects",
+        ),
+        (
+            "ereignis",
+            "Ereignisse",
+            "metadata:tabular_ereignis",
+        ),
+        (
+            "akteur",
+            "Akteure",
+            "metadata:tabular_akteur",
+        ),
+        (
+            "ort",
+            "Orte",
+            "metadata:tabular_ort",
+        ),
+        (
+            "digitales_objekt",
+            "Digitale Objekte",
+            "metadata:tabular_digitales_objekt",
+        ),
+        (
+            "equipment_software",
+            "Equipment Software",
+            "metadata:tabular_equipment_software",
+        ),
+    )
+    default_entity = "project"
 
     def _allowed_organizations(self) -> Iterable[Organization]:
         return Organization.objects.filter(code__in=self.allowed_org_codes, is_active=True).order_by("name")
@@ -88,7 +124,47 @@ class MetadataEntryMixin(BaseCoordinatorMixin, MetadataEditorMixin, CSVMappingTe
             organization_code=org_code,
             fallback_codes=allowed_codes,
         )
+        context["organization_code"] = org_code
+
+        selected_entity = self._resolve_entity_key(request)
+        tabs = self._build_tab_definitions(org_code, selected_entity)
+        context["selected_entity"] = selected_entity
+        context["entity_tabs"] = tabs
+        context["active_tab_url"] = next(
+            (tab["url"] for tab in tabs if tab["key"] == selected_entity),
+            tabs[0]["url"] if tabs else "",
+        )
         return context
+
+    def _resolve_entity_key(self, request: HttpRequest) -> str:
+        requested = (request.GET.get("entity") or "").strip().lower()
+        valid_keys = {key for key, *_ in self.tab_config}
+        if requested in valid_keys:
+            return requested
+        return self.default_entity
+
+    def _build_tab_definitions(
+        self,
+        organization_code: str | None,
+        selected_entity: str,
+    ) -> List[Dict[str, str]]:
+        base_params = {"embed": "1"}
+        if organization_code:
+            base_params["organization"] = organization_code
+        query = urlencode(base_params)
+        tabs: List[Dict[str, str]] = []
+        for key, label, url_name in self.tab_config:
+            url = reverse(url_name)
+            full_url = f"{url}?{query}" if query else url
+            tabs.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "url": full_url,
+                    "checked": key == selected_entity,
+                }
+            )
+        return tabs
 
     def _build_field_context(
         self,

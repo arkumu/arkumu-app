@@ -44,45 +44,35 @@
                     <div class="card-body">
                         <!-- All entity tabs -->
                         <div role="tablist" class="tabs tabs-boxed mb-4">
-                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Projekte"
-                                   checked
-                                   hx-get="{% url 'metadata:tabular_projects' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                   hx-target="#workspace-browse-panel"
-                                   hx-swap="innerHTML"
-                                   hx-trigger="click" />
-                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Ereignisse"
-                                   hx-get="{% url 'metadata:tabular_ereignis' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                   hx-target="#workspace-browse-panel"
-                                   hx-swap="innerHTML"
-                                   hx-trigger="click" />
-                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Akteure"
-                                   hx-get="{% url 'metadata:tabular_akteur' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                   hx-target="#workspace-browse-panel"
-                                   hx-swap="innerHTML"
-                                   hx-trigger="click" />
-                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Orte"
-                                   hx-get="{% url 'metadata:tabular_ort' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                   hx-target="#workspace-browse-panel"
-                                   hx-swap="innerHTML"
-                                   hx-trigger="click" />
-                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Digitale Objekte"
-                                   hx-get="{% url 'metadata:tabular_digitales_objekt' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                   hx-target="#workspace-browse-panel"
-                                   hx-swap="innerHTML"
-                                   hx-trigger="click" />
-                            <input type="radio" name="entity_tabs" role="tab" class="tab" aria-label="Equipment Software"
-                                   hx-get="{% url 'metadata:tabular_equipment_software' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
-                                   hx-target="#workspace-browse-panel"
-                                   hx-swap="innerHTML"
-                                   hx-trigger="click" />
+                            {% if entity_tabs %}
+                                {% for tab in entity_tabs %}
+                                <input type="radio"
+                                       name="entity_tabs"
+                                       role="tab"
+                                       class="tab"
+                                       aria-label="{{ tab.label }}"
+                                       {% if tab.checked %}checked{% endif %}
+                                       hx-get="{{ tab.url }}"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click"
+                                       data-entity="{{ tab.key }}" />
+                                {% endfor %}
+                            {% else %}
+                                <div class="alert alert-info text-sm">Keine Entitäten konfiguriert.</div>
+                            {% endif %}
                         </div>
 
                         <!-- Shared content area for all tabs -->
                         <div class="bg-base-100 border border-base-300 rounded-lg overflow-hidden p-6">
                             <div id="workspace-browse-panel"
-                                 hx-get="{% url 'metadata:tabular_projects' %}?embed=1{% if organization_code %}&organization={{ organization_code }}{% endif %}"
+                                 {% if active_tab_url %}hx-get="{{ active_tab_url }}"{% endif %}
                                  hx-trigger="load"
-                                 hx-target="this" hx-swap="innerHTML"></div>
+                                 hx-target="this" hx-swap="innerHTML">
+                                {% if not active_tab_url %}
+                                <div class="alert alert-info">Kein Tab verfügbar.</div>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                 </div>

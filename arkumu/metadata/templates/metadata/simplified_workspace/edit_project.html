@@ -10,6 +10,7 @@
 {% endblock container_type_end %}
 
 {% block content %}
+{% url 'metadata:metadata_entry' as metadata_entry_default_url %}
 <div class="w-full px-2 sm:px-4 lg:px-6 xl:px-10 py-6">
   <div class="card bg-base-100 shadow-2xl border border-base-300 rounded-2xl w-full max-w-none">
     <div class="card-body p-8 space-y-8">
@@ -85,7 +86,7 @@
         {% include "metadata/simplified_workspace/partials/_tabbed_sections.html" with sections=tab_sections tab_group_name="project-sections" %}
 
         <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
-          <a href="{% url 'metadata:metadata_entry' %}" class="btn btn-outline">
+          <a href="{{ metadata_entry_return_url|default:metadata_entry_default_url }}" class="btn btn-outline">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>

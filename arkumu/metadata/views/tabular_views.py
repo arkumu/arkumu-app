@@ -1264,6 +1264,14 @@ def _build_rows_for_subjects(
         'actor': 'metadata:edit_actor',
         'digital_object': 'metadata:edit_digital_object',
     }
+    entity_param_map = {
+        'project': 'project',
+        'ereignis': 'ereignis',
+        'event': 'ereignis',
+        'akteur': 'akteur',
+        'actor': 'akteur',
+        'digital_object': 'digitales_objekt',
+    }
     add_actions = entity_type in edit_url_names
 
     if not subjects:
@@ -1329,6 +1337,7 @@ def _build_rows_for_subjects(
     rows: List[Dict[str, str]] = []
     if add_actions:
         edit_url = reverse(edit_url_names[entity_type])
+        entity_param_value = entity_param_map.get(entity_type)
 
     for s in subjects:
         row: Dict[str, str] = {spec['label']: '' for spec in column_specs}
@@ -1376,7 +1385,10 @@ def _build_rows_for_subjects(
         
         if add_actions:
             if s.uri:
-                query = urlencode({'uri': s.uri})
+                query_params = {'uri': s.uri}
+                if entity_param_value:
+                    query_params['entity'] = entity_param_value
+                query = urlencode(query_params)
                 row['Aktionen'] = {
                     "href": f"{edit_url}?{query}",
                     "label": "Bearbeiten",
