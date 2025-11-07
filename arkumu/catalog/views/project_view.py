@@ -8,8 +8,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse
 from django.http import HttpResponseBadRequest, HttpResponseNotFound
 import logging
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Mapping
 
+from arkumu.catalog.services.wikidata_service import WikidataService
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
@@ -147,6 +148,15 @@ class ProjectView(LoginRequiredMixin, View):
         categories = [item.label for item in record.categories if item.label]
         digital_objects = [item.path for item in record.digital_objects if item.path]
         actors = []
+
+        categories_name = []
+        for i,w in enumerate(categories):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        categories = [
+            {"id": cid, "name": cname}
+            for cid, cname in zip(categories, categories_name)
+        ]
+
         for actor in record.actors or []:
             if not actor:
                 continue
@@ -264,7 +274,19 @@ class ProjectView(LoginRequiredMixin, View):
 
         institution_label = record.institution.label if record.institution and record.institution.label else ''
         project_type = record.project_type.label if record.project_type and record.project_type.label else ''
-        rights_status = record.project_type.label if record.rights_status and record.project_type.label else ''
+        rights_status_raw = record.rights_status
+        rights_status = ''
+        if rights_status_raw:
+            if isinstance(rights_status_raw, Mapping):
+                rights_status = rights_status_raw.get('label') or rights_status_raw.get('value') or ''
+            else:
+                candidate = getattr(rights_status_raw, 'label', rights_status_raw)
+                if isinstance(candidate, (list, tuple, set)):
+                    rights_status = [item for item in candidate if item]
+                elif isinstance(candidate, str):
+                    rights_status = candidate
+                else:
+                    rights_status = str(candidate) if candidate else ''
         catchphrase_labels = [item.label for item in record.catchphrases if item.label]
         category_labels = [item.label for item in record.categories if item.label]
         digital_object_paths = [item.path for item in record.digital_objects if item.path]

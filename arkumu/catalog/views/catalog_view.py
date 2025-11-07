@@ -14,6 +14,7 @@ from arkumu.projects.services import ProjectSnapshotService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.metadata.models import ExternalSourcesEntity
+from ..services.wikidata_service import WikidataService
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,24 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 page_obj = paginator.page(1)
             except EmptyPage:
                 page_obj = paginator.page(paginator.num_pages)
+
+            for i, page in enumerate(page_obj):
+                wikidata_service = WikidataService()
+                if page.get("category1"):
+                    page["category1_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category1"))
+                if page.get("category2"):
+                    page["category2_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category2"))
+                if page.get("category3"):
+                    page["category3_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category3"))
+                if page.get("categories"):
+                    categories_name = []
+                    for i, w in enumerate(page.get("categories")):
+                        categories_name.append(wikidata_service.get_entity_label(wikidata_id=w))
+                    page["categories"] = [
+                        {"id": cid, "name": cname}
+                         for cid, cname in zip(page.get("categories"), categories_name)
+                    ]
+
 
             # Calculate result range for display
             total_results = paginator.count

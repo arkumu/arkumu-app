@@ -84,13 +84,28 @@ class ExternalSourcesEntityCacheService:
         # ----------------------------------
         # Ereignis Orte
         # ----------------------------------
-        pred = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/ereignisort")
-        entities = Triple.objects.filter(predicate=pred, object__resource_type=ResourceType.LITERAL)
-        cached =  self.ensure_cached(set([entity.object.value for entity in entities]), ["P625", "label_de"], self.Source.WD, force_refresh=force_refresh)
+        ereignisort_preds = self._resolve_predicates("http://arkumu.org/data/properties/ereignisort")
+        if ereignisort_preds:
+            ereignisort_values = set(
+                Triple.objects.filter(
+                    predicate__in=ereignisort_preds,
+                    object__resource_type=ResourceType.LITERAL,
+                    object__value__isnull=False,
+                ).values_list("object__value", flat=True)
+            )
+            if ereignisort_values:
+                self.ensure_cached(ereignisort_values, ["P625", "label_de"], self.Source.WD, force_refresh=force_refresh)
 
-        pred = Resource.objects.get(canonical_uri="http://arkumu.org/data/properties/schlagwort")
-        entities = Triple.objects.filter(predicate=pred)
-        cached.append(self.ensure_cached(set([entity.object.value for entity in entities]), ["label_de"], self.Source.WD, force_refresh=force_refresh))
+        schlagwort_preds = self._resolve_predicates("http://arkumu.org/data/properties/schlagwort")
+        if schlagwort_preds:
+            schlagwort_values = set(
+                Triple.objects.filter(
+                    predicate__in=schlagwort_preds,
+                    object__value__isnull=False,
+                ).values_list("object__value", flat=True)
+            )
+            if schlagwort_values:
+                self.ensure_cached(schlagwort_values, ["label_de"], self.Source.WD, force_refresh=force_refresh)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -160,3 +175,24 @@ class ExternalSourcesEntityCacheService:
                 seen.add(qid)
                 result.append(qid)
         return result
+
+    def _resolve_predicates(self, canonical_uri: str) -> list[Resource]:
+        predicates = list(
+            Resource.objects.filter(
+                canonical_uri=canonical_uri,
+                resource_type=ResourceType.PROPERTY,
+            )
+        )
+
+        if not predicates:
+            logger.warning("No predicate resources found for canonical URI %s", canonical_uri)
+            return []
+
+        if len(predicates) > 1:
+            logger.info(
+                "Multiple predicate resources found for canonical URI %s; processing all %d variants",
+                canonical_uri,
+                len(predicates),
+            )
+
+        return predicates
