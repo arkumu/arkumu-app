@@ -104,10 +104,6 @@
                  class="{% if current_url_name in 'create_project create_event create_actor create_role create_digital_object create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">
             Metadata Workspace
           </a></li>
-          <li><a href="{% url 'metadata:metadata_entry' %}"
-                 class="{% if current_url_name == 'metadata_entry' %}active{% endif %}">
-            Metadata Tabular
-          </a></li>
           <li><a href="{% url 'metadata:controlled_vocab_overview' %}"
                  class="{% if current_url_name in 'controlled_vocab_overview controlled_vocab_list controlled_vocab_create controlled_vocab_edit' %}active{% endif %}">
             Controlled Vocabularies
