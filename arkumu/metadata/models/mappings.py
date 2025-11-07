@@ -3,6 +3,48 @@ from django.conf import settings
 from arkumu.metadata.models.base import UUIDModel
 
 
+class MappingSelectionAudit(UUIDModel):
+    """Audit trail for mapping selections (superuser only feature)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='mapping_selection_audits'
+    )
+    organization_id = models.CharField(max_length=255, db_index=True)
+    mapping = models.ForeignKey(
+        'Mapping',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='selection_audits'
+    )
+    mapping_name = models.CharField(max_length=255)
+    action = models.CharField(
+        max_length=20,
+        choices=[
+            ('set', 'Set Active'),
+            ('cleared', 'Cleared')
+        ]
+    )
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['organization_id', '-timestamp']),
+            models.Index(fields=['user', '-timestamp']),
+            models.Index(fields=['-timestamp']),
+        ]
+        verbose_name = 'Mapping Selection Audit'
+        verbose_name_plural = 'Mapping Selection Audits'
+
+    def __str__(self):
+        username = self.user.username if self.user else 'Unknown'
+        return f"{username} {self.action} mapping for {self.organization_id} at {self.timestamp}"
+
+
 class Mapping(UUIDModel):
     """Flexible mapping configurations for CSV data transformation"""
     
@@ -28,12 +70,23 @@ class Mapping(UUIDModel):
     # Execution tracking
     last_executed = models.DateTimeField(null=True, blank=True)
     execution_stats = models.JSONField(default=dict, help_text="Statistics from last execution")
-    
+
+    # Active mapping flag (only one per organization)
+    is_active = models.BooleanField(default=False, help_text="Whether this is the active mapping for this organization")
+
     class Meta:
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['organization_id', 'validation_status']),
             models.Index(fields=['created_by', 'validation_status']),
+            models.Index(fields=['organization_id', 'is_active']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['organization_id'],
+                condition=models.Q(is_active=True),
+                name='unique_active_mapping_per_org'
+            )
         ]
     
     def __str__(self):
@@ -42,10 +95,10 @@ class Mapping(UUIDModel):
     def get_source_datasets(self):
         """Get list of datasets this mapping applies to - computed from mapping_config"""
         return self.mapping_config.get('workspace_datasets', [])
-    
+
     def get_dataset_count(self):
-        """Get number of datasets in this mapping"""
-        return len(self.source_datasets)
+        """Get number of datasets in this mapping - uses workspace_datasets from mapping_config"""
+        return len(self.get_source_datasets())
     
     def get_column_count(self):
         """Get total number of columns in workspace (selected columns only)"""

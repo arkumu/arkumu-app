@@ -1,5 +1,7 @@
+import json
 import logging
 from collections import defaultdict
+from functools import wraps
 
 from django.conf import settings
 
@@ -13,13 +15,14 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django.test import RequestFactory
 from io import StringIO
 
 from arkumu.importer.models import IngestSession
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
+from arkumu.metadata.models.mappings import Mapping, MappingSelectionAudit
 from arkumu.storage.models.upload_tracking import AsyncUploadSession
 from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
 from arkumu.storage.services.bucket_service import BucketService
@@ -29,6 +32,7 @@ from arkumu.oaipmh.views import oai_endpoint
 from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
 from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.projects.services import ProjectSnapshotService
+from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 
 from .dashboard_helpers import (
     build_session_entry,
@@ -39,6 +43,22 @@ from .dashboard_helpers import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def superuser_required(view_func):
+    """Decorator to require superuser access for function-based views."""
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return HttpResponseForbidden(
+                "<div class='alert alert-error'>Authentication required</div>"
+            )
+        if not request.user.is_superuser:
+            return HttpResponseForbidden(
+                "<div class='alert alert-error'>Access denied: Superuser privileges required</div>"
+            )
+        return view_func(request, *args, **kwargs)
+    return wrapper
 
 _oai_proxy_request_factory = RequestFactory()
 
@@ -790,3 +810,143 @@ def oai_widget(request):
             "oai_snapshot": oai_snapshot,
         },
     )
+
+
+@require_http_methods(["GET", "POST"])
+@superuser_required
+def mapping_selector_widget(request):
+    """
+    HTMX widget for selecting the active mapping for ALL organizations.
+
+    **SUPERUSER ONLY**: Only superusers can view and change schema mappings.
+    This affects how the projekt snapshot service and metadata entry services
+    interpret organizational data structures globally.
+    """
+    from arkumu.users.models import Organization
+    from django.db import transaction
+
+    if request.method == "POST":
+        # Handle mapping selection for a specific organization
+        organization_id = request.POST.get('organization_id')
+        mapping_id = request.POST.get('mapping_id')
+
+        if not organization_id:
+            return HttpResponse(
+                "<div class='alert alert-error'>Organization ID required</div>"
+            )
+
+        try:
+            organization = Organization.objects.get(code=organization_id)
+        except Organization.DoesNotExist:
+            return HttpResponse(
+                "<div class='alert alert-error'>Organization not found</div>"
+            )
+
+        # Use transaction to ensure atomic is_active updates
+        with transaction.atomic():
+            # Clear mapping if empty selection
+            if not mapping_id:
+                # Set all mappings for this org to is_active=False
+                Mapping.objects.filter(
+                    organization_id=organization_id,
+                    is_active=True
+                ).update(is_active=False)
+
+                logger.info(
+                    f"SUPERUSER {request.user.username} cleared active mapping for org {organization_id}"
+                )
+
+                # Log audit trail
+                MappingSelectionAudit.objects.create(
+                    user=request.user,
+                    organization_id=organization_id,
+                    mapping=None,
+                    mapping_name='',
+                    action='cleared',
+                    ip_address=request.META.get('REMOTE_ADDR')
+                )
+
+            else:
+                # Set new mapping as active
+                try:
+                    mapping = Mapping.objects.get(id=mapping_id, organization_id=organization_id)
+
+                    # Deactivate all other mappings for this org
+                    Mapping.objects.filter(
+                        organization_id=organization_id,
+                        is_active=True
+                    ).exclude(id=mapping.id).update(is_active=False)
+
+                    # Activate the selected mapping
+                    mapping.is_active = True
+                    mapping.save(update_fields=['is_active'])
+
+                    # Log the change for audit trail
+                    logger.info(
+                        f"SUPERUSER {request.user.username} set active mapping to '{mapping.name}' "
+                        f"(ID: {mapping.id}) for org {organization_id}"
+                    )
+
+                    # Create audit record
+                    MappingSelectionAudit.objects.create(
+                        user=request.user,
+                        organization_id=organization_id,
+                        mapping=mapping,
+                        mapping_name=mapping.name,
+                        action='set',
+                        ip_address=request.META.get('REMOTE_ADDR')
+                    )
+
+                except Mapping.DoesNotExist:
+                    return HttpResponse(
+                        "<div class='alert alert-error'>Mapping not found or does not belong to this organization</div>"
+                    )
+
+        # Return updated widget with HX-Trigger for other components
+        organizations_with_mappings = _get_organizations_with_mappings()
+
+        response = render(request, 'metadata/partials/mapping_selector_widget.html', {
+            'organizations_with_mappings': organizations_with_mappings,
+            'mapping_changed_success': True,
+            'changed_org_name': organization.name
+        })
+        response['HX-Trigger'] = json.dumps({
+            'mapping-changed': {
+                'mapping_id': str(mapping_id) if mapping_id else None,
+                'organization_id': organization_id,
+                'action': 'set' if mapping_id else 'cleared'
+            }
+        })
+        return response
+
+    # GET request - render selector with all organizations
+    organizations_with_mappings = _get_organizations_with_mappings()
+
+    return render(request, 'metadata/partials/mapping_selector_widget.html', {
+        'organizations_with_mappings': organizations_with_mappings
+    })
+
+
+def _get_organizations_with_mappings():
+    """Helper function to get production organizations with their mappings."""
+    from arkumu.users.models import Organization
+
+    # Hardcoded list of production organizations (excludes test orgs)
+    PRODUCTION_ORG_CODES = ['fuk', 'hmt', 'khm', 'rsh', 'det']
+
+    organizations = Organization.objects.filter(code__in=PRODUCTION_ORG_CODES).order_by('name')
+
+    organizations_data = []
+    for org in organizations:
+        mappings = Mapping.objects.filter(organization_id=org.code).order_by('-created_at')
+        active_mapping = mappings.filter(is_active=True).first()
+
+        # Only include orgs that have at least one mapping
+        if mappings.exists():
+            organizations_data.append({
+                'organization': org,
+                'mappings': mappings,
+                'active_mapping': active_mapping
+            })
+
+    return organizations_data

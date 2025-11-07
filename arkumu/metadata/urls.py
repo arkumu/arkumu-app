@@ -70,6 +70,9 @@ urlpatterns = [
     path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
     path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
 
+    # SUPERUSER ONLY: Mapping selector widget
+    path('dashboard/mapping-selector/', dashboard_views.mapping_selector_widget, name='mapping_selector_widget'),
+
     # Controlled vocabularies
     path('controlled-vocabularies/', controlled_vocabulary_views.ControlledVocabularyOverviewView.as_view(), name='controlled_vocab_overview'),
     path('controlled-vocabularies/<str:vocab_key>/', controlled_vocabulary_views.ControlledVocabularyEntryListView.as_view(), name='controlled_vocab_list'),
@@ -378,6 +381,13 @@ urlpatterns = [
     # New simplified workspace views (uses legacy infrastructure with subset of fields)
     path('edit/project/', simplified_workspace_views.SimplifiedProjectEditView.as_view(), name='edit_project'),
     path('edit/ereignis/', simplified_workspace_views.SimplifiedEreignisEditView.as_view(), name='edit_ereignis'),
+    path(
+        'edit/ereignis/actor-card/',
+        simplified_workspace_views.ActorParticipationCardView.as_view(),
+        name='actor_participation_card',
+    ),
+    path('edit/context-entity-suggestions/', simplified_workspace_views.ContextEntitySuggestionsView.as_view(), name='simplified_context_entity_suggestions'),
+    path('edit/context-entity-select/', simplified_workspace_views.ContextEntitySelectView.as_view(), name='simplified_context_entity_select'),
     # Old version (keeping for reference)
     path('edit/project/old/', entity_creation_views.edit_project, name='edit_project_old'),
     path('edit/event/', entity_creation_views.edit_event, name='edit_event'),
