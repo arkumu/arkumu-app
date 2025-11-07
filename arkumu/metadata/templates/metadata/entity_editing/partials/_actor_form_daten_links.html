@@ -1,0 +1,104 @@
+<div class="project-form">
+
+  <div id="{{prefix}}fields">
+    {% if actor_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div></div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span></span>
+            {% for error in actor_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="space-y-6">
+      <!-- Ereignisse und Relationen Section -->
+      <div class="space-y-4 mt-6">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Daten-Links
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">OrcID</span>
+              {% if actor_form.orc_id.errors %}
+              <span class="label-text-alt text-error">{{ actor_form.orc_id.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ actor_form.orc_id }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">GND-ID</span>
+              {% if actor_form.gnd_id.errors %}
+              <span class="label-text-alt text-error">{{ actor_form.gnd_id.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ actor_form.gnd_id }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Viaf ID</span>
+              {% if actor_form.viaf_id.errors %}
+              <span class="label-text-alt text-error">{{ actor_form.viaf_id.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ actor_form.viaf_id }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Lccn ID</span>
+              {% if actor_form.lccn_id.errors %}
+              <span class="label-text-alt text-error">{{ actor_form.lccn_id.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ actor_form.lccn_id }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Wikidata-ID</span>
+              {% if actor_form.wikidata_id.errors %}
+              <span class="label-text-alt text-error">{{ actor_form.wikidata_id.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ actor_form.wikidata_id }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Weitere Normdaten</span>
+              {% if actor_form.weitere_normdaten.errors %}
+              <span class="label-text-alt text-error">{{ actor_form.weitere_normdaten.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ actor_form.weitere_normdaten }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Links zu den Webseiten der Akteur:in</span>
+              {% if actor_form.webseiten_links.errors %}
+              <span class="label-text-alt text-error">{{ actor_form.webseiten_links.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ actor_form.webseiten_links }}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

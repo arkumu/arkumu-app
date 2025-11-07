@@ -1,0 +1,80 @@
+<div class="digital-object-form"> 
+
+  <div id="{{prefix}}fields">
+    {% if digital_object_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div></div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span></span>
+            {% for error in digital_object_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="space-y-6">
+      <!-- Ersteller und Einlieferer Section -->
+      <div class="space-y-4 mt-6">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Einliefernde Hochschule
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Einliefernde Hochschule</span>
+              {% if digital_object_form.einliefernde_hochschule_uri.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.einliefernde_hochschule_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.einliefernde_hochschule_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">ID beim Einlieferer</span>
+              {% if digital_object_form.einlieferer_id.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.einlieferer_id.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.einlieferer_id }}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Erstellungsdatum beim Einlieferer</span>
+                {% if digital_object_form.erstellungsdatum.errors %}
+                <span class="label-text-alt text-error">{{ digital_object_form.erstellungsdatum.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ digital_object_form.erstellungsdatum }}
+              <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.erstellungsdatum.help_text }}</div>
+            </div>
+          
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Letzte Projektmodifikation beim Einlieferer</span>
+              {% if digital_object_form.letzteModifikation.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.letzteModifikation.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.letzteModifikation }}
+            <div class="text-xs text-base-content/60 mt-1">{{ digital_object_form.letzteModifikation.help_text }}</div>
+          </div>
+        </div>
+
+        
+      </div>
+    </div>
+  </div>
+</div>

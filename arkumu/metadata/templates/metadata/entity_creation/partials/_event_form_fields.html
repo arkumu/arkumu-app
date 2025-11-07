@@ -50,17 +50,6 @@
 
           <div class="form-control">
             <label class="label">
-              <span class="label-text font-medium">Associated Project</span>
-              {% if event_form.project_uri.errors %}
-              <span class="label-text-alt text-error">{{ event_form.project_uri.errors.0 }}</span>
-              {% endif %}
-            </label>
-            {{ event_form.project_uri }}
-            <div class="text-xs text-base-content/60 mt-1">Select the project this event is associated with</div>
-          </div>
-
-          <div class="form-control">
-            <label class="label">
               <span class="label-text font-medium">Ereignisort</span>
               {% if event_form.ereignisort.errors %}
               <span class="label-text-alt text-error">{{ event_form.ereignisort.errors.0 }}</span>

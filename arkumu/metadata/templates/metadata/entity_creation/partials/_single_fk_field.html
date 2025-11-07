@@ -23,21 +23,27 @@
           {% endfor %}
         </select>
       </div>
+    {% elif search_properties and search_properties|length == 1 %}
+      {# Single configured search property - show info message #}
+      <div class="text-xs text-base-content/60 mb-1">
+        Suche nach: <span class="font-medium">{{ search_properties.0.label }}</span>
+      </div>
     {% endif %}
 
     {# Visible input for search/display - NOT submitted (name starts with q_) #}
     <input type="text"
            id="{{ input_id }}"
            name="q"
-           class="{{ css_class }}"
+           class="{{ css_class }} w-full"
            placeholder="Tippen zum Suchen..."
            value="{{ display_value|default:'' }}"
            title="URI: {{ uri_value|default:'nicht gesetzt' }}"
            {% if search_url %}
-           hx-get="{{ search_url }}&input_id={{ input_id }}&target_id={{ target_id }}"
+           hx-get="{{ search_url }}"
            hx-trigger="input changed delay:200ms"
            hx-target="#{{ target_id }}"
-           hx-include="this, [id='prop-{{ input_id }}'], #{{ input_id }}-hidden"
+           hx-include="[id='prop-{{ input_id }}'], #{{ input_id }}-hidden"
+           hx-params="q, property"
            {% endif %}
            autocomplete="off"
            {% if required %}required{% endif %}>

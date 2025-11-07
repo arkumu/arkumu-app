@@ -1,0 +1,39 @@
+{% if suggestions %}
+<div class="flex justify-end items-center px-2 py-1 border-b border-base-300">
+  <button type="button"
+          class="btn btn-ghost btn-xs btn-circle"
+          hx-get="{% url 'metadata:simplified_context_entity_suggestions' %}?clear=1&dataset={{ dataset|urlencode }}&input_id={{ input_id }}&hidden_id={{ hidden_id }}&hidden_name={{ hidden_name|urlencode }}&target_id={{ target_id }}&field_name={{ field_name }}&context_slug={{ context_slug }}"
+          hx-target="#{{ target_id }}"
+          hx-swap="innerHTML"
+          title="Schließen">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+    </svg>
+  </button>
+</div>
+<ul class="menu menu-xs w-full text-left">
+  {% for suggestion in suggestions %}
+    <li>
+      <button type="button"
+              class="btn btn-ghost btn-xs justify-start w-full"
+              hx-post="{% url 'metadata:simplified_context_entity_select' %}"
+              hx-vals='{
+                "input_id": "{{ input_id }}",
+                "hidden_id": "{{ hidden_id }}",
+                "hidden_name": "{{ hidden_name }}",
+                "target_id": "{{ target_id }}",
+                "dataset": "{{ dataset|escapejs }}",
+                "search_property": "{{ search_property|escapejs }}",
+                "field_name": "{{ field_name|escapejs }}",
+                "context_slug": "{{ context_slug|escapejs }}",
+                "value": "{{ suggestion.uri|escapejs }}",
+                "label": "{{ suggestion.label|escapejs }}"
+              }'
+              hx-target="#{{ target_id }}"
+              hx-swap="innerHTML">
+        <span class="truncate">{{ suggestion.label }}</span>
+      </button>
+    </li>
+  {% endfor %}
+</ul>
+{% endif %}

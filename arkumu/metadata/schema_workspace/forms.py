@@ -80,15 +80,19 @@ class DatasetEntityForm(forms.Form):
 
             # Multi-value fields render as a special widget with + button
             # The actual form field is just for validation
+            widget_attrs = {
+                "data-column": column_name,
+                "data-column-type": column_type,
+                "data-multi-value": "true",
+            }
+            widget_name = meta.get("widget")
+            if widget_name:
+                widget_attrs["data-widget"] = widget_name
             field = forms.CharField(
                 label=field_label,
                 required=required,
                 widget=forms.HiddenInput(
-                    attrs={
-                        "data-column": column_name,
-                        "data-column-type": column_type,
-                        "data-multi-value": "true",
-                    }
+                    attrs=widget_attrs
                 ),
             )
             # Template will render the dynamic add/remove UI
@@ -98,7 +102,7 @@ class DatasetEntityForm(forms.Form):
                 required=required,
                 widget=forms.TextInput(
                     attrs={
-                        "class": "input input-bordered",
+                        "class": "input input-bordered w-full",
                         "data-column": column_name,
                         "data-column-type": meta.get("column_type"),
                     }

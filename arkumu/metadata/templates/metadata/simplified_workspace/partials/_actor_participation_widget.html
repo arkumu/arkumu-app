@@ -1,0 +1,20 @@
+{% with container_id="actor-participation-list-"|add:widget.field_name|slugify %}
+  <div class="space-y-4" id="actor-participation-widget-{{ widget.field_name|slugify }}">
+    <div id="{{ container_id }}" class="space-y-4">
+      {% for card in widget.cards %}
+        {% include "metadata/simplified_workspace/partials/_actor_participation_card.html" with card=card widget=widget %}
+      {% endfor %}
+    </div>
+    <button type="button"
+            class="btn btn-outline btn-sm"
+            hx-post="{{ widget.add_url }}"
+            hx-vals='{"dataset": "{{ widget.dataset_name|escapejs }}", "field_name": "{{ widget.field_name|escapejs }}"}'
+            hx-target="#{{ container_id }}"
+            hx-swap="beforeend">
+      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+      </svg>
+      Teilnahme hinzufügen
+    </button>
+  </div>
+{% endwith %}

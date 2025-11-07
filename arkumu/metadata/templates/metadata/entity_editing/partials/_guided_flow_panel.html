@@ -1,0 +1,52 @@
+<div class="card bg-base-100 border border-base-300 shadow-sm">
+  <div class="card-body space-y-6">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="text-xl font-semibold">Geführte Erstellung</h2>
+        <p class="text-sm text-base-content/70">
+          Lege ein Projekt an und verknüpfe anschließend Ereignisse, Akteur*innen und digitale Objekte – Schritt für Schritt.
+        </p>
+      </div>
+      <span class="badge badge-outline badge-lg bg-base-200/60">
+        Flow-ID: {{ flow_state.flow_id|slice:":8" }}
+      </span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <ul class="steps steps-horizontal">
+        {% for item in step_items %}
+          <li class="step {% if item.status == 'complete' %}step-primary{% elif item.status == 'current' %}step-secondary{% endif %}">
+            {% if item.enabled %}
+              <button type="button"
+                      class="btn btn-link btn-sm px-0 normal-case"
+                      hx-get="{{ item.url }}"
+                      hx-target="#guided-flow-panel"
+                      hx-swap="innerHTML"
+                      hx-push-url="false">
+                {{ item.label }}
+              </button>
+            {% else %}
+              <span class="opacity-50 cursor-not-allowed">{{ item.label }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    {% if message %}
+      <div class="alert {% if message.level == 'success' %}alert-success{% elif message.level == 'error' %}alert-error{% else %}alert-info{% endif %}">
+        <span>{{ message.text|safe }}</span>
+      </div>
+    {% endif %}
+
+    <div data-guided-step-container>
+      {% if step_template %}
+        {% include step_template with step_context=step_context flow_state=flow_state active_step=active_step %}
+      {% else %}
+        <div class="alert alert-warning">
+          <span>Für diesen Schritt wurde noch kein Template hinterlegt.</span>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>

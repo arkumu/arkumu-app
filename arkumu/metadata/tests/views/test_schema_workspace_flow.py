@@ -122,7 +122,7 @@ class StubSchemaWorkspaceService:
     def get_join_values(self, relationship, entity_uri):
         return []
 
-    def sync_join_relationship(self, *, entity_uri, relationship, related_uris):
+    def sync_join_relationship(self, *, entity_uri, relationship, related_items):
         return None
 
 

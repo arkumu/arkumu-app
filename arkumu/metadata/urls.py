@@ -1,6 +1,22 @@
 from django.urls import path
-from arkumu.metadata.views import dashboard_views, resource_views, triple_views, bulk_editor_views, data_discovery_views, data_explorer_views, direct_data_views, model_graph_views, resource_relationship_views, mapping_visualizer_graphviz, database_structure_visualizer, blueprint_visualizer_graphviz, simplified_resource_views
-from arkumu.metadata.views import metadata_entry_views
+from arkumu.metadata.views import (
+    dashboard_views,
+    resource_views,
+    triple_views,
+    bulk_editor_views,
+    data_discovery_views,
+    data_explorer_views,
+    direct_data_views,
+    model_graph_views,
+    resource_relationship_views,
+    mapping_visualizer_graphviz,
+    database_structure_visualizer,
+    blueprint_visualizer_graphviz,
+    simplified_resource_views,
+)
+from arkumu.metadata.views import metadata_entry_views, tabular_views, schema_workspace_views
+from arkumu.metadata.views import workspace_quick_create_views
+from arkumu.metadata.views import controlled_vocabulary_views
 # Temporarily disabled bulk arkumu mapping views
 # from arkumu.metadata.views.bulk_arkumu_mapping_views import (
 #     BulkArkumuMappingView,
@@ -31,7 +47,7 @@ from arkumu.metadata.views.csv_mapping.views.execution_views import (
     ValidateMappingExecutionView
 )
 from arkumu.metadata.views.csv_mapping.views import mapping_analysis_views
-from arkumu.metadata.views import entity_creation_views
+from arkumu.metadata.views import entity_creation_views, simplified_workspace_views
 
 app_name = 'metadata'
 
@@ -55,6 +71,14 @@ urlpatterns = [
     path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
     path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
 
+    # SUPERUSER ONLY: Mapping selector widget
+    path('dashboard/mapping-selector/', dashboard_views.mapping_selector_widget, name='mapping_selector_widget'),
+
+    # Controlled vocabularies
+    path('controlled-vocabularies/', controlled_vocabulary_views.ControlledVocabularyOverviewView.as_view(), name='controlled_vocab_overview'),
+    path('controlled-vocabularies/<str:vocab_key>/', controlled_vocabulary_views.ControlledVocabularyEntryListView.as_view(), name='controlled_vocab_list'),
+    path('controlled-vocabularies/<str:vocab_key>/new/', controlled_vocabulary_views.ControlledVocabularyEntryManageView.as_view(), name='controlled_vocab_create'),
+    path('controlled-vocabularies/<str:vocab_key>/<uuid:resource_id>/edit/', controlled_vocabulary_views.ControlledVocabularyEntryManageView.as_view(), name='controlled_vocab_edit'),
     # Data Explorer (unified resource and triple browsing)
     path('data-explorer/', DataExplorerView.as_view(), name='data_explorer'),
     path('data-explorer/results/', DataExplorerResultsView.as_view(), name='data_explorer_results'),
@@ -141,6 +165,22 @@ urlpatterns = [
     path('metadata-entry/section/', metadata_entry_views.MetadataEntrySectionView.as_view(), name='metadata_entry_section'),
     path('metadata-entry/submit/', metadata_entry_views.MetadataEntrySubmitView.as_view(), name='metadata_entry_submit'),
     path('metadata-entry/latest/', metadata_entry_views.MetadataEntryLatestProjectsView.as_view(), name='metadata_entry_latest'),
+
+    # Workspace quick create (human fields, single page)
+    path('workspace/quick-create/<str:entity>/', workspace_quick_create_views.quick_create_entity, name='workspace_quick_create'),
+
+    # Legacy schema-driven metadata workspace
+    path('workspace/legacy/', schema_workspace_views.SchemaDrivenWorkspaceView.as_view(), name='entity_creation_workspace'),
+    path('workspace/legacy/<uuid:mapping_id>/dataset/', schema_workspace_views.SchemaDatasetFragmentView.as_view(), name='entity_workspace_dataset'),
+    path('workspace/legacy/<uuid:mapping_id>/project-access/', schema_workspace_views.ProjectAccessLevelUpdateView.as_view(), name='project_access_update'),
+    path('workspace/legacy/<uuid:mapping_id>/field-values/', schema_workspace_views.DatasetFieldValueOptionsView.as_view(), name='entity_workspace_field_values'),
+    path('workspace/legacy/<uuid:mapping_id>/search/', schema_workspace_views.EntitySearchView.as_view(), name='entity_workspace_search'),
+    path('workspace/legacy/<uuid:mapping_id>/relationship-row/', schema_workspace_views.RelationshipRowView.as_view(), name='entity_workspace_relationship_row'),
+    path('workspace/legacy/<uuid:mapping_id>/relationship-rows/', schema_workspace_views.RelationshipRowsView.as_view(), name='entity_workspace_relationship_rows'),
+    path('workspace/legacy/<uuid:mapping_id>/triple-suggestions/', schema_workspace_views.TripleRelationshipSuggestionsView.as_view(), name='entity_workspace_triple_suggestions'),
+    path('workspace/legacy/<uuid:mapping_id>/triple/', schema_workspace_views.TripleRelationshipManageView.as_view(), name='entity_workspace_triple_manage'),
+    path('workspace/legacy/<uuid:mapping_id>/select-suggestion/', schema_workspace_views.RelationshipSelectSuggestionView.as_view(), name='entity_workspace_select_suggestion'),
+    path('workspace/legacy/<uuid:mapping_id>/flow/', schema_workspace_views.SchemaWorkspaceFlowView.as_view(), name='entity_workspace_flow'),
 
     # Manual Relationship Builder
     path('add-column-to-workspace/', direct_data_views.add_column_to_workspace, name='add_column_to_workspace'),
@@ -320,15 +360,12 @@ urlpatterns = [
     # path('bulk-arkumu-mapping/delete/<uuid:pk>/', BulkArkumuMappingDeleteView.as_view(), name='bulk_arkumu_mapping_delete'),
 
 
-    # Entity creation endpoints
-    path('create/project/', entity_creation_views.create_project, name='create_project'),
-    path('project/details/', entity_creation_views.get_project_details, name='project_details'),
+    # Entity creation endpoints (OLD - kept for reference)
+    # path('create/project/', entity_creation_views.create_project, name='create_project_old_view'),
     path('create/event/', entity_creation_views.create_event, name='create_event'),
     path('create/actor/', entity_creation_views.create_actor, name='create_actor'),
-    path('actor/details/', entity_creation_views.get_actor_details, name='actor_details'),
     path('create/role/', entity_creation_views.create_role, name='create_role'),
-    path('role/details/', entity_creation_views.get_role_details, name='role_details'),
-    path('create/digital-object/', entity_creation_views.create_digital_object, name='create_digital_object'),
+    path('create/digital-object/legacy/', entity_creation_views.create_digital_object, name='create_digital_object_old'),
     path('create/institution/', entity_creation_views.create_institution, name='create_institution'),
     path('create/project-category/', entity_creation_views.create_project_category, name='create_project_category'),
     path('create/project-type/', entity_creation_views.create_project_type, name='create_project_type'),
@@ -336,4 +373,72 @@ urlpatterns = [
     path('create/description/', entity_creation_views.create_description, name='create_description'),
     path('create/catchphrase/', entity_creation_views.create_catchphrase, name='create_catchphrase'),
 
+    # Entity creation endpoints
+    # New simplified workspace views (uses legacy infrastructure with subset of fields)
+    path('create/project/', simplified_workspace_views.SimplifiedProjectCreateView.as_view(), name='create_project'),
+    path('create/ereignis/', simplified_workspace_views.SimplifiedEreignisCreateView.as_view(), name='create_ereignis'),
+    path('create/akteur/', simplified_workspace_views.SimplifiedAkteurCreateView.as_view(), name='create_akteur'),
+    path('create/ort/', simplified_workspace_views.SimplifiedOrtCreateView.as_view(), name='create_ort'),
+    path('create/digital-object/', simplified_workspace_views.SimplifiedDigitalesObjektCreateView.as_view(), name='create_digital_object'),
+    path('create/equipment-software/', simplified_workspace_views.SimplifiedEquipmentSoftwareCreateView.as_view(), name='create_equipment_software'),
+
+    # Entity edit endpoints
+    # New simplified workspace views (uses legacy infrastructure with subset of fields)
+    path('edit/project/', simplified_workspace_views.SimplifiedProjectEditView.as_view(), name='edit_project'),
+    path('edit/ereignis/', simplified_workspace_views.SimplifiedEreignisEditView.as_view(), name='edit_ereignis'),
+    path('edit/akteur/', simplified_workspace_views.SimplifiedAkteurEditView.as_view(), name='edit_akteur'),
+    path('edit/ort/', simplified_workspace_views.SimplifiedOrtEditView.as_view(), name='edit_ort'),
+    path('edit/digital-object/', simplified_workspace_views.SimplifiedDigitalesObjektEditView.as_view(), name='edit_digital_object'),
+    path('edit/equipment-software/', simplified_workspace_views.SimplifiedEquipmentSoftwareEditView.as_view(), name='edit_equipment_software'),
+    path(
+        'edit/ereignis/actor-card/',
+        simplified_workspace_views.ActorParticipationCardView.as_view(),
+        name='actor_participation_card',
+    ),
+    path('edit/context-entity-suggestions/', simplified_workspace_views.ContextEntitySuggestionsView.as_view(), name='simplified_context_entity_suggestions'),
+    path('edit/context-entity-select/', simplified_workspace_views.ContextEntitySelectView.as_view(), name='simplified_context_entity_select'),
+    # Old version (keeping for reference)
+    path('edit/project/old/', entity_creation_views.edit_project, name='edit_project_old'),
+    path('edit/event/', entity_creation_views.edit_event, name='edit_event'),
+    path('edit/actor/', entity_creation_views.edit_actor, name='edit_actor'),
+    path('edit/role/', entity_creation_views.edit_role, name='edit_role'),
+    path('edit/digital-object/legacy/', entity_creation_views.edit_digital_object, name='edit_digital_object_old'),
+    path('edit/institution/', entity_creation_views.edit_institution, name='edit_institution'),
+    path('edit/project-category/', entity_creation_views.edit_project_category, name='edit_project_category'),
+    path('edit/project-type/', entity_creation_views.edit_project_type, name='edit_project_type'),
+    path('edit/alternate-title/', entity_creation_views.edit_alternate_title, name='edit_alternate_title'),
+    path('edit/description/', entity_creation_views.edit_description, name='edit_description'),
+    path('edit/catchphrase/', entity_creation_views.edit_catchphrase, name='edit_catchphrase'),
+    
+    # Tabular views for mapping-based entities (DigiKunst entities)
+    path('tabular/projects/', tabular_views.project_table_view, name='tabular_projects'),
+    path('tabular/events/', tabular_views.event_table_view, name='tabular_events'),
+    path('tabular/actors/', tabular_views.actor_table_view, name='tabular_actors'),
+    path('tabular/digital-objects/', tabular_views.digital_object_table_view, name='tabular_digital_objects'),
+    
+    # DigiKunst entity tabular views
+    path('tabular/akteur/', tabular_views.akteur_table_view, name='tabular_akteur'),
+    path('tabular/akteur-relation/', tabular_views.akteur_relation_table_view, name='tabular_akteur_relation'),
+    path('tabular/bestehender-lizenzvertrag/', tabular_views.bestehender_lizenzvertrag_table_view, name='tabular_bestehender_lizenzvertrag'),
+    path('tabular/digitales-objekt/', tabular_views.digitales_objekt_table_view, name='tabular_digitales_objekt'),
+    path('tabular/eigenschaft/', tabular_views.eigenschaft_table_view, name='tabular_eigenschaft'),
+    path('tabular/equipment-software/', tabular_views.equipment_software_table_view, name='tabular_equipment_software'),
+    path('tabular/equipmentart/', tabular_views.equipmentart_table_view, name='tabular_equipmentart'),
+    path('tabular/ereignis/', tabular_views.ereignis_table_view, name='tabular_ereignis'),
+    path('tabular/ereignis-beschreibung/', tabular_views.ereignis_beschreibung_table_view, name='tabular_ereignis_beschreibung'),
+    path('tabular/ereignis-eigenschaftswert/', tabular_views.ereignis_eigenschaftswert_table_view, name='tabular_ereignis_eigenschaftswert'),
+    path('tabular/ereignis-relation/', tabular_views.ereignis_relation_table_view, name='tabular_ereignis_relation'),
+    path('tabular/ereignis-rolle/', tabular_views.ereignis_rolle_table_view, name='tabular_ereignis_rolle'),
+    path('tabular/informationstraeger/', tabular_views.informationstraeger_table_view, name='tabular_informationstraeger'),
+    path('tabular/informationstraeger-eigenschaftswert/', tabular_views.informationstraeger_eigenschaftswert_table_view, name='tabular_informationstraeger_eigenschaftswert'),
+    path('tabular/inhaltswarnung/', tabular_views.inhaltswarnung_table_view, name='tabular_inhaltswarnung'),
+    path('tabular/organisationseinheit/', tabular_views.organisationseinheit_table_view, name='tabular_organisationseinheit'),
+    path('tabular/ort/', tabular_views.ort_table_view, name='tabular_ort'),
+    path('tabular/physisches-objekt/', tabular_views.physisches_objekt_table_view, name='tabular_physisches_objekt'),
+    path('tabular/produkt-id/', tabular_views.produkt_id_table_view, name='tabular_produkt_id'),
+    path('tabular/projekt-beschreibung/', tabular_views.projekt_beschreibung_table_view, name='tabular_projekt_beschreibung'),
+    path('tabular/projekt-eigenschaftswert/', tabular_views.projekt_eigenschaftswert_table_view, name='tabular_projekt_eigenschaftswert'),
+    path('tabular/projekt-relation/', tabular_views.projekt_relation_table_view, name='tabular_projekt_relation'),
+    path('tabular/sammlung/', tabular_views.sammlung_table_view, name='tabular_sammlung'),
+    path('tabular/schlagwort/', tabular_views.schlagwort_table_view, name='tabular_schlagwort'),
     ]

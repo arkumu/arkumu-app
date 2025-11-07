@@ -30,8 +30,13 @@ class SchemaService:
     for post-import CRUD operations.
     """
     
-    def __init__(self, mapping_id: str, institution: str = "ARKUMU", 
-                 base_uri: str = "http://arkumu.org/data"):
+    def __init__(
+        self,
+        mapping_id: str,
+        institution: str = "ARKUMU",
+        base_uri: str = "http://arkumu.org/data",
+        schema_variant_key: Optional[str] = None,
+    ):
         """
         Initialize schema service for a specific mapping.
         
@@ -45,6 +50,7 @@ class SchemaService:
         self.base_uri = base_uri
         self._processor = None
         self._schema_loaded = False
+        self.schema_variant_key = schema_variant_key
     
     def _ensure_schema_loaded(self):
         """Ensure schema is loaded from cache or created if needed."""
@@ -127,7 +133,10 @@ class SchemaService:
                 
                 # Load mapping configuration
                 adapter = MappingAdapter()
-                execution_config = adapter.translate_to_execution_config(self.mapping_id)
+                execution_config = adapter.translate_to_execution_config(
+                    self.mapping_id,
+                    schema_variant_key=self.schema_variant_key,
+                )
                 
                 # Create processor and generate complete schema
                 self._processor = CompleteSchemaProcessor(

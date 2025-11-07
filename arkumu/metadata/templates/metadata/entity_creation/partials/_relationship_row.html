@@ -46,6 +46,34 @@
   <div id="{{ suggestions_id }}"
        class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden">
   </div>
+  {% if context_items %}
+    <div class="flex flex-wrap gap-2 mt-2 w-full">
+      {% for context_item in context_items %}
+        {% with context_slug=context_item.slug %}
+          <div class="form-control min-w-[12rem] flex-1">
+            <label class="label py-1">
+              <span class="label-text text-xs font-medium">{{ context_item.label }}</span>
+            </label>
+            <input type="text"
+                   name="{{ field_name }}__context__{{ context_slug }}[]"
+                   class="input input-bordered input-sm w-full"
+                   placeholder="Relation angeben"
+                   value="{{ context_item.value|default:'' }}"
+                   {% if context_item.options %}
+                     list="{{ row_id }}-context-{{ forloop.counter0 }}"
+                   {% endif %}>
+            {% if context_item.options %}
+              <datalist id="{{ row_id }}-context-{{ forloop.counter0 }}">
+                {% for option in context_item.options %}
+                  <option value="{{ option }}"></option>
+                {% endfor %}
+              </datalist>
+            {% endif %}
+          </div>
+        {% endwith %}
+      {% endfor %}
+    </div>
+  {% endif %}
 {% if wrap|default:True %}
 </div>
 {% endif %}

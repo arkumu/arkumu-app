@@ -50,3 +50,5 @@ lxml==6.0.2  # https://github.com/lxml/lxml
 xmlschema==4.1.0  # https://github.com/sissaschool/xmlschema
 # whitenoise for static file serving
 whitenoise==6.11.0  # https://github.com/whitenoise/whitenoise
+# crispy-tailwind 1.0.3
+crispy-tailwind==1.0.3  # https://github.com/jrief/crispy-tailwind3
