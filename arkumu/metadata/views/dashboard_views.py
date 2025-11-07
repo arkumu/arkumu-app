@@ -81,6 +81,7 @@ def _maintenance_response(request, message: str, *, level: str = "info", details
 
 
 @general_login_required
+@superuser_required
 def metadata_dashboard(request):
     """Main dashboard view for metadata visualization and analysis."""
 

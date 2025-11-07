@@ -75,10 +75,12 @@
             </a></li>
             <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener"
                    class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">
-              Metadata Legacy
+              Metadata Raw
             </a></li>
             <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
+            {% if request.user.is_superuser %}
             <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
+            {% endif %}
 
             <li><a href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a></li>
           {% else %}
@@ -110,10 +112,12 @@
           </a></li>
           <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener"
                  class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">
-            Metadata Legacy
+            Metadata Raw
           </a></li>
           <li><a href="{% url 'importer:ingest_data' %}" class="{% if current_namespace == 'importer' %}active{% endif %}">Metadata Ingestion</a></li>
+          {% if request.user.is_superuser %}
           <li><a href="{% url 'metadata:metadata_dashboard' %}" class="{% if current_url_name == 'metadata_dashboard' %}active{% endif %}">Metadata Dashboard</a></li>
+          {% endif %}
           <li><a href="{% url 'catalog:explorer' %}" class="catalog-nav flex items-center gap-2 {% if current_namespace == 'catalog' %}active{% endif %}">
             <i class="fas fa-search"></i>
             <span>Canonical Explorer</span>
