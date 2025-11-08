@@ -55,6 +55,7 @@
           <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
           <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
           {% if request.user.is_authenticated %}
+          <li><a href="{% url 'metadata:oai_endpoints_info' %}" class="{% if current_url_name == 'oai_endpoints_info' %}active{% endif %}">OAI</a></li>
           <li>
             <details>
               <summary>Metadata</summary>
@@ -93,6 +94,7 @@
         <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
         <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
         {% if request.user.is_authenticated %}
+          <li><a href="{% url 'metadata:oai_endpoints_info' %}" class="{% if current_url_name == 'oai_endpoints_info' %}active{% endif %}">OAI</a></li>
           <li>
             <details>
               <summary>Metadata</summary>

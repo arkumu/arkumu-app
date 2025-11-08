@@ -833,6 +833,38 @@ def oai_widget(request):
     )
 
 
+@general_login_required
+def oai_endpoints_info(request):
+    """Display OAI-PMH endpoints information page with clickable links."""
+
+    oai_snapshot = None
+    try:
+        oai_snapshot = build_oai_dashboard_snapshot()
+    except Exception as exc:
+        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
+
+    # Build endpoint examples for each institution
+    endpoints = []
+    if oai_snapshot and oai_snapshot.institution_summaries:
+        for summary in oai_snapshot.institution_summaries:
+            if summary.accessible_count > 0:
+                endpoints.append({
+                    'code': summary.code,
+                    'label': summary.label or summary.code.upper(),
+                    'project_count': summary.project_count,
+                    'accessible_count': summary.accessible_count,
+                })
+
+    return render(
+        request,
+        'metadata/oai_endpoints_info.html',
+        {
+            'endpoints': endpoints,
+            'oai_snapshot': oai_snapshot,
+        },
+    )
+
+
 @require_http_methods(["GET", "POST"])
 @superuser_required
 def mapping_selector_widget(request):

@@ -71,6 +71,9 @@ urlpatterns = [
     path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
     path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
 
+    # OAI Endpoints Information Page
+    path('oai-endpoints/', dashboard_views.oai_endpoints_info, name='oai_endpoints_info'),
+
     # SUPERUSER ONLY: Mapping selector widget
     path('dashboard/mapping-selector/', dashboard_views.mapping_selector_widget, name='mapping_selector_widget'),
 
