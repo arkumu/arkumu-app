@@ -13,6 +13,46 @@
     </p>
   </div>
 
+  <!-- Get Individual Record -->
+  <div class="card bg-base-100 shadow-xl mb-8">
+    <div class="card-body">
+      <h2 class="card-title text-2xl mb-2">Get Individual Record</h2>
+      <p class="text-base-content/70 mb-4">
+        Enter a project URI to retrieve its OAI-PMH metadata record in METS format.
+      </p>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Project URI</span>
+        </label>
+        <div class="join w-full">
+          <input
+            type="text"
+            id="project-uri-input"
+            placeholder="http://arkumu.org/data/fuk/entities/projekt/8"
+            class="input input-bordered join-item flex-1" />
+          <button
+            type="button"
+            class="btn btn-primary join-item"
+            hx-on:click="const uri = document.getElementById('project-uri-input').value.trim();
+                         if (!uri) { alert('Please enter a project URI'); return; }
+                         const encodedUri = encodeURIComponent(uri);
+                         const oaiIdentifier = 'oai:arkumu:resource:' + encodedUri;
+                         const url = '{% url 'metadata:oai_proxy' %}?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
+                         window.open(url, '_blank');">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+            View Record
+          </button>
+        </div>
+        <label class="label">
+          <span class="label-text-alt text-base-content/60">Example: http://arkumu.org/data/fuk/entities/projekt/8</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
   <!-- Stats Overview -->
   {% if oai_snapshot %}
   <div class="stats stats-vertical lg:stats-horizontal shadow mb-8 w-full">
@@ -202,42 +242,5 @@
       <span>No OAI-PMH endpoints are currently available. Please check back later.</span>
     </div>
   {% endif %}
-
-  <!-- Technical Info -->
-  <div class="mt-8">
-    <div class="collapse collapse-arrow bg-base-200">
-      <input type="checkbox" />
-      <div class="collapse-title text-xl font-medium">
-        Technical Documentation
-      </div>
-      <div class="collapse-content">
-        <div class="prose max-w-none">
-          <h3>OAI-PMH Protocol</h3>
-          <p>
-            The OAI-PMH protocol supports the following verbs (operations):
-          </p>
-          <ul>
-            <li><strong>Identify</strong>: Returns repository information and supported features</li>
-            <li><strong>ListSets</strong>: Lists the sets (collections) available in the repository</li>
-            <li><strong>ListMetadataFormats</strong>: Lists metadata formats supported by the repository</li>
-            <li><strong>ListIdentifiers</strong>: Returns headers of records (without full metadata)</li>
-            <li><strong>ListRecords</strong>: Returns complete records with full metadata</li>
-            <li><strong>GetRecord</strong>: Retrieves a single metadata record by identifier</li>
-          </ul>
-
-          <h3>Metadata Format</h3>
-          <p>
-            Currently supporting <strong>METS</strong> (Metadata Encoding and Transmission Standard),
-            which provides rich descriptive, administrative, and structural metadata for digital objects.
-          </p>
-
-          <h3>Authentication</h3>
-          <p>
-            Access to OAI-PMH endpoints requires authentication. Please ensure you are logged in to view the endpoints.
-          </p>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 {% endblock %}
