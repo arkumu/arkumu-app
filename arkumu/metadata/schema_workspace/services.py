@@ -733,7 +733,15 @@ class SchemaWorkspaceService:
         for relationship in self.list_join_relationships(dataset_name):
             if relationship.other_dataset in direct_multi_targets and not relationship.widget_name:
                 continue
-            metadata.pop(relationship.self_column, None)
+
+            dataset_fk_field = None
+            for field_name, field_meta in list(metadata.items()):
+                fk_info = field_meta.get("fk_relationship") or {}
+                if fk_info.get("target_dataset") == relationship.other_dataset:
+                    dataset_fk_field = field_name
+                    break
+            source_field = dataset_fk_field or relationship.self_column
+            metadata.pop(source_field, None)
 
             for field_name, field_meta in list(metadata.items()):
                 if field_meta.get("property_uri") == relationship.self_property_uri:

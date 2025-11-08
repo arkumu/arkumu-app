@@ -189,7 +189,11 @@ def organization(db):
 
 @pytest.fixture
 def mapping(db, organization):
-    return Mapping.objects.create(name="Workspace Mapping", organization_id=organization.code)
+    return Mapping.objects.create(
+        name="Workspace Mapping",
+        organization_id=organization.code,
+        is_active=True,
+    )
 
 
 @pytest.fixture

@@ -1458,11 +1458,7 @@ def _tabular_view(request, entity_type: str):
 
     label_resolver: Optional[EntityLabelResolver] = None
     try:
-        mapping = (
-            Mapping.objects.filter(organization_id=org.code)
-            .order_by('-created_at')
-            .first()
-        )
+        mapping = Mapping.get_active_for_organization(org)
     except Exception:
         mapping = None
         logger.debug("Failed to load mapping for org %s", org.code, exc_info=True)

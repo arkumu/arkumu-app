@@ -589,13 +589,44 @@ def _get_organization(request: HttpRequest) -> Optional[Organization]:
     return organization
 
 
+def _select_active_mapping_for_organization(
+    organization: Organization,
+    request: Optional[HttpRequest] = None,
+) -> Optional[Mapping]:
+    """
+    Select the schema mapping for simplified views.
+
+    Preference order:
+    1. Active mapping (is_active=True)
+    2. Session-selected mapping (if no active mapping exists)
+    3. Newest mapping
+    """
+    queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
+    if not queryset.exists():
+        return None
+
+    active_mapping = queryset.filter(is_active=True).first()
+    if active_mapping:
+        return active_mapping
+
+    if request is not None:
+        coordinator = BaseCoordinatorMixin()
+        mapping_data = coordinator.get_current_mapping(request)
+        if mapping_data:
+            mapping = queryset.filter(id=mapping_data.get("id")).first()
+            if mapping:
+                return mapping
+
+    return queryset.first()
+
+
 def _get_schema_service(request: HttpRequest) -> Optional[SchemaWorkspaceService]:
     """Get SchemaWorkspaceService for the current organization."""
     organization = _get_organization(request)
     if not organization:
         return None
 
-    mapping = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at").first()
+    mapping = _select_active_mapping_for_organization(organization, request)
     if not mapping:
         logger.error(f"No mapping found for organization {organization.code}")
         return None
@@ -2232,15 +2263,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
         if not organization:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        # Get mapping using workspace coordinator (gets promoted/derived mapping from session)
-        workspace_coordinator = BaseCoordinatorMixin()
-
-        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mapping_data = workspace_coordinator.get_current_mapping(request)
-        if mapping_data:
-            mapping = queryset.filter(id=mapping_data.get("id")).first()
-        else:
-            mapping = queryset.first()
+        mapping = _select_active_mapping_for_organization(organization, request)
 
         if not mapping:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
@@ -2335,15 +2358,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
         if not organization:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        # Get mapping using workspace coordinator (gets promoted/derived mapping from session)
-        workspace_coordinator = BaseCoordinatorMixin()
-
-        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mapping_data = workspace_coordinator.get_current_mapping(request)
-        if mapping_data:
-            mapping = queryset.filter(id=mapping_data.get("id")).first()
-        else:
-            mapping = queryset.first()
+        mapping = _select_active_mapping_for_organization(organization, request)
 
         if not mapping:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
@@ -2516,15 +2531,7 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
         if not organization:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        # Get mapping using workspace coordinator
-        workspace_coordinator = BaseCoordinatorMixin()
-
-        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mapping_data = workspace_coordinator.get_current_mapping(request)
-        if mapping_data:
-            mapping = queryset.filter(id=mapping_data.get("id")).first()
-        else:
-            mapping = queryset.first()
+        mapping = _select_active_mapping_for_organization(organization, request)
 
         if not mapping:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
@@ -2602,15 +2609,7 @@ class SimplifiedEreignisCreateView(LoginRequiredMixin, View):
         if not organization:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        # Get mapping using workspace coordinator
-        workspace_coordinator = BaseCoordinatorMixin()
-
-        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mapping_data = workspace_coordinator.get_current_mapping(request)
-        if mapping_data:
-            mapping = queryset.filter(id=mapping_data.get("id")).first()
-        else:
-            mapping = queryset.first()
+        mapping = _select_active_mapping_for_organization(organization, request)
 
         if not mapping:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
@@ -3010,15 +3009,7 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
         if not organization:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        # Get mapping using workspace coordinator
-        workspace_coordinator = BaseCoordinatorMixin()
-
-        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mapping_data = workspace_coordinator.get_current_mapping(request)
-        if mapping_data:
-            mapping = queryset.filter(id=mapping_data.get("id")).first()
-        else:
-            mapping = queryset.first()
+        mapping = _select_active_mapping_for_organization(organization, request)
 
         if not mapping:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
@@ -3096,15 +3087,7 @@ class SimplifiedAkteurCreateView(LoginRequiredMixin, View):
         if not organization:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        # Get mapping using workspace coordinator
-        workspace_coordinator = BaseCoordinatorMixin()
-
-        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mapping_data = workspace_coordinator.get_current_mapping(request)
-        if mapping_data:
-            mapping = queryset.filter(id=mapping_data.get("id")).first()
-        else:
-            mapping = queryset.first()
+        mapping = _select_active_mapping_for_organization(organization, request)
 
         if not mapping:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
@@ -3426,13 +3409,7 @@ class _BaseSimplifiedCreateView(LoginRequiredMixin, _SimplifiedDatasetMixin, Vie
         if not organization:
             return None, None
 
-        workspace_coordinator = BaseCoordinatorMixin()
-        queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
-        mapping_data = workspace_coordinator.get_current_mapping(request)
-        if mapping_data:
-            mapping = queryset.filter(id=mapping_data.get("id")).first()
-        else:
-            mapping = queryset.first()
+        mapping = _select_active_mapping_for_organization(organization, request)
 
         if not mapping:
             return None, organization

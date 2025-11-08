@@ -159,11 +159,7 @@ class EntityCreationService:
         from arkumu.common.uri_utils import slugify_uri_part
 
         try:
-            mapping = (
-                Mapping.objects.filter(organization_id=self.organization.code)
-                .order_by("-created_at")
-                .first()
-            )
+            mapping = Mapping.get_active_for_organization(self.organization)
         except Exception:
             return None
         if mapping is None:

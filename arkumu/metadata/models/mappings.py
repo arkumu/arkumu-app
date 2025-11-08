@@ -1,3 +1,5 @@
+from typing import Optional, Union
+
 from django.db import models
 from django.conf import settings
 from arkumu.metadata.models.base import UUIDModel
@@ -114,3 +116,27 @@ class Mapping(UUIDModel):
         return (self.validation_status in ['validated', 'active'] and 
                 self.mapping_config and 
                 self.source_datasets) 
+
+    # ------------------------------------------------------------------ #
+    # Selection helpers
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def get_active_for_organization(
+        cls,
+        organization: Union[str, "Organization"],
+    ) -> Optional["Mapping"]:
+        """
+        Return the active mapping for an organization, falling back to the
+        newest mapping when no active record exists.
+        """
+        org_code = organization
+        if organization is None:
+            return None
+        if not isinstance(organization, str):
+            org_code = getattr(organization, "code", None)
+        if not org_code:
+            return None
+
+        org_code = str(org_code).lower()
+        queryset = cls.objects.filter(organization_id=org_code).order_by("-created_at")
+        return queryset.filter(is_active=True).first() or queryset.first()

@@ -148,15 +148,18 @@ class Command(BaseCommand):
         except Organization.DoesNotExist as exc:
             raise CommandError(f"Organization '{org_code}' not found") from exc
 
-        mapping_qs = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
         if mapping_id:
-            mapping = mapping_qs.filter(id=mapping_id).first()
+            mapping = (
+                Mapping.objects.filter(organization_id=organization.code, id=mapping_id)
+                .order_by("-created_at")
+                .first()
+            )
             if not mapping:
                 raise CommandError(
                     f"Mapping '{mapping_id}' does not belong to organization '{org_code}'"
                 )
         else:
-            mapping = mapping_qs.first()
+            mapping = Mapping.get_active_for_organization(organization)
             if not mapping:
                 raise CommandError(f"No mapping configuration found for organization '{org_code}'")
 

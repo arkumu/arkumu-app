@@ -99,6 +99,9 @@ def _resolve_active_mapping(
         mapping = queryset.filter(id=mapping_data.get("id")).first()
         if mapping:
             return mapping
+    active_mapping = queryset.filter(is_active=True).first()
+    if active_mapping:
+        return active_mapping
     return queryset.first()
 
 
