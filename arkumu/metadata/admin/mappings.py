@@ -1,14 +1,19 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from django.utils.safestring import mark_safe
 from django.contrib.admin import SimpleListFilter
+from django.db import transaction
 from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils import timezone
 import json
 
-from arkumu.metadata.models.mappings import Mapping
+from arkumu.metadata.models.mappings import Mapping, MappingSelectionAudit
+from arkumu.metadata.tasks import (
+    create_promoted_manifest_task,
+    promote_legacy_junctions_task,
+)
 
 
 class ValidationStatusFilter(SimpleListFilter):
@@ -69,9 +74,11 @@ class MappingAdmin(admin.ModelAdmin):
         'name',
         'organization_link',
         'validation_status_badge',
+        'active_status_badge',
         'dataset_count_display',
         'column_count_display',
         'relationship_count_display',
+        'promoted_manifest_status',
         'last_executed_display',
         'created_by_link',
         'created_at'
@@ -100,6 +107,7 @@ class MappingAdmin(admin.ModelAdmin):
         'dataset_count_display',
         'column_count_display',
         'relationship_count_display',
+        'promoted_manifest_status',
         'mapping_preview',
         'schema_manifest_preview',
         'execution_stats_display',
@@ -135,7 +143,8 @@ class MappingAdmin(admin.ModelAdmin):
             'fields': (
                 'dataset_count_display',
                 'column_count_display',
-                'relationship_count_display'
+                'relationship_count_display',
+                'promoted_manifest_status',
             ),
             'classes': ('collapse',),
         }),
@@ -184,6 +193,20 @@ class MappingAdmin(admin.ModelAdmin):
         )
     validation_status_badge.short_description = _('Status')
     validation_status_badge.admin_order_field = 'validation_status'
+
+    def active_status_badge(self, obj):
+        """Display whether the mapping is active for its organization."""
+        if obj.is_active:
+            return format_html(
+                '<span style="background-color:#198754;color:white;padding:3px 8px;'
+                'border-radius:3px;font-size:11px;font-weight:bold;">Active</span>'
+            )
+        return format_html(
+            '<span style="background-color:#adb5bd;color:white;padding:3px 8px;'
+            'border-radius:3px;font-size:11px;">Inactive</span>'
+        )
+    active_status_badge.short_description = _('Active?')
+    active_status_badge.admin_order_field = 'is_active'
     
     def dataset_count_display(self, obj):
         """Display number of datasets."""
@@ -218,6 +241,139 @@ class MappingAdmin(admin.ModelAdmin):
             )
         return format_html('<span style="color: #6c757d;">No relationships</span>')
     relationship_count_display.short_description = _('Relationships')
+
+    def promoted_manifest_status(self, obj):
+        config = obj.mapping_config or {}
+        manifest = config.get('promoted_manifest') or {}
+        created_at = manifest.get('created_at')
+
+        if manifest:
+            timestamp = f" – {created_at}" if created_at else ""
+            return format_html(
+                '<span style="color:#198754;font-weight:bold;">Ready{}</span>',
+                timestamp,
+            )
+
+        return format_html('<span style="color:#b02a37;">Missing</span>')
+    promoted_manifest_status.short_description = _('Promoted manifest')
+
+    @admin.action(description=_("Set selected mapping as active"))
+    def action_set_active_mapping(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(
+                request,
+                "Select exactly one mapping to mark as active.",
+                level=messages.ERROR,
+            )
+            return
+
+        mapping = queryset.first()
+        if not mapping.organization_id:
+            self.message_user(
+                request,
+                "Selected mapping does not have an organization_id set.",
+                level=messages.ERROR,
+            )
+            return
+
+        with transaction.atomic():
+            Mapping.objects.filter(
+                organization_id=mapping.organization_id,
+                is_active=True,
+            ).exclude(id=mapping.id).update(is_active=False)
+
+            Mapping.objects.filter(id=mapping.id).update(is_active=True)
+            mapping.is_active = True
+
+            MappingSelectionAudit.objects.create(
+                user=request.user if request.user.is_authenticated else None,
+                organization_id=mapping.organization_id,
+                mapping=mapping,
+                mapping_name=mapping.name,
+                action='set',
+                ip_address=request.META.get('REMOTE_ADDR'),
+            )
+
+        self.message_user(
+            request,
+            f"Mapping '{mapping.name}' is now active for organization {mapping.organization_id}.",
+            level=messages.SUCCESS,
+        )
+
+    @admin.action(description=_("Queue promote_legacy_junctions (Huey)"))
+    def action_promote_legacy_junctions(self, request, queryset):
+        scheduled = []
+        seen_orgs = set()
+        for mapping in queryset:
+            org_code = (mapping.organization_id or "").lower()
+            if not org_code or org_code in seen_orgs:
+                continue
+            task = promote_legacy_junctions_task.schedule(
+                kwargs={
+                    "mapping_id": str(mapping.id),
+                    "dry_run": False,
+                },
+                delay=0,
+            )
+            scheduled.append((mapping, task.id))
+            seen_orgs.add(org_code)
+
+        if not scheduled:
+            self.message_user(
+                request,
+                "No tasks queued. Ensure mappings have unique organizations selected.",
+                level=messages.WARNING,
+            )
+            return
+
+        preview = self._build_task_preview(scheduled)
+        self.message_user(
+            request,
+            f"Queued {len(scheduled)} promote_legacy_junctions task(s): {preview}",
+            level=messages.SUCCESS,
+        )
+
+    @admin.action(description=_("Queue create_promoted_schema_manifest (Huey)"))
+    def action_generate_promoted_manifest(self, request, queryset):
+        scheduled = []
+        for mapping in queryset:
+            if not mapping.organization_id:
+                continue
+            task = create_promoted_manifest_task.schedule(
+                kwargs={
+                    "mapping_id": str(mapping.id),
+                    "output_key": "promoted_manifest",
+                },
+                delay=0,
+            )
+            scheduled.append((mapping, task.id))
+
+        if not scheduled:
+            self.message_user(
+                request,
+                "No tasks queued. Ensure the selected mappings have an organization configured.",
+                level=messages.WARNING,
+            )
+            return
+
+        preview = self._build_task_preview(scheduled)
+        self.message_user(
+            request,
+            f"Queued {len(scheduled)} create_promoted_schema_manifest task(s): {preview}",
+            level=messages.SUCCESS,
+        )
+
+    def _build_task_preview(self, scheduled_tasks):
+        if not scheduled_tasks:
+            return ""
+        preview_items = [
+            f"{mapping.organization_id}:{mapping.name} → {task_id}"
+            for mapping, task_id in scheduled_tasks[:3]
+        ]
+        remainder = len(scheduled_tasks) - len(preview_items)
+        if remainder > 0:
+            preview_items.append(f"+{remainder} more")
+        return ", ".join(preview_items)
     
     def last_executed_display(self, obj):
         """Display last execution time with relative format."""
@@ -425,7 +581,15 @@ class MappingAdmin(admin.ModelAdmin):
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
     
-    actions = ['mark_as_validated', 'mark_as_active', 'reset_to_draft', 'clear_execution_stats']
+    actions = [
+        'action_set_active_mapping',
+        'action_promote_legacy_junctions',
+        'action_generate_promoted_manifest',
+        'mark_as_validated',
+        'mark_as_active',
+        'reset_to_draft',
+        'clear_execution_stats',
+    ]
     
     def mark_as_validated(self, request, queryset):
         """Mark selected mappings as validated."""

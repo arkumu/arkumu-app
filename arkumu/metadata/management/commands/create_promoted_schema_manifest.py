@@ -129,6 +129,10 @@ class Command(BaseCommand):
             help="Organization code to process",
         )
         parser.add_argument(
+            "--mapping-id",
+            help="Optional mapping UUID to target; defaults to the newest mapping for the organization",
+        )
+        parser.add_argument(
             "--output-key",
             default="promoted_manifest",
             help="Dictionary key to store the promoted manifest (default: promoted_manifest)",
@@ -137,15 +141,24 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         org_code: str = options["organization"].lower()
         output_key: str = options["output_key"]
+        mapping_id: Optional[str] = options.get("mapping_id")
 
         try:
             organization = Organization.objects.get(code=org_code)
         except Organization.DoesNotExist as exc:
             raise CommandError(f"Organization '{org_code}' not found") from exc
 
-        mapping = Mapping.objects.filter(organization_id=organization.code).first()
-        if not mapping:
-            raise CommandError(f"No mapping configuration found for organization '{org_code}'")
+        mapping_qs = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
+        if mapping_id:
+            mapping = mapping_qs.filter(id=mapping_id).first()
+            if not mapping:
+                raise CommandError(
+                    f"Mapping '{mapping_id}' does not belong to organization '{org_code}'"
+                )
+        else:
+            mapping = mapping_qs.first()
+            if not mapping:
+                raise CommandError(f"No mapping configuration found for organization '{org_code}'")
 
         config = mapping.mapping_config
         required_keys = {"workspace_columns", "schema_manifest", "fk_relationships"}
