@@ -51,21 +51,85 @@
   </div>
   {% endif %}
 
-  <!-- What is OAI-PMH Info Card -->
-  <div class="alert alert-info shadow-lg mb-8">
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-    </svg>
-    <div>
-      <h3 class="font-bold">What is OAI-PMH?</h3>
-      <div class="text-sm">
-        OAI-PMH is a protocol for harvesting metadata from repositories. It enables automated collection and synchronization of metadata records in standardized formats like METS.
+  <!-- Repository-Wide Endpoints -->
+  <h2 class="text-2xl font-bold mb-4">Repository Information</h2>
+
+  <div class="card bg-base-100 shadow-xl mb-8">
+    <div class="card-body">
+      <h3 class="card-title text-xl mb-4">General Repository Endpoints</h3>
+      <p class="text-base-content/70 mb-4">
+        These endpoints provide information about the entire repository, not specific to any institution.
+      </p>
+
+      <div class="grid grid-cols-1 gap-3">
+        <!-- Identify -->
+        <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+          <div class="flex-none">
+            <div class="badge badge-sm badge-info">Identify</div>
+          </div>
+          <div class="flex-grow">
+            <p class="text-sm font-semibold">Repository information</p>
+            <p class="text-xs text-base-content/60">General repository metadata and capabilities</p>
+          </div>
+          <div class="flex-none">
+            <a href="{% url 'metadata:oai_proxy' %}?verb=Identify"
+               target="_blank"
+               class="btn btn-sm btn-outline btn-info gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View
+            </a>
+          </div>
+        </div>
+
+        <!-- ListSets -->
+        <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+          <div class="flex-none">
+            <div class="badge badge-sm badge-secondary">ListSets</div>
+          </div>
+          <div class="flex-grow">
+            <p class="text-sm font-semibold">Available sets/collections</p>
+            <p class="text-xs text-base-content/60">All institutional collections in the repository</p>
+          </div>
+          <div class="flex-none">
+            <a href="{% url 'metadata:oai_proxy' %}?verb=ListSets"
+               target="_blank"
+               class="btn btn-sm btn-outline btn-secondary gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View
+            </a>
+          </div>
+        </div>
+
+        <!-- ListMetadataFormats -->
+        <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+          <div class="flex-none">
+            <div class="badge badge-sm badge-accent">ListMetadataFormats</div>
+          </div>
+          <div class="flex-grow">
+            <p class="text-sm font-semibold">Supported metadata formats</p>
+            <p class="text-xs text-base-content/60">Available formats for metadata harvesting (e.g., METS)</p>
+          </div>
+          <div class="flex-none">
+            <a href="{% url 'metadata:oai_proxy' %}?verb=ListMetadataFormats"
+               target="_blank"
+               class="btn btn-sm btn-outline btn-accent gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Endpoints by Institution -->
-  <h2 class="text-2xl font-bold mb-4">Available Endpoints</h2>
+  <h2 class="text-2xl font-bold mb-4">Endpoints by Institution</h2>
 
   {% if endpoints %}
     <div class="space-y-6">
@@ -82,69 +146,9 @@
           </p>
 
           <!-- Endpoint Links -->
-          <div class="divider">Endpoint Operations</div>
+          <div class="divider">Institution-Specific Endpoints</div>
 
           <div class="grid grid-cols-1 gap-3">
-            <!-- Identify -->
-            <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
-              <div class="flex-none">
-                <div class="badge badge-sm badge-info">Identify</div>
-              </div>
-              <div class="flex-grow">
-                <p class="text-sm text-base-content/70">Repository information</p>
-              </div>
-              <div class="flex-none">
-                <a href="{% url 'metadata:oai_proxy' %}?verb=Identify&set={{ endpoint.code }}"
-                   target="_blank"
-                   class="btn btn-sm btn-outline btn-primary gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                  </svg>
-                  View
-                </a>
-              </div>
-            </div>
-
-            <!-- ListSets -->
-            <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
-              <div class="flex-none">
-                <div class="badge badge-sm badge-secondary">ListSets</div>
-              </div>
-              <div class="flex-grow">
-                <p class="text-sm text-base-content/70">Available sets/collections</p>
-              </div>
-              <div class="flex-none">
-                <a href="{% url 'metadata:oai_proxy' %}?verb=ListSets&set={{ endpoint.code }}"
-                   target="_blank"
-                   class="btn btn-sm btn-outline btn-secondary gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                  </svg>
-                  View
-                </a>
-              </div>
-            </div>
-
-            <!-- ListMetadataFormats -->
-            <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
-              <div class="flex-none">
-                <div class="badge badge-sm badge-accent">ListMetadataFormats</div>
-              </div>
-              <div class="flex-grow">
-                <p class="text-sm text-base-content/70">Supported metadata formats</p>
-              </div>
-              <div class="flex-none">
-                <a href="{% url 'metadata:oai_proxy' %}?verb=ListMetadataFormats&set={{ endpoint.code }}"
-                   target="_blank"
-                   class="btn btn-sm btn-outline btn-accent gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                  </svg>
-                  View
-                </a>
-              </div>
-            </div>
-
             <!-- ListIdentifiers -->
             <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
               <div class="flex-none">
