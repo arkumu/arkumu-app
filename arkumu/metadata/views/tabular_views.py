@@ -10,6 +10,8 @@ from django.db.models import CharField, Exists, OuterRef, Subquery
 from django.db.models.functions import Coalesce, Lower
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
+from django.utils.formats import date_format
 from django.utils.text import slugify
 
 from arkumu.metadata.models.resource import Resource, ResourceType
@@ -97,6 +99,7 @@ def _build_column_specs(columns_config: List[Any]) -> List[Dict[str, Any]]:
                     "sortable": False,
                     "sort_key": None,
                     "slug": slugify(str(column)),
+                    "resource_field": None,
                 }
             )
             continue
@@ -123,6 +126,7 @@ def _build_column_specs(columns_config: List[Any]) -> List[Dict[str, Any]]:
                 "sortable": column.get("sortable", True),
                 "sort_key": column.get("sort_key"),
                 "slug": slugify(str(label)),
+                "resource_field": column.get("resource_field"),
             }
         )
     return specs
@@ -153,6 +157,14 @@ def _fallback_uri_segment(res: Resource) -> str:
         last_segment = res.uri.rstrip('/').split('/')[-1]
         return last_segment.replace('-', ' ').replace('_', ' ')
     return str(res.id)
+
+
+def _format_timestamp(value) -> str:
+    """Format audit timestamps in the local timezone."""
+    if not value:
+        return ''
+    localized = timezone.localtime(value)
+    return date_format(localized, "SHORT_DATETIME_FORMAT")
 
 
 def _is_preferred_label_predicate(tokens: Set[str]) -> bool:
@@ -244,6 +256,10 @@ def _apply_subject_sort(
     if sort_key == 'uri':
         field = f"{order}uri"
         return queryset.order_by(field)
+    
+    if sort_key in {'created_at', 'updated_at'}:
+        field = f"{order}{sort_key}"
+        return queryset.order_by(field, default_field)
 
     predicates = [
         candidate for candidate in sort_spec.get('sort_predicates', [])
@@ -1199,6 +1215,23 @@ ENTITY_PARAM_MAP: Dict[str, str] = {
     'ort': 'ort',
 }
 
+AUDIT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "label": "Erstellt am",
+        "matchers": ["__internal_created_at__"],
+        "sortable": True,
+        "sort_key": "created_at",
+        "resource_field": "created_at",
+    },
+    {
+        "label": "Aktualisiert am",
+        "matchers": ["__internal_updated_at__"],
+        "sortable": True,
+        "sort_key": "updated_at",
+        "resource_field": "updated_at",
+    },
+]
+
 
 def _entity_has_actions(entity_type: Optional[str]) -> bool:
     return bool(entity_type) and entity_type in EDIT_URL_NAMES
@@ -1462,6 +1495,8 @@ def _build_rows_for_subjects(
             predicate_tokens = _predicate_tokens(t.predicate)
             matched_spec = None
             for spec in column_specs:
+                if spec.get('resource_field'):
+                    continue
                 if predicate_tokens & spec['matchers']:
                     matched_spec = spec
                     break
@@ -1501,6 +1536,18 @@ def _build_rows_for_subjects(
         if entity_type in {"digital_object", "digitales_objekt"} and "S3-Link" in row:
             has_s3_path = bool(row.get("Dateipfad"))
             row["S3-Link"] = "Ja" if has_s3_path else "Nein"
+
+        for spec in column_specs:
+            resource_field = spec.get('resource_field')
+            if not resource_field:
+                continue
+            if resource_field == 'created_at':
+                row[spec['label']] = _format_timestamp(s.created_at)
+            elif resource_field == 'updated_at':
+                row[spec['label']] = _format_timestamp(s.updated_at)
+            else:
+                value = getattr(s, resource_field, '')
+                row[spec['label']] = value or ''
 
         if add_actions:
             if s.uri:
@@ -1561,6 +1608,7 @@ def _tabular_view(request, entity_type: str):
     uri_contains = cfg['uri_contains']
     desired_columns = cfg['columns']
     column_specs = _build_column_specs(desired_columns)
+    column_specs.extend(_build_column_specs(AUDIT_COLUMN_DEFINITIONS))
     add_actions = _entity_has_actions(entity_type)
     sort_specs = list(column_specs)
     visibility_spec = {
