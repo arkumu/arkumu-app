@@ -13,6 +13,7 @@ from arkumu.cache.services import CacheManager
 from arkumu.projects.services import ProjectSnapshotService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
+from arkumu.metadata.models import ExternalSourcesEntity
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,18 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             if query:
                 projects = self._get_all_projects(query, request)
                 logger.info(f"📊 SEARCH_RESULTS: Found {len(projects)} projects for '{query}'")
+                # for project in projects:
+                #     project["categories_name"] = []
+                    # for categorie in project.get("categories"):
+                #     try:
+                #         project["categories_name"].append(ExternalSourcesEntity.objects.get(data_id= project.get("categories")))
+                #     except ExternalSourcesEntity.DoesNotExist:
+                #         logger.info("categorie don't exist")
+                # print(" ")
+                # print(" ")
+                # print(" ")
+                # print(" ")
+                # print(f"{projects[0]}")
             else:
                 # Empty results when no query - lazy loading
                 projects = []

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from django.urls import reverse
 
-from arkumu.metadata.schema_workspace.services import JoinRelationship
+from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
 from arkumu.metadata.views import schema_workspace_views
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -61,6 +61,9 @@ def test_dataset_field_value_options_returns_literals(client, monkeypatch):
                 }
             }
 
+        def augment_field_metadata_with_joins(self, dataset_name, metadata):
+            return metadata, {}
+
         def get_dataset_schema(self, dataset_name):
             return {
                 "properties": {
@@ -74,7 +77,7 @@ def test_dataset_field_value_options_returns_literals(client, monkeypatch):
         def get_join_values(self, relationship, entity_uri):
             return []
 
-        def sync_join_relationship(self, *, entity_uri, relationship, related_uris):
+        def sync_join_relationship(self, *, entity_uri, relationship, related_items):
             return None
 
     monkeypatch.setattr(
@@ -283,18 +286,67 @@ def test_join_relationship_render_and_save(client, monkeypatch, organization, ma
                 relationship_count=0,
             )
 
+        def augment_field_metadata_with_joins(self, dataset_name, metadata):
+            metadata = dict(metadata)
+            join_field_map = {}
+            for relationship in self.list_join_relationships(dataset_name):
+                field_name = f"__join__{relationship.join_dataset}__{relationship.other_dataset}"
+                metadata[field_name] = {
+                    "column_name": field_name,
+                    "column_type": "join",
+                    "property_label": relationship.other_display_label,
+                    "is_required": False,
+                    "is_multi_value": True,
+                    "is_join": True,
+                    "join_relationship": relationship,
+                    "join_other_dataset": relationship.other_dataset,
+                    "join_key": f"{relationship.join_dataset}::{relationship.other_dataset}",
+                }
+                if relationship.context_columns:
+                    metadata[field_name]["context_columns"] = relationship.context_columns
+                join_field_map[field_name] = relationship
+            return metadata, join_field_map
+
         def list_join_relationships(self, dataset_name):
             if dataset_name == "Projekt":
                 return [join_relationship]
             return []
+
+        def collect_relationship_values(self, *, dataset_name, entity_uri, field_metadata, join_field_map):
+            values = []
+            if dataset_name == "Projekt" and entity_uri == project_uri:
+                for field_name, relationship in join_field_map.items():
+                    values.append(
+                        RelationshipValues(
+                            field_name=field_name,
+                            display_label=relationship.other_display_label,
+                            uris=[event_uri],
+                            is_join=True,
+                            target_dataset=relationship.other_dataset,
+                            records=[
+                                {
+                                    "uri": event_uri,
+                                    "join_resource_id": None,
+                                    "context": {},
+                                }
+                            ],
+                        )
+                    )
+            return values
 
         def get_join_values(self, relationship, entity_uri):
             if entity_uri == project_uri:
                 return [event_uri]
             return []
 
-        def sync_join_relationship(self, *, entity_uri, relationship, related_uris):
-            self.synced.append((entity_uri, tuple(related_uris)))
+        def sync_join_relationship(self, *, entity_uri, relationship, related_items):
+            serialized = []
+            for item in related_items:
+                if isinstance(item, dict):
+                    serialized.append(item.get("uri"))
+                else:
+                    serialized.append(item)
+            self.synced.append((entity_uri, tuple(serialized)))
 
         def save_entity(self, dataset_name, entity_data, entity_uri=None):
             return project_uri, False

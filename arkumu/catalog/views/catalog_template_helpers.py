@@ -54,6 +54,7 @@ class CatalogTemplateHelperMixin:
             'csrf_token': get_token(request)
         }
 
+
         return render_to_string(
             'catalog/partials/results_container.html',
             context,

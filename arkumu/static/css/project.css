@@ -11,3 +11,16 @@
   background-color: #f2dede;
   border-color: #eed3d7;
 }
+
+/* Override DaisyUI navbar active state to use primary color instead of neutral (black) */
+/* This applies to all apps EXCEPT catalog (which uses custom theme) */
+.navbar .menu li > a.active:not(.catalog-nav) {
+  background-color: oklch(var(--p) / 0.15) !important;
+  color: oklch(var(--p)) !important;
+}
+
+/* Dark theme override */
+[data-theme="dark"] .navbar .menu li > a.active:not(.catalog-nav) {
+  background-color: oklch(var(--p) / 0.25) !important;
+  color: oklch(var(--pc)) !important;
+}

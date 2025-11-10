@@ -78,4 +78,15 @@ def join_ontology_types(external_ontologies):
         
         return ', '.join(types) if types else ""
     except Exception:
-        return "" 
+        return ""
+
+
+@register.filter
+def get_item(mapping, key):
+    """Safely retrieve a value from a mapping by key inside templates."""
+    if isinstance(mapping, dict):
+        return mapping.get(key, "")
+    try:
+        return getattr(mapping, key, "")
+    except Exception:
+        return ""

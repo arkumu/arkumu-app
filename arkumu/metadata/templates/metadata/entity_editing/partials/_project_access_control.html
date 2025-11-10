@@ -1,0 +1,48 @@
+<div id="project-access-control" class="card bg-base-200 border border-base-300 shadow-sm">
+  <div class="card-body space-y-3">
+    <div class="flex items-center justify-between">
+      <span class="text-sm font-semibold uppercase tracking-wide text-base-content/70">Projektzugriff</span>
+      <span class="badge {% if current_access_level == 'public' %}badge-success{% elif current_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
+        {{ current_access_display }}
+      </span>
+    </div>
+
+    {% if project_access_message %}
+      <div class="alert alert-success py-2">
+        <span>{{ project_access_message }}</span>
+      </div>
+    {% endif %}
+
+    {% if project_access_disabled %}
+      <p class="text-sm text-base-content/70">
+        Speichere das Projekt, um den Zugriff anzupassen.
+      </p>
+    {% else %}
+      <form class="space-y-2">
+        {% csrf_token %}
+        <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
+        <input type="hidden" name="dataset" value="{{ dataset_summary.dataset_name }}">
+
+        <select name="public_access_level"
+                class="select select-bordered select-sm w-full"
+                hx-post="{% url 'metadata:project_access_update' mapping.id %}"
+                hx-trigger="change"
+                hx-target="#project-access-control"
+                hx-swap="outerHTML"
+                hx-include="closest form">
+          {% for choice in project_access_choices %}
+            <option value="{{ choice.value }}" {% if choice.value == current_access_level %}selected{% endif %}>
+              {{ choice.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </form>
+
+      {% if current_access_level == 'public' and not project_access_public_approved %}
+        <p class="text-xs text-warning">
+          Öffentliche Projekte benötigen zusätzlich eine Freigabe, bevor sie sichtbar werden.
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>

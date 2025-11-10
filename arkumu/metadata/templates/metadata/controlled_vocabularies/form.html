@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-6 py-10 space-y-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <a href="{% url 'metadata:controlled_vocab_list' vocab_key %}" class="link text-sm">&larr; Back to list</a>
+      <h1 class="text-3xl font-bold mt-1">
+        {% if resource %}Edit{% else %}Create{% endif %} {{ config.display_name|lower }}
+      </h1>
+    </div>
+  </div>
+
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <div class="alert alert-error">
+        {% for error in form.non_field_errors %}
+          <span>{{ error }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% for field in form %}
+      <div class="form-control">
+        <label class="label" for="{{ field.id_for_label }}">
+          <span class="label-text font-semibold">{{ field.label }}</span>
+          {% if field.field.required %}
+            <span class="label-text-alt text-error">*</span>
+          {% endif %}
+        </label>
+        {{ field }}
+        {% if field.help_text %}
+          <label class="label">
+            <span class="label-text-alt text-base-content/70">{{ field.help_text }}</span>
+          </label>
+        {% endif %}
+        {% if field.errors %}
+          <label class="label">
+            <span class="label-text-alt text-error">{{ field.errors|join:", " }}</span>
+          </label>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <div class="flex items-center justify-end gap-3">
+      <a href="{% url 'metadata:controlled_vocab_list' vocab_key %}" class="btn btn-ghost">Cancel</a>
+      <button type="submit" class="btn btn-primary">
+        {% if resource %}Save changes{% else %}Create entry{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

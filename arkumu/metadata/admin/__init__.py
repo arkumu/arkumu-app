@@ -1,6 +1,6 @@
 from .mappings import MappingAdmin
 from .resource import ResourceAdmin
 from .triples import TripleAdmin
-from .wikidata import WikidataEntityAdmin
+from .external_souces import ExternalSourcesEntityAdmin
 
-__all__ = ['MappingAdmin', 'ResourceAdmin', 'TripleAdmin', 'WikidataEntityAdmin']
+__all__ = ['MappingAdmin', 'ResourceAdmin', 'TripleAdmin', 'ExternalSourcesEntityAdmin']

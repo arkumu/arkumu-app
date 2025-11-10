@@ -7,72 +7,88 @@
 
     <!-- Quick Actions - Horizontal Layout -->
     <div class="mb-8 p-4 bg-base-200 rounded-lg">
-        <h3 class="text-lg font-semibold mb-2">Quick Navigation</h3>
-        <p class="text-sm text-base-content/70 mb-4">
-            Jump straight into metadata tools or inspect the live OAI-PMH feeds without touching caches or data.
-        </p>
-        <div class="flex flex-wrap gap-3 justify-start">
-            <!-- Primary Actions -->
-            <a href="{% url 'metadata:data_explorer' %}" class="btn btn-primary btn-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                Metadata Explorer
-            </a>
-            <a href="{% url 'metadata:create_project' %}" class="btn btn-secondary btn-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h16" />
-                </svg>
-                Metadata Workspace
-            </a>
-            <button type="button"
-                    class="btn btn-outline btn-primary btn-sm btn-disabled pointer-events-none"
-                    title="Disabled while the feature is offline"
-                    disabled>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
-                Data Discovery
-            </button>
+      <h3 class="text-lg font-semibold mb-2">Quick Navigation</h3>
+      <p class="text-sm text-base-content/70 mb-4">
+        Jump straight into metadata tools or inspect the live OAI-PMH feeds without touching caches or data.
+      </p>
+      <div class="flex flex-wrap gap-3 justify-start">
+        <!-- Primary Actions -->
+        <a href="{% url 'metadata:data_explorer' %}" class="btn btn-primary btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          Metadata Explorer
+        </a>
+        <button type="button"
+                class="btn btn-outline btn-primary btn-sm btn-disabled pointer-events-none"
+                title="Disabled while the feature is offline"
+                disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+          </svg>
+          Data Discovery
+        </button>
 
-            <!-- OAI-PMH API Links -->
-            <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=oai_dc" target="_blank" class="btn btn-outline btn-secondary btn-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                OAI Dublin Core
-            </a>
+        <!-- OAI-PMH API Links -->
+        <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=oai_dc" target="_blank"
+           class="btn btn-outline btn-secondary btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          OAI Dublin Core
+        </a>
             <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=mets" target="_blank" class="btn btn-outline btn-secondary btn-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                </svg>
-                OAI METS
-            </a>
-        </div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+          </svg>
+          OAI METS
+        </a>
+        <form method="post" action="{% url 'metadata:metadata_dashboard_external_sources_refresh' %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-warning btn-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2">
+              <path
+                d="M3 15C3 17.8284 3 19.2426 3.87868 20.1213C4.75736 21 6.17157 21 9 21H15C17.8284 21 19.2426 21 20.1213 20.1213C21 19.2426 21 17.8284 21 15"
+                stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12 3V16M12 16L16 11.625M12 16L8 11.625" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Reload External Sources
+          </button>
+        </form>
+      </div>
     </div>
 
     <!-- Snapshot Overview -->
     <div class="mb-8 p-4 bg-base-200 rounded-lg">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <h3 class="text-lg font-semibold mb-2">Project Snapshot</h3>
-                <p class="text-sm text-base-content/70">
-                    View cached cross-institutional project metrics without slowing down the main dashboard.
-                </p>
-            </div>
-            <a href="{% url 'metadata:metadata_dashboard_snapshot_stats' %}"
-               class="btn btn-outline btn-primary btn-sm">
-                View Snapshot Metrics
-            </a>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Project Snapshot</h3>
+          <p class="text-sm text-base-content/70">
+            View cached cross-institutional project metrics without slowing down the main dashboard.
+          </p>
         </div>
-        <p class="text-xs text-base-content/60 mt-3">
-            Snapshot data loads from cache only. Use the cache warmers below when you need to rebuild it.
-        </p>
+        <a href="{% url 'metadata:metadata_dashboard_snapshot_stats' %}"
+           class="btn btn-outline btn-primary btn-sm">
+          View Snapshot Metrics
+        </a>
+      </div>
+      <p class="text-xs text-base-content/60 mt-3">
+        Snapshot data loads from cache only. Use the cache warmers below when you need to rebuild it.
+      </p>
     </div>
 
     {% if request.user.is_staff %}
-    <!-- Cache Warmers -->
-    <div class="mb-8 p-4 bg-base-200 rounded-lg">
+      <!-- Cache Warmers -->
+      <div class="mb-8 p-4 bg-base-200 rounded-lg">
         <h3 class="text-lg font-semibold mb-2">Cache &amp; API Warmers</h3>
         <p class="text-sm text-base-content/70 mb-4">
             These tasks rebuild derived caches so dashboards stay fast. They never modify source data—only refresh schema, project snapshots, and card layouts.
@@ -288,7 +304,7 @@
                     {% endif %}
                 </div>
             </div>
-            
+
             <!-- Delete Organization Data -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
@@ -303,7 +319,7 @@
                             </option>
                             {% endfor %}
                         </select>
-                        <button id="delete-org-btn" 
+                        <button id="delete-org-btn"
                                 class="btn btn-warning btn-sm w-full"
                                 hx-post="{% url 'importer:delete_organization_triples' %}"
                                 hx-target="#delete-org-result"
@@ -328,13 +344,13 @@
                     {% endif %}
                 </div>
             </div>
-            
+
             <!-- Reset Database -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
                     <h4 class="card-title text-sm">Reset All Data</h4>
                     <p class="text-xs text-base-content/70 mb-3">Delete all imported data (Resources and Triples)</p>
-                    <button id="reset-db-btn" 
+                    <button id="reset-db-btn"
                             class="btn btn-error btn-sm w-full"
                             hx-post="{% url 'importer:reset_database' %}"
                             hx-target="#reset-db-result"
@@ -349,13 +365,13 @@
                     </button>
                 </div>
             </div>
-            
+
             <!-- Clear Upload Sessions -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
                     <h4 class="card-title text-sm">Clear Upload Sessions</h4>
                     <p class="text-xs text-base-content/70 mb-3">Delete all upload session records and history</p>
-                    <button id="clear-uploads-btn" 
+                    <button id="clear-uploads-btn"
                             class="btn btn-warning btn-sm w-full"
                             hx-post="{% url 'importer:clear_upload_sessions' %}"
                             hx-target="#clear-uploads-result"
@@ -370,13 +386,13 @@
                     </button>
                 </div>
             </div>
-            
+
             <!-- Clear Ingest Sessions -->
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4">
                     <h4 class="card-title text-sm">Clear Ingest Sessions</h4>
                     <p class="text-xs text-base-content/70 mb-3">Delete all ingest session records and history</p>
-                    <button id="clear-ingests-btn" 
+                    <button id="clear-ingests-btn"
                             class="btn btn-warning btn-sm w-full"
                             hx-post="{% url 'importer:clear_ingest_sessions' %}"
                             hx-target="#clear-ingests-result"
@@ -392,7 +408,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Results containers -->
         <div class="mt-4 space-y-2">
             <div id="delete-org-result"></div>
@@ -403,7 +419,8 @@
     </div>
     {% endif %}
 
-    {% if request.user.is_superuser %}
+
+  {% if request.user.is_staff %}
         <div class="mt-6">
             <div class="card bg-base-100 shadow-md">
                 <div class="card-body p-4 space-y-3">
@@ -471,6 +488,25 @@
                             <button type="submit" class="btn btn-outline btn-sm">Deduplicate S3 Rows</button>
                         </form>
 
+                        <form hx-post="{% url 'metadata:metadata_dashboard_link_events' %}"
+                              hx-target="#storage-maintenance-results"
+                              hx-swap="afterbegin"
+                              class="flex flex-wrap gap-2 items-center">
+                            {% csrf_token %}
+                            <label class="text-xs">Bucket:</label>
+                            <select name="bucket" class="select select-bordered select-xs">
+                                <option value="">All</option>
+                                {% for bucket in checksum_buckets %}
+                                <option value="{{ bucket }}">{{ bucket|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="mode" class="select select-bordered select-xs">
+                                <option value="apply">Run now</option>
+                                <option value="dry">Dry run</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline btn-sm">Link Event Files</button>
+                        </form>
+
                     </div>
 
                     <div id="storage-maintenance-results" class="space-y-2"></div>
@@ -492,35 +528,35 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Triples</h2>
                 <p class="text-4xl font-bold">{{ stats.total_triples }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Classes</h2>
                 <p class="text-4xl font-bold">{{ stats.class_resources }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Properties</h2>
                 <p class="text-4xl font-bold">{{ stats.property_resources }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Ingests</h2>
                 <p class="text-4xl font-bold">{{ stats.ingests }}</p>
             </div>
         </div>
-        
+
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title text-sm">Resource Links</h2>
@@ -531,23 +567,25 @@
             </div>
         </div>
 
-        <div id="oai-widget-container"
-             class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
-                <p class="text-xs text-base-content/70">Load OAI snapshot on demand to keep the dashboard fast.</p>
-                <div class="card-actions justify-start mt-2">
-                    <button class="btn btn-outline btn-primary btn-sm"
-                            hx-get="{% url 'metadata:metadata_dashboard_oai_widget' %}"
-                            hx-target="#oai-widget-container"
-                            hx-swap="outerHTML"
-                            hx-indicator="#oai-widget-spinner">
-                        Load OAI stats
-                        <span id="oai-widget-spinner" class="loading loading-spinner loading-sm htmx-indicator ml-2"></span>
-                    </button>
-                </div>
+      <div id="oai-widget-container"
+           class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+            <p class="text-xs text-base-content/70">
+                Load the OAI snapshot on demand to keep the dashboard fast.
+            </p>
+            <div class="card-actions justify-start mt-2">
+                <button class="btn btn-outline btn-primary btn-sm"
+                        hx-get="{% url 'metadata:metadata_dashboard_oai_widget' %}"
+                        hx-target="#oai-widget-container"
+                        hx-swap="outerHTML"
+                        hx-indicator="#oai-widget-spinner">
+                    Load OAI stats
+                    <span id="oai-widget-spinner" class="loading loading-spinner loading-sm htmx-indicator ml-2"></span>
+                </button>
             </div>
         </div>
+      </div>
 
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
@@ -574,7 +612,7 @@
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Recent Uploads</h2>
-                
+
                 <div class="overflow-x-auto">
                     <table class="table table-zebra w-full">
                         <thead>
@@ -618,18 +656,18 @@
                         </tbody>
                     </table>
                 </div>
-                
+
                 <div class="card-actions justify-end mt-4">
                     <a href="{% url 'metadata:all_upload_sessions' %}" class="btn btn-primary btn-sm">View All</a>
                 </div>
             </div>
         </div>
-        
+
         <!-- Recent Ingests -->
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title">Recent Ingests</h2>
-                
+
                 <div class="overflow-x-auto">
                     <table class="table table-zebra w-full">
                         <thead>
@@ -670,7 +708,7 @@
                         </tbody>
                     </table>
                 </div>
-                
+
                 <div class="card-actions justify-end mt-4">
                     <a href="{% url 'metadata:all_ingest_sessions' %}" class="btn btn-primary btn-sm">View All</a>
                 </div>
@@ -678,4 +716,25 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+{% if request.user.is_superuser %}
+<script>
+// Listen for mapping changes globally (superuser only)
+document.body.addEventListener('mapping-changed', function(evt) {
+    console.log('Mapping changed by superuser:', evt.detail);
+
+    // Show toast notification or update UI
+    const detail = evt.detail;
+    const action = detail.action === 'cleared' ? 'cleared' : 'set to ' + detail.mapping_name;
+
+    console.log(`Active mapping ${action} for org ${detail.organization_id}`);
+
+    // Other superuser-only components can react to this event
+    // e.g., refresh projekt snapshot stats, schema manifest preview, etc.
+});
+</script>
+{% endif %}
 {% endblock %}

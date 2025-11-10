@@ -1,4 +1,6 @@
 """Project detail view backed by cached project snapshots."""
+import uuid
+from functools import singledispatchmethod
 
 from django.views.generic import View
 from django.shortcuts import render
@@ -6,13 +8,71 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse
 from django.http import HttpResponseBadRequest, HttpResponseNotFound
 import logging
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Mapping
 
+from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
 
 logger = logging.getLogger(__name__)
 
+
+# Copy from arkumu-app/arkumu/catalog/views.py. You may need to remove the file.
+class Entity:
+    @singledispatchmethod
+    def __init__(self, arg):
+        raise NotImplementedError("Not implemented for these arguments")
+
+    @__init__.register
+    def _(self, arg: Resource):
+        self.uri = arg.uri
+        self.init_helper(arg.id)
+
+    @__init__.register
+    def _(self, arg: Triple):
+        self.uri = Resource.objects.get(id=arg.subject_id).uri
+        self.init_helper(arg.subject_id)
+
+    @__init__.register
+    def _(self, arg: str):
+        self.uri = arg
+        subject = Resource.objects.get(uri=arg)
+        self.init_helper(subject.id)
+
+    @__init__.register
+    def _(self, arg: uuid.UUID):
+        self.uri = Resource.objects.get(id=arg).uri
+        self.init_helper(arg)
+
+    def init_helper(self, subject_id):
+        self.id = subject_id
+        self.name = Resource.objects.get(id=subject_id).name
+        self.resources = {}
+        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.resources:
+                self.resources[Resource.objects.get(id=entity_field_triple.predicate_id).name] = [
+                    Resource.objects.get(id=entity_field_triple.object_id)]
+            else:
+                self.resources[Resource.objects.get(id=entity_field_triple.predicate_id).name].append(
+                    Resource.objects.get(id=entity_field_triple.object_id))
+        self.properties = {}
+        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.properties:
+                self.properties[Resource.objects.get(id=entity_field_triple.predicate_id).name] = [
+                    Resource.objects.get(id=entity_field_triple.predicate_id)]
+            else:
+                self.properties[Resource.objects.get(id=entity_field_triple.predicate_id).name].append(
+                    Resource.objects.get(id=entity_field_triple.predicate_id))
+        self.field_names = []
+        for entity_field_triple in Triple.objects.filter(subject_id=subject_id):
+            if Resource.objects.get(id=entity_field_triple.predicate_id).name not in self.field_names:
+                self.field_names.append(Resource.objects.get(id=entity_field_triple.predicate_id).name)
+
+    def __repr__(self):
+        ret = {field_name: [resource.value for resource in self.resources[field_name]] if self.resources[field_name][
+                                                                                              0].resource_type == ResourceType.LITERAL else [
+            resource.uri for resource in self.resources[field_name]] for field_name in self.field_names}
+        return f"Entity with id: {self.id} \nvalues: {ret}"
 
 class ProjectView(LoginRequiredMixin, View):
     """Render a single project using the shared snapshot."""
@@ -204,11 +264,34 @@ class ProjectView(LoginRequiredMixin, View):
 
         institution_label = record.institution.label if record.institution and record.institution.label else ''
         project_type = record.project_type.label if record.project_type and record.project_type.label else ''
+        rights_status_raw = record.rights_status
+        rights_status = ''
+        if rights_status_raw:
+            if isinstance(rights_status_raw, Mapping):
+                rights_status = rights_status_raw.get('label') or rights_status_raw.get('value') or ''
+            else:
+                candidate = getattr(rights_status_raw, 'label', rights_status_raw)
+                if isinstance(candidate, (list, tuple, set)):
+                    rights_status = [item for item in candidate if item]
+                elif isinstance(candidate, str):
+                    rights_status = candidate
+                else:
+                    rights_status = str(candidate) if candidate else ''
         catchphrase_labels = [item.label for item in record.catchphrases if item.label]
         category_labels = [item.label for item in record.categories if item.label]
         digital_object_paths = [item.path for item in record.digital_objects if item.path]
         alternative_titles = [item.value for item in record.alternative_titles if item.value]
 
+        # neu
+        ent = Entity(record.uri)
+        comment_de = ent.resources.get("comment_de")[0].value if ent.resources.get("comment_de") else ''
+        comment_en = ent.resources.get("comment_en")[0].value if ent.resources.get("comment_en") else ''
+        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].value if ent.resources.get(
+            "Sprache des bevorzugten Titels") else ''
+        lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].value if ent.resources.get(
+            "Sprache des bevorzugten Untertitels") else ''
+
+        # Mappe CSV-Spalten auf ProjectRecord-Eigenschaften
         metadata_entries = [
             _entry('Projekt URI', record.uri),
             _entry('Institution', institution_label),
@@ -217,6 +300,11 @@ class ProjectView(LoginRequiredMixin, View):
             _entry('Kategorien', category_labels),
             _entry('Digitale Objekte', digital_object_paths),
             _entry('Alternative Titel', alternative_titles),
+            _entry('Kommentar DE', comment_de),
+            _entry('Kommentar EN', comment_en),
+            _entry('Sprache Titel', lang_title),
+            _entry('Sprache Untertitel', lang_sub_title),
+            _entry("Rechtsstatus",rights_status),
         ]
 
         if record.events:

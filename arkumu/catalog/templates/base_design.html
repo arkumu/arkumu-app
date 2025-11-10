@@ -13,7 +13,7 @@
     <meta name="description" content="Archive der Kunst- und Musikhochschulen" />
     <meta name="author" content="arkumu" />
     <link rel="icon" href="{% static 'images/favicons/favicon.ico' %}" />
-    
+
     <!-- Immediate theme application to prevent flash of wrong theme -->
     <script>
       (function() {
@@ -25,12 +25,12 @@
         });
       })();
     </script>
-    
+
     {% block css %}
       <!-- Tailwind CSS -->
       <link href="{% static 'css/output.css' %}" rel="stylesheet" />
       <link href="{% static 'css/project.css' %}" rel="stylesheet" />
-      
+
       <!-- Inline styles for theme background -->
       <style>
         html, body {
@@ -40,13 +40,13 @@
           min-height: 100vh;
           height: 100%;
         }
-        
+
         /* Dark theme specific styles */
         html.theme-dark, body.theme-dark {
           background-color: #1E1E1E !important; /* arkumu-dark color */
           color: #FAF9F6; /* arkumu-light color */
         }
-        
+
         /* Blue theme specific styles */
         html.theme-blue, body.theme-blue {
           background-color: #FAF9F6; /* Keep light background for blue theme */
@@ -54,11 +54,11 @@
         }
       </style>
     {% endblock css %}
-    
+
     {% block javascript %}
       <!-- Project specific Javascript -->
       <script defer src="{% static 'js/project.js' %}"></script>
-      
+
       <!-- HTMX -->
       <script defer src="{% static 'js/htmx.min.js' %}"></script>
     {% endblock javascript %}
@@ -66,7 +66,7 @@
   <body class="h-full {% block bodyclass %}{% endblock bodyclass %}">
     {% block body %}
       <!-- Navbar will be added later -->
-      
+
 <div class="w-full min-h-screen px-4 sm:px-8 md:px-6 lg:px-12 max-w-none mx-auto bg-arkumu-light theme-dark:bg-arkumu-dark theme-blue:bg-arkumu-light">     {% if messages %}
           {% for message in messages %}
             <div class="alert alert-dismissible {% if message.tags %}alert-{{ message.tags }}{% endif %}">
@@ -78,25 +78,25 @@
             </div>
           {% endfor %}
         {% endif %}
-        
+
         {% block main %}
           {% block container_type %}
             <div class="w-full">
           {% endblock container_type %}
-          
+
               {% block content %}
                 <!-- Content goes here -->
               {% endblock content %}
-          
+
           {% block container_type_end %}
             </div>
           {% endblock container_type_end %}
         {% endblock main %}
       </div>
     {% endblock body %}
-    
+
     {% block modal %}{% endblock modal %}
-    
+
     {% block inline_javascript %}
       <script>
         // Theme switcher functionality for design pages
@@ -104,21 +104,21 @@
           // Initialize theme from localStorage
           const savedTheme = localStorage.getItem('arkumu-theme') || 'light';
           document.body.classList.add('theme-' + savedTheme);
-          
+
           // Theme switching function
           function switchTheme(theme) {
             // Remove existing theme classes
             document.documentElement.classList.remove('theme-light', 'theme-dark', 'theme-blue');
             document.body.classList.remove('theme-light', 'theme-dark', 'theme-blue');
-            
+
             // Add new theme class
             document.documentElement.classList.add('theme-' + theme);
             document.body.classList.add('theme-' + theme);
-            
+
             // Store in localStorage
             localStorage.setItem('arkumu-theme', theme);
           }
-          
+
           // Setup theme switching for component buttons (.theme-button)
           const themeButtons = document.querySelectorAll('.theme-button');
           themeButtons.forEach(button => {
@@ -131,4 +131,5 @@
       </script>
     {% endblock inline_javascript %}
   </body>
+  {% include 'components/footer/footer.html' %}
 </html>

@@ -13,7 +13,7 @@ from django.conf.urls.i18n import i18n_patterns
 # Import staticfiles_urlpatterns
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
-from arkumu.pages.views import ImpressumView
+# from arkumu.pages.views import ImpressumView
 urlpatterns = [
     # ============================================================================
     # BACKEND APPLICATION URLS (with navbar)
@@ -24,13 +24,13 @@ urlpatterns = [
         TemplateView.as_view(template_name="pages/about.html"),
         name="about",
     ),
-    path("impressum/", ImpressumView.as_view(), name="impressum"),
-    
+    # path("impressum/", ImpressumView.as_view(), name="impressum"),
+
     # ============================================================================
     # DESIGN SHOWCASE URLS (moved to catalog app)
     # ============================================================================
     # These URLs have been moved to arkumu.catalog.urls
-    
+
     # ============================================================================
     # ADMIN & USER MANAGEMENT
     # ============================================================================
@@ -41,24 +41,24 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     # Override signup to redirect to login
     path("accounts/signup/", RedirectView.as_view(url="/accounts/login/", permanent=True)),
-    
+
     # ============================================================================
     # APPLICATION MODULES
     # ============================================================================
     # Your stuff: custom urls includes go here
-    path('metadata/', include('arkumu.metadata.urls', namespace='metadata')),
+    path('metadata/', include(('arkumu.metadata.urls', 'metadata'), namespace='metadata')),
     path('storage/', include('arkumu.storage.urls', namespace='storage')),
     path('importer/', include('arkumu.importer.urls', namespace='importer')),
     path('catalog/', include('arkumu.catalog.urls', namespace='catalog')),
     # OAI-PMH provider (minimal)
     path('oai/', include('arkumu.oaipmh.urls', namespace='oai')),
     # SSE URLs removed - migrated to HTMX polling
-    
+
     # ============================================================================
     # MEDIA & INTERNATIONALIZATION
     # ============================================================================
     # Media files
-    *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),    
+    *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
     # i18n
     path('i18n/', include('django.conf.urls.i18n')),
 ]
@@ -98,7 +98,7 @@ if settings.DEBUG:
 
     # Add static files serving for development
     urlpatterns += staticfiles_urlpatterns()
-    
+
     # Optionally, if you also serve from STATIC_ROOT in debug (less common for dev)
     # urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 

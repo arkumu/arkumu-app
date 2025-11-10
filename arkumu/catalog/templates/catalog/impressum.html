@@ -1,0 +1,196 @@
+{% extends "base_design.html" %}
+{% load static %}
+{% block title %}arkumu{% endblock title %}
+
+{% block navbar %}{% endblock navbar %}
+{% block body_class %}h-full{% endblock body_class %}
+{% block messages_wrapper_class %}w-full px-4{% endblock messages_wrapper_class %}
+{% block container_class %}w-full h-full px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto{% endblock container_class %}
+
+{% block content %}
+  {#  <div>{{ project }}</div>#}
+  <div class="w-full min-h-screen"
+       data-rdf-type="http://arkumu.org/data/fuk/types/projekt"
+       data-uri="{{ project.uri }}">
+    <header class="w-full py-8 px-4 transition-colors
+                 text-arkumu-dark
+                 theme-dark:text-arkumu-light
+                 theme-blue:text-arkumu-light">
+      <div class="flex items-center justify-between w-full">
+        <div class="w-48 md:w-56 lg:w-64 transition-all duration-300">
+          <a href="/catalog/browse/" class="block">
+            <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo"
+                 class="w-full h-auto transition-all duration-300 block theme-dark:hidden theme-blue:hidden">
+            <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
+                 class="w-full h-auto transition-all duration-300 hidden theme-dark:block theme-blue:hidden">
+            <img src="{% static 'images/arkumu-logo-blue.svg' %}" alt="arkumu logo"
+                 class="w-full h-auto transition-all duration-300 hidden theme-dark:hidden theme-blue:block">
+          </a>
+        </div>
+
+        <div class="flex items-center">
+          <div class="theme-buttons">
+            {% include 'components/header/theme_buttons.html' %}
+          </div>
+          <div class="w-6 md:w-8 lg:w-10"></div>
+          <div class="flex items-center space-x-4 md:space-x-5 lg:space-x-6">
+            <div class="flex flex-col items-center">
+              {% include 'components/header/search_button.html' %}
+              <span
+                class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Suche</span>
+            </div>
+            <div class="flex flex-col items-center">
+              {% include 'components/header/menu_button.html' %}
+              <span
+                class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Menü</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  <div class="text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">
+              <h1 tabindex="0" class="text-4xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">
+            Impressum
+          </h1>
+    <div class="mb-5">Das Webportal arkumu.nrw ist ein gemeinsames Projekt mehrerer Hochschulen in Nordrhein-Westfalen. Die inhaltliche Verantwortung für die jeweils eingestellten Inhalte liegt bei den einliefernden Hochschulen selbst.</div>
+
+      <h2 tabindex="0" class="text-3xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Angaben gemäß § 5 Abs. 1 DDG:</h2>
+
+  <div class="mb-3">
+    <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">1. Hochschule für Musik Detmold (HFM Detmold)</h3>
+    <p>Zuständig für Inhalte aus dem Bereich Musik<br>
+    Neustadt 22, 32756 Detmold</p>
+    <p><a href="https://www.hfm-detmold.de">www.hfm-detmold.de</a><br>
+    Telefon: <a href="tel:+4952319755">+49 5231 - 9755</a><br>
+    E-Mail: <a href="mailto:webmaster@hfm-detmold.de">webmaster@hfm-detmold.de</a></p>
+    <p>Die Hochschule für Musik Detmold ist eine Körperschaft des Öffentlichen Rechts und zugleich Einrichtung des Landes. Sie wird durch die*den Rektor*in der Hochschule gesetzlich vertreten.</p>
+    <p>Umsatzsteuer-Identifikationsnummer gem. §27a UStG: DE 124617697</p>
+  </div>
+
+  <div class="mb-3">
+    <h3  tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">2. Kunsthochschule für Medien Köln (KHM)</h3>
+    <p>Kunsthochschule für Medien Köln<br>
+    Heumarkt 14<br>
+    D-50667 Köln</p>
+    <p><a href="https://www.khm.de">www.khm.de</a><br>
+    Telefon: <a href="tel:+49221201890">+49 221 20189 - 0</a><br>
+    E-Mail: <a href="mailto:webmaster@khm.de">webmaster@khm.de</a></p>
+    <p>Die Kunsthochschule für Medien ist eine Körperschaft des Öffentlichen Rechts und zugleich Einrichtung des Landes. Sie wird durch die*den Rektor*in der Hochschule gesetzlich vertreten.</p>
+    <p>Umsatzsteuer-Identifikationsnummer gem. §27a UStG: DE 811383949</p>
+  </div>
+
+  <div class="mb-3">
+    <h3  tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">3. Folkwang Universität der Künste</h3>
+    <p>Klemensborn 39<br>
+    45239 Essen</p>
+    <p><a href="https://www.folkwang-uni.de">www.folkwang-uni.de</a><br>
+    Telefon: <a href="tel:+4920149030">+49 201 4903 - 0</a><br>
+    E-Mail: <a href="mailto:gross@folkwang-uni.de">gross@folkwang-uni.de</a></p>
+    <p>Die Folkwang Universität der Künste ist eine Körperschaft des Öffentlichen Rechts und zugleich Einrichtung des Landes. Sie wird durch die*den Rektor*in der Hochschule gesetzlich vertreten.</p>
+    <p>Umsatzsteuer-Identifikationsnummer gem. §27a UStG: DE 119677452</p>
+  </div>
+
+  <div class="mb-3">
+    <h3  tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">4. Hochschule für Musik und Tanz Köln (HfMT Köln)</h3>
+    <p>Unter Krahnenbäumen 87<br>
+    50668 Köln</p>
+    <p><a href="https://www.hfmt-koeln.de">www.hfmt-koeln.de</a><br>
+    Telefon: <a href="tel:+49221283800">+49 221 28380 - 0</a><br>
+    E-Mail: <a href="mailto:webmaster@hfmt-koeln.de">webmaster@hfmt-koeln.de</a></p>
+    <p>Die Hochschule für Musik und Tanz ist eine Körperschaft des Öffentlichen Rechts und zugleich Einrichtung des Landes. Sie wird durch die*den Rektor*in der Hochschule gesetzlich vertreten.</p>
+    <p>Umsatzsteuer-Identifikationsnummer gem. §27a UStG: DE 811344000</p>
+  </div>
+
+  <div class="mb-3">
+    <h3  tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">5. Robert Schumann Hochschule Düsseldorf</h3>
+    <p>Fischerstraße 110<br>
+    40476 Düsseldorf</p>
+    <p><a href="https://www.rsh-duesseldorf.de">www.rsh-duesseldorf.de</a><br>
+    Telefon: <a href="tel:+4921149180">+49 211 4918 - 0</a><br>
+    E-Mail: <a href="mailto:kommunikation@rsh-duesseldorf.de">kommunikation@rsh-duesseldorf.de</a></p>
+    <p>Die Robert Schumann Hochschule ist eine Körperschaft des Öffentlichen Rechts und zugleich Einrichtung des Landes. Sie wird durch die*den Rektor*in der Hochschule gesetzlich vertreten.</p>
+    <p>Umsatzsteuer-Identifikationsnummer gem. §27a UStG: DE 119356424</p>
+  </div>
+
+<div class="mb-5">
+   <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Zuständige Aufsichtsbehörde für alle vorgenannten Hochschulen:</h3>
+  <p>Ministerium für Kultur und Wissenschaft des Landes Nordrhein-Westfalen,<br>
+  Völklinger Straße 49, 40221 Düsseldorf</p>
+</div>
+    <div class="mb-5">
+  <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Technische Umsetzung und Betrieb:</h3>
+  <p>IT Center University of Cologne (ITCC)<br>
+  Universität zu Köln<br>
+  Albertus-Magnus-Platz, 50923 Köln<br>
+  <a href="https://www.uni-koeln.de">www.uni-koeln.de</a></p>
+    </div>
+    <div class="mb-5">
+  <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Gestaltung der Website:</h3>
+  <p>Büro brauchbarkeit<br>
+  Lichtstraße 25, 50825 Köln<br>
+  <a href="https://www.brauchbarkeit.de">www.brauchbarkeit.de</a></p>
+    </div>
+    <div class="mb-5">
+  <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Haftungsausschluss:</h3>
+  <p>Für die Inhalte der jeweiligen Hochschulbereiche sind ausschließlich die einliefernden Institutionen verantwortlich. Trotz sorgfältiger Kontrolle übernehmen wir keine Haftung für die Inhalte externer Links. Für den Inhalt verlinkter Seiten sind ausschließlich deren Betreiber verantwortlich.</p>
+    </div>
+    <div class="mb-5">
+  <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Urheberrecht:</h3>
+  <p>Die auf dieser Website veröffentlichten Inhalte und Werke unterliegen dem deutschen Urheberrecht. Beiträge Dritter sind als solche gekennzeichnet. Jede Nutzung, die nicht durch das Urheberrechtsgesetz zugelassen ist, bedarf der vorherigen schriftlichen Zustimmung der jeweiligen Rechteinhaberin bzw. des jeweiligen Rechteinhabers.</p>
+    </div>
+  <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Datenschutz:</h3>
+  <p>Hinweise zum Datenschutz finden Sie in unserer <a class="text-red-600" href="/catalog/datenschutz">Datenschutzerklärung</a></p>
+<div class="mb-5">
+  <h3 tabindex="0" class="text-2xl font-medium mb-3 transition-colors
+                     text-arkumu-dark
+                     theme-dark:text-arkumu-light
+                     theme-blue:text-arkumu-blue">Text- und Data-Mining:</h3>
+  <p>Die oben genannten Hochschulen behalten sich eine Nutzung ihrer Inhalte für kommerzielles Text- und Data-Mining im Sinne von § 44b UrhG ausdrücklich vor. Für den Erwerb einer entsprechenden Nutzungslizenz wenden Sie sich bitte an die jeweilige Hochschule.</p>
+</div>
+
+
+</div>
+
+  </div>
+{% endblock content %}

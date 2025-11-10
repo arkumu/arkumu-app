@@ -144,6 +144,7 @@ class StubWorkspaceService:
                 "join_relationship": join_map[projekt_field_name],
                 "join_other_dataset": "Projekt",
                 "join_key": "Mitarbeit::Projekt",
+                "widget": "JunctionRelationshipWidget",
             }
 
             # Create join field for Person with proper naming
@@ -168,6 +169,7 @@ class StubWorkspaceService:
                 "join_relationship": join_map[person_field_name],
                 "join_other_dataset": "Person",
                 "join_key": "Mitarbeit::Person",
+                "widget": "JunctionRelationshipWidget",
             }
 
         return metadata, join_map
@@ -261,7 +263,7 @@ class StubWorkspaceService:
 
             return new_uri, created
 
-    def sync_join_relationship(self, entity_uri: str, relationship: JoinRelationship, related_uris: list):
+    def sync_join_relationship(self, entity_uri: str, relationship: JoinRelationship, related_items: list):
         """Stub sync for join relationships."""
         entity = Resource.objects.get(uri=entity_uri)
         predicate, _ = Resource.objects.get_or_create(
@@ -273,7 +275,10 @@ class StubWorkspaceService:
         Triple.objects.filter(subject=entity, predicate=predicate).delete()
 
         # Create new relationships
-        for related_uri in related_uris:
+        for item in related_items:
+            related_uri = item if isinstance(item, str) else item.get("uri")
+            if not related_uri:
+                continue
             related_resource, _ = Resource.objects.get_or_create(
                 uri=related_uri,
                 defaults={"resource_type": ResourceType.ENTITY, "name": related_uri.split("/")[-1]}
@@ -492,6 +497,7 @@ class TestFormRendering:
 
         # Check that the hidden inputs have data-multi-value attribute
         assert 'data-multi-value="true"' in content, "Hidden inputs should have data-multi-value attribute"
+        assert 'data-widget="JunctionRelationshipWidget"' in content, "Join widgets should identify themselves for front-end handling"
 
         # Check that the relationship rows use the correct name pattern (field_name + [])
         # The dynamic rows should have name="__join__Mitarbeit__Person[]"
