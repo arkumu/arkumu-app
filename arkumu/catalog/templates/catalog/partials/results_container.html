@@ -40,7 +40,7 @@
   <div id="pagination" class="flex items-center justify-center space-x-2 py-8">
     <!-- Previous Button -->
     {% if has_previous %}
-    <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ previous_page }}"
+    <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&amp;page={{ previous_page }}&amp;orga_code={{ orga_code }}"
             hx-target="#results-container"
             hx-swap="innerHTML"
             hx-indicator="#search-loading"
@@ -73,7 +73,7 @@
         </span>
         {% else %}
         <!-- Other Page Numbers -->
-        <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ page_num }}"
+        <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&amp;page={{ page_num }}&amp;orga_code={{ orga_code }}"
                 hx-target="#results-container"
                 hx-swap="innerHTML"
                 hx-indicator="#search-loading"
@@ -89,7 +89,7 @@
 
     <!-- Next Button -->
     {% if has_next %}
-    <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ next_page }}"
+    <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&amp;page={{ next_page }}&amp;orga_code={{ orga_code }}"
             hx-target="#results-container"
             hx-swap="innerHTML"
             hx-indicator="#search-loading"

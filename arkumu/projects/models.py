@@ -299,6 +299,21 @@ class ProjectRecord:
         ).lower()
         return query.lower() in haystack
 
+    def matches_institution(self, instit: str) -> bool:
+        if not instit:
+            return True
+
+        haystack = " ".join(
+            filter(
+                None,
+                [
+                    self.institution.label if self.institution else None,
+                ],
+            )
+        ).lower()
+        print(haystack)
+        return instit.lower() in haystack
+
 
 @dataclass
 class ProjectSnapshot:
