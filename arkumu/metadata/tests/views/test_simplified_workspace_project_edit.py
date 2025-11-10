@@ -14,6 +14,7 @@ from arkumu.metadata.constants import (
 )
 from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
 from arkumu.metadata.views import simplified_workspace_views
+from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.users.models import Organization
 
 
@@ -366,6 +367,12 @@ def _context_input_name(column_label: str) -> str:
 
 @pytest.mark.django_db
 def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
+    Resource.objects.create(
+        uri=dummy_service.entity_uri,
+        resource_type=ResourceType.ENTITY,
+        organization=user.organization,
+        public_access_level=PublicAccessLevel.RESTRICTED,
+    )
     client.force_login(user)
     response = client.get(
         reverse("metadata:edit_project"),
@@ -385,7 +392,30 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     assert 'name="Wikidata-ID"' in content
     assert 'name="Andere Normdaten"' in content
     assert 'name="Externe Projektwebseite"' in content
+    assert 'name="visibility"' in content
+    assert f'value="{PublicAccessLevel.RESTRICTED.value}" selected' in content
     assert 'id="triple-component-projekt-hat-teil"' in content
+
+
+@pytest.mark.django_db
+def test_post_updates_visibility_level(client, user, dummy_service):
+    resource = Resource.objects.create(
+        uri=dummy_service.entity_uri,
+        resource_type=ResourceType.ENTITY,
+        organization=user.organization,
+        public_access_level=PublicAccessLevel.PRIVATE,
+    )
+    client.force_login(user)
+    response = client.post(
+        reverse("metadata:edit_project"),
+        {
+            "entity_uri": dummy_service.entity_uri,
+            "visibility": PublicAccessLevel.PUBLIC.value,
+        },
+    )
+    assert response.status_code == 302
+    resource.refresh_from_db()
+    assert resource.public_access_level == PublicAccessLevel.PUBLIC.value
 
 
 @pytest.mark.django_db
@@ -465,6 +495,12 @@ def test_post_clears_multi_value_relationships(client, user, dummy_service):
 
 @pytest.mark.django_db
 def test_post_filters_self_from_linked_projects(client, user, dummy_service):
+    Resource.objects.create(
+        uri=dummy_service.entity_uri,
+        resource_type=ResourceType.ENTITY,
+        organization=user.organization,
+        public_access_level=PublicAccessLevel.PRIVATE,
+    )
     client.force_login(user)
     response = client.post(
         reverse("metadata:edit_project"),
@@ -484,6 +520,7 @@ def test_post_filters_self_from_linked_projects(client, user, dummy_service):
         for _, property_uri, related in dummy_service.multi_fk_calls
     }
     relation_uri = DummyProjektSchemaService.PROJECT_RELATION_FIELDS["Projekt hat Teil"][1]
+    assert relation_uri in calls, calls
     assert calls[relation_uri] == [
         "http://example.org/project/child-1",
         "http://example.org/project/child-3",

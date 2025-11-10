@@ -47,10 +47,41 @@ from arkumu.metadata.services.entity_label_service import infer_entity_label as 
 from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.users.models import Organization
 from arkumu.storage.models import S3FileObject
-from arkumu.metadata.models.resource import Resource
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 
 logger = logging.getLogger(__name__)
+
+_VISIBILITY_OPTION_DEFINITIONS: Tuple[Tuple[PublicAccessLevel, str], ...] = (
+    (
+        PublicAccessLevel.PRIVATE,
+        "Private - Nur Organisation",
+    ),
+    (
+        PublicAccessLevel.RESTRICTED,
+        "Restricted - Authentifizierte Nutzer",
+    ),
+    (
+        PublicAccessLevel.PUBLIC,
+        "Public - Öffentlich im Katalog",
+    ),
+)
+_VALID_VISIBILITY_VALUES: Set[str] = {level.value for level, _ in _VISIBILITY_OPTION_DEFINITIONS}
+
+
+def _build_visibility_choices() -> List[Dict[str, str]]:
+    return [
+        {"value": level.value, "label": label}
+        for level, label in _VISIBILITY_OPTION_DEFINITIONS
+    ]
+
+
+def _normalize_visibility_value(raw_value: Optional[str], fallback: Optional[str] = None) -> str:
+    if raw_value in _VALID_VISIBILITY_VALUES:
+        return raw_value
+    if fallback in _VALID_VISIBILITY_VALUES:
+        return fallback
+    return PublicAccessLevel.PRIVATE.value
 
 
 # Section configuration shared by simplified edit views. Each section defines
@@ -1035,7 +1066,7 @@ def _collect_relationship_payloads(
 
         # Skip TripleCreatorWidget fields - they are managed via HTMX endpoints
         widget = meta.get("widget")
-        if widget == "TripleCreatorWidget":
+        if widget == "TripleCreatorWidget" and not meta.get("fk_relationship"):
             logger.info(f"⏭️  Skipping TripleCreatorWidget field: {field_name}")
             continue
 
@@ -2120,6 +2151,18 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
         tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        visibility_choices = _build_visibility_choices()
+        current_visibility = _normalize_visibility_value(
+            request.POST.get("visibility"),
+            fallback=PublicAccessLevel.PRIVATE.value,
+        )
+
+        resource = Resource.objects.filter(uri=entity_uri).first()
+        visibility_choices = _build_visibility_choices()
+        current_visibility = _normalize_visibility_value(
+            resource.public_access_level if resource else None,
+            fallback=PublicAccessLevel.RESTRICTED.value,
+        )
 
         # Render the form
         context = {
@@ -2134,6 +2177,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             "read_only_relationships": read_only_relationships,
             "title": "Projekt bearbeiten",
             "description": "Aktualisiere die wichtigsten Angaben für dieses Projekt.",
+            "visibility_choices": visibility_choices,
+            "current_visibility": current_visibility,
         }
         context["metadata_entry_return_url"] = _build_metadata_entry_url(
             schema_service.organization.code,
@@ -2153,6 +2198,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
 
         if not entity_uri:
             return HttpResponseBadRequest("Missing entity_uri")
+
+        resource = Resource.objects.filter(uri=entity_uri).first()
 
         # Get field metadata and augment with joins (for relationship handling)
         field_metadata = schema_service.get_field_metadata(dataset_name)
@@ -2188,6 +2235,11 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
         tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        visibility_choices = _build_visibility_choices()
+        current_visibility = _normalize_visibility_value(
+            request.POST.get("visibility"),
+            fallback=resource.public_access_level if resource else None,
+        )
 
         if form.is_valid():
             try:
@@ -2229,6 +2281,14 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                         related_uris=related_uris,
                     )
 
+                visibility = request.POST.get("visibility")
+                if visibility in _VALID_VISIBILITY_VALUES:
+                    resource_to_update = Resource.objects.filter(uri=saved_uri).first()
+                    if resource_to_update and resource_to_update.public_access_level != visibility:
+                        resource_to_update.public_access_level = visibility
+                        resource_to_update.save(update_fields=["public_access_level"])
+                        logger.info(f"✅ Updated visibility to {visibility} for {saved_uri}")
+
                 preview_field_name = _get_preview_field_name(fields_with_metadata)
                 preview_key = ""
                 if preview_field_name:
@@ -2259,6 +2319,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                     "error": str(e),
                     "title": "Projekt bearbeiten",
                     "mapping_id": schema_service.mapping.id,
+                    "visibility_choices": visibility_choices,
+                    "current_visibility": current_visibility,
                 }
                 context["metadata_entry_return_url"] = _build_metadata_entry_url(
                     schema_service.organization.code,
@@ -2277,6 +2339,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                 "dataset_name": dataset_name,
                 "title": "Projekt bearbeiten",
                 "mapping_id": schema_service.mapping.id,
+                "visibility_choices": visibility_choices,
+                "current_visibility": current_visibility,
             }
             context["metadata_entry_return_url"] = _build_metadata_entry_url(
                 schema_service.organization.code,
@@ -2360,12 +2424,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
         tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         # Get visibility choices
-        from arkumu.metadata.models.resource import PublicAccessLevel
-        visibility_choices = [
-            {"value": PublicAccessLevel.PRIVATE.value, "label": "Private - Nur Organisation"},
-            {"value": PublicAccessLevel.RESTRICTED.value, "label": "Restricted - Authentifizierte Nutzer"},
-            {"value": PublicAccessLevel.PUBLIC.value, "label": "Public - Öffentlich im Katalog"},
-        ]
+        visibility_choices = _build_visibility_choices()
 
         # Render the form
         context = {
@@ -2490,12 +2549,13 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                     )
 
                 # Set visibility on the Resource
-                visibility = request.POST.get("visibility", "private")
-                resource = Resource.objects.filter(uri=saved_uri).first()
-                if resource:
-                    resource.public_access_level = visibility
-                    resource.save()
-                    logger.info(f"✅ Set visibility to {visibility} for {saved_uri}")
+                visibility = request.POST.get("visibility")
+                if visibility in _VALID_VISIBILITY_VALUES:
+                    resource = Resource.objects.filter(uri=saved_uri).first()
+                    if resource and resource.public_access_level != visibility:
+                        resource.public_access_level = visibility
+                        resource.save(update_fields=["public_access_level"])
+                        logger.info(f"✅ Set visibility to {visibility} for {saved_uri}")
 
                 preview_field_name = _get_preview_field_name(fields_with_metadata)
                 preview_key = ""
@@ -2527,6 +2587,8 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                     "error": str(e),
                     "title": "Neues Projekt erstellen",
                     "mapping_id": schema_service.mapping.id,
+                    "visibility_choices": visibility_choices,
+                    "current_visibility": current_visibility,
                 }
                 context["metadata_entry_return_url"] = _build_metadata_entry_url(
                     schema_service.organization.code,
@@ -2545,6 +2607,8 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                 "dataset_name": dataset_name,
                 "title": "Neues Projekt erstellen",
                 "mapping_id": schema_service.mapping.id,
+                "visibility_choices": visibility_choices,
+                "current_visibility": current_visibility,
             }
             context["metadata_entry_return_url"] = _build_metadata_entry_url(
                 schema_service.organization.code,
