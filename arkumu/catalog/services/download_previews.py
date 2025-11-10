@@ -13,8 +13,8 @@ def clean_path(path):
 
 
 class DownloadPreviews:
-    preview_pred = Resource.objects.get(canonical_uri='http://arkumu.org/data/properties/vorschaubild')
-    path_pred = Resource.objects.get(canonical_uri='http://arkumu.org/data/properties/dateipfad')
+    preview_pred = Resource.objects.filter(canonical_uri='http://arkumu.org/data/properties/vorschaubild')
+    path_pred = Resource.objects.filter(canonical_uri='http://arkumu.org/data/properties/dateipfad')
 
     storage = BaseStorageService()
 
@@ -23,7 +23,7 @@ class DownloadPreviews:
         self._download(paths)
 
     def _get_download_paths(self, force=False):
-        preview_objs = [triple.object for triple in Triple.objects.filter(predicate=self.preview_pred)]
+        preview_objs = [triple.object for triple in Triple.objects.filter(predicate__in=self.preview_pred)]
         paths = self._digital_objs_path(preview_objs)
         if not force:
             paths = self._remove_already_downloaded(paths)
@@ -36,7 +36,7 @@ class DownloadPreviews:
 
     def _digital_objs_path(self, digital_objs):
         return  [{'bucket': path.source.code, 'path': f"data{clean_path(path.object.value)}"}
-                       for path in Triple.objects.filter(subject__in=digital_objs, predicate=self.path_pred)]
+                       for path in Triple.objects.filter(subject__in=digital_objs, predicate__in=self.path_pred)]
 
     def _download(self, paths):
         download_count = 0
