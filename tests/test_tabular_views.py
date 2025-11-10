@@ -5,7 +5,7 @@ from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.views.tabular_views import _build_rows_for_subjects
+from arkumu.metadata.views.tabular_views import _build_column_specs, _build_rows_for_subjects
 
 
 @pytest.mark.django_db
@@ -244,9 +244,11 @@ def test_build_rows_uses_label_resolver_for_entity_fk():
 
     resolver = StubResolver()
 
+    column_specs = _build_column_specs(desired_columns)
+
     rows, columns_meta = _build_rows_for_subjects(
         [subject],
-        desired_columns,
+        column_specs,
         entity_type="project",
         org=org,
         label_resolver=resolver,
@@ -254,4 +256,6 @@ def test_build_rows_uses_label_resolver_for_entity_fk():
 
     assert rows[0]["related"] == "Resolved Label"
     assert resolver.calls == ["http://arkumu.org/data/fuk/entities/akteurin/actor-1"]
-    assert columns_meta[0]["is_fk"] is True
+    related_meta = next((meta for meta in columns_meta if meta["name"] == "related"), None)
+    assert related_meta is not None
+    assert related_meta["is_fk"] is True

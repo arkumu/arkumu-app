@@ -486,9 +486,15 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
 PROJECT_LINK_FIELD_NAME = "Verknüpftes Projekt"
 PROJECT_LINK_PROPERTY_URI = "http://arkumu.org/data/properties/verknuepftes-projekt"
 PROJECT_DATASET_NAME = "Projekt"
+DIGITAL_OBJECT_DATASET_NAME = "Digitales_Objekt"
 
 
 METADATA_ENTRY_PATH = "/metadata/metadata-entry/"
+
+PREVIEW_PICKER_FIELD_SLUGS_BY_DATASET: Dict[str, Set[str]] = {
+    PROJECT_DATASET_NAME: {"vorschaubild", "vorschaubild_uri"},
+    DIGITAL_OBJECT_DATASET_NAME: {"dateipfad"},
+}
 
 
 def _build_metadata_entry_url(
@@ -1313,50 +1319,58 @@ def _get_preview_field_name(fields_with_metadata: List[Dict[str, Any]]) -> Optio
     return None
 
 
-def _update_project_preview_link(
-    *,
-    project_uri: str,
-    preview_key: str,
-    organization_code: Optional[str],
-) -> None:
-    """Ensure the selected S3 object is linked to the project resource."""
+def _should_use_preview_picker(dataset_name: Optional[str], field_slug: str) -> bool:
+    if not field_slug:
+        return False
+    dataset_key = dataset_name or ""
+    return field_slug in PREVIEW_PICKER_FIELD_SLUGS_BY_DATASET.get(dataset_key, set())
 
+
+def _link_verified_file_to_resource(
+    *,
+    resource_uri: str,
+    file_key: str,
+    organization_code: Optional[str],
+    context_label: str,
+) -> None:
     logger.info(
-        "📷 Preview link requested | project=%s | key=%s | org=%s",
-        project_uri,
-        preview_key,
+        "📷 %s link requested | resource=%s | key=%s | org=%s",
+        context_label,
+        resource_uri,
+        file_key,
         organization_code,
     )
 
-    if not project_uri:
-        logger.info("📷 Preview link skipped: missing project URI")
+    if not resource_uri:
+        logger.info("📷 %s link skipped: missing resource URI", context_label)
         return
 
-    project_resource = Resource.objects.filter(uri=project_uri).first()
-    if project_resource is None:
-        logger.warning("📷 Preview link skipped: project resource %s not found", project_uri)
+    target_resource = Resource.objects.filter(uri=resource_uri).first()
+    if target_resource is None:
+        logger.warning("📷 %s link skipped: resource %s not found", context_label, resource_uri)
         return
 
-    # Clear previous links that no longer match
-    stale_queryset = S3FileObject.objects.filter(related_resource=project_resource)
-    if preview_key:
-        stale_queryset = stale_queryset.exclude(s3_key=preview_key)
+    stale_queryset = S3FileObject.objects.filter(related_resource=target_resource)
+    if file_key:
+        stale_queryset = stale_queryset.exclude(s3_key=file_key)
     stale_count = stale_queryset.update(related_resource=None)
     if stale_count:
-        logger.info("📷 Cleared %s stale preview link(s) for %s", stale_count, project_uri)
+        logger.info("📷 Cleared %s stale %s link(s) for %s", stale_count, context_label, resource_uri)
 
-    if not preview_key:
-        logger.info("📷 Preview cleared for %s", project_uri)
+    if not file_key:
+        logger.info("📷 %s cleared for %s", context_label, resource_uri)
         return
 
-    file_obj = (
-        S3FileObject.objects.filter(status="verified", s3_key=preview_key)
-        .order_by("-updated_at", "-created_at")
-        .first()
-    )
+    queryset = S3FileObject.objects.filter(status="verified", s3_key=file_key).order_by("-updated_at", "-created_at")
+    if organization_code:
+        queryset = queryset.filter(
+            Q(organization__iexact=organization_code)
+            | Q(related_resource__organization__code__iexact=organization_code)
+        )
+    file_obj = queryset.first()
 
     if file_obj is None:
-        logger.warning("📷 Preview link skipped: verified S3 key %s not found", preview_key)
+        logger.warning("📷 %s link skipped: verified S3 key %s not found", context_label, file_key)
         return
 
     update_fields = ["related_resource"]
@@ -1366,13 +1380,46 @@ def _update_project_preview_link(
             file_obj.organization = new_org
             update_fields.append("organization")
 
-    file_obj.related_resource = project_resource
+    file_obj.related_resource = target_resource
     file_obj.save(update_fields=update_fields)
     logger.info(
-        "📷 Preview linked | file=%s | project=%s | org=%s",
+        "📷 %s linked | file=%s | resource=%s | org=%s",
+        context_label,
         file_obj.s3_key,
-        project_uri,
+        resource_uri,
         file_obj.organization,
+    )
+
+
+def _update_project_preview_link(
+    *,
+    project_uri: str,
+    preview_key: str,
+    organization_code: Optional[str],
+) -> None:
+    """Ensure the selected S3 object is linked to the project resource."""
+
+    _link_verified_file_to_resource(
+        resource_uri=project_uri,
+        file_key=preview_key,
+        organization_code=organization_code,
+        context_label="Project preview",
+    )
+
+
+def _update_digital_object_file_link(
+    *,
+    digital_object_uri: str,
+    file_key: str,
+    organization_code: Optional[str],
+) -> None:
+    """Ensure the selected S3 object is linked to the digital object resource."""
+
+    _link_verified_file_to_resource(
+        resource_uri=digital_object_uri,
+        file_key=file_key,
+        organization_code=organization_code,
+        context_label="Digital object file",
     )
 
 
@@ -1415,7 +1462,7 @@ def _enrich_fk_metadata(
         meta["use_single_fk_widget"] = False
 
         field_slug = slugify(field.name or "")
-        if field_slug in {"vorschaubild", "vorschaubild_uri"}:
+        if _should_use_preview_picker(dataset_name, field_slug):
             organization = getattr(schema_service, "organization", None)
             org_code = getattr(organization, "code", None)
             raw_value = form.data.get(field.name) if form.is_bound else None
@@ -3524,6 +3571,16 @@ class _BaseSimplifiedCreateView(LoginRequiredMixin, _SimplifiedDatasetMixin, Vie
                         related_uris=related_uris,
                     )
 
+                if self.dataset_name == DIGITAL_OBJECT_DATASET_NAME:
+                    preview_field_name = _get_preview_field_name(fields_with_metadata)
+                    if preview_field_name:
+                        preview_key = form.cleaned_data.get(preview_field_name, "") or ""
+                        _update_digital_object_file_link(
+                            digital_object_uri=saved_uri,
+                            file_key=preview_key,
+                            organization_code=schema_service.organization.code,
+                        )
+
                 logger.info(f"✅ Created {self.dataset_name}: {saved_uri}")
                 return _redirect_to_metadata_entry(
                     schema_service.organization.code,
@@ -3717,6 +3774,16 @@ class _BaseSimplifiedEditView(LoginRequiredMixin, _SimplifiedDatasetMixin, View)
                         related_uris=related_uris,
                     )
 
+                if self.dataset_name == DIGITAL_OBJECT_DATASET_NAME:
+                    preview_field_name = _get_preview_field_name(fields_with_metadata)
+                    if preview_field_name:
+                        preview_key = form.cleaned_data.get(preview_field_name, "") or ""
+                        _update_digital_object_file_link(
+                            digital_object_uri=saved_uri,
+                            file_key=preview_key,
+                            organization_code=schema_service.organization.code,
+                        )
+
                 logger.info(f"✅ Updated {self.dataset_name}: {saved_uri}")
                 return _redirect_to_metadata_entry(
                     schema_service.organization.code,
@@ -3779,7 +3846,7 @@ class SimplifiedOrtEditView(_BaseSimplifiedEditView):
 
 
 class SimplifiedDigitalesObjektCreateView(_BaseSimplifiedCreateView):
-    dataset_name = "Digitales_Objekt"
+    dataset_name = DIGITAL_OBJECT_DATASET_NAME
     metadata_entry_entity = "digitales_objekt"
     template_name = "metadata/simplified_workspace/edit_digitales_objekt.html"
     page_title = "Neues Digitales Objekt erstellen"
@@ -3787,7 +3854,7 @@ class SimplifiedDigitalesObjektCreateView(_BaseSimplifiedCreateView):
 
 
 class SimplifiedDigitalesObjektEditView(_BaseSimplifiedEditView):
-    dataset_name = "Digitales_Objekt"
+    dataset_name = DIGITAL_OBJECT_DATASET_NAME
     metadata_entry_entity = "digitales_objekt"
     template_name = "metadata/simplified_workspace/edit_digitales_objekt.html"
     page_title = "Digitales Objekt bearbeiten"
