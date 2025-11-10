@@ -4,29 +4,6 @@
 
 {% block content %}
 <div class="w-full min-h-screen">
-  <!-- Header con el contenido existente sin cambios -->
-  <header class="w-full py-8 px-4 transition-colors
-               text-arkumu-dark
-               theme-dark:text-arkumu-light
-               theme-blue:text-arkumu-light">
-    <div class="flex items-center justify-between w-full">
-      <!-- Left side: Logo placeholder con tamaño adaptativo más grande -->
-      <div class="w-48 md:w-56 lg:w-64 transition-all duration-300">
-        <!-- Logo con variantes para cada tema -->
-        <a href="/catalog/browse/" class="block">
-          <!-- Logo para tema predeterminado (claro) -->
-          <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo"
-               class="w-full h-auto transition-all duration-300 block theme-dark:hidden theme-blue:hidden">
-
-          <!-- Logo para tema oscuro -->
-          <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
-               class="w-full h-auto transition-all duration-300 hidden theme-dark:block theme-blue:hidden">
-
-          <!-- Logo para tema azul -->
-          <img src="{% static 'images/arkumu-logo-blue.svg' %}" alt="arkumu logo"
-               class="w-full h-auto transition-all duration-300 hidden theme-dark:hidden theme-blue:block">
-        </a>
-      </div>
 
       <!-- Right side: Theme buttons and icons -->
       <div class="flex items-center">
