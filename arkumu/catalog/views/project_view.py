@@ -157,6 +157,15 @@ class ProjectView(LoginRequiredMixin, View):
             for cid, cname in zip(categories, categories_name)
         ]
 
+        categories_name = []
+        for i,w in enumerate(catchphrases):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        categories = [
+            {"id": cid, "name": cname}
+            for cid, cname in zip(categories, categories_name)
+        ]
+
+
         for actor in record.actors or []:
             if not actor:
                 continue
@@ -291,6 +300,16 @@ class ProjectView(LoginRequiredMixin, View):
         category_labels = [item.label for item in record.categories if item.label]
         digital_object_paths = [item.path for item in record.digital_objects if item.path]
         alternative_titles = [item.value for item in record.alternative_titles if item.value]
+
+        categories_name = []
+        for i,w in enumerate(category_labels):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        category_labels = categories_name
+
+        categories_name = []
+        for i,w in enumerate(catchphrase_labels):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        catchphrase_labels = categories_name
 
         # neu
         ent = Entity(record.uri)
