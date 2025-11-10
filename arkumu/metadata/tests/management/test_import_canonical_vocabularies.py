@@ -1,3 +1,4 @@
+import io
 import pathlib
 
 import pytest
@@ -212,3 +213,23 @@ def test_import_project_categories_handles_filmportal_identifier(vocab_dir):
         predicate__uri="http://arkumu.org/data/properties/filmportal-kategorie-id",
     )
     assert triple.object.value == "fp-001"
+
+
+@pytest.mark.django_db
+def test_import_reports_triple_stats(vocab_dir):
+    stdout = io.StringIO()
+    call_command(
+        "import_canonical_vocabularies",
+        "--directory",
+        str(vocab_dir),
+        "--vocabulary",
+        "roles",
+        stdout=stdout,
+    )
+
+    lines = stdout.getvalue().splitlines()
+    vocab_line = next(line for line in lines if line.startswith("roles:"))
+    total_line = next(line for line in lines if line.startswith("Total concepts"))
+
+    assert "triples created: 0" not in vocab_line
+    assert "triples created: 0" not in total_line

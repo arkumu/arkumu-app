@@ -35,6 +35,18 @@ class VocabularyEntrySummary:
     field_values: List[Tuple[str, List[str]]]
 
 
+@dataclass
+class VocabularySaveStats:
+    triples_created: int = 0
+    triples_deleted: int = 0
+
+
+@dataclass
+class VocabularySaveResult:
+    resource: Resource
+    stats: VocabularySaveStats
+
+
 class ControlledVocabularyService:
     def __init__(self, vocab_key: str):
         self.vocab_key = vocab_key
@@ -142,7 +154,13 @@ class ControlledVocabularyService:
     # ------------------------------------------------------------------
 
     @transaction.atomic
-    def save(self, cleaned_data: Dict[str, object], resource: Optional[Resource] = None) -> Resource:
+    def save(
+        self,
+        cleaned_data: Dict[str, object],
+        resource: Optional[Resource] = None,
+        *,
+        with_stats: bool = False,
+    ) -> Resource | VocabularySaveResult:
         slug = (cleaned_data.get("slug") or "").strip()
         if not slug:
             raise ValueError("Missing slug for controlled vocabulary entry.")
@@ -163,6 +181,8 @@ class ControlledVocabularyService:
             resource.canonical_uri = canonical_uri
             resource.resource_type = ResourceType.ENTITY
 
+        stats = VocabularySaveStats()
+
         label = self._label_from_cleaned_data(cleaned_data)
         if label:
             resource.name = label
@@ -179,13 +199,8 @@ class ControlledVocabularyService:
 
         rdf_type_predicate = self._ensure_resource(RDF_TYPE_URI, ResourceType.PROPERTY)
         class_resource = self._ensure_resource(self.config.class_uri, ResourceType.CLASS)
-        Triple.objects.update_or_create(
-            subject=resource,
-            predicate=rdf_type_predicate,
-            object=class_resource,
-            source=None,
-            defaults={"is_derived": True},
-        )
+        if self._ensure_triple(resource, rdf_type_predicate, class_resource):
+            stats.triples_created += 1
         touched_predicates[rdf_type_predicate] = {class_resource.id}
 
         for column, column_config in self.config.columns.items():
@@ -205,8 +220,12 @@ class ControlledVocabularyService:
 
             result = self._apply_form_value(resource, predicate_resource, column_config, value)
             touched_predicates[predicate_resource] = result["object_ids"]
+            stats.triples_created += result.get("triples_created", 0)
 
-        self._cleanup_outdated_triples(resource, touched_predicates)
+        stats.triples_deleted += self._cleanup_outdated_triples(resource, touched_predicates)
+
+        if with_stats:
+            return VocabularySaveResult(resource=resource, stats=stats)
         return resource
 
     # ------------------------------------------------------------------
@@ -310,33 +329,37 @@ class ControlledVocabularyService:
         predicate: Resource,
         config: ColumnConfig,
         raw_value: object,
-    ) -> Dict[str, Set[int]]:
+    ) -> Dict[str, object]:
         object_ids: Set[int] = set()
         values: Iterable[str]
+        triples_created = 0
 
         if config.value_type == "reference":
             if not raw_value:
-                return {"object_ids": set()}
+                return {"object_ids": set(), "triples_created": 0}
             target = self._resolve_reference(str(raw_value))
-            self._ensure_triple(subject, predicate, target)
+            if self._ensure_triple(subject, predicate, target):
+                triples_created += 1
             object_ids.add(target.id)
-            return {"object_ids": object_ids}
+            return {"object_ids": object_ids, "triples_created": triples_created}
 
         if config.value_type == "boolean":
             bool_value = bool(raw_value)
             literal = self._ensure_literal("true" if bool_value else "false", None, XSD_BOOLEAN_URI)
-            self._ensure_triple(subject, predicate, literal)
+            if self._ensure_triple(subject, predicate, literal):
+                triples_created += 1
             object_ids.add(literal.id)
-            return {"object_ids": object_ids}
+            return {"object_ids": object_ids, "triples_created": triples_created}
 
         if config.value_type == "iri":
             iri_value = str(raw_value).strip()
             if not iri_value:
-                return {"object_ids": set()}
+                return {"object_ids": set(), "triples_created": 0}
             iri_resource = self._ensure_resource(iri_value, ResourceType.IRI)
-            self._ensure_triple(subject, predicate, iri_resource)
+            if self._ensure_triple(subject, predicate, iri_resource):
+                triples_created += 1
             object_ids.add(iri_resource.id)
-            return {"object_ids": object_ids}
+            return {"object_ids": object_ids, "triples_created": triples_created}
 
         if isinstance(raw_value, str):
             values = self._split_form_values(raw_value, config) if config.split else [raw_value]
@@ -352,10 +375,11 @@ class ControlledVocabularyService:
                 config.language,
                 config.datatype,
             )
-            self._ensure_triple(subject, predicate, literal)
+            if self._ensure_triple(subject, predicate, literal):
+                triples_created += 1
             object_ids.add(literal.id)
 
-        return {"object_ids": object_ids}
+        return {"object_ids": object_ids, "triples_created": triples_created}
 
     def _split_form_values(self, raw_value: str, config: ColumnConfig) -> List[str]:
         if not raw_value:
@@ -394,20 +418,22 @@ class ControlledVocabularyService:
 
         return [value for value in formatted if value]
 
-    def _ensure_triple(self, subject: Resource, predicate: Resource, obj: Resource) -> None:
-        Triple.objects.update_or_create(
+    def _ensure_triple(self, subject: Resource, predicate: Resource, obj: Resource) -> bool:
+        _triple, created = Triple.objects.update_or_create(
             subject=subject,
             predicate=predicate,
             object=obj,
             source=None,
             defaults={"is_derived": True},
         )
+        return created
 
     def _cleanup_outdated_triples(
         self,
         subject: Resource,
         predicate_objects: Dict[Resource, Set[int]],
-    ) -> None:
+    ) -> int:
+        deleted = 0
         for predicate, valid_object_ids in predicate_objects.items():
             qs = Triple.objects.filter(
                 subject=subject,
@@ -417,7 +443,9 @@ class ControlledVocabularyService:
             )
             if valid_object_ids:
                 qs = qs.exclude(object_id__in=valid_object_ids)
-            qs.delete()
+            count, _ = qs.delete()
+            deleted += count
+        return deleted
 
     def _resolve_reference(self, resource_id: str) -> Resource:
         return Resource.objects.get(pk=resource_id)

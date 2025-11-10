@@ -116,13 +116,17 @@ class Command(BaseCommand):
 
             existing_resource = Resource.objects.filter(uri=canonical_uri).first()
             form_data = self._build_form_data(row, config, service, id_to_resource)
-            saved_resource = service.save(form_data, resource=existing_resource)
+            save_result = service.save(form_data, resource=existing_resource, with_stats=True)
+            saved_resource = save_result.resource
             id_to_resource[concept_id] = saved_resource
 
             if existing_resource is None:
                 stats["concepts_created"] += 1
             else:
                 stats["concepts_updated"] += 1
+
+            stats["triples_created"] += save_result.stats.triples_created
+            stats["triples_deleted"] += save_result.stats.triples_deleted
 
         return stats
 
