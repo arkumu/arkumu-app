@@ -10,17 +10,6 @@ from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 
 
-@dataclass
-class InstitutionalEdge:
-    triple_id: str
-    subject_id: str
-    predicate_uri: str
-    object_id: str
-    object_uri: Optional[str]
-    object_type: str
-    object_value: Optional[str]
-
-
 class InstitutionalGraphService:
     """Build org-scoped graphs using archive-native predicates."""
 
@@ -50,11 +39,13 @@ class InstitutionalGraphService:
         if expand_neighbors and depth > 0:
             visited: set[str] = {root_id}
             frontier = [
-                edge.object_id
+                edge.get("object_id")
                 for edge in edges
-                if edge.object_type != ResourceType.LITERAL
+                if edge.get("object_type") != ResourceType.LITERAL
             ]
-            frontier = [node_id for node_id in frontier if node_id not in visited]
+            frontier = [
+                node_id for node_id in frontier if node_id and node_id not in visited
+            ]
 
             hops = 0
             while frontier and hops < depth:
@@ -62,11 +53,15 @@ class InstitutionalGraphService:
                 next_edges = self._fetch_triples_for_subjects(frontier)
                 edges.extend(next_edges)
                 next_frontier = [
-                    edge.object_id
+                    edge.get("object_id")
                     for edge in next_edges
-                    if edge.object_type != ResourceType.LITERAL
+                    if edge.get("object_type") != ResourceType.LITERAL
                 ]
-                frontier = [node_id for node_id in next_frontier if node_id not in visited]
+                frontier = [
+                    node_id
+                    for node_id in next_frontier
+                    if node_id and node_id not in visited
+                ]
                 hops += 1
 
         nodes = self._collect_nodes_from_edges(edges)
@@ -74,25 +69,24 @@ class InstitutionalGraphService:
             "organization": getattr(self.organization, "code", None),
             "root_id": root_id,
             "nodes": nodes,
-            "edges": [edge.__dict__ for edge in edges],
+            "edges": edges,
             "counts": {"nodes": len(nodes), "edges": len(edges)},
         }
 
     # Helpers --------------------------------------------------------------
-    def _base_triple_filter(self) -> Q:
-        clause = Q(predicate__canonical_uri__isnull=True)
+    def _triple_filter(self) -> Q:
         if self.organization:
-            clause &= Q(source=self.organization)
-        return clause
+            return Q(source=self.organization)
+        return Q()
 
     def _fetch_triples_for_subjects(
         self,
         subject_ids: Sequence[str],
-    ) -> List[InstitutionalEdge]:
+    ) -> List[Dict[str, Any]]:
         if not subject_ids:
             return []
 
-        clause = self._base_triple_filter() & Q(subject_id__in=subject_ids)
+        clause = self._triple_filter() & Q(subject_id__in=subject_ids)
         triples = (
             Triple.objects.filter(clause)
             .select_related("predicate", "object")
@@ -100,22 +94,26 @@ class InstitutionalGraphService:
                 "id",
                 "subject_id",
                 "predicate__uri",
+                "predicate__canonical_uri",
                 "object__id",
                 "object__uri",
+                "object__canonical_uri",
                 "object__resource_type",
                 "object__value",
             )
         )
         return [
-            InstitutionalEdge(
-                triple_id=str(t.id),
-                subject_id=str(t.subject_id),
-                predicate_uri=t.predicate.uri,
-                object_id=str(t.object.id),
-                object_uri=getattr(t.object, "uri", None),
-                object_type=t.object.resource_type,
-                object_value=getattr(t.object, "value", None),
-            )
+            {
+                "triple_id": str(t.id),
+                "subject_id": str(t.subject_id),
+                "predicate_uri": t.predicate.uri,
+                "predicate_canonical": getattr(t.predicate, "canonical_uri", None),
+                "object_id": str(t.object.id),
+                "object_uri": getattr(t.object, "uri", None),
+                "object_canonical": getattr(t.object, "canonical_uri", None),
+                "object_type": t.object.resource_type,
+                "object_value": getattr(t.object, "value", None),
+            }
             for t in triples
             if getattr(t.predicate, "uri", None)
         ]
@@ -123,11 +121,11 @@ class InstitutionalGraphService:
     def _fetch_triples_for_objects(
         self,
         object_ids: Sequence[str],
-    ) -> List[InstitutionalEdge]:
+    ) -> List[Dict[str, Any]]:
         if not object_ids:
             return []
 
-        clause = self._base_triple_filter() & Q(object_id__in=object_ids)
+        clause = self._triple_filter() & Q(object_id__in=object_ids)
         triples = (
             Triple.objects.filter(clause)
             .select_related("predicate", "object")
@@ -135,36 +133,47 @@ class InstitutionalGraphService:
                 "id",
                 "subject_id",
                 "predicate__uri",
+                "predicate__canonical_uri",
                 "object__id",
                 "object__uri",
+                "object__canonical_uri",
                 "object__resource_type",
                 "object__value",
             )
         )
         return [
-            InstitutionalEdge(
-                triple_id=str(t.id),
-                subject_id=str(t.subject_id),
-                predicate_uri=t.predicate.uri,
-                object_id=str(t.object.id),
-                object_uri=getattr(t.object, "uri", None),
-                object_type=t.object.resource_type,
-                object_value=getattr(t.object, "value", None),
-            )
+            {
+                "triple_id": str(t.id),
+                "subject_id": str(t.subject_id),
+                "predicate_uri": t.predicate.uri,
+                "predicate_canonical": getattr(t.predicate, "canonical_uri", None),
+                "object_id": str(t.object.id),
+                "object_uri": getattr(t.object, "uri", None),
+                "object_canonical": getattr(t.object, "canonical_uri", None),
+                "object_type": t.object.resource_type,
+                "object_value": getattr(t.object, "value", None),
+            }
             for t in triples
             if getattr(t.predicate, "uri", None)
         ]
 
     def _collect_nodes_from_edges(
         self,
-        edges: Iterable[InstitutionalEdge],
+        edges: Iterable[Dict[str, Any]],
     ) -> Dict[str, Dict[str, Any]]:
-        node_ids = {edge.subject_id for edge in edges} | {edge.object_id for edge in edges}
+        node_ids: set[str] = set()
+        for edge in edges:
+            subj = edge.get("subject_id")
+            obj = edge.get("object_id")
+            if subj:
+                node_ids.add(str(subj))
+            if obj:
+                node_ids.add(str(obj))
         if not node_ids:
             return {}
         resources = (
             Resource.objects.filter(id__in=list(node_ids))
-            .only("id", "uri", "name", "value", "resource_type", "organization")
+            .only("id", "uri", "name", "value", "resource_type", "canonical_uri", "organization")
             .select_related("organization")
         )
         result: Dict[str, Dict[str, Any]] = {}
@@ -175,6 +184,7 @@ class InstitutionalGraphService:
                 "name": resource.name,
                 "value": resource.value,
                 "resource_type": resource.resource_type,
+                "canonical_uri": resource.canonical_uri,
                 "organization": getattr(resource.organization, "code", None),
             }
         return result

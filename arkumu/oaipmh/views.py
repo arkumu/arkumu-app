@@ -214,7 +214,7 @@ def _build_institutional_rdf_element(resource: Resource) -> Optional[ET._Element
     description_map: Dict[str, ET._Element] = {}
     for node_id, node in nodes.items():
         uri = node.get("uri")
-        if not uri:
+        if not uri or node.get("resource_type") == ResourceType.LITERAL:
             continue
         description = ET.SubElement(root, ET.QName(RDF_NS, "Description"))
         description.set(ET.QName(RDF_NS, "about"), uri)
@@ -235,7 +235,7 @@ def _build_institutional_rdf_element(resource: Resource) -> Optional[ET._Element
             continue
         obj_type = obj_node.get("resource_type")
         if obj_type == ResourceType.LITERAL:
-            element.text = obj_node.get("value")
+            element.text = obj_node.get("value") or edge.get("object_value")
         else:
             obj_uri = obj_node.get("uri")
             if not obj_uri:
