@@ -96,8 +96,8 @@
                 {% if tree_summary.datasets %}
                     {% for dataset in tree_summary.datasets %}
                         {% with dataset_dom_id='dataset-node-'|add:dataset.name|slugify %}
-                        <div class="border border-base-300 rounded-xl p-3 bg-base-200/30">
-                            <div class="flex items-start justify-between gap-2">
+                        <details class="border border-base-300 rounded-xl bg-base-200/30 p-3" data-dataset="{{ dataset.name|slugify }}">
+                            <summary class="flex items-start justify-between gap-2 cursor-pointer">
                                 <div>
                                     <p class="font-semibold text-base-content">{{ dataset.label }}</p>
                                     {% if dataset.canonical_uri %}
@@ -109,20 +109,17 @@
                                         {{ dataset.column_count }} column{{ dataset.column_count|pluralize }}
                                     </p>
                                 </div>
-                                <button type="button"
-                                        class="btn btn-xs"
-                                        hx-get="{% url 'metadata:canonical_graph_tree_dataset' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset.name|urlencode }}&target_id={{ dataset_dom_id }}"
-                                        hx-target="#{{ dataset_dom_id }}"
-                                        hx-swap="innerHTML"
-                                        hx-indicator="#dataset-indicator-{{ forloop.counter }}">
-                                    Toggle
-                                </button>
+                                <span class="badge badge-outline text-xs">{{ dataset.unmapped_count }} unmapped</span>
+                            </summary>
+                            <div id="{{ dataset_dom_id }}"
+                                 class="mt-3 text-sm"
+                                 hx-get="{% url 'metadata:canonical_graph_tree_dataset' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset.name|urlencode }}&target_id={{ dataset_dom_id }}"
+                                 hx-trigger="revealed once"
+                                 hx-target="#{{ dataset_dom_id }}"
+                                 hx-swap="innerHTML">
+                                <div class="text-xs text-base-content/60">Expand to load columns…</div>
                             </div>
-                            <div id="dataset-indicator-{{ forloop.counter }}" class="hidden loading loading-spinner loading-xs mt-2"></div>
-                            <div id="{{ dataset_dom_id }}" class="mt-3 text-sm">
-                                {% include "metadata/partials/canonical_tree_dataset_children.html" with dataset=dataset dataset_dom_id=dataset_dom_id organization_code=organization_code mapping=mapping %}
-                            </div>
-                        </div>
+                        </details>
                         {% endwith %}
                     {% endfor %}
                 {% else %}
