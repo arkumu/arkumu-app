@@ -464,6 +464,7 @@ ENABLE_CANONICAL_URI_API = False
 # Optional HTTP Basic Auth for OAI endpoint (uses Django users)
 OAI_BASIC_AUTH_ENABLED = env.bool("OAI_BASIC_AUTH_ENABLED", default=False)
 OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=[])
+OAI_USE_DB_ASSEMBLER = env.bool("OAI_USE_DB_ASSEMBLER", default=False)
 
 # Path mapping configuration for Rosetta-backed institutions
 ROSETTA_MAPPING_DIR = BASE_DIR / "data" / "mappings"
