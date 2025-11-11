@@ -41,6 +41,7 @@ def test_serializes_canonical_and_institutional_rdf_for_khm_and_hmt():
             organization=org,
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,
+            resource_type=ResourceType.ENTITY,
         )
 
         canonical_literal = Resource.objects.create(
@@ -67,6 +68,40 @@ def test_serializes_canonical_and_institutional_rdf_for_khm_and_hmt():
             subject=project,
             predicate=local_predicate,
             object=local_literal,
+            source=org,
+        )
+
+        event = Resource.objects.create(
+            uri=f"http://arkumu.org/data/{org_code}/entities/ereignis/test-event",
+            organization=org,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+            resource_type=ResourceType.ENTITY,
+        )
+        event_link_pred = Resource.objects.create(
+            uri=f"http://arkumu.org/data/{org_code}/properties/ereignis",
+            resource_type=ResourceType.PROPERTY,
+            name=f"{org_code.upper()} Event Link",
+        )
+        Triple.objects.create(
+            subject=project,
+            predicate=event_link_pred,
+            object=event,
+            source=org,
+        )
+        event_title_pred = Resource.objects.create(
+            uri=f"http://arkumu.org/data/{org_code}/properties/ereignistitel",
+            resource_type=ResourceType.PROPERTY,
+            name=f"{org_code.upper()} Event Title",
+        )
+        event_title_literal = Resource.objects.create(
+            resource_type=ResourceType.LITERAL,
+            value=f"{org_code.upper()} Event Title",
+        )
+        Triple.objects.create(
+            subject=event,
+            predicate=event_title_pred,
+            object=event_title_literal,
             source=org,
         )
 

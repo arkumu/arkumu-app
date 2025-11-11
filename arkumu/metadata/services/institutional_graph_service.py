@@ -41,7 +41,7 @@ class InstitutionalGraphService:
             frontier = [
                 edge.get("object_id")
                 for edge in edges
-                if edge.get("object_type") != ResourceType.LITERAL
+                if edge.get("object_type") == ResourceType.ENTITY
             ]
             frontier = [
                 node_id for node_id in frontier if node_id and node_id not in visited
@@ -55,7 +55,7 @@ class InstitutionalGraphService:
                 next_frontier = [
                     edge.get("object_id")
                     for edge in next_edges
-                    if edge.get("object_type") != ResourceType.LITERAL
+                    if edge.get("object_type") == ResourceType.ENTITY
                 ]
                 frontier = [
                     node_id
@@ -86,7 +86,11 @@ class InstitutionalGraphService:
         if not subject_ids:
             return []
 
-        clause = self._triple_filter() & Q(subject_id__in=subject_ids)
+        clause = (
+            self._triple_filter()
+            & Q(subject_id__in=subject_ids)
+            & Q(subject__resource_type=ResourceType.ENTITY)
+        )
         triples = (
             Triple.objects.filter(clause)
             .select_related("predicate", "object")
@@ -125,7 +129,11 @@ class InstitutionalGraphService:
         if not object_ids:
             return []
 
-        clause = self._triple_filter() & Q(object_id__in=object_ids)
+        clause = (
+            self._triple_filter()
+            & Q(object_id__in=object_ids)
+            & Q(subject__resource_type=ResourceType.ENTITY)
+        )
         triples = (
             Triple.objects.filter(clause)
             .select_related("predicate", "object")
