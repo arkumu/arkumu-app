@@ -105,11 +105,7 @@ class Command(BaseCommand):
             queryset = queryset | Mapping.objects.filter(id__in=mapping_ids)
 
         if org_code:
-            latest = (
-                Mapping.objects.filter(organization_id=org_code)
-                .order_by("-created_at")
-                .first()
-            )
+            latest = Mapping.get_active_for_organization(org_code)
             if latest:
                 queryset = queryset | Mapping.objects.filter(id=latest.id)
             else:

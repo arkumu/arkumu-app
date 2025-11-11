@@ -231,10 +231,10 @@ class SchemaManifestService:
         return copy.deepcopy(schema)
 
     def _get_canonical_schema(self, organization_code: str) -> Dict[str, Any]:
+        # Get the active mapping for this organization
         canonical_schema = (
             Mapping.objects
-            .filter(organization_id=organization_code)
-            .order_by('-created_at')
+            .filter(organization_id=organization_code, is_active=True)
             .first()
         )
         if not canonical_schema:

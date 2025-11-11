@@ -1,0 +1,195 @@
+<div class="digital-object-form"> 
+
+  <div id="{{prefix}}fields">
+    {% if digital_object_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div></div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span></span>
+            {% for error in digital_object_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="space-y-6">
+      <!-- Ersteller und Einlieferer Section -->
+      <div class="space-y-4 mt-6">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Beschreibende Metadaten
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Inhaltsbeschreibung (deutsch)</span>
+              {% if digital_object_form.inhaltsbeschreibung_deutsch.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.inhaltsbeschreibung_deutsch.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.inhaltsbeschreibung_deutsch }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Inhaltsbeschreibung (englisch)</span>
+              {% if digital_object_form.inhaltsbeschreibung_englisch.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.inhaltsbeschreibung_englisch.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.inhaltsbeschreibung_englisch }}
+          </div>
+          
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Wesentliche Eigenschaften (deutsch)</span>
+              {% if digital_object_form.wesentliche_eigenschaften_deutsch.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.wesentliche_eigenschaften_deutsch.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.wesentliche_eigenschaften_deutsch }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Wesentliche Eigenschaften (englisch)</span>
+              {% if digital_object_form.wesentliche_eigenschaften_englisch.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.wesentliche_eigenschaften_englisch.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.wesentliche_eigenschaften_englisch }}
+          </div>
+          
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bildbeschreibung (deutsch)</span>
+              {% if digital_object_form.bildbeschreibung_deutsch.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.bildbeschreibung_deutsch.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.bildbeschreibung_eigenschaften_deutsch }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Bildbeschreibung (englisch)</span>
+              {% if digital_object_form.bildbeschreibung_englisch.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.bildbeschreibung_englisch.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.bildbeschreibung_englisch }}
+          </div>
+
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Originalsprachen</span>
+              {% if digital_object_form.originalsprache_uri.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.originalsprache_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.originalsprache_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Sprachfassungen</span>
+              {% if digital_object_form.sprachfassung_uri.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.sprachfassung_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.sprachfassung_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Untertitelsprachen</span>
+              {% if digital_object_form.untertitelsprache_uri.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.untertitelsprache_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.untertitelsprache_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Tonmischfassung</span>
+              {% if digital_object_form.tonmischfassung.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.tonmischfassung.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.tonmischfassung}}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Tonformat</span>
+              {% if digital_object_form.tonformat.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.tonformat.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.tonformat}}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Equalizerdaten</span>
+              {% if digital_object_form.equalizerdaten.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.equalizerdaten.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.equalizerdaten}}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Projektkompilation</span>
+              {% if digital_object_form.projektkompilation.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.projektkompilation.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.projektkompilation}}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Teil einer Serie</span>
+              {% if digital_object_form.teil_einer_serie.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.teil_einer_serie.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.teil_einer_serie}}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Loop</span>
+              {% if digital_object_form.loop.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.loop.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.loop}}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Systemvorraussetzungen</span>
+              {% if digital_object_form.systemvorraussetzungen.errors %}
+              <span class="label-text-alt text-error">{{ digital_object_form.systemvorraussetzungen.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ digital_object_form.systemvorraussetzungen}}
+          </div>
+
+        </div>        
+      </div>
+    </div>
+  </div>
+</div>

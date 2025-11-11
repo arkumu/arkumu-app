@@ -1,0 +1,77 @@
+{% with ctx=step_context %}
+  <div class="space-y-6">
+    <div>
+      <h3 class="text-lg font-semibold">Überblick</h3>
+      <p class="text-sm text-base-content/70">
+        Zusammenfassung der bislang erfassten Entitäten im aktuellen Flow.
+      </p>
+    </div>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="card border border-base-300 bg-base-100">
+        <div class="card-body space-y-2">
+          <h4 class="text-sm font-semibold uppercase text-base-content/60">Projekt</h4>
+          {% if ctx.project_summary %}
+            <p class="font-semibold">{{ ctx.project_summary.label }}</p>
+            <p class="text-xs text-base-content/60 break-all">{{ ctx.project_summary.uri }}</p>
+          {% else %}
+            <p class="text-sm text-base-content/60">Noch kein Projekt angelegt.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card border border-base-300 bg-base-100">
+        <div class="card-body space-y-2">
+          <h4 class="text-sm font-semibold uppercase text-base-content/60">Ereignisse</h4>
+          <p class="text-2xl font-semibold">{{ ctx.events|length }}</p>
+          <p class="text-xs text-base-content/60">
+            Akteur*innen insgesamt: {{ ctx.total_actor_count }} · Objekte insgesamt: {{ ctx.total_object_count }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-3">
+      {% if ctx.events %}
+        {% for event in ctx.events %}
+          <div class="collapse collapse-plus bg-base-200/40 border border-base-300">
+            <input type="checkbox" />
+            <div class="collapse-title font-semibold">
+              {{ event.label }} · Akteur*innen: {{ event.actors|length }} · Objekte: {{ event.digital_objects|length }}
+            </div>
+            <div class="collapse-content space-y-2">
+              <p class="text-xs text-base-content/60 break-all">{{ event.uri }}</p>
+              {% if event.actors %}
+                <div>
+                  <h5 class="text-sm font-semibold">Akteur*innen</h5>
+                  <ul class="text-sm text-base-content/70 list-disc list-inside">
+                    {% for actor in event.actors %}
+                      <li>{{ actor.label }} <span class="text-xs opacity-70">({{ actor.uri }})</span></li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+              {% if event.digital_objects %}
+                <div>
+                  <h5 class="text-sm font-semibold">Digitale Objekte</h5>
+                  <ul class="text-sm text-base-content/70 list-disc list-inside">
+                    {% for obj in event.digital_objects %}
+                      <li>{{ obj.label }} <span class="text-xs opacity-70">({{ obj.uri }})</span></li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+              {% if not event.actors and not event.digital_objects %}
+                <p class="text-sm text-base-content/70">Bisher keine Verknüpfungen erfasst.</p>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="p-6 border border-dashed border-base-300 rounded-box text-sm text-base-content/70">
+          Noch keine Ereignisse im Flow vorhanden.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endwith %}

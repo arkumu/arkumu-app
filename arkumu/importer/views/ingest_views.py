@@ -3,9 +3,10 @@ Views for the new ingest data interface
 """
 import os
 import logging
+from functools import wraps
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.views import View
 from arkumu.users.mixins import GeneralLoginRequiredMixin, general_login_required
 from arkumu.users.models import Organization
@@ -16,6 +17,22 @@ logger = logging.getLogger(__name__)
 
 # Session storage for selected files
 SELECTED_FILES_SESSION_KEY = 'ingest_selected_files'
+
+
+def superuser_required(view_func):
+    """Decorator to require superuser access for function-based views."""
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return HttpResponseForbidden(
+                "<div class='alert alert-error'>Authentication required</div>"
+            )
+        if not request.user.is_superuser:
+            return HttpResponseForbidden(
+                "<div class='alert alert-error'>Access denied: Superuser privileges required</div>"
+            )
+        return view_func(request, *args, **kwargs)
+    return wrapper
 
 
 class IngestDataView(GeneralLoginRequiredMixin, IngestCoordinatorMixin, View):
@@ -214,10 +231,11 @@ class IngestDataView(GeneralLoginRequiredMixin, IngestCoordinatorMixin, View):
         return HttpResponse("Invalid action", status=400)
 
 
-@general_login_required
+@superuser_required
 def ingest_data(request):
     """
     Function-based wrapper for IngestDataView (for URL compatibility)
+    Requires superuser privileges.
     """
     view = IngestDataView()
     if request.method == 'POST':

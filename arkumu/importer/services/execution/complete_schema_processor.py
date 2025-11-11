@@ -94,13 +94,20 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
     def _add_column_metadata_to_blueprints(self, datasets: List[DatasetConfig]):
         """Add detailed column metadata to blueprints."""
         logger.info("   📝 Adding column metadata to blueprints...")
-        
+
+        # Get schema_manifest from execution config (if available)
+        schema_manifest = getattr(self._current_execution_config, 'schema_manifest', {})
+
         for dataset_config in datasets:
             blueprint = self.dataset_blueprints[dataset_config.dataset_name]
-            
+
             # Initialize column metadata section
             blueprint['column_metadata'] = {}
-            
+
+            # Get promoted column metadata for this dataset (if exists)
+            dataset_manifest = schema_manifest.get(dataset_config.dataset_name, {})
+            promoted_column_metadata = dataset_manifest.get('column_metadata', {})
+
             for column in dataset_config.columns:
                 column_metadata = {
                     'column_name': column.column_name,
@@ -112,18 +119,27 @@ class CompleteSchemaProcessor(MappingAwareProcessor):
                     'is_external_ontology': column.column_type == ColumnType.EXTERNAL_ONTOLOGY,
                     'has_fk': hasattr(column, 'fk_config') and column.fk_config is not None
                 }
-                
+
                 # Add multi-value specific metadata
                 if column.column_type == ColumnType.MULTI_VALUE:
                     column_metadata['multi_value_separator'] = getattr(column, 'separator', ',')
-                
+
                 # Add external ontology metadata
                 if column.column_type == ColumnType.EXTERNAL_ONTOLOGY:
                     column_metadata['ontology_type'] = getattr(column, 'ontology_type', None)
                     column_metadata['uri_template'] = getattr(column, 'uri_template', None)
-                
+
+                # Merge promoted column metadata (widget, property_label, etc.)
+                if column.column_name in promoted_column_metadata:
+                    promoted_meta = promoted_column_metadata[column.column_name]
+                    # Only merge specific fields we care about (widget, property_label)
+                    if 'widget' in promoted_meta:
+                        column_metadata['widget'] = promoted_meta['widget']
+                    if 'property_label' in promoted_meta:
+                        column_metadata['property_label'] = promoted_meta['property_label']
+
                 blueprint['column_metadata'][column.column_name] = column_metadata
-            
+
             logger.info(f"     📝 {dataset_config.dataset_name}: Added metadata for {len(blueprint['column_metadata'])} columns")
     
     def _add_junction_table_schemas(self, execution_config: ExecutionConfig):

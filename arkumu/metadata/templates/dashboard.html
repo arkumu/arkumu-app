@@ -567,44 +567,25 @@
             </div>
         </div>
 
-      <div class="card bg-base-100 shadow-xl">
-
-        {% if oai_snapshot %}
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
-                <p class="text-4xl font-bold">{{ oai_snapshot.total_projects }}</p>
-                <div class="text-xs text-base-content/70 space-y-1">
-                    {% if oai_snapshot.total_projects %}
-                        {% for summary in oai_snapshot.institution_summaries|slice:":4" %}
-                        <div class="flex justify-between gap-2">
-                            <span class="truncate w-28 uppercase">{{ summary.code }}</span>
-                            <span class="font-semibold">{{ summary.project_count }}</span>
-                        </div>
-                        {% endfor %}
-                        {% if oai_snapshot.institution_summaries|length > 4 %}
-                        <div class="text-xs text-base-content/50">
-                            +{{ oai_snapshot.institution_summaries|length|add:"-4" }} more institutions
-                        </div>
-                        {% endif %}
-                    {% else %}
-                        <div class="text-xs text-base-content/60">No harvestable projects detected</div>
-                    {% endif %}
-                </div>
-                <div class="text-xs text-base-content/50 mt-3">
-                    {{ oai_snapshot.total_harvestable_objects }} harvestable files ready
-                </div>
-                <div class="text-xs text-base-content/50">Snapshot: {{ oai_snapshot.generated_at|date:"Y-m-d H:i" }}</div>
+      <div id="oai-widget-container"
+           class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
+            <p class="text-xs text-base-content/70">
+                Load the OAI snapshot on demand to keep the dashboard fast.
+            </p>
+            <div class="card-actions justify-start mt-2">
+                <button class="btn btn-outline btn-primary btn-sm"
+                        hx-get="{% url 'metadata:metadata_dashboard_oai_widget' %}"
+                        hx-target="#oai-widget-container"
+                        hx-swap="outerHTML"
+                        hx-indicator="#oai-widget-spinner">
+                    Load OAI stats
+                    <span id="oai-widget-spinner" class="loading loading-spinner loading-sm htmx-indicator ml-2"></span>
+                </button>
             </div>
         </div>
-        {% else %}
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-sm">OAI Harvestable Projects</h2>
-                <p class="text-xs text-base-content/70">Snapshot unavailable. Check OAI services.</p>
-            </div>
-        </div>
-        {% endif %}
+      </div>
 
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
@@ -735,4 +716,25 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+{% if request.user.is_superuser %}
+<script>
+// Listen for mapping changes globally (superuser only)
+document.body.addEventListener('mapping-changed', function(evt) {
+    console.log('Mapping changed by superuser:', evt.detail);
+
+    // Show toast notification or update UI
+    const detail = evt.detail;
+    const action = detail.action === 'cleared' ? 'cleared' : 'set to ' + detail.mapping_name;
+
+    console.log(`Active mapping ${action} for org ${detail.organization_id}`);
+
+    // Other superuser-only components can react to this event
+    // e.g., refresh projekt snapshot stats, schema manifest preview, etc.
+});
+</script>
+{% endif %}
 {% endblock %}

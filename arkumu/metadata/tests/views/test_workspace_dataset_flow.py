@@ -156,10 +156,18 @@ class WorkspaceSchemaBuilder:
         )
 
         class StubSchemaService:
-            def __init__(self, *, mapping_id: str, institution: str, base_uri: str) -> None:
+            def __init__(
+                self,
+                *,
+                mapping_id: str,
+                institution: str,
+                base_uri: str,
+                schema_variant_key: str | None = None,
+            ) -> None:
                 self.mapping_id = mapping_id
                 self.institution = institution
                 self.base_uri = base_uri
+                self.schema_variant_key = schema_variant_key or "promoted_manifest"
                 self._processor = processor
 
             def list_datasets(self):
@@ -181,7 +189,11 @@ def organization(db):
 
 @pytest.fixture
 def mapping(db, organization):
-    return Mapping.objects.create(name="Workspace Mapping", organization_id=organization.code)
+    return Mapping.objects.create(
+        name="Workspace Mapping",
+        organization_id=organization.code,
+        is_active=True,
+    )
 
 
 @pytest.fixture

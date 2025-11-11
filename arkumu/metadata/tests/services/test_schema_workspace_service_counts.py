@@ -251,7 +251,7 @@ def test_list_join_relationships_and_sync(monkeypatch, organization, mapping):
     service.sync_join_relationship(
         entity_uri=project_resource.uri,
         relationship=relationship,
-        related_uris=[event_resource.uri],
+        related_items=[{"uri": event_resource.uri, "context": {}}],
     )
 
     project_property = Resource.objects.get(uri=project_property_uri)
@@ -275,7 +275,7 @@ def test_list_join_relationships_and_sync(monkeypatch, organization, mapping):
     service.sync_join_relationship(
         entity_uri=project_resource.uri,
         relationship=relationship,
-        related_uris=[],
+        related_items=[],
     )
 
     assert not Triple.objects.filter(

@@ -112,6 +112,13 @@ class ProjectForm(BaseEntityForm):
         choices=[],
         help_text="URI of the preview image",
     )
+    verknuepfte_projekt_uris = forms.MultipleChoiceField(
+        label="Verknüpfte Projekte",
+        required=False,
+        choices=[],
+        widget=forms.SelectMultiple,
+        help_text="Weitere Projekte, die fachlich mit diesem Projekt verbunden sind.",
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -132,6 +139,31 @@ class ProjectForm(BaseEntityForm):
         self.fields["vorschaubild_uri"].choices = _with_placeholder(
             "Select the URI of a preview image", options.get("digital_object", [])
         )
+        selected_uri = (
+            self.initial.get("uri")
+            or (self.data.get("uri") if self.is_bound else None)
+        )
+        project_choices = options.get("project", [])
+        if selected_uri:
+            project_choices = [
+                choice for choice in project_choices if choice[0] != selected_uri
+            ]
+        self.fields["verknuepfte_projekt_uris"].choices = project_choices
+
+    def clean_verknuepfte_projekt_uris(self):
+        values = self.cleaned_data.get("verknuepfte_projekt_uris") or []
+        if not isinstance(values, (list, tuple)):
+            return []
+        selected_uri = self.cleaned_data.get("uri") or self.initial.get("uri")
+        cleaned: list[str] = []
+        for uri in values:
+            if not uri:
+                continue
+            if selected_uri and uri == selected_uri:
+                continue
+            if uri not in cleaned:
+                cleaned.append(uri)
+        return cleaned
 
 
 class EventForm(BaseEntityForm):
@@ -344,4 +376,3 @@ class CatchphraseForm(BaseEntityForm):
         self.fields["uri"].choices = _with_placeholder(
             "Select a catchphrase", options.get("catchphrase", [])
         )
-

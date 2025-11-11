@@ -269,29 +269,9 @@
                 </span>
                 <span class="label-text-alt text-base-content/60">Mehrfachauswahl möglich</span>
               </div>
-              {% if item.initial_labels %}
-                <div class="flex flex-wrap gap-2 mb-2">
-                  {% for choice in item.initial_labels %}
-                    <div class="flex items-center gap-1">
-                      <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
-                      {% if choice.resource_id %}
-                        <a href="{% url 'metadata:resource_graph' choice.resource_id %}"
-                           class="btn btn-xs btn-primary btn-circle"
-                           title="View resource graph"
-                           target="_blank">
-                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-                          </svg>
-                        </a>
-                      {% endif %}
-                    </div>
-                  {% endfor %}
-                </div>
-              {% endif %}
               {{ item.field }}
 
-              {# New pure HTMX relationship container #}
-              {% include "metadata/entity_creation/partials/_relationship_rows_container.html" with field_name=item.field.name rows=item.rows search_properties=item.meta.search_properties selected_property=item.selected_property property_select_id=item.property_select_id dataset_name=dataset_summary.dataset_name mapping_id=mapping.id %}
+              {{ item.multi_select_html|safe }}
             </div>
           {% endfor %}
           {% for relation in read_only_relationships %}

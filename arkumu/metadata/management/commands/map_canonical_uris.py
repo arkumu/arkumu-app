@@ -111,7 +111,6 @@ class Command(BaseCommand):
         # Get unmapped classes
         unmapped_classes = service.get_unmapped_resources(
             resource_type=ResourceType.CLASS,
-            limit=limit
         )
         
         if unmapped_classes:
@@ -122,7 +121,6 @@ class Command(BaseCommand):
         # Get unmapped properties
         unmapped_properties = service.get_unmapped_resources(
             resource_type=ResourceType.PROPERTY,
-            limit=limit
         )
         
         if unmapped_properties:
