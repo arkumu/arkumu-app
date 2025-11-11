@@ -69,6 +69,38 @@ def test_serializes_canonical_and_institutional_rdf_for_khm_and_hmt():
             object=local_literal,
             source=org,
         )
+        event = Resource.objects.create(
+            uri=f"http://arkumu.org/data/{org_code}/entities/ereignis/test-event",
+            organization=org,
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+        )
+        event_link_pred = Resource.objects.create(
+            uri=f"http://arkumu.org/data/{org_code}/properties/ereignis",
+            resource_type=ResourceType.PROPERTY,
+            name=f"{org_code.upper()} Event Link",
+        )
+        Triple.objects.create(
+            subject=project,
+            predicate=event_link_pred,
+            object=event,
+            source=org,
+        )
+        event_title_pred = Resource.objects.create(
+            uri=f"http://arkumu.org/data/{org_code}/properties/ereignistitel",
+            resource_type=ResourceType.PROPERTY,
+            name=f"{org_code.upper()} Event Title",
+        )
+        event_title_literal = Resource.objects.create(
+            resource_type=ResourceType.LITERAL,
+            value=f"{org_code.upper()} Event Title",
+        )
+        Triple.objects.create(
+            subject=event,
+            predicate=event_title_pred,
+            object=event_title_literal,
+            source=org,
+        )
 
         graph_data = {
             "root_id": str(project.id),
@@ -118,8 +150,12 @@ def test_serializes_canonical_and_institutional_rdf_for_khm_and_hmt():
     assert "<arkumu:bevorzugter-titel>KHM Canonical Title</arkumu:bevorzugter-titel>" in khm_canonical
     assert f'rdf:about="{khm_uri}"' in khm_institutional
     assert "<khm:projekttitel>KHM Institutional Title</khm:projekttitel>" in khm_institutional
+    assert '<khm:ereignis rdf:resource="http://arkumu.org/data/khm/entities/ereignis/test-event"/>' in khm_institutional
+    assert "<khm:ereignistitel>KHM Event Title</khm:ereignistitel>" in khm_institutional
 
     assert f'rdf:about="{hmt_uri}"' in hmt_canonical
     assert "<arkumu:bevorzugter-titel>HMT Canonical Title</arkumu:bevorzugter-titel>" in hmt_canonical
     assert f'rdf:about="{hmt_uri}"' in hmt_institutional
     assert "<hmt:projekttitel>HMT Institutional Title</hmt:projekttitel>" in hmt_institutional
+    assert '<hmt:ereignis rdf:resource="http://arkumu.org/data/hmt/entities/ereignis/test-event"/>' in hmt_institutional
+    assert "<hmt:ereignistitel>HMT Event Title</hmt:ereignistitel>" in hmt_institutional
