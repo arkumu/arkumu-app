@@ -10,6 +10,7 @@ from django.http import HttpResponseBadRequest, HttpResponseNotFound
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Mapping
 
+from arkumu.catalog.models import PreviewImages
 from arkumu.catalog.services.wikidata_service import WikidataService
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
@@ -138,10 +139,32 @@ class ProjectView(LoginRequiredMixin, View):
 
     @staticmethod
     def _build_context(record: ProjectRecord) -> Dict[str, Any]:
-        image = record.image
-        if not image and record.digital_objects:
-            image = record.digital_objects[0].path
-        image = image or 'images/main/card_1.png'
+
+        image = []
+
+        # image = record.image
+        # if not image and record.digital_objects:
+        #     image = record.digital_objects[0].path
+        # image = image or 'images/main/card_1.png'
+
+        for obj in record.digital_objects:
+            if '_preview' in obj.path:
+                image.append(obj.path)
+
+
+        print(image)
+        image_preview = []
+        for candidate in image:
+            if PreviewImages.objects.filter(path=candidate).exists():
+                image_preview.append(candidate)
+        image = image_preview
+        #
+        # if valid_preview:
+        #     card["image"] = valid_preview
+        # else:
+        #     fallback_path = _object_display_path(self.digital_objects[0])
+        #     if fallback_path:
+        #         card["image"] = fallback_path
 
         alternative_title = record.alternative_titles[0].value if record.alternative_titles else ''
         catchphrases = [item.label for item in record.catchphrases if item.label]
