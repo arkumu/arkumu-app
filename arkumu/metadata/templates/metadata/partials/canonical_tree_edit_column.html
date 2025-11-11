@@ -1,0 +1,50 @@
+{% if form_error %}
+    <div class="alert alert-error text-xs">{{ form_error }}</div>
+{% else %}
+    <form hx-post="{% url 'metadata:canonical_graph_tree_update_column' %}"
+          hx-target="#{{ dataset_dom_id }}"
+          hx-swap="innerHTML"
+          class="mt-2 border border-base-300 rounded-lg p-3 bg-base-100 space-y-3">
+        {% csrf_token %}
+        <input type="hidden" name="organization" value="{{ organization_code }}">
+        <input type="hidden" name="mapping_id" value="{{ mapping.id }}">
+        <input type="hidden" name="dataset_name" value="{{ dataset_name }}">
+        <input type="hidden" name="column_slug" value="{{ column_slug }}">
+        <input type="hidden" name="target_id" value="{{ dataset_dom_id }}">
+        <div>
+            <p class="text-sm font-semibold text-base-content">
+                Update mapping for <span class="text-primary">{{ dataset_name }} · {{ column.slug }}</span>
+            </p>
+            <p class="text-xs text-base-content/70">Current: {{ column.canonical_uri|default:"(none)" }}</p>
+        </div>
+        <label class="label">
+            <span class="label-text text-xs font-semibold">Canonical property</span>
+        </label>
+        <select name="canonical_uri" class="select select-bordered w-full select-sm">
+            <option value="">— No canonical property —</option>
+            {% for group in canonical_catalog %}
+                {% if group.properties %}
+                    <optgroup label="{{ group.label }}">
+                        {% for prop in group.properties %}
+                            <option value="{{ prop.uri }}" {% if prop.uri == column.canonical_uri %}selected{% endif %}>
+                                {{ prop.label }}
+                            </option>
+                        {% endfor %}
+                    </optgroup>
+                {% endif %}
+            {% endfor %}
+        </select>
+        <div class="flex justify-end gap-2">
+            <button type="button"
+                    class="btn btn-ghost btn-xs"
+                    hx-get="{% url 'metadata:canonical_graph_tree_dataset' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset_name|urlencode }}"
+                    hx-target="#{{ dataset_dom_id }}"
+                    hx-swap="innerHTML">
+                Cancel
+            </button>
+            <button type="submit" class="btn btn-primary btn-xs">
+                Save
+            </button>
+        </div>
+    </form>
+{% endif %}

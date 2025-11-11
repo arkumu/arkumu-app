@@ -1,20 +1,31 @@
 {% if dataset %}
+    {% with container_id=dataset_dom_id|default:'dataset-node-'|add:dataset.name|slugify %}
     <div class="space-y-2">
         <div class="text-xs text-base-content/70">
             {{ dataset.unmapped_count }} unmapped column{{ dataset.unmapped_count|pluralize }} in this dataset.
         </div>
         {% if dataset.columns %}
             {% for column in dataset.columns %}
+                {% with column_dom_id="column-editor-"|add:dataset.name|slugify|add:"-"|add:column.slug|slugify %}
                 <div class="rounded-lg border {% if not column.canonical_uri %}border-error/40 bg-error/5{% else %}border-base-300 bg-base-100{% endif %} p-3 text-xs space-y-1">
                     <div class="flex items-center justify-between gap-2">
                         <p class="font-semibold text-base-content">
                             {{ column.label }}
                             <span class="text-base-content/60">({{ column.slug }})</span>
                         </p>
-                        <div class="flex flex-wrap gap-1">
-                            {% if column.metadata.is_anchor %}<span class="badge badge-xs badge-info">Anchor</span>{% endif %}
-                            {% if column.metadata.is_multi_value %}<span class="badge badge-xs badge-secondary">Multi</span>{% endif %}
-                            {% if column.metadata.has_fk or column.metadata.is_fk %}<span class="badge badge-xs badge-accent">FK</span>{% endif %}
+                        <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap gap-1">
+                                {% if column.metadata.is_anchor %}<span class="badge badge-xs badge-info">Anchor</span>{% endif %}
+                                {% if column.metadata.is_multi_value %}<span class="badge badge-xs badge-secondary">Multi</span>{% endif %}
+                                {% if column.metadata.has_fk or column.metadata.is_fk %}<span class="badge badge-xs badge-accent">FK</span>{% endif %}
+                            </div>
+                            <button type="button"
+                                    class="btn btn-ghost btn-xs"
+                                    hx-get="{% url 'metadata:canonical_graph_tree_edit_column' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset.name|urlencode }}&column_slug={{ column.slug|urlencode }}&target_id={{ container_id }}"
+                                    hx-target="#{{ column_dom_id }}"
+                                    hx-swap="innerHTML">
+                                Edit
+                            </button>
                         </div>
                     </div>
                     <div>
@@ -30,7 +41,9 @@
                     {% if column.uri %}
                         <p class="text-base-content/60 break-all">Local property: {{ column.uri }}</p>
                     {% endif %}
+                    <div id="{{ column_dom_id }}"></div>
                 </div>
+                {% endwith %}
             {% endfor %}
         {% else %}
             <div class="text-xs text-base-content/70">
@@ -38,6 +51,7 @@
             </div>
         {% endif %}
     </div>
+    {% endwith %}
 {% else %}
     <div class="text-xs text-base-content/60">Dataset data unavailable.</div>
 {% endif %}

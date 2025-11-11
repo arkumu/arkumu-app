@@ -6,25 +6,24 @@
             <span>{{ error }}</span>
         </div>
     {% elif tree_summary %}
-        <div class="grid gap-4 lg:grid-cols-3">
-            <div class="lg:col-span-2">
-                <div class="stats stats-vertical lg:stats-horizontal shadow bg-base-200/70 w-full">
-                    <div class="stat">
-                        <div class="stat-title">Datasets</div>
-                        <div class="stat-value text-primary">{{ tree_summary.stats.dataset_count }}</div>
-                        <div class="stat-desc text-xs text-base-content/70">From selected mapping</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-title">Columns</div>
-                        <div class="stat-value text-primary">{{ tree_summary.stats.total_columns }}</div>
-                        <div class="stat-desc text-xs text-base-content/70">
-                            {{ tree_summary.stats.mapped_columns }} mapped · {{ tree_summary.stats.unmapped_columns }} unmapped
-                        </div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-title">Canonical classes touched</div>
-                        <div class="stat-value text-primary">{{ tree_summary.canonical_classes|length }}</div>
-                    </div>
+        <div class="grid gap-4 lg:grid-cols-3 text-sm">
+            <div class="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="rounded-lg border border-base-300 bg-base-200/70 px-4 py-3">
+                    <p class="text-xs uppercase tracking-wide text-base-content/70">Datasets</p>
+                    <p class="text-2xl font-semibold text-primary">{{ tree_summary.stats.dataset_count }}</p>
+                    <p class="text-[11px] text-base-content/60">From selected mapping</p>
+                </div>
+                <div class="rounded-lg border border-base-300 bg-base-200/70 px-4 py-3">
+                    <p class="text-xs uppercase tracking-wide text-base-content/70">Columns</p>
+                    <p class="text-2xl font-semibold text-primary">{{ tree_summary.stats.total_columns }}</p>
+                    <p class="text-[11px] text-base-content/60">
+                        {{ tree_summary.stats.mapped_columns }} mapped · {{ tree_summary.stats.unmapped_columns }} unmapped
+                    </p>
+                </div>
+                <div class="rounded-lg border border-base-300 bg-base-200/70 px-4 py-3">
+                    <p class="text-xs uppercase tracking-wide text-base-content/70">Canonical classes</p>
+                    <p class="text-2xl font-semibold text-primary">{{ tree_summary.canonical_classes|length }}</p>
+                    <p class="text-[11px] text-base-content/60">Touched in this mapping</p>
                 </div>
             </div>
             <div class="rounded-xl border border-base-300 bg-base-100 p-4">
@@ -96,6 +95,7 @@
                 </div>
                 {% if tree_summary.datasets %}
                     {% for dataset in tree_summary.datasets %}
+                        {% with dataset_dom_id='dataset-node-'|add:dataset.name|slugify %}
                         <div class="border border-base-300 rounded-xl p-3 bg-base-200/30">
                             <div class="flex items-start justify-between gap-2">
                                 <div>
@@ -111,16 +111,19 @@
                                 </div>
                                 <button type="button"
                                         class="btn btn-xs"
-                                        hx-get="{% url 'metadata:canonical_graph_tree_dataset' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset.name|urlencode }}"
-                                        hx-target="#dataset-node-{{ forloop.counter }}"
+                                        hx-get="{% url 'metadata:canonical_graph_tree_dataset' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset.name|urlencode }}&target_id={{ dataset_dom_id }}"
+                                        hx-target="#{{ dataset_dom_id }}"
                                         hx-swap="innerHTML"
                                         hx-indicator="#dataset-indicator-{{ forloop.counter }}">
                                     Toggle
                                 </button>
                             </div>
                             <div id="dataset-indicator-{{ forloop.counter }}" class="hidden loading loading-spinner loading-xs mt-2"></div>
-                            <div id="dataset-node-{{ forloop.counter }}" class="mt-3 text-sm"></div>
+                            <div id="{{ dataset_dom_id }}" class="mt-3 text-sm">
+                                {% include "metadata/partials/canonical_tree_dataset_children.html" with dataset=dataset dataset_dom_id=dataset_dom_id organization_code=organization_code mapping=mapping %}
+                            </div>
                         </div>
+                        {% endwith %}
                     {% endfor %}
                 {% else %}
                     <div class="alert alert-info text-sm">

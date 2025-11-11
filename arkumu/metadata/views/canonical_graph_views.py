@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from django.http import HttpRequest, HttpResponse
@@ -8,6 +9,7 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
 from arkumu.metadata.models.mappings import Mapping
+from arkumu.projects.schema_manifest_canonical import CANONICAL_PROPERTY_REGISTRY
 from arkumu.users.mixins import general_login_required
 from arkumu.users.models import Organization
 
@@ -297,6 +299,7 @@ def canonical_graph_tree_dataset(request: HttpRequest) -> HttpResponse:
     org_code = request.GET.get("organization")
     mapping_id = request.GET.get("mapping_id")
     dataset_name = request.GET.get("dataset_name")
+    dataset_dom_id = request.GET.get("target_id")
     mapping, manifest = _resolve_mapping_and_manifest(org_code, mapping_id)
     if not mapping or not manifest or not dataset_name:
         return render(
@@ -309,5 +312,143 @@ def canonical_graph_tree_dataset(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "metadata/partials/canonical_tree_dataset_children.html",
-        {"dataset": dataset},
+        {
+            "dataset": dataset,
+            "dataset_dom_id": dataset_dom_id,
+            "organization_code": org_code or mapping.organization_id,
+            "mapping": mapping,
+        },
     )
+
+
+@general_login_required
+def canonical_graph_tree_edit_column(request: HttpRequest) -> HttpResponse:
+    org_code = request.GET.get("organization")
+    mapping_id = request.GET.get("mapping_id")
+    dataset_name = request.GET.get("dataset_name")
+    column_slug = request.GET.get("column_slug")
+    dataset_dom_id = request.GET.get("target_id")
+
+    mapping, manifest = _resolve_mapping_and_manifest(org_code, mapping_id)
+    if not mapping or not manifest or not dataset_name or not column_slug:
+        return render(
+            request,
+            "metadata/partials/canonical_tree_edit_column.html",
+            {"form_error": "Column context missing."},
+        )
+
+    dataset = manifest.get(dataset_name)
+    if not dataset:
+        return render(
+            request,
+            "metadata/partials/canonical_tree_edit_column.html",
+            {"form_error": f"Dataset '{dataset_name}' not found."},
+        )
+    properties = dataset.get("properties") or {}
+    column = properties.get(column_slug)
+    if not column:
+        return render(
+            request,
+            "metadata/partials/canonical_tree_edit_column.html",
+            {"form_error": f"Column '{column_slug}' not found in dataset '{dataset_name}'."},
+        )
+
+    summary = _build_manifest_tree_summary(manifest)
+    context = {
+        "mapping": mapping,
+        "organization_code": org_code or mapping.organization_id,
+        "dataset_name": dataset_name,
+        "column_slug": column_slug,
+        "column": column,
+        "dataset_dom_id": dataset_dom_id,
+        "canonical_catalog": _get_canonical_property_catalog(dataset.get("entity_type", {}).get("canonical_uri")),
+    }
+    return render(request, "metadata/partials/canonical_tree_edit_column.html", context)
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def canonical_graph_tree_update_column(request: HttpRequest) -> HttpResponse:
+    org_code = request.POST.get("organization")
+    mapping_id = request.POST.get("mapping_id")
+    dataset_name = request.POST.get("dataset_name")
+    column_slug = request.POST.get("column_slug")
+    dataset_dom_id = request.POST.get("target_id")
+    canonical_uri = (request.POST.get("canonical_uri") or "").strip() or None
+
+    mapping, manifest = _resolve_mapping_and_manifest(org_code, mapping_id)
+    if not mapping or not manifest or not dataset_name or not column_slug:
+        return render(
+            request,
+            "metadata/partials/canonical_tree_edit_column.html",
+            {"form_error": "Update failed: missing dataset or column context."},
+        )
+
+    config = mapping.mapping_config or {}
+    manifest_config = config.get("schema_manifest") or {}
+    dataset_config = manifest_config.get(dataset_name)
+    if not dataset_config:
+        return render(
+            request,
+            "metadata/partials/canonical_tree_edit_column.html",
+            {"form_error": f"Dataset '{dataset_name}' not found."},
+        )
+    property_config = (dataset_config.get("properties") or {}).get(column_slug)
+    if not property_config:
+        return render(
+            request,
+            "metadata/partials/canonical_tree_edit_column.html",
+            {"form_error": f"Column '{column_slug}' not found in dataset '{dataset_name}'."},
+        )
+
+    property_config["canonical_uri"] = canonical_uri
+    mapping.mapping_config = config
+    mapping.save(update_fields=["mapping_config"])
+
+    summary = _build_manifest_tree_summary(manifest_config)
+    dataset_summary = next((ds for ds in summary["datasets"] if ds["name"] == dataset_name), None)
+
+    return render(
+        request,
+        "metadata/partials/canonical_tree_dataset_children.html",
+        {
+            "dataset": dataset_summary,
+            "dataset_dom_id": dataset_dom_id,
+            "organization_code": org_code or mapping.organization_id,
+            "mapping": mapping,
+        },
+    )
+
+
+@lru_cache(maxsize=1)
+def _base_canonical_property_catalog() -> List[Dict[str, Any]]:
+    catalog: List[Dict[str, Any]] = []
+    for class_uri, props in CANONICAL_PROPERTY_REGISTRY.items():
+        entries = [
+            {
+                "uri": prop_uri,
+                "label": prop_uri.rstrip("/").split("/")[-1].replace("-", " ").title(),
+            }
+            for prop_uri in sorted(props.keys())
+        ]
+        class_label = class_uri.rstrip("/").split("/")[-1].replace("-", " ").title()
+        catalog.append(
+            {
+                "uri": class_uri,
+                "label": class_label,
+                "properties": entries,
+            }
+        )
+    catalog.sort(key=lambda item: item["label"].lower())
+    return catalog
+
+
+def _get_canonical_property_catalog(preferred_class_uri: Optional[str]) -> List[Dict[str, Any]]:
+    base_catalog = _base_canonical_property_catalog()
+    catalog = [
+        {"uri": entry["uri"], "label": entry["label"], "properties": list(entry["properties"])}
+        for entry in base_catalog
+    ]
+    if preferred_class_uri:
+        catalog.sort(key=lambda item: (0 if item["uri"] == preferred_class_uri else 1, item["label"].lower()))
+    return catalog

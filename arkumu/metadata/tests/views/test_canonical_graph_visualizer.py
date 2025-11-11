@@ -107,7 +107,7 @@ def test_tree_canonical_partial(client, test_user, khm_mapping):
         HTTP_HX_REQUEST="true",
     )
     assert response.status_code == 200
-    assert b"Mapped columns" in response.content
+    assert b"mapped" in response.content.lower()
 
 
 @pytest.mark.django_db
@@ -119,8 +119,52 @@ def test_tree_dataset_partial(client, test_user, khm_mapping):
             "organization": "khm",
             "mapping_id": str(khm_mapping.id),
             "dataset_name": "Projects",
+            "target_id": "dataset-node-projects",
         },
         HTTP_HX_REQUEST="true",
     )
     assert response.status_code == 200
-    assert b"Canonical property" in response.content or b"Missing canonical" in response.content
+    body = response.content.decode("utf-8").lower()
+    assert "canonical property" in body or "missing canonical" in body
+
+
+@pytest.mark.django_db
+def test_tree_edit_column_get(client, test_user, khm_mapping):
+    client.force_login(test_user)
+    response = client.get(
+        reverse("metadata:canonical_graph_tree_edit_column"),
+        {
+            "organization": "khm",
+            "mapping_id": str(khm_mapping.id),
+            "dataset_name": "Projects",
+            "column_slug": "project_id",
+            "target_id": "dataset-node-projects",
+        },
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 200
+    assert b"Canonical property" in response.content
+    assert b"<select" in response.content
+
+
+@pytest.mark.django_db
+def test_tree_update_column_persists_change(client, test_user, khm_mapping):
+    client.force_login(test_user)
+    new_uri = "http://arkumu.org/data/properties/test-prop"
+    response = client.post(
+        reverse("metadata:canonical_graph_tree_update_column"),
+        {
+            "organization": "khm",
+            "mapping_id": str(khm_mapping.id),
+            "dataset_name": "Projects",
+            "column_slug": "partner",
+            "target_id": "dataset-node-projects",
+            "canonical_uri": new_uri,
+        },
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 200
+    assert new_uri.encode() in response.content
+    khm_mapping.refresh_from_db()
+    manifest = khm_mapping.mapping_config["schema_manifest"]
+    assert manifest["Projects"]["properties"]["partner"]["canonical_uri"] == new_uri
