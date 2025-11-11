@@ -157,12 +157,12 @@ class ProjectView(LoginRequiredMixin, View):
             for cid, cname in zip(categories, categories_name)
         ]
 
-        categories_name = []
+        catchphrases_name = []
         for i,w in enumerate(catchphrases):
-            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
-        categories = [
+            catchphrases_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        catchphrases = [
             {"id": cid, "name": cname}
-            for cid, cname in zip(categories, categories_name)
+            for cid, cname in zip(catchphrases, catchphrases_name)
         ]
 
 
@@ -315,7 +315,7 @@ class ProjectView(LoginRequiredMixin, View):
         ent = Entity(record.uri)
         comment_de = ent.resources.get("Deutscher Kommentar")[0].value if ent.resources.get("Deutscher Kommentar") else ''
         comment_en = ent.resources.get("Englischer Kommentar")[0].value if ent.resources.get("Englischer Kommentar") else ''
-        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].uri if ent.resources.get("Sprache des bevorzugten Titels") else '' 
+        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].uri if ent.resources.get("Sprache des bevorzugten Titels") else ''
         lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].uri if ent.resources.get("Sprache des bevorzugten Untertitels") else ''
 
         # Mappe CSV-Spalten auf ProjectRecord-Eigenschaften
