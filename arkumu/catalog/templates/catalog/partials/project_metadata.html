@@ -11,6 +11,7 @@
           class="divide-y divide-arkumu-dark theme-dark:divide-arkumu-light theme-blue:divide-arkumu-blue">
         {% for item in metadata %}
           <!-- Hauptzeile -->
+          {% if item.value != "—" %}
           <tr class="border-b border-arkumu-dark theme-dark:border-arkumu-light theme-blue:border-arkumu-blue">
             <th class="text-left py-3 font-mono uppercase tracking-wide text-xs
                         text-arkumu-dark/70 theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
@@ -30,6 +31,7 @@
               {% endif %}
             </td>
           </tr>
+          {% endif %}
 
           <!-- Zusätzliche Stichpunkte -->
           {% if item.additionalNotes %}
