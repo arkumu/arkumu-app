@@ -23,6 +23,7 @@ from arkumu.metadata.derivations.kreuz_config import (
     DerivationPattern,
     iter_applicable_patterns,
 )
+from arkumu.metadata.services.derived_relationship_service import DerivedRelationshipService
 from arkumu.metadata.services.junction_pattern_service import JunctionPatternService
 
 
@@ -409,7 +410,9 @@ class MappingAdmin(admin.ModelAdmin):
     def _handle_junction_patterns_post(self, request: HttpRequest, mapping: Mapping) -> HttpResponse:
         action = request.POST.get("action")
         dataset_name = request.POST.get("dataset_name")
-        if not dataset_name:
+
+        dataset_required_actions = {"remove_pattern", "adopt_pattern"}
+        if action in dataset_required_actions and not dataset_name:
             self.message_user(request, _("Dataset missing."), level=messages.ERROR)
             return redirect(reverse('admin:metadata_mapping_junction_patterns', args=[mapping.pk]))
 
@@ -435,6 +438,16 @@ class MappingAdmin(admin.ModelAdmin):
                 )
             else:
                 self.message_user(request, _("Could not add pattern."), level=messages.ERROR)
+        elif action == "run_derivation":
+            dry_run = request.POST.get("dry_run") == "1"
+            stats = self._run_derivation(mapping, dry_run=dry_run)
+            if stats:
+                msg = _("Derivation complete: processed %(processed)d, created %(created)d")
+                self.message_user(
+                    request,
+                    msg % {"processed": stats.processed, "created": stats.created},
+                    level=messages.SUCCESS,
+                )
         else:
             self.message_user(request, _("Unsupported action."), level=messages.WARNING)
 
@@ -450,6 +463,13 @@ class MappingAdmin(admin.ModelAdmin):
             "opts": self.model._meta,
             "change_url": reverse('admin:metadata_mapping_change', args=[mapping.pk]),
         }
+
+    def _run_derivation(self, mapping: Mapping, *, dry_run: bool):
+        service = DerivedRelationshipService(
+            mapping.organization_id or "",
+            mapping_config=mapping.mapping_config,
+        )
+        return service.derive(dry_run=dry_run)
 
     def _dataset_rows(self, mapping: Mapping, *, include_proposals: bool) -> List[Dict[str, object]]:
         manifest = (mapping.mapping_config or {}).get("schema_manifest") or {}

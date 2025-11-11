@@ -6,9 +6,18 @@
     <h1>{% blocktrans with mapping=mapping.name %}Junction patterns for {{ mapping }}{% endblocktrans %}</h1>
     <p class="help">{% trans "Review existing derivation rules for Kreuz datasets and adopt suggested patterns derived from the canonical schema." %}</p>
 
-    <p>
-        <a class="button" href="{{ change_url }}">{% trans "Back to mapping" %}</a>
-    </p>
+    <div class="module" style="margin-bottom: 20px;">
+        <form method="post" style="display:flex;gap:1rem;align-items:center;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="run_derivation">
+            <label>
+                <input type="checkbox" name="dry_run" value="1">
+                {% trans "Dry run (no triples written)" %}
+            </label>
+            <button type="submit" class="button default">{% trans "Run derivation" %}</button>
+            <a class="button" href="{{ change_url }}">{% trans "Back to mapping" %}</a>
+        </form>
+    </div>
 
     {% if datasets %}
         {% for row in datasets %}
