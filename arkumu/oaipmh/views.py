@@ -27,7 +27,6 @@ from django.db.models import Q
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
-from arkumu.metadata.services.institutional_graph_service import InstitutionalGraphService
 from arkumu.metadata.services.oai_stats import classify_project_access
 from arkumu.users.models import Organization
 from arkumu.projects import (
@@ -174,29 +173,32 @@ def _build_institutional_rdf_element(resource: Resource) -> Optional[ET._Element
     org_code = str(organization.code).strip().lower()
     if not _should_emit_institutional_rdf(org_code):
         return None
-    service = InstitutionalGraphService(org_code=org_code)
-    try:
-        graph = service.get_entity_graph(
-            resource.uri,
-            include_incoming=True,
-            expand_neighbors=True,
-            depth=2,
+
+    triples = (
+        Triple.objects.filter(
+            subject=resource,
+            source__code__iexact=organization.code,
+            predicate__canonical_uri__isnull=True,
         )
-    except ValueError:
+        .select_related("predicate", "object")
+        .order_by("predicate__uri")
+    )
+
+    rows = [
+        (t.predicate.uri, t.object)
+        for t in triples
+        if getattr(t.predicate, "uri", None)
+    ]
+    if not rows:
         return None
 
-    nodes = graph.get("nodes") or {}
-    edges = graph.get("edges") or []
-    if not nodes or not edges:
-        return None
-
-    namespace_map: "OrderedDict[str, str]" = OrderedDict({"rdf": RDF_NS})
-    namespaces: "OrderedDict[str, Optional[str]]" = OrderedDict()
-    for edge in edges:
-        ns_uri, _ = _split_namespace(edge.get("predicate_uri", ""))
+    namespaces = OrderedDict()
+    for predicate_uri, _ in rows:
+        ns_uri, _ = _split_namespace(predicate_uri)
         if ns_uri:
             namespaces.setdefault(ns_uri, None)
 
+    nsmap = OrderedDict({"rdf": RDF_NS})
     prefix_index = 1
     preferred_namespace = f"http://arkumu.org/data/{org_code}/properties/"
     for ns_uri in namespaces.keys():
@@ -205,43 +207,24 @@ def _build_institutional_rdf_element(resource: Resource) -> Optional[ET._Element
         else:
             prefix = f"ns{prefix_index}"
             prefix_index += 1
-        namespace_map[prefix] = ns_uri
+        nsmap[prefix] = ns_uri
         namespaces[ns_uri] = prefix
 
-    root = ET.Element(ET.QName(RDF_NS, "RDF"), nsmap=namespace_map)
+    root = ET.Element(ET.QName(RDF_NS, "RDF"), nsmap=nsmap)
+    description = ET.SubElement(root, ET.QName(RDF_NS, "Description"))
+    description.set(ET.QName(RDF_NS, "about"), resource.uri or "")
 
-    description_map: Dict[str, ET._Element] = {}
-    for node_id, node in nodes.items():
-        uri = node.get("uri")
-        if not uri:
-            continue
-        description = ET.SubElement(root, ET.QName(RDF_NS, "Description"))
-        description.set(ET.QName(RDF_NS, "about"), uri)
-        description_map[node_id] = description
-
-    for edge in edges:
-        subject_elem = description_map.get(edge.get("subject_id"))
-        if subject_elem is None:
-            continue
-        predicate_uri = edge.get("predicate_uri")
-        ns_uri, local_name = _split_namespace(predicate_uri or "")
+    for predicate_uri, obj in rows:
+        ns_uri, local_name = _split_namespace(predicate_uri)
         if not ns_uri or not local_name:
             continue
-        element = ET.SubElement(subject_elem, ET.QName(ns_uri, local_name))
-
-        object_id = edge.get("object_id")
-        obj_node = nodes.get(object_id or "")
-        if not obj_node:
-            continue
-        if edge.get("object_type") == ResourceType.LITERAL:
-            element.text = obj_node.get("value")
+        element = ET.SubElement(description, ET.QName(ns_uri, local_name))
+        if obj.resource_type == ResourceType.LITERAL:
+            element.text = obj.value
         else:
-            obj_uri = obj_node.get("uri")
-            if not obj_uri:
-                continue
-            element.set(ET.QName(RDF_NS, "resource"), obj_uri)
+            element.set(ET.QName(RDF_NS, "resource"), obj.uri or "")
 
-    return root if len(root) else None
+    return root
 
 
 def _normalized_org_code(
