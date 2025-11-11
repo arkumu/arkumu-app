@@ -49,6 +49,12 @@ class ProjectDigitalObject:
     media_type: Optional[str] = None
     significant_properties_de: Optional[str] = None
     significant_properties_en: Optional[str] = None
+    originalsprache: Optional[str] = None
+    sprachfassung: Optional[str] = None
+    untertitelsprache: Optional[str] = None
+    tonformat: Optional[str] = None
+    tonmischfassung: Optional[str] = None
+    equalizer: Optional[str] = None
     resource_id: Optional[str] = None
     source: Optional[str] = None
     source_event_ids: List[str] = field(default_factory=list)
@@ -122,8 +128,70 @@ class ProjectEvent:
     type_uri: Optional[str] = None
     start_estimated: Optional[bool] = None
     end_estimated: Optional[bool] = None
+    tonart: Optional[str] = None
+    stimmung_in_hertz: Optional[str] = None
     actors: List[ProjectEventActor] = field(default_factory=list)
     is_reference_only: bool = False
+
+
+@dataclass
+class ProjectPropertyBundle:
+    dauer_hms: Optional[str] = None
+    dauer_freitext: Optional[str] = None
+    tonarten: List[str] = field(default_factory=list)
+    produktionsformat: Optional[str] = None
+    instrumentierung: Optional[str] = None
+    aspect_ratio: Optional[str] = None
+    stimmung_hz: Optional[str] = None
+    sprachen: List[str] = field(default_factory=list)
+    abspielgeschwindigkeit: Optional[str] = None
+    equalizer: List[str] = field(default_factory=list)
+    bandbreite: Optional[str] = None
+    tonaufnahme: Optional[str] = None
+    werkverzeichnis: Optional[str] = None
+    musikgattungen: List[str] = field(default_factory=list)
+    tonformate: List[str] = field(default_factory=list)
+    bildfrequenz: Optional[str] = None
+    filmentwicklung: Optional[str] = None
+    tonmischfassungen: List[str] = field(default_factory=list)
+    fernsehnorm: Optional[str] = None
+    spurausrichtung: Optional[str] = None
+    ton_kanaele: Optional[str] = None
+    audio_aufnahmetechnik: Optional[str] = None
+
+
+@dataclass
+class ProjectStatusSignatures:
+    signatur: Optional[str] = None
+    signatur_beim_einlieferer: Optional[str] = None
+    werkverzeichnis_nummer: Optional[str] = None
+
+
+@dataclass
+class ProjectAuthorityLinks:
+    wikidata_ids: List[str] = field(default_factory=list)
+    gnd_ids: List[str] = field(default_factory=list)
+    weitere_normdaten: List[str] = field(default_factory=list)
+    externe_webseiten: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ProjectSubmitterInfo:
+    hochschule: Optional[str] = None
+    hochschule_uri: Optional[str] = None
+    organisationseinheiten: List[str] = field(default_factory=list)
+    erstellungsdatum: Optional[str] = None
+    letzte_modifikation: Optional[str] = None
+
+
+@dataclass
+class ProjectLicenseInfo:
+    bestehende_vertraege: List[str] = field(default_factory=list)
+    neuer_lizenzvertrag: Optional[str] = None
+    angegebene_nutzungsrechte: Optional[str] = None
+    sonderregelungen: List[str] = field(default_factory=list)
+    weitere_rechtsdokumente: List[str] = field(default_factory=list)
+    dateiabfrage_dokument: Optional[str] = None
 
 
 @dataclass
@@ -155,6 +223,11 @@ class ProjectRecord:
     ownership_filtered: bool = False
     reference_only: bool = False
     harvestable: bool = True
+    properties: ProjectPropertyBundle = field(default_factory=ProjectPropertyBundle)
+    status: ProjectStatusSignatures = field(default_factory=ProjectStatusSignatures)
+    authority: ProjectAuthorityLinks = field(default_factory=ProjectAuthorityLinks)
+    submitter: ProjectSubmitterInfo = field(default_factory=ProjectSubmitterInfo)
+    licenses: ProjectLicenseInfo = field(default_factory=ProjectLicenseInfo)
 
     @property
     def slug(self) -> str:
@@ -240,6 +313,11 @@ class ProjectRecord:
             ownership_filtered=bool(payload.get("ownership_filtered", False)),
             reference_only=bool(payload.get("reference_only", False)),
             harvestable=bool(payload.get("harvestable", True)),
+            properties=ProjectPropertyBundle(**(payload.get("properties") or {})),
+            status=ProjectStatusSignatures(**(payload.get("status") or {})),
+            authority=ProjectAuthorityLinks(**(payload.get("authority") or {})),
+            submitter=ProjectSubmitterInfo(**(payload.get("submitter") or {})),
+            licenses=ProjectLicenseInfo(**(payload.get("licenses") or {})),
         )
         return record
 

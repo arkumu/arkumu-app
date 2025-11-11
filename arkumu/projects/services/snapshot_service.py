@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import uuid
 
 from django.utils import timezone
+from django.utils.text import slugify
 from django.conf import settings
 from django.db.models import Q
 
@@ -35,9 +36,14 @@ from arkumu.projects import (
     ProjectDigitalObjectLicense,
     ProjectEvent,
     ProjectEventActor,
+    ProjectAuthorityLinks,
     ProjectInstitution,
+    ProjectLicenseInfo,
+    ProjectPropertyBundle,
     ProjectRecord,
+    ProjectStatusSignatures,
     ProjectSnapshot,
+    ProjectSubmitterInfo,
     ProjectType,
 )
 from arkumu.projects.fixity import parse_fixity
@@ -127,6 +133,98 @@ class ProjectSnapshotService:
     EVENT_TYPE_LIDO_PROPERTIES: Tuple[str, ...] = (
         "http://arkumu.org/data/properties/lido-terminologie-id",
     )
+    EVENT_TONART_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/auffuehrungstonart",
+    )
+    EVENT_TUNING_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/stimmung-in-hertz",
+    )
+    PROJECT_WIKIDATA_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/wikidata-id",
+    )
+    PROJECT_GND_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/gnd-nummer",
+    )
+    PROJECT_OTHER_AUTHORITY_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/andere-normdaten",
+    )
+    PROJECT_EXTERNAL_LINK_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/externe-projektwebseite",
+    )
+    PROJECT_ORG_UNIT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/organisationseinheit",
+    )
+    PROJECT_CREATED_AT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/projekterstellung-beim-einlieferer",
+    )
+    PROJECT_MODIFIED_AT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/letzte-projektmodifikation-beim-einlieferer",
+    )
+    PROJECT_EXISTING_LICENSE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/bestehender-lizenzvertrag",
+    )
+    PROJECT_NEW_LICENSE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/neuer-lizenzvertrag-digi-kunst-formular",
+    )
+    PROJECT_USAGE_RIGHTS_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/angegebene-nutzungsrechte",
+    )
+    PROJECT_SPECIAL_TERMS_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/sonderregelung",
+    )
+    PROJECT_OTHER_LEGAL_DOC_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/weiteres-rechtsdokument",
+    )
+    PROJECT_FILE_REQUEST_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/dateiabfragedokument",
+    )
+    PROJECT_SIGNATURE_DEPOSITOR_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/signatur-beim-einlieferer",
+    )
+    PROJECT_WORK_CATALOG_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/werkverzeichnis-nummer",
+    )
+    PROJECT_LANGUAGE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels",
+        "http://arkumu.org/data/properties/sprache-des-bevorzugten-untertitels",
+    )
+    DIGITAL_OBJECT_TONFORMAT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/tonformat",
+    )
+    DIGITAL_OBJECT_TONMISCH_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/tonmischfassung",
+    )
+    DIGITAL_OBJECT_EQUALIZER_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/eq",
+    )
+    DIGITAL_OBJECT_ORIGINAL_LANGUAGE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/originalsprache",
+    )
+    DIGITAL_OBJECT_LANGUAGE_VARIANT_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/sprachfassung",
+    )
+    DIGITAL_OBJECT_SUBTITLE_LANGUAGE_PROPERTIES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/untertitelsprache",
+    )
+    PROJECT_PROPERTY_PROJECT_LINK = "http://arkumu.org/data/properties/projekt"
+    PROJECT_PROPERTY_VALUE_PREDICATE = "http://arkumu.org/data/properties/wert"
+    PROJECT_PROPERTY_DEFINITION_PREDICATE = "http://arkumu.org/data/properties/eigenschaft"
+    PROJECT_PROPERTY_LABEL_PREDICATES: Tuple[str, ...] = (
+        "http://arkumu.org/data/properties/deutscher-name-der-projekteigenschaft",
+        "http://arkumu.org/data/properties/englischer-name-der-projekteigenschaft",
+    )
+    PROJECT_PROPERTY_FIELD_MAP: Dict[str, str] = {
+        "dauer": "dauer_freitext",
+        "dauer-freitext": "dauer_freitext",
+        "dauer-in-hh-mm-ss": "dauer_hms",
+        "tonart": "tonarten",
+        "produktionsformat": "produktionsformat",
+        "instrumentierung": "instrumentierung",
+        "musikgattung": "musikgattungen",
+        "stimmung-in-hertz": "stimmung_hz",
+        "sprache": "sprachen",
+        "werkverzeichnis": "werkverzeichnis",
+    }
     EVENT_START_ESTIMATED_PROPERTIES: Tuple[str, ...] = (
         "http://arkumu.org/data/properties/ereignisbeginn-geschaetzt",
     )
@@ -1102,9 +1200,6 @@ class ProjectSnapshotService:
 
         event_edge_map: Dict[str, Set[str]] = {}
         for event_id in all_event_ids:
-            event_obj = event_lookup.get(str(event_id))
-            if event_obj and event_obj.is_reference_only:
-                continue
             event_edges = edges_by_subject.get(event_id, [])
             related_ids = self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
             if not related_ids:
@@ -1461,6 +1556,30 @@ class ProjectSnapshotService:
         if not title:
             return None
 
+        werkverzeichnis_value = self._first_literal(subject_edges, self.PROJECT_WORK_CATALOG_PROPERTIES[0]) if self.PROJECT_WORK_CATALOG_PROPERTIES else None
+        project_property_values = self._collect_project_property_values(subject_id)
+        properties_bundle = self._build_project_properties_bundle(
+            project_property_values,
+            subject_edges,
+            events_all,
+            digital_objects,
+            werkverzeichnis_value,
+        )
+        status_block = self._build_status_block(
+            project_property_values,
+            subject_edges,
+            werkverzeichnis_value,
+        )
+        authority_links = self._build_authority_links(subject_edges)
+        submitter_info = self._build_submitter_info(subject_edges, institution)
+        license_info = self._build_license_metadata(subject_edges)
+
+        if werkverzeichnis_value and not properties_bundle.werkverzeichnis:
+            properties_bundle.werkverzeichnis = werkverzeichnis_value
+        if werkverzeichnis_value and not status_block.werkverzeichnis_nummer:
+            status_block.werkverzeichnis_nummer = werkverzeichnis_value
+
+        # DEBUG placeholder
         record = ProjectRecord(
             subject_id=subject_id,
             uri=project_uri,
@@ -1489,6 +1608,11 @@ class ProjectSnapshotService:
             ownership_filtered=ownership_filtered,
             reference_only=reference_only_flag,
             harvestable=harvestable_flag,
+            properties=properties_bundle,
+            status=status_block,
+            authority=authority_links,
+            submitter=submitter_info,
+            licenses=license_info,
         )
         return record
 
@@ -2145,6 +2269,339 @@ class ProjectSnapshotService:
         )
         if license_info:
             project_object.license = license_info
+
+        original_language = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_ORIGINAL_LANGUAGE_PROPERTIES,
+        )
+        if original_language:
+            project_object.originalsprache = original_language
+
+        language_variant = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_LANGUAGE_VARIANT_PROPERTIES,
+        )
+        if language_variant:
+            project_object.sprachfassung = language_variant
+
+        subtitle_language = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_SUBTITLE_LANGUAGE_PROPERTIES,
+        )
+        if subtitle_language:
+            project_object.untertitelsprache = subtitle_language
+
+        tonformat_value = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_TONFORMAT_PROPERTIES,
+        )
+        if tonformat_value:
+            project_object.tonformat = tonformat_value
+
+        tonmisch_value = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_TONMISCH_PROPERTIES,
+        )
+        if tonmisch_value:
+            project_object.tonmischfassung = tonmisch_value
+
+        equalizer_value = self._first_literal_any(
+            edges_for_digital,
+            self.DIGITAL_OBJECT_EQUALIZER_PROPERTIES,
+        )
+        if equalizer_value:
+            project_object.equalizer = equalizer_value
+
+    def _collect_project_property_values(self, project_subject_id: str) -> Dict[str, List[str]]:
+        try:
+            project_uuid = uuid.UUID(str(project_subject_id))
+        except (TypeError, ValueError):
+            return {}
+
+        if not self.PROJECT_PROPERTY_PROJECT_LINK:
+            return {}
+
+        try:
+            link_ids = list(
+                Triple.objects.filter(
+                    predicate__canonical_uri=self.PROJECT_PROPERTY_PROJECT_LINK,
+                    object_id=project_uuid,
+                ).values_list('subject_id', flat=True)
+            )
+        except Exception:
+            logger.exception("Failed to collect project property links for %s", project_subject_id)
+            return {}
+
+        crosstable_ids = [str(value) for value in link_ids if value]
+        if not crosstable_ids:
+            return {}
+
+        try:
+            value_triples = (
+                Triple.objects.filter(
+                    predicate__canonical_uri=self.PROJECT_PROPERTY_VALUE_PREDICATE,
+                    subject_id__in=crosstable_ids,
+                )
+                .select_related('object')
+            )
+        except Exception:
+            logger.exception("Failed to load project property values for %s", project_subject_id)
+            return {}
+
+        values_by_row: Dict[str, str] = {}
+        for triple in value_triples:
+            literal = self._normalize_text_value(getattr(triple.object, 'value', None))
+            if literal:
+                values_by_row[str(triple.subject_id)] = literal
+
+        if not values_by_row:
+            return {}
+
+        try:
+            property_relations = list(
+                Triple.objects.filter(
+                    predicate__canonical_uri=self.PROJECT_PROPERTY_DEFINITION_PREDICATE,
+                    subject_id__in=crosstable_ids,
+                ).values_list('subject_id', 'object_id')
+            )
+        except Exception:
+            logger.exception("Failed to load project property relations for %s", project_subject_id)
+            return {}
+
+        property_ids = {str(obj_id) for _, obj_id in property_relations if obj_id}
+        if not property_ids:
+            return {}
+
+        label_map: Dict[str, str] = {}
+        for predicate in self.PROJECT_PROPERTY_LABEL_PREDICATES:
+            try:
+                label_triples = (
+                    Triple.objects.filter(
+                        predicate__canonical_uri=predicate,
+                        subject_id__in=property_ids,
+                    )
+                    .select_related('object')
+                )
+            except Exception:
+                logger.exception("Failed to fetch property labels for predicate %s", predicate)
+                continue
+
+            for triple in label_triples:
+                property_id = str(triple.subject_id)
+                if property_id in label_map:
+                    continue
+                label = self._normalize_text_value(getattr(triple.object, 'value', None))
+                if label:
+                    label_map[property_id] = label
+
+        results: Dict[str, List[str]] = defaultdict(list)
+        for row_id, property_id in property_relations:
+            row_key = str(row_id)
+            property_key = str(property_id)
+            label = label_map.get(property_key)
+            value = values_by_row.get(row_key)
+            if not label or not value:
+                continue
+            slug = self._normalize_property_label(label)
+            if not slug:
+                continue
+            bucket = results.setdefault(slug, [])
+            if value not in bucket:
+                bucket.append(value)
+        return results
+
+    def _build_project_properties_bundle(
+        self,
+        property_value_map: Optional[Dict[str, List[str]]],
+        subject_edges: Iterable[Dict[str, Any]],
+        events: Sequence[ProjectEvent],
+        digital_objects: Sequence[ProjectDigitalObject],
+        werkverzeichnis_value: Optional[str],
+    ) -> ProjectPropertyBundle:
+        bundle = ProjectPropertyBundle()
+        property_value_map = property_value_map or {}
+
+        for slug, values in property_value_map.items():
+            field_name = self.PROJECT_PROPERTY_FIELD_MAP.get(slug)
+            if not field_name:
+                continue
+            self._assign_project_property_value(bundle, field_name, values)
+
+        if werkverzeichnis_value and not bundle.werkverzeichnis:
+            bundle.werkverzeichnis = werkverzeichnis_value
+
+        language_literals = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_LANGUAGE_PROPERTIES,
+        )
+        for literal in language_literals:
+            self._append_unique(bundle.sprachen, literal)
+
+        for event in events:
+            if event.tonart:
+                self._append_unique(bundle.tonarten, event.tonart)
+            if not bundle.stimmung_hz and event.stimmung_in_hertz:
+                bundle.stimmung_hz = self._normalize_text_value(event.stimmung_in_hertz)
+
+        for digital_object in digital_objects:
+            self._append_unique(bundle.tonformate, digital_object.tonformat)
+            self._append_unique(bundle.tonmischfassungen, digital_object.tonmischfassung)
+            self._append_unique(bundle.equalizer, digital_object.equalizer)
+            self._append_unique(bundle.sprachen, digital_object.originalsprache)
+            self._append_unique(bundle.sprachen, digital_object.sprachfassung)
+            self._append_unique(bundle.sprachen, digital_object.untertitelsprache)
+
+        return bundle
+
+    def _assign_project_property_value(
+        self,
+        bundle: ProjectPropertyBundle,
+        field_name: str,
+        values: Sequence[str],
+    ) -> None:
+        cleaned = [
+            self._normalize_text_value(value)
+            for value in values
+            if self._normalize_text_value(value)
+        ]
+        if not cleaned:
+            return
+
+        current = getattr(bundle, field_name, None)
+        if isinstance(current, list):
+            for value in cleaned:
+                self._append_unique(current, value)
+            return
+
+        if not current:
+            setattr(bundle, field_name, cleaned[0])
+
+    @staticmethod
+    def _append_unique(collection: List[str], value: Optional[str]) -> None:
+        if value is None:
+            return
+        text = str(value).strip()
+        if not text:
+            return
+        if text not in collection:
+            collection.append(text)
+
+    @staticmethod
+    def _normalize_property_label(label: Optional[str]) -> Optional[str]:
+        if not label:
+            return None
+        token = slugify(label)
+        return token or None
+
+    def _build_status_block(
+        self,
+        property_value_map: Optional[Dict[str, List[str]]],
+        subject_edges: Iterable[Dict[str, Any]],
+        werkverzeichnis_value: Optional[str],
+    ) -> ProjectStatusSignatures:
+        status = ProjectStatusSignatures()
+        property_value_map = property_value_map or {}
+
+        signature_values = property_value_map.get("signatur")
+        if signature_values:
+            status.signatur = self._normalize_text_value(signature_values[0])
+
+        depositor_signature = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_SIGNATURE_DEPOSITOR_PROPERTIES,
+        )
+        if depositor_signature:
+            status.signatur_beim_einlieferer = depositor_signature[0]
+
+        if werkverzeichnis_value:
+            status.werkverzeichnis_nummer = werkverzeichnis_value
+
+        return status
+
+    def _build_authority_links(
+        self,
+        subject_edges: Iterable[Dict[str, Any]],
+    ) -> ProjectAuthorityLinks:
+        authority = ProjectAuthorityLinks()
+        authority.wikidata_ids = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_WIKIDATA_PROPERTIES,
+        )
+        authority.gnd_ids = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_GND_PROPERTIES,
+        )
+        authority.weitere_normdaten = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_OTHER_AUTHORITY_PROPERTIES,
+        )
+        authority.externe_webseiten = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_EXTERNAL_LINK_PROPERTIES,
+        )
+        return authority
+
+    def _build_submitter_info(
+        self,
+        subject_edges: Iterable[Dict[str, Any]],
+        institution: Optional[ProjectInstitution],
+    ) -> ProjectSubmitterInfo:
+        submitter = ProjectSubmitterInfo()
+        if institution:
+            submitter.hochschule = institution.label
+            submitter.hochschule_uri = institution.uri
+
+        submitter.organisationseinheiten = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_ORG_UNIT_PROPERTIES,
+        )
+
+        if self.PROJECT_CREATED_AT_PROPERTIES:
+            submitter.erstellungsdatum = self._first_literal(
+                subject_edges,
+                self.PROJECT_CREATED_AT_PROPERTIES[0],
+            )
+        if self.PROJECT_MODIFIED_AT_PROPERTIES:
+            submitter.letzte_modifikation = self._first_literal(
+                subject_edges,
+                self.PROJECT_MODIFIED_AT_PROPERTIES[0],
+            )
+
+        return submitter
+
+    def _build_license_metadata(
+        self,
+        subject_edges: Iterable[Dict[str, Any]],
+    ) -> ProjectLicenseInfo:
+        license_info = ProjectLicenseInfo()
+        license_info.bestehende_vertraege = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_EXISTING_LICENSE_PROPERTIES,
+        )
+        if self.PROJECT_NEW_LICENSE_PROPERTIES:
+            license_info.neuer_lizenzvertrag = self._first_literal(
+                subject_edges,
+                self.PROJECT_NEW_LICENSE_PROPERTIES[0],
+            )
+        if self.PROJECT_USAGE_RIGHTS_PROPERTIES:
+            license_info.angegebene_nutzungsrechte = self._first_literal(
+                subject_edges,
+                self.PROJECT_USAGE_RIGHTS_PROPERTIES[0],
+            )
+        license_info.sonderregelungen = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_SPECIAL_TERMS_PROPERTIES,
+        )
+        license_info.weitere_rechtsdokumente = self._literal_list_from_edges(
+            subject_edges,
+            self.PROJECT_OTHER_LEGAL_DOC_PROPERTIES,
+        )
+        if self.PROJECT_FILE_REQUEST_PROPERTIES:
+            license_info.dateiabfrage_dokument = self._first_literal(
+                subject_edges,
+                self.PROJECT_FILE_REQUEST_PROPERTIES[0],
+            )
+        return license_info
 
     def _resolve_media_type(
         self,
