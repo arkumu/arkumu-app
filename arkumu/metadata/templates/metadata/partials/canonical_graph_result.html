@@ -1,0 +1,69 @@
+<div class="space-y-4">
+    <div id="graph-loading-indicator" class="loading loading-ring loading-lg" style="display:none;"></div>
+    {% if error %}
+        <div class="alert alert-error">
+            <span class="font-semibold">Unable to render:</span>
+            <span>{{ error }}</span>
+        </div>
+    {% elif result %}
+        <div class="flex flex-wrap gap-4 text-sm text-base-content/80">
+            <div>
+                <span class="font-semibold text-base-content">Dataset:</span>
+                <span>{{ result.stats.dataset_label }} ({{ dataset_name }})</span>
+            </div>
+            <div>
+                <span class="font-semibold text-base-content">Canonical class:</span>
+                <code class="text-xs">{{ result.stats.dataset_canonical_uri|default:"—" }}</code>
+            </div>
+            <div>
+                <span class="font-semibold text-base-content">Properties:</span>
+                <span>{{ result.stats.property_count }} total · {{ result.stats.canonical_count }} canonical · {{ result.stats.missing_canonical_count }} missing</span>
+            </div>
+            <div>
+                <span class="font-semibold text-base-content">FK edges:</span>
+                <span>{{ result.stats.fk_edge_count }}</span>
+            </div>
+        </div>
+        <div class="relative group">
+            <div class="absolute top-4 right-4 z-10 flex flex-col gap-2 opacity-90 group-hover:opacity-100 transition">
+                <button type="button"
+                        class="btn btn-circle btn-sm"
+                        data-zoom-btn="in"
+                        aria-label="Zoom in">
+                    +
+                </button>
+                <button type="button"
+                        class="btn btn-circle btn-sm"
+                        data-zoom-btn="out"
+                        aria-label="Zoom out">
+                    −
+                </button>
+                <button type="button"
+                        class="btn btn-circle btn-sm"
+                        data-zoom-btn="reset"
+                        aria-label="Reset zoom">
+                    ⟳
+                </button>
+            </div>
+            <div class="border border-base-300 rounded-2xl overflow-auto min-h-[70vh] max-h-[85vh] bg-base-200/50"
+                 data-graph-wrapper>
+                <div class="min-w-[1024px] cursor-grab"
+                     data-graph-surface>
+                    {{ result.svg|safe }}
+                </div>
+            </div>
+        </div>
+        <div class="text-xs text-base-content/70">
+            <p>Legend:</p>
+            <ul class="list-disc list-inside space-y-1">
+                <li><span class="font-semibold">Blue nodes</span> – dataset level; <span class="font-semibold">green ellipses</span> – canonical URIs; <span class="font-semibold">yellow folders</span> – FK targets.</li>
+                <li><span class="font-semibold">Red columns</span> highlight properties missing canonical URIs.</li>
+                <li>Dashed lines show canonical bindings; dotted brown lines capture FK relationships captured in the manifest.</li>
+            </ul>
+        </div>
+    {% else %}
+        <div class="text-sm text-base-content/70">
+            Choose an organization mapping and dataset to generate the canonical manifest diagram.
+        </div>
+    {% endif %}
+</div>

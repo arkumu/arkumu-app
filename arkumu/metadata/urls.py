@@ -13,6 +13,7 @@ from arkumu.metadata.views import (
     database_structure_visualizer,
     blueprint_visualizer_graphviz,
     simplified_resource_views,
+    canonical_graph_views,
 )
 from arkumu.metadata.views import metadata_entry_views, tabular_views, schema_workspace_views
 from arkumu.metadata.views import workspace_quick_create_views
@@ -132,6 +133,11 @@ urlpatterns = [
 
     # Graph Connections Viewer
     path('graph-connections/', bulk_editor_views.graph_connections_view, name='graph_connections'),
+    path('canonical-graph/', canonical_graph_views.canonical_manifest_graph_view, name='canonical_graph_view'),
+    path('canonical-graph/selectors/', canonical_graph_views.canonical_graph_selectors, name='canonical_graph_selectors'),
+    path('canonical-graph/render/', canonical_graph_views.canonical_graph_render, name='canonical_graph_render'),
+    path('canonical-graph/tree/canonical/', canonical_graph_views.canonical_graph_tree_canonical, name='canonical_graph_tree_canonical'),
+    path('canonical-graph/tree/dataset/', canonical_graph_views.canonical_graph_tree_dataset, name='canonical_graph_tree_dataset'),
     path('htmx/datasets/', bulk_editor_views.get_datasets_htmx, name='get_datasets_htmx'),
     path('htmx/dataset/<uuid:dataset_id>/columns/', bulk_editor_views.get_dataset_columns_htmx, name='get_dataset_columns_htmx'),
     path('htmx/column/<str:column_id>/cells/', bulk_editor_views.get_column_cells_htmx, name='get_column_cells_htmx'),
