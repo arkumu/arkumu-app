@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 
 from .views.cards import GraphSearchView
 from .views.catalog_view import CatalogView
+from .views.images import ImagesView
 from .views.project_view import ProjectTabView, ProjectView
 from .views.explorer import (
     CatalogExplorerView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path('projekt/', login_required(ProjectView.as_view()), name='projekt'),
     path('projekt/tab/', login_required(ProjectTabView.as_view()), name='projekt_tab'),
     path('browse/', general_login_required(CatalogView.as_view()), name='browse'),
+    path('images/', general_login_required(ImagesView.as_view()), name='images'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
     path('university/', login_required(TemplateView.as_view(template_name="catalog/university_page.html")), name='university_page'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from arkumu.catalog.models import PreviewImages
+
 
 @dataclass
 class ProjectAlternateTitle:
@@ -262,9 +264,25 @@ class ProjectRecord:
         }
 
         if self.digital_objects and not self.image:
-            fallback_path = _object_display_path(self.digital_objects[0])
-            if fallback_path:
-                card["image"] = fallback_path
+
+            preview_candidates = [
+                obj for obj in self.digital_objects
+                if (_path := _object_display_path(obj)) and '_preview' in _path
+            ]
+
+            valid_preview = None
+            for candidate in preview_candidates:
+                candidate_path = _object_display_path(candidate)
+                if PreviewImages.objects.filter(path=candidate_path).exists():
+                    valid_preview = candidate_path
+                    break
+
+            if valid_preview:
+                card["image"] = valid_preview
+            else:
+                fallback_path = _object_display_path(self.digital_objects[0])
+                if fallback_path:
+                    card["image"] = fallback_path
 
         for idx, actor in enumerate(self.actors[:4]):
             if actor.name:
