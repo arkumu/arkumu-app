@@ -430,6 +430,16 @@ class BaseStorageService:
             logger.error(f"CORS: Unexpected error: {str(e)}")
             return {"success": False, "error": str(e)}
 
+    def get_file_content_type(self, bucket_name: str, file_path: str) -> Dict[str, Any]:
+        try:
+            response = self.s3_client.head_object(Bucket=bucket_name, Key=file_path)
+            return {
+                'success': True,
+                'content_type': response['ContentType']
+            }
+        except ClientError as e:
+            return {"success": False, "error": str(e.response.get('Error', {}))}
+
     def get_file_content(self, bucket_name: str, file_path: str) -> Dict[str, Any]:
         try:
             response = self.s3_client.get_object(Bucket=bucket_name, Key=file_path)
