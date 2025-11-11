@@ -524,6 +524,31 @@ OAI_ROSETTA_HARVESTABLE_ORGS = tuple(
     if org.strip()
 )
 
+OAI_PROJECT_TYPE_URIS = tuple(
+    uri.strip()
+    for uri in env.list(
+        "OAI_PROJECT_TYPE_URIS",
+        default=[
+            "http://arkumu.org/data/types/projekt",
+            "http://arkumu.org/data/fuk/types/projekt",
+            "http://arkumu.org/data/det/types/projekt",
+            "http://arkumu.org/data/rsh/types/projekt",
+            "http://arkumu.org/data/khm/types/00-projekte",
+            "http://arkumu.org/data/hmt/types/00-hfm-projekte",
+        ],
+    )
+    if uri and uri.strip()
+)
+
+OAI_INSTITUTIONAL_RDF_ORGS = tuple(
+    org.strip().lower()
+    for org in env.list(
+        "OAI_INSTITUTIONAL_RDF_ORGS",
+        default=["khm", "hmt"],
+    )
+    if org and org.strip()
+)
+
 OAI_S3_ROSETTA_BASE_PATHS = {
     key.strip().lower(): value.rstrip("/")
     for key, value in {

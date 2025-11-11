@@ -5,7 +5,7 @@ import binascii
 import logging
 import mimetypes
 import re
-from collections import defaultdict, Counter
+from collections import defaultdict, Counter, OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -24,7 +24,7 @@ from lxml import etree as ET
 
 from django.db.models import Q
 
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.metadata.services.oai_stats import classify_project_access
@@ -59,7 +59,7 @@ from arkumu.oaipmh.oai_project import (
     OAIProject,
     OAIProjectBuilder,
 )
-from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
+from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph, RDF_NS
 from arkumu.common.arkumu_license import (
     ARKUMU_LICENSE_LABELS,
     ARKUMU_LICENSE_TEXTS,
@@ -111,6 +111,13 @@ METS_NSMAP = {
 
 _DIGITAL_OBJECT_ORG_DEFAULT = ("fuk", "det", "rsh")
 _DIGITAL_OBJECT_URI_REGEX = r'/entities/digitales-objekt/[0-9]+$'
+_PROJECT_TYPE_URIS: tuple[str, ...] = tuple(
+    uri.strip()
+    for uri in getattr(settings, "OAI_PROJECT_TYPE_URIS", ())
+    if uri and str(uri).strip()
+)
+_RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
 _KHM_HMT_LICENSE_ORGS: set[str] = {"khm", "hmt"}
 
 
@@ -121,6 +128,103 @@ def _digital_object_orgs() -> set[str]:
         for code in configured
         if code
     }
+
+
+def _project_type_filter() -> Optional[Q]:
+    if not _PROJECT_TYPE_URIS:
+        return None
+    predicate_filter = (
+        Q(subject_triples__predicate__uri=_RDF_TYPE_URI)
+        | Q(subject_triples__predicate__canonical_uri=_RDF_TYPE_URI)
+    )
+    object_filter = (
+        Q(subject_triples__object__uri__in=_PROJECT_TYPE_URIS)
+        | Q(subject_triples__object__canonical_uri__in=_PROJECT_TYPE_URIS)
+    )
+    return predicate_filter & object_filter
+
+
+def _split_namespace(uri: str) -> tuple[str, str]:
+    if "#" in uri:
+        base, local = uri.rsplit("#", 1)
+        return f"{base}#", local
+    if "/" in uri:
+        base, local = uri.rsplit("/", 1)
+        if not base.endswith("/"):
+            base = f"{base}/"
+        return base, local
+    return uri, ""
+
+
+def _should_emit_institutional_rdf(org_code: Optional[str]) -> bool:
+    configured = {
+        str(code).strip().lower()
+        for code in getattr(settings, "OAI_INSTITUTIONAL_RDF_ORGS", ())
+        if code
+    }
+    normalized = (org_code or "").strip().lower()
+    return normalized in configured
+
+
+def _build_institutional_rdf_element(resource: Resource) -> Optional[ET._Element]:
+    organization = getattr(resource, "organization", None)
+    if not organization or not getattr(organization, "code", None):
+        return None
+    org_code = str(organization.code).strip().lower()
+    if not _should_emit_institutional_rdf(org_code):
+        return None
+
+    triples = (
+        Triple.objects.filter(
+            subject=resource,
+            source__code__iexact=organization.code,
+            predicate__canonical_uri__isnull=True,
+        )
+        .select_related("predicate", "object")
+        .order_by("predicate__uri")
+    )
+
+    rows = [
+        (t.predicate.uri, t.object)
+        for t in triples
+        if getattr(t.predicate, "uri", None)
+    ]
+    if not rows:
+        return None
+
+    namespaces = OrderedDict()
+    for predicate_uri, _ in rows:
+        ns_uri, _ = _split_namespace(predicate_uri)
+        if ns_uri:
+            namespaces.setdefault(ns_uri, None)
+
+    nsmap = OrderedDict({"rdf": RDF_NS})
+    prefix_index = 1
+    preferred_namespace = f"http://arkumu.org/data/{org_code}/properties/"
+    for ns_uri in namespaces.keys():
+        if ns_uri == preferred_namespace:
+            prefix = org_code
+        else:
+            prefix = f"ns{prefix_index}"
+            prefix_index += 1
+        nsmap[prefix] = ns_uri
+        namespaces[ns_uri] = prefix
+
+    root = ET.Element(ET.QName(RDF_NS, "RDF"), nsmap=nsmap)
+    description = ET.SubElement(root, ET.QName(RDF_NS, "Description"))
+    description.set(ET.QName(RDF_NS, "about"), resource.uri or "")
+
+    for predicate_uri, obj in rows:
+        ns_uri, local_name = _split_namespace(predicate_uri)
+        if not ns_uri or not local_name:
+            continue
+        element = ET.SubElement(description, ET.QName(ns_uri, local_name))
+        if obj.resource_type == ResourceType.LITERAL:
+            element.text = obj.value
+        else:
+            element.set(ET.QName(RDF_NS, "resource"), obj.uri or "")
+
+    return root
 
 
 def _normalized_org_code(
@@ -1237,6 +1341,8 @@ def _get_resources_queryset(
         Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
     )
 
+    project_type_clause = _project_type_filter()
+
     if allowed_uris is not None:
         uris = list(dict.fromkeys(allowed_uris))
         if not uris:
@@ -1248,13 +1354,12 @@ def _get_resources_queryset(
             .order_by('updated_at', 'id')
         )
     else:
-        queryset = (
-            Resource.objects.filter(
-                Q(uri__regex=r'/entities/projekt/[0-9]+$') & access_clause
-            )
-            .select_related('organization')
-            .order_by('updated_at', 'id')
-        )
+        queryset = Resource.objects.filter(access_clause).select_related('organization')
+        if project_type_clause is not None:
+            queryset = queryset.filter(project_type_clause).distinct()
+        else:
+            queryset = queryset.filter(uri__regex=r'/entities/projekt/[0-9]+$')
+        queryset = queryset.order_by('updated_at', 'id')
 
     if allowed_uris is None:
         queryset = _restrict_to_harvestable_files(queryset)
@@ -2230,6 +2335,25 @@ def _build_mets_from_project(
         source_xml.append(rdf_element)
     except Exception:
         logger.exception("Failed to build RDF metadata for %s", getattr(resource, "uri", "unknown"))
+
+    if _should_emit_institutional_rdf(normalized_org_code):
+        inst_element = _build_institutional_rdf_element(resource)
+        if inst_element is not None:
+            inst_md = ET.SubElement(
+                ie_amd,
+                ET.QName(METS_NS, "sourceMD"),
+                {"ID": "ie-amd-source-RDF-INSTITUTIONAL"},
+            )
+            inst_wrap = ET.SubElement(
+                inst_md,
+                ET.QName(METS_NS, "mdWrap"),
+                {
+                    "MDTYPE": "OTHER",
+                    "OTHERMDTYPE": "RDF-INSTITUTIONAL",
+                },
+            )
+            inst_xml = ET.SubElement(inst_wrap, ET.QName(METS_NS, "xmlData"))
+            inst_xml.append(inst_element)
 
     digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
     digiprov_wrap = ET.SubElement(digiprov_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
@@ -3424,13 +3548,18 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                     return None
                 return project_builder.from_project_record(record)
 
+            project_type_clause = _project_type_filter()
+
             # Filter to only project entities
             resource_qs = (
                 Resource.objects.filter(uri=resource_uri)
                 .filter(access_clause)
                 .select_related("organization")
             )
-            resource_qs = resource_qs.filter(uri__regex=r'/entities/projekt/[0-9]+$')
+            if project_type_clause is not None:
+                resource_qs = resource_qs.filter(project_type_clause).distinct()
+            else:
+                resource_qs = resource_qs.filter(uri__regex=r'/entities/projekt/[0-9]+$')
             resource = resource_qs.first()
 
             snapshot_marker: Optional[str] = None
