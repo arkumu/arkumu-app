@@ -76,7 +76,7 @@ class InstitutionalGraphService:
     # Helpers --------------------------------------------------------------
     def _triple_filter(self) -> Q:
         if self.organization:
-            return Q(source=self.organization)
+            return Q(source=self.organization) | Q(source__isnull=True)
         return Q()
 
     def _fetch_triples_for_subjects(
