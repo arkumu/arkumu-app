@@ -6,8 +6,12 @@
          aria-label="Projektdetails">
   <div class="w-full max-w-7xl mx-auto">
     <div class="flex flex-col lg:flex-row gap-10 lg:gap-20 mb-16">
-      <div class="lg:w-2/3">
-      </div>
+      {% for img in project.image %}
+        <div class="lg:w-2/3">
+          <img src="/catalog/images/?query={{ img }}" class="w-full h-full object-cover" alt="{{ title }}"
+               data-rdf-property="http://arkumu.org/data/properties/vorschaubild">
+        </div>
+      {% endfor %}
     </div>
   </div>
 </section>
