@@ -311,7 +311,6 @@ class ProjectRecord:
                 ],
             )
         ).lower()
-        print(haystack)
         return instit.lower() in haystack
 
 

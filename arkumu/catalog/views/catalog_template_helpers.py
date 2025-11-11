@@ -148,8 +148,10 @@ class CatalogTemplateHelperMixin:
         response = HttpResponse(html)
 
         # Add URL push for browser history
-        if query:
-            response['HX-Push-Url'] = f"/catalog/browse/?query={query}&orga_code={orga_code}"
+        if query and not orga_code:
+            response['HX-Push-Url'] = f"/catalog/browse/?query={query}"
+        elif orga_code:
+            response['HX-Push-Url'] = f"/catalog/browse/?orga_code={orga_code}"
         else:
             response['HX-Push-Url'] = "/catalog/browse/"
 

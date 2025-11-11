@@ -41,15 +41,19 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         if orga_code == "" or orga_code.lower() == "none":
             orga_code = None
 
-        if orga_code and orga_code != None:
-            if (orga_code or "").strip().lower() == "fuk":
-                orga_code = "Folkwang Universität der Künste"
+        # Mapping der Kürzel zu vollständigen Namen
+        orga_mapping = {
+            "fuk": "Folkwang Universität der Künste",
+            "rsh": "Robert Schumann Hochschule Düsseldorf",
+            "khm": "Kunsthochschule für Medien Köln",
+            "det": "Hochschule für Musik Detmold",
+            "hmt": "Hochschule für Musik und Tanz Köln"
+        }
 
-        if (orga_code or "").strip().lower() == "RSH":
-            orga_code = "Robert Schumann Hochschule Düsseldorf"
-        #
-        # if orga_code.lower().strip() == "fuk":
-        #     orga_code = "Folkwang Universität der Künste"
+        # Normalisierung und Ersetzung des Kürzels
+        if orga_code:
+            normalized_code = (orga_code or "").strip().lower()
+            orga_code = orga_mapping.get(normalized_code, orga_code)  # Behält Original bei wenn kein Match
 
         page = request.GET.get('page', 1)
         is_htmx = request.headers.get('HX-Request') is not None
@@ -166,11 +170,12 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 return render(request, 'catalog/university_pages/university_page_FUK.html', context)
             if orga_code == "Robert Schumann Hochschule Düsseldorf":
                 return render(request, 'catalog/university_pages/university_page_RSH.html', context)
-
             if orga_code == "Kunsthochschule für Medien Köln":
                 return render(request, 'catalog/university_pages/university_page_KHM.html', context)
             if orga_code == "Hochschule für Musik Detmold":
                 return render(request, 'catalog/university_pages/university_page_DET.html', context)
+            if orga_code == "Hochschule für Musik und Tanz Köln":
+                return render(request, 'catalog/university_pages/university_page_HMT.html', context)
             return render(request, 'catalog/design.html', context)
 
         except Exception as e:
