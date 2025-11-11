@@ -1,0 +1,123 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="app-mapping">
+    <h1>{% blocktrans with mapping=mapping.name %}Junction patterns for {{ mapping }}{% endblocktrans %}</h1>
+    <p class="help">{% trans "Review existing derivation rules for Kreuz datasets and adopt suggested patterns derived from the canonical schema." %}</p>
+
+    <p>
+        <a class="button" href="{{ change_url }}">{% trans "Back to mapping" %}</a>
+    </p>
+
+    {% if datasets %}
+        {% for row in datasets %}
+            <div class="module aligned" style="margin-bottom: 24px;">
+                <h2>{{ row.name }}</h2>
+                <p class="help">
+                    {% trans "Canonical predicates" %}: {{ row.canonical_predicates|join:", " }}
+                </p>
+
+                <div class="module">
+                    <h3>{% trans "Existing patterns" %}</h3>
+                    {% if row.existing_patterns %}
+                        <table class="adminlist">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Pattern" %}</th>
+                                    <th>{% trans "Required predicates" %}</th>
+                                    <th>{% trans "Recipes" %}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pattern in row.existing_patterns %}
+                                    <tr>
+                                        <td><strong>{{ pattern.name }}</strong><br><span class="help">{{ pattern.description }}</span></td>
+                                        <td>{{ pattern.required_properties|join:", " }}</td>
+                                        <td>
+                                            <ul style="margin:0;">
+                                                {% for recipe in pattern.recipes %}
+                                                    <li>
+                                                        {{ recipe.subject_property }} → {{ recipe.predicate_uri }} → {{ recipe.object_property }}
+                                                        {% if recipe.description %}<br><span class="help">{{ recipe.description }}</span>{% endif %}
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </td>
+                                        <td>
+                                            <form method="post" style="display:inline;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="remove_pattern">
+                                                <input type="hidden" name="dataset_name" value="{{ row.name }}">
+                                                <input type="hidden" name="pattern_name" value="{{ pattern.name }}">
+                                                <button type="submit" class="button" onclick="return confirm('Remove this pattern?');">
+                                                    {% trans "Remove" %}
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="help">{% trans "No patterns defined for this dataset yet." %}</p>
+                    {% endif %}
+                </div>
+
+                <div class="module">
+                    <h3>{% trans "Suggested patterns" %}</h3>
+                    {% if row.proposed_patterns %}
+                        <table class="adminlist">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Pattern" %}</th>
+                                    <th>{% trans "Required predicates" %}</th>
+                                    <th>{% trans "Recipes" %}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pattern in row.proposed_patterns %}
+                                    <tr>
+                                        <td><strong>{{ pattern.name }}</strong><br><span class="help">{{ pattern.description }}</span></td>
+                                        <td>{{ pattern.required_properties|join:", " }}</td>
+                                        <td>
+                                            <ul style="margin:0;">
+                                                {% for recipe in pattern.recipes %}
+                                                    <li>
+                                                        {{ recipe.subject_property }} → {{ recipe.predicate_uri }} → {{ recipe.object_property }}
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </td>
+                                        <td>
+                                            <form method="post" style="display:inline;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="adopt_pattern">
+                                                <input type="hidden" name="dataset_name" value="{{ row.name }}">
+                                                <input type="hidden" name="pattern_name" value="{{ pattern.name }}">
+                                                <button type="submit" class="button default">
+                                                    {% trans "Adopt" %}
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="help">{% trans "No suggestions available. All known canonical combinations are already defined." %}</p>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>{% trans "This mapping does not have a schema manifest yet." %}</p>
+    {% endif %}
+
+    <p>
+        <a class="button" href="{{ change_url }}">{% trans "Back to mapping" %}</a>
+    </p>
+</div>
+{% endblock %}
