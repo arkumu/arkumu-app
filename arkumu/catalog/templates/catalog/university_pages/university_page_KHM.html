@@ -101,7 +101,10 @@
         </div>
         {% include 'components/text/blue_line.html' %}
         <h3 class="text-lg font-medium mb-3">Projekte der Kunsthochschule für Medien Köln</h3>
-        {% include 'components/cards/card_grid.html' %}
+        {% if results %}
+          <!-- Include with all context variables -->
+          {% include 'catalog/partials/results_container.html' %}
+        {% endif %}
       </div>
     </main>
   </div>

@@ -40,6 +40,17 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
         if orga_code == "" or orga_code.lower() == "none":
             orga_code = None
+
+        if orga_code and orga_code != None:
+            if (orga_code or "").strip().lower() == "fuk":
+                orga_code = "Folkwang Universität der Künste"
+
+        if (orga_code or "").strip().lower() == "RSH":
+            orga_code = "Robert Schumann Hochschule Düsseldorf"
+        #
+        # if orga_code.lower().strip() == "fuk":
+        #     orga_code = "Folkwang Universität der Künste"
+
         page = request.GET.get('page', 1)
         is_htmx = request.headers.get('HX-Request') is not None
 
@@ -151,8 +162,15 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             }
 
             logger.info(f"📄 FULL_PAGE: Returning full page in {processing_time:.3f}s")
-            if orga_code:
+            if orga_code == "Folkwang Universität der Künste":
                 return render(request, 'catalog/university_pages/university_page_FUK.html', context)
+            if orga_code == "Robert Schumann Hochschule Düsseldorf":
+                return render(request, 'catalog/university_pages/university_page_RSH.html', context)
+
+            if orga_code == "Kunsthochschule für Medien Köln":
+                return render(request, 'catalog/university_pages/university_page_KHM.html', context)
+            if orga_code == "Hochschule für Musik Detmold":
+                return render(request, 'catalog/university_pages/university_page_DET.html', context)
             return render(request, 'catalog/design.html', context)
 
         except Exception as e:
@@ -216,8 +234,6 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             )
 
         elif organ_code:
-            # for record in records:
-            #     print(record)
             matching_records = [record for record in records if record.matches_institution(organ_code)]
             logger.info("🔍 FILTERED: %d projects match institution '%s'", len(matching_records), organ_code)
         else:
