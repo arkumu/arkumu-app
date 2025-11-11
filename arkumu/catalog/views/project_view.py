@@ -311,14 +311,12 @@ class ProjectView(LoginRequiredMixin, View):
             categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
         catchphrase_labels = categories_name
 
-        # neu
+        # Metadata aus Deutschem und Englischem Kommentar sowie Sprache des Titels und Untertitels extrahieren
         ent = Entity(record.uri)
-        comment_de = ent.resources.get("comment_de")[0].value if ent.resources.get("comment_de") else ''
-        comment_en = ent.resources.get("comment_en")[0].value if ent.resources.get("comment_en") else ''
-        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].value if ent.resources.get(
-            "Sprache des bevorzugten Titels") else ''
-        lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].value if ent.resources.get(
-            "Sprache des bevorzugten Untertitels") else ''
+        comment_de = ent.resources.get("Deutscher Kommentar")[0].value if ent.resources.get("Deutscher Kommentar") else ''
+        comment_en = ent.resources.get("Englischer Kommentar")[0].value if ent.resources.get("Englischer Kommentar") else ''
+        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].uri if ent.resources.get("Sprache des bevorzugten Titels") else '' 
+        lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].uri if ent.resources.get("Sprache des bevorzugten Untertitels") else ''
 
         # Mappe CSV-Spalten auf ProjectRecord-Eigenschaften
         metadata_entries = [
