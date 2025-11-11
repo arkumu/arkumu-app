@@ -18,7 +18,10 @@
               class="btn btn-xs btn-outline justify-start w-full"
               {% if suggestion.value %}title="{{ suggestion.value }}"{% endif %}
               hx-post="{% url 'metadata:entity_workspace_select_suggestion' mapping_id %}"
-              hx-vals='{"input_id": "{{ input_id }}", "target_id": "{{ target_id }}", "value": "{{ suggestion.value|escapejs }}", "label": "{{ suggestion.label|escapejs }}", "dataset": "{{ dataset_name|escapejs }}", "column": "{{ column_name|escapejs }}", "property": "{{ property_uri|default:""|escapejs }}", "property_select_id": "{{ property_select_id|default:""|escapejs }}"}'
+              hx-vals='{"input_id": "{{ input_id }}", "target_id": "{{ target_id }}", "value": "{{ suggestion.value|escapejs }}", "label": "{{ suggestion.label|escapejs }}", "dataset": "{{ dataset_name|escapejs }}", "column": "{{ column_name|escapejs }}", "property": "{{ property_uri|default:""|escapejs }}", "property_select_id": "{{ property_select_id|default:""|escapejs }}", "chip_container_id": "{{ chip_container_id|default:""|escapejs }}", "widget": "{{ widget|default:""|escapejs }}", "field_name": "{{ field_name_param|default:column_name|escapejs }}"}'
+              {% if widget == "multi_select" and chip_container_id %}
+              hx-include="#{{ chip_container_id }} input[name='{{ field_name_param|default:column_name }}[]']"
+              {% endif %}
               hx-target="#{{ target_id }}"
               hx-swap="innerHTML">
         <span class="truncate">{{ suggestion.display|default:suggestion.label }}</span>

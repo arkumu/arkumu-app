@@ -1,0 +1,138 @@
+<div class="project-form">
+
+  <div id="{{prefix}}fields">
+    {% if project_form.non_field_errors %}
+      <div class="alert alert-error shadow-lg">
+        <div></div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span></span>
+            {% for error in project_form.non_field_errors %}
+              {{ error }}<br>
+            {% endfor %}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="space-y-6">
+      <!-- Projektkategorisierung Section -->
+      <div class="space-y-4 mt-6">
+        <h2 class="text-lg font-semibold flex items-center border-b pb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 2a1 1 0 000 2h6a1 1 0 100-2H7zm6 7a1 1 0 011 1v3a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 011-1h6zm-3-4a1 1 0 00-1 1v1a1 1 0 002 0V9a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          Projektkategorisierung
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Projektart*</span>
+              {% if project_form.projektArt_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.projektArt_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.projektArt_uri }}
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Kategorie</span>
+              {% if project_form.kategorie_uri.errors %}
+              <span class="label-text-alt text-error">{{ project_form.kategorie_uri.errors.0 }}</span>
+              {% endif %}
+            </label>
+            {{ project_form.kategorie_uri }}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-control">
+            <label class="label">
+                <span class="label-text font-medium">Schlagworte</span>
+                {% if project_form.schlagworte_uri.errors %}
+                <span class="label-text-alt text-error">{{ project_form.schlagworte_uri.errors.0 }}</span>
+                {% endif %}
+              </label>
+              {{ project_form.schlagworte_uri }}
+              <div class="text-xs text-base-content/60 mt-1">{{ project_form.schlagworte_uri.help_text }}</div>
+            </div>
+          
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Schlagwort hinzufügen BUTTON</span>
+              <span class="label-text-alt text-error"></span>
+            </label>
+            <div class="text-xs text-base-content/60 mt-1"></div>
+          </div>
+        </div>
+
+        
+      </div>
+    </div>
+    <script>
+      function add_uri_fill_in_handler(){
+        console.log("this is a test uri_fill_in")
+        const prefix = "{{prefix}}"
+        const uriSelect = document.querySelector(`#id_${prefix}uri`);
+        const projectStatus_uri_input = document.querySelector(`#id_${prefix}projektStatus_uri`);
+        const signatur_uri_input = document.querySelector(`#id_${prefix}signatur`);
+        const signaturEinlieferer_uri_input = document.querySelector(`#id_${prefix}signaturEinlieferer`);
+        const verzeichnisnummern_uri_input = document.querySelector(`#id_${prefix}verzeichnisnummern`);
+        const fields = {projectStatus_uri : projectStatus_uri_input
+        ,signatur : signatur_uri_input  
+        ,signaturEinlieferer: signaturEinlieferer_uri_input
+        ,verzeichnisnummern: verzeichnisnummern_uri_input
+        }
+        
+        uriSelect.addEventListener('change', function() {
+          const selectedValue = this.value;
+
+          // If nothing is selected, clear the name field
+          if (!selectedValue) {
+            Object.entries(fields).forEach((field_name, field) =>{field.value = '';})
+            var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+                for (var c of controls) {
+                    c.disabled = false;
+                }   
+            return;
+          }
+
+          // We need to make an AJAX request to get actor details
+          fetch(`/metadata/project/details/?uri=${selectedValue}`)
+            .then(response => {
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              return response.json();
+            })
+            .then(data => {
+              for (field in data){
+                if (field){
+                  fields[field].value = data[field];
+                }
+                else{
+                  fields[field].value = '';
+                }
+              }
+
+              var controls = document.querySelectorAll("#{{prefix}}fields button, #{{prefix}}fields input, #{{prefix}}fields select, #{{prefix}}fields textarea");
+              for (var c of controls) {
+                  c.disabled = true;
+              }   
+            })
+            .catch(error => {
+              console.error('Error fetching actor details:', error);
+              // Optionally clear the fields on error
+              Object.entries(fields).forEach((field_name, field) =>{field.value = '';})
+              // Show an error message to the user (optional enhancement)
+              // You could show a toast notification or modal here if desired
+            });
+        });
+      }
+    </script>
+  </div>
+</div>

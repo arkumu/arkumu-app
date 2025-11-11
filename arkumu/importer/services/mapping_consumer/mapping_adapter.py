@@ -5,16 +5,15 @@ Loads and adapts mapping configurations from arkumu.metadata for execution.
 """
 
 import logging
+import copy
 from typing import Dict, Any, Optional, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from django.core.exceptions import ObjectDoesNotExist
 from arkumu.metadata.models.mappings import Mapping
 from .config_translator import ConfigTranslator, ExecutionConfig
 from arkumu.importer.services.mapping_validation.validator import MappingValidator
-from dataclasses import dataclass, field
-from typing import Dict, Any, List
 from arkumu.common.uri_utils import normalize_string_nfc
 
 @dataclass
@@ -74,7 +73,7 @@ class MappingAdapter:
             summary=summary
         )
         
-    def load_mapping_config(self, mapping_id: int) -> Dict[str, Any]:
+    def load_mapping_config(self, mapping_id: int, *, schema_variant_key: Optional[str] = None) -> Dict[str, Any]:
         """
         Load mapping configuration from database.
         
@@ -96,7 +95,13 @@ class MappingAdapter:
             config = mapping.mapping_config
             if not isinstance(config, dict):
                 raise ValueError(f"Mapping {mapping_id} has invalid configuration format")
-                
+            config = copy.deepcopy(config)
+            if schema_variant_key and schema_variant_key in config:
+                variant = config[schema_variant_key]
+                if isinstance(variant, dict):
+                    for section in ("workspace_columns", "schema_manifest", "fk_relationships"):
+                        if section in variant:
+                            config[section] = copy.deepcopy(variant[section])
             # Add metadata
             config['_metadata'] = {
                 'mapping_id': mapping.id,
@@ -237,7 +242,7 @@ class MappingAdapter:
                 summary="Mapping could not be loaded for validation"
             )
     
-    def translate_to_execution_config(self, mapping_id: int) -> ExecutionConfig:
+    def translate_to_execution_config(self, mapping_id: int, *, schema_variant_key: Optional[str] = None) -> ExecutionConfig:
         """
         Load and translate mapping to execution configuration.
         
@@ -251,7 +256,7 @@ class MappingAdapter:
             ValueError: If mapping is invalid or cannot be translated
         """
         # Load the mapping configuration
-        config = self.load_mapping_config(mapping_id)
+        config = self.load_mapping_config(mapping_id, schema_variant_key=schema_variant_key)
         
         # Validate mapping completeness using the new validator
         validation_result = self.mapping_validator.validate_mapping_completeness(config)

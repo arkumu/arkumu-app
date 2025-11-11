@@ -1,0 +1,114 @@
+<div id="{{ card.row_id }}"
+     class="card bg-base-200/40 border border-base-200 shadow-sm p-4 space-y-4"
+     data-testid="actor-participation-card">
+  <input type="hidden"
+         name="{{ widget.field_name }}[]"
+         id="{{ card.actor.hidden_input_id }}"
+         value="{{ card.actor.stored_value|default:'' }}">
+  <input type="hidden"
+         name="{{ widget.field_name }}__join_ids[]"
+         value="{{ card.join_resource_id|default:'' }}">
+
+  <div class="flex items-start justify-between gap-3">
+    <div>
+      <p class="text-sm font-semibold text-base-content/70">Akteur:in</p>
+      <p class="text-xs text-base-content/60">Wähle die Akteur:in des Ereignisses.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if card.actor.resource_id %}
+        <a href="{% url 'metadata:resource_graph' card.actor.resource_id %}"
+           class="btn btn-ghost btn-sm btn-circle"
+           target="_blank"
+           title="Ressource öffnen">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-3-3v6m8-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </a>
+      {% endif %}
+      <button type="button"
+              class="btn btn-ghost btn-sm btn-circle"
+              title="Teilnahme entfernen"
+              hx-delete="{% url 'metadata:entity_workspace_relationship_row' widget.mapping_id %}?row_id={{ card.row_id }}"
+              hx-target="#{{ card.row_id }}"
+              hx-swap="outerHTML"
+              hx-confirm="Diese Teilnahme entfernen?">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-2">
+    <div class="space-y-2">
+      <label class="label-text text-sm font-medium">Akteur:in auswählen</label>
+      <div class="flex gap-2">
+        <input type="text"
+               id="{{ card.actor.input_id }}"
+               name="q"
+               class="input input-bordered flex-1"
+               placeholder="Akteur:in suchen…"
+               value="{{ card.actor.display_value|default:'' }}"
+               hx-get="{{ card.actor.suggestion_url }}&input_id={{ card.actor.input_id }}&target_id={{ card.actor.suggestions_id }}"
+               hx-trigger="input changed delay:200ms"
+               hx-target="#{{ card.actor.suggestions_id }}"
+               hx-include="this"
+               autocomplete="off">
+        <span class="btn btn-ghost btn-sm btn-circle cursor-move" title="Reihenfolge (demnächst verfügbar)">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+          </svg>
+        </span>
+      </div>
+      <div id="{{ card.actor.suggestions_id }}"
+           class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden">
+      </div>
+    </div>
+
+    <div class="space-y-2">
+      <label class="label-text text-sm font-medium">Rolle im Ereignis</label>
+      {% if card.role %}
+        <input type="hidden"
+               name="{{ card.role.hidden_name }}"
+               id="{{ card.role.hidden_input_id }}"
+               value="{{ card.role.value|default:'' }}">
+        <input type="text"
+               id="{{ card.role.input_id }}"
+               class="input input-bordered w-full"
+               placeholder="Rolle wählen…"
+               value="{{ card.role.display_value|default:'' }}"
+               hx-get="{% url 'metadata:simplified_context_entity_suggestions' %}?dataset={{ card.role.target_dataset|urlencode }}&search_property={{ card.role.search_property|urlencode }}&input_id={{ card.role.input_id }}&hidden_id={{ card.role.hidden_input_id }}&hidden_name={{ card.role.hidden_name|urlencode }}&target_id={{ card.role.suggestions_id }}&field_name={{ widget.field_name }}&context_slug={{ card.role.slug }}"
+               hx-trigger="input changed delay:200ms"
+               hx-target="#{{ card.role.suggestions_id }}"
+               hx-include="#{{ card.role.hidden_input_id }}"
+               autocomplete="off">
+        <div id="{{ card.role.suggestions_id }}"
+             class="mt-1 max-h-48 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm empty:hidden">
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/60">Keine Rollen-Konfiguration verfügbar.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if card.flags %}
+    <div class="grid gap-3 md:grid-cols-3">
+      {% for flag in card.flags %}
+        <div class="form-control">
+          <label class="label py-1">
+            <span class="label-text text-sm font-medium">{{ flag.label }}</span>
+          </label>
+          <select class="select select-bordered select-sm w-full"
+                  name="{{ flag.input_name }}">
+            {% for choice in flag.choices %}
+              <option value="{{ choice.value }}"
+                      {% if choice.value|stringformat:"s" == flag.value|stringformat:"s" %}selected{% endif %}>
+                {{ choice.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>

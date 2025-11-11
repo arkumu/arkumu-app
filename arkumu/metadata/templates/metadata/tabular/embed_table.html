@@ -1,0 +1,155 @@
+{% load metadata_tags %}
+
+<div class="w-full">
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+      <h2 class="text-xl font-semibold">{{ dataset_name }} <span class="badge badge-sm">{{ page_obj.paginator.count }}</span></h2>
+      {% if entity_type == 'project' %}
+      <a href="{% url 'metadata:create_project' %}?entity=project{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Projekt
+      </a>
+      {% elif entity_type == 'ereignis' %}
+      <a href="{% url 'metadata:create_ereignis' %}?entity=ereignis{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Ereignis
+      </a>
+      {% elif entity_type == 'akteur' %}
+      <a href="{% url 'metadata:create_akteur' %}?entity=akteur{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Akteur
+      </a>
+      {% elif entity_type == 'digitales_objekt' or entity_type == 'digital_object' %}
+      <a href="{% url 'metadata:create_digital_object' %}?entity=digitales_objekt{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Digitales Objekt
+      </a>
+      {% elif entity_type == 'ort' %}
+      <a href="{% url 'metadata:create_ort' %}?entity=ort{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Ort
+      </a>
+      {% elif entity_type == 'equipment_software' %}
+      <a href="{% url 'metadata:create_equipment_software' %}?entity=equipment_software{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Equipment &amp; Software
+      </a>
+      {% endif %}
+    </div>
+    <div class="join hidden sm:inline-flex">
+      {% if page_obj.paginator.num_pages > 1 %}
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page=1" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page=1"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">«</a>
+        {% if page_obj.has_previous %}
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.previous_page_number }}" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.previous_page_number }}"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">‹</a>
+        {% else %}
+        <button class="btn btn-xs join-item btn-disabled">‹</button>
+        {% endif %}
+        <span class="btn btn-xs join-item btn-ghost">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.next_page_number }}" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.next_page_number }}"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">›</a>
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.paginator.num_pages }}" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.paginator.num_pages }}"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">»</a>
+        {% else %}
+        <button class="btn btn-xs join-item btn-disabled">›</button>
+        <button class="btn btn-xs join-item btn-disabled">»</button>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="overflow-x-auto w-full">
+    <table class="table table-zebra table-sm w-full">
+      <thead>
+        <tr>
+          {% if columns|length and columns.0.name == 'Aktionen' %}
+          <th class="bg-base-200 sticky left-0 z-10">Aktionen</th>
+          {% endif %}
+          <th class="bg-base-200">#</th>
+          {% for column in columns %}
+          {% if column.name != 'Aktionen' %}
+          <th class="bg-base-200 whitespace-nowrap">
+            {% if column.sortable and column.slug %}
+            <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
+                    hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}sort={{ column.slug }}&order={% if current_sort.column == column.slug and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}&page=1"
+                    hx-target="#workspace-browse-panel"
+                    hx-swap="innerHTML"
+                    hx-push-url="true">
+              {{ column.name }}
+              {% if current_sort.column == column.slug %}
+                {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
+              {% else %}
+                <span class="opacity-30">↕</span>
+              {% endif %}
+            </button>
+            {% else %}
+            <span class="text-xs font-semibold">{{ column.name }}</span>
+            {% endif %}
+            {% if column.is_fk %}
+            <span class="badge badge-xs badge-info ml-1" title="Foreign Key">FK</span>
+            {% endif %}
+          </th>
+          {% endif %}
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in page_obj %}
+        <tr>
+          {% if columns|length and columns.0.name == 'Aktionen' %}
+          <td class="sticky left-0 z-10 bg-base-100">
+            {% with action=row|get_item:'Aktionen' %}
+              {% if action and action.href %}
+                <a href="{{ action.href }}" class="btn btn-xs btn-primary">
+                  {{ action.label|default:"Bearbeiten" }}
+                </a>
+              {% else %}
+                <span class="text-base-content/30">—</span>
+              {% endif %}
+            {% endwith %}
+          </td>
+          {% endif %}
+          <td class="font-mono text-xs bg-base-100">{{ page_obj.start_index|add:forloop.counter|add:"-1" }}</td>
+          {% for column in columns %}
+          {% if column.name != 'Aktionen' %}
+          <td class="whitespace-nowrap" title="{{ row|get_item:column.name }}">
+            {% with value=row|get_item:column.name %}
+              {% if value %}
+                <div class="max-w-md truncate">{{ value }}</div>
+              {% else %}
+                <span class="text-base-content/30">—</span>
+              {% endif %}
+            {% endwith %}
+          </td>
+          {% endif %}
+          {% endfor %}
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="{{ columns|length|add:1 }}" class="text-center text-base-content/50 py-8">
+            No data available
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

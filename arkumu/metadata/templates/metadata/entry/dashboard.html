@@ -1,9 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Canonical Metadata Entry{% endblock %}
+{% block title %}{% endblock %}
+
+{% block container_type %}
+<div class="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+{% endblock container_type %}
+
 
 {% block content %}
 <div id="metadata-entry-root">
     {% include "metadata/entry/partials/dashboard_inner.html" %}
 </div>
 {% endblock %}
+
+{% block container_type_end %}
+</div>
+{% endblock container_type_end %}

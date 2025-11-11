@@ -1,113 +1,82 @@
-<div class="max-w-screen-2xl mx-auto px-6 py-10">
-    <div class="space-y-6">
-        <div class="bg-base-200 rounded-box p-6 border border-base-300">
-            <h1 class="text-2xl font-bold">Projekt-Metadaten erfassen</h1>
-            <p class="text-sm text-base-content/70 mt-1">
-                Erfasse neue Projekte mit einer institutionseigenen Datensatzstruktur. Wähle zuerst deine Institution, danach eine Sektion.
+<div class="w-full mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="space-y-6 p-6">
+        <div class="bg-base-200 rounded-box p-6">
+            <h1 class="text-2xl font-bold">Metadata Workspace</h1>
+            <p class="text-sm text-base-content/70 mt-2">
+                Wähle eine Entität aus und durchschaue die vorhandenen Einträge in der Tabellenansicht.
             </p>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-            <aside class="xl:col-span-3 space-y-4">
-                <div class="card bg-base-100 border border-base-300 shadow-sm">
-                    <div class="card-body space-y-3">
-                        <h2 class="text-lg font-semibold">Institution</h2>
-                        {% if organizations %}
-                        <select name="organization"
-                                class="select select-bordered w-full"
-                                hx-get="{% url 'metadata:metadata_entry' %}"
-                                hx-target="#metadata-entry-root"
-                                hx-select="#metadata-entry-root"
-                                hx-push-url="true"
-                                hx-trigger="change"
-                                aria-label="Institution auswählen">
-                            {% for org in organizations %}
-                            <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
-                                {{ org.name }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% else %}
-                        <p class="text-sm">Keine Institutionen für die manuelle Eingabe konfiguriert.</p>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="card bg-base-100 border border-base-300 shadow-sm">
-                    <div class="card-body space-y-3">
-                        <div class="flex items-center justify-between">
-                            <h2 class="text-lg font-semibold">Sektionen</h2>
-                            <span class="badge badge-soft badge-sm">{{ sections|length }}</span>
-                        </div>
-                        {% if selected_organization %}
-                            {% if sections %}
-                                <div class="space-y-2">
-                                {% for section in sections %}
-                                    <button type="button"
-                                            class="btn btn-outline btn-sm w-full justify-start"
-                                            hx-get="{% url 'metadata:metadata_entry_section' %}"
-                                            hx-target="#metadata-entry-panel"
-                                            hx-swap="innerHTML"
-                                            hx-vals='{"organization": "{{ selected_organization }}", "section": "{{ section.name }}"}'
-                                            aria-label="{{ section.label }} öffnen">
-                                        <div class="text-left">
-                                            <span class="font-medium block">{{ section.label }}</span>
-                                            {% if section.description %}
-                                            <span class="text-xs text-base-content/60">{{ section.description }}</span>
-                                            {% endif %}
-                                        </div>
-                                    </button>
-                                {% endfor %}
-                                </div>
+        <div class="space-y-6">
+            <!-- Organization selector at top -->
+            <div class="card bg-base-100">
+                <div class="card-body">
+                    <div class="flex items-center gap-4">
+                        <div class="form-control flex-1 max-w-xs">
+                            <label class="label">
+                                <span class="label-text font-semibold">Organisation</span>
+                            </label>
+                            {% if organizations %}
+                            <select name="organization"
+                                  class="select select-bordered"
+                                  hx-get="{% url 'metadata:metadata_entry' %}"
+                                  hx-target="#metadata-entry-root"
+                                  hx-swap="innerHTML"
+                                  hx-push-url="true"
+                                  hx-trigger="change"
+                                  aria-label="Institution auswählen">
+                              {% for org in organizations %}
+                              <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
+                                  {{ org.name }}
+                              </option>
+                              {% endfor %}
+                            </select>
                             {% else %}
-                                <p class="text-sm text-base-content/70">Für diese Institution sind noch keine Sektionen hinterlegt.</p>
+                            <div class="alert alert-info alert-sm">Keine Institutionen konfiguriert.</div>
                             {% endif %}
-                        {% else %}
-                            <p class="text-sm text-base-content/70">Wähle zunächst eine Institution.</p>
-                        {% endif %}
+                        </div>
                     </div>
                 </div>
-            </aside>
+            </div>
 
-            <main class="xl:col-span-6">
-                <div id="metadata-entry-panel" class="card bg-base-100 border border-dashed border-base-300 shadow-none">
+            <main class="w-full">
+                <div class="card bg-base-100">
                     <div class="card-body">
-                        {% if selected_organization %}
-                            <h2 class="text-lg font-semibold mb-2">Sektion wählen</h2>
-                            <p class="text-sm text-base-content/70">
-                                Die Formulare basieren auf den Projekt-Datenklassen deiner Organisation und lassen sich direkt mit HTMX ausfüllen.
-                            </p>
-                        {% else %}
-                            <h2 class="text-lg font-semibold mb-2">Institution wählen</h2>
-                            <p class="text-sm text-base-content/70">
-                                Nach der Auswahl wird die passende Struktur zum Erfassen neuer Projekte angezeigt.
-                            </p>
-                        {% endif %}
+                        <!-- All entity tabs -->
+                        <div role="tablist" class="tabs tabs-boxed mb-4">
+                            {% if entity_tabs %}
+                                {% for tab in entity_tabs %}
+                                <input type="radio"
+                                       name="entity_tabs"
+                                       role="tab"
+                                       class="tab"
+                                       aria-label="{{ tab.label }}"
+                                       {% if tab.checked %}checked{% endif %}
+                                       hx-get="{{ tab.url }}"
+                                       hx-target="#workspace-browse-panel"
+                                       hx-swap="innerHTML"
+                                       hx-trigger="click"
+                                       data-entity="{{ tab.key }}" />
+                                {% endfor %}
+                            {% else %}
+                                <div class="alert alert-info text-sm">Keine Entitäten konfiguriert.</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Shared content area for all tabs -->
+                        <div class="bg-base-100 border border-base-300 rounded-lg overflow-hidden p-6">
+                            <div id="workspace-browse-panel"
+                                 {% if active_tab_url %}hx-get="{{ active_tab_url }}"{% endif %}
+                                 hx-trigger="load"
+                                 hx-target="this" hx-swap="innerHTML">
+                                {% if not active_tab_url %}
+                                <div class="alert alert-info">Kein Tab verfügbar.</div>
+                                {% endif %}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </main>
-
-            <section class="xl:col-span-3 space-y-4">
-                <div class="card bg-base-100 border border-base-300 shadow-sm">
-                    <div class="card-body space-y-4">
-                        <div>
-                            <h2 class="text-lg font-semibold">Projektstruktur</h2>
-                            <p class="text-xs text-base-content/70">Aus den Dataclasses des Snapshots abgeleitete Felder und Relationen.</p>
-                        </div>
-                        <div class="space-y-4 text-sm">
-                            {% include "metadata/entry/partials/project_structure_tree.html" with node=project_structure %}
-                        </div>
-                    </div>
-                </div>
-
-                <div id="metadata-entry-latest"
-                     hx-get="{% url 'metadata:metadata_entry_latest' %}{% if selected_organization %}?organization={{ selected_organization }}{% endif %}"
-                     hx-trigger="load, metadata-entry:submission-success from:body"
-                     hx-target="this"
-                     hx-swap="innerHTML">
-                    {% include "metadata/entry/partials/latest_projects.html" %}
-                </div>
-            </section>
         </div>
     </div>
 </div>

@@ -21,6 +21,7 @@ services:
     volumes:
       - .:/app:z
       - ./compose/dev/django/start:/start:z
+      - ../arkumu-metadata:/arkumu-metadata:z
     env_file:
       - ./.envs/.dev/.django
       - ./.envs/.dev/.postgres
@@ -83,6 +84,7 @@ services:
       - redis
     volumes:
       - .:/app:z
+      - ../arkumu-metadata:/arkumu-metadata:z
     env_file:
       - ./.envs/.dev/.django
       - ./.envs/.dev/.postgres

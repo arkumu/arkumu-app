@@ -1,0 +1,130 @@
+{% load metadata_tags %}
+
+<!-- Table with overflow -->
+<div class="overflow-x-auto">
+  <table class="table table-zebra table-sm">
+    <thead>
+      <tr>
+        {% if columns|length and columns.0.name == 'Aktionen' %}
+        <th class="bg-base-200 w-28">Aktionen</th>
+        {% endif %}
+        <th class="bg-base-200">#</th>
+        {% for column in columns %}
+        {% if column.name != 'Aktionen' %}
+        <th class="bg-base-200">
+          {% if column.sortable and column.slug %}
+          <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
+                  hx-get="?{% if preserved_query %}{{ preserved_query }}&{% endif %}sort={{ column.slug }}&order={% if current_sort.column == column.slug and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}&page=1"
+                  hx-target="#table-container"
+                  hx-swap="innerHTML"
+                  hx-push-url="true">
+            {{ column.name }}
+            {% if current_sort.column == column.slug %}
+              {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
+            {% else %}
+              <span class="opacity-30">↕</span>
+            {% endif %}
+          </button>
+          {% else %}
+          <span class="text-xs font-semibold">{{ column.name }}</span>
+          {% endif %}
+          {% if column.is_fk %}
+          <span class="badge badge-xs badge-info ml-1" title="Foreign Key">FK</span>
+          {% endif %}
+        </th>
+        {% endif %}
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in page_obj %}
+      <tr>
+        {% if columns|length and columns.0.name == 'Aktionen' %}
+        <td class="w-28">
+          {% with action=row|get_item:'Aktionen' %}
+            {% if action and action.href %}
+              <a href="{{ action.href }}" class="btn btn-sm btn-primary">
+                {{ action.label|default:"Bearbeiten" }}
+              </a>
+            {% else %}
+              <span class="text-base-content/30">—</span>
+            {% endif %}
+          {% endwith %}
+        </td>
+        {% endif %}
+        <td class="font-mono text-xs">{{ forloop.counter|add:page_obj.start_index|add:"-1" }}</td>
+        {% for column in columns %}
+        {% if column.name != 'Aktionen' %}
+        <td class="max-w-xs truncate"{% if column.name != 'Aktionen' %} title="{{ row|get_item:column.name }}"{% endif %}>
+          {% with value=row|get_item:column.name %}
+            {% if value %}
+              {{ value }}
+            {% else %}
+              <span class="text-base-content/30">—</span>
+            {% endif %}
+          {% endwith %}
+        </td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="{{ columns|length|add:1 }}" class="text-center text-base-content/50 py-8">
+          No data available
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination Controls -->
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="flex justify-center mt-6">
+  <div class="join">
+    {% if page_obj.has_previous %}
+    <button class="join-item btn btn-sm"
+            hx-get="?{% if preserved_query %}{{ preserved_query }}&{% endif %}page=1"
+            hx-target="#table-container"
+            hx-swap="innerHTML"
+            hx-push-url="true">
+      «
+    </button>
+    <button class="join-item btn btn-sm"
+            hx-get="?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.previous_page_number }}"
+            hx-target="#table-container"
+            hx-swap="innerHTML"
+            hx-push-url="true">
+      ‹
+    </button>
+    {% else %}
+    <button class="join-item btn btn-sm btn-disabled">«</button>
+    <button class="join-item btn btn-sm btn-disabled">‹</button>
+    {% endif %}
+
+    <button class="join-item btn btn-sm btn-active">
+      Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </button>
+
+    {% if page_obj.has_next %}
+    <button class="join-item btn btn-sm"
+            hx-get="?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.next_page_number }}"
+            hx-target="#table-container"
+            hx-swap="innerHTML"
+            hx-push-url="true">
+      ›
+    </button>
+    <button class="join-item btn btn-sm"
+            hx-get="?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.paginator.num_pages }}"
+            hx-target="#table-container"
+            hx-swap="innerHTML"
+            hx-push-url="true">
+      »
+    </button>
+    {% else %}
+    <button class="join-item btn btn-sm btn-disabled">›</button>
+    <button class="join-item btn btn-sm btn-disabled">»</button>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

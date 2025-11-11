@@ -1,0 +1,92 @@
+<div class="mapping-selector-widget border rounded p-4 mb-4 bg-base-200">
+  <!-- Superuser Badge -->
+  <div class="flex items-center justify-between mb-3">
+    <div class="flex items-center gap-2">
+      <h3 class="text-lg font-semibold">Active Schema Mappings (All Organizations)</h3>
+      <span class="badge badge-error badge-sm">SUPERUSER ONLY</span>
+    </div>
+  </div>
+
+  {% if mapping_changed_success %}
+    <div class="alert alert-success mb-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      <span>
+        Mapping for {{ changed_org_name }} updated successfully!
+      </span>
+    </div>
+  {% endif %}
+
+  <div class="space-y-4">
+    {% for org_data in organizations_with_mappings %}
+      <div class="card bg-base-300 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <h4 class="font-semibold">{{ org_data.organization.name }}</h4>
+            <span class="text-xs text-gray-500">({{ org_data.organization.code }})</span>
+          </div>
+          {% if org_data.active_mapping %}
+            <span class="badge badge-success badge-sm">Active Mapping Set</span>
+          {% else %}
+            <span class="badge badge-warning badge-sm">No Active Mapping</span>
+          {% endif %}
+        </div>
+
+        <form hx-post="{% url 'metadata:mapping_selector_widget' %}"
+              hx-target="closest .mapping-selector-widget"
+              hx-swap="outerHTML"
+              class="space-y-2">
+          {% csrf_token %}
+          <input type="hidden" name="organization_id" value="{{ org_data.organization.code }}">
+
+          <div class="form-control">
+            <select name="mapping_id"
+                    class="select select-bordered select-sm w-full"
+                    hx-post="{% url 'metadata:mapping_selector_widget' %}"
+                    hx-target="closest .mapping-selector-widget"
+                    hx-swap="outerHTML">
+              <option value="">-- No Active Mapping --</option>
+              {% for mapping in org_data.mappings %}
+                <option value="{{ mapping.id }}"
+                        {% if mapping.is_active %}selected{% endif %}>
+                  {{ mapping.name }}
+                  ({{ mapping.get_column_count }} cols, {{ mapping.get_dataset_count }} datasets)
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </form>
+
+        {% if org_data.mappings|length == 0 %}
+          <div class="text-xs text-warning mt-2">
+            No mappings available for this organization.
+          </div>
+        {% endif %}
+      </div>
+    {% empty %}
+      <div class="alert alert-info">
+        <span>No organizations found with mappings.</span>
+      </div>
+    {% endfor %}
+  </div>
+
+  <!-- Info box explaining what this does -->
+  <div class="collapse collapse-arrow bg-base-300 mt-4">
+    <input type="checkbox" />
+    <div class="collapse-title text-sm font-medium">
+      ℹ️ What does this do?
+    </div>
+    <div class="collapse-content text-xs">
+      <p class="mb-2">
+        The active schema mapping defines how each organization's data is structured and interpreted:
+      </p>
+      <ul class="list-disc list-inside space-y-1 ml-2">
+        <li><strong>Projekt Snapshot Service</strong> uses this to know which datasets/columns contain project data</li>
+        <li><strong>Schema Manifest Service</strong> reads this to build CardSchema with property bindings</li>
+        <li><strong>Metadata Entry</strong> (if enabled) could validate against this schema</li>
+      </ul>
+      <p class="mt-2 text-warning">
+        <strong>Warning:</strong> Changing this may affect data visibility and OAI-PMH exports.
+      </p>
+    </div>
+  </div>
+</div>

@@ -15,6 +15,7 @@ from arkumu.metadata.models.resources import (
     EntityResource,
     PropertyResource,
 )
+from arkumu.metadata.models.triples import Triple
 
 from .config import EntityCreationConfig, FieldConfig, ENTITY_CREATION_CONFIG
 
@@ -111,6 +112,38 @@ class EntityCreationService:
 
         return entity, True
 
+    def update_entity_from_form(self, *, entity: EntityResource, form) -> None:
+        """
+        Update an existing entity with values provided by a validated form.
+        """
+        if not form.is_valid():
+            raise ValueError("Form must be valid before calling update_entity_from_form")
+
+        cleaned = form.cleaned_data
+        with transaction.atomic():
+            EntityResource.ensure_dataset_membership(
+                entity=entity,
+                organization=self.organization,
+                dataset_name=self.dataset_resource_name,
+                base_uri=self.dataset_base_uri,
+            )
+
+            for field in self.config.fields:
+                if field.field_name not in cleaned:
+                    continue
+
+                binding = self.ensure_property_resource(field)
+                Triple.objects.filter(
+                    subject=entity._resource,
+                    predicate=binding.resource._resource,
+                ).delete()
+
+                value = cleaned.get(field.field_name)
+                if value in (None, "", []):
+                    continue
+
+                self._assign_value(entity, binding, value)
+
     def _resolve_dataset_resource_name(self) -> str:
         if self.config.dataset_resource_name:
             return self.config.dataset_resource_name
@@ -126,11 +159,7 @@ class EntityCreationService:
         from arkumu.common.uri_utils import slugify_uri_part
 
         try:
-            mapping = (
-                Mapping.objects.filter(organization_id=self.organization.code)
-                .order_by("-created_at")
-                .first()
-            )
+            mapping = Mapping.get_active_for_organization(self.organization)
         except Exception:
             return None
         if mapping is None:

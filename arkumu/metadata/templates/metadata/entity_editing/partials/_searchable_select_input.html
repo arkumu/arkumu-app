@@ -1,0 +1,16 @@
+{% with input_id="searchable-field-"|add:field_name|add:"-query" %}
+<input type="search"
+       id="{{ input_id }}"
+       name="q"
+       value="{{ query }}"
+       placeholder="Suchen ..."
+       class="input input-bordered input-sm flex-1"
+       hx-get="{{ search_url }}"
+       hx-target="#searchable-field-{{ field_name }}"
+       hx-trigger="input changed delay:250ms"
+       hx-swap="outerHTML"
+       hx-include="#searchable-field-{{ field_name }} select"
+       hx-params="serialize"
+       autocomplete="off"
+       data-search-input>
+{% endwith %}

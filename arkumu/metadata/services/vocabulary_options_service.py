@@ -24,6 +24,8 @@ class UriOption:
 _TYPE_LABEL_PREDICATES: Dict[str, str] = {
     "http://arkumu.org/data/types/einliefernde-hochschule": "http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule",
     "http://arkumu.org/data/types/projektkategorie": "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb",
+    "http://arkumu.org/data/types/organisationseinheit": "http://arkumu.org/data/properties/organisationseinheit/deutscher-name",
+    "http://arkumu.org/data/types/projektStatus": "http://arkumu.org/data/properties/projektStatus",
     "http://arkumu.org/data/types/projektart": "http://arkumu.org/data/properties/deutscher-name-der-projektart",
     "http://arkumu.org/data/types/akteurin": "http://arkumu.org/data/properties/deutscher-name",
     "http://arkumu.org/data/types/rolle": "http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb",
@@ -40,6 +42,9 @@ _TYPE_LABEL_PREDICATES: Dict[str, str] = {
 _DEFAULT_TYPE_URI_KEYS: Dict[str, str] = {
     "institution": "http://arkumu.org/data/types/einliefernde-hochschule",
     "project_category": "http://arkumu.org/data/types/projektkategorie",
+    "organisationseinheit": "http://arkumu.org/data/types/organisationseinheit",
+    "project_status": "http://arkumu.org/data/types/projektStatus",
+    "signatur": "http://arkumu.org/data/types/signatur",
     "project_type": "http://arkumu.org/data/types/projektart",
     "actor": "http://arkumu.org/data/types/akteurin",
     "role": "http://arkumu.org/data/types/rolle",

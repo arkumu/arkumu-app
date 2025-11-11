@@ -72,6 +72,19 @@ def workspace_setup(monkeypatch, organization, mapping):
         name="ProjektEreignis",
     )
 
+    projekt_dataset_resource = Resource.objects.create(
+        uri="http://example.org/datasets/projekt",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+        name="Projekt Dataset",
+    )
+    ereignis_dataset_resource = Resource.objects.create(
+        uri="http://example.org/datasets/ereignis",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+        name="Ereignis Dataset",
+    )
+
     anchor_property = Resource.objects.create(
         uri="http://example.org/properties/projekt-id",
         resource_type=ResourceType.PROPERTY,
@@ -89,6 +102,12 @@ def workspace_setup(monkeypatch, organization, mapping):
         resource_type=ResourceType.PROPERTY,
         organization=organization,
         name="Ereignis",
+    )
+    event_name_property = Resource.objects.create(
+        uri="http://example.org/properties/event_name",
+        resource_type=ResourceType.PROPERTY,
+        organization=organization,
+        name="Event Name",
     )
     project_fk_property = Resource.objects.create(
         uri="http://example.org/properties/project_fk",
@@ -110,6 +129,7 @@ def workspace_setup(monkeypatch, organization, mapping):
             "actor_refs": actor_property,
             "event_refs": event_property,
         },
+        "dataset_resource": projekt_dataset_resource,
         "column_metadata": {
             "projekt_id": {"column_type": "text", "is_anchor": True},
             "actor_refs": {"column_type": "fk", "is_multi_value": True},
@@ -132,8 +152,13 @@ def workspace_setup(monkeypatch, organization, mapping):
 
     ereignis_schema = {
         "entity_type": event_class,
-        "properties": {},
-        "column_metadata": {},
+        "properties": {
+            "event_name": event_name_property,
+        },
+        "dataset_resource": ereignis_dataset_resource,
+        "column_metadata": {
+            "event_name": {"column_type": "text", "is_multi_value": False},
+        },
         "anchor_columns": [],
         "fk_relationships": [],
     }
@@ -199,6 +224,14 @@ def workspace_setup(monkeypatch, organization, mapping):
             "name": "rdf:type",
         },
     )
+    Resource.objects.get_or_create(
+        uri="http://purl.org/dc/terms/isPartOf",
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "organization": organization,
+            "name": "isPartOf",
+        },
+    )
 
     service = SchemaWorkspaceService(mapping=mapping, organization=organization)
     return {
@@ -219,6 +252,41 @@ def test_list_join_relationships_handles_junction_schema(workspace_setup):
     assert relationship.other_dataset == "Ereignis"
     assert relationship.self_column == "project_fk"
     assert relationship.other_property_uri.endswith("event_fk")
+
+
+@pytest.mark.django_db
+def test_list_join_relationships_uses_configured_widget(workspace_setup):
+    service = workspace_setup["service"]
+    mapping = service.mapping
+    mapping.mapping_config = {
+        "junction_widgets": {
+            "Projekt": [
+                {
+                    "widget": "JunctionRelationshipWidget",
+                    "join_dataset": "Projekt_Ereignis",
+                    "self_column": "project_fk",
+                    "other_column": "event_fk",
+                    "other_dataset": "Ereignis",
+                    "search_columns": ["event_name"],
+                }
+            ]
+        }
+    }
+
+    relationships = service.list_join_relationships("Projekt")
+    assert len(relationships) == 1
+    relationship = relationships[0]
+    assert relationship.widget_name == "JunctionRelationshipWidget"
+    assert relationship.search_property_uris == ["http://example.org/properties/event_name"]
+
+    field_metadata = service.get_field_metadata("Projekt")
+    metadata, join_map = service.augment_field_metadata_with_joins("Projekt", field_metadata)
+    field_name = "__join__Projekt_Ereignis__Ereignis"
+    assert field_name in metadata
+    assert metadata[field_name]["selected_property"] == "http://example.org/properties/event_name"
+    assert metadata[field_name]["search_property_uris"] == ["http://example.org/properties/event_name"]
+    assert metadata[field_name]["widget"] == "JunctionRelationshipWidget"
+    assert join_map[field_name] == relationship
 
 
 @pytest.mark.django_db
@@ -359,3 +427,80 @@ def test_apply_relationship_initials_respects_mutate_flag(workspace_setup):
     payload = json.loads(form.initial["actor_refs"])
     assert payload[0]["uri"] == actor_resource.uri
     assert read_only_after_mutation == []
+
+
+@pytest.mark.django_db
+def test_list_triple_relationships_provides_labels(workspace_setup):
+    service = workspace_setup["service"]
+    organization = workspace_setup["organization"]
+
+    actor_resource = Resource.objects.create(
+        uri="http://example.org/actor/10",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+        name="Akteur 10",
+    )
+    subject_resource = Resource.objects.create(
+        uri="http://example.org/project/10",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+        name="Projekt 10",
+    )
+    actor_property = workspace_setup["actor_property"]
+
+    Triple.objects.create(
+        subject=subject_resource,
+        predicate=actor_property,
+        object=actor_resource,
+        source=organization,
+    )
+
+    triples = service.list_triple_relationships(
+        subject_uri=subject_resource.uri,
+        predicate_uri=actor_property.uri,
+        target_dataset="Akteurin",
+    )
+    assert len(triples) == 1
+    assert triples[0]["uri"] == actor_resource.uri
+    assert triples[0]["label"]
+
+
+@pytest.mark.django_db
+def test_suggest_triple_targets_returns_candidates(workspace_setup):
+    service = workspace_setup["service"]
+    organization = workspace_setup["organization"]
+
+    dataset_resource = service.get_dataset_schema("Projekt")["dataset_resource"]
+    subject_resource = Resource.objects.create(
+        uri="http://example.org/project/42",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+        name="Projekt 42",
+    )
+    anchor_property = service.get_dataset_schema("Projekt")["properties"]["projekt_id"]
+    literal = Resource.objects.create(
+        resource_type=ResourceType.LITERAL,
+        organization=organization,
+        value="Projekt 42",
+        name="Projekt 42",
+    )
+    Triple.objects.create(
+        subject=subject_resource,
+        predicate=anchor_property,
+        object=literal,
+        source=organization,
+    )
+    is_part_of = Resource.objects.get(uri="http://purl.org/dc/terms/isPartOf")
+    Triple.objects.create(
+        subject=subject_resource,
+        predicate=is_part_of,
+        object=dataset_resource,
+        source=organization,
+    )
+
+    suggestions = service.suggest_triple_targets(
+        target_dataset="Projekt",
+        query="42",
+    )
+    assert suggestions
+    assert any(item["uri"] == subject_resource.uri for item in suggestions)

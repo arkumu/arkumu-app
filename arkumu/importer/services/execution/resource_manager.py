@@ -602,10 +602,9 @@ class ResourceManager:
 
     @staticmethod
     def _dataset_defaults_to_public(dataset_name: Optional[str]) -> bool:
-        if not dataset_name:
-            return False
-        slug = slugify_uri_part(str(dataset_name)).lower()
-        return slug in {"projekt", "project"}
+        # Importer should never set entities as public by default
+        # They should be restricted until explicitly approved
+        return False
     
     def create_external_resource(self, external_uri: str, ontology_type: str) -> Resource:
         """Create or get an external ontology resource."""

@@ -10,6 +10,7 @@ from .views import (
     upload_status_view,
     file_browser_oob_views,
     upload_views,
+    file_search_views,
 )
 
 app_name = "storage"
@@ -28,6 +29,9 @@ urlpatterns = [
     path("upload/presigned/multipart/abort/", upload_views.abort_multipart_upload, name="multipart_abort"),
     path("upload/presigned/multipart/init/", upload_views.presigned_multipart_init, name="presigned_multipart_init"),
     path("upload/presigned/multipart/parts/", upload_views.presigned_multipart_part_urls, name="presigned_multipart_part_urls"),
+
+    # Search endpoints
+    path("search/verified-files/", file_search_views.verified_file_search, name="verified_file_search"),
     path("upload/presigned/batch/", upload_views.batch_presigned_urls, name="batch_presigned_urls"),
     
     # Upload session status + dismiss banner

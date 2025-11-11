@@ -65,7 +65,7 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
         class_label="Projekt",
         form_class=ProjectForm,
         template_name="metadata/entity_creation/create_project.html",
-        form_partial="metadata/entity_creation/partials/_project_form_fields.html",
+        form_partial="metadata/entity_creation/partials/_project_form_sections_v2.html",
         title="Create New Project",
         description="Fill in the details to create a new archival project",
         fields=(
@@ -115,6 +115,46 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
                 property_label="Vorschaubild",
                 value_type="entity",
             ),
+            FieldConfig(
+                field_name="verknuepfte_projekt_uris",
+                property_path="properties/verknuepftes-projekt",
+                property_label="Verknüpftes Projekt",
+                value_type="entity_multi",
+            ),
+            FieldConfig(
+                field_name="organisationseinheit_uri",
+                property_path="properties/organisationseinheit",
+                property_label="Organisationseinheit",
+                value_type="entity",
+            ),
+            FieldConfig(
+                field_name="erstellungsdatum_uri",
+                property_path="properties/erstellungsdatum",
+                property_label="Erstellungsdatum",
+            ),
+            FieldConfig(
+                field_name="letzteModifikation_uri",
+                property_path="properties/letzteModifikation",
+                property_label="Letzte Modifikation",       
+            ),
+            FieldConfig(
+                field_name="projektStatus_uri",
+                property_path="properties/projektStatus",
+                property_label="Status",
+                value_type="entity",
+            ),
+            FieldConfig(
+                field_name="signatur",
+                property_path="properties/signatur",
+                property_label="Signatur",
+                value_type="literal",   
+            ),
+            FieldConfig(
+                field_name="signaturEinlieferer",
+                property_path="properties/signaturEinlieferer",
+                property_label="Signatur beim Einlieferer",
+                value_type="literal",
+            ),
         ),
     ),
     "event": EntityCreationConfig(
@@ -124,7 +164,7 @@ ENTITY_CREATION_CONFIG: Dict[str, EntityCreationConfig] = {
         class_label="Ereignis",
         form_class=EventForm,
         template_name="metadata/entity_creation/create_event.html",
-        form_partial="metadata/entity_creation/partials/_event_form_fields.html",
+        form_partial="metadata/entity_creation/partials/_event_form_sections_v2.html",
         title="Create New Event",
         description="Fill in the details to create a new archival event",
         fields=(

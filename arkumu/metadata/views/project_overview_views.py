@@ -47,11 +47,7 @@ def _resolve_dataset_options(active_org_code: Optional[str]) -> Tuple[List[Datas
     if active_org_code:
         try:
             org = Organization.objects.filter(code=active_org_code).first()
-            mapping = (
-                Mapping.objects.filter(organization_id=active_org_code)
-                .order_by("-created_at")
-                .first()
-            )
+            mapping = Mapping.get_active_for_organization(active_org_code)
             if mapping and org:
                 workspace_service = SchemaWorkspaceService(mapping=mapping, organization=org)
                 for summary in workspace_service.list_datasets():
@@ -202,11 +198,7 @@ class ProjectOverviewCoordinatorMixin(BaseCoordinatorMixin):
             )
             return detail
 
-        mapping = (
-            Mapping.objects.filter(organization_id=organization.code)
-            .order_by("-created_at")
-            .first()
-        )
+        mapping = Mapping.get_active_for_organization(organization)
         if not mapping:
             detail["message"] = _(
                 "Für diese Organisation steht noch kein Workspace-Mapping bereit."
