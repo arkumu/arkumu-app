@@ -12,42 +12,6 @@
   <div class="w-full min-h-screen"
        data-rdf-type="http://arkumu.org/data/fuk/types/projekt"
        data-uri="{{ project.uri }}">
-    <header class="w-full py-8 px-4 transition-colors
-                 text-arkumu-dark
-                 theme-dark:text-arkumu-light
-                 theme-blue:text-arkumu-light">
-      <div class="flex items-center justify-between w-full">
-        <div class="w-48 md:w-56 lg:w-64 transition-all duration-300">
-          <a href="/catalog/browse/" class="block">
-            <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo"
-                 class="w-full h-auto transition-all duration-300 block theme-dark:hidden theme-blue:hidden">
-            <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
-                 class="w-full h-auto transition-all duration-300 hidden theme-dark:block theme-blue:hidden">
-            <img src="{% static 'images/arkumu-logo-blue.svg' %}" alt="arkumu logo"
-                 class="w-full h-auto transition-all duration-300 hidden theme-dark:hidden theme-blue:block">
-          </a>
-        </div>
-
-        <div class="flex items-center">
-          <div class="theme-buttons">
-            {% include 'components/header/theme_buttons.html' %}
-          </div>
-          <div class="w-6 md:w-8 lg:w-10"></div>
-          <div class="flex items-center space-x-4 md:space-x-5 lg:space-x-6">
-            <div class="flex flex-col items-center">
-              {% include 'components/header/search_button.html' %}
-              <span
-                class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Suche</span>
-            </div>
-            <div class="flex flex-col items-center">
-              {% include 'components/header/menu_button.html' %}
-              <span
-                class="text-xs mt-1 font-mono text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">Menü</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </header>
 
     <section class="px-4">
       <div class="w-full max-w-7xl mx-auto">
@@ -91,10 +55,10 @@
                data-rdf-property="http://arkumu.org/data/properties/projektkategorie"
                aria-label="Projektkategorien">
             {% for category in project.categories %}
-              <a tabindex="0" href="https://www.wikidata.org/wiki/{{ category }}">
+              <a tabindex="0" href="https://www.wikidata.org/wiki/{{ category.id }}">
                 <div data-rdf-type="http://arkumu.org/data/types/projektkategorie"
                      data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
-                  {% include 'components/buttons/small_secondary_button.html' with button_text=category %}
+                  {% include 'components/buttons/small_secondary_button.html' with button_text=category.name %}
                 </div>
               </a>
             {% endfor %}

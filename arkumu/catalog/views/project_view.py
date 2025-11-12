@@ -10,6 +10,8 @@ from django.http import HttpResponseBadRequest, HttpResponseNotFound
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Mapping
 
+from arkumu.catalog.models import PreviewImages
+from arkumu.catalog.services.wikidata_service import WikidataService
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
@@ -137,16 +139,56 @@ class ProjectView(LoginRequiredMixin, View):
 
     @staticmethod
     def _build_context(record: ProjectRecord) -> Dict[str, Any]:
-        image = record.image
-        if not image and record.digital_objects:
-            image = record.digital_objects[0].path
-        image = image or 'images/main/card_1.png'
+
+        image = []
+
+        # image = record.image
+        # if not image and record.digital_objects:
+        #     image = record.digital_objects[0].path
+        # image = image or 'images/main/card_1.png'
+
+        for obj in record.digital_objects:
+            if '_preview' in obj.path:
+                image.append(obj.path)
+
+
+        print(image)
+        image_preview = []
+        for candidate in image:
+            if PreviewImages.objects.filter(path=candidate).exists():
+                image_preview.append(candidate)
+        image = image_preview
+        #
+        # if valid_preview:
+        #     card["image"] = valid_preview
+        # else:
+        #     fallback_path = _object_display_path(self.digital_objects[0])
+        #     if fallback_path:
+        #         card["image"] = fallback_path
 
         alternative_title = record.alternative_titles[0].value if record.alternative_titles else ''
         catchphrases = [item.label for item in record.catchphrases if item.label]
         categories = [item.label for item in record.categories if item.label]
         digital_objects = [item.path for item in record.digital_objects if item.path]
         actors = []
+
+        categories_name = []
+        for i,w in enumerate(categories):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        categories = [
+            {"id": cid, "name": cname}
+            for cid, cname in zip(categories, categories_name)
+        ]
+
+        catchphrases_name = []
+        for i,w in enumerate(catchphrases):
+            catchphrases_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        catchphrases = [
+            {"id": cid, "name": cname}
+            for cid, cname in zip(catchphrases, catchphrases_name)
+        ]
+
+
         for actor in record.actors or []:
             if not actor:
                 continue
@@ -282,14 +324,22 @@ class ProjectView(LoginRequiredMixin, View):
         digital_object_paths = [item.path for item in record.digital_objects if item.path]
         alternative_titles = [item.value for item in record.alternative_titles if item.value]
 
-        # neu
+        categories_name = []
+        for i,w in enumerate(category_labels):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        category_labels = categories_name
+
+        categories_name = []
+        for i,w in enumerate(catchphrase_labels):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        catchphrase_labels = categories_name
+
+        # Metadata aus Deutschem und Englischem Kommentar sowie Sprache des Titels und Untertitels extrahieren
         ent = Entity(record.uri)
-        comment_de = ent.resources.get("comment_de")[0].value if ent.resources.get("comment_de") else ''
-        comment_en = ent.resources.get("comment_en")[0].value if ent.resources.get("comment_en") else ''
-        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].value if ent.resources.get(
-            "Sprache des bevorzugten Titels") else ''
-        lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].value if ent.resources.get(
-            "Sprache des bevorzugten Untertitels") else ''
+        comment_de = ent.resources.get("Deutscher Kommentar")[0].value if ent.resources.get("Deutscher Kommentar") else ''
+        comment_en = ent.resources.get("Englischer Kommentar")[0].value if ent.resources.get("Englischer Kommentar") else ''
+        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].uri if ent.resources.get("Sprache des bevorzugten Titels") else ''
+        lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].uri if ent.resources.get("Sprache des bevorzugten Untertitels") else ''
 
         # Mappe CSV-Spalten auf ProjectRecord-Eigenschaften
         metadata_entries = [

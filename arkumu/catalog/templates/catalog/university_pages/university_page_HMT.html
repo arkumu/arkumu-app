@@ -1,0 +1,139 @@
+{% extends "base_design.html" %}
+{% load static %}
+{% block title %}arkumu{% endblock title %}
+
+{% block content %}
+  <div class="w-full min-h-screen">
+    <!-- Main Content Area -->
+    <main class="w-full px-4">
+      <div class="w-full">
+        <div class="w-full transition-colors
+            bg-arkumu-light text-arkumu-dark
+            theme-dark:bg-arkumu-dark theme-dark:text-arkumu-light
+            theme-blue:bg-arkumu-light theme-blue:text-arkumu-blue">
+          <div class="container mx-auto px-6 py-12">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
+              <!-- Left side - Logo and text as image -->
+              <div class="flex-shrink-0">
+                <img src="{% static 'images/Logo_09.svg' %}"
+                     alt="Hochschule für Musik und Tanz Köln"
+                     class="w-full max-w-xs">
+              </div>
+
+              <!-- Right side - Description text -->
+              <div class="lg:col-span-2">
+                <h2 class="text-base font-medium mb-4"><b>Hochschule für Musik und Tanz Köln</b></h2>
+                <div class="space-y-4 text-sm leading-relaxed">
+                  <p>
+                    1925 gilt als das Geburtsjahr der Hochschule, wobei ihre Geschichte bereits bis ins Jahr 1845
+                    zurückreicht. So ist die HfMT nicht nur die zweitälteste Musikhochschule Deutschlands, sie zählt mit
+                    Ihren drei Standorten in Köln, Aachen und Wuppertal auch zu den größten Kunsthochschulen
+                    Europas.</p>
+                  <p>
+                    In über 50 Studienprogrammen erhalten Studierende sowohl eine exzellente Spitzen- als auch eine
+                    fundierte Breitenausbildung in den Bereichen Musik und Tanz. Eine Vielfalt an Experimentierräumen,
+                    Raum für interdisziplinären Austausch, konzentrierte und konzertierte Übung, für wissenschaftliche
+                    und künstlerische Projekte, kreative Ideen und viel Freude am Spiel zeichnen die Hochschule aus.</p>
+                  <p>
+                    Das 1965 von Herbert Eimert gegründete Studio für elektronische Musik an der HfMT Köln ist eines der
+                    ältesten Hochschulstudios in Deutschland. Es verfügt über eine umfangreiche Sammlung historisch
+                    bedeutender Tonaufnahmen sowie eine Vielzahl von technischen Geräten, die in der Entwicklung der
+                    elektronischen Musik eine zentrale Rolle spielten. Die nahezu vollständige Erfassung dieser Bestände
+                    hat dem Studio umfassende Erfahrungen in mehreren spezialisierten Bereichen eingebracht.</p>
+                  <ul class="list-disc pl-5 space-y-2">
+                    <li><b>Retrodigitalisierung von Tonaufnahmen:</b> Analoge Aufzeichnungen werden in digitale Formate
+                      überführt, um deren Zugänglichkeit für Forschung und Öffentlichkeit zu verbessern und ihre
+                      dauerhafte Bewahrung zu sichern.
+                    </li>
+                    <li><b>Erhalt der Klangqualität und historischen Authentizität:</b> Die Digitalisierungsprozesse
+                      werden so gestaltet, dass die ursprüngliche Klangqualität und Authentizität der Aufnahmen erhalten
+                      bleibt.
+                    </li>
+                    <li><b>Entwicklung von Langzeitspeicherstrategien für Musikdigitalisate:</b> Das Studio entwickelt
+                      fortgeschrittene Methoden zur langfristigen Sicherung digitaler Musikdateien, um das kulturelle
+                      Erbe effektiv zu bewahren.
+                    </li>
+                    <li><b>Emulation von historischen Musikproduktionssystemen:</b> Durch die Nachbildung alter
+                      Produktionsumgebungen und -software bietet das Studio Einblicke in historische
+                      Produktionsprozesse, die Forscher:innen und Studierenden helfen, diese zu verstehen und
+                      nachzuvollziehen.
+                    </li>
+                    <li><b>Ausbildung und Forschungsförderung:</b> Das Studio nutzt seine technischen und
+                      methodologischen Fähigkeiten, um Bildung und Forschung im Bereich der elektronischen Musik zu
+                      unterstützen und zu erweitern.
+                    </li>
+                  </ul>
+                  <p>
+                    Diese Maßnahmen tragen dazu bei, das Studio für elektronische Musik als einen wertvollen Akteur in
+                    der akademischen und kulturellen Landschaft zu etablieren, der sowohl die historische
+                    Musikproduktion bewahrt als auch innovative Bildungs- und Forschungsprojekte fördert.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% include 'components/text/blue_line.html' %}
+
+        <!-- Contact Information Component -->
+        <div class="w-full transition-colors
+            bg-arkumu-light text-arkumu-dark
+            theme-dark:bg-arkumu-dark theme-dark:text-arkumu-light
+            theme-blue:bg-arkumu-light theme-blue:text-arkumu-blue">
+          <div class="container mx-auto px-6 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <!-- Left Column -->
+              <div class="space-y-1">
+                <p class="text-sm"><b>Weitere</b></p>
+                <p class="text-sm">Informationen</p>
+              </div>
+
+              <!-- Right Column -->
+              <div class="space-y-3">
+                <!-- General Information -->
+                <div>
+                  <p class="text-sm font-medium"><b>Hochschule für Musik und Tanz Köln</b></p>
+                  <p class="text-sm">Unter Krahnenbäumen 87</p>
+                  <p class="text-sm">50668 Köln</p>
+                  <a href="https://www.hfmt-koeln.de"
+                     class="text-sm underline hover:no-underline transition-all
+                    text-arkumu-dark
+                    theme-dark:text-arkumu-light
+                    theme-blue:text-arkumu-blue">
+                    www.hfmt-koeln.de
+                  </a>
+                </div>
+
+                <!-- Library Contact -->
+                <div class="mt-4">
+                  <p class="text-sm font-medium"><b>Bibliothek der Hochschule für Musik und Tanz</b></p>
+                  <div class="mt-1">
+                    <a href="mailto:florian.siemund@hfmt-koeln.de"
+                       class="text-sm underline hover:no-underline transition-all block
+                      text-arkumu-dark
+                      theme-dark:text-arkumu-light
+                      theme-blue:text-arkumu-blue">
+                      Florian Siemund
+                    </a>
+                    <a href="mailto:Andrea.Ciocchetti@hfmt-koeln.de"
+                       class="text-sm underline hover:no-underline transition-all block
+                      text-arkumu-dark
+                      theme-dark:text-arkumu-light
+                      theme-blue:text-arkumu-blue">
+                      Andrea Ciocchetti
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% include 'components/text/blue_line.html' %}
+        <h3 class="text-lg font-medium mb-3 mt-6 px-6">Projekte der Hochschule für Musik und Tanz Köln</h3>
+        {% if results %}
+          <!-- Include with all context variables -->
+          {% include 'catalog/partials/results_container.html' %}
+        {% endif %}
+      </div>
+    </main>
+  </div>
+{% endblock content %}

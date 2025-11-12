@@ -812,6 +812,23 @@ def trigger_external_sources_refresh(request):
     )
     return redirect('metadata:metadata_dashboard')
 
+@general_login_required
+@require_POST
+def trigger_preview_images_refresh(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Only staff members can trigger external sources refreshes.')
+        return redirect('metadata:metadata_dashboard')
+
+    from arkumu.catalog.tasks import download_previews_task
+
+    download_previews_task.schedule(kwargs={"force": True}, delay=0)
+
+    messages.success(
+        request,
+        'Reload of preview images started.',
+    )
+    return redirect('metadata:metadata_dashboard')
+
 
 @general_login_required
 def oai_widget(request):
