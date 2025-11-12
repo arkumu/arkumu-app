@@ -229,15 +229,27 @@ class OAIProjectBuilder:
             if code and path
         }
 
-    def from_project_record(self, record: ProjectRecord) -> OAIProject:
+    def from_project_record(
+        self,
+        record: ProjectRecord,
+        *,
+        skip_shared_event_filter: bool = False,
+        skip_format_exclusion: bool = False,
+    ) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
 
-        # For KHM/HMT: Filter out digital objects from shared events to prevent cross-project contamination
-        filtered_record = self._filter_shared_event_objects(record, institution_code)
+        filtered_record = record
+        if not skip_shared_event_filter:
+            # For KHM/HMT: Filter out digital objects from shared events to prevent cross-project contamination
+            filtered_record = self._filter_shared_event_objects(filtered_record, institution_code)
         filtered_record = self._filter_flagged_digital_objects(filtered_record)
         filtered_record = self._filter_overarching_projects(filtered_record, institution_code)
 
-        normalized_objects = self._normalize_objects(filtered_record, institution_code)
+        normalized_objects = self._normalize_objects(
+            filtered_record,
+            institution_code,
+            skip_format_exclusion=skip_format_exclusion,
+        )
 
         return OAIProject(
             record=filtered_record,
@@ -485,12 +497,14 @@ class OAIProjectBuilder:
         self,
         record: ProjectRecord,
         institution_code: Optional[str],
+        *,
+        skip_format_exclusion: bool = False,
     ) -> List[NormalizedDigitalObject]:
         objects: List[NormalizedDigitalObject] = []
         seen: set[str] = set()
 
         for obj in getattr(record, "digital_objects", []) or []:
-            if self._should_skip_digital_object(obj, institution_code):
+            if not skip_format_exclusion and self._should_skip_digital_object(obj, institution_code):
                 logger.info(
                     "OAI digital object skipped: format excluded (org=%s path=%s file=%s)",
                     institution_code,

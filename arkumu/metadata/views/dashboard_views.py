@@ -31,8 +31,20 @@ from arkumu.users.mixins import general_login_required
 from arkumu.users.models import Organization
 from arkumu.oaipmh.models import OAIProjectMediaLink
 from arkumu.oaipmh.services import OAIProjectMediaSyncService
-from arkumu.oaipmh.views import oai_endpoint
-from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
+from arkumu.oaipmh.views import (
+    oai_endpoint,
+    oai_db_endpoint,
+    _restrict_to_harvestable_files,
+    _project_type_filter,
+)
+from arkumu.oaipmh.services.oai_project_assembler import OAIProjectAssembler, AssemblyContext
+from arkumu.oaipmh.oai_project import OAIProjectBuilder
+from arkumu.metadata.services.oai_stats import (
+    build_oai_dashboard_snapshot,
+    classify_project_access,
+    OAIDashboardSnapshot,
+    _summarize_by_institution,
+)
 from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
@@ -405,9 +417,8 @@ def all_ingest_sessions(request):
     )
 
 
-@general_login_required
-def oai_proxy(request):
-    """Proxy the OAI-PMH endpoint for authenticated dashboard users."""
+def _proxy_oai_request(request, *, handler, internal_path: str):
+    """Shared proxy helper for snapshot and DB OAI endpoints."""
 
     if request.method != "GET":
         return HttpResponseBadRequest("Only GET requests are supported")
@@ -416,7 +427,7 @@ def oai_proxy(request):
         return HttpResponseBadRequest("Missing required 'verb' parameter")
 
     query_items = [(key, value) for key, values in request.GET.lists() for value in values]
-    internal_request = _oai_proxy_request_factory.get("/oai/", data=query_items)
+    internal_request = _oai_proxy_request_factory.get(internal_path, data=query_items)
 
     # Propagate authenticated user and session context for downstream checks
     internal_request.user = request.user
@@ -432,7 +443,19 @@ def oai_proxy(request):
     internal_request.META["REMOTE_ADDR"] = "127.0.0.1"
     internal_request.META["HTTP_X_INTERNAL_OAI_BYPASS"] = "1"
 
-    return oai_endpoint(internal_request)
+    return handler(internal_request)
+
+
+@general_login_required
+def oai_proxy(request):
+    """Proxy the snapshot-backed OAI-PMH endpoint for authenticated dashboard users."""
+    return _proxy_oai_request(request, handler=oai_endpoint, internal_path="/oai/")
+
+
+@general_login_required
+def oai_db_proxy(request):
+    """Proxy the DB-backed OAI-PMH endpoint for authenticated dashboard users."""
+    return _proxy_oai_request(request, handler=oai_db_endpoint, internal_path="/oai/db/")
 
 
 @general_login_required
@@ -836,6 +859,94 @@ def oai_widget(request):
     )
 
 
+def _build_oai_endpoint_summaries(oai_snapshot):
+    endpoints = []
+    if oai_snapshot and oai_snapshot.institution_summaries:
+        for summary in oai_snapshot.institution_summaries:
+            if summary.accessible_count > 0:
+                endpoints.append(
+                    {
+                        "code": summary.code,
+                        "label": summary.label or summary.code.upper(),
+                        "project_count": summary.project_count,
+                        "accessible_count": summary.accessible_count,
+                    }
+                )
+    return endpoints
+
+
+def _build_db_oai_dashboard_snapshot() -> OAIDashboardSnapshot:
+    """Assemble DB-backed harvest stats without relying on cached snapshots."""
+
+    builder = OAIProjectBuilder()
+    assembler = OAIProjectAssembler()
+
+    # Accept any slug after /entities/projekt/, not just numeric IDs,
+    # because canonical URIs vary per institution (e.g., proj-1, khm-0001, etc.).
+    project_uri_pattern = r"/entities/projekt/[^/]+$"
+    queryset = Resource.objects.filter(
+        resource_type=ResourceType.ENTITY,
+    ).select_related("organization")
+
+    project_type_q = _project_type_filter()
+    if project_type_q is not None:
+        queryset = queryset.filter(project_type_q)
+    else:
+        queryset = queryset.filter(
+            Q(canonical_uri__regex=project_uri_pattern)
+            | Q(uri__regex=project_uri_pattern)
+        )
+
+    queryset = _restrict_to_harvestable_files(queryset).order_by("updated_at", "id")
+
+    harvestable_projects = []
+    total_objects = 0
+
+    for resource in queryset.iterator(chunk_size=100):
+        try:
+            record = assembler.build_record(AssemblyContext(resource=resource))
+        except Exception:
+            logger.exception("DB dashboard: failed to assemble record for %s", getattr(resource, "uri", "unknown"))
+            continue
+
+        if not record:
+            continue
+
+        try:
+            project = builder.from_project_record(
+                record,
+                skip_shared_event_filter=True,
+                skip_format_exclusion=True,
+            )
+        except Exception:
+            logger.exception("DB dashboard: failed to build OAI project for %s", getattr(resource, "uri", "unknown"))
+            continue
+
+        if not project.harvestable:
+            continue
+
+        harvestable_projects.append(project)
+        total_objects += sum(1 for obj in project.digital_objects if obj.harvestable)
+
+    accessible, blocked, missing = classify_project_access(harvestable_projects)
+    summaries = _summarize_by_institution(
+        harvestable_projects,
+        accessible_uris=accessible,
+        blocked_uris=blocked,
+        missing_resource_uris=missing,
+    )
+
+    return OAIDashboardSnapshot(
+        generated_at=timezone.now(),
+        total_projects=len(harvestable_projects),
+        total_accessible_projects=len(accessible),
+        total_blocked_projects=len(blocked),
+        total_missing_resources=len(missing),
+        institution_summaries=summaries,
+        total_harvestable_objects=total_objects,
+    )
+
+
 @general_login_required
 def oai_snapshot_dashboard(request):
     """Display the legacy snapshot-backed OAI endpoints."""
@@ -847,16 +958,7 @@ def oai_snapshot_dashboard(request):
         logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
 
     # Build endpoint examples for each institution
-    endpoints = []
-    if oai_snapshot and oai_snapshot.institution_summaries:
-        for summary in oai_snapshot.institution_summaries:
-            if summary.accessible_count > 0:
-                endpoints.append({
-                    'code': summary.code,
-                    'label': summary.label or summary.code.upper(),
-                    'project_count': summary.project_count,
-                    'accessible_count': summary.accessible_count,
-                })
+    endpoints = _build_oai_endpoint_summaries(oai_snapshot)
 
     return render(
         request,
@@ -878,28 +980,24 @@ def oai_db_dashboard(request):
 
     oai_snapshot = None
     try:
-        oai_snapshot = build_oai_dashboard_snapshot()
+        oai_snapshot = _build_db_oai_dashboard_snapshot()
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
+        logger.exception("Failed to build DB OAI dashboard snapshot: %s", exc)
+        oai_snapshot = None
 
     db_endpoint_url = request.build_absolute_uri(reverse('oai:db-endpoint'))
     snapshot_endpoint_url = request.build_absolute_uri(reverse('oai:endpoint'))
-    db_examples = {
-        'ListIdentifiers (METS)': f"{db_endpoint_url}?verb=ListIdentifiers&metadataPrefix=mets",
-        'ListRecords (METS)': f"{db_endpoint_url}?verb=ListRecords&metadataPrefix=mets",
-        'ListIdentifiers (Set filter)': f"{db_endpoint_url}?verb=ListIdentifiers&metadataPrefix=oai_dc&set=fuk",
-        'GetRecord (METS)': f"{db_endpoint_url}?verb=GetRecord&identifier=oai:arkumu:resource:http%3A%2F%2Farkumu.org%2Fdata%2Fentities%2Fprojekt%2F1&metadataPrefix=mets",
-    }
+    endpoints = _build_oai_endpoint_summaries(oai_snapshot)
 
     return render(
         request,
         'metadata/oai_db_dashboard.html',
         {
             'oai_snapshot': oai_snapshot,
+            'endpoints': endpoints,
             'db_endpoint_url': db_endpoint_url,
             'snapshot_endpoint_url': snapshot_endpoint_url,
-            'db_examples': db_examples,
-            'comparison_doc_path': 'docs/db_vs_snapshot_comparison.md',
+            'db_proxy_base_url': reverse('metadata:oai_db_proxy'),
         },
     )
 

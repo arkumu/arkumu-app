@@ -583,7 +583,11 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
     if record is None:
         return None
     try:
-        return project_builder.from_project_record(record)
+        return project_builder.from_project_record(
+            record,
+            skip_shared_event_filter=_db_mode_enabled(),
+            skip_format_exclusion=_db_mode_enabled(),
+        )
     except Exception:
         logger.exception("Failed to build OAI project for %s", resource.uri)
         return None
@@ -1507,14 +1511,22 @@ def _candidate_projects_for_resource(
     else:
         record = _get_snapshot_record(resource)
         if record:
-            project = project_builder.from_project_record(record)
+            project = project_builder.from_project_record(
+                record,
+                skip_shared_event_filter=_db_mode_enabled(),
+                skip_format_exclusion=_db_mode_enabled(),
+            )
             candidates.append(project)
             seen.add(project.uri)
 
     if not _db_mode_enabled():
         fallback_record = _fallback_record_from_storage(resource)
         if fallback_record:
-            fallback_project = project_builder.from_project_record(fallback_record)
+            fallback_project = project_builder.from_project_record(
+                fallback_record,
+                skip_shared_event_filter=_db_mode_enabled(),
+                skip_format_exclusion=_db_mode_enabled(),
+            )
             if fallback_project.uri not in seen:
                 candidates.append(fallback_project)
 
@@ -1528,7 +1540,11 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
     harvestable: Dict[str, OAIProject] = {}
 
     for record in snapshot.projects:
-        project = project_builder.from_project_record(record)
+        project = project_builder.from_project_record(
+            record,
+            skip_shared_event_filter=_db_mode_enabled(),
+            skip_format_exclusion=_db_mode_enabled(),
+        )
         if project.harvestable:
             harvestable[project.uri] = project
 
@@ -1582,7 +1598,11 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
             record = _fallback_record_from_storage(resource)
             if not record:
                 continue
-            project = project_builder.from_project_record(record)
+            project = project_builder.from_project_record(
+                record,
+                skip_shared_event_filter=_db_mode_enabled(),
+                skip_format_exclusion=_db_mode_enabled(),
+            )
             if not project.harvestable:
                 continue
             harvestable[project.uri] = project
@@ -2190,7 +2210,11 @@ def _build_dc_payload_from_record(
 ) -> Dict[str, List[str]]:
     """Compatibility wrapper to build DC payloads from legacy ProjectRecord inputs."""
 
-    project = project_builder.from_project_record(record)
+    project = project_builder.from_project_record(
+        record,
+        skip_shared_event_filter=_db_mode_enabled(),
+        skip_format_exclusion=_db_mode_enabled(),
+    )
     return _build_dc_payload_from_project(
         project,
         resource,
@@ -3728,7 +3752,11 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                 record = snapshot_service.get_record_by_uri(res.uri)
                 if not record:
                     return None
-                return project_builder.from_project_record(record)
+                return project_builder.from_project_record(
+                    record,
+                    skip_shared_event_filter=_db_mode_enabled(),
+                    skip_format_exclusion=_db_mode_enabled(),
+                )
 
             project_type_clause = _project_type_filter()
 
