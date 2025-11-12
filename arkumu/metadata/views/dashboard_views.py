@@ -2,6 +2,7 @@ import json
 import logging
 from collections import defaultdict
 from functools import wraps
+from urllib.parse import urlencode
 
 from django.conf import settings
 
@@ -28,6 +29,8 @@ from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.users.mixins import general_login_required
 from arkumu.users.models import Organization
+from arkumu.oaipmh.models import OAIProjectMediaLink
+from arkumu.oaipmh.services import OAIProjectMediaSyncService
 from arkumu.oaipmh.views import oai_endpoint
 from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
 from arkumu.cache.services.project_cache_service import ProjectCacheService
@@ -834,8 +837,8 @@ def oai_widget(request):
 
 
 @general_login_required
-def oai_endpoints_info(request):
-    """Display OAI-PMH endpoints information page with clickable links."""
+def oai_snapshot_dashboard(request):
+    """Display the legacy snapshot-backed OAI endpoints."""
 
     oai_snapshot = None
     try:
@@ -857,10 +860,264 @@ def oai_endpoints_info(request):
 
     return render(
         request,
-        'metadata/oai_endpoints_info.html',
+        'metadata/oai_snapshot_dashboard.html',
         {
             'endpoints': endpoints,
             'oai_snapshot': oai_snapshot,
+        },
+    )
+
+
+def oai_endpoints_info(request):  # Backwards-compat alias for legacy URL
+    return oai_snapshot_dashboard(request)
+
+
+@general_login_required
+def oai_db_dashboard(request):
+    """Describe the DB-backed OAI endpoint with quick links and parity notes."""
+
+    oai_snapshot = None
+    try:
+        oai_snapshot = build_oai_dashboard_snapshot()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
+
+    db_endpoint_url = request.build_absolute_uri(reverse('oai:db-endpoint'))
+    snapshot_endpoint_url = request.build_absolute_uri(reverse('oai:endpoint'))
+    db_examples = {
+        'ListIdentifiers (METS)': f"{db_endpoint_url}?verb=ListIdentifiers&metadataPrefix=mets",
+        'ListRecords (METS)': f"{db_endpoint_url}?verb=ListRecords&metadataPrefix=mets",
+        'ListIdentifiers (Set filter)': f"{db_endpoint_url}?verb=ListIdentifiers&metadataPrefix=oai_dc&set=fuk",
+        'GetRecord (METS)': f"{db_endpoint_url}?verb=GetRecord&identifier=oai:arkumu:resource:http%3A%2F%2Farkumu.org%2Fdata%2Fentities%2Fprojekt%2F1&metadataPrefix=mets",
+    }
+
+    return render(
+        request,
+        'metadata/oai_db_dashboard.html',
+        {
+            'oai_snapshot': oai_snapshot,
+            'db_endpoint_url': db_endpoint_url,
+            'snapshot_endpoint_url': snapshot_endpoint_url,
+            'db_examples': db_examples,
+            'comparison_doc_path': 'docs/db_vs_snapshot_comparison.md',
+        },
+    )
+
+
+def _oai_project_queryset_for_org(org: Organization):
+    access_clause = (
+        Q(public_access_level=PublicAccessLevel.RESTRICTED)
+        | (Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True))
+    )
+    return (
+        Resource.objects.filter(
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+        )
+        .filter(uri__regex=r'/entities/projekt/[0-9]+$')
+        .filter(access_clause)
+        .order_by('updated_at', 'id')
+    )
+
+
+def _redirect_to_media_links(org_code: str | None = None, *, page: str | None = None):
+    params = {}
+    if org_code:
+        params['organization'] = org_code
+    if page and page not in ('', '1'):
+        params['page'] = page
+    url = reverse('metadata:oai_media_links_dashboard')
+    if params:
+        url = f"{url}?{urlencode(params)}"
+    return redirect(url)
+
+
+def _run_media_link_seed(org: Organization) -> dict[str, int]:
+    service = OAIProjectMediaSyncService()
+    summary = {"projects": 0, "created": 0, "refreshed": 0, "stale": 0, "skipped": 0}
+    for project in _oai_project_queryset_for_org(org).iterator(chunk_size=100):
+        result = service.sync_project(project)
+        summary["projects"] += 1
+        summary["created"] += getattr(result, "created", 0)
+        summary["refreshed"] += getattr(result, "refreshed", 0)
+        summary["stale"] += getattr(result, "stale", 0)
+        summary["skipped"] += getattr(result, "skipped", 0)
+    return summary
+
+
+@general_login_required
+@require_http_methods(["GET", "POST"])
+def oai_media_links_dashboard(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organizations = list(Organization.objects.filter(is_active=True).order_by('name'))
+    org_lookup = {
+        (org.code or '').lower(): org
+        for org in organizations
+        if org.code
+    }
+
+    selected_code = (request.POST.get('organization') or request.GET.get('organization') or '').strip()
+    selected_org = org_lookup.get(selected_code.lower()) if selected_code else None
+
+    if selected_code and not selected_org:
+        messages.error(request, f"Unknown organization code '{selected_code}'.")
+
+    page_param = request.GET.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        post_page = request.POST.get('page') or '1'
+
+        if action == 'seed':
+            if not selected_org:
+                messages.error(request, 'Select an organization before running the seed process.')
+                return _redirect_to_media_links(selected_code or None)
+
+            summary = _run_media_link_seed(selected_org)
+            if summary['projects'] == 0:
+                messages.warning(
+                    request,
+                    f"No eligible projects found for organization {selected_org.code.upper()}.",
+                )
+            else:
+                messages.success(
+                    request,
+                    (
+                        f"Seeded {summary['projects']} project(s): "
+                        f"created {summary['created']}, refreshed {summary['refreshed']}, marked stale {summary['stale']}."
+                    ),
+                )
+            return _redirect_to_media_links(selected_org.code)
+
+        if action == 'update':
+            if not selected_org:
+                messages.error(request, 'Select an organization before editing media links.')
+                return _redirect_to_media_links(selected_code or None)
+
+            link_id = request.POST.get('link_id')
+            if not link_id:
+                messages.error(request, 'Missing media link identifier.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            try:
+                link = OAIProjectMediaLink.objects.select_related('project__organization').get(id=link_id)
+            except OAIProjectMediaLink.DoesNotExist:
+                messages.error(request, 'Media link not found or already deleted.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            if link.project.organization_id != selected_org.id:
+                messages.error(request, 'Media link does not belong to the selected organization.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
+            updates = set()
+            status = request.POST.get('status')
+            if status and status in valid_statuses and status != link.status:
+                link.status = status
+                updates.update({'status', 'last_reviewed_by', 'last_reviewed_at'})
+                link.last_reviewed_by = request.user
+                link.last_reviewed_at = timezone.now()
+
+            order_input = (request.POST.get('order_index') or '').strip()
+            if order_input:
+                try:
+                    new_order = int(order_input)
+                except ValueError:
+                    messages.error(request, 'Order index must be an integer.')
+                    return _redirect_to_media_links(selected_org.code, page=post_page)
+            else:
+                new_order = None
+            if new_order != link.order_index:
+                link.order_index = new_order
+                updates.add('order_index')
+
+            label_value = request.POST.get('label_override', '')
+            if label_value != (link.label_override or ''):
+                link.label_override = label_value
+                updates.add('label_override')
+
+            notes_value = request.POST.get('notes', '')
+            if notes_value != (link.notes or ''):
+                link.notes = notes_value
+                updates.add('notes')
+
+            if request.POST.get('clear_stale') == '1' and link.is_stale:
+                link.is_stale = False
+                updates.add('is_stale')
+
+            if updates:
+                updates.add('updated_at')
+                link.save(update_fields=list(updates))
+                messages.success(request, f"Updated media link for {link.project.uri}.")
+            else:
+                messages.info(request, 'No changes detected for the selected media link.')
+
+            return _redirect_to_media_links(selected_org.code, page=post_page)
+
+    selected_org_code = selected_org.code if selected_org else ''
+    links_page = None
+    status_totals = []
+    stale_count = 0
+    available_project_count = 0
+    links_total = 0
+
+    if selected_org:
+        links_qs = (
+            OAIProjectMediaLink.objects.select_related('project__organization', 'digital_object')
+            .filter(project__organization=selected_org)
+            .order_by('order_index', 'created_at')
+        )
+        paginator = Paginator(links_qs, 25)
+        if paginator.count == 0:
+            links_page = None
+            links_total = 0
+        else:
+            try:
+                links_page = paginator.page(page_number)
+            except EmptyPage:
+                links_page = paginator.page(paginator.num_pages)
+            links_total = paginator.count
+
+        raw_stats = (
+            links_qs.values('status')
+            .annotate(count=Count('id'))
+            .order_by('status')
+        )
+        status_map = dict(OAIProjectMediaLink.STATUS_CHOICES)
+        status_totals = [
+            {
+                'status': row['status'],
+                'label': status_map.get(row['status'], row['status']),
+                'count': row['count'],
+            }
+            for row in raw_stats
+        ]
+        stale_count = links_qs.filter(is_stale=True).count()
+        available_project_count = _oai_project_queryset_for_org(selected_org).count()
+    else:
+        links_page = None
+
+    return render(
+        request,
+        'metadata/oai_media_links_dashboard.html',
+        {
+            'organizations': organizations,
+            'selected_org': selected_org,
+            'selected_org_code': selected_org_code,
+            'links_page': links_page,
+            'status_choices': OAIProjectMediaLink.STATUS_CHOICES,
+            'status_totals': status_totals,
+            'stale_count': stale_count,
+            'available_project_count': available_project_count,
+            'links_total': links_total,
         },
     )
 

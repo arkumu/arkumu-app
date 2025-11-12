@@ -55,7 +55,16 @@
           <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
           <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
           {% if request.user.is_authenticated %}
-          <li><a href="{% url 'metadata:oai_endpoints_info' %}" class="{% if current_url_name == 'oai_endpoints_info' %}active{% endif %}">OAI</a></li>
+          <li>
+            <details {% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}open{% endif %}>
+              <summary class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
+              <ul class="bg-base-100 rounded-t-none p-2">
+                <li><a href="{% url 'metadata:oai_snapshot_dashboard' %}" class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info' %}active{% endif %}">Snapshot</a></li>
+                <li><a href="{% url 'metadata:oai_db_dashboard' %}" class="{% if current_url_name == 'oai_db_dashboard' %}active{% endif %}">DB</a></li>
+                <li><a href="{% url 'metadata:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
+              </ul>
+            </details>
+          </li>
           <li>
             <details>
               <summary>Metadata</summary>
@@ -94,7 +103,16 @@
         <li><a href="{% url 'home' %}" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
         <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
         {% if request.user.is_authenticated %}
-          <li><a href="{% url 'metadata:oai_endpoints_info' %}" class="{% if current_url_name == 'oai_endpoints_info' %}active{% endif %}">OAI</a></li>
+          <li>
+            <details {% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}open{% endif %}>
+              <summary class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
+              <ul class="bg-base-100 rounded-t-none p-2">
+                <li><a href="{% url 'metadata:oai_snapshot_dashboard' %}" class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info' %}active{% endif %}">Snapshot</a></li>
+                <li><a href="{% url 'metadata:oai_db_dashboard' %}" class="{% if current_url_name == 'oai_db_dashboard' %}active{% endif %}">DB</a></li>
+                <li><a href="{% url 'metadata:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
+              </ul>
+            </details>
+          </li>
           <li>
             <details>
               <summary>Metadata</summary>

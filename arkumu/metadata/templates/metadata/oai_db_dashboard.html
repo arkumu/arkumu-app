@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}OAI-PMH (DB Mode) - arkumu{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-8">
+  <div class="card bg-base-100 shadow-xl">
+    <div class="card-body">
+      <h1 class="card-title text-3xl mb-2">OAI-PMH &mdash; DB Mode</h1>
+      <p class="text-base-content/70">
+        The DB-backed endpoint assembles project graphs on demand and streams records without waiting for the 30-day snapshot rebuild.
+        Use it for parity checks, live QA, and migration dry-runs before we flip the main `/oai/` route.
+      </p>
+    </div>
+  </div>
+
+  <div class="grid gap-6 md:grid-cols-2">
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <h2 class="card-title text-xl">Live endpoint</h2>
+        <p class="text-sm text-base-content/70">All verbs served from the database-backed assembler.</p>
+        <code class="block mt-2 bg-base-200 px-3 py-2 rounded text-sm">{{ db_endpoint_url }}</code>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <h2 class="card-title text-xl">Snapshot fallback</h2>
+        <p class="text-sm text-base-content/70">Legacy `/oai/` endpoint still reading from cached snapshots.</p>
+        <code class="block mt-2 bg-base-200 px-3 py-2 rounded text-sm">{{ snapshot_endpoint_url }}</code>
+      </div>
+    </div>
+  </div>
+
+  {% if oai_snapshot %}
+  <div class="stats stats-vertical lg:stats-horizontal shadow w-full">
+    <div class="stat">
+      <div class="stat-title">Harvestable projects</div>
+      <div class="stat-value">{{ oai_snapshot.total_accessible_projects }}</div>
+      <div class="stat-desc">Snapshot baseline</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Digital objects</div>
+      <div class="stat-value">{{ oai_snapshot.total_harvestable_objects }}</div>
+      <div class="stat-desc">Across all orgs</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Institutions</div>
+      <div class="stat-value">{{ oai_snapshot.institution_summaries|length }}</div>
+      <div class="stat-desc">Active sets</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card bg-base-100 shadow">
+    <div class="card-body space-y-4">
+      <h2 class="card-title">Quick links</h2>
+      <p class="text-base-content/70 text-sm">Options open in a new tab and hit the live `/oai/db/` endpoint directly.</p>
+      <div class="grid gap-3">
+        {% for label, url in db_examples.items %}
+        <div class="flex items-center justify-between bg-base-200 rounded p-3 flex-wrap gap-3">
+          <div>
+            <p class="font-semibold text-sm">{{ label }}</p>
+            <p class="text-xs text-base-content/60 break-all">{{ url }}</p>
+          </div>
+          <a href="{{ url }}" target="_blank" class="btn btn-sm btn-primary">Open</a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow">
+    <div class="card-body space-y-4">
+      <h2 class="card-title">Parity checklist</h2>
+      <p class="text-base-content/70 text-sm">
+        Follow <code class="badge badge-ghost">{{ comparison_doc_path }}</code> to compare `/oai/` vs `/oai/db/` outputs. Capture resumption tokens, diff METS payloads, and document discrepancies per institution.
+      </p>
+      <ul class="list-disc pl-6 text-sm space-y-1">
+        <li>Run <code>ListIdentifiers</code> and <code>ListRecords</code> per set with identical date filters.</li>
+        <li>Decode resumption tokens &mdash; snapshots carry <code>snapshot</code> fields, DB mode uses <code>cursor</code> and <code>cursor_position</code>.</li>
+        <li>For each sample identifier, diff <code>GetRecord</code> (DC + METS) and confirm identical digital-object coverage.</li>
+        <li>Record metrics: response time, DB queries, mismatch counts.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
