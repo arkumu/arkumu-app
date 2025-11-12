@@ -1,0 +1,52 @@
+{% include 'metadata/partials/oai_media_links_summary.html' with summary=summary %}
+
+<div class="space-y-4 mt-4">
+  {% if builder_errors %}
+    <div class="alert alert-warning shadow">
+      <div>
+        <h3 class="font-semibold">Some projects could not load graph data.</h3>
+        <p class="text-sm">Failed URIs: {{ builder_errors|join:", " }}</p>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if project_rows %}
+    {% for row in project_rows %}
+      {% include 'metadata/partials/oai_media_links_project_row.html' with row=row summary=summary current_page=current_page status_choices=status_choices include_summary=False %}
+    {% endfor %}
+  {% else %}
+    <div class="alert alert-info shadow">
+      <span>No curated links match the current filter.</span>
+    </div>
+  {% endif %}
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="flex justify-between items-center pt-2">
+      <div class="text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      <div class="join">
+        {% if page_obj.has_previous %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'metadata:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.previous_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Prev</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Prev</button>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'metadata:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.next_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Next</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Next</button>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>

@@ -8,237 +8,64 @@
 {% endblock container_type %}
 
 {% block content %}
-
-<div class="w-full space-y-6">
+<div class="space-y-6">
   <div class="card bg-base-100 shadow">
-    <div class="card-body space-y-4">
-      <div>
-        <h1 class="card-title text-3xl">OAI Media Links</h1>
-        <p class="text-base-content/70 text-sm">Seed curated project &rarr; digital-object links and review approvals before exposing them via the tailored OAI endpoint.</p>
-      </div>
+    <div class="card-body space-y-2">
+      <h1 class="card-title text-3xl">OAI Media Links</h1>
+      <p class="text-base-content/70 text-sm">
+        Approve, annotate, and order project → digital-object links before exposing them via the tailored OAI endpoint.
+        Curated links always win over the canonical graph, so treat this dashboard as the source of truth.
+      </p>
+    </div>
+  </div>
 
-      <form method="get" class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+  <div id="oai-media-links-alerts" class="space-y-2">
+    {% include 'metadata/partials/oai_media_links_alerts.html' %}
+  </div>
+
+  <div id="oai-media-links-seed-modal"></div>
+
+  <div class="card bg-base-100 shadow">
+    <div class="card-body">
+      <form
+        hx-get="{% url 'metadata:oai_media_links_panel' %}"
+        hx-target="#oai-media-links-panel"
+        hx-swap="innerHTML"
+        hx-push-url="true"
+        class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]"
+      >
         <div>
           <label class="label" for="org-select"><span class="label-text">Organization</span></label>
           <select id="org-select" name="organization" class="select select-bordered w-full">
             <option value="">&mdash; Select organization &mdash;</option>
             {% for org in organizations %}
-              <option value="{{ org.code }}" {% if org.code == selected_org_code %}selected{% endif %}>{{ org.name }} ({{ org.code }})</option>
+              <option value="{{ org.code }}" {% if org == selected_org %}selected{% endif %}>{{ org.name }} ({{ org.code }})</option>
             {% endfor %}
           </select>
         </div>
         <div class="flex items-end">
+          <input type="hidden" name="status" value="{{ status_filter }}">
           <button type="submit" class="btn btn-primary w-full">Load links</button>
         </div>
       </form>
     </div>
   </div>
 
-  {% if selected_org %}
-  <div class="card bg-base-100 shadow">
-    <div class="card-body space-y-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <div>
-          <h2 class="card-title text-xl mb-1">Seed curated entries</h2>
-          <p class="text-sm text-base-content/70">Runs the DB-backed assembler for every harvestable project in {{ selected_org.name }}.</p>
-        </div>
-        <form method="post" class="ml-auto">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="seed">
-          <input type="hidden" name="organization" value="{{ selected_org_code }}">
-          <button type="submit" class="btn btn-outline btn-primary" {% if not available_project_count %}disabled{% endif %}>Start seed</button>
-        </form>
+  <div id="oai-media-links-summary"></div>
+
+  <div id="oai-media-links-panel">
+    {% if panel_context %}
+      {% include 'metadata/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page %}
+    {% elif selected_org %}
+      <div class="alert alert-info shadow">
+        <span>No curated links yet. Run the seed process or add a digital object manually to get started.</span>
       </div>
-      <div class="stats shadow w-full">
-        <div class="stat">
-          <div class="stat-title">Projects eligible</div>
-          <div class="stat-value text-primary">{{ available_project_count }}</div>
-          <div class="stat-desc">Matching DB-mode filters</div>
-        </div>
-        <div class="stat">
-          <div class="stat-title">Links in table</div>
-          <div class="stat-value">{{ links_total }}</div>
-          <div class="stat-desc">Including pending rows</div>
-        </div>
-        <div class="stat">
-          <div class="stat-title">Marked as stale</div>
-          <div class="stat-value text-warning">{{ stale_count }}</div>
-          <div class="stat-desc">Need curator review</div>
-        </div>
+    {% else %}
+      <div class="alert alert-info shadow">
+        <span>Select an organization to review curated media links.</span>
       </div>
-      {% if status_totals %}
-      <div class="flex flex-wrap gap-2">
-        {% for stat in status_totals %}
-          <div class="badge badge-lg {% if stat.status == 'approved' %}badge-success{% elif stat.status == 'rejected' %}badge-error{% else %}badge-neutral{% endif %}">
-            {{ stat.label }} &middot; {{ stat.count }}
-          </div>
-        {% endfor %}
-      </div>
-      {% endif %}
-    </div>
+    {% endif %}
   </div>
-  {% endif %}
-
-  {% if project_page %}
-    <div class="card bg-base-100 shadow">
-      <div class="card-body">
-        <div class="overflow-x-auto">
-          <table class="table table-zebra w-full">
-            <thead>
-              <tr>
-                <th class="min-w-[250px]">Project</th>
-                <th class="min-w-[400px]">Digital objects</th>
-                <th class="min-w-[280px]">Add object</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for project in project_page.object_list %}
-              {% with links=project.prefetched_media_links %}
-              <tr>
-                <td class="align-top">
-                  <div class="font-semibold">{{ project.name|default:"Untitled project" }}</div>
-                  <div class="font-mono text-xs break-words">{{ project.uri }}</div>
-                  <div class="text-xs text-base-content/60 mt-1">Updated {{ project.updated_at|date:"Y-m-d H:i" }}</div>
-                  <div class="mt-2 flex items-center gap-2">
-                    <span class="badge badge-outline">{{ links|length }} object{{ links|length|pluralize }}</span>
-                    <a href="{{ project.uri }}" target="_blank" rel="noopener" class="link link-primary text-xs">Open resource</a>
-                  </div>
-                </td>
-                <td class="align-top">
-                  {% if links %}
-                  <div class="space-y-3">
-                    {% for link in links %}
-                    <div class="rounded border border-base-300 bg-base-200/40 p-3 space-y-2">
-                      <div class="flex flex-wrap justify-between gap-3">
-                        <div>
-                          <p class="font-mono text-xs break-words">{{ link.digital_object.uri }}</p>
-                          <p class="text-[11px] text-base-content/60">Created {{ link.created_at|date:"Y-m-d" }}</p>
-                        </div>
-                        <div class="text-right text-[11px] space-y-1">
-                          <span class="badge {% if link.status == 'approved' %}badge-success{% elif link.status == 'rejected' %}badge-error{% else %}badge-neutral{% endif %}">{{ link.get_status_display }}</span>
-                          <div>Order: {{ link.order_index|default:"auto" }}</div>
-                          <div>Source: {{ link.get_source_display }}</div>
-                          {% if link.is_stale %}<div class="badge badge-warning badge-sm">Stale</div>{% endif %}
-                        </div>
-                      </div>
-                      <form method="post" id="update-link-{{ link.id }}" class="grid gap-2 md:grid-cols-2">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="update">
-                        <input type="hidden" name="organization" value="{{ selected_org_code }}">
-                        <input type="hidden" name="link_id" value="{{ link.id }}">
-                        <input type="hidden" name="page" value="{{ current_page }}">
-                        <label class="form-control">
-                          <span class="label-text text-xs">Status</span>
-                          <select name="status" class="select select-bordered select-xs">
-                            {% for value, label in status_choices %}
-                              <option value="{{ value }}" {% if value == link.status %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                          </select>
-                        </label>
-                        <label class="form-control">
-                          <span class="label-text text-xs">Order</span>
-                          <input type="number" name="order_index" value="{{ link.order_index|default_if_none:'' }}" class="input input-bordered input-xs" placeholder="auto">
-                        </label>
-                        <label class="form-control md:col-span-2">
-                          <span class="label-text text-xs">Label override</span>
-                          <input type="text" name="label_override" value="{{ link.label_override }}" class="input input-bordered input-xs">
-                        </label>
-                        <label class="form-control md:col-span-2">
-                          <span class="label-text text-xs">Notes</span>
-                          <textarea name="notes" rows="2" class="textarea textarea-bordered text-xs">{{ link.notes }}</textarea>
-                        </label>
-                        <label class="label cursor-pointer md:col-span-2">
-                          <span class="label-text text-xs">Clear stale flag</span>
-                          <input type="checkbox" name="clear_stale" value="1" class="checkbox checkbox-xs">
-                        </label>
-                      </form>
-                      <form method="post" id="delete-link-{{ link.id }}">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="organization" value="{{ selected_org_code }}">
-                        <input type="hidden" name="link_id" value="{{ link.id }}">
-                        <input type="hidden" name="page" value="{{ current_page }}">
-                      </form>
-                      <div class="flex flex-wrap gap-2 justify-end">
-                        <button type="submit" form="update-link-{{ link.id }}" class="btn btn-xs btn-primary">Save</button>
-                        <button type="submit" form="delete-link-{{ link.id }}" class="btn btn-xs btn-outline btn-error" onclick="return confirm('Remove this digital object from the project?');">Remove</button>
-                      </div>
-                    </div>
-                    {% endfor %}
-                  </div>
-                  {% else %}
-                  <div class="text-sm text-base-content/60">No digital objects linked yet.</div>
-                  {% endif %}
-                </td>
-                <td class="align-top">
-                  <form method="post" class="space-y-2">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="add">
-                    <input type="hidden" name="organization" value="{{ selected_org_code }}">
-                    <input type="hidden" name="project_uri" value="{{ project.uri }}">
-                    <input type="hidden" name="page" value="{{ current_page }}">
-                    <label class="form-control">
-                      <span class="label-text text-xs">Digital object URI</span>
-                      <input type="url" name="digital_uri" class="input input-bordered input-sm" placeholder="http://arkumu.org/data/entities/digital/789" required>
-                    </label>
-                    <label class="form-control">
-                      <span class="label-text text-xs">Status</span>
-                      <select name="status" class="select select-bordered select-sm">
-                        {% for value, label in status_choices %}
-                          <option value="{{ value }}" {% if value == 'pending' %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                      </select>
-                    </label>
-                    <label class="form-control">
-                      <span class="label-text text-xs">Order</span>
-                      <input type="number" name="order_index" class="input input-bordered input-sm" placeholder="auto">
-                    </label>
-                    <label class="form-control">
-                      <span class="label-text text-xs">Label override</span>
-                      <input type="text" name="label_override" class="input input-bordered input-sm">
-                    </label>
-                    <label class="form-control">
-                      <span class="label-text text-xs">Notes</span>
-                      <textarea name="notes" rows="2" class="textarea textarea-bordered text-sm"></textarea>
-                    </label>
-                    <button type="submit" class="btn btn-sm btn-secondary w-full">Add digital object</button>
-                  </form>
-                </td>
-              </tr>
-              {% endwith %}
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="flex justify-between items-center mt-4">
-          <div class="text-sm">Showing {{ project_page.start_index }}&ndash;{{ project_page.end_index }} of {{ project_total }} projects</div>
-          <div class="join">
-            {% if project_page.has_previous %}
-              <a class="btn btn-sm join-item" href="?organization={{ selected_org_code }}&page={{ project_page.previous_page_number }}">Prev</a>
-            {% else %}
-              <button class="btn btn-sm join-item" disabled>Prev</button>
-            {% endif %}
-            {% if project_page.has_next %}
-              <a class="btn btn-sm join-item" href="?organization={{ selected_org_code }}&page={{ project_page.next_page_number }}">Next</a>
-            {% else %}
-              <button class="btn btn-sm join-item" disabled>Next</button>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
-  {% elif selected_org %}
-    <div class="alert alert-info shadow">
-      <span>No curated links yet. Run the seed process or add a digital object manually to get started.</span>
-    </div>
-  {% endif %}
-
-  {% if not selected_org %}
-    <div class="alert alert-info shadow">
-      <span>Select an organization to review curated media links.</span>
-    </div>
-  {% endif %}
 </div>
 {% block container_type_end %}
 </div>

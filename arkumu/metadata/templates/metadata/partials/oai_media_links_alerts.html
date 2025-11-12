@@ -1,0 +1,9 @@
+{% if messages %}
+<div id="oai-media-links-alerts" class="space-y-2" hx-swap-oob="innerHTML">
+  {% for message in messages %}
+    <div class="alert {% if 'error' in message.tags %}alert-error{% elif 'warning' in message.tags %}alert-warning{% elif 'success' in message.tags %}alert-success{% else %}alert-info{% endif %} shadow">
+      {{ message }}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}

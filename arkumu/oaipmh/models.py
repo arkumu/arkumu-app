@@ -2,8 +2,29 @@
 
 from django.conf import settings
 from django.db import models
+from django.db.models import F
 
 from arkumu.metadata.models.resource import Resource
+
+
+class OAIProjectMediaLinkQuerySet(models.QuerySet):
+    """Custom queryset helpers for curated media links."""
+
+    def ordered(self):
+        order_expr = F("order_index").asc(nulls_last=True)
+        return self.order_by(order_expr, "created_at", "id")
+
+    def approved(self):
+        return self.filter(status=OAIProjectMediaLink.STATUS_APPROVED)
+
+    def for_project(self, project: Resource | str | None):
+        if project is None:
+            return self.none()
+        project_id = getattr(project, "pk", project)
+        return self.filter(project_id=project_id)
+
+    def approved_for_project(self, project: Resource | str | None):
+        return self.for_project(project).approved().ordered()
 
 
 class OAIProjectMediaLink(models.Model):
@@ -95,6 +116,8 @@ class OAIProjectMediaLink(models.Model):
         ]
         verbose_name = "OAI Project Media Link"
         verbose_name_plural = "OAI Project Media Links"
+
+    objects = OAIProjectMediaLinkQuerySet.as_manager()
 
     def __str__(self) -> str:  # pragma: no cover - debug helper
         return f"{self.project_id} → {self.digital_object_id} ({self.status})"

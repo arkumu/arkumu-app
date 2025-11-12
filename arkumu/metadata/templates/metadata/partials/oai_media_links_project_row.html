@@ -1,0 +1,122 @@
+<div id="project-{{ row.resource.id }}" class="card bg-base-100 shadow">
+  <div class="card-body space-y-4">
+    <div class="flex flex-wrap items-start gap-4">
+      <div class="min-w-[250px]">
+        <h3 class="text-xl font-semibold">{{ row.project_label }}</h3>
+        <div class="font-mono text-xs break-all text-base-content/70">{{ row.project_uri }}</div>
+        <div class="text-xs text-base-content/60 mt-1">Updated {{ row.resource.updated_at|date:"Y-m-d H:i" }}</div>
+      </div>
+      <div class="flex flex-wrap gap-2 ml-auto">
+        <div class="badge badge-outline">{{ row.total_links }} curated</div>
+        <div class="badge badge-outline">Harvestable {{ row.harvestable_count }}</div>
+      {% if row.warnings %}
+        {% for warning in row.warnings %}
+          <div class="badge badge-warning" title="{{ warning.message|default:'Conflict detected' }}">
+            {{ warning.code }}
+          </div>
+        {% endfor %}
+      {% endif %}
+      </div>
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div class="space-y-3">
+        {% if row.links %}
+          {% for link in row.links %}
+            {% include 'metadata/partials/oai_media_link_entry.html' with link=link row=row current_page=current_page %}
+          {% endfor %}
+        {% else %}
+          <div class="alert alert-info shadow">
+            <span>No links in the "{{ row.status_filter }}" filter for this project.</span>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="space-y-4">
+        <div class="card bg-base-200">
+          <div class="card-body space-y-2">
+            <h4 class="font-semibold text-sm">Add digital object</h4>
+            <form
+              hx-post="{% url 'metadata:oai_media_link_add' %}"
+              hx-target="#project-{{ row.resource.id }}"
+              hx-swap="outerHTML"
+              class="space-y-2"
+            >
+              {% csrf_token %}
+              <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
+              <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
+              <input type="hidden" name="page" value="{{ current_page }}">
+              <label class="form-control">
+                <span class="label-text text-xs">Project URI</span>
+                <input type="text" name="project_uri" value="{{ row.project_uri }}" class="input input-bordered input-sm w-full" readonly>
+              </label>
+              <label class="form-control">
+                <span class="label-text text-xs">Digital object URI</span>
+                <input type="text" name="digital_uri" class="input input-bordered input-sm w-full" placeholder="https://...">
+              </label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="form-control">
+                  <span class="label-text text-xs">Status</span>
+                  <select name="status" class="select select-bordered select-sm">
+                    {% for value,label in status_choices %}
+                      <option value="{{ value }}" {% if value == 'pending' %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label class="form-control">
+                  <span class="label-text text-xs">Order</span>
+                  <input type="number" name="order_index" class="input input-bordered input-sm" min="1">
+                </label>
+              </div>
+              <label class="form-control">
+                <span class="label-text text-xs">Label override</span>
+                <input type="text" name="label_override" class="input input-bordered input-sm">
+              </label>
+              <label class="form-control">
+                <span class="label-text text-xs">Notes</span>
+                <textarea name="notes" rows="2" class="textarea textarea-bordered text-sm"></textarea>
+              </label>
+              <button type="submit" class="btn btn-sm btn-secondary w-full">Add digital object</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card bg-base-200">
+          <div class="card-body space-y-2">
+            <h4 class="font-semibold text-sm">Graph diff</h4>
+            <div class="text-xs space-y-1">
+              <div>
+                <span class="font-semibold">Uncurated in graph:</span>
+                {% if row.graph_only_uris %}
+                  <ul class="list-disc list-inside">
+                    {% for uri in row.graph_only_uris %}
+                      <li class="break-all">{{ uri }}</li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <span class="text-base-content/60">None detected.</span>
+                {% endif %}
+              </div>
+              <div>
+                <span class="font-semibold">Curated but missing:</span>
+                {% if row.curated_missing_uris %}
+                  <ul class="list-disc list-inside">
+                    {% for uri in row.curated_missing_uris %}
+                      <li class="break-all">{{ uri }}</li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <span class="text-base-content/60">None detected.</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% include 'metadata/partials/oai_media_links_alerts.html' %}
+{% if include_summary %}
+  {% include 'metadata/partials/oai_media_links_summary.html' with summary=summary %}
+{% endif %}

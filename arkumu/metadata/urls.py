@@ -27,6 +27,7 @@ from arkumu.metadata.views import controlled_vocabulary_views
 #     BulkArkumuMappingDeleteView
 # )
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
+from arkumu.oaipmh import views as oai_views
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 
 # Use optimized views for better performance
@@ -76,6 +77,13 @@ urlpatterns = [
     path('oai/snapshot/', dashboard_views.oai_snapshot_dashboard, name='oai_snapshot_dashboard'),
     path('oai/db/', dashboard_views.oai_db_dashboard, name='oai_db_dashboard'),
     path('oai/media-links/', dashboard_views.oai_media_links_dashboard, name='oai_media_links_dashboard'),
+    path('oai/media-links/panel/', dashboard_views.oai_media_links_panel, name='oai_media_links_panel'),
+    path('oai/media-links/link/<int:link_id>/update/', dashboard_views.oai_media_link_update, name='oai_media_link_update'),
+    path('oai/media-links/link/<int:link_id>/delete/', dashboard_views.oai_media_link_delete, name='oai_media_link_delete'),
+    path('oai/media-links/link/add/', dashboard_views.oai_media_link_add, name='oai_media_link_add'),
+    path('oai/media-links/seed/preview/', dashboard_views.oai_media_link_seed_preview, name='oai_media_link_seed_preview'),
+    path('oai/media-links/seed/run/', dashboard_views.oai_media_link_seed_execute, name='oai_media_link_seed_execute'),
+    path('api/oai_tailored/', oai_views.oai_tailored_endpoint, name='metadata_oai_tailored_endpoint'),
     # Legacy URL for backwards compatibility
     path('oai-endpoints/', dashboard_views.oai_endpoints_info, name='oai_endpoints_info'),
 

@@ -424,6 +424,7 @@ snapshot_service = ProjectSnapshotService()
 project_builder = OAIProjectBuilder()
 _db_assembler_override: ContextVar[Optional[bool]] = ContextVar("oai_db_mode_override", default=None)
 _db_project_assembler_instance: Optional[OAIProjectAssembler] = None
+_curated_link_override: ContextVar[bool] = ContextVar("oai_curated_link_override", default=False)
 
 # Register stable namespace prefixes so ElementTree uses human-friendly tags
 ET.register_namespace("oai_dc", OAI_DC_NS)
@@ -531,6 +532,19 @@ def _force_db_mode(state: bool):
         _db_assembler_override.reset(token)
 
 
+def _curated_links_enabled() -> bool:
+    return bool(_curated_link_override.get() or _db_mode_enabled())
+
+
+@contextmanager
+def _force_curated_links(state: bool):
+    token = _curated_link_override.set(state)
+    try:
+        yield
+    finally:
+        _curated_link_override.reset(token)
+
+
 @dataclass
 class HarvestPageResult:
     resources: List[Resource]
@@ -587,6 +601,7 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
             record,
             skip_shared_event_filter=_db_mode_enabled(),
             skip_format_exclusion=_db_mode_enabled(),
+            use_curated_media_links=_curated_links_enabled(),
         )
     except Exception:
         logger.exception("Failed to build OAI project for %s", resource.uri)
@@ -1515,6 +1530,7 @@ def _candidate_projects_for_resource(
                 record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),
+                use_curated_media_links=_curated_links_enabled(),
             )
             candidates.append(project)
             seen.add(project.uri)
@@ -1526,6 +1542,7 @@ def _candidate_projects_for_resource(
                 fallback_record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),
+                use_curated_media_links=_curated_links_enabled(),
             )
             if fallback_project.uri not in seen:
                 candidates.append(fallback_project)
@@ -1544,6 +1561,7 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
             record,
             skip_shared_event_filter=_db_mode_enabled(),
             skip_format_exclusion=_db_mode_enabled(),
+            use_curated_media_links=_curated_links_enabled(),
         )
         if project.harvestable:
             harvestable[project.uri] = project
@@ -1602,6 +1620,7 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
                 record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),
+                use_curated_media_links=_curated_links_enabled(),
             )
             if not project.harvestable:
                 continue
@@ -2214,6 +2233,7 @@ def _build_dc_payload_from_record(
         record,
         skip_shared_event_filter=_db_mode_enabled(),
         skip_format_exclusion=_db_mode_enabled(),
+        use_curated_media_links=_curated_links_enabled(),
     )
     return _build_dc_payload_from_project(
         project,
@@ -2416,11 +2436,12 @@ def _build_simplified_mets_from_project(
             f"{{{XLINK_NS}}}href": href,
             f"{{{XLINK_NS}}}type": "simple",
         }
-        if obj.file_name:
-            flocat_attrs[f"{{{XLINK_NS}}}title"] = obj.file_name
+        label_value = obj.display_label or obj.file_name
+        if label_value:
+            flocat_attrs[f"{{{XLINK_NS}}}title"] = label_value
         ET.SubElement(file_element, ET.QName(METS_NS, "FLocat"), flocat_attrs)
 
-        file_label = obj.file_name or f"Digital Object {index}"
+        file_label = obj.display_label or obj.file_name or f"Digital Object {index}"
         file_div = ET.SubElement(
             struct_root,
             ET.QName(METS_NS, "div"),
@@ -2667,11 +2688,12 @@ def _build_mets_from_project(
             file_id = f"fid-{rep_index}-{file_index}"
             file_counter += 1
             preferred_location = obj.preferred_location or ""
-            file_label_source = obj.file_name or preferred_location or obj.original_path or f"Digital Object {file_index}"
+            preferred_label = obj.display_label or obj.file_name
+            file_label_source = preferred_label or preferred_location or obj.original_path or f"Digital Object {file_index}"
             label_normalized = _normalize_reference(file_label_source)
             file_label = label_normalized or file_label_source
-            if obj.file_name:
-                file_label = obj.file_name
+            if preferred_label:
+                file_label = preferred_label
 
             file_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
             file_tech = ET.SubElement(file_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
@@ -2683,7 +2705,7 @@ def _build_mets_from_project(
             _create_dnx_element(characteristics_record, "key", {"id": "objectType"}, "FILE")
 
             general_keys: List[tuple[str, str]] = []
-            label_value = obj.file_name or file_label
+            label_value = preferred_label or file_label
             if label_value:
                 general_keys.append(("label", label_value))
             if obj.file_name:
@@ -2847,7 +2869,7 @@ def _build_mets_from_project(
                 identifier_elem.text = obj.uuid
                 identifier_elem.set(ET.QName(XML_NS, "type"), "Digital-Object-ID")
 
-            file_title = obj.file_name or file_label
+            file_title = obj.display_label or obj.file_name or file_label
             if file_title:
                 title_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "title"))
                 title_elem.text = file_title
@@ -3756,6 +3778,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                     record,
                     skip_shared_event_filter=_db_mode_enabled(),
                     skip_format_exclusion=_db_mode_enabled(),
+                    use_curated_media_links=_curated_links_enabled(),
                 )
 
             project_type_clause = _project_type_filter()
@@ -3904,5 +3927,12 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
-    with _force_db_mode(True):
+    with _force_db_mode(True), _force_curated_links(True):
+        return _handle_oai_request(request)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
+    with _force_db_mode(True), _force_curated_links(True):
         return _handle_oai_request(request)

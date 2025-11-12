@@ -2,14 +2,15 @@ import json
 import logging
 from collections import defaultdict
 from functools import wraps
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
 from django.conf import settings
 
 from django.contrib import messages
 from django.core.management import call_command
-from django.db import models
-from django.db.models import Count, Q, Prefetch, Max
+from django.db import models, transaction
+from django.db.models import Count, Q, Prefetch, Max, F
 from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1018,18 +1019,6 @@ def _oai_project_queryset_for_org(org: Organization):
     )
 
 
-def _redirect_to_media_links(org_code: str | None = None, *, page: str | None = None):
-    params = {}
-    if org_code:
-        params['organization'] = org_code
-    if page and page not in ('', '1'):
-        params['page'] = page
-    url = reverse('metadata:oai_media_links_dashboard')
-    if params:
-        url = f"{url}?{urlencode(params)}"
-    return redirect(url)
-
-
 def _run_media_link_seed(org: Organization) -> dict[str, int]:
     service = OAIProjectMediaSyncService()
     summary = {"projects": 0, "created": 0, "refreshed": 0, "stale": 0, "skipped": 0}
@@ -1044,7 +1033,7 @@ def _run_media_link_seed(org: Organization) -> dict[str, int]:
 
 
 @general_login_required
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["GET"])
 def oai_media_links_dashboard(request):
     if not request.user.is_staff:
         return HttpResponseForbidden(
@@ -1058,257 +1047,25 @@ def oai_media_links_dashboard(request):
         if org.code
     }
 
-    selected_code = (request.POST.get('organization') or request.GET.get('organization') or '').strip()
-    selected_org = org_lookup.get(selected_code.lower()) if selected_code else None
-
+    selected_code = (request.GET.get('organization') or '').strip().lower()
+    selected_org = org_lookup.get(selected_code) if selected_code else None
     if selected_code and not selected_org:
         messages.error(request, f"Unknown organization code '{selected_code}'.")
 
+    status_filter = _normalized_media_link_status(request.GET.get('status'))
     page_param = request.GET.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
     except ValueError:
         page_number = 1
 
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        post_page = request.POST.get('page') or '1'
-
-        if action == 'seed':
-            if not selected_org:
-                messages.error(request, 'Select an organization before running the seed process.')
-                return _redirect_to_media_links(selected_code or None)
-
-            summary = _run_media_link_seed(selected_org)
-            if summary['projects'] == 0:
-                messages.warning(
-                    request,
-                    f"No eligible projects found for organization {selected_org.code.upper()}.",
-                )
-            else:
-                messages.success(
-                    request,
-                    (
-                        f"Seeded {summary['projects']} project(s): "
-                        f"created {summary['created']}, refreshed {summary['refreshed']}, marked stale {summary['stale']}."
-                    ),
-                )
-            return _redirect_to_media_links(selected_org.code)
-
-        if action == 'update':
-            if not selected_org:
-                messages.error(request, 'Select an organization before editing media links.')
-                return _redirect_to_media_links(selected_code or None)
-
-            link_id = request.POST.get('link_id')
-            if not link_id:
-                messages.error(request, 'Missing media link identifier.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            try:
-                link = OAIProjectMediaLink.objects.select_related('project__organization').get(id=link_id)
-            except OAIProjectMediaLink.DoesNotExist:
-                messages.error(request, 'Media link not found or already deleted.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            if link.project.organization_id != selected_org.id:
-                messages.error(request, 'Media link does not belong to the selected organization.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
-            updates = set()
-            status = request.POST.get('status')
-            if status and status in valid_statuses and status != link.status:
-                link.status = status
-                updates.update({'status', 'last_reviewed_by', 'last_reviewed_at'})
-                link.last_reviewed_by = request.user
-                link.last_reviewed_at = timezone.now()
-
-            order_input = (request.POST.get('order_index') or '').strip()
-            if order_input:
-                try:
-                    new_order = int(order_input)
-                except ValueError:
-                    messages.error(request, 'Order index must be an integer.')
-                    return _redirect_to_media_links(selected_org.code, page=post_page)
-            else:
-                new_order = None
-            if new_order != link.order_index:
-                link.order_index = new_order
-                updates.add('order_index')
-
-            label_value = request.POST.get('label_override', '')
-            if label_value != (link.label_override or ''):
-                link.label_override = label_value
-                updates.add('label_override')
-
-            notes_value = request.POST.get('notes', '')
-            if notes_value != (link.notes or ''):
-                link.notes = notes_value
-                updates.add('notes')
-
-            if request.POST.get('clear_stale') == '1' and link.is_stale:
-                link.is_stale = False
-                updates.add('is_stale')
-
-            if updates:
-                updates.add('updated_at')
-                link.save(update_fields=list(updates))
-                messages.success(request, f"Updated media link for {link.project.uri}.")
-            else:
-                messages.info(request, 'No changes detected for the selected media link.')
-
-            return _redirect_to_media_links(selected_org.code, page=post_page)
-
-        if action == 'delete':
-            if not selected_org:
-                messages.error(request, 'Select an organization before editing media links.')
-                return _redirect_to_media_links(selected_code or None)
-
-            link_id = request.POST.get('link_id')
-            if not link_id:
-                messages.error(request, 'Missing media link identifier.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            try:
-                link = OAIProjectMediaLink.objects.select_related('project__organization').get(id=link_id)
-            except OAIProjectMediaLink.DoesNotExist:
-                messages.error(request, 'Media link not found or already deleted.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            if link.project.organization_id != selected_org.id:
-                messages.error(request, 'Media link does not belong to the selected organization.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            link.delete()
-            messages.success(
-                request,
-                f"Removed digital object {link.digital_object.uri} from project {link.project.uri}.",
-            )
-            return _redirect_to_media_links(selected_org.code, page=post_page)
-
-        if action == 'add':
-            if not selected_org:
-                messages.error(request, 'Select an organization before adding media links.')
-                return _redirect_to_media_links(selected_code or None)
-
-            project_uri = (request.POST.get('project_uri') or '').strip()
-            digital_uri = (request.POST.get('digital_uri') or '').strip()
-            if not project_uri or not digital_uri:
-                messages.error(request, 'Project URI and digital object URI are required.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            project = Resource.objects.filter(
-                organization=selected_org,
-                uri=project_uri,
-                resource_type=ResourceType.ENTITY,
-            ).first()
-            if not project:
-                messages.error(request, f"Project '{project_uri}' was not found for {selected_org.code.upper()}.")
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            digital_object = Resource.objects.filter(
-                uri=digital_uri,
-                resource_type=ResourceType.ENTITY,
-            ).first()
-            if not digital_object:
-                messages.error(request, f"Digital object '{digital_uri}' was not found.")
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            exists = OAIProjectMediaLink.objects.filter(
-                project=project,
-                digital_object=digital_object,
-            ).exists()
-            if exists:
-                messages.warning(request, 'This digital object is already linked to the selected project.')
-                return _redirect_to_media_links(selected_org.code, page=post_page)
-
-            valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
-            status = request.POST.get('status') or OAIProjectMediaLink.STATUS_PENDING
-            if status not in valid_statuses:
-                status = OAIProjectMediaLink.STATUS_PENDING
-
-            order_input = (request.POST.get('order_index') or '').strip()
-            if order_input:
-                try:
-                    order_index = int(order_input)
-                except ValueError:
-                    messages.error(request, 'Order index must be an integer.')
-                    return _redirect_to_media_links(selected_org.code, page=post_page)
-            else:
-                max_order = (
-                    OAIProjectMediaLink.objects.filter(project=project)
-                    .aggregate(value=Max('order_index'))
-                    .get('value')
-                )
-                order_index = (max_order or 0) + 1
-
-            link = OAIProjectMediaLink.objects.create(
-                project=project,
-                digital_object=digital_object,
-                status=status,
-                order_index=order_index,
-                label_override=request.POST.get('label_override', ''),
-                notes=request.POST.get('notes', ''),
-            )
-            messages.success(
-                request,
-                f"Linked digital object {link.digital_object.uri} to project {project.uri}.",
-            )
-            return _redirect_to_media_links(selected_org.code, page=post_page)
-
-    selected_org_code = selected_org.code if selected_org else ''
-    project_page = None
-    status_totals: list[dict[str, object]] = []
-    stale_count = 0
-    available_project_count = 0
-    links_total = 0
-    project_total = 0
-
+    panel_context = None
     if selected_org:
-        link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=selected_org)
-        links_total = link_base_qs.count()
-
-        raw_stats = (
-            link_base_qs.values('status')
-            .annotate(count=Count('id'))
-            .order_by('status')
+        panel_context = _build_media_links_panel_context(
+            organization=selected_org,
+            status_filter=status_filter,
+            page_number=page_number,
         )
-        status_map = dict(OAIProjectMediaLink.STATUS_CHOICES)
-        status_totals = [
-            {
-                'status': row['status'],
-                'label': status_map.get(row['status'], row['status']),
-                'count': row['count'],
-            }
-            for row in raw_stats
-        ]
-        stale_count = link_base_qs.filter(is_stale=True).count()
-        available_project_count = _oai_project_queryset_for_org(selected_org).count()
-
-        project_prefetch = Prefetch(
-            'oai_media_links',
-            queryset=link_base_qs.select_related('digital_object').order_by('order_index', 'created_at'),
-            to_attr='prefetched_media_links',
-        )
-        projects_qs = (
-            Resource.objects.filter(organization=selected_org, resource_type=ResourceType.ENTITY)
-            .prefetch_related(project_prefetch)
-            .filter(oai_media_links__isnull=False)
-            .distinct()
-            .order_by('-updated_at', 'uri')
-        )
-        project_paginator = Paginator(projects_qs, 8)
-        project_total = project_paginator.count
-        if project_total:
-            try:
-                project_page = project_paginator.page(page_number)
-            except EmptyPage:
-                project_page = project_paginator.page(project_paginator.num_pages)
-    else:
-        project_page = None
-
-    current_page = project_page.number if project_page else 1
 
     return render(
         request,
@@ -1316,18 +1073,597 @@ def oai_media_links_dashboard(request):
         {
             'organizations': organizations,
             'selected_org': selected_org,
-            'selected_org_code': selected_org_code,
-            'project_page': project_page,
-            'project_total': project_total,
-            'current_page': current_page,
+            'selected_org_code': selected_org.code if selected_org else '',
             'status_choices': OAIProjectMediaLink.STATUS_CHOICES,
-            'status_totals': status_totals,
-            'stale_count': stale_count,
-            'available_project_count': available_project_count,
-            'links_total': links_total,
+            'status_filter': status_filter,
+            'panel_context': panel_context,
         },
     )
 
+MEDIA_LINKS_PAGE_SIZE = 6
+
+
+def _normalized_media_link_status(value: Optional[str]) -> str:
+    if not value:
+        return "all"
+    token = value.strip().lower()
+    valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
+    if token in valid_statuses:
+        return token
+    return "all"
+
+
+def _resolve_organization_by_code(code: Optional[str]) -> Optional[Organization]:
+    if not code:
+        return None
+    return Organization.objects.filter(code__iexact=str(code).strip()).first()
+
+
+def _media_link_prefetch_queryset(org: Organization):
+    return (
+        OAIProjectMediaLink.objects.filter(project__organization=org)
+        .select_related('digital_object')
+        .annotate(
+            other_project_refs=Count(
+                'digital_object__oai_media_references',
+                filter=~Q(digital_object__oai_media_references__project_id=F('project_id')),
+                distinct=True,
+            )
+        )
+        .ordered()
+    )
+
+
+def _build_media_links_summary(
+    organization: Organization,
+    link_qs,
+    *,
+    status_filter: str,
+) -> dict[str, Any]:
+    links_total = link_qs.count()
+    filtered_total = links_total if status_filter == "all" else link_qs.filter(status=status_filter).count()
+    raw_stats = (
+        link_qs.values('status')
+        .annotate(count=Count('id'))
+        .order_by('status')
+    )
+    status_map = dict(OAIProjectMediaLink.STATUS_CHOICES)
+    status_totals = [
+        {
+            "status": row["status"],
+            "label": status_map.get(row["status"], row["status"]),
+            "count": row["count"],
+        }
+        for row in raw_stats
+    ]
+    return {
+        "links_total": links_total,
+        "filtered_links_total": filtered_total,
+        "status_totals": status_totals,
+        "stale_count": link_qs.filter(is_stale=True).count(),
+        "available_project_count": _oai_project_queryset_for_org(organization).count(),
+        "selected_org_code": organization.code or "",
+        "organization": organization,
+        "status_filter": status_filter,
+    }
+
+
+def _build_project_row_context(
+    resource: Resource,
+    *,
+    builder: OAIProjectBuilder,
+    assembler: OAIProjectAssembler,
+    status_filter: str,
+    org_code: str,
+) -> dict[str, Any]:
+    prefetched_links: List[OAIProjectMediaLink] = list(getattr(resource, "prefetched_media_links", []) or [])
+    filtered_links = (
+        prefetched_links
+        if status_filter == "all"
+        else [link for link in prefetched_links if link.status == status_filter]
+    )
+
+    row = {
+        "resource": resource,
+        "project_uri": resource.uri,
+        "project_label": resource.name or "Untitled project",
+        "links": filtered_links,
+        "total_links": len(prefetched_links),
+        "selected_org_code": org_code,
+        "status_filter": status_filter,
+        "builder_error": False,
+        "graph_only_uris": (),
+        "curated_missing_uris": (),
+        "warnings": (),
+        "harvestable_count": 0,
+        "curated_selection": None,
+    }
+
+    context = AssemblyContext(resource=resource)
+    try:
+        record = assembler.build_record(context)
+    except Exception:
+        logger.exception("Failed to assemble project record for %s", resource.uri)
+        row["builder_error"] = True
+        return row
+
+    if record is None:
+        row["builder_error"] = True
+        return row
+
+    try:
+        curated_project = builder.from_project_record(
+            record,
+            skip_shared_event_filter=True,
+            skip_format_exclusion=True,
+            use_curated_media_links=True,
+        )
+    except Exception:
+        logger.exception("Failed to build curated project view for %s", resource.uri)
+        row["builder_error"] = True
+        return row
+
+    row["harvestable_count"] = sum(1 for obj in curated_project.digital_objects if obj.harvestable)
+    selection = curated_project.curated_selection
+    if selection:
+        row["curated_selection"] = selection
+        row["graph_only_uris"] = selection.graph_only_uris
+        row["curated_missing_uris"] = selection.curated_missing_uris
+        row["warnings"] = selection.warnings
+
+    return row
+
+
+def _build_media_links_panel_context(
+    *,
+    organization: Organization,
+    status_filter: str,
+    page_number: int,
+) -> dict[str, Any]:
+    link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
+    summary = _build_media_links_summary(
+        organization,
+        link_base_qs,
+        status_filter=status_filter,
+    )
+
+    project_prefetch = Prefetch(
+        'oai_media_links',
+        queryset=_media_link_prefetch_queryset(organization),
+        to_attr='prefetched_media_links',
+    )
+    projects_qs = (
+        Resource.objects.filter(organization=organization, resource_type=ResourceType.ENTITY)
+        .prefetch_related(project_prefetch)
+        .filter(oai_media_links__isnull=False)
+        .distinct()
+        .order_by('-updated_at', 'uri')
+    )
+    if status_filter != "all":
+        projects_qs = projects_qs.filter(oai_media_links__status=status_filter)
+
+    paginator = Paginator(projects_qs, MEDIA_LINKS_PAGE_SIZE)
+    page_obj = paginator.get_page(page_number)
+
+    builder = OAIProjectBuilder()
+    assembler = OAIProjectAssembler()
+    rows: List[dict[str, Any]] = []
+    builder_errors: List[str] = []
+
+    for project_resource in page_obj.object_list:
+        row = _build_project_row_context(
+            project_resource,
+            builder=builder,
+            assembler=assembler,
+            status_filter=status_filter,
+            org_code=organization.code or "",
+        )
+        if row["builder_error"]:
+            builder_errors.append(project_resource.uri)
+        rows.append(row)
+
+    return {
+        "selected_org": organization,
+        "selected_org_code": organization.code or "",
+        "status_filter": status_filter,
+        "summary": summary,
+        "project_rows": rows,
+        "project_total": paginator.count,
+        "current_page": page_obj.number,
+        "page_obj": page_obj,
+        "per_page": MEDIA_LINKS_PAGE_SIZE,
+        "builder_errors": builder_errors,
+        "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
+    }
+
+
+def _build_single_project_row_context(
+    *,
+    organization: Organization,
+    project_id: Any,
+    status_filter: str,
+) -> Optional[dict[str, Any]]:
+    project_prefetch = Prefetch(
+        'oai_media_links',
+        queryset=_media_link_prefetch_queryset(organization),
+        to_attr='prefetched_media_links',
+    )
+    resource = (
+        Resource.objects.filter(organization=organization, id=project_id, resource_type=ResourceType.ENTITY)
+        .prefetch_related(project_prefetch)
+        .first()
+    )
+    if not resource:
+        return None
+
+    builder = OAIProjectBuilder()
+    assembler = OAIProjectAssembler()
+    return _build_project_row_context(
+        resource,
+        builder=builder,
+        assembler=assembler,
+        status_filter=status_filter,
+        org_code=organization.code or "",
+    )
+
+
+def _render_project_row_response(
+    request,
+    *,
+    organization: Organization,
+    project_id: Any,
+    status_filter: str,
+    page_number: int,
+):
+    row = _build_single_project_row_context(
+        organization=organization,
+        project_id=project_id,
+        status_filter=status_filter,
+    )
+    if row is None:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Unable to load project row.</div>")
+
+    summary = _build_media_links_summary(
+        organization,
+        OAIProjectMediaLink.objects.filter(project__organization=organization),
+        status_filter=status_filter,
+    )
+    context = {
+        "row": row,
+        "summary": summary,
+        "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
+        "current_page": page_number,
+        "include_summary": True,
+    }
+    return render(request, 'metadata/partials/oai_media_links_project_row.html', context)
+
+
+def _preview_media_link_seed(org: Organization) -> dict[str, int]:
+    service = OAIProjectMediaSyncService()
+    summary = {"projects": 0, "created": 0, "refreshed": 0, "stale": 0, "skipped": 0}
+    with transaction.atomic():
+        for project in _oai_project_queryset_for_org(org).iterator(chunk_size=100):
+            result = service.sync_project(project)
+            summary["projects"] += 1
+            summary["created"] += getattr(result, "created", 0)
+            summary["refreshed"] += getattr(result, "refreshed", 0)
+            summary["stale"] += getattr(result, "stale", 0)
+            summary["skipped"] += getattr(result, "skipped", 0)
+        transaction.set_rollback(True)
+    return summary
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def oai_media_links_panel(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.GET.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select a valid organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.GET.get('status'))
+    page_param = request.GET.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        status_filter=status_filter,
+        page_number=page_number,
+    )
+    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    return render(request, 'metadata/partials/oai_media_links_panel.html', panel_context)
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def oai_media_link_update(request, link_id):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.POST.get('status_filter'))
+    page_param = request.POST.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    try:
+        link = OAIProjectMediaLink.objects.select_related('project__organization').get(id=link_id)
+    except OAIProjectMediaLink.DoesNotExist:
+        messages.error(request, 'Media link not found or already deleted.')
+        return HttpResponseBadRequest("<div class='alert alert-error'>Media link not found.</div>")
+
+    if link.project.organization_id != organization.id:
+        return HttpResponseForbidden("<div class='alert alert-error'>Permission denied for this media link.</div>")
+
+    valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
+    updates: set[str] = set()
+
+    requested_status = request.POST.get('status')
+    current_status = request.POST.get('current_status') or link.status
+    new_status = requested_status if requested_status in valid_statuses else current_status
+    if new_status in valid_statuses and new_status != link.status:
+        link.status = new_status
+        link.last_reviewed_by = request.user
+        link.last_reviewed_at = timezone.now()
+        updates.update({'status', 'last_reviewed_by', 'last_reviewed_at'})
+
+    order_input = (request.POST.get('order_index') or '').strip()
+    if order_input:
+        try:
+            order_value = int(order_input)
+        except ValueError:
+            return HttpResponseBadRequest("<div class='alert alert-error'>Order index must be an integer.</div>")
+    else:
+        order_value = None
+    if order_value != link.order_index:
+        link.order_index = order_value
+        updates.add('order_index')
+
+    label_value = request.POST.get('label_override', '')
+    if label_value != (link.label_override or ''):
+        link.label_override = label_value
+        updates.add('label_override')
+
+    notes_value = request.POST.get('notes', '')
+    if notes_value != (link.notes or ''):
+        link.notes = notes_value
+        updates.add('notes')
+
+    if request.POST.get('clear_stale') == '1' and link.is_stale:
+        link.is_stale = False
+        updates.add('is_stale')
+
+    if updates:
+        updates.add('updated_at')
+        link.save(update_fields=list(updates))
+        messages.success(request, f"Updated media link for {link.project.uri}.")
+    else:
+        messages.info(request, 'No changes detected for the selected media link.')
+
+    return _render_project_row_response(
+        request,
+        organization=organization,
+        project_id=link.project_id,
+        status_filter=status_filter,
+        page_number=page_number,
+    )
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def oai_media_link_delete(request, link_id):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.POST.get('status_filter'))
+    page_param = request.POST.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    try:
+        link = OAIProjectMediaLink.objects.select_related('project__organization').get(id=link_id)
+    except OAIProjectMediaLink.DoesNotExist:
+        messages.error(request, 'Media link not found or already deleted.')
+        return HttpResponseBadRequest("<div class='alert alert-error'>Media link not found.</div>")
+
+    if link.project.organization_id != organization.id:
+        return HttpResponseForbidden("<div class='alert alert-error'>Permission denied for this media link.</div>")
+
+    project_id = link.project_id
+    link.delete()
+    messages.success(
+        request,
+        f"Removed digital object {link.digital_object.uri} from project {link.project.uri}.",
+    )
+
+    row_context = _build_single_project_row_context(
+        organization=organization,
+        project_id=project_id,
+        status_filter=status_filter,
+    )
+    if not row_context or row_context["total_links"] == 0:
+        panel_context = _build_media_links_panel_context(
+            organization=organization,
+            status_filter=status_filter,
+            page_number=1,
+        )
+        panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+        return render(request, 'metadata/partials/oai_media_links_panel.html', panel_context)
+
+    return _render_project_row_response(
+        request,
+        organization=organization,
+        project_id=project_id,
+        status_filter=status_filter,
+        page_number=page_number,
+    )
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def oai_media_link_add(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.POST.get('status_filter'))
+    page_param = request.POST.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    project_uri = (request.POST.get('project_uri') or '').strip()
+    digital_uri = (request.POST.get('digital_uri') or '').strip()
+    if not project_uri or not digital_uri:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Project and digital object URIs are required.</div>")
+
+    project = Resource.objects.filter(
+        organization=organization,
+        uri=project_uri,
+        resource_type=ResourceType.ENTITY,
+    ).first()
+    if not project:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Project not found for this organization.</div>")
+
+    digital_object = Resource.objects.filter(
+        uri=digital_uri,
+        resource_type=ResourceType.ENTITY,
+    ).first()
+    if not digital_object:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Digital object not found.</div>")
+
+    exists = OAIProjectMediaLink.objects.filter(
+        project=project,
+        digital_object=digital_object,
+    ).exists()
+    if exists:
+        messages.warning(request, 'This digital object is already linked to the selected project.')
+        return _render_project_row_response(
+            request,
+            organization=organization,
+            project_id=project.id,
+            status_filter=status_filter,
+            page_number=page_number,
+        )
+
+    valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
+    requested_status = (request.POST.get('status') or OAIProjectMediaLink.STATUS_PENDING).strip().lower()
+    status_value = requested_status if requested_status in valid_statuses else OAIProjectMediaLink.STATUS_PENDING
+
+    order_input = (request.POST.get('order_index') or '').strip()
+    order_value: Optional[int]
+    if order_input:
+        try:
+            order_value = int(order_input)
+        except ValueError:
+            return HttpResponseBadRequest("<div class='alert alert-error'>Order index must be an integer.</div>")
+    else:
+        order_value = None
+
+    link = OAIProjectMediaLink.objects.create(
+        project=project,
+        digital_object=digital_object,
+        status=status_value,
+        order_index=order_value,
+        label_override=request.POST.get('label_override', ''),
+        notes=request.POST.get('notes', ''),
+        source=OAIProjectMediaLink.SOURCE_MANUAL,
+        last_reviewed_by=request.user if request.user.is_authenticated else None,
+        last_reviewed_at=timezone.now(),
+    )
+    messages.success(request, f"Linked {digital_object.uri} to project {project.uri}.")
+
+    return _render_project_row_response(
+        request,
+        organization=organization,
+        project_id=link.project_id,
+        status_filter=status_filter,
+        page_number=page_number,
+    )
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def oai_media_link_seed_preview(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.GET.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    summary = _preview_media_link_seed(organization)
+    context = {
+        "organization": organization,
+        "seed_summary": summary,
+        "status_filter": _normalized_media_link_status(request.GET.get('status')),
+    }
+    return render(request, 'metadata/partials/oai_media_links_seed_modal.html', context)
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def oai_media_link_seed_execute(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.POST.get('status'))
+    summary = _run_media_link_seed(organization)
+
+    if summary["projects"] == 0:
+        messages.warning(request, f"No eligible projects found for organization {organization.code.upper()}.")
+    else:
+        messages.success(
+            request,
+            (
+                f"Seeded {summary['projects']} project(s): "
+                f"created {summary['created']}, refreshed {summary['refreshed']}, marked stale {summary['stale']}."
+            ),
+        )
+
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        status_filter=status_filter,
+        page_number=1,
+    )
+    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    return render(request, 'metadata/partials/oai_media_links_panel.html', panel_context)
 
 @require_http_methods(["GET", "POST"])
 @superuser_required

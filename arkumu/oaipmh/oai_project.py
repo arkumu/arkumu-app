@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from uuid import UUID
 
 import logging
 import mimetypes
 
 from django.conf import settings
+from django.db.models import Count, Q
 
 from arkumu.projects import ProjectDigitalObject, ProjectDigitalObjectLicense, ProjectRecord
 from arkumu.projects.fixity import FixityInfo, parse_fixity
+from arkumu.oaipmh.models import OAIProjectMediaLink
 
 from .path_mapping import resolve_external_paths
 
@@ -80,9 +83,28 @@ def _status_token(status: Optional[str]) -> Optional[str]:
 
 
 @dataclass(frozen=True)
+class CuratedLinkWarning:
+    code: str
+    message: Optional[str] = None
+    digital_object_uri: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CuratedMediaSelection:
+    ordered_resource_ids: Tuple[str, ...]
+    ordered_object_uris: Tuple[str, ...]
+    label_overrides_by_id: Mapping[str, str]
+    label_overrides_by_uri: Mapping[str, str]
+    curated_missing_uris: Tuple[str, ...]
+    graph_only_uris: Tuple[str, ...]
+    warnings: Tuple[CuratedLinkWarning, ...]
+
+
+@dataclass(frozen=True)
 class NormalizedDigitalObject:
     """Normalized digital object enriched with Rosetta/S3 metadata."""
 
+    uri: Optional[str]
     original_path: Optional[str]
     storage_key: Optional[str]
     rosetta_path: Optional[str]
@@ -102,6 +124,8 @@ class NormalizedDigitalObject:
     significant_properties_de: Optional[str] = None
     significant_properties_en: Optional[str] = None
     license: Optional[ProjectDigitalObjectLicense] = None
+    resource_id: Optional[str] = None
+    label_override: Optional[str] = None
 
     @property
     def harvestable(self) -> bool:
@@ -144,6 +168,12 @@ class NormalizedDigitalObject:
         }
         return mapping.get(normalized, self.checksum_algorithm.upper())
 
+    @property
+    def display_label(self) -> Optional[str]:
+        if self.label_override:
+            return self.label_override
+        return self.file_name
+
 
 @dataclass(frozen=True)
 class OAIProject:
@@ -152,6 +182,7 @@ class OAIProject:
     record: ProjectRecord
     institution_code: Optional[str]
     digital_objects: Tuple[NormalizedDigitalObject, ...]
+    curated_selection: Optional[CuratedMediaSelection] = None
 
     @property
     def harvestable(self) -> bool:
@@ -235,6 +266,7 @@ class OAIProjectBuilder:
         *,
         skip_shared_event_filter: bool = False,
         skip_format_exclusion: bool = False,
+        use_curated_media_links: bool = False,
     ) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
 
@@ -245,16 +277,22 @@ class OAIProjectBuilder:
         filtered_record = self._filter_flagged_digital_objects(filtered_record)
         filtered_record = self._filter_overarching_projects(filtered_record, institution_code)
 
+        curated_selection: Optional[CuratedMediaSelection] = None
+        if use_curated_media_links:
+            curated_selection = self._resolve_curated_selection(filtered_record)
+
         normalized_objects = self._normalize_objects(
             filtered_record,
             institution_code,
             skip_format_exclusion=skip_format_exclusion,
+            curated_selection=curated_selection,
         )
 
         return OAIProject(
             record=filtered_record,
             institution_code=institution_code,
             digital_objects=tuple(normalized_objects),
+            curated_selection=curated_selection,
         )
 
     # Internal helpers -----------------------------------------------------
@@ -499,9 +537,23 @@ class OAIProjectBuilder:
         institution_code: Optional[str],
         *,
         skip_format_exclusion: bool = False,
+        curated_selection: Optional[CuratedMediaSelection] = None,
     ) -> List[NormalizedDigitalObject]:
         objects: List[NormalizedDigitalObject] = []
         seen: set[str] = set()
+        label_by_id: Dict[str, str] = {}
+        label_by_uri: Dict[str, str] = {}
+        allowed_resource_ids: Optional[set[str]] = None
+        allowed_uris: Optional[set[str]] = None
+        capture_groups = curated_selection is not None
+        grouped_by_resource: Dict[str, List[NormalizedDigitalObject]] = {}
+        grouped_by_uri: Dict[str, List[NormalizedDigitalObject]] = {}
+
+        if curated_selection:
+            allowed_resource_ids = {rid for rid in curated_selection.ordered_resource_ids if rid}
+            allowed_uris = {uri for uri in curated_selection.ordered_object_uris if uri}
+            label_by_id = dict(curated_selection.label_overrides_by_id)
+            label_by_uri = dict(curated_selection.label_overrides_by_uri)
 
         for obj in getattr(record, "digital_objects", []) or []:
             if not skip_format_exclusion and self._should_skip_digital_object(obj, institution_code):
@@ -522,6 +574,18 @@ class OAIProjectBuilder:
                 logger.info(f"Processing {len(expanded_objects)} expanded DCP files for object {getattr(obj, 'uri', 'N/A')}")
 
             for current_obj in objects_to_process:
+                resource_identifier = getattr(current_obj, "resource_id", None)
+                normalized_resource_id = str(resource_identifier) if resource_identifier else None
+                obj_uri = _clean(getattr(current_obj, "uri", None))
+                if allowed_resource_ids is not None:
+                    include = False
+                    if normalized_resource_id and normalized_resource_id in allowed_resource_ids:
+                        include = True
+                    elif obj_uri and allowed_uris and obj_uri in allowed_uris:
+                        include = True
+                    if not include:
+                        continue
+
                 normalized = self._normalize_object(current_obj, institution_code)
                 if not normalized:
                     continue
@@ -543,11 +607,50 @@ class OAIProjectBuilder:
                             logger.info(f"DCP file deduplicated: {identity}")
                         continue
                     seen.add(identity_key)
+
+                if curated_selection:
+                    label_override = None
+                    if normalized.resource_id and normalized.resource_id in label_by_id:
+                        label_override = label_by_id[normalized.resource_id]
+                    elif normalized.uri and normalized.uri in label_by_uri:
+                        label_override = label_by_uri[normalized.uri]
+                    if label_override:
+                        normalized = replace(normalized, label_override=label_override)
+
                 objects.append(normalized)
+
+                if capture_groups:
+                    if normalized.resource_id:
+                        grouped_by_resource.setdefault(normalized.resource_id, []).append(normalized)
+                    if normalized.uri:
+                        grouped_by_uri.setdefault(normalized.uri, []).append(normalized)
+
                 if expanded_objects and '.dcp/' in identity:
                     logger.info(f"DCP file added: {identity}")
 
-        return objects
+        if not curated_selection:
+            return objects
+
+        ordered_objects: List[NormalizedDigitalObject] = []
+        consumed_ids: set[int] = set()
+
+        def _extend_with_candidates(candidates: Iterable[NormalizedDigitalObject]) -> None:
+            for candidate in candidates:
+                candidate_id = id(candidate)
+                if candidate_id in consumed_ids:
+                    continue
+                ordered_objects.append(candidate)
+                consumed_ids.add(candidate_id)
+
+        for resource_id in curated_selection.ordered_resource_ids:
+            matches = grouped_by_resource.get(resource_id, [])
+            _extend_with_candidates(matches)
+
+        for uri in curated_selection.ordered_object_uris:
+            matches = grouped_by_uri.get(uri, [])
+            _extend_with_candidates(matches)
+
+        return ordered_objects
 
     def _normalize_object(
         self,
@@ -582,6 +685,11 @@ class OAIProjectBuilder:
             fixity = fixity.with_provenance(provenance)
 
         storage_status = _clean(getattr(obj, "storage_status", None))
+        object_uri = _clean(getattr(obj, "uri", None))
+        resource_identifier = getattr(obj, "resource_id", None)
+        resource_id = None
+        if resource_identifier not in (None, ""):
+            resource_id = str(resource_identifier)
 
         rosetta_candidates: Tuple[str, ...] = ()
         rosetta_path: Optional[str] = None
@@ -662,6 +770,7 @@ class OAIProjectBuilder:
                 license_info = None
 
         return NormalizedDigitalObject(
+            uri=object_uri,
             original_path=original_path,
             storage_key=storage_key,
             rosetta_path=rosetta_path,
@@ -681,6 +790,123 @@ class OAIProjectBuilder:
             significant_properties_de=significant_de,
             significant_properties_en=significant_en,
             license=license_info,
+            resource_id=resource_id,
+        )
+
+    def _resolve_curated_selection(
+        self,
+        record: ProjectRecord,
+    ) -> Optional[CuratedMediaSelection]:
+        subject_id = getattr(record, "subject_id", None)
+        if not subject_id:
+            return None
+
+        try:
+            project_uuid = UUID(str(subject_id))
+        except (TypeError, ValueError):
+            return None
+
+        links = list(
+            OAIProjectMediaLink.objects.approved_for_project(project_uuid)
+            .select_related("digital_object")
+            .annotate(
+                other_project_refs=Count(
+                    "digital_object__oai_media_references",
+                    filter=~Q(digital_object__oai_media_references__project_id=project_uuid),
+                    distinct=True,
+                )
+            )
+        )
+        if not links:
+            return None
+
+        record_objects = getattr(record, "digital_objects", []) or []
+        record_resource_ids: set[str] = set()
+        graph_only_candidates: List[str] = []
+        for obj in record_objects:
+            rid = getattr(obj, "resource_id", None)
+            uri = getattr(obj, "uri", None)
+            if rid:
+                record_resource_ids.add(str(rid))
+            elif uri:
+                graph_only_candidates.append(uri)
+
+        ordered_resource_ids = tuple(str(link.digital_object_id) for link in links)
+        ordered_object_uris = tuple(
+            link.digital_object.uri
+            for link in links
+            if getattr(link.digital_object, "uri", None)
+        )
+
+        curated_missing: List[str] = []
+        label_overrides_by_id: Dict[str, str] = {}
+        label_overrides_by_uri: Dict[str, str] = {}
+        warnings: List[CuratedLinkWarning] = []
+
+        for link in links:
+            resource_key = str(link.digital_object_id)
+            digital_uri = getattr(link.digital_object, "uri", None)
+            if link.label_override:
+                label_overrides_by_id[resource_key] = link.label_override
+                if digital_uri:
+                    label_overrides_by_uri[digital_uri] = link.label_override
+            if resource_key not in record_resource_ids:
+                curated_missing.append(digital_uri or resource_key)
+            if link.is_stale:
+                warnings.append(
+                    CuratedLinkWarning(
+                        code="curated_stale",
+                        digital_object_uri=digital_uri,
+                        message="Curated link marked stale; canonical graph no longer references this object.",
+                    )
+                )
+            other_refs = getattr(link, "other_project_refs", 0)
+            if other_refs:
+                warnings.append(
+                    CuratedLinkWarning(
+                        code="digital_object_multi_project",
+                        digital_object_uri=digital_uri,
+                        message="Digital object approved for multiple projects.",
+                    )
+                )
+
+        curated_set = set(ordered_resource_ids)
+        uncategorized_graph_uris: List[str] = list(dict.fromkeys(graph_only_candidates))
+        for obj in record_objects:
+            rid = getattr(obj, "resource_id", None)
+            uri = getattr(obj, "uri", None)
+            if not rid or not uri:
+                continue
+            if str(rid) not in curated_set:
+                uncategorized_graph_uris.append(uri)
+
+        if curated_missing:
+            warnings.append(
+                CuratedLinkWarning(
+                    code="curated_missing_in_graph",
+                    message=f"{len(curated_missing)} curated object(s) missing from canonical graph.",
+                )
+            )
+        if uncategorized_graph_uris:
+            warnings.append(
+                CuratedLinkWarning(
+                    code="graph_objects_uncurated",
+                    message=f"{len(uncategorized_graph_uris)} canonical object(s) lack curated approvals.",
+                )
+            )
+
+        ordered_uri_tuple = tuple(uri for uri in ordered_object_uris if uri)
+        curated_missing_tuple = tuple(dict.fromkeys(curated_missing))
+        uncategorized_tuple = tuple(dict.fromkeys(uncategorized_graph_uris))
+
+        return CuratedMediaSelection(
+            ordered_resource_ids=ordered_resource_ids,
+            ordered_object_uris=ordered_uri_tuple,
+            label_overrides_by_id=label_overrides_by_id,
+            label_overrides_by_uri=label_overrides_by_uri,
+            curated_missing_uris=curated_missing_tuple,
+            graph_only_uris=uncategorized_tuple,
+            warnings=tuple(warnings),
         )
 
     def _expand_dcp_folder_if_needed(
@@ -784,6 +1010,7 @@ class OAIProjectBuilder:
                 path=file_path,
                 uri=obj.uri,  # Same logical entity
             )
+            new_obj.resource_id = getattr(obj, "resource_id", None)
 
             # Copy other relevant attributes from the original object
             # Don't copy path-specific attributes like file_name, storage_key
