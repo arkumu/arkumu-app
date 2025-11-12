@@ -200,11 +200,9 @@ class ProjectView(LoginRequiredMixin, View):
         # image = image or 'images/main/card_1.png'
 
         for obj in record.digital_objects:
-            if '_preview' in obj.path:
-                image.append(obj.path)
+            image.append(obj.path)
 
 
-        print(image)
         image_preview = []
         for candidate in image:
             if PreviewImages.objects.filter(path=candidate).exists():
