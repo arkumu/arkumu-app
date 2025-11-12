@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Protocol
 
+from django.conf import settings
 from django.db import transaction
 
 from arkumu.metadata.models.resource import Resource
-from arkumu.projects import ProjectRecord
+from arkumu.projects import ProjectRecord, ProjectDigitalObject
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.catalog.services.schema_manifest_service import CardSchema
+from arkumu.catalog.services.project_views import ProjectURIs
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.storage.models.s3_file_objects import S3FileObject
@@ -60,6 +62,11 @@ class OAIProjectAssembler:
         self._graph_service_factory = graph_service_factory or CanonicalGraphService
         self._snapshot_service = snapshot_service or ProjectSnapshotService()
         self._card_schema_cache: MutableMapping[Optional[str], CardSchema] = {}
+        self._event_chain_orgs: set[str] = {
+            str(code).lower().strip()
+            for code in getattr(settings, "OAI_EVENT_CHAIN_ORGS", ("khm", "hmt"))
+            if code
+        }
 
     # ------------------------------------------------------------------
     def build_record(self, context: AssemblyContext) -> Optional[ProjectRecord]:
@@ -107,6 +114,7 @@ class OAIProjectAssembler:
             triple_service,
             storage_files_map,
         )
+        record = self._augment_shared_event_objects(record, nodes, edges_by_subject, graph, org_code)
         return record
 
     # ------------------------------------------------------------------
@@ -176,3 +184,174 @@ class OAIProjectAssembler:
             return defaultdict(list)  # type: ignore[return-value]
 
         return files_map
+
+    def _augment_shared_event_objects(
+        self,
+        record: Optional[ProjectRecord],
+        nodes: Dict[str, Dict[str, Any]],
+        edges_by_subject: Dict[str, list[Dict[str, Any]]],
+        graph: Dict[str, Any],
+        org_code: Optional[str],
+    ) -> Optional[ProjectRecord]:
+        if record is None:
+            return None
+
+        normalized_org = (org_code or "").strip().lower()
+        if normalized_org not in self._event_chain_orgs:
+            return record
+
+        if getattr(record, "digital_objects", None):
+            return record
+
+        root_id = graph.get("root_id")
+        if not root_id:
+            return record
+        root_key = str(root_id)
+
+        event_ids = self._collect_event_ids_from_graph(root_key, edges_by_subject)
+        if not event_ids:
+            return record
+
+        event_graph_service = self._graph_service_factory(org_code=org_code) if org_code else self._graph_service_factory()
+        extras: list[ProjectDigitalObject] = []
+        for event_id in event_ids:
+            event_node = nodes.get(event_id, {})
+            event_uri = event_node.get("uri") or event_node.get("canonical_uri")
+            if not event_uri:
+                continue
+            extras.extend(
+                self._digital_objects_from_event(
+                    event_graph_service,
+                    event_uri,
+                    event_id,
+                )
+            )
+
+        if not extras:
+            return record
+
+        existing = {
+            (getattr(obj, "resource_id", None), getattr(obj, "path", None))
+            for obj in getattr(record, "digital_objects", []) or []
+        }
+        sources = getattr(record, "digital_object_sources", None)
+        if not isinstance(sources, dict):
+            sources = dict(sources or {})
+
+        for obj in extras:
+            key = (getattr(obj, "resource_id", None), getattr(obj, "path", None))
+            if key in existing:
+                continue
+            record.digital_objects.append(obj)
+            existing.add(key)
+            resource_id = getattr(obj, "resource_id", None)
+            if resource_id:
+                sources[str(resource_id)] = {
+                    "source": obj.source or "event",
+                    "via_project": False,
+                    "event_ids": list(getattr(obj, "source_event_ids", []) or []),
+                    "event_uris": list(getattr(obj, "source_event_uris", []) or []),
+                }
+
+        record.digital_object_sources = sources
+        record.harvestable = bool(record.digital_objects)
+        return record
+
+    def _collect_event_ids_from_graph(
+        self,
+        root_id: str,
+        edges_by_subject: Dict[str, list[Dict[str, Any]]],
+    ) -> set[str]:
+        event_predicate = getattr(self._snapshot_service, "EVENT_RELATION_URI", None)
+        if not event_predicate:
+            return set()
+
+        visited: set[str] = set()
+        queue: deque[str] = deque()
+
+        for edge in edges_by_subject.get(root_id, []):
+            predicate = edge.get("predicate_canonical") or edge.get("predicate_uri")
+            obj_id = edge.get("object_id")
+            if predicate == event_predicate and obj_id:
+                queue.append(str(obj_id))
+
+        while queue:
+            event_id = queue.popleft()
+            if event_id in visited:
+                continue
+            visited.add(event_id)
+            for edge in edges_by_subject.get(event_id, []):
+                predicate = edge.get("predicate_canonical") or edge.get("predicate_uri")
+                obj_id = edge.get("object_id")
+                if predicate == event_predicate and obj_id:
+                    queue.append(str(obj_id))
+
+        return visited
+
+    def _digital_objects_from_event(
+        self,
+        graph_service: CanonicalGraphService,
+        event_uri: str,
+        event_id: str,
+    ) -> list[ProjectDigitalObject]:
+        try:
+            event_graph = graph_service.get_entity_graph(
+                event_uri,
+                include_incoming=False,
+                expand_neighbors=True,
+                depth=1,
+            )
+        except Exception:
+            logger.debug("Unable to load event graph for %s", event_uri, exc_info=True)
+            return []
+
+        nodes: Dict[str, Dict[str, Any]] = event_graph.get("nodes", {})
+        edges: list[Dict[str, Any]] = event_graph.get("edges", [])
+        if not nodes or not edges:
+            return []
+
+        edges_by_subject: Dict[str, list[Dict[str, Any]]] = defaultdict(list)
+        for edge in edges:
+            subject = edge.get("subject_id") or edge.get("subject") or edge.get("s")
+            if subject is None:
+                continue
+            edges_by_subject[str(subject)].append(edge)
+
+        root_id = str(event_graph.get("root_id") or "")
+        if not root_id:
+            return []
+
+        digital_predicate = getattr(self._snapshot_service, "DIGITAL_OBJECT_LINK_URI", None)
+        if not digital_predicate:
+            return []
+
+        event_edges = edges_by_subject.get(root_id, [])
+        digital_ids: list[str] = [
+            str(edge.get("object_id"))
+            for edge in event_edges
+            if edge.get("object_id") and (edge.get("predicate_canonical") or edge.get("predicate_uri")) == digital_predicate
+        ]
+        if not digital_ids:
+            return []
+
+        extras: list[ProjectDigitalObject] = []
+        for digital_id in digital_ids:
+            digital_edges = edges_by_subject.get(digital_id, [])
+            path_literal = self._snapshot_service._first_literal(  # type: ignore[attr-defined]
+                digital_edges,
+                ProjectURIs.DIGITAL_OBJECT_PATH,
+            )
+            if not path_literal:
+                continue
+            digital_node = nodes.get(digital_id, {})
+            project_object = ProjectDigitalObject(
+                path=path_literal,
+                uri=digital_node.get("uri") or digital_node.get("canonical_uri"),
+            )
+            project_object.resource_id = digital_id
+            project_object.source_event_ids = [event_id]
+            project_object.source_event_uris = [event_uri]
+            project_object.source = "event"
+            extras.append(project_object)
+
+        return extras

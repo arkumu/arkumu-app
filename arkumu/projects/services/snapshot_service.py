@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
 import uuid
@@ -156,7 +156,8 @@ class ProjectSnapshotService:
         'hmt': 'http://arkumu.org/data/hmt/properties/pruefsumme-sha256',
     }
     EVENT_PROJECT_LINK_URI = "http://arkumu.org/data/properties/projekt"
-    OWNERSHIP_FILTER_ORGS: Tuple[str, ...] = ("khm", "hmt")
+    EVENT_RELATION_URI = "http://arkumu.org/data/properties/ereignis"
+    OWNERSHIP_FILTER_ORGS: Tuple[str, ...] = ()
 
     def __init__(self, relationship_org_code: Optional[str] = None) -> None:
         self.relationship_org_code = relationship_org_code
@@ -185,8 +186,14 @@ class ProjectSnapshotService:
         self._record_index_version: Optional[str] = None
         self._digital_object_orgs: set[str] = {
             str(code).lower().strip()
-            for code in getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", ("fuk", "det", "rsh"))
+            for code in getattr(settings, "OAI_DIGITAL_OBJECT_LINK_ORGS", ("fuk", "det", "rsh", "khm", "hmt"))
             if code
+        }
+        alias_cfg = getattr(settings, "OAI_INSTITUTION_CODE_ALIASES", {})
+        self._institution_code_aliases: Dict[str, str] = {
+            str(source).lower().strip(): str(target).lower().strip()
+            for source, target in alias_cfg.items()
+            if source and target
         }
 
     def get_record_by_uri(self, uri: str) -> Optional[ProjectRecord]:
@@ -986,9 +993,24 @@ class ProjectSnapshotService:
             first_code = (institution_codes[0] or "") if institution_codes else ""
             primary_institution_code = first_code.lower().strip() or None
 
-        code_candidates: set[str] = set(filter(None, institution_codes))
+        code_candidates_raw: set[str] = {
+            str(code).strip().lower()
+            for code in institution_codes
+            if code and str(code).strip()
+        }
         if primary_institution_code:
-            code_candidates.add(primary_institution_code)
+            code_candidates_raw.add(primary_institution_code)
+
+        normalized_candidates: set[str] = set()
+        for candidate in code_candidates_raw:
+            normalized = self._apply_institution_alias(candidate)
+            if normalized:
+                normalized_candidates.add(normalized)
+        code_candidates = normalized_candidates
+
+        normalized_primary = self._apply_institution_alias(primary_institution_code)
+        if normalized_primary:
+            primary_institution_code = normalized_primary
         is_hmt_context = self._is_hmt_context(code_candidates, project_uri)
 
         ownership_filtered = False
@@ -1094,6 +1116,8 @@ class ProjectSnapshotService:
                 continue
             event_lookup[str(event.id)] = event
 
+        event_graph_ids = self._expand_event_graph(event_ids, edges_by_subject, nodes)
+
         digital_origin_map: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"via_project": False, "event_ids": set()})
         project_edge_ids: Set[str] = set(self._related_ids(subject_edges, self.DIGITAL_OBJECT_LINK_URI))
         for digital_id in project_edge_ids:
@@ -1101,7 +1125,7 @@ class ProjectSnapshotService:
             record["via_project"] = True
 
         event_edge_map: Dict[str, Set[str]] = {}
-        for event_id in all_event_ids:
+        for event_id in event_graph_ids:
             event_obj = event_lookup.get(str(event_id))
             if event_obj and event_obj.is_reference_only:
                 continue
@@ -1160,22 +1184,30 @@ class ProjectSnapshotService:
                     digital_origin_map[key]["via_project"] = True
                 digital_entries.append(entry)
 
-        if digital_only_org and event_ids:
-            for event_id in event_ids:
-                event_objects = triple_service.get_related_entities(
-                    event_id,
-                    self.DIGITAL_OBJECT_LINK_URI,
-                    organization_code=self.relationship_org_code,
+        if digital_only_org and event_graph_ids:
+            event_object_rows = (
+                Triple.objects.filter(
+                    predicate__canonical_uri=self.DIGITAL_OBJECT_LINK_URI,
+                    subject_id__in=event_graph_ids,
                 )
-                if not event_objects:
+                .values('subject_id', 'object_id')
+            )
+            seen_event_entries: set[str] = set()
+            for row in event_object_rows:
+                object_id_raw = row.get('object_id')
+                if not object_id_raw:
                     continue
-                event_key = str(event_id)
-                for entry in event_objects:
-                    object_id_raw = entry.get('id')
-                    if object_id_raw:
-                        key = str(object_id_raw)
-                        digital_origin_map[key]["event_ids"].add(event_key)
-                digital_entries.extend(event_objects)
+                key = str(object_id_raw)
+                if key in seen_event_entries:
+                    event_id_value = row.get('subject_id')
+                    if event_id_value:
+                        digital_origin_map[key]["event_ids"].add(str(event_id_value))
+                    continue
+                seen_event_entries.add(key)
+                event_id_value = row.get('subject_id')
+                if event_id_value:
+                    digital_origin_map[key]["event_ids"].add(str(event_id_value))
+                digital_entries.append({'id': key})
 
         if not digital_entries and code_candidates:
             fallback_predicates = self._fallback_digital_predicates_for_org(code_candidates)
@@ -1310,7 +1342,7 @@ class ProjectSnapshotService:
         collected_ids.update(
             self._related_ids(subject_edges, self.DIGITAL_OBJECT_LINK_URI)
         )
-        for event_id in event_ids:
+        for event_id in event_graph_ids:
             event_edges = edges_by_subject.get(event_id, [])
             collected_ids.update(
                 self._related_ids(event_edges, self.DIGITAL_OBJECT_LINK_URI)
@@ -1889,6 +1921,50 @@ class ProjectSnapshotService:
             if self._canonical(edge) == predicate and edge.get('object_id'):
                 ids.append(str(edge['object_id']))
         return ids
+
+    def _expand_event_graph(
+        self,
+        event_ids: Sequence[str],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> List[str]:
+        if not event_ids:
+            return []
+
+        visited: set[str] = set()
+        queue: deque[str] = deque()
+
+        for event_id in event_ids:
+            if not event_id:
+                continue
+            token = str(event_id)
+            if token in visited:
+                continue
+            visited.add(token)
+            queue.append(token)
+
+        while queue:
+            current = queue.popleft()
+            edges = edges_by_subject.get(current, [])
+            related_ids = self._related_ids(edges, self.EVENT_RELATION_URI)
+            for related_id in related_ids:
+                normalized = str(related_id)
+                if not normalized or normalized in visited:
+                    continue
+                if normalized not in nodes:
+                    continue
+                visited.add(normalized)
+                queue.append(normalized)
+
+        return list(visited)
+
+    def _apply_institution_alias(self, code: Optional[str]) -> Optional[str]:
+        if not code:
+            return None
+        normalized = str(code).strip().lower()
+        if not normalized:
+            return None
+        return self._institution_code_aliases.get(normalized, normalized)
 
     def _first_literal_any(
         self,
