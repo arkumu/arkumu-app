@@ -63,6 +63,7 @@ urlpatterns = [
     path('dashboard/link-digital-objects/', dashboard_views.trigger_link_digital_objects, name='metadata_dashboard_link_digital_objects'),
     path('dashboard/snapshot-stats/', dashboard_views.project_snapshot_stats, name='metadata_dashboard_snapshot_stats'),
     path('dashboard/external-sources-refresh/', dashboard_views.trigger_external_sources_refresh, name='metadata_dashboard_external_sources_refresh'),
+    path('dashboard/preview-images-refresh/', dashboard_views.trigger_preview_images_refresh, name='metadata_dashboard_preview_images_refresh'),
     path('dashboard/all-uploads/', dashboard_views.all_upload_sessions, name='all_upload_sessions'),
     path('dashboard/all-ingests/', dashboard_views.all_ingest_sessions, name='all_ingest_sessions'),
     path('dashboard/ingest-stats/<uuid:session_id>/', dashboard_views.ingest_session_stats, name='ingest_session_stats'),

@@ -24,7 +24,7 @@ class CatalogTemplateHelperMixin:
     """
 
     def render_results_container(self, request, results: List[Dict], pagination_context: Dict,
-                                query: str = "", total_results: int = 0) -> str:
+                                 query: str = "", total_results: int = 0, orga_code: str = "") -> str:
         """
         Render unified results container with all sub-components.
 
@@ -41,6 +41,7 @@ class CatalogTemplateHelperMixin:
         context = {
             'results': results,
             'query': query,
+            'orga_code': orga_code,
             'total_results': total_results,
             'start_result': pagination_context.get('start_result', 0),
             'end_result': pagination_context.get('end_result', 0),
@@ -53,7 +54,6 @@ class CatalogTemplateHelperMixin:
             'page_range': pagination_context.get('page_range', []),
             'csrf_token': get_token(request)
         }
-
 
         return render_to_string(
             'catalog/partials/results_container.html',
@@ -115,7 +115,7 @@ class CatalogTemplateHelperMixin:
         return f'<div class="text-center py-4 text-arkumu-dark theme-dark:text-arkumu-light">Suche nach "{query}" - {total_results} Projekte gefunden</div>'
 
     def build_search_response(self, request, results: List[Dict], pagination_context: Dict,
-                            query: str = "", total_results: int = 0) -> HttpResponse:
+                              query: str = "", total_results: int = 0, orga_code: str = "") -> HttpResponse:
         """
         Build simple search response with unified results container.
 
@@ -137,17 +137,21 @@ class CatalogTemplateHelperMixin:
             results=results,
             pagination_context=pagination_context,
             query=query,
-            total_results=total_results
+            total_results=total_results,
+            orga_code=orga_code,
         )
 
-        logger.info(f"🚀 CATALOG_RESPONSE: Built unified results container for query '{query}' with {total_results} results")
+        logger.info(
+            f"🚀 CATALOG_RESPONSE: Built unified results container for query '{query}' with {total_results} results")
 
         # Create HttpResponse
         response = HttpResponse(html)
 
         # Add URL push for browser history
-        if query:
+        if query and not orga_code:
             response['HX-Push-Url'] = f"/catalog/browse/?query={query}"
+        elif orga_code:
+            response['HX-Push-Url'] = f"/catalog/browse/?orga_code={orga_code}"
         else:
             response['HX-Push-Url'] = "/catalog/browse/"
 
@@ -218,7 +222,7 @@ class CatalogTemplateHelperMixin:
         )
 
     def add_search_performance_headers(self, response: HttpResponse, query: str,
-                                     results_count: int, processing_time: float = None) -> HttpResponse:
+                                       results_count: int, processing_time: float = None) -> HttpResponse:
         """
         Add performance and search metadata headers.
 

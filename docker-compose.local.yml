@@ -3,7 +3,7 @@ volumes:
   arkumu_local_postgres_data_backups: {}
   arkumu_local_redis_data: {}
   minio_data: {}
-  
+
 networks:
   arkumu_network:
     driver: bridge
@@ -136,12 +136,12 @@ services:
   # - Create custom CSS components
   # - Modify DaisyUI themes
   # - Add new Tailwind utility classes
-  # 
+  #
   # You DON'T need this for:
   # - Backend development (Django/Python)
   # - Using existing DaisyUI components as-is
   # - Database or functionality changes
-  # - Translation updates 
+  # - Translation updates
   #
   # To enable: uncomment the node service below and run:
   # docker compose -f docker-compose.local.yml up node
@@ -152,7 +152,7 @@ services:
     restart: unless-stopped
     depends_on:
       - django
-    working_dir: /app/theme/static_src 
+    working_dir: /app/theme/static_src
     volumes:
       - .:/app:z
     command: /bin/sh -c "npm install && npm run dev"

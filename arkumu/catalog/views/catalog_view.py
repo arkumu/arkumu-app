@@ -14,6 +14,7 @@ from arkumu.projects.services import ProjectSnapshotService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.metadata.models import ExternalSourcesEntity
+from ..services.wikidata_service import WikidataService
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,28 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         start_time = time.time()
 
         query = request.GET.get('query', '').strip()
+        orga_code = request.GET.get('orga_code', "").strip()
+
+        if query == "":
+            query = None
+
+        if orga_code == "" or orga_code.lower() == "none":
+            orga_code = None
+
+        # Mapping der Kürzel zu vollständigen Namen
+        orga_mapping = {
+            "fuk": "Folkwang Universität der Künste",
+            "rsh": "Robert Schumann Hochschule Düsseldorf",
+            "khm": "Kunsthochschule für Medien Köln",
+            "det": "Hochschule für Musik Detmold",
+            "hmt": "Hochschule für Musik und Tanz Köln"
+        }
+
+        # Normalisierung und Ersetzung des Kürzels
+        if orga_code:
+            normalized_code = (orga_code or "").strip().lower()
+            orga_code = orga_mapping.get(normalized_code, orga_code)  # Behält Original bei wenn kein Match
+
         page = request.GET.get('page', 1)
         is_htmx = request.headers.get('HX-Request') is not None
 
@@ -52,21 +75,13 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             if query:
                 projects = self._get_all_projects(query, request)
                 logger.info(f"📊 SEARCH_RESULTS: Found {len(projects)} projects for '{query}'")
-                # for project in projects:
-                #     project["categories_name"] = []
-                    # for categorie in project.get("categories"):
-                #     try:
-                #         project["categories_name"].append(ExternalSourcesEntity.objects.get(data_id= project.get("categories")))
-                #     except ExternalSourcesEntity.DoesNotExist:
-                #         logger.info("categorie don't exist")
-                # print(" ")
-                # print(" ")
-                # print(" ")
-                # print(" ")
-                # print(f"{projects[0]}")
             else:
                 # Empty results when no query - lazy loading
                 projects = []
+
+            if orga_code:
+                projects = self._get_all_projects(query="", request=request, organ_code=orga_code)
+                logger.info(f"📊 ORGA_FILTERED_RESULTS: Found {len(projects)} projects for organization '{orga_code}'")
 
             # Paginate results
             paginator = Paginator(projects, self.ITEMS_PER_PAGE)
@@ -77,6 +92,24 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 page_obj = paginator.page(1)
             except EmptyPage:
                 page_obj = paginator.page(paginator.num_pages)
+
+            for i, page in enumerate(page_obj):
+                wikidata_service = WikidataService()
+                if page.get("category1"):
+                    page["category1_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category1"))
+                if page.get("category2"):
+                    page["category2_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category2"))
+                if page.get("category3"):
+                    page["category3_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category3"))
+                if page.get("categories"):
+                    categories_name = []
+                    for i, w in enumerate(page.get("categories")):
+                        categories_name.append(wikidata_service.get_entity_label(wikidata_id=w))
+                    page["categories"] = [
+                        {"id": cid, "name": cname}
+                         for cid, cname in zip(page.get("categories"), categories_name)
+                    ]
+
 
             # Calculate result range for display
             total_results = paginator.count
@@ -107,13 +140,15 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                     results=page_obj.object_list,
                     pagination_context=pagination_context,
                     query=query,
-                    total_results=total_results
+                    total_results=total_results,
+                    orga_code=orga_code,
                 )
                 return self.add_search_performance_headers(response, query, total_results, processing_time)
 
             # For regular requests, return full page
             context = {
                 'query': query,
+                'orga_code': orga_code,
                 'results': page_obj.object_list,
                 'pagination': pagination_context,
                 # Also include individual pagination values for template
@@ -131,6 +166,16 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             }
 
             logger.info(f"📄 FULL_PAGE: Returning full page in {processing_time:.3f}s")
+            if orga_code == "Folkwang Universität der Künste":
+                return render(request, 'catalog/university_pages/university_page_FUK.html', context)
+            if orga_code == "Robert Schumann Hochschule Düsseldorf":
+                return render(request, 'catalog/university_pages/university_page_RSH.html', context)
+            if orga_code == "Kunsthochschule für Medien Köln":
+                return render(request, 'catalog/university_pages/university_page_KHM.html', context)
+            if orga_code == "Hochschule für Musik Detmold":
+                return render(request, 'catalog/university_pages/university_page_DET.html', context)
+            if orga_code == "Hochschule für Musik und Tanz Köln":
+                return render(request, 'catalog/university_pages/university_page_HMT.html', context)
             return render(request, 'catalog/design.html', context)
 
         except Exception as e:
@@ -143,15 +188,27 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         self,
         query: str,
         request=None,
+        organ_code: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return project cards, using cached snapshot and query cache."""
         cache_manager = CacheManager()
         skip_cache = bool(request and request.GET.get('nocache') == '1')
 
-        if query and not skip_cache:
+        if query and not skip_cache and not organ_code:
             cached_search = cache_manager.catalog.get_cached_search_results(
                 query=query,
                 property_name="cross_institutional_search",
+                selected_class="projekt",
+                user_org="global",
+            )
+            if cached_search and cached_search.get('results'):
+                logger.info("✅ CATALOG_CACHE_HIT: Using cached search results for '%s'", query)
+                return cached_search['results'].get('entities', [])
+
+        if organ_code and not skip_cache:
+            cached_search = cache_manager.catalog.get_cached_search_results(
+                query="",
+                property_name="institutional_search",
                 selected_class="projekt",
                 user_org="global",
             )
@@ -172,7 +229,7 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             skip_cache,
         )
 
-        if query:
+        if query and not organ_code:
             matching_records = [record for record in records if record.matches_query(query)]
             logger.info("🔍 FILTERED: %d projects match '%s'", len(matching_records), query)
             logger.debug(
@@ -180,21 +237,33 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 sorted({code for record in matching_records for code in record.institution_codes}),
                 sorted({slug for record in matching_records for slug in record.category_slugs}),
             )
+
+        elif organ_code:
+            matching_records = [record for record in records if record.matches_institution(organ_code)]
+            logger.info("🔍 FILTERED: %d projects match institution '%s'", len(matching_records), organ_code)
         else:
             matching_records = records
 
         cards = [record.to_card_dict() for record in matching_records]
 
-        if query and not skip_cache:
+        if query and not skip_cache and not organ_code:
             cache_manager.catalog.cache_search_results(
                 query=query,
-                property_name="cross_institutional_search",
+                property_name="institutional_search",
                 results={'entities': cards},
                 selected_class="projekt",
                 user_org="global",
             )
             logger.info("💾 CATALOG_CACHED: Stored search results for '%s'", query)
-
+        if organ_code and not skip_cache:
+            cache_manager.catalog.cache_search_results(
+                query="",
+                property_name="cross_institutional_search",
+                results={'entities': cards},
+                selected_class="projekt",
+                user_org="global",
+            )
+            logger.info("💾 CATALOG_CACHED: Stored search results for '%s'", organ_code)
         return cards
 
 
