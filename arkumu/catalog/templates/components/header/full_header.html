@@ -1,9 +1,16 @@
 {% load static %}
 
 <style>
-  @media (max-width: 650px) {
-    .header-logo {
+  @media (max-width: 834px) {
+    /* Oculta los botones de tema y el botón de búsqueda */
+    .theme-buttons,
+    .search-button-wrapper {
       display: none !important;
+    }
+
+    /* Alinea el resto (menú) hacia la derecha del logo */
+    .header-inner {
+      justify-content: space-between !important;
     }
   }
 </style>
@@ -13,7 +20,7 @@
                text-arkumu-dark
                theme-dark:text-arkumu-light
                theme-blue:text-arkumu-light">
-  <div class="flex items-center justify-between w-full">
+  <div class="header-inner flex items-center justify-between w-full">
 
     <!-- Logo -->
     <div class="header-logo w-48 md:w-56 lg:w-64 transition-all duration-300">
@@ -29,18 +36,24 @@
 
     <!-- Theme buttons and icons -->
     <div class="flex items-center ml-auto">
+      <!-- Botones de tema -->
       <div class="theme-buttons">
         {% include 'components/header/theme_buttons.html' %}
       </div>
+
       <div class="w-6 md:w-8 lg:w-10 transition-all duration-300"></div>
+
       <div class="flex items-center space-x-4 md:space-x-5 lg:space-x-6 transition-all duration-300">
-        <div class="flex flex-col items-center">
+        <!-- Botón de búsqueda -->
+        <div class="search-button-wrapper flex flex-col items-center">
           {% include 'components/header/search_button.html' %}
           <span class="text-xs mt-1 font-mono
           text-arkumu-dark
           theme-dark:text-arkumu-light
           theme-blue:text-arkumu-blue">Suche</span>
         </div>
+
+        <!-- Botón de menú -->
         <div class="flex flex-col items-center">
           {% include 'components/header/menu_button.html' %}
           <span class="text-xs mt-1 font-mono
