@@ -1,28 +1,20 @@
-<!-- Footer Component with Complete Theme Support -->
 {% load static %}
 <footer class="w-full transition-colors
                bg-arkumu-dark text-arkumu-light
                theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
                theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
   <div class="container mx-auto px-6 py-12">
-    <!-- Arkumu Logo -->
     <div class="mb-12 w-48 md:w-56 lg:w-64">
       <a href="/catalog/browse/" class="block">
-        <!-- Logo para tema predeterminado (claro) - en footer usa el dark porque el fondo es oscuro -->
         <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
              class="w-full h-auto transition-all duration-300 block theme-dark:hidden theme-blue:hidden">
-
-        <!-- Logo para tema oscuro - en footer usa el light porque el fondo es claro -->
         <img src="{% static 'images/arkumu-logo-light.svg' %}" alt="arkumu logo"
              class="w-full h-auto transition-all duration-300 hidden theme-dark:block theme-blue:hidden">
-
-        <!-- Logo para tema azul -->
         <img src="{% static 'images/arkumu-logo-dark.svg' %}" alt="arkumu logo"
              class="w-full h-auto transition-all duration-300 hidden theme-dark:hidden theme-blue:block">
       </a>
     </div>
 
-    <!-- Kooperationspartner Section -->
     <div class="mb-12">
       <h3 class="text-sm font-medium mb-6">Kooperationspartner</h3>
       <div class="flex flex-wrap gap-4 mb-6">
@@ -72,9 +64,7 @@
       </div>
     </div>
 
-    <!-- Bottom Section with Footer Links -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-      <!-- Gefördert durch -->
       <div>
         <h3 class="text-sm font-medium mb-4">Gefördert durch:</h3>
         <div class="transition-colors bg-arkumu-light inline-block">
@@ -85,7 +75,6 @@
         </div>
       </div>
 
-      <!-- Empfohlen von -->
       <div>
         <h3 class="text-sm font-medium mb-4">Ein Kooperationsvorhaben empfohlen von:</h3>
         <div class="transition-colors bg-arkumu-light inline-block">
@@ -95,7 +84,6 @@
         </div>
       </div>
 
-      <!-- Footer Links - Moved to right column -->
       <div class="lg:pt-8">
         <nav class="flex flex-col gap-3 text-sm">
           <a href="/catalog/impressum/" class="hover:underline transition-colors
