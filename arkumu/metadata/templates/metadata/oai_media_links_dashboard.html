@@ -3,8 +3,13 @@
 
 {% block title %}OAI Media Links - arkumu{% endblock %}
 
+{% block container_type %}
+<div class="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+{% endblock container_type %}
+
 {% block content %}
-<div class="max-w-6xl mx-auto space-y-6">
+
+<div class="w-full space-y-6">
   <div class="card bg-base-100 shadow">
     <div class="card-body space-y-4">
       <div>
@@ -74,118 +79,158 @@
   </div>
   {% endif %}
 
-  {% if links_page %}
-  <div class="card bg-base-100 shadow">
-    <div class="card-body">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="card-title text-xl">Curated links for {{ selected_org.name|default:selected_org_code }}</h2>
-        <div class="text-sm text-base-content/70">
-          Page {{ links_page.number }} of {{ links_page.paginator.num_pages }}
-        </div>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th>Digital Object</th>
-              <th>Status</th>
-              <th>Source</th>
-              <th>Workflow</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for link in links_page.object_list %}
-            <tr class="align-top">
-              <td class="max-w-xs">
-                <div class="font-mono text-sm break-words">{{ link.project.uri }}</div>
-                <div class="text-xs text-base-content/60">Updated {{ link.project.updated_at|date:"Y-m-d H:i" }}</div>
-                {% if link.is_stale %}
-                <div class="badge badge-warning mt-2">Stale</div>
-                {% endif %}
-              </td>
-              <td class="max-w-xs">
-                <div class="font-mono text-sm break-words">{{ link.digital_object.uri }}</div>
-              </td>
-              <td>
-                <span class="badge {% if link.status == 'approved' %}badge-success{% elif link.status == 'rejected' %}badge-error{% else %}badge-neutral{% endif %}">{{ link.get_status_display }}</span>
-                <div class="text-xs text-base-content/50 mt-2">
-                  Last reviewed:
-                  {% if link.last_reviewed_at %}
-                    {{ link.last_reviewed_at|date:"Y-m-d H:i" }}{% if link.last_reviewed_by %} by {{ link.last_reviewed_by.get_short_name|default:link.last_reviewed_by.username }}{% endif %}
+  {% if project_page %}
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <div class="overflow-x-auto">
+          <table class="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th class="min-w-[250px]">Project</th>
+                <th class="min-w-[400px]">Digital objects</th>
+                <th class="min-w-[280px]">Add object</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for project in project_page.object_list %}
+              {% with links=project.prefetched_media_links %}
+              <tr>
+                <td class="align-top">
+                  <div class="font-semibold">{{ project.name|default:"Untitled project" }}</div>
+                  <div class="font-mono text-xs break-words">{{ project.uri }}</div>
+                  <div class="text-xs text-base-content/60 mt-1">Updated {{ project.updated_at|date:"Y-m-d H:i" }}</div>
+                  <div class="mt-2 flex items-center gap-2">
+                    <span class="badge badge-outline">{{ links|length }} object{{ links|length|pluralize }}</span>
+                    <a href="{{ project.uri }}" target="_blank" rel="noopener" class="link link-primary text-xs">Open resource</a>
+                  </div>
+                </td>
+                <td class="align-top">
+                  {% if links %}
+                  <div class="space-y-3">
+                    {% for link in links %}
+                    <div class="rounded border border-base-300 bg-base-200/40 p-3 space-y-2">
+                      <div class="flex flex-wrap justify-between gap-3">
+                        <div>
+                          <p class="font-mono text-xs break-words">{{ link.digital_object.uri }}</p>
+                          <p class="text-[11px] text-base-content/60">Created {{ link.created_at|date:"Y-m-d" }}</p>
+                        </div>
+                        <div class="text-right text-[11px] space-y-1">
+                          <span class="badge {% if link.status == 'approved' %}badge-success{% elif link.status == 'rejected' %}badge-error{% else %}badge-neutral{% endif %}">{{ link.get_status_display }}</span>
+                          <div>Order: {{ link.order_index|default:"auto" }}</div>
+                          <div>Source: {{ link.get_source_display }}</div>
+                          {% if link.is_stale %}<div class="badge badge-warning badge-sm">Stale</div>{% endif %}
+                        </div>
+                      </div>
+                      <form method="post" id="update-link-{{ link.id }}" class="grid gap-2 md:grid-cols-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update">
+                        <input type="hidden" name="organization" value="{{ selected_org_code }}">
+                        <input type="hidden" name="link_id" value="{{ link.id }}">
+                        <input type="hidden" name="page" value="{{ current_page }}">
+                        <label class="form-control">
+                          <span class="label-text text-xs">Status</span>
+                          <select name="status" class="select select-bordered select-xs">
+                            {% for value, label in status_choices %}
+                              <option value="{{ value }}" {% if value == link.status %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </label>
+                        <label class="form-control">
+                          <span class="label-text text-xs">Order</span>
+                          <input type="number" name="order_index" value="{{ link.order_index|default_if_none:'' }}" class="input input-bordered input-xs" placeholder="auto">
+                        </label>
+                        <label class="form-control md:col-span-2">
+                          <span class="label-text text-xs">Label override</span>
+                          <input type="text" name="label_override" value="{{ link.label_override }}" class="input input-bordered input-xs">
+                        </label>
+                        <label class="form-control md:col-span-2">
+                          <span class="label-text text-xs">Notes</span>
+                          <textarea name="notes" rows="2" class="textarea textarea-bordered text-xs">{{ link.notes }}</textarea>
+                        </label>
+                        <label class="label cursor-pointer md:col-span-2">
+                          <span class="label-text text-xs">Clear stale flag</span>
+                          <input type="checkbox" name="clear_stale" value="1" class="checkbox checkbox-xs">
+                        </label>
+                      </form>
+                      <form method="post" id="delete-link-{{ link.id }}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="organization" value="{{ selected_org_code }}">
+                        <input type="hidden" name="link_id" value="{{ link.id }}">
+                        <input type="hidden" name="page" value="{{ current_page }}">
+                      </form>
+                      <div class="flex flex-wrap gap-2 justify-end">
+                        <button type="submit" form="update-link-{{ link.id }}" class="btn btn-xs btn-primary">Save</button>
+                        <button type="submit" form="delete-link-{{ link.id }}" class="btn btn-xs btn-outline btn-error" onclick="return confirm('Remove this digital object from the project?');">Remove</button>
+                      </div>
+                    </div>
+                    {% endfor %}
+                  </div>
                   {% else %}
-                    not reviewed
+                  <div class="text-sm text-base-content/60">No digital objects linked yet.</div>
                   {% endif %}
-                </div>
-              </td>
-              <td>
-                <div class="font-semibold">{{ link.get_source_display }}</div>
-                <div class="text-xs text-base-content/60">Created {{ link.created_at|date:"Y-m-d" }}</div>
-              </td>
-              <td class="w-72">
-                <form method="post" class="space-y-2">
-                  {% csrf_token %}
-                  <input type="hidden" name="action" value="update">
-                  <input type="hidden" name="organization" value="{{ selected_org_code }}">
-                  <input type="hidden" name="link_id" value="{{ link.id }}">
-                  <input type="hidden" name="page" value="{{ links_page.number }}">
-                  <label class="form-control">
-                    <span class="label-text text-xs">Status</span>
-                    <select name="status" class="select select-bordered select-sm">
-                      {% for value, label in status_choices %}
-                        <option value="{{ value }}" {% if value == link.status %}selected{% endif %}>{{ label }}</option>
-                      {% endfor %}
-                    </select>
-                  </label>
-                  <label class="form-control">
-                    <span class="label-text text-xs">Order</span>
-                    <input type="number" name="order_index" value="{{ link.order_index|default_if_none:'' }}" class="input input-bordered input-sm" placeholder="auto">
-                  </label>
-                  <label class="form-control">
-                    <span class="label-text text-xs">Label override</span>
-                    <input type="text" name="label_override" value="{{ link.label_override }}" class="input input-bordered input-sm">
-                  </label>
-                  <label class="form-control">
-                    <span class="label-text text-xs">Notes</span>
-                    <textarea name="notes" rows="2" class="textarea textarea-bordered text-sm">{{ link.notes }}</textarea>
-                  </label>
-                  <label class="label cursor-pointer">
-                    <span class="label-text text-xs">Clear stale flag</span>
-                    <input type="checkbox" name="clear_stale" value="1" class="checkbox checkbox-sm">
-                  </label>
-                  <button type="submit" class="btn btn-sm btn-primary w-full">Save changes</button>
-                </form>
-              </td>
-            </tr>
-            {% empty %}
-            <tr>
-              <td colspan="5" class="text-center py-6 text-base-content/60">No media links for this organization yet.</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+                </td>
+                <td class="align-top">
+                  <form method="post" class="space-y-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add">
+                    <input type="hidden" name="organization" value="{{ selected_org_code }}">
+                    <input type="hidden" name="project_uri" value="{{ project.uri }}">
+                    <input type="hidden" name="page" value="{{ current_page }}">
+                    <label class="form-control">
+                      <span class="label-text text-xs">Digital object URI</span>
+                      <input type="url" name="digital_uri" class="input input-bordered input-sm" placeholder="http://arkumu.org/data/entities/digital/789" required>
+                    </label>
+                    <label class="form-control">
+                      <span class="label-text text-xs">Status</span>
+                      <select name="status" class="select select-bordered select-sm">
+                        {% for value, label in status_choices %}
+                          <option value="{{ value }}" {% if value == 'pending' %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label class="form-control">
+                      <span class="label-text text-xs">Order</span>
+                      <input type="number" name="order_index" class="input input-bordered input-sm" placeholder="auto">
+                    </label>
+                    <label class="form-control">
+                      <span class="label-text text-xs">Label override</span>
+                      <input type="text" name="label_override" class="input input-bordered input-sm">
+                    </label>
+                    <label class="form-control">
+                      <span class="label-text text-xs">Notes</span>
+                      <textarea name="notes" rows="2" class="textarea textarea-bordered text-sm"></textarea>
+                    </label>
+                    <button type="submit" class="btn btn-sm btn-secondary w-full">Add digital object</button>
+                  </form>
+                </td>
+              </tr>
+              {% endwith %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
 
-      <div class="flex justify-between items-center mt-4">
-        <div class="text-sm">Showing {{ links_page.start_index }}&ndash;{{ links_page.end_index }} of {{ links_page.paginator.count }}</div>
-        <div class="join">
-          {% if links_page.has_previous %}
-            <a class="btn btn-sm join-item" href="?organization={{ selected_org_code }}&page={{ links_page.previous_page_number }}">Prev</a>
-          {% else %}
-            <button class="btn btn-sm join-item" disabled>Prev</button>
-          {% endif %}
-          {% if links_page.has_next %}
-            <a class="btn btn-sm join-item" href="?organization={{ selected_org_code }}&page={{ links_page.next_page_number }}">Next</a>
-          {% else %}
-            <button class="btn btn-sm join-item" disabled>Next</button>
-          {% endif %}
+        <div class="flex justify-between items-center mt-4">
+          <div class="text-sm">Showing {{ project_page.start_index }}&ndash;{{ project_page.end_index }} of {{ project_total }} projects</div>
+          <div class="join">
+            {% if project_page.has_previous %}
+              <a class="btn btn-sm join-item" href="?organization={{ selected_org_code }}&page={{ project_page.previous_page_number }}">Prev</a>
+            {% else %}
+              <button class="btn btn-sm join-item" disabled>Prev</button>
+            {% endif %}
+            {% if project_page.has_next %}
+              <a class="btn btn-sm join-item" href="?organization={{ selected_org_code }}&page={{ project_page.next_page_number }}">Next</a>
+            {% else %}
+              <button class="btn btn-sm join-item" disabled>Next</button>
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>
-  </div>
   {% elif selected_org %}
     <div class="alert alert-info shadow">
-      <span>No curated links yet. Run the seed process to populate this table.</span>
+      <span>No curated links yet. Run the seed process or add a digital object manually to get started.</span>
     </div>
   {% endif %}
 
@@ -195,4 +240,7 @@
     </div>
   {% endif %}
 </div>
+{% block container_type_end %}
+</div>
+{% endblock container_type_end %}
 {% endblock %}

@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.management import call_command
 from django.db import models
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Prefetch, Max
 from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1062,32 +1062,117 @@ def oai_media_links_dashboard(request):
 
             return _redirect_to_media_links(selected_org.code, page=post_page)
 
+        if action == 'delete':
+            if not selected_org:
+                messages.error(request, 'Select an organization before editing media links.')
+                return _redirect_to_media_links(selected_code or None)
+
+            link_id = request.POST.get('link_id')
+            if not link_id:
+                messages.error(request, 'Missing media link identifier.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            try:
+                link = OAIProjectMediaLink.objects.select_related('project__organization').get(id=link_id)
+            except OAIProjectMediaLink.DoesNotExist:
+                messages.error(request, 'Media link not found or already deleted.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            if link.project.organization_id != selected_org.id:
+                messages.error(request, 'Media link does not belong to the selected organization.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            link.delete()
+            messages.success(
+                request,
+                f"Removed digital object {link.digital_object.uri} from project {link.project.uri}.",
+            )
+            return _redirect_to_media_links(selected_org.code, page=post_page)
+
+        if action == 'add':
+            if not selected_org:
+                messages.error(request, 'Select an organization before adding media links.')
+                return _redirect_to_media_links(selected_code or None)
+
+            project_uri = (request.POST.get('project_uri') or '').strip()
+            digital_uri = (request.POST.get('digital_uri') or '').strip()
+            if not project_uri or not digital_uri:
+                messages.error(request, 'Project URI and digital object URI are required.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            project = Resource.objects.filter(
+                organization=selected_org,
+                uri=project_uri,
+                resource_type=ResourceType.ENTITY,
+            ).first()
+            if not project:
+                messages.error(request, f"Project '{project_uri}' was not found for {selected_org.code.upper()}.")
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            digital_object = Resource.objects.filter(
+                uri=digital_uri,
+                resource_type=ResourceType.ENTITY,
+            ).first()
+            if not digital_object:
+                messages.error(request, f"Digital object '{digital_uri}' was not found.")
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            exists = OAIProjectMediaLink.objects.filter(
+                project=project,
+                digital_object=digital_object,
+            ).exists()
+            if exists:
+                messages.warning(request, 'This digital object is already linked to the selected project.')
+                return _redirect_to_media_links(selected_org.code, page=post_page)
+
+            valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
+            status = request.POST.get('status') or OAIProjectMediaLink.STATUS_PENDING
+            if status not in valid_statuses:
+                status = OAIProjectMediaLink.STATUS_PENDING
+
+            order_input = (request.POST.get('order_index') or '').strip()
+            if order_input:
+                try:
+                    order_index = int(order_input)
+                except ValueError:
+                    messages.error(request, 'Order index must be an integer.')
+                    return _redirect_to_media_links(selected_org.code, page=post_page)
+            else:
+                max_order = (
+                    OAIProjectMediaLink.objects.filter(project=project)
+                    .aggregate(value=Max('order_index'))
+                    .get('value')
+                )
+                order_index = (max_order or 0) + 1
+
+            link = OAIProjectMediaLink.objects.create(
+                project=project,
+                digital_object=digital_object,
+                status=status,
+                order_index=order_index,
+                label_override=request.POST.get('label_override', ''),
+                notes=request.POST.get('notes', ''),
+            )
+            messages.success(
+                request,
+                f"Linked digital object {link.digital_object.uri} to project {project.uri}.",
+            )
+            return _redirect_to_media_links(selected_org.code, page=post_page)
+
     selected_org_code = selected_org.code if selected_org else ''
-    links_page = None
-    status_totals = []
+    project_page = None
+    status_totals: list[dict[str, object]] = []
     stale_count = 0
     available_project_count = 0
     links_total = 0
+    project_total = 0
 
     if selected_org:
-        links_qs = (
-            OAIProjectMediaLink.objects.select_related('project__organization', 'digital_object')
-            .filter(project__organization=selected_org)
-            .order_by('order_index', 'created_at')
-        )
-        paginator = Paginator(links_qs, 25)
-        if paginator.count == 0:
-            links_page = None
-            links_total = 0
-        else:
-            try:
-                links_page = paginator.page(page_number)
-            except EmptyPage:
-                links_page = paginator.page(paginator.num_pages)
-            links_total = paginator.count
+        link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=selected_org)
+        links_total = link_base_qs.count()
 
         raw_stats = (
-            links_qs.values('status')
+            link_base_qs.values('status')
             .annotate(count=Count('id'))
             .order_by('status')
         )
@@ -1100,10 +1185,32 @@ def oai_media_links_dashboard(request):
             }
             for row in raw_stats
         ]
-        stale_count = links_qs.filter(is_stale=True).count()
+        stale_count = link_base_qs.filter(is_stale=True).count()
         available_project_count = _oai_project_queryset_for_org(selected_org).count()
+
+        project_prefetch = Prefetch(
+            'oai_media_links',
+            queryset=link_base_qs.select_related('digital_object').order_by('order_index', 'created_at'),
+            to_attr='prefetched_media_links',
+        )
+        projects_qs = (
+            Resource.objects.filter(organization=selected_org, resource_type=ResourceType.ENTITY)
+            .prefetch_related(project_prefetch)
+            .filter(oai_media_links__isnull=False)
+            .distinct()
+            .order_by('-updated_at', 'uri')
+        )
+        project_paginator = Paginator(projects_qs, 8)
+        project_total = project_paginator.count
+        if project_total:
+            try:
+                project_page = project_paginator.page(page_number)
+            except EmptyPage:
+                project_page = project_paginator.page(project_paginator.num_pages)
     else:
-        links_page = None
+        project_page = None
+
+    current_page = project_page.number if project_page else 1
 
     return render(
         request,
@@ -1112,7 +1219,9 @@ def oai_media_links_dashboard(request):
             'organizations': organizations,
             'selected_org': selected_org,
             'selected_org_code': selected_org_code,
-            'links_page': links_page,
+            'project_page': project_page,
+            'project_total': project_total,
+            'current_page': current_page,
             'status_choices': OAIProjectMediaLink.STATUS_CHOICES,
             'status_totals': status_totals,
             'stale_count': stale_count,
