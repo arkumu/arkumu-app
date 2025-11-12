@@ -29,6 +29,7 @@ urlpatterns = [
     path('browse/', general_login_required(CatalogView.as_view()), name='browse'),
     path('images/', general_login_required(ImagesView.as_view()), name='images'),
     path('components/', login_required(TemplateView.as_view(template_name="catalog/components.html")), name='components'),
+    path('advancedSearch/', login_required(TemplateView.as_view(template_name="catalog/advancedSearch.html")), name='advancedSearch'),
     path('university/', login_required(TemplateView.as_view(template_name="catalog/university_page.html")), name='university_page'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
     path('impressum/', login_required(TemplateView.as_view(template_name="catalog/impressum.html")), name='impressum'),

@@ -1,98 +1,88 @@
 <!-- Filter Bar Component with Theme Support -->
 <div class="filter-bar-component w-full p-6">
   
-  <!-- Active Filter Tags Row -->
-  <div class="flex flex-wrap items-center gap-2 mb-6">
-    <!-- Active filter tags with X button -->
-    {% if tag1 %}
-    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                border-arkumu-dark text-arkumu-dark bg-white
-                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-      <span class="mr-2">{{ tag1|default:"Video, Spielfilme" }}</span>
-      <button class="hover:opacity-70" 
-              hx-delete="/filter/remove/{{ tag1_id|default:'tag1' }}" 
-              hx-target="closest .filter-bar-component"
-              hx-swap="outerHTML">×</button>
-    </div>
-    {% endif %}
+  <!-- Single Row: Tags, Search, Sort, and View Controls -->
+  <div class="flex items-center justify-between gap-4">
     
-    {% if tag2 %}
-    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                border-arkumu-dark text-arkumu-dark bg-white
-                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-      <span class="mr-2">{{ tag2|default:"Instrumentalmusik" }}</span>
-      <button class="hover:opacity-70" 
-              hx-delete="/filter/remove/{{ tag2_id|default:'tag2' }}" 
-              hx-target="closest .filter-bar-component"
-              hx-swap="outerHTML">×</button>
-    </div>
-    {% endif %}
-    
-    {% if tag3 %}
-    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                border-arkumu-dark text-arkumu-dark bg-white
-                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-      <span class="mr-2">{{ tag3|default:"autonome Projekte" }}</span>
-      <button class="hover:opacity-70" 
-              hx-delete="/filter/remove/{{ tag3_id|default:'tag3' }}" 
-              hx-target="closest .filter-bar-component"
-              hx-swap="outerHTML">×</button>
-    </div>
-    {% endif %}
-    
-    <!-- Default tags if none provided -->
-    {% if not tag1 and not tag2 and not tag3 %}
-    <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                border-arkumu-dark text-arkumu-dark bg-white
-                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-      <span class="mr-2">Video, Spielfilme</span>
-      <button class="hover:opacity-70" 
-              hx-delete="/filter/remove/video-spielfilme" 
-              hx-target="closest .filter-bar-component"
-              hx-swap="outerHTML">×</button>
-    </div>
-    
-    <div class="inline-flex items-center px-3 py-1 text-xs border transition-colors
-                border-arkumu-dark text-arkumu-dark bg-white
-                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-      <span class="mr-2">Instrumentalmusik</span>
-      <button class="hover:opacity-70" 
-              hx-delete="/filter/remove/instrumentalmusik" 
-              hx-target="closest .filter-bar-component"
-              hx-swap="outerHTML">×</button>
-    </div>
-    
-    <div class="inline-flex items-center px-3 py-1 text-xs border transition-colors
-                border-arkumu-dark text-arkumu-dark bg-white
-                theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-      <span class="mr-2">autonome Projekte</span>
-      <button class="hover:opacity-70" 
-              hx-delete="/filter/remove/autonome-projekte" 
-              hx-target="closest .filter-bar-component"
-              hx-swap="outerHTML">×</button>
-    </div>
-    {% endif %}
-  </div>
-
-  <!-- Bottom Row: Results count, Search, Sort -->
-  <div class="flex items-center justify-between">
-    
-    <!-- Results Count (Left) -->
-    <div class="text-sm font-mono transition-colors
-                text-arkumu-dark
-                theme-dark:text-arkumu-light
-                theme-blue:text-arkumu-blue">
-      {{ result_count|default:"4" }} {{ result_label|default:"Ergebnisse" }}
+    <!-- Left Side: Active Filter Tags -->
+    <div class="flex flex-wrap items-center gap-2">
+      {% if tag1 %}
+      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                  border-arkumu-dark text-arkumu-dark bg-white
+                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+        <span class="mr-2">{{ tag1|default:"Video, Spielfilme" }}</span>
+        <button class="hover:opacity-70" 
+                hx-delete="/filter/remove/{{ tag1_id|default:'tag1' }}" 
+                hx-target="closest .filter-bar-component"
+                hx-swap="outerHTML">×</button>
+      </div>
+      {% endif %}
+      
+      {% if tag2 %}
+      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                  border-arkumu-dark text-arkumu-dark bg-white
+                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+        <span class="mr-2">{{ tag2|default:"Instrumentalmusik" }}</span>
+        <button class="hover:opacity-70" 
+                hx-delete="/filter/remove/{{ tag2_id|default:'tag2' }}" 
+                hx-target="closest .filter-bar-component"
+                hx-swap="outerHTML">×</button>
+      </div>
+      {% endif %}
+      
+      {% if tag3 %}
+      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                  border-arkumu-dark text-arkumu-dark bg-white
+                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+        <span class="mr-2">{{ tag3|default:"autonome Projekte" }}</span>
+        <button class="hover:opacity-70" 
+                hx-delete="/filter/remove/{{ tag3_id|default:'tag3' }}" 
+                hx-target="closest .filter-bar-component"
+                hx-swap="outerHTML">×</button>
+      </div>
+      {% endif %}
+      
+      {% if not tag1 and not tag2 and not tag3 %}
+      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                  border-arkumu-dark text-arkumu-dark bg-white
+                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+        <span class="mr-2">Video, Spielfilme</span>
+        <button class="hover:opacity-70" 
+                hx-delete="/filter/remove/video-spielfilme" 
+                hx-target="closest .filter-bar-component"
+                hx-swap="outerHTML">×</button>
+      </div>
+      
+      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                  border-arkumu-dark text-arkumu-dark bg-white
+                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+        <span class="mr-2">Instrumentalmusik</span>
+        <button class="hover:opacity-70" 
+                hx-delete="/filter/remove/instrumentalmusik" 
+                hx-target="closest .filter-bar-component"
+                hx-swap="outerHTML">×</button>
+      </div>
+      
+      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
+                  border-arkumu-dark text-arkumu-dark bg-white
+                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
+                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
+        <span class="mr-2">autonome Projekte</span>
+        <button class="hover:opacity-70" 
+                hx-delete="/filter/remove/autonome-projekte" 
+                hx-target="closest .filter-bar-component"
+                hx-swap="outerHTML">×</button>
+      </div>
+      {% endif %}
     </div>
     
-    <!-- Right Side: Search and Sort -->
-    <div class="flex items-center gap-4">
+    <!-- Right Side: Search, Sort, and View Controls -->
+    <div class="flex items-center gap-4 flex-shrink-0">
       
       <!-- Search Bar -->
       <div class="relative">
@@ -115,7 +105,6 @@
                hx-trigger="keyup changed delay:300ms" 
                hx-target="#results-container">
         
-        <!-- Search Icon -->
         <div class="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
           <svg class="w-4 h-4 transition-colors
                      text-gray-500
@@ -146,7 +135,6 @@
           <option value="relevance">{{ sort_option3|default:"Sortieren nach Relevanz" }}</option>
         </select>
         
-        <!-- Dropdown Arrow -->
         <div class="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none transition-colors
                     text-arkumu-dark
                     theme-dark:text-arkumu-light
@@ -161,7 +149,6 @@
                   theme-dark:border-gray-600
                   theme-blue:border-arkumu-blue">
         
-        <!-- Grid View Button -->
         <button class="p-2 transition-colors hover:opacity-70
                        bg-white border-r
                        theme-dark:bg-arkumu-dark theme-dark:border-gray-600
@@ -180,7 +167,6 @@
           </svg>
         </button>
         
-        <!-- List View Button -->
         <button class="p-2 transition-colors hover:opacity-70
                        bg-white border-r
                        theme-dark:bg-arkumu-dark theme-dark:border-gray-600
@@ -199,7 +185,6 @@
           </svg>
         </button>
         
-        <!-- Map View Button -->
         <button class="p-2 transition-colors hover:opacity-70
                        bg-white
                        theme-dark:bg-arkumu-dark
