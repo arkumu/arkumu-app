@@ -101,10 +101,13 @@
         </div>
         {% include 'components/text/blue_line.html' %}
         <h3 class="text-lg font-medium mb-3">Projekte der Kunsthochschule für Medien Köln</h3>
-        {% if results %}
-          <!-- Include with all context variables -->
-          {% include 'catalog/partials/results_container.html' %}
-        {% endif %}
+        <!-- Results Container -->
+        <div id="results-container" class="w-full mt-2">
+          {% if results %}
+            <!-- Include with all context variables -->
+            {% include 'catalog/partials/results_container.html' %}
+          {% endif %}
+        </div>
       </div>
     </main>
   </div>
