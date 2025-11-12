@@ -267,7 +267,6 @@ class ProjectRecord:
 
             preview_candidates = [
                 obj for obj in self.digital_objects
-                if (_path := _object_display_path(obj)) and '_preview' in _path
             ]
 
             valid_preview = None
