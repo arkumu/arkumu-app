@@ -1,6 +1,9 @@
 # ruff: noqa: E501
 from .base import *  # noqa: F403
+import copy
+
 from .base import INSTALLED_APPS
+from .base import LOGGING as BASE_LOGGING
 from .base import MIDDLEWARE
 from .base import env
 
@@ -97,3 +100,15 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024 * 1024  # 100GB total request si
 WARM_CACHE_ON_STARTUP = False
 WARM_CROSS_INSTITUTIONAL_CACHE_ON_STARTUP = False
 OAI_SKIP_CACHE_WARMUP = True
+
+# Logging overrides for local development
+# ------------------------------------------------------------------------------
+LOGGING = copy.deepcopy(BASE_LOGGING)
+root_log_level = env("DJANGO_ROOT_LOG_LEVEL", default="INFO").upper()
+LOGGING["root"]["level"] = root_log_level
+LOGGING.setdefault("loggers", {})
+LOGGING["loggers"]["arkumu.projects.services.snapshot_service"] = {
+    "handlers": ["console"],
+    "level": env("ARKUMU_PROJECTS_LOG_LEVEL", default=root_log_level).upper(),
+    "propagate": False,
+}

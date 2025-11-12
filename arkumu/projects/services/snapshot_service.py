@@ -279,6 +279,11 @@ class ProjectSnapshotService:
             "PROJECT_SNAPSHOT_FORCE_ORG_GRAPHS",
             False,
         )
+        self._property_debug_on_snapshot = getattr(
+            settings,
+            "PROJECT_SNAPSHOT_PROPERTY_DEBUG_ENABLED",
+            False,
+        )
         self._record_index: Dict[str, ProjectRecord] = {}
         self._record_index_version: Optional[str] = None
         self._digital_object_orgs: set[str] = {
@@ -1565,6 +1570,11 @@ class ProjectSnapshotService:
             digital_objects,
             werkverzeichnis_value,
         )
+        self._log_project_properties_debug(
+            subject_id,
+            project_property_values,
+            properties_bundle,
+        )
         status_block = self._build_status_block(
             project_property_values,
             subject_edges,
@@ -2485,6 +2495,59 @@ class ProjectSnapshotService:
             return
         if text not in collection:
             collection.append(text)
+
+    def _log_project_properties_debug(
+        self,
+        subject_id: str,
+        property_value_map: Optional[Dict[str, List[str]]],
+        bundle: ProjectPropertyBundle,
+    ) -> None:
+        if not self._property_debug_on_snapshot:
+            return
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
+        property_value_map = property_value_map or {}
+        retrieved_keys: List[str] = []
+        empty_source_keys: List[str] = []
+
+        for slug, values in property_value_map.items():
+            cleaned = [
+                self._normalize_text_value(value)
+                for value in values
+                if self._normalize_text_value(value)
+            ]
+            if cleaned:
+                retrieved_keys.append(slug)
+            else:
+                empty_source_keys.append(slug)
+
+        bundle_null_fields = sorted(
+            field_name
+            for field_name, value in vars(bundle).items()
+            if self._is_empty_property_value(value)
+        )
+
+        logger.debug(
+            (
+                "Project %s catalog properties | retrieved_keys=%s | "
+                "empty_source_keys=%s | bundle_null_fields=%s"
+            ),
+            subject_id,
+            sorted(retrieved_keys),
+            sorted(empty_source_keys),
+            bundle_null_fields,
+        )
+
+    @staticmethod
+    def _is_empty_property_value(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) == 0
+        if isinstance(value, str):
+            return not value.strip()
+        return False
 
     @staticmethod
     def _normalize_property_label(label: Optional[str]) -> Optional[str]:
