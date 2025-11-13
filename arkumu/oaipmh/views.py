@@ -31,6 +31,7 @@ from arkumu.metadata.services.canonical_graph_service import CanonicalGraphServi
 from arkumu.metadata.services.institutional_graph_service import InstitutionalGraphService
 from arkumu.metadata.services.oai_stats import classify_project_access
 from arkumu.users.models import Organization
+from arkumu.users.mixins import general_login_required
 from arkumu.projects import (
     ProjectDigitalObject,
     ProjectDigitalObjectLicense,
@@ -4027,16 +4028,15 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
     return _handle_oai_request(request)
 
 
+@general_login_required
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
-    user = getattr(request, "user", None)
-    if not user or not user.is_authenticated or not user.is_superuser:
-        return HttpResponseForbidden("DB-backed endpoint restricted to superusers.")
     with _force_db_mode(True), _force_curated_links(True):
         return _handle_oai_request(request)
 
 
+@general_login_required
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
@@ -4044,6 +4044,7 @@ def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
         return _handle_oai_request(request)
 
 
+@general_login_required
 @require_http_methods(["GET"])
 def oai_schema_download(request: HttpRequest, snapshot: str, variant: str, ext: str) -> HttpResponse:
     snapshot_info = schema_utils.get_snapshot(snapshot)
