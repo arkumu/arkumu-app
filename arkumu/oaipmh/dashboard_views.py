@@ -52,6 +52,7 @@ LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = (
     "title",
     "name",
     "label",
+    "dateiname",
 )
 
 MEDIA_LINKS_PAGE_SIZE = 6
@@ -465,11 +466,9 @@ def _prefetch_resource_labels(
         resource_id = getattr(resource, "id", None)
         if resource_id is None or resource_id in cache:
             continue
-        label = getattr(resource, "name", None) or getattr(resource, "value", None)
-        if label:
-            cache[resource_id] = str(label)
-        else:
-            pending[resource_id] = resource
+        # For entities, always check triples first
+        # Only use name/value as fallback if no triples found
+        pending[resource_id] = resource
 
     if not pending:
         return cache
@@ -599,6 +598,7 @@ def _build_media_links_panel_context(
     status_filter: str,
     page_number: int,
     project_access_filter: str = "all",
+    search_query: str = "",
 ) -> dict[str, Any]:
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
     summary = _build_media_links_summary(
@@ -646,6 +646,17 @@ def _build_media_links_panel_context(
     if digital_resources:
         label_lookup = _prefetch_resource_labels(digital_resources, cache=label_lookup)
 
+    # Apply search filter if provided
+    if search_query:
+        search_lower = search_query.lower()
+        filtered_projects = []
+        for project_resource in project_resources:
+            project_label = label_lookup.get(project_resource.id, "")
+            if search_lower in project_label.lower() or search_lower in project_resource.uri.lower():
+                filtered_projects.append(project_resource)
+        project_resources = filtered_projects
+        page_obj.object_list = project_resources
+
     for project_resource in project_resources:
         row = _build_project_row_context(
             project_resource,
@@ -663,6 +674,7 @@ def _build_media_links_panel_context(
         "selected_org": organization,
         "selected_org_code": organization.code or "",
         "status_filter": status_filter,
+        "search_query": search_query,
         "summary": summary,
         "project_rows": rows,
         "project_total": paginator.count,
@@ -778,6 +790,8 @@ def oai_media_links_panel(request):
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
         project_access_filter = 'all'
 
+    search_query = (request.GET.get('search') or '').strip()
+
     page_param = request.GET.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
@@ -789,6 +803,7 @@ def oai_media_links_panel(request):
         status_filter=status_filter,
         page_number=page_number,
         project_access_filter=project_access_filter,
+        search_query=search_query,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
 
@@ -1091,6 +1106,7 @@ def _build_digital_object_centric_context(
     page_number: int,
     project_access_filter: str = "all",
     shared_filter: str = "all",
+    search_query: str = "",
 ) -> dict[str, Any]:
     """Build context for digital object-centric view (groups by digital object, shows projects)."""
 
@@ -1184,14 +1200,22 @@ def _build_digital_object_centric_context(
                 label_lookup=label_lookup,
             )
 
+        digital_object_label = _resource_display_label(
+            digital_resource,
+            fallback="Untitled digital object",
+            label_lookup=label_lookup,
+        )
+
+        # Apply search filter if provided
+        if search_query:
+            search_lower = search_query.lower()
+            if search_lower not in digital_object_label.lower() and search_lower not in digital_resource.uri.lower():
+                continue
+
         digital_object_rows.append({
             "digital_object": digital_resource,
             "digital_object_uri": digital_resource.uri,
-            "digital_object_label": _resource_display_label(
-                digital_resource,
-                fallback="Untitled digital object",
-                label_lookup=label_lookup,
-            ),
+            "digital_object_label": digital_object_label,
             "project_count": item['project_count'],
             "approved_count": item['approved_count'],
             "pending_count": item['pending_count'],
@@ -1225,6 +1249,7 @@ def _build_digital_object_centric_context(
         "status_filter": status_filter,
         "project_access_filter": project_access_filter,
         "shared_filter": shared_filter,
+        "search_query": search_query,
         "summary": summary,
         "digital_object_rows": digital_object_rows,
         "digital_object_total": paginator.count,
@@ -1261,6 +1286,8 @@ def oai_media_links_digital_view(request):
     if shared_filter not in ['all', 'shared', 'single']:
         shared_filter = 'all'
 
+    search_query = (request.GET.get('search') or '').strip()
+
     page_param = request.GET.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
@@ -1273,6 +1300,7 @@ def oai_media_links_digital_view(request):
         page_number=page_number,
         project_access_filter=project_access_filter,
         shared_filter=shared_filter,
+        search_query=search_query,
     )
 
     # If not an HTMX request, redirect to the full dashboard with params

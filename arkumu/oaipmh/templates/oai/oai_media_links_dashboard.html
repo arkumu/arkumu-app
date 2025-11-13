@@ -26,28 +26,26 @@
   <div id="oai-media-links-seed-modal"></div>
 
   <div class="card bg-base-100 shadow">
-    <div class="card-body">
-      <form
-        hx-get="{% url 'oai:oai_media_links_panel' %}"
-        hx-target="#oai-media-links-panel"
-        hx-swap="innerHTML"
-        hx-push-url="true"
-        class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]"
-      >
-        <div>
-          <label class="label" for="org-select"><span class="label-text">Organization</span></label>
-          <select id="org-select" name="organization" class="select select-bordered w-full">
-            <option value="">&mdash; Select organization &mdash;</option>
+    <div class="card-body py-4">
+      <div class="flex flex-wrap items-center gap-4">
+        <form
+          hx-get="{% url 'oai:oai_media_links_panel' %}"
+          hx-target="#oai-media-links-panel"
+          hx-swap="innerHTML"
+          hx-push-url="true"
+          class="flex items-center gap-2"
+        >
+          <select id="org-select" name="organization" class="select select-bordered select-sm">
+            <option value="">Select organization</option>
             {% for org in organizations %}
               <option value="{{ org.code }}" {% if org == selected_org %}selected{% endif %}>{{ org.name }} ({{ org.code }})</option>
             {% endfor %}
           </select>
-        </div>
-        <div class="flex items-end">
           <input type="hidden" name="status" value="{{ status_filter }}">
-          <button type="submit" class="btn btn-primary w-full">Load links</button>
-        </div>
-      </form>
+          <button type="submit" class="btn btn-primary btn-sm">Load</button>
+        </form>
+        <div id="oai-media-links-summary-stats" class="flex-1"></div>
+      </div>
     </div>
   </div>
 
