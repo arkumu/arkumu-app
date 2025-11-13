@@ -23,7 +23,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from lxml import etree as ET
 
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -720,7 +720,21 @@ def _restrict_to_harvestable_files(queryset):
     if digital_object_orgs:
         event_condition = project_event_condition & ~Q(organization__code__in=digital_object_orgs)
 
-    combined_condition = s3_condition | event_condition
+    # Digital-object S3 linkage: project -> digital object -> S3FileObject
+    digital_object_files = Triple.objects.filter(
+        predicate__uri__endswith="/properties/digitales-objekt",
+        subject_id=OuterRef("pk"),
+    ).values("object_id")
+
+    digital_object_s3_condition = Exists(
+        S3FileObject.objects.filter(
+            related_resource_id__in=digital_object_files,
+            status__in=HARVESTABLE_FILE_STATUSES,
+            s3_key__isnull=False,
+        ).exclude(s3_key="")
+    )
+
+    combined_condition = s3_condition | event_condition | digital_object_s3_condition
     if rosetta_orgs:
         combined_condition |= rosetta_condition
     if dump_project_ids:
