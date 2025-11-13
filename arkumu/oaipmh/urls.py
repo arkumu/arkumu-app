@@ -13,7 +13,7 @@ urlpatterns = [
     path("", oai_endpoint, name="endpoint"),
     path("db/", oai_db_endpoint, name="db-endpoint"),
     path("tailored/", oai_tailored_endpoint, name="tailored-endpoint"),
-    path("schemas/<slug:snapshot>/<slug:variant>.ttl", oai_schema_download, name="schema_download"),
+    path("schemas/<slug:snapshot>/<slug:variant>.<slug:ext>", oai_schema_download, name="schema_download"),
 
     # Dashboard and proxy views
     path("proxy/", dashboard_views.oai_proxy, name="oai_proxy"),

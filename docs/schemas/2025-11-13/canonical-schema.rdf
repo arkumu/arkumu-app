@@ -1,0 +1,1298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF
+  xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+  xmlns:owl="http://www.w3.org/2002/07/owl#"
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:dcterms="http://purl.org/dc/terms/"
+>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/anzeigestatus">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Anzeigestatus</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/anzeigestatus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/anzeigestatus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/anzeigestatus"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Anzeigestatus; FUK::Digitales_Objekt::Anzeigestatus; RSH::Digitales_Objekt::Anzeigestatus</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Rollen Der Akteurin Im Ereignis</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/rollen-der-akteurin-im-ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/rollen-der-akteurin-im-ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/rollen-der-akteurin-im-ereignis"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn_Ereignis_Kreuztabelle::Rollen der AkteurIn im Ereignis; FUK::AkteurIn_Ereignis_Kreuztabelle::Rollen der AkteurIn im Ereignis; RSH::AkteurIn_Ereignis_Kreuztabelle::Rollen der AkteurIn im Ereignis</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Deutscher Name Der Rolle Breadcrumb</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/deutscher-name-der-rolle-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/deutscher-name-der-rolle-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/deutscher-name-der-rolle-breadcrumb"/>
+    <dcterms:source xml:lang="en">DET::Rolle::Deutscher Name der Rolle (Breadcrumb); FUK::Rolle::Deutscher Name der Rolle (Breadcrumb); RSH::Rolle::Deutscher Name der Rolle (Breadcrumb)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/vorschaubild">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Vorschaubild</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/vorschaubild"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/vorschaubild"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/vorschaubild"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Vorschaubild; FUK::Projekt::Vorschaubild; RSH::Projekt::Vorschaubild</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignisname">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignisname</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignisname"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignisname"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignisname"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignisname; FUK::Ereignis::Ereignisname; RSH::Ereignis::Ereignisname</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/datensatzerstellung-beim-einlieferer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Datensatzerstellung Beim Einlieferer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/datensatzerstellung-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/datensatzerstellung-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/datensatzerstellung-beim-einlieferer"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Datensatzerstellung beim Einlieferer; FUK::Digitales_Objekt::Datensatzerstellung beim Einlieferer; RSH::Digitales_Objekt::Datensatzerstellung beim Einlieferer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::Datensatzerstellung beim Einlieferer; FUK::Ereignis::Datensatzerstellung beim Einlieferer; RSH::Ereignis::Datensatzerstellung beim Einlieferer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/wirkungsort">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Wirkungsort</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/wirkungsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/wirkungsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/wirkungsort"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Wirkungsort; FUK::AkteurIn::Wirkungsort; RSH::AkteurIn::Wirkungsort</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/bildbeschreibung-englisch">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Bildbeschreibung Englisch</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/bildbeschreibung-englisch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/bildbeschreibung-englisch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/bildbeschreibung-englisch"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Bildbeschreibung (englisch); FUK::Digitales_Objekt::Bildbeschreibung (englisch); RSH::Digitales_Objekt::Bildbeschreibung (englisch)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/beruf-und-taetigkeit">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Beruf Und Taetigkeit</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/beruf-und-taetigkeit"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/beruf-und-taetigkeit"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/beruf-und-taetigkeit"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Beruf und Tätigkeit; FUK::AkteurIn::Beruf und Tätigkeit; RSH::AkteurIn::Beruf und Tätigkeit</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/rolle-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Rolle Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/rolle-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/rolle-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/rolle-id"/>
+    <dcterms:source xml:lang="en">DET::Rolle::Rolle-ID; FUK::Rolle::Rolle-ID; RSH::Rolle::Rolle-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/dateiabfragedokument">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Dateiabfragedokument</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/dateiabfragedokument"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/dateiabfragedokument"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/dateiabfragedokument"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Dateiabfragedokument; FUK::Projekt::Dateiabfragedokument; RSH::Projekt::Dateiabfragedokument</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/wesentliche-eigenschaften-englisch">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Wesentliche Eigenschaften Englisch</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/wesentliche-eigenschaften-englisch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/wesentliche-eigenschaften-englisch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/wesentliche-eigenschaften-englisch"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Wesentliche Eigenschaften (englisch); FUK::Digitales_Objekt::Wesentliche Eigenschaften (englisch); RSH::Digitales_Objekt::Wesentliche Eigenschaften (englisch)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/informationstraeger">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Informationstraeger</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/informationstraeger"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/informationstraeger"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/informationstraeger"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Informationsträger; FUK::Ereignis::Informationsträger; RSH::Ereignis::Informationsträger</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/dateipfad">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Dateipfad</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/dateipfad"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/dateipfad"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/dateipfad"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Dateipfad; FUK::Digitales_Objekt::Dateipfad; RSH::Digitales_Objekt::Dateipfad</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/datensatz-id-beim-einlieferer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Datensatz Id Beim Einlieferer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/datensatz-id-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/datensatz-id-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/datensatz-id-beim-einlieferer"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Datensatz-ID beim Einlieferer; FUK::Digitales_Objekt::Datensatz-ID beim Einlieferer; RSH::Digitales_Objekt::Datensatz-ID beim Einlieferer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::Datensatz-ID beim Einlieferer; FUK::Ereignis::Datensatz-ID beim Einlieferer; RSH::Ereignis::Datensatz-ID beim Einlieferer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ist-arkumu-preview">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ist Arkumu Preview</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ist-arkumu-preview"/>
+    <dcterms:source xml:lang="en">FUK::Digitales_Objekt::ist arkumu-Preview</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/dcp-art">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Dcp Art</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/dcp-art"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/dcp-art"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/dcp-art"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::DCP-Art; FUK::Digitales_Objekt::DCP-Art; RSH::Digitales_Objekt::DCP-Art</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/sonderregelung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Sonderregelung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/sonderregelung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/sonderregelung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/sonderregelung"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Sonderregelung; FUK::Projekt::Sonderregelung; RSH::Projekt::Sonderregelung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/bildbeschreibung-deutsch">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Bildbeschreibung Deutsch</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/bildbeschreibung-deutsch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/bildbeschreibung-deutsch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/bildbeschreibung-deutsch"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Bildbeschreibung (deutsch); FUK::Digitales_Objekt::Bildbeschreibung (deutsch); RSH::Digitales_Objekt::Bildbeschreibung (deutsch)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/im-ereignis">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Im Ereignis</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/im-ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/im-ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/im-ereignis"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn_Ereignis_Kreuztabelle::im Ereignis; FUK::AkteurIn_Ereignis_Kreuztabelle::im Ereignis; RSH::AkteurIn_Ereignis_Kreuztabelle::im Ereignis</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/nachgestellter-titel">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Nachgestellter Titel</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/nachgestellter-titel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/nachgestellter-titel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/nachgestellter-titel"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Nachgestellter Titel; FUK::AkteurIn::Nachgestellter Titel; RSH::AkteurIn::Nachgestellter Titel</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/geschlecht">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Geschlecht</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/geschlecht"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/geschlecht"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/geschlecht"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Geschlecht; FUK::AkteurIn::Geschlecht; RSH::AkteurIn::Geschlecht</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/englischer-kommentar">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Englischer Kommentar</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/englischer-kommentar"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/englischer-kommentar"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/englischer-kommentar"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Englischer Kommentar; FUK::AkteurIn::Englischer Kommentar; RSH::AkteurIn::Englischer Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Englischer Kommentar; FUK::Digitales_Objekt::Englischer Kommentar; RSH::Digitales_Objekt::Englischer Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">RSH::Ereignis::Englischer Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projekt::Englischer Kommentar; FUK::Projekt::Englischer Kommentar; RSH::Projekt::Englischer Kommentar</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/erhaltungstyp">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Erhaltungstyp</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/erhaltungstyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/erhaltungstyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/erhaltungstyp"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Erhaltungstyp; FUK::Digitales_Objekt::Erhaltungstyp; RSH::Digitales_Objekt::Erhaltungstyp</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/dateipaket">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Dateipaket</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/dateipaket"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/dateipaket"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/dateipaket"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Dateipaket; FUK::Digitales_Objekt::Dateipaket; RSH::Digitales_Objekt::Dateipaket</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/deutsche-kurzbiografie">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Deutsche Kurzbiografie</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/deutsche-kurzbiografie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/deutsche-kurzbiografie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/deutsche-kurzbiografie"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Deutsche Kurzbiografie; FUK::AkteurIn::Deutsche Kurzbiografie; RSH::AkteurIn::Deutsche Kurzbiografie</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/objekttyp">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Objekttyp</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/objekttyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/objekttyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/objekttyp"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Objekttyp; FUK::Digitales_Objekt::Objekttyp; RSH::Digitales_Objekt::Objekttyp</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/akteurin-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Akteurin Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/akteurin-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/akteurin-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/akteurin-id"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::AkteurIn-ID; FUK::AkteurIn::AkteurIn-ID; RSH::AkteurIn::AkteurIn-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/dateiname">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Dateiname</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/dateiname"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/dateiname"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/dateiname"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Dateiname; FUK::Digitales_Objekt::Dateiname; RSH::Digitales_Objekt::Dateiname</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/fruehestes-sterbedatum">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Fruehestes Sterbedatum</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/fruehestes-sterbedatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/fruehestes-sterbedatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/fruehestes-sterbedatum"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Frühestes Sterbedatum; FUK::AkteurIn::Frühestes Sterbedatum; RSH::AkteurIn::Frühestes Sterbedatum</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/alternativer-name">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Alternativer Name</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/alternativer-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/alternativer-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/alternativer-name"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Alternativer Name; FUK::AkteurIn::Alternativer Name; RSH::AkteurIn::Alternativer Name</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignisbeginn">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignisbeginn</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignisbeginn"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignisbeginn"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignisbeginn"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignisbeginn; FUK::Ereignis::Ereignisbeginn; RSH::Ereignis::Ereignisbeginn</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/interner-kommentar">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Interner Kommentar</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/interner-kommentar"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/interner-kommentar"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/interner-kommentar"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Interner Kommentar; FUK::AkteurIn::Interner Kommentar; RSH::AkteurIn::Interner Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Interner Kommentar; FUK::Digitales_Objekt::Interner Kommentar; RSH::Digitales_Objekt::Interner Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">RSH::Ereignis::Interner Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projekt::Interner Kommentar; FUK::Projekt::Interner Kommentar; RSH::Projekt::Interner Kommentar</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/letzte-projektmodifikation-beim-einlieferer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Letzte Projektmodifikation Beim Einlieferer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/letzte-projektmodifikation-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/letzte-projektmodifikation-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/letzte-projektmodifikation-beim-einlieferer"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Letzte Projektmodifikation beim Einlieferer; FUK::Projekt::Letzte Projektmodifikation beim Einlieferer; RSH::Projekt::Letzte Projektmodifikation beim Einlieferer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/bestehender-lizenzvertrag">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Bestehender Lizenzvertrag</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/bestehender-lizenzvertrag"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/bestehender-lizenzvertrag"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/bestehender-lizenzvertrag"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Bestehender Lizenzvertrag; FUK::Projekt::Bestehender Lizenzvertrag; RSH::Projekt::Bestehender Lizenzvertrag</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/nicht-oeffentlicher-name">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Nicht Oeffentlicher Name</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/nicht-oeffentlicher-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/nicht-oeffentlicher-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/nicht-oeffentlicher-name"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Nicht-öffentlicher Name; FUK::AkteurIn::Nicht-öffentlicher Name; RSH::AkteurIn::Nicht-öffentlicher Name</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignis">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignis</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignis"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Ereignis; FUK::Projekt::Ereignis; RSH::Projekt::Ereignis</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/medientyp">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Medientyp</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/medientyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/medientyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/medientyp"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Medientyp; FUK::Digitales_Objekt::Medientyp; RSH::Digitales_Objekt::Medientyp</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/schlagwort">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Schlagwort</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/schlagwort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/schlagwort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/schlagwort"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Schlagwort; FUK::Projekt::Schlagwort; RSH::Projekt::Schlagwort</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/projektkategorie">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Projektkategorie</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/projektkategorie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/projektkategorie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/projektkategorie"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Projektkategorie; FUK::Projekt::Projektkategorie; RSH::Projekt::Projektkategorie</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/gnd-nummer-maennlich">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Gnd Nummer Maennlich</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/gnd-nummer-maennlich"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/gnd-nummer-maennlich"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/gnd-nummer-maennlich"/>
+    <dcterms:source xml:lang="en">DET::Rolle::GND-Nummer (männlich); FUK::Rolle::GND-Nummer (männlich); RSH::Rolle::GND-Nummer (männlich)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/geburtsort">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Geburtsort</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/geburtsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/geburtsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/geburtsort"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Geburtsort; FUK::AkteurIn::Geburtsort; RSH::AkteurIn::Geburtsort</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/englische-kurzbiografie">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Englische Kurzbiografie</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/englische-kurzbiografie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/englische-kurzbiografie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/englische-kurzbiografie"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Englische Kurzbiografie; FUK::AkteurIn::Englische Kurzbiografie; RSH::AkteurIn::Englische Kurzbiografie</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/projekt-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Projekt Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/projekt-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/projekt-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/projekt-id"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Projekt-ID; FUK::Projekt::Projekt-ID; RSH::Projekt::Projekt-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/einliefernde-hochschule"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Deutscher Name Der Einliefernden Hochschule</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/deutscher-name-der-einliefernden-hochschule"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/deutscher-name-der-einliefernden-hochschule"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/deutscher-name-der-einliefernden-hochschule"/>
+    <dcterms:source xml:lang="en">DET::Einliefernde_Hochschule::Deutscher Name der Einliefernden Hochschule; FUK::Einliefernde Hochschule::Deutscher Name der Einliefernden Hochschule; RSH::Einliefernde_Hochschule::Deutscher Name der Einliefernden Hochschule</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/spaetestes-sterbedatum">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Spaetestes Sterbedatum</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/spaetestes-sterbedatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/spaetestes-sterbedatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/spaetestes-sterbedatum"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Spätestes Sterbedatum; FUK::AkteurIn::Spätestes Sterbedatum; RSH::AkteurIn::Spätestes Sterbedatum</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignis-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignis Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignis-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignis-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignis-id"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignis-ID; FUK::Ereignis::Ereignis-ID; RSH::Ereignis::Ereignis-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/akteurin-im-ereignis">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Akteurin Im Ereignis</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/akteurin-im-ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/akteurin-im-ereignis"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/akteurin-im-ereignis"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn_Ereignis_Kreuztabelle::AkteurIn im Ereignis; FUK::AkteurIn_Ereignis_Kreuztabelle::AkteurIn im Ereignis; RSH::AkteurIn_Ereignis_Kreuztabelle::AkteurIn im Ereignis</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/physisches-objekt">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Physisches Objekt</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/physisches-objekt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/physisches-objekt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/physisches-objekt"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Physisches Objekt; FUK::Ereignis::Physisches Objekt; RSH::Ereignis::Physisches Objekt</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/beschreibung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Beschreibung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/beschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/beschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/beschreibung"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Beschreibung; FUK::Projekt::Beschreibung; RSH::Projekt::Beschreibung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/projektkompilation">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Projektkompilation</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/projektkompilation"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/projektkompilation"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/projektkompilation"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Projektkompilation; FUK::Digitales_Objekt::Projektkompilation; RSH::Digitales_Objekt::Projektkompilation</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/aat-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Aat Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/aat-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/aat-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/aat-id"/>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::AAT-ID; FUK::Projektkategorie::AAT-ID; RSH::Projektkategorie::AAT-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Rolle::AAT-ID; FUK::Rolle::AAT-ID; RSH::Rolle::AAT-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/filmportal-kategorie-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Filmportal Kategorie Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/filmportal-kategorie-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/filmportal-kategorie-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/filmportal-kategorie-id"/>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::Filmportal-Kategorie-ID; FUK::Projektkategorie::Filmportal-Kategorie-ID; RSH::Projektkategorie::Filmportal-Kategorie-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/projektkategorie-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Projektkategorie Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/projektkategorie-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/projektkategorie-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/projektkategorie-id"/>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::Projektkategorie-ID; FUK::Projektkategorie::Projektkategorie-ID; RSH::Projektkategorie::Projektkategorie-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/wikidata-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/einliefernde-hochschule"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Wikidata Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/wikidata-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/wikidata-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/wikidata-id"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Wikidata-ID; FUK::AkteurIn::Wikidata-ID; RSH::AkteurIn::Wikidata-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Einliefernde_Hochschule::Wikidata-ID; FUK::Einliefernde Hochschule::Wikidata-ID; RSH::Einliefernde_Hochschule::Wikidata-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::Wikidata-ID; FUK::Ereignis::Wikidata-ID; RSH::Ereignis::Wikidata-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projekt::Wikidata-ID; FUK::Projekt::Wikidata-ID; RSH::Projekt::Wikidata-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::Wikidata-ID; FUK::Projektkategorie::Wikidata-ID; RSH::Projektkategorie::Wikidata-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Rolle::Wikidata-ID; FUK::Rolle::Wikidata-ID; RSH::Rolle::Wikidata-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/einlieferer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Einlieferer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/einlieferer"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Einlieferer; FUK::Digitales_Objekt::Einlieferer; RSH::Digitales_Objekt::Einlieferer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::Einlieferer; FUK::Ereignis::Einlieferer; RSH::Ereignis::Einlieferer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/gnd-nummer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/einliefernde-hochschule"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Gnd Nummer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/gnd-nummer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/gnd-nummer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/gnd-nummer"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::GND-Nummer; FUK::AkteurIn::GND-Nummer; RSH::AkteurIn::GND-Nummer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Einliefernde_Hochschule::GND-Nummer; FUK::Einliefernde Hochschule::GND-Nummer; RSH::Einliefernde_Hochschule::GND-Nummer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::GND-Nummer; FUK::Ereignis::GND-Nummer; RSH::Ereignis::GND-Nummer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projekt::GND-Nummer; FUK::Projekt::GND-Nummer; RSH::Projekt::GND-Nummer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::GND-Nummer; FUK::Projektkategorie::GND-Nummer; RSH::Projektkategorie::GND-Nummer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/englischer-name-der-einliefernden-hochschule">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/einliefernde-hochschule"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Englischer Name Der Einliefernden Hochschule</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/englischer-name-der-einliefernden-hochschule"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/englischer-name-der-einliefernden-hochschule"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/englischer-name-der-einliefernden-hochschule"/>
+    <dcterms:source xml:lang="en">DET::Einliefernde_Hochschule::Englischer Name der Einliefernden Hochschule; FUK::Einliefernde Hochschule::Englischer Name der Einliefernden Hochschule; RSH::Einliefernde_Hochschule::Englischer Name der Einliefernden Hochschule</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/digitales-objekt">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Digitales Objekt</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/digitales-objekt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/digitales-objekt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/digitales-objekt"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Digitales Objekt; FUK::Ereignis::Digitales Objekt; RSH::Ereignis::Digitales Objekt</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/wirkungsende">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Wirkungsende</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/wirkungsende"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/wirkungsende"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/wirkungsende"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Wirkungsende; FUK::AkteurIn::Wirkungsende; RSH::AkteurIn::Wirkungsende</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Waehlt Besitzt Leistungsschutzrechte Automatisch Aus</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus"/>
+    <dcterms:source xml:lang="en">DET::Rolle::wählt ""besitzt Leistungsschutzrechte"" automatisch aus; FUK::Rolle::wählt ""besitzt Leistungsschutzrechte"" automatisch aus; RSH::Rolle::wählt ""besitzt Leistungsschutzrechte"" automatisch aus</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/tonformat">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Tonformat</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/tonformat"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/tonformat"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/tonformat"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Tonformat; FUK::Digitales_Objekt::Tonformat; RSH::Digitales_Objekt::Tonformat</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/projekterstellung-beim-einlieferer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Projekterstellung Beim Einlieferer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/projekterstellung-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/projekterstellung-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/projekterstellung-beim-einlieferer"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Projekterstellung beim Einlieferer; FUK::Projekt::Projekterstellung beim Einlieferer; RSH::Projekt::Projekterstellung beim Einlieferer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/derivatkopie-nummer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Derivatkopie Nummer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/derivatkopie-nummer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/derivatkopie-nummer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/derivatkopie-nummer"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Derivatkopie-Nummer; FUK::Digitales_Objekt::Derivatkopie-Nummer; RSH::Digitales_Objekt::Derivatkopie-Nummer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/synonyme">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Synonyme</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/synonyme"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/synonyme"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/synonyme"/>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::Synonyme; FUK::Projektkategorie::Synonyme; RSH::Projektkategorie::Synonyme</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Rolle::Synonyme; FUK::Rolle::Synonyme; RSH::Rolle::Synonyme</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/teil-einer-serie">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Teil Einer Serie</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/teil-einer-serie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/teil-einer-serie"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/teil-einer-serie"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Teil einer Serie; FUK::Digitales_Objekt::Teil einer Serie; RSH::Digitales_Objekt::Teil einer Serie</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/entstehung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Entstehung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/entstehung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/entstehung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/entstehung"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Entstehung; FUK::Digitales_Objekt::Entstehung; RSH::Digitales_Objekt::Entstehung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/eq">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Eq</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/eq"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/eq"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/eq"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::EQ; FUK::Digitales_Objekt::EQ; RSH::Digitales_Objekt::EQ</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/systemvoraussetzungen">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Systemvoraussetzungen</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/systemvoraussetzungen"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/systemvoraussetzungen"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/systemvoraussetzungen"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Systemvoraussetzungen; FUK::Digitales_Objekt::Systemvoraussetzungen; RSH::Digitales_Objekt::Systemvoraussetzungen</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/externe-projektwebseite">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Externe Projektwebseite</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/externe-projektwebseite"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/externe-projektwebseite"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/externe-projektwebseite"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Externe Projektwebseite; FUK::Projekt::Externe Projektwebseite; RSH::Projekt::Externe Projektwebseite</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/gnd-nummer-weiblich">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Gnd Nummer Weiblich</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/gnd-nummer-weiblich"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/gnd-nummer-weiblich"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/gnd-nummer-weiblich"/>
+    <dcterms:source xml:lang="en">DET::Rolle::GND-Nummer (weiblich); FUK::Rolle::GND-Nummer (weiblich); RSH::Rolle::GND-Nummer (weiblich)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/auffuehrungstonart">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Auffuehrungstonart</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/auffuehrungstonart"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/auffuehrungstonart"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Aufführungstonart; FUK::Ereignis::Aufführungstonart</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/andere-normdaten">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Andere Normdaten</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/andere-normdaten"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/andere-normdaten"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/andere-normdaten"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Andere Normdaten; FUK::AkteurIn::Andere Normdaten; RSH::AkteurIn::Andere Normdaten</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::Andere Normdaten; FUK::Ereignis::Andere Normdaten; RSH::Ereignis::Andere Normdaten</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projekt::Andere Normdaten; FUK::Projekt::Andere Normdaten; RSH::Projekt::Andere Normdaten</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/deutsche-inhaltliche-beschreibung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Deutsche Inhaltliche Beschreibung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/deutsche-inhaltliche-beschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/deutsche-inhaltliche-beschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/deutsche-inhaltliche-beschreibung"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Deutsche inhaltliche Beschreibung; FUK::Digitales_Objekt::Deutsche inhaltliche Beschreibung; RSH::Digitales_Objekt::Deutsche inhaltliche Beschreibung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/spaetestes-geburtsdatum">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Spaetestes Geburtsdatum</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/spaetestes-geburtsdatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/spaetestes-geburtsdatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/spaetestes-geburtsdatum"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Spätestes Geburtsdatum; FUK::AkteurIn::Spätestes Geburtsdatum; RSH::AkteurIn::Spätestes Geburtsdatum</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/wesentliche-eigenschaften-deutsch">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Wesentliche Eigenschaften Deutsch</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/wesentliche-eigenschaften-deutsch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/wesentliche-eigenschaften-deutsch"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/wesentliche-eigenschaften-deutsch"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Wesentliche Eigenschaften (deutsch); FUK::Digitales_Objekt::Wesentliche Eigenschaften (deutsch); RSH::Digitales_Objekt::Wesentliche Eigenschaften (deutsch)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/webseite-der-akteurin">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Webseite Der Akteurin</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/webseite-der-akteurin"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/webseite-der-akteurin"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/webseite-der-akteurin"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Webseite der AkteurIn; FUK::AkteurIn::Webseite der AkteurIn; RSH::AkteurIn::Webseite der AkteurIn</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/akteurin-ereignis-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Akteurin Ereignis Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/akteurin-ereignis-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/akteurin-ereignis-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/akteurin-ereignis-id"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn_Ereignis_Kreuztabelle::AkteurIn-Ereignis-ID; FUK::AkteurIn_Ereignis_Kreuztabelle::AkteurIn-Ereignis-ID; RSH::AkteurIn_Ereignis_Kreuztabelle::AkteurIn-Ereignis-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/sprachfassung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Sprachfassung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/sprachfassung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/sprachfassung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/sprachfassung"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Sprachfassung; FUK::Digitales_Objekt::Sprachfassung; RSH::Digitales_Objekt::Sprachfassung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/besitzt-leistungsschutzrechte">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Besitzt Leistungsschutzrechte</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/besitzt-leistungsschutzrechte"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/besitzt-leistungsschutzrechte"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/besitzt-leistungsschutzrechte"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn_Ereignis_Kreuztabelle::besitzt Leistungsschutzrechte; FUK::AkteurIn_Ereignis_Kreuztabelle::besitzt Leistungsschutzrechte; RSH::AkteurIn_Ereignis_Kreuztabelle::besitzt Leistungsschutzrechte</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/bevorzugter-untertitel">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Bevorzugter Untertitel</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/bevorzugter-untertitel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/bevorzugter-untertitel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/bevorzugter-untertitel"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Bevorzugter Untertitel; FUK::Projekt::Bevorzugter Untertitel; RSH::Projekt::Bevorzugter Untertitel</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/neuer-lizenzvertrag-digi-kunst-formular">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Neuer Lizenzvertrag Digi Kunst Formular</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/neuer-lizenzvertrag-digi-kunst-formular"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/neuer-lizenzvertrag-digi-kunst-formular"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/neuer-lizenzvertrag-digi-kunst-formular"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Neuer Lizenzvertrag (Digi-Kunst-Formular); FUK::Projekt::Neuer Lizenzvertrag (Digi-Kunst-Formular); RSH::Projekt::Neuer Lizenzvertrag (Digi-Kunst-Formular)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/originalsprache">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Originalsprache</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/originalsprache"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/originalsprache"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/originalsprache"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Originalsprache; FUK::Digitales_Objekt::Originalsprache; RSH::Digitales_Objekt::Originalsprache</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/werkverzeichnis-nummer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Werkverzeichnis Nummer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/werkverzeichnis-nummer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/werkverzeichnis-nummer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/werkverzeichnis-nummer"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Werkverzeichnis-Nummer; FUK::Projekt::Werkverzeichnis-Nummer; RSH::Projekt::Werkverzeichnis-Nummer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/bevorzugter-titel">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Bevorzugter Titel</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/bevorzugter-titel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/bevorzugter-titel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/bevorzugter-titel"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Bevorzugter Titel; FUK::Projekt::Bevorzugter Titel; RSH::Projekt::Bevorzugter Titel</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/aufloesungsort">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Aufloesungsort</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/aufloesungsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/aufloesungsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/aufloesungsort"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Auflösungsort; FUK::AkteurIn::Auflösungsort; RSH::AkteurIn::Auflösungsort</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/nicht-oeffentlicher-name-begruendung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Nicht Oeffentlicher Name Begruendung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/nicht-oeffentlicher-name-begruendung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/nicht-oeffentlicher-name-begruendung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/nicht-oeffentlicher-name-begruendung"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Nicht-öffentlicher Name (Begründung); FUK::AkteurIn::Nicht-öffentlicher Name (Begründung); RSH::AkteurIn::Nicht-öffentlicher Name (Begründung)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/khm-internetfreigabestufe">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Khm Internetfreigabestufe</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/khm-internetfreigabestufe"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/khm-internetfreigabestufe"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/khm-internetfreigabestufe"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::KHM-Internetfreigabestufe; FUK::Digitales_Objekt::KHM-Internetfreigabestufe; RSH::Digitales_Objekt::KHM-Internetfreigabestufe</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/wird-im-loop-abgespielt">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Wird Im Loop Abgespielt</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/wird-im-loop-abgespielt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/wird-im-loop-abgespielt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/wird-im-loop-abgespielt"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Wird im Loop abgespielt; FUK::Digitales_Objekt::Wird im Loop abgespielt; RSH::Digitales_Objekt::Wird im Loop abgespielt</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/angegebene-nutzungsrechte">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Angegebene Nutzungsrechte</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/angegebene-nutzungsrechte"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/angegebene-nutzungsrechte"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/angegebene-nutzungsrechte"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Angegebene Nutzungsrechte; FUK::Projekt::Angegebene Nutzungsrechte; RSH::Projekt::Angegebene Nutzungsrechte</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/letzte-datensatzmodifikation-beim-einlieferer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Letzte Datensatzmodifikation Beim Einlieferer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/letzte-datensatzmodifikation-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/letzte-datensatzmodifikation-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/letzte-datensatzmodifikation-beim-einlieferer"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Letzte Datensatzmodifikation beim Einlieferer; FUK::Digitales_Objekt::Letzte Datensatzmodifikation beim Einlieferer; RSH::Digitales_Objekt::Letzte Datensatzmodifikation beim Einlieferer</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::Letzte Datensatzmodifikation beim Einlieferer; FUK::Ereignis::Letzte Datensatzmodifikation beim Einlieferer; RSH::Ereignis::Letzte Datensatzmodifikation beim Einlieferer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/wirkungsbeginn">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Wirkungsbeginn</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/wirkungsbeginn"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/wirkungsbeginn"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/wirkungsbeginn"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Wirkungsbeginn; FUK::AkteurIn::Wirkungsbeginn; RSH::AkteurIn::Wirkungsbeginn</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/einliefernde-hochschule">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Einliefernde Hochschule</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/einliefernde-hochschule"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/einliefernde-hochschule"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/einliefernde-hochschule"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Einliefernde Hochschule; FUK::Projekt::Einliefernde Hochschule; RSH::Projekt::Einliefernde Hochschule</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/stimmung-in-hertz">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Stimmung In Hertz</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/stimmung-in-hertz"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/stimmung-in-hertz"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Stimmung in Hertz; FUK::Ereignis::Stimmung in Hertz</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/englischer-name">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Englischer Name</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/englischer-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/englischer-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/englischer-name"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Englischer Name; FUK::AkteurIn::Englischer Name; RSH::AkteurIn::Englischer Name</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/equipment-und-software">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Equipment Und Software</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/equipment-und-software"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/equipment-und-software"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/equipment-und-software"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Equipment und Software; FUK::Ereignis::Equipment und Software; RSH::Ereignis::Equipment und Software</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignistyp">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignistyp</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignistyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignistyp"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignistyp"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignistyp; FUK::Ereignis::Ereignistyp; RSH::Ereignis::Ereignistyp</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/sprache-des-bevorzugten-titels">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Sprache Des Bevorzugten Titels</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/sprache-des-bevorzugten-titels"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/sprache-des-bevorzugten-titels"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/sprache-des-bevorzugten-titels"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Sprache des bevorzugten Titels; FUK::Projekt::Sprache des bevorzugten Titels; RSH::Projekt::Sprache des bevorzugten Titels</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/projektart">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Projektart</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/projektart"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/projektart"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/projektart"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Projektart; FUK::Projekt::Projektart; RSH::Projekt::Projektart</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/einliefernde-hochschule-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/einliefernde-hochschule"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Einliefernde Hochschule Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/einliefernde-hochschule-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/einliefernde-hochschule-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/einliefernde-hochschule-id"/>
+    <dcterms:source xml:lang="en">DET::Einliefernde_Hochschule::Einliefernde Hochschule-ID; FUK::Einliefernde Hochschule::Einliefernde Hochschule-ID; RSH::Einliefernde_Hochschule::Einliefernde Hochschule-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/inhaltswarnung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Inhaltswarnung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/inhaltswarnung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/inhaltswarnung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/inhaltswarnung"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Inhaltswarnung; FUK::Projekt::Inhaltswarnung; RSH::Projekt::Inhaltswarnung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/alternativer-titel-set">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Alternativer Titel Set</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/alternativer-titel-set"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/alternativer-titel-set"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/alternativer-titel-set"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Alternativer Titel-Set; FUK::Projekt::Alternativer Titel-Set; RSH::Projekt::Alternativer Titel-Set</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/sterbeort">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Sterbeort</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/sterbeort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/sterbeort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/sterbeort"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Sterbeort; FUK::AkteurIn::Sterbeort; RSH::AkteurIn::Sterbeort</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/orcid">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Orcid</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/orcid"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/orcid"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/orcid"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::OrcID; FUK::AkteurIn::OrcID; RSH::AkteurIn::OrcID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/viaf-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Viaf Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/viaf-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/viaf-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/viaf-id"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::VIAF-ID; FUK::AkteurIn::VIAF-ID; RSH::AkteurIn::VIAF-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Ereignis::VIAF-ID; FUK::Ereignis::VIAF-ID; RSH::Ereignis::VIAF-ID</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projekt::VIAF-ID; FUK::Projekt::VIAF-ID; RSH::Projekt::VIAF-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignisbeginn-geschaetzt">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignisbeginn Geschaetzt</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignisbeginn-geschaetzt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignisbeginn-geschaetzt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignisbeginn-geschaetzt"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignisbeginn geschätzt; FUK::Ereignis::Ereignisbeginn geschätzt; RSH::Ereignis::Ereignisbeginn geschätzt</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignisort">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignisort</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignisort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignisort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignisort"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignisort; FUK::Ereignis::Ereignisort; RSH::Ereignis::Ereignisort</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/organisationseinheit">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Organisationseinheit</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/organisationseinheit"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/organisationseinheit"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/organisationseinheit"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Organisationseinheit; FUK::Projekt::Organisationseinheit; RSH::Projekt::Organisationseinheit</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/waehlt-ist-urheber-in-automatisch-aus">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Waehlt Ist Urheber In Automatisch Aus</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/waehlt-ist-urheber-in-automatisch-aus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/waehlt-ist-urheber-in-automatisch-aus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/waehlt-ist-urheber-in-automatisch-aus"/>
+    <dcterms:source xml:lang="en">DET::Rolle::wählt ""ist Urheber:in"" automatisch aus; FUK::Rolle::wählt ""ist Urheber:in"" automatisch aus; RSH::Rolle::wählt ""ist Urheber:in"" automatisch aus</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Deutscher Name Der Projektkategorie Breadcrumb</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/deutscher-name-der-projektkategorie-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/deutscher-name-der-projektkategorie-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/deutscher-name-der-projektkategorie-breadcrumb"/>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::Deutscher Name der Projektkategorie (Breadcrumb); FUK::Projektkategorie::Deutscher Name der Projektkategorie (Breadcrumb); RSH::Projektkategorie::Deutscher Name der Projektkategorie (Breadcrumb)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignisbeschreibung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignisbeschreibung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignisbeschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignisbeschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignisbeschreibung"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignisbeschreibung; FUK::Ereignis::Ereignisbeschreibung; RSH::Ereignis::Ereignisbeschreibung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignisende">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignisende</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignisende"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignisende"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignisende"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignisende; FUK::Ereignis::Ereignisende; RSH::Ereignis::Ereignisende</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/signatur-beim-einlieferer">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Signatur Beim Einlieferer</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/signatur-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/signatur-beim-einlieferer"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/signatur-beim-einlieferer"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Signatur beim Einlieferer; FUK::Projekt::Signatur beim Einlieferer; RSH::Projekt::Signatur beim Einlieferer</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/sprache-des-bevorzugten-untertitels">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Sprache Des Bevorzugten Untertitels</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/sprache-des-bevorzugten-untertitels"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/sprache-des-bevorzugten-untertitels"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/sprache-des-bevorzugten-untertitels"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Sprache des bevorzugten Untertitels; FUK::Projekt::Sprache des bevorzugten Untertitels; RSH::Projekt::Sprache des bevorzugten Untertitels</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/untertitelsprache">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Untertitelsprache</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/untertitelsprache"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/untertitelsprache"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/untertitelsprache"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Untertitelsprache; FUK::Digitales_Objekt::Untertitelsprache; RSH::Digitales_Objekt::Untertitelsprache</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/englischer-name-der-rolle-breadcrumb">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Englischer Name Der Rolle Breadcrumb</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/englischer-name-der-rolle-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/englischer-name-der-rolle-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/englischer-name-der-rolle-breadcrumb"/>
+    <dcterms:source xml:lang="en">DET::Rolle::Englischer Name der Rolle (Breadcrumb); FUK::Rolle::Englischer Name der Rolle (Breadcrumb); RSH::Rolle::Englischer Name der Rolle (Breadcrumb)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/englische-inhaltliche-beschreibung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Englische Inhaltliche Beschreibung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/englische-inhaltliche-beschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/englische-inhaltliche-beschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/englische-inhaltliche-beschreibung"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Englische inhaltliche Beschreibung; FUK::Digitales_Objekt::Englische inhaltliche Beschreibung; RSH::Digitales_Objekt::Englische inhaltliche Beschreibung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/deutscher-name">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Deutscher Name</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/deutscher-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/deutscher-name"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/deutscher-name"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Deutscher Name; FUK::AkteurIn::Deutscher Name; RSH::AkteurIn::Deutscher Name</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/digitales-objekt-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Digitales Objekt Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/digitales-objekt-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/digitales-objekt-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/digitales-objekt-id"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Digitales Objekt-ID; FUK::Digitales_Objekt::Digitales Objekt-ID; RSH::Digitales_Objekt::Digitales Objekt-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/deutscher-kommentar">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Deutscher Kommentar</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/deutscher-kommentar"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/deutscher-kommentar"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/deutscher-kommentar"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Deutscher Kommentar; FUK::AkteurIn::Deutscher Kommentar; RSH::AkteurIn::Deutscher Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Deutscher Kommentar; FUK::Digitales_Objekt::Deutscher Kommentar; RSH::Digitales_Objekt::Deutscher Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">RSH::Ereignis::Deutscher Kommentar</dcterms:source>
+    <dcterms:source xml:lang="en">DET::Projekt::Deutscher Kommentar; FUK::Projekt::Deutscher Kommentar; RSH::Projekt::Deutscher Kommentar</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/rechtsstatus">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Rechtsstatus</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/rechtsstatus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/rechtsstatus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/rechtsstatus"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Rechtsstatus; FUK::Projekt::Rechtsstatus; RSH::Projekt::Rechtsstatus</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/weiteres-rechtsdokument">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Weiteres Rechtsdokument</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/weiteres-rechtsdokument"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/weiteres-rechtsdokument"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/weiteres-rechtsdokument"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Weiteres Rechtsdokument; FUK::Projekt::Weiteres Rechtsdokument; RSH::Projekt::Weiteres Rechtsdokument</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/tonmischfassung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Tonmischfassung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/tonmischfassung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/tonmischfassung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/tonmischfassung"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Tonmischfassung; FUK::Digitales_Objekt::Tonmischfassung; RSH::Digitales_Objekt::Tonmischfassung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/art-des-lizenzvertrages">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Art Des Lizenzvertrages</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/art-des-lizenzvertrages"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/art-des-lizenzvertrages"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/art-des-lizenzvertrages"/>
+    <dcterms:source xml:lang="en">DET::Projekt::Art des Lizenzvertrages; FUK::Projekt::Art des Lizenzvertrages; RSH::Projekt::Art des Lizenzvertrages</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/gnd-nummer-gruppe">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/rolle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Gnd Nummer Gruppe</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/gnd-nummer-gruppe"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/gnd-nummer-gruppe"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/gnd-nummer-gruppe"/>
+    <dcterms:source xml:lang="en">DET::Rolle::GND-Nummer (Gruppe); FUK::Rolle::GND-Nummer (Gruppe); RSH::Rolle::GND-Nummer (Gruppe)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/fruehestes-geburtsdatum">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Fruehestes Geburtsdatum</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/fruehestes-geburtsdatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/fruehestes-geburtsdatum"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/fruehestes-geburtsdatum"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Frühestes Geburtsdatum; FUK::AkteurIn::Frühestes Geburtsdatum; RSH::AkteurIn::Frühestes Geburtsdatum</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ist-urheberin">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ist Urheberin</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ist-urheberin"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ist-urheberin"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ist-urheberin"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn_Ereignis_Kreuztabelle::ist UrheberIn; FUK::AkteurIn_Ereignis_Kreuztabelle::ist UrheberIn; RSH::AkteurIn_Ereignis_Kreuztabelle::ist UrheberIn</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ereignisende-geschaetzt">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/ereignis"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ereignisende Geschaetzt</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ereignisende-geschaetzt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ereignisende-geschaetzt"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ereignisende-geschaetzt"/>
+    <dcterms:source xml:lang="en">DET::Ereignis::Ereignisende geschätzt; FUK::Ereignis::Ereignisende geschätzt; RSH::Ereignis::Ereignisende geschätzt</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/gruendungsort">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Gruendungsort</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/gruendungsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/gruendungsort"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/gruendungsort"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Gründungsort; FUK::AkteurIn::Gründungsort; RSH::AkteurIn::Gründungsort</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/englischer-name-der-projektkategorie-breadcrumb">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/projektkategorie"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Englischer Name Der Projektkategorie Breadcrumb</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/englischer-name-der-projektkategorie-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/englischer-name-der-projektkategorie-breadcrumb"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/englischer-name-der-projektkategorie-breadcrumb"/>
+    <dcterms:source xml:lang="en">DET::Projektkategorie::Englischer Name der Projektkategorie (Breadcrumb); FUK::Projektkategorie::Englischer Name der Projektkategorie (Breadcrumb); RSH::Projektkategorie::Englischer Name der Projektkategorie (Breadcrumb)</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/ungesicherte-zuschreibung">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Ungesicherte Zuschreibung</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/ungesicherte-zuschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/ungesicherte-zuschreibung"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/ungesicherte-zuschreibung"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn_Ereignis_Kreuztabelle::Ungesicherte Zuschreibung; FUK::AkteurIn_Ereignis_Kreuztabelle::Ungesicherte Zuschreibung; RSH::AkteurIn_Ereignis_Kreuztabelle::Ungesicherte Zuschreibung</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/vorangestellter-titel">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Vorangestellter Titel</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/vorangestellter-titel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/vorangestellter-titel"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/vorangestellter-titel"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::Vorangestellter Titel; FUK::AkteurIn::Vorangestellter Titel; RSH::AkteurIn::Vorangestellter Titel</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/lccn-id">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/akteurin"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Lccn Id</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/lccn-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/lccn-id"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/lccn-id"/>
+    <dcterms:source xml:lang="en">DET::AkteurIn::LCCN-ID; FUK::AkteurIn::LCCN-ID; RSH::AkteurIn::LCCN-ID</dcterms:source>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://arkumu.org/data/properties/lizenzstatus">
+    <rdfs:domain rdf:resource="http://arkumu.org/data/types/digitales-objekt"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2000/01/rdf-schema#Literal"/>
+    <rdfs:label xml:lang="en">Lizenzstatus</rdfs:label>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/det/properties/lizenzstatus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/fuk/properties/lizenzstatus"/>
+    <owl:equivalentProperty rdf:resource="http://arkumu.org/data/rsh/properties/lizenzstatus"/>
+    <dcterms:source xml:lang="en">DET::Digitales_Objekt::Lizenzstatus; FUK::Digitales_Objekt::Lizenzstatus; RSH::Digitales_Objekt::Lizenzstatus</dcterms:source>
+  </rdf:Property>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/rolle">
+    <rdfs:label xml:lang="en">Rolle</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: Rolle; FUK: Rolle; RSH: Rolle</rdfs:comment>
+  </rdfs:Class>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/akteurin">
+    <rdfs:label xml:lang="en">Akteurin</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: AkteurIn; FUK: AkteurIn; RSH: AkteurIn</rdfs:comment>
+  </rdfs:Class>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle">
+    <rdfs:label xml:lang="en">Akteurin Ereignis Kreuztabelle</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: AkteurIn_Ereignis_Kreuztabelle; FUK: AkteurIn_Ereignis_Kreuztabelle; RSH: AkteurIn_Ereignis_Kreuztabelle</rdfs:comment>
+  </rdfs:Class>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/projekt">
+    <rdfs:label xml:lang="en">Projekt</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: Projekt; FUK: Projekt; RSH: Projekt</rdfs:comment>
+  </rdfs:Class>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/einliefernde-hochschule">
+    <rdfs:label xml:lang="en">Einliefernde Hochschule</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: Einliefernde_Hochschule; FUK: Einliefernde Hochschule; RSH: Einliefernde_Hochschule</rdfs:comment>
+  </rdfs:Class>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/digitales-objekt">
+    <rdfs:label xml:lang="en">Digitales Objekt</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: Digitales_Objekt; FUK: Digitales_Objekt; RSH: Digitales_Objekt</rdfs:comment>
+  </rdfs:Class>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/ereignis">
+    <rdfs:label xml:lang="en">Ereignis</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: Ereignis; FUK: Ereignis; RSH: Ereignis</rdfs:comment>
+  </rdfs:Class>
+  <rdfs:Class rdf:about="http://arkumu.org/data/types/projektkategorie">
+    <rdfs:label xml:lang="en">Projektkategorie</rdfs:label>
+    <rdfs:comment xml:lang="en">Available in datasets -&gt; DET: Projektkategorie; FUK: Projektkategorie; RSH: Projektkategorie</rdfs:comment>
+  </rdfs:Class>
+</rdf:RDF>

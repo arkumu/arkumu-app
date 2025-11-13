@@ -13,12 +13,14 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.urls import reverse
 
-SCHEMA_VARIANTS: Dict[str, str] = {
-    "canonical": "canonical-schema.ttl",
-    "institutional": "institutional-schema.ttl",
-}
+from .schema_config import (
+    SCHEMA_VARIANTS,
+    SCHEMA_FORMATS,
+    DEFAULT_SCHEMA_FORMATS,
+    SCHEMA_RELATIVE_DIR,
+)
 
-SCHEMA_DOCS_ROOT = Path(settings.BASE_DIR) / "docs" / "schemas"
+SCHEMA_DOCS_ROOT = Path(settings.BASE_DIR) / SCHEMA_RELATIVE_DIR
 ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -29,10 +31,12 @@ class SchemaSnapshot:
     tag: str
     path: Path
 
-    def file_path(self, variant: str) -> Path:
-        filename = SCHEMA_VARIANTS.get(variant)
-        if not filename:
-            raise KeyError(f"Unknown schema variant: {variant}")
+    def file_path(self, variant: str, fmt: str) -> Path:
+        base_name = SCHEMA_VARIANTS.get(variant)
+        fmt_meta = SCHEMA_FORMATS.get(fmt)
+        if not base_name or not fmt_meta:
+            raise KeyError(f"Unknown schema variant ({variant}) or format ({fmt}).")
+        filename = f"{base_name}.{fmt_meta['ext']}"
         file_path = self.path / filename
         if not file_path.exists():
             raise FileNotFoundError(file_path)
@@ -72,10 +76,17 @@ def list_schema_variants() -> Iterable[str]:
     return SCHEMA_VARIANTS.keys()
 
 
+def format_from_extension(extension: str) -> Optional[str]:
+    for fmt, meta in SCHEMA_FORMATS.items():
+        if meta["ext"] == extension:
+            return fmt
+    return None
+
+
 @dataclass(frozen=True)
 class SchemaUrlBundle:
     snapshot_tag: str
-    urls: Dict[str, Dict[str, str]]
+    urls: Dict[str, Dict[str, Dict[str, str]]]
 
 
 def build_schema_url_bundle(request: HttpRequest) -> Optional[SchemaUrlBundle]:
@@ -83,17 +94,32 @@ def build_schema_url_bundle(request: HttpRequest) -> Optional[SchemaUrlBundle]:
     if not snapshot:
         return None
 
-    url_map: Dict[str, Dict[str, str]] = {}
+    url_map: Dict[str, Dict[str, Dict[str, str]]] = {}
     for variant in SCHEMA_VARIANTS:
-        latest_url = request.build_absolute_uri(
-            reverse("oai:schema_download", args=("latest", variant))
-        )
-        snapshot_url = request.build_absolute_uri(
-            reverse("oai:schema_download", args=(snapshot.tag, variant))
-        )
-        url_map[variant] = {
-            "latest": latest_url,
-            "snapshot": snapshot_url,
-        }
+        variant_map: Dict[str, Dict[str, str]] = {}
+        for fmt in SCHEMA_FORMATS:
+            fmt_meta = SCHEMA_FORMATS[fmt]
+            try:
+                snapshot.file_path(variant, fmt)
+            except FileNotFoundError:
+                continue
+
+            ext = fmt_meta["ext"]
+            latest_url = request.build_absolute_uri(
+                reverse("oai:schema_download", args=("latest", variant, ext))
+            )
+            snapshot_url = request.build_absolute_uri(
+                reverse("oai:schema_download", args=(snapshot.tag, variant, ext))
+            )
+            variant_map[fmt] = {
+                "latest": latest_url,
+                "snapshot": snapshot_url,
+            }
+
+        if variant_map:
+            url_map[variant] = variant_map
+
+    if not url_map:
+        return None
 
     return SchemaUrlBundle(snapshot_tag=snapshot.tag, urls=url_map)

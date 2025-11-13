@@ -24,16 +24,23 @@ from __future__ import annotations
 import argparse
 import importlib
 import inspect
+import os
 import re
+import shutil
 from dataclasses import is_dataclass
 from datetime import datetime, timezone
-import os
-import shutil
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import DCTERMS, OWL, RDF, RDFS, SKOS, XSD
+
+from arkumu.oaipmh.schema_config import (
+    SCHEMA_VARIANTS,
+    SCHEMA_FORMATS,
+    DEFAULT_SCHEMA_FORMATS,
+    SCHEMA_RELATIVE_DIR,
+)
 
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.projects.schema_manifest_canonical import (
@@ -48,7 +55,7 @@ DATASET_DOC_RE = re.compile(
 )
 
 # Base directory for published schema snapshots.
-BASE_SCHEMA_DIR = Path("docs") / "schemas"
+BASE_SCHEMA_DIR = Path(SCHEMA_RELATIVE_DIR)
 
 # Ordered list of manifest modules to inspect for institutional schemas.
 INSTITUTIONAL_MANIFEST_MODULES: Sequence[str] = [
@@ -295,9 +302,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--format",
-        choices=["ttl", "xml", "json-ld", "nt"],
-        default="ttl",
-        help="RDF serialization to use (default: %(default)s)",
+        dest="formats",
+        choices=list(SCHEMA_FORMATS.keys()),
+        action="append",
+        help=(
+            "RDF serialization(s) to emit. Can be passed multiple times. "
+            "Defaults to ttl and xml."
+        ),
     )
     parser.add_argument(
         "--mark-latest",
@@ -312,24 +323,30 @@ def main() -> None:
     output_dir: Path = args.output_dir or _default_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    format_map = {
-        "ttl": "turtle",
-        "xml": "pretty-xml",
-        "json-ld": "json-ld",
-        "nt": "nt",
-    }
-    serialization = format_map[args.format]
+    selected_formats = args.formats or list(DEFAULT_SCHEMA_FORMATS)
+    # Preserve order while removing duplicates
+    seen = set()
+    ordered_formats: List[str] = []
+    for fmt in selected_formats:
+        if fmt not in seen:
+            seen.add(fmt)
+            ordered_formats.append(fmt)
 
     canonical_graph = build_canonical_graph()
-    canonical_path = output_dir / f"canonical-schema.{args.format}"
-    canonical_graph.serialize(destination=str(canonical_path), format=serialization)
-
     institutional_graph = build_institutional_graph()
-    institutional_path = output_dir / f"institutional-schema.{args.format}"
-    institutional_graph.serialize(destination=str(institutional_path), format=serialization)
 
-    print(f"Wrote canonical schema to {canonical_path}")
-    print(f"Wrote institutional schema to {institutional_path}")
+    for fmt in ordered_formats:
+        fmt_meta = SCHEMA_FORMATS[fmt]
+        serializer = fmt_meta["serializer"]
+        ext = fmt_meta["ext"]
+
+        canonical_path = output_dir / f"{SCHEMA_VARIANTS['canonical']}.{ext}"
+        canonical_graph.serialize(destination=str(canonical_path), format=serializer)
+        print(f"Wrote canonical schema ({fmt}) to {canonical_path}")
+
+        institutional_path = output_dir / f"{SCHEMA_VARIANTS['institutional']}.{ext}"
+        institutional_graph.serialize(destination=str(institutional_path), format=serializer)
+        print(f"Wrote institutional schema ({fmt}) to {institutional_path}")
 
     if args.mark_latest:
         marker = BASE_SCHEMA_DIR / "latest"

@@ -1014,14 +1014,16 @@ def _identify(oai: ET._Element, request: HttpRequest) -> ET._Element:
             nsmap={"arkschema": SCHEMA_DESCRIPTION_NS},
         )
         schema_info.set("snapshot", schema_bundle.snapshot_tag)
-        for variant, urls in schema_bundle.urls.items():
-            schema_elem = ET.SubElement(
-                schema_info,
-                ET.QName(SCHEMA_DESCRIPTION_NS, "schema"),
-            )
-            schema_elem.set("type", variant)
-            schema_elem.set("latest", urls.get("latest", ""))
-            schema_elem.set("snapshot", urls.get("snapshot", ""))
+        for variant, format_map in schema_bundle.urls.items():
+            for fmt, urls in format_map.items():
+                schema_elem = ET.SubElement(
+                    schema_info,
+                    ET.QName(SCHEMA_DESCRIPTION_NS, "schema"),
+                )
+                schema_elem.set("type", variant)
+                schema_elem.set("format", fmt)
+                schema_elem.set("latest", urls.get("latest", ""))
+                schema_elem.set("snapshot", urls.get("snapshot", ""))
 
     return oai
 
@@ -3960,18 +3962,20 @@ def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
 
 
 @require_http_methods(["GET"])
-def oai_schema_download(request: HttpRequest, snapshot: str, variant: str) -> HttpResponse:
+def oai_schema_download(request: HttpRequest, snapshot: str, variant: str, ext: str) -> HttpResponse:
     snapshot_info = schema_utils.get_snapshot(snapshot)
     if not snapshot_info:
         raise Http404("Schema snapshot not found.")
-    if variant not in schema_utils.SCHEMA_VARIANTS:
-        raise Http404("Unknown schema variant.")
+    fmt = schema_utils.format_from_extension(ext)
+    if not fmt or variant not in schema_utils.SCHEMA_VARIANTS:
+        raise Http404("Unknown schema variant or format.")
     try:
-        file_path = snapshot_info.file_path(variant)
+        file_path = snapshot_info.file_path(variant, fmt)
     except FileNotFoundError:
         raise Http404("Schema file is unavailable.")
 
-    response = FileResponse(file_path.open("rb"), content_type="text/turtle")
+    content_type = schema_utils.SCHEMA_FORMATS[fmt]["content_type"]
+    response = FileResponse(file_path.open("rb"), content_type=content_type)
     response["Content-Disposition"] = f'inline; filename="{file_path.name}"'
     response["Cache-Control"] = "public, max-age=3600"
     return response
