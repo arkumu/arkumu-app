@@ -778,6 +778,11 @@ def oai_media_links_panel(request):
         page_number=page_number,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+
+    # If not an HTMX request, redirect to the full dashboard with params
+    if not request.headers.get('HX-Request'):
+        return redirect(f"{reverse('oai:oai_media_links_dashboard')}?organization={organization.code}&status={status_filter}")
+
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
 
@@ -1056,6 +1061,40 @@ def oai_media_link_seed_execute(request):
                 f"created {summary['created']}, refreshed {summary['refreshed']}, marked stale {summary['stale']}."
             ),
         )
+
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        status_filter=status_filter,
+        page_number=1,
+    )
+    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def oai_project_status_update(request, resource_id):
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    try:
+        resource = Resource.objects.get(id=resource_id)
+    except Resource.DoesNotExist:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Project not found.</div>")
+
+    new_status = request.POST.get('public_access_level', '').strip().lower()
+    valid_statuses = ['private', 'restricted', 'public']
+
+    if new_status not in valid_statuses:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Invalid status.</div>")
+
+    resource.public_access_level = new_status
+    resource.save()
+
+    organization = resource.organization
+    status_filter = request.GET.get('status', 'all')
 
     panel_context = _build_media_links_panel_context(
         organization=organization,
