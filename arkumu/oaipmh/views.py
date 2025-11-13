@@ -2411,26 +2411,21 @@ def _build_simplified_mets_from_project(
         publisher_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "publisher"))
         publisher_elem.text = publisher_value
 
-    # Add Arkumu license rights (same as snapshot version)
-    arkumu_tokens: set[str] = set()
-    for obj in project.digital_objects:
-        license_obj = getattr(obj, "license", None)
-        if license_obj:
-            token = license_token_from_license_info(license_obj)
-            if token and token in ARKUMU_LICENSE_LABELS:
-                arkumu_tokens.add(token)
+    # Add hardcoded Arkumu license rights for simplified METS
+    rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
+    rights_elem.text = "Lizenz arkumu-A 1.0"
 
-    # Use token "1" if it exists in license labels (default Arkumu license)
-    if "1" in ARKUMU_LICENSE_LABELS:
-        arkumu_tokens = {"1"}
-
-    for token in sorted(arkumu_tokens):
-        label = ARKUMU_LICENSE_LABELS[token]
-        text = ARKUMU_LICENSE_TEXTS[token]
-        rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
-        rights_elem.text = label
-        rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
-        rights_elem.text = text
+    rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
+    rights_elem.text = (
+        "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich "
+        "unbeschränkte Recht, das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit "
+        "zu vervielfältigen (§16 UrhG), zu speichern und gegebenenfalls in langzeitstabile Dateiformate "
+        "zu überführen. Dies umfasst auch das Recht, ein Werk erstmalig zu digitalisieren oder eine digitale "
+        "Dokumentation des Werkes zu erstellen. Sofern für Zwecke der Langzeitverfügbarkeit eine Umwandlung "
+        "bestehender Dateiformate in andere Dateiformate erforderlich ist und diese Umwandlung eine Bearbeitung "
+        "darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen Bearbeitungsrechte eingeräumt. "
+        "(Lizenz arkumu-A 1.0)"
+    )
 
     ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "simplified-amd"})
     tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "simplified-amd-tech"})
