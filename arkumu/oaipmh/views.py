@@ -726,12 +726,26 @@ def _restrict_to_harvestable_files(queryset):
         subject_id=OuterRef("pk"),
     ).values("object_id")
 
+    event_ids_for_project = Triple.objects.filter(
+        predicate__uri__endswith="/properties/ereignis",
+        subject_id=OuterRef("pk"),
+    ).values("object_id")
+
+    digital_object_files_via_events = Triple.objects.filter(
+        predicate__uri__endswith="/properties/digitales-objekt",
+        subject_id__in=event_ids_for_project,
+    ).values("object_id")
+
     digital_object_s3_condition = Exists(
         S3FileObject.objects.filter(
-            related_resource_id__in=digital_object_files,
             status__in=HARVESTABLE_FILE_STATUSES,
             s3_key__isnull=False,
-        ).exclude(s3_key="")
+        )
+        .exclude(s3_key="")
+        .filter(
+            Q(related_resource_id__in=digital_object_files)
+            | Q(related_resource_id__in=digital_object_files_via_events)
+        )
     )
 
     combined_condition = s3_condition | event_condition | digital_object_s3_condition
