@@ -237,6 +237,7 @@ def _build_db_oai_dashboard_snapshot() -> OAIDashboardSnapshot:
 
 
 @general_login_required
+@require_http_methods(["GET"])
 def oai_snapshot_dashboard(request):
     """Display the legacy snapshot-backed OAI endpoints."""
 
@@ -264,6 +265,7 @@ def oai_endpoints_info(request):  # Backwards-compat alias for legacy URL
 
 
 @general_login_required
+@require_http_methods(["GET"])
 def oai_db_dashboard(request):
     """Describe the DB-backed OAI endpoint with quick links and parity notes."""
 
