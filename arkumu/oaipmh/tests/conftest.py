@@ -5,7 +5,7 @@ Provides common test data, mock services, and utility functions.
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, patch
 from lxml import etree as ET
 from typing import Dict, Any, List
@@ -14,12 +14,20 @@ from django.test import Client, TransactionTestCase
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.core.cache import cache
+from django.utils import timezone as dj_timezone
 
 from arkumu.users.models import Organization
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
+from arkumu.metadata.models.triples import Triple
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.projects import ProjectSnapshot
+from arkumu.projects.services.dump_fixity_index import FixityRecord
+from arkumu.oaipmh import views, path_mapping
+from arkumu.oaipmh.views import HARVESTABLE_FILE_STATUSES, _fallback_record_from_storage
+from arkumu.projects.services import dump_fixity_index, s3_key_index
 
 User = get_user_model()
+_FAST_SNAPSHOT_SERVICE = None
 
 
 @pytest.fixture
@@ -144,6 +152,112 @@ def sample_resources(db, sample_organizations):
     return resources
 
 
+@pytest.fixture
+def parity_dataset(db):
+    """Dataset mirroring docs/db_vs_snapshot_comparison.md instructions."""
+    org_specs = (
+        ("FUK Library", "fuk"),
+        ("KHM Museum", "khm"),
+        ("HMT Music Archive", "hmt"),
+    )
+    project_type_map = {
+        "fuk": "http://arkumu.org/data/fuk/types/projekt",
+        "khm": "http://arkumu.org/data/khm/types/00-projekte",
+        "hmt": "http://arkumu.org/data/hmt/types/00-hfm-projekte",
+    }
+    rdf_type_uri = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    rdf_type_resource, _ = Resource.objects.get_or_create(
+        uri=rdf_type_uri,
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "name": "rdf:type",
+        },
+    )
+    project_type_resources: Dict[str, Resource] = {}
+    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    dataset: Dict[str, Any] = {
+        "orgs": {},
+        "org_codes": [],
+        "sample_project_uris": [],
+    }
+
+    for offset, (name, code) in enumerate(org_specs):
+        organization = Organization.objects.create(
+            name=name,
+            code=code,
+            domain=f"{code}.arkumu.test",
+            is_active=True,
+        )
+        dataset["org_codes"].append(code)
+
+        resources: List[Resource] = []
+        for idx in range(12):
+            uri = f"http://arkumu.org/data/entities/projekt/{(offset + 1) * 1000 + idx}"
+            resource = Resource.objects.create(
+                uri=uri,
+                organization=organization,
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+                updated_at=base_time + timedelta(days=offset, minutes=idx),
+                value=f"{code.upper()} Reference Project {idx}",
+            )
+            resources.append(resource)
+
+            S3FileObject.objects.create(
+                file_name=f"{code}-object-{idx}.tif",
+                s3_key=f"{code}/objects/object-{idx}.tif",
+                file_size_bytes=2048 + idx,
+                content_type="image/tiff",
+                related_resource=resource,
+                status='completed',
+                organization=code,
+            )
+        project_type_uri = project_type_map.get(code, "http://arkumu.org/data/types/projekt")
+        project_type_resource = project_type_resources.get(project_type_uri)
+        if project_type_resource is None:
+            project_type_resource, _ = Resource.objects.get_or_create(
+                uri=project_type_uri,
+                defaults={
+                    "resource_type": ResourceType.CLASS,
+                    "name": f"{code.upper()} Project Type",
+                },
+            )
+            project_type_resources[project_type_uri] = project_type_resource
+        for resource in resources:
+            Triple.objects.create(
+                subject=resource,
+                predicate=rdf_type_resource,
+                object=project_type_resource,
+                source=organization,
+            )
+
+        dataset["orgs"][code] = {
+            "organization": organization,
+            "resources": resources,
+            "uris": [res.uri for res in resources],
+        }
+        dataset["sample_project_uris"].extend([res.uri for res in resources[:3]])
+
+    # Identifier that lacks harvestable files for error parity assertions
+    primary_org = dataset["orgs"][org_specs[0][1]]["organization"]
+    orphan_resource = Resource.objects.create(
+        uri="http://arkumu.org/data/entities/projekt/999901",
+        organization=primary_org,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+        updated_at=base_time + timedelta(days=10),
+    )
+    Triple.objects.create(
+        subject=orphan_resource,
+        predicate=rdf_type_resource,
+        object=project_type_resources[project_type_map["fuk"]],
+        source=primary_org,
+    )
+    dataset["non_harvestable_uri"] = orphan_resource.uri
+
+    return dataset
+
+
 @pytest.fixture(autouse=True)
 def clear_oai_related_cache():
     """Ensure cache is cleared between tests to avoid stale OAI pages."""
@@ -192,6 +306,118 @@ def mock_canonical_graph_service():
         }
 
         yield mock_instance
+
+
+@pytest.fixture(autouse=True)
+def _fast_snapshot_service(monkeypatch):
+    """Patch snapshot service with a lightweight fallback-driven implementation."""
+    from arkumu.metadata.models.resource import Resource  # Local import for Django readiness
+
+    global _FAST_SNAPSHOT_SERVICE
+
+    class _SnapshotStub:
+        def __init__(self):
+            self._snapshot = None
+            self._index = {}
+
+        def _build(self):
+            resources = (
+                Resource.objects.filter(
+                    s3fileobject__status__in=HARVESTABLE_FILE_STATUSES,
+                    s3fileobject__s3_key__isnull=False,
+                )
+                .exclude(s3fileobject__s3_key="")
+                .distinct()
+            )
+
+            records = []
+            index = {}
+            for resource in resources:
+                record = _fallback_record_from_storage(resource)
+                if not record or not record.uri:
+                    continue
+                records.append(record)
+                index[record.uri] = record
+
+            self._snapshot = ProjectSnapshot(
+                projects=records,
+                counts={"projects": len(records)},
+                generated_at=dj_timezone.now(),
+            )
+            self._index = index
+
+        def _ensure_snapshot(self):
+            if self._snapshot is None:
+                self._build()
+
+        def get_cross_institutional_snapshot(self, *, force_refresh: bool = False):
+            if force_refresh or self._snapshot is None:
+                self._build()
+            return self._snapshot
+
+        def refresh_cross_institutional_snapshot(self):
+            self._build()
+            return self._snapshot
+
+        def get_record_by_uri(self, uri: str):
+            if not uri:
+                return None
+            self._ensure_snapshot()
+            return self._index.get(uri)
+
+    if _FAST_SNAPSHOT_SERVICE is None:
+        _FAST_SNAPSHOT_SERVICE = _SnapshotStub()
+
+    monkeypatch.setattr(views, "snapshot_service", _FAST_SNAPSHOT_SERVICE)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _db_assembler_stub(monkeypatch):
+    """Ensure DB-backed assembly returns deterministic records for synthetic data."""
+
+    class _AssemblerStub:
+        def build_record(self, context):
+            return _fallback_record_from_storage(context.resource)
+
+    monkeypatch.setattr(views, "_db_project_assembler_instance", _AssemblerStub())
+
+
+@pytest.fixture(autouse=True)
+def _oai_storage_stubs(monkeypatch):
+    """Provide deterministic storage lookups for synthetic parity datasets."""
+
+    def fake_find_fixity(org_code, candidates):
+        for candidate in candidates or []:
+            if not candidate:
+                continue
+            normalized = str(candidate).strip().lstrip("/")
+            if not normalized:
+                continue
+            return FixityRecord(
+                dump_key=normalized,
+                storage_key=normalized,
+                checksum_or_etag="sha256:stub",
+                status="completed",
+            )
+        return None
+
+    def fake_lookup(org_code, candidates):
+        for candidate in candidates or []:
+            if candidate:
+                normalized = str(candidate).strip()
+                if normalized:
+                    return normalized
+        return None
+
+    def fake_resolver(org_code, *, path=None, file_name=None):
+        candidate = path or file_name
+        return [candidate] if candidate else []
+
+    monkeypatch.setattr(dump_fixity_index, "find_fixity", fake_find_fixity)
+    monkeypatch.setattr(s3_key_index, "lookup_dump_storage_key", fake_lookup)
+    monkeypatch.setattr(path_mapping, "resolve_external_paths", fake_resolver)
+    views.project_builder._path_resolver = fake_resolver
 
 
 @pytest.fixture

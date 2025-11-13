@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}OAI-PMH Endpoints - arkumu{% endblock %}
+{% block title %}OAI-PMH Endpoints (DB Mode) - arkumu{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
   <!-- Header -->
   <div class="mb-8">
-    <h1 class="text-4xl font-bold mb-3">OAI-PMH Endpoints</h1>
+    <h1 class="text-4xl font-bold mb-3">OAI-PMH Endpoints (DB Mode)</h1>
     <p class="text-base-content/70 text-lg">
-      Access metadata from participating institutions via OAI-PMH (Open Archives Initiative Protocol for Metadata Harvesting).
+      Live, database-backed harvesting without waiting for snapshot rebuilds. Use these endpoints to verify parity,
+      test cursor-based pagination, and QA institutions before promoting DB mode to production.
     </p>
   </div>
 
@@ -18,7 +19,7 @@
     <div class="card-body">
       <h2 class="card-title text-2xl mb-2">Get Individual Record</h2>
       <p class="text-base-content/70 mb-4">
-        Enter a project URI to retrieve its OAI-PMH metadata record in METS format.
+        Enter a project URI to retrieve its DB-backed OAI-PMH metadata record in METS format.
       </p>
 
       <div class="form-control">
@@ -28,17 +29,18 @@
         <div class="join w-full">
           <input
             type="text"
-            id="project-uri-input"
+            id="db-project-uri-input"
             placeholder="http://arkumu.org/data/fuk/entities/projekt/8"
             class="input input-bordered join-item flex-1" />
           <button
             type="button"
             class="btn btn-primary join-item"
-            hx-on:click="const uri = document.getElementById('project-uri-input').value.trim();
+            hx-on:click="const uri = document.getElementById('db-project-uri-input').value.trim();
                          if (!uri) { alert('Please enter a project URI'); return; }
                          const encodedUri = encodeURIComponent(uri);
                          const oaiIdentifier = 'oai:arkumu:resource:' + encodedUri;
-                         const url = '{% url 'metadata:oai_proxy' %}?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
+                         const baseUrl = '{{ db_proxy_base_url|escapejs }}';
+                         const url = baseUrl + '?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
                          window.open(url, '_blank');">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
@@ -64,7 +66,7 @@
       </div>
       <div class="stat-title">Total Projects</div>
       <div class="stat-value text-primary">{{ oai_snapshot.total_accessible_projects }}</div>
-      <div class="stat-desc">Available for harvest</div>
+      <div class="stat-desc">Snapshot baseline</div>
     </div>
 
     <div class="stat">
@@ -98,7 +100,10 @@
     <div class="card-body">
       <h3 class="card-title text-xl mb-4">General Repository Endpoints</h3>
       <p class="text-base-content/70 mb-4">
-        These endpoints provide information about the entire repository, not specific to any institution.
+        All routes hit <code class="badge badge-ghost">/oai/db/</code>, enforcing DB-backed assembly even when the main `/oai/` route still reads snapshots.
+      </p>
+      <p class="text-xs text-base-content/60 mb-4">
+        Direct endpoint: <code class="bg-base-200 px-2 py-1 rounded">{{ db_endpoint_url }}</code>
       </p>
 
       <div class="grid grid-cols-1 gap-3">
@@ -109,10 +114,10 @@
           </div>
           <div class="flex-grow">
             <p class="text-sm font-semibold">Repository information</p>
-            <p class="text-xs text-base-content/60">General repository metadata and capabilities</p>
+            <p class="text-xs text-base-content/60">DB-backed repository metadata and capabilities</p>
           </div>
           <div class="flex-none">
-            <a href="{% url 'metadata:oai_proxy' %}?verb=Identify"
+            <a href="{{ db_proxy_base_url }}?verb=Identify"
                target="_blank"
                class="btn btn-sm btn-outline btn-info gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -130,10 +135,10 @@
           </div>
           <div class="flex-grow">
             <p class="text-sm font-semibold">Available sets/collections</p>
-            <p class="text-xs text-base-content/60">All institutional collections in the repository</p>
+            <p class="text-xs text-base-content/60">All institutional collections</p>
           </div>
           <div class="flex-none">
-            <a href="{% url 'metadata:oai_proxy' %}?verb=ListSets"
+            <a href="{{ db_proxy_base_url }}?verb=ListSets"
                target="_blank"
                class="btn btn-sm btn-outline btn-secondary gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -151,10 +156,10 @@
           </div>
           <div class="flex-grow">
             <p class="text-sm font-semibold">Supported metadata formats</p>
-            <p class="text-xs text-base-content/60">Available formats for metadata harvesting (e.g., METS)</p>
+            <p class="text-xs text-base-content/60">Available formats (e.g., METS, oai_dc)</p>
           </div>
           <div class="flex-none">
-            <a href="{% url 'metadata:oai_proxy' %}?verb=ListMetadataFormats"
+            <a href="{{ db_proxy_base_url }}?verb=ListMetadataFormats"
                target="_blank"
                class="btn btn-sm btn-outline btn-accent gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -198,7 +203,7 @@
                 <p class="text-sm text-base-content/70">Record identifiers in METS format</p>
               </div>
               <div class="flex-none">
-                <a href="{% url 'metadata:oai_proxy' %}?verb=ListIdentifiers&metadataPrefix=mets&set={{ endpoint.code }}"
+                <a href="{{ db_proxy_base_url }}?verb=ListIdentifiers&metadataPrefix=mets&set={{ endpoint.code }}"
                    target="_blank"
                    class="btn btn-sm btn-outline btn-warning gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -219,7 +224,7 @@
                 <p class="text-xs text-base-content/60">Complete project metadata with digital objects</p>
               </div>
               <div class="flex-none">
-                <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=mets&set={{ endpoint.code }}"
+                <a href="{{ db_proxy_base_url }}?verb=ListRecords&metadataPrefix=mets&set={{ endpoint.code }}"
                    target="_blank"
                    class="btn btn-sm btn-primary gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">

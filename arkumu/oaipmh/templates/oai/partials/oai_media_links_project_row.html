@@ -1,0 +1,135 @@
+{% if row.links %}
+  {% for link in row.links %}
+    <tr id="{% if forloop.first %}project-{{ row.resource.id }}{% endif %}" class="{% if forloop.first %}border-t-2 border-base-300{% endif %}">
+      {% if forloop.first %}
+        <td rowspan="{{ row.links|length }}" class="align-top bg-base-200">
+          <div class="space-y-2 p-2">
+            <div>
+              <div class="font-bold text-base text-secondary">{{ row.project_label }}</div>
+              <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <div class="badge badge-xs badge-outline">{{ row.total_links }}</div>
+              <div class="badge badge-xs badge-outline">H:{{ row.harvestable_count }}</div>
+              {% if row.warnings %}
+                {% for warning in row.warnings %}
+                  <div class="badge badge-xs badge-warning" title="{{ warning.message|default:'Conflict detected' }}">
+                    {{ warning.code }}
+                  </div>
+                {% endfor %}
+              {% endif %}
+            </div>
+            <details class="text-xs">
+              <summary class="cursor-pointer font-semibold">Add / Graph Diff</summary>
+              <div class="space-y-2 mt-2">
+                <form
+                  hx-post="{% url 'oai:oai_media_link_add' %}"
+                  hx-target="#project-{{ row.resource.id }}"
+                  hx-swap="outerHTML"
+                  class="space-y-1"
+                >
+                  {% csrf_token %}
+                  <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
+                  <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
+                  <input type="hidden" name="page" value="{{ current_page }}">
+                  <input type="hidden" name="project_uri" value="{{ row.project_uri }}">
+                  <input type="text" name="digital_uri" class="input input-bordered input-xs w-full" placeholder="Digital object URI">
+                  <div class="grid grid-cols-3 gap-1">
+                    <select name="status" class="select select-bordered select-xs">
+                      {% for value,label in status_choices %}
+                        <option value="{{ value }}" {% if value == 'pending' %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                    <input type="number" name="order_index" class="input input-bordered input-xs" placeholder="Order" min="1">
+                    <button type="submit" class="btn btn-xs btn-secondary">Add</button>
+                  </div>
+                </form>
+                <div class="text-[10px] space-y-1 pt-1 border-t">
+                  <div>
+                    <span class="font-semibold">Uncurated:</span>
+                    {% if row.graph_only_uris %}
+                      <span class="text-warning">{{ row.graph_only_uris|length }}</span>
+                    {% else %}
+                      <span class="text-base-content/60">0</span>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <span class="font-semibold">Missing:</span>
+                    {% if row.curated_missing_uris %}
+                      <span class="text-error">{{ row.curated_missing_uris|length }}</span>
+                    {% else %}
+                      <span class="text-base-content/60">0</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </td>
+        <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300">
+          <div class="p-2">
+            <div class="badge badge-sm w-full {% if row.resource.public_access_level == 'public' %}badge-success{% elif row.resource.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
+              {{ row.resource.public_access_level }}
+            </div>
+            <select
+              name="public_access_level"
+              class="select select-bordered select-xs w-full mt-2"
+              hx-post="{% url 'oai:oai_project_status_update' row.resource.id %}"
+              hx-target="#project-{{ row.resource.id }}"
+              hx-swap="outerHTML"
+            >
+              <option value="private" {% if row.resource.public_access_level == 'private' %}selected{% endif %}>private</option>
+              <option value="restricted" {% if row.resource.public_access_level == 'restricted' %}selected{% endif %}>restricted</option>
+              <option value="public" {% if row.resource.public_access_level == 'public' %}selected{% endif %}>public</option>
+            </select>
+          </div>
+        </td>
+      {% endif %}
+      <td class="align-top border-l border-base-300">
+        <div class="p-2">
+          {% include 'oai/partials/oai_media_link_entry.html' with link=link row=row current_page=current_page %}
+        </div>
+      </td>
+    </tr>
+  {% endfor %}
+{% else %}
+  <tr id="project-{{ row.resource.id }}" class="border-t-2 border-base-300">
+    <td class="align-top bg-base-200">
+      <div class="space-y-2 p-2">
+        <div>
+          <div class="font-semibold text-sm">{{ row.project_label }}</div>
+          <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
+        </div>
+        <div class="flex flex-wrap gap-1">
+          <div class="badge badge-xs badge-outline">{{ row.total_links }}</div>
+          <div class="badge badge-xs badge-outline">H:{{ row.harvestable_count }}</div>
+        </div>
+      </div>
+    </td>
+    <td class="align-top border-l border-base-300">
+      <div class="p-2">
+        <div class="badge badge-sm w-full {% if row.resource.public_access_level == 'public' %}badge-success{% elif row.resource.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
+          {{ row.resource.public_access_level }}
+        </div>
+        <select
+          name="public_access_level"
+          class="select select-bordered select-xs w-full mt-2"
+          hx-post="{% url 'oai:oai_project_status_update' row.resource.id %}"
+          hx-target="#project-{{ row.resource.id }}"
+          hx-swap="outerHTML"
+        >
+          <option value="private" {% if row.resource.public_access_level == 'private' %}selected{% endif %}>private</option>
+          <option value="restricted" {% if row.resource.public_access_level == 'restricted' %}selected{% endif %}>restricted</option>
+          <option value="public" {% if row.resource.public_access_level == 'public' %}selected{% endif %}>public</option>
+        </select>
+      </div>
+    </td>
+    <td class="align-top border-l border-base-300">
+      <div class="text-sm text-base-content/60 text-center p-2">No links</div>
+    </td>
+  </tr>
+{% endif %}
+{% include 'oai/partials/oai_media_links_alerts.html' %}
+{% if include_summary %}
+  {% include 'oai/partials/oai_media_links_summary.html' with summary=summary %}
+{% endif %}

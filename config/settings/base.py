@@ -464,6 +464,7 @@ ENABLE_CANONICAL_URI_API = False
 # Optional HTTP Basic Auth for OAI endpoint (uses Django users)
 OAI_BASIC_AUTH_ENABLED = env.bool("OAI_BASIC_AUTH_ENABLED", default=False)
 OAI_BASIC_AUTH_ALLOWED_USERS = env.list("OAI_BASIC_AUTH_ALLOWED_USERS", default=[])
+OAI_USE_DB_ASSEMBLER = env.bool("OAI_USE_DB_ASSEMBLER", default=False)
 
 # Path mapping configuration for Rosetta-backed institutions
 ROSETTA_MAPPING_DIR = BASE_DIR / "data" / "mappings"
@@ -521,6 +522,31 @@ OAI_ROSETTA_HARVESTABLE_ORGS = tuple(
         default=["khm", "hmt"],
     )
     if org.strip()
+)
+
+OAI_PROJECT_TYPE_URIS = tuple(
+    uri.strip()
+    for uri in env.list(
+        "OAI_PROJECT_TYPE_URIS",
+        default=[
+            "http://arkumu.org/data/types/projekt",
+            "http://arkumu.org/data/fuk/types/projekt",
+            "http://arkumu.org/data/det/types/projekt",
+            "http://arkumu.org/data/rsh/types/projekt",
+            "http://arkumu.org/data/khm/types/00-projekte",
+            "http://arkumu.org/data/hmt/types/00-hfm-projekte",
+        ],
+    )
+    if uri and uri.strip()
+)
+
+OAI_INSTITUTIONAL_RDF_ORGS = tuple(
+    org.strip().lower()
+    for org in env.list(
+        "OAI_INSTITUTIONAL_RDF_ORGS",
+        default=["khm", "hmt"],
+    )
+    if org and org.strip()
 )
 
 OAI_S3_ROSETTA_BASE_PATHS = {

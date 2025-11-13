@@ -1,0 +1,141 @@
+{% include 'oai/partials/oai_media_links_summary.html' with summary=summary %}
+
+<div class="mt-4">
+  {% if view_mode == 'digital' %}
+    <div class="flex items-center justify-between mb-4 p-3 bg-base-200 rounded">
+      <div class="text-sm space-x-4">
+        <span><span class="font-semibold">{{ total_digital_objects }}</span> total digital objects</span>
+        <span class="text-success"><span class="font-semibold">{{ shared_count }}</span> shared with multiple projects</span>
+        <span class="text-info"><span class="font-semibold">{{ single_count }}</span> in single project</span>
+      </div>
+      <div class="btn-group">
+        <button
+          class="btn btn-xs {% if shared_filter == 'all' %}btn-active{% endif %}"
+          hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared=all"
+          hx-target="#oai-media-links-panel"
+          hx-swap="innerHTML"
+          hx-push-url="true"
+        >
+          All
+        </button>
+        <button
+          class="btn btn-xs {% if shared_filter == 'shared' %}btn-active{% endif %}"
+          hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared=shared"
+          hx-target="#oai-media-links-panel"
+          hx-swap="innerHTML"
+          hx-push-url="true"
+        >
+          Shared Only
+        </button>
+        <button
+          class="btn btn-xs {% if shared_filter == 'single' %}btn-active{% endif %}"
+          hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared=single"
+          hx-target="#oai-media-links-panel"
+          hx-swap="innerHTML"
+          hx-push-url="true"
+        >
+          Single Only
+        </button>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="flex justify-between items-center pb-2">
+    <form class="flex gap-2" hx-get="{% url 'oai:oai_media_links_digital_view' %}" hx-target="#oai-media-links-panel" hx-swap="innerHTML" hx-push-url="true">
+      <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+      <input type="hidden" name="status" value="{{ summary.status_filter }}">
+      <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+      <input type="hidden" name="shared" value="{{ shared_filter|default:'all' }}">
+      <input type="text" name="search" value="{{ search_query }}" placeholder="Search digital objects..." class="input input-bordered input-sm w-64">
+      <button type="submit" class="btn btn-sm btn-primary">Search</button>
+      {% if search_query %}
+        <a href="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared={{ shared_filter|default:'all' }}"
+           class="btn btn-sm btn-ghost"
+           hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared={{ shared_filter|default:'all' }}"
+           hx-target="#oai-media-links-panel"
+           hx-swap="innerHTML"
+           hx-push-url="true">Clear</a>
+      {% endif %}
+    </form>
+    {% if page_obj.paginator.num_pages > 1 %}
+      <div class="text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ digital_object_total }} objects)</div>
+      <div class="join">
+        {% if page_obj.has_previous %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared={{ shared_filter|default:'all' }}&search={{ search_query|default:'' }}&page={{ page_obj.previous_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Prev</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Prev</button>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared={{ shared_filter|default:'all' }}&search={{ search_query|default:'' }}&page={{ page_obj.next_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Next</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Next</button>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% if digital_object_rows %}
+    <div class="overflow-x-auto">
+      <table class="table table-xs w-full">
+        <thead>
+          <tr>
+            <th class="w-1/3">Digital Object</th>
+            <th class="w-20">Projects</th>
+            <th>Project Links</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in digital_object_rows %}
+            {% include 'oai/partials/oai_digital_object_row.html' with row=row summary=summary current_page=current_page status_choices=status_choices %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-info shadow">
+      <span>No digital objects match the current filter.</span>
+    </div>
+  {% endif %}
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="flex justify-between items-center pt-2">
+      <div class="text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ digital_object_total }} objects)</div>
+      <div class="join">
+        {% if page_obj.has_previous %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared={{ shared_filter|default:'all' }}&search={{ search_query|default:'' }}&page={{ page_obj.previous_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Prev</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Prev</button>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'oai:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&shared={{ shared_filter|default:'all' }}&search={{ search_query|default:'' }}&page={{ page_obj.next_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Next</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Next</button>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>

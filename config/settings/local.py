@@ -70,6 +70,16 @@ if env("USE_DOCKER") == "yes":
     hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
     INTERNAL_IPS += [".".join(ip.split(".")[:-1] + ["1"]) for ip in ips]
 
+# Logging: default to DEBUG locally but allow overrides via env
+LOG_LEVEL = env("ARKUMU_LOG_LEVEL", default="DEBUG").upper()
+LOGGING["root"]["level"] = LOG_LEVEL
+LOGGING.setdefault("loggers", {})
+LOGGING["loggers"].setdefault(
+    "arkumu",
+    {"handlers": LOGGING["root"]["handlers"], "propagate": False},
+)
+LOGGING["loggers"]["arkumu"]["level"] = LOG_LEVEL
+
 # django-extensions
 # ------------------------------------------------------------------------------
 # https://django-extensions.readthedocs.io/en/latest/installation_instructions.html#configuration

@@ -27,6 +27,7 @@ from arkumu.metadata.views import controlled_vocabulary_views
 #     BulkArkumuMappingDeleteView
 # )
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
+from arkumu.oaipmh import views as oai_views
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 
 # Use optimized views for better performance
@@ -69,11 +70,6 @@ urlpatterns = [
     path('dashboard/ingest-stats/<uuid:session_id>/', dashboard_views.ingest_session_stats, name='ingest_session_stats'),
     path('dashboard/upload-stats/<uuid:session_id>/', dashboard_views.upload_session_stats, name='upload_session_stats'),
     path('dashboard/upload-session/<uuid:session_id>/verify/', dashboard_views.trigger_upload_verification, name='upload_session_verify'),
-    path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
-    path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
-
-    # OAI Endpoints Information Page
-    path('oai-endpoints/', dashboard_views.oai_endpoints_info, name='oai_endpoints_info'),
 
     # SUPERUSER ONLY: Mapping selector widget
     path('dashboard/mapping-selector/', dashboard_views.mapping_selector_widget, name='mapping_selector_widget'),
