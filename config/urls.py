@@ -51,8 +51,10 @@ urlpatterns = [
     path('storage/', include('arkumu.storage.urls', namespace='storage')),
     path('importer/', include('arkumu.importer.urls', namespace='importer')),
     path('catalog/', include('arkumu.catalog.urls', namespace='catalog')),
-    # OAI-PMH provider (minimal)
+    # OAI-PMH provider - public harvesting endpoints (IP-restricted by nginx)
     path('oai/', include('arkumu.oaipmh.urls', namespace='oai')),
+    # OAI-PMH admin/dashboard (bypasses nginx IP restriction)
+    path('oai-pmh/', include('arkumu.oaipmh.dashboard_urls', namespace='oai_admin')),
     path('schemas/<slug:snapshot>/<slug:variant>.<slug:ext>', oai_schema_download, name='schema_download_public'),
     # SSE URLs removed - migrated to HTMX polling
 
