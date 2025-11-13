@@ -4046,7 +4046,9 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
-    return _handle_oai_request(request)
+    """Snapshot-based OAI endpoint - always uses pre-built snapshots, never DB mode."""
+    with _force_db_mode(False):
+        return _handle_oai_request(request)
 
 
 @general_login_required
