@@ -147,6 +147,44 @@
     
     <!-- Range Slider -->
     <div class="relative">
+      
+      
+      <!-- Slider Container -->
+      <div class="relative h-12 mb-4" id="year-range-slider">
+        <!-- Background Track -->
+        <div class="absolute top-1/2 transform -translate-y-1/2 w-full h-1 transition-colors
+                    bg-gray-300
+                    theme-dark:bg-gray-600
+                    theme-blue:bg-gray-300"></div>
+        
+        <!-- Active Range Track -->
+        <div id="range-track" class="absolute top-1/2 transform -translate-y-1/2 h-1 transition-colors
+                    bg-arkumu-dark
+                    theme-dark:bg-arkumu-light
+                    theme-blue:bg-arkumu-blue pointer-events-none" 
+             style="left: 0%; width: 100%;"></div>
+        
+        <!-- Left Handle -->
+        <div id="handle-start" 
+             class="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full cursor-pointer transition-colors
+                    bg-arkumu-dark border-2 border-white
+                    theme-dark:bg-arkumu-light
+                    theme-blue:bg-arkumu-blue
+                    hover:scale-125 active:scale-110"
+             style="left: 0%;"
+             data-value="1950"></div>
+        
+        <!-- Right Handle -->
+        <div id="handle-end" 
+             class="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full cursor-pointer transition-colors
+                    bg-arkumu-dark border-2 border-white
+                    theme-dark:bg-arkumu-light
+                    theme-blue:bg-arkumu-blue
+                    hover:scale-125 active:scale-110"
+             style="left: 100%;"
+             data-value="2024"></div>
+      </div>
+      <!-- Selected Range Display -->
       <!-- Year Labels -->
       <div class="flex justify-between mb-4 font-mono text-sm transition-colors
                   text-arkumu-dark
@@ -162,19 +200,88 @@
         <span>{{ year_2020|default:"2020" }}</span>
         <span>{{ end_year|default:"Heute" }}</span>
       </div>
-      
-      <!-- Slider Track Visual -->
-      <div class="relative h-1 mb-4 transition-colors
-                  bg-gray-300
-                  theme-dark:bg-gray-600
-                  theme-blue:bg-gray-300">
-        <div class="absolute h-full transition-colors
-                    bg-arkumu-dark
-                    theme-dark:bg-arkumu-light
-                    theme-blue:bg-arkumu-blue" 
-             style="left: {{ slider_start|default:'60' }}%; width: {{ slider_width|default:'15' }}%;"></div>
-      </div>
-      
     </div>
   </div>
 </div>
+
+<script>
+(function() {
+  const slider = document.getElementById('year-range-slider');
+  const handleStart = document.getElementById('handle-start');
+  const handleEnd = document.getElementById('handle-end');
+  const rangeTrack = document.getElementById('range-track');
+  const rangeDisplay = document.getElementById('range-display');
+  
+  const minYear = 1950;
+  const maxYear = 2024;
+  const yearRange = maxYear - minYear;
+  
+  let activeHandle = null;
+  
+  function percentToYear(percent) {
+    return Math.round(minYear + (percent / 100) * yearRange);
+  }
+  
+  function yearToPercent(year) {
+    return ((year - minYear) / yearRange) * 100;
+  }
+  
+  function updateRange() {
+    const startPercent = parseFloat(handleStart.style.left);
+    const endPercent = parseFloat(handleEnd.style.left);
+    
+    rangeTrack.style.left = startPercent + '%';
+    rangeTrack.style.width = (endPercent - startPercent) + '%';
+    
+    const startYear = percentToYear(startPercent);
+    const endYear = percentToYear(endPercent);
+    
+    handleStart.dataset.value = startYear;
+    handleEnd.dataset.value = endYear;
+    
+    rangeDisplay.textContent = startYear + ' - ' + (endYear === maxYear ? 'Heute' : endYear);
+  }
+  
+  function handleMouseDown(e, handle) {
+    e.preventDefault();
+    activeHandle = handle;
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }
+  
+  function handleMouseMove(e) {
+    if (!activeHandle) return;
+    
+    const rect = slider.getBoundingClientRect();
+    let percent = ((e.clientX - rect.left) / rect.width) * 100;
+    percent = Math.max(0, Math.min(100, percent));
+    
+    const startPercent = parseFloat(handleStart.style.left);
+    const endPercent = parseFloat(handleEnd.style.left);
+    
+    if (activeHandle === handleStart) {
+      if (percent < endPercent - 5) {
+        handleStart.style.left = percent + '%';
+      }
+    } else if (activeHandle === handleEnd) {
+      if (percent > startPercent + 5) {
+        handleEnd.style.left = percent + '%';
+      }
+    }
+    
+    updateRange();
+  }
+  
+  function handleMouseUp() {
+    activeHandle = null;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+  }
+  
+  handleStart.addEventListener('mousedown', (e) => handleMouseDown(e, handleStart));
+  handleEnd.addEventListener('mousedown', (e) => handleMouseDown(e, handleEnd));
+  
+  // Initialize
+  updateRange();
+})();
+</script>

@@ -1,7 +1,7 @@
 <!-- Filter Bar Component with Theme Support -->
 <div class="filter-bar-component w-full p-6">
   
-  <!-- Single Row: Tags, Search, Sort, and View Controls -->
+  <!-- Single Row: Tags and View Controls -->
   <div class="flex items-center justify-between gap-4">
     
     <!-- Left Side: Active Filter Tags -->
@@ -81,67 +81,8 @@
       {% endif %}
     </div>
     
-    <!-- Right Side: Search, Sort, and View Controls -->
+    <!-- Right Side: View Controls Only -->
     <div class="flex items-center gap-4 flex-shrink-0">
-      
-      <!-- Search Bar -->
-      <div class="relative">
-        <input type="text" 
-               name="search"
-               placeholder="{{ search_placeholder|default:'Suche' }}"
-               value="{{ search_value|default:'' }}"
-               class="w-64 px-3 py-2 text-sm border transition-colors
-                      border-gray-400 bg-white
-                      theme-dark:border-gray-600 theme-dark:bg-arkumu-dark
-                      theme-blue:border-arkumu-blue theme-blue:bg-white
-                      text-arkumu-dark
-                      theme-dark:text-arkumu-light
-                      theme-blue:text-arkumu-blue
-                      placeholder-gray-500
-                      theme-dark:placeholder-gray-400
-                      theme-blue:placeholder-gray-500
-                      focus:outline-none focus:border-gray-600"
-               hx-post="/search" 
-               hx-trigger="keyup changed delay:300ms" 
-               hx-target="#results-container">
-        
-        <div class="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-          <svg class="w-4 h-4 transition-colors
-                     text-gray-500
-                     theme-dark:text-gray-400
-                     theme-blue:text-gray-500" 
-               fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-          </svg>
-        </div>
-      </div>
-      
-      <!-- Sort Dropdown -->
-      <div class="relative">
-        <select name="sort" 
-                class="appearance-none border px-4 py-2 text-sm transition-colors
-                       border-gray-400 bg-white
-                       theme-dark:border-gray-600 theme-dark:bg-arkumu-dark
-                       theme-blue:border-arkumu-blue theme-blue:bg-white
-                       text-arkumu-dark
-                       theme-dark:text-arkumu-light
-                       theme-blue:text-arkumu-blue
-                       focus:outline-none focus:border-gray-600 pr-8"
-                hx-post="/sort" 
-                hx-target="#results-container"
-                hx-trigger="change">
-          <option value="date">{{ sort_option1|default:"Sortieren nach Datum" }}</option>
-          <option value="title">{{ sort_option2|default:"Sortieren nach Titel" }}</option>
-          <option value="relevance">{{ sort_option3|default:"Sortieren nach Relevanz" }}</option>
-        </select>
-        
-        <div class="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none transition-colors
-                    text-arkumu-dark
-                    theme-dark:text-arkumu-light
-                    theme-blue:text-arkumu-blue">
-          ∨
-        </div>
-      </div>
       
       <!-- View Toggle Icons -->
       <div class="flex border transition-colors

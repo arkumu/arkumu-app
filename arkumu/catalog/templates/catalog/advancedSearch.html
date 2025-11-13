@@ -8,7 +8,26 @@
   <main class="w-full px-4">
     {% include 'components/inputs/filter.html' %}
     {% include 'components/inputs/filter_bar.html' with result_label="Ergebnisse" tag1="Video, Spielfilme" tag2="Instrumentalmusik" tag3="autonome Projekte" search_placeholder="Suche" sort_option1="Sortieren nach Datum" sort_option2="Sortieren nach Titel" sort_option3="Sortieren nach Relevanz" %}
-    {% include 'components/text/text_dotted_line.html' with text="6 Ergebnisse" %}
+    <!-- Dotted Line Component with Theme-aware Colors -->
+    <div class="w-full my-8">
+      <!-- Dotted line that spans the full width - themed with gradients -->
+      <div class="w-full h-[2px] mb-4 bg-repeat-x bg-center bg-[length:12px_2px]
+        bg-[radial-gradient(circle,var(--dot-color,#1E1E1E)_2px,rgba(0,0,0,0)_2px)]
+        [--dot-color:theme(colors.arkumu.dark)]
+        theme-dark:[--dot-color:theme(colors.arkumu.light)]
+        theme-blue:[--dot-color:theme(colors.arkumu.blue)]"></div>
+
+      <!-- Text label below the line -->
+      <div class="text-xs font-mono
+        text-arkumu-dark
+        theme-dark:text-arkumu-light
+        theme-blue:text-arkumu-blue" tabindex="0">6 Ergebnisse</div>
+    </div>
+
+    {% include 'components/cards/card_lateral.html' with year="2024" image="images/main/card_1.png" institution="Folkwang Universität der Kunst" title="Handmade in Ethiopia" subtitle="Projekt" contributor1_name="Johanna Schwer" contributor1_role="Betreuerin" contributor2_name="Judith Schanz" contributor2_role="Betreuerin" contributor3_name="Martina Allerbech" contributor3_role="Designerin, Beraterin" category1="Industrial Design" category2="Transformation Design" button_text="Projekt ansehen" %}
+    {% include 'components/cards/card_lateral.html' with year="2024" image="images/main/card_1.png" institution="Folkwang Universität der Kunst" title="Handmade in Ethiopia" subtitle="Projekt" contributor1_name="Johanna Schwer" contributor1_role="Betreuerin" contributor2_name="Judith Schanz" contributor2_role="Betreuerin" contributor3_name="Martina Allerbech" contributor3_role="Designerin, Beraterin" category1="Industrial Design" category2="Transformation Design" button_text="Projekt ansehen" %}
+    {% include 'components/cards/card_lateral.html' with year="2024" description="description something" image="images/main/card_1.png" institution="Folkwang Universität der Kunst" title="Handmade in Ethiopia" subtitle="Projekt" contributor1_name="Johanna Schwer" contributor1_role="Betreuerin" contributor2_name="Judith Schanz" contributor2_role="Betreuerin" contributor3_name="Martina Allerbech" contributor3_role="Designerin, Beraterin" category1="Industrial Design" category2="Transformation Design" button_text="Projekt ansehen" %}
+
   </main>
 </div>
 {% endblock content %}
