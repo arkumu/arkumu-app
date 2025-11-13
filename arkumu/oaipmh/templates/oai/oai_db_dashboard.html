@@ -39,7 +39,7 @@
                          if (!uri) { alert('Please enter a project URI'); return; }
                          const encodedUri = encodeURIComponent(uri);
                          const oaiIdentifier = 'oai:arkumu:resource:' + encodedUri;
-                         const baseUrl = '{{ db_proxy_base_url|escapejs }}';
+                         const baseUrl = '{{ db_endpoint_url|escapejs }}';
                          const url = baseUrl + '?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
                          window.open(url, '_blank');">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
@@ -103,7 +103,7 @@
         All routes hit <code class="badge badge-ghost">/oai/db/</code>, enforcing DB-backed assembly even when the main `/oai/` route still reads snapshots.
       </p>
       <p class="text-xs text-base-content/60 mb-4">
-        Direct endpoint: <code class="bg-base-200 px-2 py-1 rounded">{{ db_endpoint_url }}</code>
+        Proxy endpoint: <code class="bg-base-200 px-2 py-1 rounded">{{ db_endpoint_url }}</code>
       </p>
 
       <div class="grid grid-cols-1 gap-3">
