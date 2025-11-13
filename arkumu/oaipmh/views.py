@@ -2392,7 +2392,25 @@ def _build_simplified_mets_from_project(
     rights_record = _create_dnx_element(rights_section, "record")
     _create_dnx_element(rights_record, "key", {"id": "policyId"}, "graph-managed")
 
-    def _append_rdf_md(md_id: str, other_type: str, rdf_elem: ET._Element) -> None:
+    schema_href_map: Dict[str, str] = {}
+    snapshot = schema_utils.get_latest_snapshot()
+    fmt_meta = schema_utils.SCHEMA_FORMATS.get("xml")
+    if snapshot and fmt_meta:
+        ext = fmt_meta["ext"]
+        for variant in ("canonical", "institutional"):
+            try:
+                snapshot.file_path(variant, "xml")
+            except (FileNotFoundError, KeyError):
+                continue
+            path = reverse("oai:schema_download", args=(snapshot.tag, variant, ext))
+            schema_href_map[variant] = path
+
+    def _append_rdf_md(
+        md_id: str,
+        other_type: str,
+        rdf_elem: ET._Element,
+        schema_href: Optional[str] = None,
+    ) -> None:
         source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": md_id})
         source_wrap = ET.SubElement(
             source_md,
@@ -2403,18 +2421,33 @@ def _build_simplified_mets_from_project(
             },
         )
         source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+        if schema_href:
+            rdf_elem.set(
+                ET.QName(XSI_NS, "schemaLocation"),
+                f"{RDF_NS} {schema_href}",
+            )
         source_xml.append(rdf_elem)
 
     try:
         rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
         canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
-        _append_rdf_md("simplified-rdf-canonical", "RDF", canonical_rdf)
+        _append_rdf_md(
+            "simplified-rdf-canonical",
+            "RDF",
+            canonical_rdf,
+            schema_href=schema_href_map.get("canonical"),
+        )
     except Exception:
         logger.exception("Failed to build canonical RDF metadata for %s", getattr(resource, "uri", "unknown"))
 
     institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
     if institutional_rdf is not None:
-        _append_rdf_md("simplified-rdf-institutional", "RDF-INSTITUTIONAL", institutional_rdf)
+        _append_rdf_md(
+            "simplified-rdf-institutional",
+            "RDF-INSTITUTIONAL",
+            institutional_rdf,
+            schema_href=schema_href_map.get("institutional"),
+        )
     else:
         logger.info(
             "Simplified METS could not build institutional RDF for %s",
