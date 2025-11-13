@@ -13,7 +13,7 @@
       <div class="modal-action">
         <button type="button" class="btn" onclick="document.getElementById('oai-media-links-seed-modal').innerHTML='';">Cancel</button>
         <form
-          hx-post="{% url 'oai:oai_media_link_seed_execute' %}"
+          hx-post="{% url 'oai_admin:oai_media_link_seed_execute' %}"
           hx-target="#oai-media-links-panel"
           hx-swap="innerHTML"
           class="inline-flex"

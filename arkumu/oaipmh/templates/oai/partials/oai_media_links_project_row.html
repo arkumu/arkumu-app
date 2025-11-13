@@ -23,7 +23,7 @@
               <summary class="cursor-pointer font-semibold">Add / Graph Diff</summary>
               <div class="space-y-2 mt-2">
                 <form
-                  hx-post="{% url 'oai:oai_media_link_add' %}"
+                  hx-post="{% url 'oai_admin:oai_media_link_add' %}"
                   hx-target="#project-{{ row.resource.id }}"
                   hx-swap="outerHTML"
                   class="space-y-1"
@@ -74,7 +74,7 @@
             <select
               name="public_access_level"
               class="select select-bordered select-xs w-full mt-2"
-              hx-post="{% url 'oai:oai_project_status_update' row.resource.id %}"
+              hx-post="{% url 'oai_admin:oai_project_status_update' row.resource.id %}"
               hx-target="#project-{{ row.resource.id }}"
               hx-swap="outerHTML"
             >
@@ -114,7 +114,7 @@
         <select
           name="public_access_level"
           class="select select-bordered select-xs w-full mt-2"
-          hx-post="{% url 'oai:oai_project_status_update' row.resource.id %}"
+          hx-post="{% url 'oai_admin:oai_project_status_update' row.resource.id %}"
           hx-target="#project-{{ row.resource.id }}"
           hx-swap="outerHTML"
         >

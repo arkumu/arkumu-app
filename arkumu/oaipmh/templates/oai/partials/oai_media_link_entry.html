@@ -24,7 +24,7 @@
       {{ link.status }}
     </div>
     <form
-      hx-post="{% url 'oai:oai_media_link_update' link.id %}"
+      hx-post="{% url 'oai_admin:oai_media_link_update' link.id %}"
       hx-target="#project-{{ row.resource.id }}"
       hx-swap="outerHTML"
       hx-trigger="change from:select"
@@ -41,7 +41,7 @@
       </select>
     </form>
     <form
-      hx-post="{% url 'oai:oai_media_link_delete' link.id %}"
+      hx-post="{% url 'oai_admin:oai_media_link_delete' link.id %}"
       hx-target="#project-{{ row.resource.id }}"
       hx-swap="outerHTML"
       hx-confirm="Remove this digital object?"
