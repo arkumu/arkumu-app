@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Dict, Iterable, List, Optional, Sequence
 from uuid import UUID
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
-from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
 from arkumu.oaipmh.models import OAIProjectMediaLink
-from arkumu.projects import ProjectRecord
+from arkumu.projects import ProjectDigitalObject, ProjectRecord
 
 from .oai_project_assembler import AssemblyContext, OAIProjectAssembler
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -56,7 +62,7 @@ class OAIProjectMediaSyncService:
         if record is None:
             return SyncResult(skipped=1)
 
-        candidates = self._candidates_from_record(record)
+        candidates = self._candidates_from_record(record, project)
         if not candidates:
             return self._mark_project_stale(project)
 
@@ -70,7 +76,11 @@ class OAIProjectMediaSyncService:
         except Exception:  # pragma: no cover - defensive logging in assembler
             return None
 
-    def _candidates_from_record(self, record: ProjectRecord) -> List[MediaLinkCandidate]:
+    def _candidates_from_record(
+        self,
+        record: ProjectRecord,
+        project: Resource,
+    ) -> List[MediaLinkCandidate]:
         digital_objects = getattr(record, "digital_objects", None) or []
         if not digital_objects:
             return []
@@ -90,12 +100,74 @@ class OAIProjectMediaSyncService:
             if resource is None and obj.uri:
                 resource = resources_by_uri.get(obj.uri)
             if resource is None:
+                resource = self._ensure_digital_object_resource(project, obj)
+            if resource is None:
                 continue
+
+            if not getattr(obj, "resource_id", None):
+                obj.resource_id = str(resource.id)
+            if not getattr(obj, "uri", None):
+                obj.uri = resource.uri
 
             source = self._normalize_source(getattr(obj, "source", None))
             candidates.append(MediaLinkCandidate(resource=resource, source=source))
 
         return candidates
+
+    # ------------------------------------------------------------------
+    def _ensure_digital_object_resource(
+        self,
+        project: Resource,
+        obj: ProjectDigitalObject,
+    ) -> Optional[Resource]:
+        """Promote literal-only digital objects into lightweight Resource rows."""
+
+        path = (getattr(obj, "path", None) or getattr(obj, "access_url", None) or "").strip()
+        if not path:
+            return None
+
+        organization = getattr(project, "organization", None)
+        org_code = (getattr(organization, "code", None) or "").strip().lower()
+        if not organization or not org_code:
+            return None
+
+        uri = self._digital_object_uri(org_code, path)
+        existing = Resource.objects.filter(uri=uri).first()
+        if existing:
+            return existing
+
+        name = (getattr(obj, "file_name", None) or self._infer_file_name(path) or uri.rsplit("/", 1)[-1])[:255]
+        defaults = {
+            "organization": organization,
+            "resource_type": ResourceType.ENTITY,
+            "name": name,
+            "value": path,
+            "canonical_uri": uri,
+            "public_access_level": getattr(project, "public_access_level", PublicAccessLevel.RESTRICTED),
+            "is_public_approved": getattr(project, "is_public_approved", False),
+        }
+
+        try:
+            resource = Resource.objects.create(uri=uri, **defaults)
+        except IntegrityError:
+            resource = Resource.objects.filter(uri=uri).first()
+
+        if resource:
+            logger.debug("Promoted literal path to digital object resource uri=%s project=%s", uri, project.uri)
+        return resource
+
+    @staticmethod
+    def _digital_object_uri(org_code: str, path: str) -> str:
+        digest = hashlib.sha256(path.encode("utf-8")).hexdigest()
+        return f"http://arkumu.org/data/{org_code}/entities/digitales-objekt/{digest}"
+
+    @staticmethod
+    def _infer_file_name(path: str) -> str:
+        try:
+            name = PurePosixPath(path).name
+            return name or path
+        except Exception:
+            return path
 
     def _resources_by_id(self, identifiers: Sequence[str]) -> Dict[str, Resource]:
         if not identifiers:

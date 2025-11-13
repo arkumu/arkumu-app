@@ -87,7 +87,15 @@ class ProjectSnapshotService:
         'fuk': (
             "http://arkumu.org/data/fuk/properties/vorschaubild",
         ),
-        'hmt': (),
+        'hmt': (
+            "http://arkumu.org/data/hmt/properties/dateipfad-absolut",
+        ),
+        'khm': (
+            "http://arkumu.org/data/khm/properties/dateipfad-absolut",
+            "http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner",
+            "http://arkumu.org/data/khm/properties/dateipfad-kurz",
+            "http://arkumu.org/data/khm/properties/media-dateipfad-kurz",
+        ),
         'det': (),
     }
     RIGHTS_STATEMENT_FALLBACK_PREDICATES: Tuple[str, ...] = (

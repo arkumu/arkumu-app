@@ -10,7 +10,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.management import call_command
 from django.db import models, transaction
-from django.db.models import Count, Q, Prefetch, Max, F
+from django.db.models import Count, Q, Prefetch, Max, F, Exists, OuterRef
 from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -56,6 +56,22 @@ LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = (
 )
 
 MEDIA_LINKS_PAGE_SIZE = 6
+PROJECT_LINK_PREDICATES: tuple[str, ...] = tuple(
+    uri.strip()
+    for uri in getattr(
+        settings,
+        "OAI_PROJECT_LINK_PREDICATES",
+        ("http://arkumu.org/data/properties/projekt",),
+    )
+    if uri and uri.strip()
+)
+_PROJECT_TYPE_URIS: tuple[str, ...] = tuple(
+    uri.strip()
+    for uri in getattr(settings, "OAI_PROJECT_TYPE_URIS", ())
+    if uri and uri.strip()
+)
+_RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+_PROJECT_URI_FALLBACK_REGEX = r'/entities/projekt/[^/]+$'
 
 _oai_proxy_request_factory = RequestFactory()
 
@@ -269,27 +285,82 @@ def _oai_project_queryset_for_org(org: Organization):
         Q(public_access_level=PublicAccessLevel.RESTRICTED)
         | (Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True))
     )
-    return (
-        Resource.objects.filter(
-            organization=org,
-            resource_type=ResourceType.ENTITY,
+    queryset = Resource.objects.filter(
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+    ).filter(access_clause)
+
+    scope_clauses: List[Q] = []
+
+    scope_clauses: List[Q] = [Q(uri__regex=_PROJECT_URI_FALLBACK_REGEX)]
+
+    # Annotate project type membership using EXISTS to avoid expensive joins/distinct
+    if _PROJECT_TYPE_URIS:
+        type_predicate_filter = (
+            Q(predicate__uri=_RDF_TYPE_URI)
+            | Q(predicate__canonical_uri=_RDF_TYPE_URI)
         )
-        .filter(uri__regex=r'/entities/projekt/[0-9]+$')
-        .filter(access_clause)
-        .order_by('updated_at', 'id')
-    )
+        type_object_filter = (
+            Q(object__uri__in=_PROJECT_TYPE_URIS)
+            | Q(object__canonical_uri__in=_PROJECT_TYPE_URIS)
+        )
+        type_subquery = Triple.objects.filter(
+            subject_id=OuterRef('pk'),
+        ).filter(type_predicate_filter & type_object_filter)
+        queryset = queryset.annotate(has_project_type=Exists(type_subquery))
+        scope_clauses.append(Q(has_project_type=True))
+
+    if PROJECT_LINK_PREDICATES:
+        link_subquery = Triple.objects.filter(
+            object_id=OuterRef('pk'),
+        ).filter(
+            Q(predicate__uri__in=PROJECT_LINK_PREDICATES)
+            | Q(predicate__canonical_uri__in=PROJECT_LINK_PREDICATES)
+        )
+        queryset = queryset.annotate(has_project_link=Exists(link_subquery))
+        scope_clauses.append(Q(has_project_link=True))
+
+    project_scope = scope_clauses[0]
+    for clause in scope_clauses[1:]:
+        project_scope |= clause
+
+    return queryset.filter(project_scope).order_by('updated_at', 'id')
 
 
 def _run_media_link_seed(org: Organization) -> dict[str, int]:
     service = OAIProjectMediaSyncService()
     summary = {"projects": 0, "created": 0, "refreshed": 0, "stale": 0, "skipped": 0}
-    for project in _oai_project_queryset_for_org(org).iterator(chunk_size=100):
+    org_label = getattr(org, "code", None) or getattr(org, "name", "unknown")
+    is_debug_logging = logger.isEnabledFor(logging.DEBUG)
+    if is_debug_logging:
+        logger.debug("Media link seed run started for org=%s (preview=False)", org_label)
+    for idx, project in enumerate(_oai_project_queryset_for_org(org).iterator(chunk_size=100), start=1):
         result = service.sync_project(project)
         summary["projects"] += 1
         summary["created"] += getattr(result, "created", 0)
         summary["refreshed"] += getattr(result, "refreshed", 0)
         summary["stale"] += getattr(result, "stale", 0)
         summary["skipped"] += getattr(result, "skipped", 0)
+        if is_debug_logging and idx % 25 == 0:
+            logger.debug(
+                "Media link seed progress org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
+                org_label,
+                summary["projects"],
+                summary["created"],
+                summary["refreshed"],
+                summary["stale"],
+                summary["skipped"],
+            )
+    if is_debug_logging:
+        logger.debug(
+            "Media link seed run completed for org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
+            org_label,
+            summary["projects"],
+            summary["created"],
+            summary["refreshed"],
+            summary["stale"],
+            summary["skipped"],
+        )
     return summary
 
 
@@ -761,15 +832,39 @@ def _render_project_row_response(
 def _preview_media_link_seed(org: Organization) -> dict[str, int]:
     service = OAIProjectMediaSyncService()
     summary = {"projects": 0, "created": 0, "refreshed": 0, "stale": 0, "skipped": 0}
+    org_label = getattr(org, "code", None) or getattr(org, "name", "unknown")
+    is_debug_logging = logger.isEnabledFor(logging.DEBUG)
+    if is_debug_logging:
+        logger.debug("Media link seed preview started for org=%s", org_label)
     with transaction.atomic():
-        for project in _oai_project_queryset_for_org(org).iterator(chunk_size=100):
+        for idx, project in enumerate(_oai_project_queryset_for_org(org).iterator(chunk_size=100), start=1):
             result = service.sync_project(project)
             summary["projects"] += 1
             summary["created"] += getattr(result, "created", 0)
             summary["refreshed"] += getattr(result, "refreshed", 0)
             summary["stale"] += getattr(result, "stale", 0)
             summary["skipped"] += getattr(result, "skipped", 0)
+            if is_debug_logging and idx % 25 == 0:
+                logger.debug(
+                    "Media link seed preview progress org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
+                    org_label,
+                    summary["projects"],
+                    summary["created"],
+                    summary["refreshed"],
+                    summary["stale"],
+                    summary["skipped"],
+                )
         transaction.set_rollback(True)
+    if is_debug_logging:
+        logger.debug(
+            "Media link seed preview completed for org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
+            org_label,
+            summary["projects"],
+            summary["created"],
+            summary["refreshed"],
+            summary["stale"],
+            summary["skipped"],
+        )
     return summary
 
 

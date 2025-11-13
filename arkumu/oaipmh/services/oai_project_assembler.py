@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Proto
 from django.conf import settings
 from django.db import transaction
 
-from arkumu.metadata.models.resource import Resource
+from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.projects import ProjectRecord, ProjectDigitalObject
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.catalog.services.schema_manifest_service import CardSchema
@@ -219,11 +219,20 @@ class OAIProjectAssembler:
             event_uri = event_node.get("uri") or event_node.get("canonical_uri")
             if not event_uri:
                 continue
+            event_type = str(event_node.get("resource_type") or "").upper()
+            if event_type and event_type != ResourceType.ENTITY:
+                logger.debug(
+                    "Skipping supplemental event objects for %s (resource_type=%s)",
+                    event_uri,
+                    event_type,
+                )
+                continue
             extras.extend(
                 self._digital_objects_from_event(
                     event_graph_service,
                     event_uri,
                     event_id,
+                    org_code,
                 )
             )
 
@@ -293,6 +302,7 @@ class OAIProjectAssembler:
         graph_service: CanonicalGraphService,
         event_uri: str,
         event_id: str,
+        org_code: Optional[str],
     ) -> list[ProjectDigitalObject]:
         try:
             event_graph = graph_service.get_entity_graph(
@@ -334,12 +344,20 @@ class OAIProjectAssembler:
         if not digital_ids:
             return []
 
+        path_predicates: list[str] = [ProjectURIs.DIGITAL_OBJECT_PATH]
+        fallback_predicates = []
+        if org_code:
+            fallback_predicates = self._snapshot_service._fallback_digital_predicates_for_org((org_code,))
+        for predicate in fallback_predicates:
+            if predicate and predicate not in path_predicates:
+                path_predicates.append(predicate)
+
         extras: list[ProjectDigitalObject] = []
         for digital_id in digital_ids:
             digital_edges = edges_by_subject.get(digital_id, [])
-            path_literal = self._snapshot_service._first_literal(  # type: ignore[attr-defined]
+            path_literal = self._snapshot_service._first_literal_from_predicates(  # type: ignore[attr-defined]
                 digital_edges,
-                ProjectURIs.DIGITAL_OBJECT_PATH,
+                path_predicates,
             )
             if not path_literal:
                 continue
