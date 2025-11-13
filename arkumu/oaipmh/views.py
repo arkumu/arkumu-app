@@ -16,7 +16,8 @@ from urllib.parse import unquote, urlparse
 
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.http import HttpRequest, HttpResponse
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
@@ -68,6 +69,7 @@ from arkumu.common.arkumu_license import (
     license_token_from_license_info,
 )
 from arkumu.oaipmh.services import AssemblyContext, OAIProjectAssembler
+from arkumu.oaipmh import schema_utils
 
 
 # Minimal repository config (can be moved to settings)
@@ -78,6 +80,7 @@ REPO_PROTOCOL_VERSION = "2.0"
 REPO_EARLIEST_DATASTAMP = "1970-01-01T00:00:00Z"
 REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
+SCHEMA_DESCRIPTION_NS = "http://arkumu.org/oai/schema-info/1.0"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
 METS_NS = DEFAULT_METS_NS
@@ -1001,6 +1004,24 @@ def _identify(oai: ET._Element, request: HttpRequest) -> ET._Element:
 
     ET.SubElement(identify, "deletedRecord").text = REPO_DELETED_RECORD
     ET.SubElement(identify, "granularity").text = REPO_GRANULARITY
+
+    schema_bundle = schema_utils.build_schema_url_bundle(request)
+    if schema_bundle:
+        description = ET.SubElement(identify, "description")
+        schema_info = ET.SubElement(
+            description,
+            ET.QName(SCHEMA_DESCRIPTION_NS, "schemaInfo"),
+            nsmap={"arkschema": SCHEMA_DESCRIPTION_NS},
+        )
+        schema_info.set("snapshot", schema_bundle.snapshot_tag)
+        for variant, urls in schema_bundle.urls.items():
+            schema_elem = ET.SubElement(
+                schema_info,
+                ET.QName(SCHEMA_DESCRIPTION_NS, "schema"),
+            )
+            schema_elem.set("type", variant)
+            schema_elem.set("latest", urls.get("latest", ""))
+            schema_elem.set("snapshot", urls.get("snapshot", ""))
 
     return oai
 
@@ -3936,3 +3957,21 @@ def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
 def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
     with _force_db_mode(True), _force_curated_links(True):
         return _handle_oai_request(request)
+
+
+@require_http_methods(["GET"])
+def oai_schema_download(request: HttpRequest, snapshot: str, variant: str) -> HttpResponse:
+    snapshot_info = schema_utils.get_snapshot(snapshot)
+    if not snapshot_info:
+        raise Http404("Schema snapshot not found.")
+    if variant not in schema_utils.SCHEMA_VARIANTS:
+        raise Http404("Unknown schema variant.")
+    try:
+        file_path = snapshot_info.file_path(variant)
+    except FileNotFoundError:
+        raise Http404("Schema file is unavailable.")
+
+    response = FileResponse(file_path.open("rb"), content_type="text/turtle")
+    response["Content-Disposition"] = f'inline; filename="{file_path.name}"'
+    response["Cache-Control"] = "public, max-age=3600"
+    return response

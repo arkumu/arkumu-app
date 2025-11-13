@@ -1,0 +1,1297 @@
+@prefix arkprop: <http://arkumu.org/data/properties/> .
+@prefix arktype: <http://arkumu.org/data/types/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+arktype:akteurin a rdfs:Class ;
+    rdfs:label "Akteurin"@en ;
+    rdfs:comment "Available in datasets -> DET: AkteurIn; FUK: AkteurIn; RSH: AkteurIn"@en .
+
+arktype:akteurin-ereignis-kreuztabelle a rdfs:Class ;
+    rdfs:label "Akteurin Ereignis Kreuztabelle"@en ;
+    rdfs:comment "Available in datasets -> DET: AkteurIn_Ereignis_Kreuztabelle; FUK: AkteurIn_Ereignis_Kreuztabelle; RSH: AkteurIn_Ereignis_Kreuztabelle"@en .
+
+arktype:digitales-objekt a rdfs:Class ;
+    rdfs:label "Digitales Objekt"@en ;
+    rdfs:comment "Available in datasets -> DET: Digitales_Objekt; FUK: Digitales_Objekt; RSH: Digitales_Objekt"@en .
+
+arktype:einliefernde-hochschule a rdfs:Class ;
+    rdfs:label "Einliefernde Hochschule"@en ;
+    rdfs:comment "Available in datasets -> DET: Einliefernde_Hochschule; FUK: Einliefernde Hochschule; RSH: Einliefernde_Hochschule"@en .
+
+arktype:ereignis a rdfs:Class ;
+    rdfs:label "Ereignis"@en ;
+    rdfs:comment "Available in datasets -> DET: Ereignis; FUK: Ereignis; RSH: Ereignis"@en .
+
+arktype:projekt a rdfs:Class ;
+    rdfs:label "Projekt"@en ;
+    rdfs:comment "Available in datasets -> DET: Projekt; FUK: Projekt; RSH: Projekt"@en .
+
+arktype:projektkategorie a rdfs:Class ;
+    rdfs:label "Projektkategorie"@en ;
+    rdfs:comment "Available in datasets -> DET: Projektkategorie; FUK: Projektkategorie; RSH: Projektkategorie"@en .
+
+arktype:rolle a rdfs:Class ;
+    rdfs:label "Rolle"@en ;
+    rdfs:comment "Available in datasets -> DET: Rolle; FUK: Rolle; RSH: Rolle"@en .
+
+arkprop:aat-id a rdf:Property ;
+    rdfs:label "Aat Id"@en ;
+    dcterms:source "DET::Projektkategorie::AAT-ID; FUK::Projektkategorie::AAT-ID; RSH::Projektkategorie::AAT-ID"@en,
+        "DET::Rolle::AAT-ID; FUK::Rolle::AAT-ID; RSH::Rolle::AAT-ID"@en ;
+    rdfs:domain arktype:projektkategorie,
+        arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/aat-id>,
+        <http://arkumu.org/data/fuk/properties/aat-id>,
+        <http://arkumu.org/data/rsh/properties/aat-id> .
+
+arkprop:akteurin-ereignis-id a rdf:Property ;
+    rdfs:label "Akteurin Ereignis Id"@en ;
+    dcterms:source "DET::AkteurIn_Ereignis_Kreuztabelle::AkteurIn-Ereignis-ID; FUK::AkteurIn_Ereignis_Kreuztabelle::AkteurIn-Ereignis-ID; RSH::AkteurIn_Ereignis_Kreuztabelle::AkteurIn-Ereignis-ID"@en ;
+    rdfs:domain arktype:akteurin-ereignis-kreuztabelle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/akteurin-ereignis-id>,
+        <http://arkumu.org/data/fuk/properties/akteurin-ereignis-id>,
+        <http://arkumu.org/data/rsh/properties/akteurin-ereignis-id> .
+
+arkprop:akteurin-id a rdf:Property ;
+    rdfs:label "Akteurin Id"@en ;
+    dcterms:source "DET::AkteurIn::AkteurIn-ID; FUK::AkteurIn::AkteurIn-ID; RSH::AkteurIn::AkteurIn-ID"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/akteurin-id>,
+        <http://arkumu.org/data/fuk/properties/akteurin-id>,
+        <http://arkumu.org/data/rsh/properties/akteurin-id> .
+
+arkprop:akteurin-im-ereignis a rdf:Property ;
+    rdfs:label "Akteurin Im Ereignis"@en ;
+    dcterms:source "DET::AkteurIn_Ereignis_Kreuztabelle::AkteurIn im Ereignis; FUK::AkteurIn_Ereignis_Kreuztabelle::AkteurIn im Ereignis; RSH::AkteurIn_Ereignis_Kreuztabelle::AkteurIn im Ereignis"@en ;
+    rdfs:domain arktype:akteurin-ereignis-kreuztabelle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/akteurin-im-ereignis>,
+        <http://arkumu.org/data/fuk/properties/akteurin-im-ereignis>,
+        <http://arkumu.org/data/rsh/properties/akteurin-im-ereignis> .
+
+arkprop:alternativer-name a rdf:Property ;
+    rdfs:label "Alternativer Name"@en ;
+    dcterms:source "DET::AkteurIn::Alternativer Name; FUK::AkteurIn::Alternativer Name; RSH::AkteurIn::Alternativer Name"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/alternativer-name>,
+        <http://arkumu.org/data/fuk/properties/alternativer-name>,
+        <http://arkumu.org/data/rsh/properties/alternativer-name> .
+
+arkprop:alternativer-titel-set a rdf:Property ;
+    rdfs:label "Alternativer Titel Set"@en ;
+    dcterms:source "DET::Projekt::Alternativer Titel-Set; FUK::Projekt::Alternativer Titel-Set; RSH::Projekt::Alternativer Titel-Set"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/alternativer-titel-set>,
+        <http://arkumu.org/data/fuk/properties/alternativer-titel-set>,
+        <http://arkumu.org/data/rsh/properties/alternativer-titel-set> .
+
+arkprop:andere-normdaten a rdf:Property ;
+    rdfs:label "Andere Normdaten"@en ;
+    dcterms:source "DET::AkteurIn::Andere Normdaten; FUK::AkteurIn::Andere Normdaten; RSH::AkteurIn::Andere Normdaten"@en,
+        "DET::Ereignis::Andere Normdaten; FUK::Ereignis::Andere Normdaten; RSH::Ereignis::Andere Normdaten"@en,
+        "DET::Projekt::Andere Normdaten; FUK::Projekt::Andere Normdaten; RSH::Projekt::Andere Normdaten"@en ;
+    rdfs:domain arktype:akteurin,
+        arktype:ereignis,
+        arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/andere-normdaten>,
+        <http://arkumu.org/data/fuk/properties/andere-normdaten>,
+        <http://arkumu.org/data/rsh/properties/andere-normdaten> .
+
+arkprop:angegebene-nutzungsrechte a rdf:Property ;
+    rdfs:label "Angegebene Nutzungsrechte"@en ;
+    dcterms:source "DET::Projekt::Angegebene Nutzungsrechte; FUK::Projekt::Angegebene Nutzungsrechte; RSH::Projekt::Angegebene Nutzungsrechte"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/angegebene-nutzungsrechte>,
+        <http://arkumu.org/data/fuk/properties/angegebene-nutzungsrechte>,
+        <http://arkumu.org/data/rsh/properties/angegebene-nutzungsrechte> .
+
+arkprop:anzeigestatus a rdf:Property ;
+    rdfs:label "Anzeigestatus"@en ;
+    dcterms:source "DET::Digitales_Objekt::Anzeigestatus; FUK::Digitales_Objekt::Anzeigestatus; RSH::Digitales_Objekt::Anzeigestatus"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/anzeigestatus>,
+        <http://arkumu.org/data/fuk/properties/anzeigestatus>,
+        <http://arkumu.org/data/rsh/properties/anzeigestatus> .
+
+arkprop:art-des-lizenzvertrages a rdf:Property ;
+    rdfs:label "Art Des Lizenzvertrages"@en ;
+    dcterms:source "DET::Projekt::Art des Lizenzvertrages; FUK::Projekt::Art des Lizenzvertrages; RSH::Projekt::Art des Lizenzvertrages"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/art-des-lizenzvertrages>,
+        <http://arkumu.org/data/fuk/properties/art-des-lizenzvertrages>,
+        <http://arkumu.org/data/rsh/properties/art-des-lizenzvertrages> .
+
+arkprop:auffuehrungstonart a rdf:Property ;
+    rdfs:label "Auffuehrungstonart"@en ;
+    dcterms:source "DET::Ereignis::Aufführungstonart; FUK::Ereignis::Aufführungstonart"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/auffuehrungstonart>,
+        <http://arkumu.org/data/fuk/properties/auffuehrungstonart> .
+
+arkprop:aufloesungsort a rdf:Property ;
+    rdfs:label "Aufloesungsort"@en ;
+    dcterms:source "DET::AkteurIn::Auflösungsort; FUK::AkteurIn::Auflösungsort; RSH::AkteurIn::Auflösungsort"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/aufloesungsort>,
+        <http://arkumu.org/data/fuk/properties/aufloesungsort>,
+        <http://arkumu.org/data/rsh/properties/aufloesungsort> .
+
+arkprop:beruf-und-taetigkeit a rdf:Property ;
+    rdfs:label "Beruf Und Taetigkeit"@en ;
+    dcterms:source "DET::AkteurIn::Beruf und Tätigkeit; FUK::AkteurIn::Beruf und Tätigkeit; RSH::AkteurIn::Beruf und Tätigkeit"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/beruf-und-taetigkeit>,
+        <http://arkumu.org/data/fuk/properties/beruf-und-taetigkeit>,
+        <http://arkumu.org/data/rsh/properties/beruf-und-taetigkeit> .
+
+arkprop:beschreibung a rdf:Property ;
+    rdfs:label "Beschreibung"@en ;
+    dcterms:source "DET::Projekt::Beschreibung; FUK::Projekt::Beschreibung; RSH::Projekt::Beschreibung"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/beschreibung>,
+        <http://arkumu.org/data/fuk/properties/beschreibung>,
+        <http://arkumu.org/data/rsh/properties/beschreibung> .
+
+arkprop:besitzt-leistungsschutzrechte a rdf:Property ;
+    rdfs:label "Besitzt Leistungsschutzrechte"@en ;
+    dcterms:source "DET::AkteurIn_Ereignis_Kreuztabelle::besitzt Leistungsschutzrechte; FUK::AkteurIn_Ereignis_Kreuztabelle::besitzt Leistungsschutzrechte; RSH::AkteurIn_Ereignis_Kreuztabelle::besitzt Leistungsschutzrechte"@en ;
+    rdfs:domain arktype:akteurin-ereignis-kreuztabelle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/besitzt-leistungsschutzrechte>,
+        <http://arkumu.org/data/fuk/properties/besitzt-leistungsschutzrechte>,
+        <http://arkumu.org/data/rsh/properties/besitzt-leistungsschutzrechte> .
+
+arkprop:bestehender-lizenzvertrag a rdf:Property ;
+    rdfs:label "Bestehender Lizenzvertrag"@en ;
+    dcterms:source "DET::Projekt::Bestehender Lizenzvertrag; FUK::Projekt::Bestehender Lizenzvertrag; RSH::Projekt::Bestehender Lizenzvertrag"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/bestehender-lizenzvertrag>,
+        <http://arkumu.org/data/fuk/properties/bestehender-lizenzvertrag>,
+        <http://arkumu.org/data/rsh/properties/bestehender-lizenzvertrag> .
+
+arkprop:bevorzugter-titel a rdf:Property ;
+    rdfs:label "Bevorzugter Titel"@en ;
+    dcterms:source "DET::Projekt::Bevorzugter Titel; FUK::Projekt::Bevorzugter Titel; RSH::Projekt::Bevorzugter Titel"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/bevorzugter-titel>,
+        <http://arkumu.org/data/fuk/properties/bevorzugter-titel>,
+        <http://arkumu.org/data/rsh/properties/bevorzugter-titel> .
+
+arkprop:bevorzugter-untertitel a rdf:Property ;
+    rdfs:label "Bevorzugter Untertitel"@en ;
+    dcterms:source "DET::Projekt::Bevorzugter Untertitel; FUK::Projekt::Bevorzugter Untertitel; RSH::Projekt::Bevorzugter Untertitel"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/bevorzugter-untertitel>,
+        <http://arkumu.org/data/fuk/properties/bevorzugter-untertitel>,
+        <http://arkumu.org/data/rsh/properties/bevorzugter-untertitel> .
+
+arkprop:bildbeschreibung-deutsch a rdf:Property ;
+    rdfs:label "Bildbeschreibung Deutsch"@en ;
+    dcterms:source "DET::Digitales_Objekt::Bildbeschreibung (deutsch); FUK::Digitales_Objekt::Bildbeschreibung (deutsch); RSH::Digitales_Objekt::Bildbeschreibung (deutsch)"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/bildbeschreibung-deutsch>,
+        <http://arkumu.org/data/fuk/properties/bildbeschreibung-deutsch>,
+        <http://arkumu.org/data/rsh/properties/bildbeschreibung-deutsch> .
+
+arkprop:bildbeschreibung-englisch a rdf:Property ;
+    rdfs:label "Bildbeschreibung Englisch"@en ;
+    dcterms:source "DET::Digitales_Objekt::Bildbeschreibung (englisch); FUK::Digitales_Objekt::Bildbeschreibung (englisch); RSH::Digitales_Objekt::Bildbeschreibung (englisch)"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/bildbeschreibung-englisch>,
+        <http://arkumu.org/data/fuk/properties/bildbeschreibung-englisch>,
+        <http://arkumu.org/data/rsh/properties/bildbeschreibung-englisch> .
+
+arkprop:dateiabfragedokument a rdf:Property ;
+    rdfs:label "Dateiabfragedokument"@en ;
+    dcterms:source "DET::Projekt::Dateiabfragedokument; FUK::Projekt::Dateiabfragedokument; RSH::Projekt::Dateiabfragedokument"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/dateiabfragedokument>,
+        <http://arkumu.org/data/fuk/properties/dateiabfragedokument>,
+        <http://arkumu.org/data/rsh/properties/dateiabfragedokument> .
+
+arkprop:dateiname a rdf:Property ;
+    rdfs:label "Dateiname"@en ;
+    dcterms:source "DET::Digitales_Objekt::Dateiname; FUK::Digitales_Objekt::Dateiname; RSH::Digitales_Objekt::Dateiname"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/dateiname>,
+        <http://arkumu.org/data/fuk/properties/dateiname>,
+        <http://arkumu.org/data/rsh/properties/dateiname> .
+
+arkprop:dateipaket a rdf:Property ;
+    rdfs:label "Dateipaket"@en ;
+    dcterms:source "DET::Digitales_Objekt::Dateipaket; FUK::Digitales_Objekt::Dateipaket; RSH::Digitales_Objekt::Dateipaket"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/dateipaket>,
+        <http://arkumu.org/data/fuk/properties/dateipaket>,
+        <http://arkumu.org/data/rsh/properties/dateipaket> .
+
+arkprop:dateipfad a rdf:Property ;
+    rdfs:label "Dateipfad"@en ;
+    dcterms:source "DET::Digitales_Objekt::Dateipfad; FUK::Digitales_Objekt::Dateipfad; RSH::Digitales_Objekt::Dateipfad"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/dateipfad>,
+        <http://arkumu.org/data/fuk/properties/dateipfad>,
+        <http://arkumu.org/data/rsh/properties/dateipfad> .
+
+arkprop:datensatz-id-beim-einlieferer a rdf:Property ;
+    rdfs:label "Datensatz Id Beim Einlieferer"@en ;
+    dcterms:source "DET::Digitales_Objekt::Datensatz-ID beim Einlieferer; FUK::Digitales_Objekt::Datensatz-ID beim Einlieferer; RSH::Digitales_Objekt::Datensatz-ID beim Einlieferer"@en,
+        "DET::Ereignis::Datensatz-ID beim Einlieferer; FUK::Ereignis::Datensatz-ID beim Einlieferer; RSH::Ereignis::Datensatz-ID beim Einlieferer"@en ;
+    rdfs:domain arktype:digitales-objekt,
+        arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/datensatz-id-beim-einlieferer>,
+        <http://arkumu.org/data/fuk/properties/datensatz-id-beim-einlieferer>,
+        <http://arkumu.org/data/rsh/properties/datensatz-id-beim-einlieferer> .
+
+arkprop:datensatzerstellung-beim-einlieferer a rdf:Property ;
+    rdfs:label "Datensatzerstellung Beim Einlieferer"@en ;
+    dcterms:source "DET::Digitales_Objekt::Datensatzerstellung beim Einlieferer; FUK::Digitales_Objekt::Datensatzerstellung beim Einlieferer; RSH::Digitales_Objekt::Datensatzerstellung beim Einlieferer"@en,
+        "DET::Ereignis::Datensatzerstellung beim Einlieferer; FUK::Ereignis::Datensatzerstellung beim Einlieferer; RSH::Ereignis::Datensatzerstellung beim Einlieferer"@en ;
+    rdfs:domain arktype:digitales-objekt,
+        arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/datensatzerstellung-beim-einlieferer>,
+        <http://arkumu.org/data/fuk/properties/datensatzerstellung-beim-einlieferer>,
+        <http://arkumu.org/data/rsh/properties/datensatzerstellung-beim-einlieferer> .
+
+arkprop:dcp-art a rdf:Property ;
+    rdfs:label "Dcp Art"@en ;
+    dcterms:source "DET::Digitales_Objekt::DCP-Art; FUK::Digitales_Objekt::DCP-Art; RSH::Digitales_Objekt::DCP-Art"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/dcp-art>,
+        <http://arkumu.org/data/fuk/properties/dcp-art>,
+        <http://arkumu.org/data/rsh/properties/dcp-art> .
+
+arkprop:derivatkopie-nummer a rdf:Property ;
+    rdfs:label "Derivatkopie Nummer"@en ;
+    dcterms:source "DET::Digitales_Objekt::Derivatkopie-Nummer; FUK::Digitales_Objekt::Derivatkopie-Nummer; RSH::Digitales_Objekt::Derivatkopie-Nummer"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/derivatkopie-nummer>,
+        <http://arkumu.org/data/fuk/properties/derivatkopie-nummer>,
+        <http://arkumu.org/data/rsh/properties/derivatkopie-nummer> .
+
+arkprop:deutsche-inhaltliche-beschreibung a rdf:Property ;
+    rdfs:label "Deutsche Inhaltliche Beschreibung"@en ;
+    dcterms:source "DET::Digitales_Objekt::Deutsche inhaltliche Beschreibung; FUK::Digitales_Objekt::Deutsche inhaltliche Beschreibung; RSH::Digitales_Objekt::Deutsche inhaltliche Beschreibung"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/deutsche-inhaltliche-beschreibung>,
+        <http://arkumu.org/data/fuk/properties/deutsche-inhaltliche-beschreibung>,
+        <http://arkumu.org/data/rsh/properties/deutsche-inhaltliche-beschreibung> .
+
+arkprop:deutsche-kurzbiografie a rdf:Property ;
+    rdfs:label "Deutsche Kurzbiografie"@en ;
+    dcterms:source "DET::AkteurIn::Deutsche Kurzbiografie; FUK::AkteurIn::Deutsche Kurzbiografie; RSH::AkteurIn::Deutsche Kurzbiografie"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/deutsche-kurzbiografie>,
+        <http://arkumu.org/data/fuk/properties/deutsche-kurzbiografie>,
+        <http://arkumu.org/data/rsh/properties/deutsche-kurzbiografie> .
+
+arkprop:deutscher-kommentar a rdf:Property ;
+    rdfs:label "Deutscher Kommentar"@en ;
+    dcterms:source "DET::AkteurIn::Deutscher Kommentar; FUK::AkteurIn::Deutscher Kommentar; RSH::AkteurIn::Deutscher Kommentar"@en,
+        "DET::Digitales_Objekt::Deutscher Kommentar; FUK::Digitales_Objekt::Deutscher Kommentar; RSH::Digitales_Objekt::Deutscher Kommentar"@en,
+        "DET::Projekt::Deutscher Kommentar; FUK::Projekt::Deutscher Kommentar; RSH::Projekt::Deutscher Kommentar"@en,
+        "RSH::Ereignis::Deutscher Kommentar"@en ;
+    rdfs:domain arktype:akteurin,
+        arktype:digitales-objekt,
+        arktype:ereignis,
+        arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/deutscher-kommentar>,
+        <http://arkumu.org/data/fuk/properties/deutscher-kommentar>,
+        <http://arkumu.org/data/rsh/properties/deutscher-kommentar> .
+
+arkprop:deutscher-name a rdf:Property ;
+    rdfs:label "Deutscher Name"@en ;
+    dcterms:source "DET::AkteurIn::Deutscher Name; FUK::AkteurIn::Deutscher Name; RSH::AkteurIn::Deutscher Name"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/deutscher-name>,
+        <http://arkumu.org/data/fuk/properties/deutscher-name>,
+        <http://arkumu.org/data/rsh/properties/deutscher-name> .
+
+arkprop:deutscher-name-der-einliefernden-hochschule a rdf:Property ;
+    rdfs:label "Deutscher Name Der Einliefernden Hochschule"@en ;
+    dcterms:source "DET::Einliefernde_Hochschule::Deutscher Name der Einliefernden Hochschule; FUK::Einliefernde Hochschule::Deutscher Name der Einliefernden Hochschule; RSH::Einliefernde_Hochschule::Deutscher Name der Einliefernden Hochschule"@en ;
+    rdfs:domain arktype:einliefernde-hochschule ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/deutscher-name-der-einliefernden-hochschule>,
+        <http://arkumu.org/data/fuk/properties/deutscher-name-der-einliefernden-hochschule>,
+        <http://arkumu.org/data/rsh/properties/deutscher-name-der-einliefernden-hochschule> .
+
+arkprop:deutscher-name-der-projektkategorie-breadcrumb a rdf:Property ;
+    rdfs:label "Deutscher Name Der Projektkategorie Breadcrumb"@en ;
+    dcterms:source "DET::Projektkategorie::Deutscher Name der Projektkategorie (Breadcrumb); FUK::Projektkategorie::Deutscher Name der Projektkategorie (Breadcrumb); RSH::Projektkategorie::Deutscher Name der Projektkategorie (Breadcrumb)"@en ;
+    rdfs:domain arktype:projektkategorie ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/deutscher-name-der-projektkategorie-breadcrumb>,
+        <http://arkumu.org/data/fuk/properties/deutscher-name-der-projektkategorie-breadcrumb>,
+        <http://arkumu.org/data/rsh/properties/deutscher-name-der-projektkategorie-breadcrumb> .
+
+arkprop:deutscher-name-der-rolle-breadcrumb a rdf:Property ;
+    rdfs:label "Deutscher Name Der Rolle Breadcrumb"@en ;
+    dcterms:source "DET::Rolle::Deutscher Name der Rolle (Breadcrumb); FUK::Rolle::Deutscher Name der Rolle (Breadcrumb); RSH::Rolle::Deutscher Name der Rolle (Breadcrumb)"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/deutscher-name-der-rolle-breadcrumb>,
+        <http://arkumu.org/data/fuk/properties/deutscher-name-der-rolle-breadcrumb>,
+        <http://arkumu.org/data/rsh/properties/deutscher-name-der-rolle-breadcrumb> .
+
+arkprop:digitales-objekt a rdf:Property ;
+    rdfs:label "Digitales Objekt"@en ;
+    dcterms:source "DET::Ereignis::Digitales Objekt; FUK::Ereignis::Digitales Objekt; RSH::Ereignis::Digitales Objekt"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/digitales-objekt>,
+        <http://arkumu.org/data/fuk/properties/digitales-objekt>,
+        <http://arkumu.org/data/rsh/properties/digitales-objekt> .
+
+arkprop:digitales-objekt-id a rdf:Property ;
+    rdfs:label "Digitales Objekt Id"@en ;
+    dcterms:source "DET::Digitales_Objekt::Digitales Objekt-ID; FUK::Digitales_Objekt::Digitales Objekt-ID; RSH::Digitales_Objekt::Digitales Objekt-ID"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/digitales-objekt-id>,
+        <http://arkumu.org/data/fuk/properties/digitales-objekt-id>,
+        <http://arkumu.org/data/rsh/properties/digitales-objekt-id> .
+
+arkprop:einlieferer a rdf:Property ;
+    rdfs:label "Einlieferer"@en ;
+    dcterms:source "DET::Digitales_Objekt::Einlieferer; FUK::Digitales_Objekt::Einlieferer; RSH::Digitales_Objekt::Einlieferer"@en,
+        "DET::Ereignis::Einlieferer; FUK::Ereignis::Einlieferer; RSH::Ereignis::Einlieferer"@en ;
+    rdfs:domain arktype:digitales-objekt,
+        arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/einlieferer>,
+        <http://arkumu.org/data/fuk/properties/einlieferer>,
+        <http://arkumu.org/data/rsh/properties/einlieferer> .
+
+arkprop:einliefernde-hochschule a rdf:Property ;
+    rdfs:label "Einliefernde Hochschule"@en ;
+    dcterms:source "DET::Projekt::Einliefernde Hochschule; FUK::Projekt::Einliefernde Hochschule; RSH::Projekt::Einliefernde Hochschule"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/einliefernde-hochschule>,
+        <http://arkumu.org/data/fuk/properties/einliefernde-hochschule>,
+        <http://arkumu.org/data/rsh/properties/einliefernde-hochschule> .
+
+arkprop:einliefernde-hochschule-id a rdf:Property ;
+    rdfs:label "Einliefernde Hochschule Id"@en ;
+    dcterms:source "DET::Einliefernde_Hochschule::Einliefernde Hochschule-ID; FUK::Einliefernde Hochschule::Einliefernde Hochschule-ID; RSH::Einliefernde_Hochschule::Einliefernde Hochschule-ID"@en ;
+    rdfs:domain arktype:einliefernde-hochschule ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/einliefernde-hochschule-id>,
+        <http://arkumu.org/data/fuk/properties/einliefernde-hochschule-id>,
+        <http://arkumu.org/data/rsh/properties/einliefernde-hochschule-id> .
+
+arkprop:englische-inhaltliche-beschreibung a rdf:Property ;
+    rdfs:label "Englische Inhaltliche Beschreibung"@en ;
+    dcterms:source "DET::Digitales_Objekt::Englische inhaltliche Beschreibung; FUK::Digitales_Objekt::Englische inhaltliche Beschreibung; RSH::Digitales_Objekt::Englische inhaltliche Beschreibung"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/englische-inhaltliche-beschreibung>,
+        <http://arkumu.org/data/fuk/properties/englische-inhaltliche-beschreibung>,
+        <http://arkumu.org/data/rsh/properties/englische-inhaltliche-beschreibung> .
+
+arkprop:englische-kurzbiografie a rdf:Property ;
+    rdfs:label "Englische Kurzbiografie"@en ;
+    dcterms:source "DET::AkteurIn::Englische Kurzbiografie; FUK::AkteurIn::Englische Kurzbiografie; RSH::AkteurIn::Englische Kurzbiografie"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/englische-kurzbiografie>,
+        <http://arkumu.org/data/fuk/properties/englische-kurzbiografie>,
+        <http://arkumu.org/data/rsh/properties/englische-kurzbiografie> .
+
+arkprop:englischer-kommentar a rdf:Property ;
+    rdfs:label "Englischer Kommentar"@en ;
+    dcterms:source "DET::AkteurIn::Englischer Kommentar; FUK::AkteurIn::Englischer Kommentar; RSH::AkteurIn::Englischer Kommentar"@en,
+        "DET::Digitales_Objekt::Englischer Kommentar; FUK::Digitales_Objekt::Englischer Kommentar; RSH::Digitales_Objekt::Englischer Kommentar"@en,
+        "DET::Projekt::Englischer Kommentar; FUK::Projekt::Englischer Kommentar; RSH::Projekt::Englischer Kommentar"@en,
+        "RSH::Ereignis::Englischer Kommentar"@en ;
+    rdfs:domain arktype:akteurin,
+        arktype:digitales-objekt,
+        arktype:ereignis,
+        arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/englischer-kommentar>,
+        <http://arkumu.org/data/fuk/properties/englischer-kommentar>,
+        <http://arkumu.org/data/rsh/properties/englischer-kommentar> .
+
+arkprop:englischer-name a rdf:Property ;
+    rdfs:label "Englischer Name"@en ;
+    dcterms:source "DET::AkteurIn::Englischer Name; FUK::AkteurIn::Englischer Name; RSH::AkteurIn::Englischer Name"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/englischer-name>,
+        <http://arkumu.org/data/fuk/properties/englischer-name>,
+        <http://arkumu.org/data/rsh/properties/englischer-name> .
+
+arkprop:englischer-name-der-einliefernden-hochschule a rdf:Property ;
+    rdfs:label "Englischer Name Der Einliefernden Hochschule"@en ;
+    dcterms:source "DET::Einliefernde_Hochschule::Englischer Name der Einliefernden Hochschule; FUK::Einliefernde Hochschule::Englischer Name der Einliefernden Hochschule; RSH::Einliefernde_Hochschule::Englischer Name der Einliefernden Hochschule"@en ;
+    rdfs:domain arktype:einliefernde-hochschule ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/englischer-name-der-einliefernden-hochschule>,
+        <http://arkumu.org/data/fuk/properties/englischer-name-der-einliefernden-hochschule>,
+        <http://arkumu.org/data/rsh/properties/englischer-name-der-einliefernden-hochschule> .
+
+arkprop:englischer-name-der-projektkategorie-breadcrumb a rdf:Property ;
+    rdfs:label "Englischer Name Der Projektkategorie Breadcrumb"@en ;
+    dcterms:source "DET::Projektkategorie::Englischer Name der Projektkategorie (Breadcrumb); FUK::Projektkategorie::Englischer Name der Projektkategorie (Breadcrumb); RSH::Projektkategorie::Englischer Name der Projektkategorie (Breadcrumb)"@en ;
+    rdfs:domain arktype:projektkategorie ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/englischer-name-der-projektkategorie-breadcrumb>,
+        <http://arkumu.org/data/fuk/properties/englischer-name-der-projektkategorie-breadcrumb>,
+        <http://arkumu.org/data/rsh/properties/englischer-name-der-projektkategorie-breadcrumb> .
+
+arkprop:englischer-name-der-rolle-breadcrumb a rdf:Property ;
+    rdfs:label "Englischer Name Der Rolle Breadcrumb"@en ;
+    dcterms:source "DET::Rolle::Englischer Name der Rolle (Breadcrumb); FUK::Rolle::Englischer Name der Rolle (Breadcrumb); RSH::Rolle::Englischer Name der Rolle (Breadcrumb)"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/englischer-name-der-rolle-breadcrumb>,
+        <http://arkumu.org/data/fuk/properties/englischer-name-der-rolle-breadcrumb>,
+        <http://arkumu.org/data/rsh/properties/englischer-name-der-rolle-breadcrumb> .
+
+arkprop:entstehung a rdf:Property ;
+    rdfs:label "Entstehung"@en ;
+    dcterms:source "DET::Digitales_Objekt::Entstehung; FUK::Digitales_Objekt::Entstehung; RSH::Digitales_Objekt::Entstehung"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/entstehung>,
+        <http://arkumu.org/data/fuk/properties/entstehung>,
+        <http://arkumu.org/data/rsh/properties/entstehung> .
+
+arkprop:eq a rdf:Property ;
+    rdfs:label "Eq"@en ;
+    dcterms:source "DET::Digitales_Objekt::EQ; FUK::Digitales_Objekt::EQ; RSH::Digitales_Objekt::EQ"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/eq>,
+        <http://arkumu.org/data/fuk/properties/eq>,
+        <http://arkumu.org/data/rsh/properties/eq> .
+
+arkprop:equipment-und-software a rdf:Property ;
+    rdfs:label "Equipment Und Software"@en ;
+    dcterms:source "DET::Ereignis::Equipment und Software; FUK::Ereignis::Equipment und Software; RSH::Ereignis::Equipment und Software"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/equipment-und-software>,
+        <http://arkumu.org/data/fuk/properties/equipment-und-software>,
+        <http://arkumu.org/data/rsh/properties/equipment-und-software> .
+
+arkprop:ereignis a rdf:Property ;
+    rdfs:label "Ereignis"@en ;
+    dcterms:source "DET::Projekt::Ereignis; FUK::Projekt::Ereignis; RSH::Projekt::Ereignis"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignis>,
+        <http://arkumu.org/data/fuk/properties/ereignis>,
+        <http://arkumu.org/data/rsh/properties/ereignis> .
+
+arkprop:ereignis-id a rdf:Property ;
+    rdfs:label "Ereignis Id"@en ;
+    dcterms:source "DET::Ereignis::Ereignis-ID; FUK::Ereignis::Ereignis-ID; RSH::Ereignis::Ereignis-ID"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignis-id>,
+        <http://arkumu.org/data/fuk/properties/ereignis-id>,
+        <http://arkumu.org/data/rsh/properties/ereignis-id> .
+
+arkprop:ereignisbeginn a rdf:Property ;
+    rdfs:label "Ereignisbeginn"@en ;
+    dcterms:source "DET::Ereignis::Ereignisbeginn; FUK::Ereignis::Ereignisbeginn; RSH::Ereignis::Ereignisbeginn"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignisbeginn>,
+        <http://arkumu.org/data/fuk/properties/ereignisbeginn>,
+        <http://arkumu.org/data/rsh/properties/ereignisbeginn> .
+
+arkprop:ereignisbeginn-geschaetzt a rdf:Property ;
+    rdfs:label "Ereignisbeginn Geschaetzt"@en ;
+    dcterms:source "DET::Ereignis::Ereignisbeginn geschätzt; FUK::Ereignis::Ereignisbeginn geschätzt; RSH::Ereignis::Ereignisbeginn geschätzt"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignisbeginn-geschaetzt>,
+        <http://arkumu.org/data/fuk/properties/ereignisbeginn-geschaetzt>,
+        <http://arkumu.org/data/rsh/properties/ereignisbeginn-geschaetzt> .
+
+arkprop:ereignisbeschreibung a rdf:Property ;
+    rdfs:label "Ereignisbeschreibung"@en ;
+    dcterms:source "DET::Ereignis::Ereignisbeschreibung; FUK::Ereignis::Ereignisbeschreibung; RSH::Ereignis::Ereignisbeschreibung"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignisbeschreibung>,
+        <http://arkumu.org/data/fuk/properties/ereignisbeschreibung>,
+        <http://arkumu.org/data/rsh/properties/ereignisbeschreibung> .
+
+arkprop:ereignisende a rdf:Property ;
+    rdfs:label "Ereignisende"@en ;
+    dcterms:source "DET::Ereignis::Ereignisende; FUK::Ereignis::Ereignisende; RSH::Ereignis::Ereignisende"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignisende>,
+        <http://arkumu.org/data/fuk/properties/ereignisende>,
+        <http://arkumu.org/data/rsh/properties/ereignisende> .
+
+arkprop:ereignisende-geschaetzt a rdf:Property ;
+    rdfs:label "Ereignisende Geschaetzt"@en ;
+    dcterms:source "DET::Ereignis::Ereignisende geschätzt; FUK::Ereignis::Ereignisende geschätzt; RSH::Ereignis::Ereignisende geschätzt"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignisende-geschaetzt>,
+        <http://arkumu.org/data/fuk/properties/ereignisende-geschaetzt>,
+        <http://arkumu.org/data/rsh/properties/ereignisende-geschaetzt> .
+
+arkprop:ereignisname a rdf:Property ;
+    rdfs:label "Ereignisname"@en ;
+    dcterms:source "DET::Ereignis::Ereignisname; FUK::Ereignis::Ereignisname; RSH::Ereignis::Ereignisname"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignisname>,
+        <http://arkumu.org/data/fuk/properties/ereignisname>,
+        <http://arkumu.org/data/rsh/properties/ereignisname> .
+
+arkprop:ereignisort a rdf:Property ;
+    rdfs:label "Ereignisort"@en ;
+    dcterms:source "DET::Ereignis::Ereignisort; FUK::Ereignis::Ereignisort; RSH::Ereignis::Ereignisort"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignisort>,
+        <http://arkumu.org/data/fuk/properties/ereignisort>,
+        <http://arkumu.org/data/rsh/properties/ereignisort> .
+
+arkprop:ereignistyp a rdf:Property ;
+    rdfs:label "Ereignistyp"@en ;
+    dcterms:source "DET::Ereignis::Ereignistyp; FUK::Ereignis::Ereignistyp; RSH::Ereignis::Ereignistyp"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ereignistyp>,
+        <http://arkumu.org/data/fuk/properties/ereignistyp>,
+        <http://arkumu.org/data/rsh/properties/ereignistyp> .
+
+arkprop:erhaltungstyp a rdf:Property ;
+    rdfs:label "Erhaltungstyp"@en ;
+    dcterms:source "DET::Digitales_Objekt::Erhaltungstyp; FUK::Digitales_Objekt::Erhaltungstyp; RSH::Digitales_Objekt::Erhaltungstyp"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/erhaltungstyp>,
+        <http://arkumu.org/data/fuk/properties/erhaltungstyp>,
+        <http://arkumu.org/data/rsh/properties/erhaltungstyp> .
+
+arkprop:externe-projektwebseite a rdf:Property ;
+    rdfs:label "Externe Projektwebseite"@en ;
+    dcterms:source "DET::Projekt::Externe Projektwebseite; FUK::Projekt::Externe Projektwebseite; RSH::Projekt::Externe Projektwebseite"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/externe-projektwebseite>,
+        <http://arkumu.org/data/fuk/properties/externe-projektwebseite>,
+        <http://arkumu.org/data/rsh/properties/externe-projektwebseite> .
+
+arkprop:filmportal-kategorie-id a rdf:Property ;
+    rdfs:label "Filmportal Kategorie Id"@en ;
+    dcterms:source "DET::Projektkategorie::Filmportal-Kategorie-ID; FUK::Projektkategorie::Filmportal-Kategorie-ID; RSH::Projektkategorie::Filmportal-Kategorie-ID"@en ;
+    rdfs:domain arktype:projektkategorie ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/filmportal-kategorie-id>,
+        <http://arkumu.org/data/fuk/properties/filmportal-kategorie-id>,
+        <http://arkumu.org/data/rsh/properties/filmportal-kategorie-id> .
+
+arkprop:fruehestes-geburtsdatum a rdf:Property ;
+    rdfs:label "Fruehestes Geburtsdatum"@en ;
+    dcterms:source "DET::AkteurIn::Frühestes Geburtsdatum; FUK::AkteurIn::Frühestes Geburtsdatum; RSH::AkteurIn::Frühestes Geburtsdatum"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/fruehestes-geburtsdatum>,
+        <http://arkumu.org/data/fuk/properties/fruehestes-geburtsdatum>,
+        <http://arkumu.org/data/rsh/properties/fruehestes-geburtsdatum> .
+
+arkprop:fruehestes-sterbedatum a rdf:Property ;
+    rdfs:label "Fruehestes Sterbedatum"@en ;
+    dcterms:source "DET::AkteurIn::Frühestes Sterbedatum; FUK::AkteurIn::Frühestes Sterbedatum; RSH::AkteurIn::Frühestes Sterbedatum"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/fruehestes-sterbedatum>,
+        <http://arkumu.org/data/fuk/properties/fruehestes-sterbedatum>,
+        <http://arkumu.org/data/rsh/properties/fruehestes-sterbedatum> .
+
+arkprop:geburtsort a rdf:Property ;
+    rdfs:label "Geburtsort"@en ;
+    dcterms:source "DET::AkteurIn::Geburtsort; FUK::AkteurIn::Geburtsort; RSH::AkteurIn::Geburtsort"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/geburtsort>,
+        <http://arkumu.org/data/fuk/properties/geburtsort>,
+        <http://arkumu.org/data/rsh/properties/geburtsort> .
+
+arkprop:geschlecht a rdf:Property ;
+    rdfs:label "Geschlecht"@en ;
+    dcterms:source "DET::AkteurIn::Geschlecht; FUK::AkteurIn::Geschlecht; RSH::AkteurIn::Geschlecht"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/geschlecht>,
+        <http://arkumu.org/data/fuk/properties/geschlecht>,
+        <http://arkumu.org/data/rsh/properties/geschlecht> .
+
+arkprop:gnd-nummer a rdf:Property ;
+    rdfs:label "Gnd Nummer"@en ;
+    dcterms:source "DET::AkteurIn::GND-Nummer; FUK::AkteurIn::GND-Nummer; RSH::AkteurIn::GND-Nummer"@en,
+        "DET::Einliefernde_Hochschule::GND-Nummer; FUK::Einliefernde Hochschule::GND-Nummer; RSH::Einliefernde_Hochschule::GND-Nummer"@en,
+        "DET::Ereignis::GND-Nummer; FUK::Ereignis::GND-Nummer; RSH::Ereignis::GND-Nummer"@en,
+        "DET::Projekt::GND-Nummer; FUK::Projekt::GND-Nummer; RSH::Projekt::GND-Nummer"@en,
+        "DET::Projektkategorie::GND-Nummer; FUK::Projektkategorie::GND-Nummer; RSH::Projektkategorie::GND-Nummer"@en ;
+    rdfs:domain arktype:akteurin,
+        arktype:einliefernde-hochschule,
+        arktype:ereignis,
+        arktype:projekt,
+        arktype:projektkategorie ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/gnd-nummer>,
+        <http://arkumu.org/data/fuk/properties/gnd-nummer>,
+        <http://arkumu.org/data/rsh/properties/gnd-nummer> .
+
+arkprop:gnd-nummer-gruppe a rdf:Property ;
+    rdfs:label "Gnd Nummer Gruppe"@en ;
+    dcterms:source "DET::Rolle::GND-Nummer (Gruppe); FUK::Rolle::GND-Nummer (Gruppe); RSH::Rolle::GND-Nummer (Gruppe)"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/gnd-nummer-gruppe>,
+        <http://arkumu.org/data/fuk/properties/gnd-nummer-gruppe>,
+        <http://arkumu.org/data/rsh/properties/gnd-nummer-gruppe> .
+
+arkprop:gnd-nummer-maennlich a rdf:Property ;
+    rdfs:label "Gnd Nummer Maennlich"@en ;
+    dcterms:source "DET::Rolle::GND-Nummer (männlich); FUK::Rolle::GND-Nummer (männlich); RSH::Rolle::GND-Nummer (männlich)"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/gnd-nummer-maennlich>,
+        <http://arkumu.org/data/fuk/properties/gnd-nummer-maennlich>,
+        <http://arkumu.org/data/rsh/properties/gnd-nummer-maennlich> .
+
+arkprop:gnd-nummer-weiblich a rdf:Property ;
+    rdfs:label "Gnd Nummer Weiblich"@en ;
+    dcterms:source "DET::Rolle::GND-Nummer (weiblich); FUK::Rolle::GND-Nummer (weiblich); RSH::Rolle::GND-Nummer (weiblich)"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/gnd-nummer-weiblich>,
+        <http://arkumu.org/data/fuk/properties/gnd-nummer-weiblich>,
+        <http://arkumu.org/data/rsh/properties/gnd-nummer-weiblich> .
+
+arkprop:gruendungsort a rdf:Property ;
+    rdfs:label "Gruendungsort"@en ;
+    dcterms:source "DET::AkteurIn::Gründungsort; FUK::AkteurIn::Gründungsort; RSH::AkteurIn::Gründungsort"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/gruendungsort>,
+        <http://arkumu.org/data/fuk/properties/gruendungsort>,
+        <http://arkumu.org/data/rsh/properties/gruendungsort> .
+
+arkprop:im-ereignis a rdf:Property ;
+    rdfs:label "Im Ereignis"@en ;
+    dcterms:source "DET::AkteurIn_Ereignis_Kreuztabelle::im Ereignis; FUK::AkteurIn_Ereignis_Kreuztabelle::im Ereignis; RSH::AkteurIn_Ereignis_Kreuztabelle::im Ereignis"@en ;
+    rdfs:domain arktype:akteurin-ereignis-kreuztabelle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/im-ereignis>,
+        <http://arkumu.org/data/fuk/properties/im-ereignis>,
+        <http://arkumu.org/data/rsh/properties/im-ereignis> .
+
+arkprop:informationstraeger a rdf:Property ;
+    rdfs:label "Informationstraeger"@en ;
+    dcterms:source "DET::Ereignis::Informationsträger; FUK::Ereignis::Informationsträger; RSH::Ereignis::Informationsträger"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/informationstraeger>,
+        <http://arkumu.org/data/fuk/properties/informationstraeger>,
+        <http://arkumu.org/data/rsh/properties/informationstraeger> .
+
+arkprop:inhaltswarnung a rdf:Property ;
+    rdfs:label "Inhaltswarnung"@en ;
+    dcterms:source "DET::Projekt::Inhaltswarnung; FUK::Projekt::Inhaltswarnung; RSH::Projekt::Inhaltswarnung"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/inhaltswarnung>,
+        <http://arkumu.org/data/fuk/properties/inhaltswarnung>,
+        <http://arkumu.org/data/rsh/properties/inhaltswarnung> .
+
+arkprop:interner-kommentar a rdf:Property ;
+    rdfs:label "Interner Kommentar"@en ;
+    dcterms:source "DET::AkteurIn::Interner Kommentar; FUK::AkteurIn::Interner Kommentar; RSH::AkteurIn::Interner Kommentar"@en,
+        "DET::Digitales_Objekt::Interner Kommentar; FUK::Digitales_Objekt::Interner Kommentar; RSH::Digitales_Objekt::Interner Kommentar"@en,
+        "DET::Projekt::Interner Kommentar; FUK::Projekt::Interner Kommentar; RSH::Projekt::Interner Kommentar"@en,
+        "RSH::Ereignis::Interner Kommentar"@en ;
+    rdfs:domain arktype:akteurin,
+        arktype:digitales-objekt,
+        arktype:ereignis,
+        arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/interner-kommentar>,
+        <http://arkumu.org/data/fuk/properties/interner-kommentar>,
+        <http://arkumu.org/data/rsh/properties/interner-kommentar> .
+
+arkprop:ist-arkumu-preview a rdf:Property ;
+    rdfs:label "Ist Arkumu Preview"@en ;
+    dcterms:source "FUK::Digitales_Objekt::ist arkumu-Preview"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/fuk/properties/ist-arkumu-preview> .
+
+arkprop:ist-urheberin a rdf:Property ;
+    rdfs:label "Ist Urheberin"@en ;
+    dcterms:source "DET::AkteurIn_Ereignis_Kreuztabelle::ist UrheberIn; FUK::AkteurIn_Ereignis_Kreuztabelle::ist UrheberIn; RSH::AkteurIn_Ereignis_Kreuztabelle::ist UrheberIn"@en ;
+    rdfs:domain arktype:akteurin-ereignis-kreuztabelle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ist-urheberin>,
+        <http://arkumu.org/data/fuk/properties/ist-urheberin>,
+        <http://arkumu.org/data/rsh/properties/ist-urheberin> .
+
+arkprop:khm-internetfreigabestufe a rdf:Property ;
+    rdfs:label "Khm Internetfreigabestufe"@en ;
+    dcterms:source "DET::Digitales_Objekt::KHM-Internetfreigabestufe; FUK::Digitales_Objekt::KHM-Internetfreigabestufe; RSH::Digitales_Objekt::KHM-Internetfreigabestufe"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/khm-internetfreigabestufe>,
+        <http://arkumu.org/data/fuk/properties/khm-internetfreigabestufe>,
+        <http://arkumu.org/data/rsh/properties/khm-internetfreigabestufe> .
+
+arkprop:lccn-id a rdf:Property ;
+    rdfs:label "Lccn Id"@en ;
+    dcterms:source "DET::AkteurIn::LCCN-ID; FUK::AkteurIn::LCCN-ID; RSH::AkteurIn::LCCN-ID"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/lccn-id>,
+        <http://arkumu.org/data/fuk/properties/lccn-id>,
+        <http://arkumu.org/data/rsh/properties/lccn-id> .
+
+arkprop:letzte-datensatzmodifikation-beim-einlieferer a rdf:Property ;
+    rdfs:label "Letzte Datensatzmodifikation Beim Einlieferer"@en ;
+    dcterms:source "DET::Digitales_Objekt::Letzte Datensatzmodifikation beim Einlieferer; FUK::Digitales_Objekt::Letzte Datensatzmodifikation beim Einlieferer; RSH::Digitales_Objekt::Letzte Datensatzmodifikation beim Einlieferer"@en,
+        "DET::Ereignis::Letzte Datensatzmodifikation beim Einlieferer; FUK::Ereignis::Letzte Datensatzmodifikation beim Einlieferer; RSH::Ereignis::Letzte Datensatzmodifikation beim Einlieferer"@en ;
+    rdfs:domain arktype:digitales-objekt,
+        arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/letzte-datensatzmodifikation-beim-einlieferer>,
+        <http://arkumu.org/data/fuk/properties/letzte-datensatzmodifikation-beim-einlieferer>,
+        <http://arkumu.org/data/rsh/properties/letzte-datensatzmodifikation-beim-einlieferer> .
+
+arkprop:letzte-projektmodifikation-beim-einlieferer a rdf:Property ;
+    rdfs:label "Letzte Projektmodifikation Beim Einlieferer"@en ;
+    dcterms:source "DET::Projekt::Letzte Projektmodifikation beim Einlieferer; FUK::Projekt::Letzte Projektmodifikation beim Einlieferer; RSH::Projekt::Letzte Projektmodifikation beim Einlieferer"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/letzte-projektmodifikation-beim-einlieferer>,
+        <http://arkumu.org/data/fuk/properties/letzte-projektmodifikation-beim-einlieferer>,
+        <http://arkumu.org/data/rsh/properties/letzte-projektmodifikation-beim-einlieferer> .
+
+arkprop:lizenzstatus a rdf:Property ;
+    rdfs:label "Lizenzstatus"@en ;
+    dcterms:source "DET::Digitales_Objekt::Lizenzstatus; FUK::Digitales_Objekt::Lizenzstatus; RSH::Digitales_Objekt::Lizenzstatus"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/lizenzstatus>,
+        <http://arkumu.org/data/fuk/properties/lizenzstatus>,
+        <http://arkumu.org/data/rsh/properties/lizenzstatus> .
+
+arkprop:medientyp a rdf:Property ;
+    rdfs:label "Medientyp"@en ;
+    dcterms:source "DET::Digitales_Objekt::Medientyp; FUK::Digitales_Objekt::Medientyp; RSH::Digitales_Objekt::Medientyp"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/medientyp>,
+        <http://arkumu.org/data/fuk/properties/medientyp>,
+        <http://arkumu.org/data/rsh/properties/medientyp> .
+
+arkprop:nachgestellter-titel a rdf:Property ;
+    rdfs:label "Nachgestellter Titel"@en ;
+    dcterms:source "DET::AkteurIn::Nachgestellter Titel; FUK::AkteurIn::Nachgestellter Titel; RSH::AkteurIn::Nachgestellter Titel"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/nachgestellter-titel>,
+        <http://arkumu.org/data/fuk/properties/nachgestellter-titel>,
+        <http://arkumu.org/data/rsh/properties/nachgestellter-titel> .
+
+arkprop:neuer-lizenzvertrag-digi-kunst-formular a rdf:Property ;
+    rdfs:label "Neuer Lizenzvertrag Digi Kunst Formular"@en ;
+    dcterms:source "DET::Projekt::Neuer Lizenzvertrag (Digi-Kunst-Formular); FUK::Projekt::Neuer Lizenzvertrag (Digi-Kunst-Formular); RSH::Projekt::Neuer Lizenzvertrag (Digi-Kunst-Formular)"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/neuer-lizenzvertrag-digi-kunst-formular>,
+        <http://arkumu.org/data/fuk/properties/neuer-lizenzvertrag-digi-kunst-formular>,
+        <http://arkumu.org/data/rsh/properties/neuer-lizenzvertrag-digi-kunst-formular> .
+
+arkprop:nicht-oeffentlicher-name a rdf:Property ;
+    rdfs:label "Nicht Oeffentlicher Name"@en ;
+    dcterms:source "DET::AkteurIn::Nicht-öffentlicher Name; FUK::AkteurIn::Nicht-öffentlicher Name; RSH::AkteurIn::Nicht-öffentlicher Name"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/nicht-oeffentlicher-name>,
+        <http://arkumu.org/data/fuk/properties/nicht-oeffentlicher-name>,
+        <http://arkumu.org/data/rsh/properties/nicht-oeffentlicher-name> .
+
+arkprop:nicht-oeffentlicher-name-begruendung a rdf:Property ;
+    rdfs:label "Nicht Oeffentlicher Name Begruendung"@en ;
+    dcterms:source "DET::AkteurIn::Nicht-öffentlicher Name (Begründung); FUK::AkteurIn::Nicht-öffentlicher Name (Begründung); RSH::AkteurIn::Nicht-öffentlicher Name (Begründung)"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/nicht-oeffentlicher-name-begruendung>,
+        <http://arkumu.org/data/fuk/properties/nicht-oeffentlicher-name-begruendung>,
+        <http://arkumu.org/data/rsh/properties/nicht-oeffentlicher-name-begruendung> .
+
+arkprop:objekttyp a rdf:Property ;
+    rdfs:label "Objekttyp"@en ;
+    dcterms:source "DET::Digitales_Objekt::Objekttyp; FUK::Digitales_Objekt::Objekttyp; RSH::Digitales_Objekt::Objekttyp"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/objekttyp>,
+        <http://arkumu.org/data/fuk/properties/objekttyp>,
+        <http://arkumu.org/data/rsh/properties/objekttyp> .
+
+arkprop:orcid a rdf:Property ;
+    rdfs:label "Orcid"@en ;
+    dcterms:source "DET::AkteurIn::OrcID; FUK::AkteurIn::OrcID; RSH::AkteurIn::OrcID"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/orcid>,
+        <http://arkumu.org/data/fuk/properties/orcid>,
+        <http://arkumu.org/data/rsh/properties/orcid> .
+
+arkprop:organisationseinheit a rdf:Property ;
+    rdfs:label "Organisationseinheit"@en ;
+    dcterms:source "DET::Projekt::Organisationseinheit; FUK::Projekt::Organisationseinheit; RSH::Projekt::Organisationseinheit"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/organisationseinheit>,
+        <http://arkumu.org/data/fuk/properties/organisationseinheit>,
+        <http://arkumu.org/data/rsh/properties/organisationseinheit> .
+
+arkprop:originalsprache a rdf:Property ;
+    rdfs:label "Originalsprache"@en ;
+    dcterms:source "DET::Digitales_Objekt::Originalsprache; FUK::Digitales_Objekt::Originalsprache; RSH::Digitales_Objekt::Originalsprache"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/originalsprache>,
+        <http://arkumu.org/data/fuk/properties/originalsprache>,
+        <http://arkumu.org/data/rsh/properties/originalsprache> .
+
+arkprop:physisches-objekt a rdf:Property ;
+    rdfs:label "Physisches Objekt"@en ;
+    dcterms:source "DET::Ereignis::Physisches Objekt; FUK::Ereignis::Physisches Objekt; RSH::Ereignis::Physisches Objekt"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/physisches-objekt>,
+        <http://arkumu.org/data/fuk/properties/physisches-objekt>,
+        <http://arkumu.org/data/rsh/properties/physisches-objekt> .
+
+arkprop:projekt-id a rdf:Property ;
+    rdfs:label "Projekt Id"@en ;
+    dcterms:source "DET::Projekt::Projekt-ID; FUK::Projekt::Projekt-ID; RSH::Projekt::Projekt-ID"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/projekt-id>,
+        <http://arkumu.org/data/fuk/properties/projekt-id>,
+        <http://arkumu.org/data/rsh/properties/projekt-id> .
+
+arkprop:projektart a rdf:Property ;
+    rdfs:label "Projektart"@en ;
+    dcterms:source "DET::Projekt::Projektart; FUK::Projekt::Projektart; RSH::Projekt::Projektart"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/projektart>,
+        <http://arkumu.org/data/fuk/properties/projektart>,
+        <http://arkumu.org/data/rsh/properties/projektart> .
+
+arkprop:projekterstellung-beim-einlieferer a rdf:Property ;
+    rdfs:label "Projekterstellung Beim Einlieferer"@en ;
+    dcterms:source "DET::Projekt::Projekterstellung beim Einlieferer; FUK::Projekt::Projekterstellung beim Einlieferer; RSH::Projekt::Projekterstellung beim Einlieferer"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/projekterstellung-beim-einlieferer>,
+        <http://arkumu.org/data/fuk/properties/projekterstellung-beim-einlieferer>,
+        <http://arkumu.org/data/rsh/properties/projekterstellung-beim-einlieferer> .
+
+arkprop:projektkategorie a rdf:Property ;
+    rdfs:label "Projektkategorie"@en ;
+    dcterms:source "DET::Projekt::Projektkategorie; FUK::Projekt::Projektkategorie; RSH::Projekt::Projektkategorie"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/projektkategorie>,
+        <http://arkumu.org/data/fuk/properties/projektkategorie>,
+        <http://arkumu.org/data/rsh/properties/projektkategorie> .
+
+arkprop:projektkategorie-id a rdf:Property ;
+    rdfs:label "Projektkategorie Id"@en ;
+    dcterms:source "DET::Projektkategorie::Projektkategorie-ID; FUK::Projektkategorie::Projektkategorie-ID; RSH::Projektkategorie::Projektkategorie-ID"@en ;
+    rdfs:domain arktype:projektkategorie ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/projektkategorie-id>,
+        <http://arkumu.org/data/fuk/properties/projektkategorie-id>,
+        <http://arkumu.org/data/rsh/properties/projektkategorie-id> .
+
+arkprop:projektkompilation a rdf:Property ;
+    rdfs:label "Projektkompilation"@en ;
+    dcterms:source "DET::Digitales_Objekt::Projektkompilation; FUK::Digitales_Objekt::Projektkompilation; RSH::Digitales_Objekt::Projektkompilation"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/projektkompilation>,
+        <http://arkumu.org/data/fuk/properties/projektkompilation>,
+        <http://arkumu.org/data/rsh/properties/projektkompilation> .
+
+arkprop:rechtsstatus a rdf:Property ;
+    rdfs:label "Rechtsstatus"@en ;
+    dcterms:source "DET::Projekt::Rechtsstatus; FUK::Projekt::Rechtsstatus; RSH::Projekt::Rechtsstatus"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/rechtsstatus>,
+        <http://arkumu.org/data/fuk/properties/rechtsstatus>,
+        <http://arkumu.org/data/rsh/properties/rechtsstatus> .
+
+arkprop:rolle-id a rdf:Property ;
+    rdfs:label "Rolle Id"@en ;
+    dcterms:source "DET::Rolle::Rolle-ID; FUK::Rolle::Rolle-ID; RSH::Rolle::Rolle-ID"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/rolle-id>,
+        <http://arkumu.org/data/fuk/properties/rolle-id>,
+        <http://arkumu.org/data/rsh/properties/rolle-id> .
+
+arkprop:rollen-der-akteurin-im-ereignis a rdf:Property ;
+    rdfs:label "Rollen Der Akteurin Im Ereignis"@en ;
+    dcterms:source "DET::AkteurIn_Ereignis_Kreuztabelle::Rollen der AkteurIn im Ereignis; FUK::AkteurIn_Ereignis_Kreuztabelle::Rollen der AkteurIn im Ereignis; RSH::AkteurIn_Ereignis_Kreuztabelle::Rollen der AkteurIn im Ereignis"@en ;
+    rdfs:domain arktype:akteurin-ereignis-kreuztabelle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/rollen-der-akteurin-im-ereignis>,
+        <http://arkumu.org/data/fuk/properties/rollen-der-akteurin-im-ereignis>,
+        <http://arkumu.org/data/rsh/properties/rollen-der-akteurin-im-ereignis> .
+
+arkprop:schlagwort a rdf:Property ;
+    rdfs:label "Schlagwort"@en ;
+    dcterms:source "DET::Projekt::Schlagwort; FUK::Projekt::Schlagwort; RSH::Projekt::Schlagwort"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/schlagwort>,
+        <http://arkumu.org/data/fuk/properties/schlagwort>,
+        <http://arkumu.org/data/rsh/properties/schlagwort> .
+
+arkprop:signatur-beim-einlieferer a rdf:Property ;
+    rdfs:label "Signatur Beim Einlieferer"@en ;
+    dcterms:source "DET::Projekt::Signatur beim Einlieferer; FUK::Projekt::Signatur beim Einlieferer; RSH::Projekt::Signatur beim Einlieferer"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/signatur-beim-einlieferer>,
+        <http://arkumu.org/data/fuk/properties/signatur-beim-einlieferer>,
+        <http://arkumu.org/data/rsh/properties/signatur-beim-einlieferer> .
+
+arkprop:sonderregelung a rdf:Property ;
+    rdfs:label "Sonderregelung"@en ;
+    dcterms:source "DET::Projekt::Sonderregelung; FUK::Projekt::Sonderregelung; RSH::Projekt::Sonderregelung"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/sonderregelung>,
+        <http://arkumu.org/data/fuk/properties/sonderregelung>,
+        <http://arkumu.org/data/rsh/properties/sonderregelung> .
+
+arkprop:spaetestes-geburtsdatum a rdf:Property ;
+    rdfs:label "Spaetestes Geburtsdatum"@en ;
+    dcterms:source "DET::AkteurIn::Spätestes Geburtsdatum; FUK::AkteurIn::Spätestes Geburtsdatum; RSH::AkteurIn::Spätestes Geburtsdatum"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/spaetestes-geburtsdatum>,
+        <http://arkumu.org/data/fuk/properties/spaetestes-geburtsdatum>,
+        <http://arkumu.org/data/rsh/properties/spaetestes-geburtsdatum> .
+
+arkprop:spaetestes-sterbedatum a rdf:Property ;
+    rdfs:label "Spaetestes Sterbedatum"@en ;
+    dcterms:source "DET::AkteurIn::Spätestes Sterbedatum; FUK::AkteurIn::Spätestes Sterbedatum; RSH::AkteurIn::Spätestes Sterbedatum"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/spaetestes-sterbedatum>,
+        <http://arkumu.org/data/fuk/properties/spaetestes-sterbedatum>,
+        <http://arkumu.org/data/rsh/properties/spaetestes-sterbedatum> .
+
+arkprop:sprache-des-bevorzugten-titels a rdf:Property ;
+    rdfs:label "Sprache Des Bevorzugten Titels"@en ;
+    dcterms:source "DET::Projekt::Sprache des bevorzugten Titels; FUK::Projekt::Sprache des bevorzugten Titels; RSH::Projekt::Sprache des bevorzugten Titels"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/sprache-des-bevorzugten-titels>,
+        <http://arkumu.org/data/fuk/properties/sprache-des-bevorzugten-titels>,
+        <http://arkumu.org/data/rsh/properties/sprache-des-bevorzugten-titels> .
+
+arkprop:sprache-des-bevorzugten-untertitels a rdf:Property ;
+    rdfs:label "Sprache Des Bevorzugten Untertitels"@en ;
+    dcterms:source "DET::Projekt::Sprache des bevorzugten Untertitels; FUK::Projekt::Sprache des bevorzugten Untertitels; RSH::Projekt::Sprache des bevorzugten Untertitels"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/sprache-des-bevorzugten-untertitels>,
+        <http://arkumu.org/data/fuk/properties/sprache-des-bevorzugten-untertitels>,
+        <http://arkumu.org/data/rsh/properties/sprache-des-bevorzugten-untertitels> .
+
+arkprop:sprachfassung a rdf:Property ;
+    rdfs:label "Sprachfassung"@en ;
+    dcterms:source "DET::Digitales_Objekt::Sprachfassung; FUK::Digitales_Objekt::Sprachfassung; RSH::Digitales_Objekt::Sprachfassung"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/sprachfassung>,
+        <http://arkumu.org/data/fuk/properties/sprachfassung>,
+        <http://arkumu.org/data/rsh/properties/sprachfassung> .
+
+arkprop:sterbeort a rdf:Property ;
+    rdfs:label "Sterbeort"@en ;
+    dcterms:source "DET::AkteurIn::Sterbeort; FUK::AkteurIn::Sterbeort; RSH::AkteurIn::Sterbeort"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/sterbeort>,
+        <http://arkumu.org/data/fuk/properties/sterbeort>,
+        <http://arkumu.org/data/rsh/properties/sterbeort> .
+
+arkprop:stimmung-in-hertz a rdf:Property ;
+    rdfs:label "Stimmung In Hertz"@en ;
+    dcterms:source "DET::Ereignis::Stimmung in Hertz; FUK::Ereignis::Stimmung in Hertz"@en ;
+    rdfs:domain arktype:ereignis ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/stimmung-in-hertz>,
+        <http://arkumu.org/data/fuk/properties/stimmung-in-hertz> .
+
+arkprop:synonyme a rdf:Property ;
+    rdfs:label "Synonyme"@en ;
+    dcterms:source "DET::Projektkategorie::Synonyme; FUK::Projektkategorie::Synonyme; RSH::Projektkategorie::Synonyme"@en,
+        "DET::Rolle::Synonyme; FUK::Rolle::Synonyme; RSH::Rolle::Synonyme"@en ;
+    rdfs:domain arktype:projektkategorie,
+        arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/synonyme>,
+        <http://arkumu.org/data/fuk/properties/synonyme>,
+        <http://arkumu.org/data/rsh/properties/synonyme> .
+
+arkprop:systemvoraussetzungen a rdf:Property ;
+    rdfs:label "Systemvoraussetzungen"@en ;
+    dcterms:source "DET::Digitales_Objekt::Systemvoraussetzungen; FUK::Digitales_Objekt::Systemvoraussetzungen; RSH::Digitales_Objekt::Systemvoraussetzungen"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/systemvoraussetzungen>,
+        <http://arkumu.org/data/fuk/properties/systemvoraussetzungen>,
+        <http://arkumu.org/data/rsh/properties/systemvoraussetzungen> .
+
+arkprop:teil-einer-serie a rdf:Property ;
+    rdfs:label "Teil Einer Serie"@en ;
+    dcterms:source "DET::Digitales_Objekt::Teil einer Serie; FUK::Digitales_Objekt::Teil einer Serie; RSH::Digitales_Objekt::Teil einer Serie"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/teil-einer-serie>,
+        <http://arkumu.org/data/fuk/properties/teil-einer-serie>,
+        <http://arkumu.org/data/rsh/properties/teil-einer-serie> .
+
+arkprop:tonformat a rdf:Property ;
+    rdfs:label "Tonformat"@en ;
+    dcterms:source "DET::Digitales_Objekt::Tonformat; FUK::Digitales_Objekt::Tonformat; RSH::Digitales_Objekt::Tonformat"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/tonformat>,
+        <http://arkumu.org/data/fuk/properties/tonformat>,
+        <http://arkumu.org/data/rsh/properties/tonformat> .
+
+arkprop:tonmischfassung a rdf:Property ;
+    rdfs:label "Tonmischfassung"@en ;
+    dcterms:source "DET::Digitales_Objekt::Tonmischfassung; FUK::Digitales_Objekt::Tonmischfassung; RSH::Digitales_Objekt::Tonmischfassung"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/tonmischfassung>,
+        <http://arkumu.org/data/fuk/properties/tonmischfassung>,
+        <http://arkumu.org/data/rsh/properties/tonmischfassung> .
+
+arkprop:ungesicherte-zuschreibung a rdf:Property ;
+    rdfs:label "Ungesicherte Zuschreibung"@en ;
+    dcterms:source "DET::AkteurIn_Ereignis_Kreuztabelle::Ungesicherte Zuschreibung; FUK::AkteurIn_Ereignis_Kreuztabelle::Ungesicherte Zuschreibung; RSH::AkteurIn_Ereignis_Kreuztabelle::Ungesicherte Zuschreibung"@en ;
+    rdfs:domain arktype:akteurin-ereignis-kreuztabelle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/ungesicherte-zuschreibung>,
+        <http://arkumu.org/data/fuk/properties/ungesicherte-zuschreibung>,
+        <http://arkumu.org/data/rsh/properties/ungesicherte-zuschreibung> .
+
+arkprop:untertitelsprache a rdf:Property ;
+    rdfs:label "Untertitelsprache"@en ;
+    dcterms:source "DET::Digitales_Objekt::Untertitelsprache; FUK::Digitales_Objekt::Untertitelsprache; RSH::Digitales_Objekt::Untertitelsprache"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/untertitelsprache>,
+        <http://arkumu.org/data/fuk/properties/untertitelsprache>,
+        <http://arkumu.org/data/rsh/properties/untertitelsprache> .
+
+arkprop:viaf-id a rdf:Property ;
+    rdfs:label "Viaf Id"@en ;
+    dcterms:source "DET::AkteurIn::VIAF-ID; FUK::AkteurIn::VIAF-ID; RSH::AkteurIn::VIAF-ID"@en,
+        "DET::Ereignis::VIAF-ID; FUK::Ereignis::VIAF-ID; RSH::Ereignis::VIAF-ID"@en,
+        "DET::Projekt::VIAF-ID; FUK::Projekt::VIAF-ID; RSH::Projekt::VIAF-ID"@en ;
+    rdfs:domain arktype:akteurin,
+        arktype:ereignis,
+        arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/viaf-id>,
+        <http://arkumu.org/data/fuk/properties/viaf-id>,
+        <http://arkumu.org/data/rsh/properties/viaf-id> .
+
+arkprop:vorangestellter-titel a rdf:Property ;
+    rdfs:label "Vorangestellter Titel"@en ;
+    dcterms:source "DET::AkteurIn::Vorangestellter Titel; FUK::AkteurIn::Vorangestellter Titel; RSH::AkteurIn::Vorangestellter Titel"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/vorangestellter-titel>,
+        <http://arkumu.org/data/fuk/properties/vorangestellter-titel>,
+        <http://arkumu.org/data/rsh/properties/vorangestellter-titel> .
+
+arkprop:vorschaubild a rdf:Property ;
+    rdfs:label "Vorschaubild"@en ;
+    dcterms:source "DET::Projekt::Vorschaubild; FUK::Projekt::Vorschaubild; RSH::Projekt::Vorschaubild"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/vorschaubild>,
+        <http://arkumu.org/data/fuk/properties/vorschaubild>,
+        <http://arkumu.org/data/rsh/properties/vorschaubild> .
+
+arkprop:waehlt-besitzt-leistungsschutzrechte-automatisch-aus a rdf:Property ;
+    rdfs:label "Waehlt Besitzt Leistungsschutzrechte Automatisch Aus"@en ;
+    dcterms:source "DET::Rolle::wählt \"\"besitzt Leistungsschutzrechte\"\" automatisch aus; FUK::Rolle::wählt \"\"besitzt Leistungsschutzrechte\"\" automatisch aus; RSH::Rolle::wählt \"\"besitzt Leistungsschutzrechte\"\" automatisch aus"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus>,
+        <http://arkumu.org/data/fuk/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus>,
+        <http://arkumu.org/data/rsh/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus> .
+
+arkprop:waehlt-ist-urheber-in-automatisch-aus a rdf:Property ;
+    rdfs:label "Waehlt Ist Urheber In Automatisch Aus"@en ;
+    dcterms:source "DET::Rolle::wählt \"\"ist Urheber:in\"\" automatisch aus; FUK::Rolle::wählt \"\"ist Urheber:in\"\" automatisch aus; RSH::Rolle::wählt \"\"ist Urheber:in\"\" automatisch aus"@en ;
+    rdfs:domain arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/waehlt-ist-urheber-in-automatisch-aus>,
+        <http://arkumu.org/data/fuk/properties/waehlt-ist-urheber-in-automatisch-aus>,
+        <http://arkumu.org/data/rsh/properties/waehlt-ist-urheber-in-automatisch-aus> .
+
+arkprop:webseite-der-akteurin a rdf:Property ;
+    rdfs:label "Webseite Der Akteurin"@en ;
+    dcterms:source "DET::AkteurIn::Webseite der AkteurIn; FUK::AkteurIn::Webseite der AkteurIn; RSH::AkteurIn::Webseite der AkteurIn"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/webseite-der-akteurin>,
+        <http://arkumu.org/data/fuk/properties/webseite-der-akteurin>,
+        <http://arkumu.org/data/rsh/properties/webseite-der-akteurin> .
+
+arkprop:weiteres-rechtsdokument a rdf:Property ;
+    rdfs:label "Weiteres Rechtsdokument"@en ;
+    dcterms:source "DET::Projekt::Weiteres Rechtsdokument; FUK::Projekt::Weiteres Rechtsdokument; RSH::Projekt::Weiteres Rechtsdokument"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/weiteres-rechtsdokument>,
+        <http://arkumu.org/data/fuk/properties/weiteres-rechtsdokument>,
+        <http://arkumu.org/data/rsh/properties/weiteres-rechtsdokument> .
+
+arkprop:werkverzeichnis-nummer a rdf:Property ;
+    rdfs:label "Werkverzeichnis Nummer"@en ;
+    dcterms:source "DET::Projekt::Werkverzeichnis-Nummer; FUK::Projekt::Werkverzeichnis-Nummer; RSH::Projekt::Werkverzeichnis-Nummer"@en ;
+    rdfs:domain arktype:projekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/werkverzeichnis-nummer>,
+        <http://arkumu.org/data/fuk/properties/werkverzeichnis-nummer>,
+        <http://arkumu.org/data/rsh/properties/werkverzeichnis-nummer> .
+
+arkprop:wesentliche-eigenschaften-deutsch a rdf:Property ;
+    rdfs:label "Wesentliche Eigenschaften Deutsch"@en ;
+    dcterms:source "DET::Digitales_Objekt::Wesentliche Eigenschaften (deutsch); FUK::Digitales_Objekt::Wesentliche Eigenschaften (deutsch); RSH::Digitales_Objekt::Wesentliche Eigenschaften (deutsch)"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/wesentliche-eigenschaften-deutsch>,
+        <http://arkumu.org/data/fuk/properties/wesentliche-eigenschaften-deutsch>,
+        <http://arkumu.org/data/rsh/properties/wesentliche-eigenschaften-deutsch> .
+
+arkprop:wesentliche-eigenschaften-englisch a rdf:Property ;
+    rdfs:label "Wesentliche Eigenschaften Englisch"@en ;
+    dcterms:source "DET::Digitales_Objekt::Wesentliche Eigenschaften (englisch); FUK::Digitales_Objekt::Wesentliche Eigenschaften (englisch); RSH::Digitales_Objekt::Wesentliche Eigenschaften (englisch)"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/wesentliche-eigenschaften-englisch>,
+        <http://arkumu.org/data/fuk/properties/wesentliche-eigenschaften-englisch>,
+        <http://arkumu.org/data/rsh/properties/wesentliche-eigenschaften-englisch> .
+
+arkprop:wikidata-id a rdf:Property ;
+    rdfs:label "Wikidata Id"@en ;
+    dcterms:source "DET::AkteurIn::Wikidata-ID; FUK::AkteurIn::Wikidata-ID; RSH::AkteurIn::Wikidata-ID"@en,
+        "DET::Einliefernde_Hochschule::Wikidata-ID; FUK::Einliefernde Hochschule::Wikidata-ID; RSH::Einliefernde_Hochschule::Wikidata-ID"@en,
+        "DET::Ereignis::Wikidata-ID; FUK::Ereignis::Wikidata-ID; RSH::Ereignis::Wikidata-ID"@en,
+        "DET::Projekt::Wikidata-ID; FUK::Projekt::Wikidata-ID; RSH::Projekt::Wikidata-ID"@en,
+        "DET::Projektkategorie::Wikidata-ID; FUK::Projektkategorie::Wikidata-ID; RSH::Projektkategorie::Wikidata-ID"@en,
+        "DET::Rolle::Wikidata-ID; FUK::Rolle::Wikidata-ID; RSH::Rolle::Wikidata-ID"@en ;
+    rdfs:domain arktype:akteurin,
+        arktype:einliefernde-hochschule,
+        arktype:ereignis,
+        arktype:projekt,
+        arktype:projektkategorie,
+        arktype:rolle ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/wikidata-id>,
+        <http://arkumu.org/data/fuk/properties/wikidata-id>,
+        <http://arkumu.org/data/rsh/properties/wikidata-id> .
+
+arkprop:wird-im-loop-abgespielt a rdf:Property ;
+    rdfs:label "Wird Im Loop Abgespielt"@en ;
+    dcterms:source "DET::Digitales_Objekt::Wird im Loop abgespielt; FUK::Digitales_Objekt::Wird im Loop abgespielt; RSH::Digitales_Objekt::Wird im Loop abgespielt"@en ;
+    rdfs:domain arktype:digitales-objekt ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/wird-im-loop-abgespielt>,
+        <http://arkumu.org/data/fuk/properties/wird-im-loop-abgespielt>,
+        <http://arkumu.org/data/rsh/properties/wird-im-loop-abgespielt> .
+
+arkprop:wirkungsbeginn a rdf:Property ;
+    rdfs:label "Wirkungsbeginn"@en ;
+    dcterms:source "DET::AkteurIn::Wirkungsbeginn; FUK::AkteurIn::Wirkungsbeginn; RSH::AkteurIn::Wirkungsbeginn"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/wirkungsbeginn>,
+        <http://arkumu.org/data/fuk/properties/wirkungsbeginn>,
+        <http://arkumu.org/data/rsh/properties/wirkungsbeginn> .
+
+arkprop:wirkungsende a rdf:Property ;
+    rdfs:label "Wirkungsende"@en ;
+    dcterms:source "DET::AkteurIn::Wirkungsende; FUK::AkteurIn::Wirkungsende; RSH::AkteurIn::Wirkungsende"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/wirkungsende>,
+        <http://arkumu.org/data/fuk/properties/wirkungsende>,
+        <http://arkumu.org/data/rsh/properties/wirkungsende> .
+
+arkprop:wirkungsort a rdf:Property ;
+    rdfs:label "Wirkungsort"@en ;
+    dcterms:source "DET::AkteurIn::Wirkungsort; FUK::AkteurIn::Wirkungsort; RSH::AkteurIn::Wirkungsort"@en ;
+    rdfs:domain arktype:akteurin ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty <http://arkumu.org/data/det/properties/wirkungsort>,
+        <http://arkumu.org/data/fuk/properties/wirkungsort>,
+        <http://arkumu.org/data/rsh/properties/wirkungsort> .
+
