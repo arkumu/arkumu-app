@@ -2557,6 +2557,8 @@ def _build_mets_from_project(
     resource: Resource,
     dc_payload: Dict[str, List[str]],
     dc_source_payloads: Optional[List[Dict[str, List[Any]]]] = None,
+    *,
+    request: Optional[HttpRequest] = None,
 ) -> ET._Element:
     _register_rosetta_namespaces()
 
