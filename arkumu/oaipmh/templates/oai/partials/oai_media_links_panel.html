@@ -10,6 +10,36 @@
     </div>
   {% endif %}
 
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="flex justify-between items-center pb-2">
+      <div class="text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ project_total }} projects)</div>
+      <div class="join">
+        {% if page_obj.has_previous %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&page={{ page_obj.previous_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Prev</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Prev</button>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a
+            class="btn btn-sm join-item"
+            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&page={{ page_obj.next_page_number }}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+          >Next</a>
+        {% else %}
+          <button class="btn btn-sm join-item" disabled>Next</button>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
   {% if project_rows %}
     <div class="overflow-x-auto">
       <table class="table table-xs w-full">
@@ -35,12 +65,12 @@
 
   {% if page_obj.paginator.num_pages > 1 %}
     <div class="flex justify-between items-center pt-2">
-      <div class="text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      <div class="text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ project_total }} projects)</div>
       <div class="join">
         {% if page_obj.has_previous %}
           <a
             class="btn btn-sm join-item"
-            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.previous_page_number }}"
+            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&page={{ page_obj.previous_page_number }}"
             hx-target="#oai-media-links-panel"
             hx-swap="innerHTML"
             hx-push-url="true"
@@ -51,7 +81,7 @@
         {% if page_obj.has_next %}
           <a
             class="btn btn-sm join-item"
-            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.next_page_number }}"
+            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&page={{ page_obj.next_page_number }}"
             hx-target="#oai-media-links-panel"
             hx-swap="innerHTML"
             hx-push-url="true"

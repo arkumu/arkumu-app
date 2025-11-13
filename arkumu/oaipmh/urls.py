@@ -26,6 +26,7 @@ urlpatterns = [
     # Media links management
     path("media-links/", dashboard_views.oai_media_links_dashboard, name="oai_media_links_dashboard"),
     path("media-links/panel/", dashboard_views.oai_media_links_panel, name="oai_media_links_panel"),
+    path("media-links/digital-view/", dashboard_views.oai_media_links_digital_view, name="oai_media_links_digital_view"),
     path("media-links/link/<int:link_id>/update/", dashboard_views.oai_media_link_update, name="oai_media_link_update"),
     path("media-links/link/<int:link_id>/delete/", dashboard_views.oai_media_link_delete, name="oai_media_link_delete"),
     path("media-links/link/add/", dashboard_views.oai_media_link_add, name="oai_media_link_add"),

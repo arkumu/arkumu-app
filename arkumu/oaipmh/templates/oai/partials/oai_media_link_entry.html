@@ -14,7 +14,7 @@
         <span class="badge badge-xs badge-error">Shared</span>
       {% endif %}
       {% if row.curated_selection and link.digital_object.uri in row.curated_missing_uris %}
-        <span class="badge badge-xs badge-warning">Missing</span>
+        <span class="badge badge-xs badge-warning" title="Curated link but not found in project graph data">Not in Graph</span>
       {% endif %}
     </div>
   </div>

@@ -377,6 +377,7 @@ def _build_media_links_summary(
     link_qs,
     *,
     status_filter: str,
+    project_access_filter: str = "all",
 ) -> dict[str, Any]:
     links_total = link_qs.count()
     filtered_total = links_total if status_filter == "all" else link_qs.filter(status=status_filter).count()
@@ -403,6 +404,7 @@ def _build_media_links_summary(
         "selected_org_code": organization.code or "",
         "organization": organization,
         "status_filter": status_filter,
+        "project_access_filter": project_access_filter,
     }
 
 
@@ -596,12 +598,14 @@ def _build_media_links_panel_context(
     organization: Organization,
     status_filter: str,
     page_number: int,
+    project_access_filter: str = "all",
 ) -> dict[str, Any]:
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
     summary = _build_media_links_summary(
         organization,
         link_base_qs,
         status_filter=status_filter,
+        project_access_filter=project_access_filter,
     )
 
     project_prefetch = Prefetch(
@@ -618,6 +622,9 @@ def _build_media_links_panel_context(
     )
     if status_filter != "all":
         projects_qs = projects_qs.filter(oai_media_links__status=status_filter)
+
+    if project_access_filter != "all":
+        projects_qs = projects_qs.filter(public_access_level=project_access_filter)
 
     paginator = Paginator(projects_qs, MEDIA_LINKS_PAGE_SIZE)
     page_obj = paginator.get_page(page_number)
@@ -664,6 +671,7 @@ def _build_media_links_panel_context(
         "per_page": MEDIA_LINKS_PAGE_SIZE,
         "builder_errors": builder_errors,
         "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
+        "view_mode": "project",
     }
 
 
@@ -766,6 +774,10 @@ def oai_media_links_panel(request):
         return HttpResponseBadRequest("<div class='alert alert-error'>Select a valid organization.</div>")
 
     status_filter = _normalized_media_link_status(request.GET.get('status'))
+    project_access_filter = request.GET.get('project_access', 'all').strip().lower()
+    if project_access_filter not in ['all', 'private', 'restricted', 'public']:
+        project_access_filter = 'all'
+
     page_param = request.GET.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
@@ -776,6 +788,7 @@ def oai_media_links_panel(request):
         organization=organization,
         status_filter=status_filter,
         page_number=page_number,
+        project_access_filter=project_access_filter,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
 
@@ -1069,6 +1082,207 @@ def oai_media_link_seed_execute(request):
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+
+
+def _build_digital_object_centric_context(
+    *,
+    organization: Organization,
+    status_filter: str,
+    page_number: int,
+    project_access_filter: str = "all",
+    shared_filter: str = "all",
+) -> dict[str, Any]:
+    """Build context for digital object-centric view (groups by digital object, shows projects)."""
+
+    link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
+
+    # Apply filters to the link queryset
+    filtered_qs = link_base_qs
+    if status_filter != "all":
+        filtered_qs = filtered_qs.filter(status=status_filter)
+    if project_access_filter != "all":
+        filtered_qs = filtered_qs.filter(project__public_access_level=project_access_filter)
+
+    # Group by digital object and aggregate project information
+    digital_objects_data = (
+        filtered_qs
+        .values('digital_object_id')
+        .annotate(
+            project_count=Count('project_id', distinct=True),
+            approved_count=Count('id', filter=Q(status=OAIProjectMediaLink.STATUS_APPROVED)),
+            pending_count=Count('id', filter=Q(status=OAIProjectMediaLink.STATUS_PENDING)),
+            rejected_count=Count('id', filter=Q(status=OAIProjectMediaLink.STATUS_REJECTED)),
+            is_shared=Count('project_id', distinct=True, filter=~Q(project_id=F('project_id'))),
+            has_stale=Count('id', filter=Q(is_stale=True)),
+        )
+        .order_by('-project_count', 'digital_object_id')
+    )
+
+    # Apply shared filter
+    if shared_filter == "shared":
+        digital_objects_data = digital_objects_data.filter(project_count__gt=1)
+    elif shared_filter == "single":
+        digital_objects_data = digital_objects_data.filter(project_count=1)
+
+    # Paginate digital objects
+    paginator = Paginator(digital_objects_data, MEDIA_LINKS_PAGE_SIZE)
+    page_obj = paginator.get_page(page_number)
+
+    # Get full digital object resources and their links for the current page
+    digital_object_ids = [item['digital_object_id'] for item in page_obj.object_list]
+    digital_resources = {
+        res.id: res
+        for res in Resource.objects.filter(id__in=digital_object_ids)
+    }
+
+    # Prefetch all links for these digital objects with their projects
+    links_for_page = (
+        OAIProjectMediaLink.objects
+        .filter(digital_object_id__in=digital_object_ids)
+        .select_related('project', 'digital_object', 'last_reviewed_by')
+        .annotate(
+            other_project_refs=Count(
+                'digital_object__oai_media_references',
+                filter=~Q(digital_object__oai_media_references__project_id=F('project_id')),
+                distinct=True,
+            )
+        )
+        .order_by('project__uri')
+    )
+
+    if status_filter != "all":
+        links_for_page = links_for_page.filter(status=status_filter)
+    if project_access_filter != "all":
+        links_for_page = links_for_page.filter(project__public_access_level=project_access_filter)
+
+    # Group links by digital object
+    links_by_digital_object: Dict[Any, List[OAIProjectMediaLink]] = defaultdict(list)
+    for link in links_for_page:
+        links_by_digital_object[link.digital_object_id].append(link)
+
+    # Prefetch labels for all resources
+    all_resources = list(digital_resources.values())
+    for links in links_by_digital_object.values():
+        all_resources.extend([link.project for link in links])
+    label_lookup = _prefetch_resource_labels(all_resources)
+
+    # Build rows with digital object info and their project links
+    digital_object_rows: List[dict[str, Any]] = []
+    for item in page_obj.object_list:
+        digital_object_id = item['digital_object_id']
+        digital_resource = digital_resources.get(digital_object_id)
+        if not digital_resource:
+            continue
+
+        links = links_by_digital_object.get(digital_object_id, [])
+
+        # Add display labels to links
+        for link in links:
+            link.project_display_label = _resource_display_label(  # type: ignore[attr-defined]
+                link.project,
+                fallback="Untitled project",
+                label_lookup=label_lookup,
+            )
+
+        digital_object_rows.append({
+            "digital_object": digital_resource,
+            "digital_object_uri": digital_resource.uri,
+            "digital_object_label": _resource_display_label(
+                digital_resource,
+                fallback="Untitled digital object",
+                label_lookup=label_lookup,
+            ),
+            "project_count": item['project_count'],
+            "approved_count": item['approved_count'],
+            "pending_count": item['pending_count'],
+            "rejected_count": item['rejected_count'],
+            "is_shared": item['project_count'] > 1,
+            "has_stale": item['has_stale'] > 0,
+            "links": links,
+        })
+
+    # Build summary stats (same as project view)
+    summary = _build_media_links_summary(
+        organization,
+        link_base_qs,
+        status_filter=status_filter,
+        project_access_filter=project_access_filter,
+    )
+
+    # Calculate digital object statistics
+    all_digital_objects = (
+        link_base_qs
+        .values('digital_object_id')
+        .annotate(project_count=Count('project_id', distinct=True))
+    )
+    total_digital_objects = all_digital_objects.count()
+    shared_count = all_digital_objects.filter(project_count__gt=1).count()
+    single_count = all_digital_objects.filter(project_count=1).count()
+
+    return {
+        "selected_org": organization,
+        "selected_org_code": organization.code or "",
+        "status_filter": status_filter,
+        "project_access_filter": project_access_filter,
+        "shared_filter": shared_filter,
+        "summary": summary,
+        "digital_object_rows": digital_object_rows,
+        "digital_object_total": paginator.count,
+        "total_digital_objects": total_digital_objects,
+        "shared_count": shared_count,
+        "single_count": single_count,
+        "current_page": page_obj.number,
+        "page_obj": page_obj,
+        "per_page": MEDIA_LINKS_PAGE_SIZE,
+        "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
+        "view_mode": "digital",
+    }
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def oai_media_links_digital_view(request):
+    """Digital object-centric view showing digital objects grouped by object with their projects."""
+    if not request.user.is_staff:
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: staff membership required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.GET.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select a valid organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.GET.get('status'))
+    project_access_filter = request.GET.get('project_access', 'all').strip().lower()
+    if project_access_filter not in ['all', 'private', 'restricted', 'public']:
+        project_access_filter = 'all'
+
+    shared_filter = request.GET.get('shared', 'all').strip().lower()
+    if shared_filter not in ['all', 'shared', 'single']:
+        shared_filter = 'all'
+
+    page_param = request.GET.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    context = _build_digital_object_centric_context(
+        organization=organization,
+        status_filter=status_filter,
+        page_number=page_number,
+        project_access_filter=project_access_filter,
+        shared_filter=shared_filter,
+    )
+
+    # If not an HTMX request, redirect to the full dashboard with params
+    if not request.headers.get('HX-Request'):
+        return redirect(
+            f"{reverse('oai:oai_media_links_dashboard')}?organization={organization.code}"
+            f"&status={status_filter}&view=digital&shared={shared_filter}"
+        )
+
+    return render(request, 'oai/partials/oai_media_links_digital_panel.html', context)
 
 
 @general_login_required
