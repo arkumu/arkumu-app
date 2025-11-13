@@ -28,6 +28,7 @@ from arkumu.metadata.views import controlled_vocabulary_views
 # )
 from arkumu.metadata.views.resource_graph_visualizer import ResourceGraphView, ResourceGraphExpandView
 from arkumu.oaipmh import views as oai_views
+from arkumu.oaipmh import dashboard_views as oai_dashboard_views
 from arkumu.metadata.views.rdf_preview_visualizer import rdf_preview_visualizer, rdf_preview_property_mappings_sorted
 
 # Use optimized views for better performance
@@ -55,6 +56,8 @@ app_name = 'metadata'
 urlpatterns = [
     # Dashboard
     path('dashboard/', dashboard_views.metadata_dashboard, name='metadata_dashboard'),
+    path('dashboard/oai/', oai_dashboard_views.oai_proxy, name='oai_proxy'),
+    path('dashboard/oai/db/', oai_dashboard_views.oai_db_proxy, name='oai_db_proxy'),
     path('dashboard/publish-projects/', dashboard_views.publish_projects_visibility, name='metadata_dashboard_publish_projects'),
     path('dashboard/cache-refresh/', dashboard_views.trigger_cache_refresh, name='metadata_dashboard_cache_refresh'),
     path('dashboard/checksum-refresh/', dashboard_views.trigger_checksum_refresh, name='metadata_dashboard_checksum_refresh'),
