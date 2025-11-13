@@ -124,6 +124,17 @@ _PROJECT_TYPE_URIS: tuple[str, ...] = tuple(
 _RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 _KHM_HMT_LICENSE_ORGS: set[str] = {"khm", "hmt"}
+SIMPLIFIED_LICENSE_LABEL = "Lizenz arkumu-A 1.0"
+SIMPLIFIED_LICENSE_NOTE = (
+    "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich "
+    "unbeschränkte Recht, das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit "
+    "zu vervielfältigen (§16 UrhG), zu speichern und gegebenenfalls in langzeitstabile Dateiformate "
+    "zu überführen. Dies umfasst auch das Recht, ein Werk erstmalig zu digitalisieren oder eine digitale "
+    "Dokumentation des Werkes zu erstellen. Sofern für Zwecke der Langzeitverfügbarkeit eine Umwandlung "
+    "bestehender Dateiformate in andere Dateiformate erforderlich ist und diese Umwandlung eine Bearbeitung "
+    "darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen Bearbeitungsrechte eingeräumt. "
+    "(Lizenz arkumu-A 1.0)"
+)
 
 
 def _digital_object_orgs() -> set[str]:
@@ -2413,19 +2424,10 @@ def _build_simplified_mets_from_project(
 
     # Add hardcoded Arkumu license rights for simplified METS
     rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
-    rights_elem.text = "Lizenz arkumu-A 1.0"
+    rights_elem.text = SIMPLIFIED_LICENSE_LABEL
 
     rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
-    rights_elem.text = (
-        "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich "
-        "unbeschränkte Recht, das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit "
-        "zu vervielfältigen (§16 UrhG), zu speichern und gegebenenfalls in langzeitstabile Dateiformate "
-        "zu überführen. Dies umfasst auch das Recht, ein Werk erstmalig zu digitalisieren oder eine digitale "
-        "Dokumentation des Werkes zu erstellen. Sofern für Zwecke der Langzeitverfügbarkeit eine Umwandlung "
-        "bestehender Dateiformate in andere Dateiformate erforderlich ist und diese Umwandlung eine Bearbeitung "
-        "darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen Bearbeitungsrechte eingeräumt. "
-        "(Lizenz arkumu-A 1.0)"
-    )
+    rights_elem.text = SIMPLIFIED_LICENSE_NOTE
 
     ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "simplified-amd"})
     tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "simplified-amd-tech"})
@@ -2438,6 +2440,23 @@ def _build_simplified_mets_from_project(
     rights_section = _create_dnx_element(tech_dnx, "section", {"id": "accessRightsPolicy"})
     rights_record = _create_dnx_element(rights_section, "record")
     _create_dnx_element(rights_record, "key", {"id": "policyId"}, "graph-managed")
+
+    rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "simplified-amd-rights"})
+    rights_wrap = ET.SubElement(
+        rights_md,
+        ET.QName(METS_NS, "mdWrap"),
+        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
+    )
+    rights_xml = ET.SubElement(rights_wrap, ET.QName(METS_NS, "xmlData"))
+    rights_dnx = _create_dnx_element(rights_xml, "dnx")
+    granted_section = _create_dnx_element(rights_dnx, "section", {"id": "grantedRightsStatement"})
+    granted_record = _create_dnx_element(granted_section, "record")
+    _create_dnx_element(
+        granted_record,
+        "key",
+        {"id": "grantedRightsStatementValue"},
+        SIMPLIFIED_LICENSE_NOTE,
+    )
 
     schema_href_map = schema_utils.build_schema_href_map(request=request)
 
