@@ -61,7 +61,9 @@
               <ul class="bg-base-100 rounded-t-none p-2 z-[60]">
                 <li><a href="{% url 'oai:oai_snapshot_dashboard' %}" class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info' %}active{% endif %}">Snapshot</a></li>
                 <li><a href="{% url 'oai:oai_db_dashboard' %}" class="{% if current_url_name == 'oai_db_dashboard' %}active{% endif %}">DB</a></li>
+                {% if request.user.is_superuser or request.user.role == 'system_admin' %}
                 <li><a href="{% url 'oai:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
+                {% endif %}
               </ul>
             </details>
           </li>
@@ -109,7 +111,9 @@
               <ul class="bg-base-100 rounded-t-none p-2">
                 <li><a href="{% url 'oai:oai_snapshot_dashboard' %}" class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info' %}active{% endif %}">Snapshot</a></li>
                 <li><a href="{% url 'oai:oai_db_dashboard' %}" class="{% if current_url_name == 'oai_db_dashboard' %}active{% endif %}">DB</a></li>
+                {% if request.user.is_superuser or request.user.role == 'system_admin' %}
                 <li><a href="{% url 'oai:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
+                {% endif %}
               </ul>
             </details>
           </li>
