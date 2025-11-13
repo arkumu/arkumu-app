@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.http import FileResponse, Http404, HttpRequest, HttpResponse
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse, HttpResponseForbidden
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
@@ -4030,6 +4030,9 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated or not user.is_superuser:
+        return HttpResponseForbidden("DB-backed endpoint restricted to superusers.")
     with _force_db_mode(True), _force_curated_links(True):
         return _handle_oai_request(request)
 
