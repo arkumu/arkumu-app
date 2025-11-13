@@ -1,8 +1,8 @@
 {% include 'oai/partials/oai_media_links_summary.html' with summary=summary %}
 
-<div class="space-y-4 mt-4">
+<div class="mt-4">
   {% if builder_errors %}
-    <div class="alert alert-warning shadow">
+    <div class="alert alert-warning shadow mb-4">
       <div>
         <h3 class="font-semibold">Some projects could not load graph data.</h3>
         <p class="text-sm">Failed URIs: {{ builder_errors|join:", " }}</p>
@@ -11,9 +11,21 @@
   {% endif %}
 
   {% if project_rows %}
-    {% for row in project_rows %}
-      {% include 'oai/partials/oai_media_links_project_row.html' with row=row summary=summary current_page=current_page status_choices=status_choices include_summary=False %}
-    {% endfor %}
+    <div class="overflow-x-auto">
+      <table class="table table-xs w-full">
+        <thead>
+          <tr>
+            <th class="w-1/3">Project</th>
+            <th>Digital Objects</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in project_rows %}
+            {% include 'oai/partials/oai_media_links_project_row.html' with row=row summary=summary current_page=current_page status_choices=status_choices include_summary=False %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   {% else %}
     <div class="alert alert-info shadow">
       <span>No curated links match the current filter.</span>

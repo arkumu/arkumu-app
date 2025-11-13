@@ -1,27 +1,23 @@
-<div class="border border-base-300 rounded-lg p-4 space-y-3 bg-base-100" id="media-link-row-{{ link.id }}">
-  <div class="flex flex-wrap items-start gap-3">
-    <div class="min-w-[200px]">
-      <div class="font-semibold">
-        {{ link.digital_object_display_label|default:link.digital_object.name|default:link.digital_object.value|default:link.digital_object.uri|default:"Untitled digital object" }}
+<div id="media-link-row-{{ link.id }}">
+  <div class="flex items-start gap-2 mb-2">
+    <div class="flex-1 min-w-0">
+      <div class="font-medium">
+        {{ link.digital_object_display_label|default:link.digital_object.name|default:link.digital_object.value|default:"Untitled" }}
       </div>
-      <div class="font-mono text-[11px] break-all text-base-content/70">
-        <a href="{{ link.digital_object.uri }}" target="_blank" rel="noopener">{{ link.digital_object.uri }}</a>
-      </div>
-      <div class="text-xs text-base-content/60 mt-1">
-        Source: {{ link.source|default:"unknown" }}, Status: {{ link.get_status_display }}
+      <div class="font-mono text-[10px] text-base-content/70 break-all">
+        <a href="{{ link.digital_object.uri }}" target="_blank" rel="noopener" class="link link-hover">{{ link.digital_object.uri }}</a>
       </div>
     </div>
-    <div class="flex flex-wrap gap-2 ml-auto">
+    <div class="flex flex-wrap gap-1">
       {% if link.is_stale %}
-        <span class="badge badge-warning">Stale</span>
+        <span class="badge badge-xs badge-warning">Stale</span>
       {% endif %}
       {% if link.other_project_refs %}
-        <span class="badge badge-error">Shared ({{ link.other_project_refs }})</span>
+        <span class="badge badge-xs badge-error">Shared</span>
       {% endif %}
       {% if row.curated_selection and link.digital_object.uri in row.curated_missing_uris %}
-        <span class="badge badge-warning">Missing in graph</span>
+        <span class="badge badge-xs badge-warning">Missing</span>
       {% endif %}
-      <span class="badge badge-outline">Order {{ link.order_index|default:"—" }}</span>
     </div>
   </div>
 
@@ -29,7 +25,7 @@
     hx-post="{% url 'oai:oai_media_link_update' link.id %}"
     hx-target="#project-{{ row.resource.id }}"
     hx-swap="outerHTML"
-    class="space-y-3"
+    class="grid grid-cols-[auto_1fr_auto] gap-2 items-start"
   >
     {% csrf_token %}
     <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
@@ -37,30 +33,24 @@
     <input type="hidden" name="page" value="{{ current_page }}">
     <input type="hidden" name="current_status" value="{{ link.status }}">
 
-    <div class="grid gap-3 md:grid-cols-2">
-      <label class="form-control">
-        <span class="label-text text-xs">Order</span>
-        <input type="number" name="order_index" class="input input-bordered input-sm" value="{{ link.order_index }}" min="1">
-      </label>
-      <label class="form-control">
-        <span class="label-text text-xs">Label override</span>
-        <input type="text" name="label_override" class="input input-bordered input-sm" value="{{ link.label_override }}">
-      </label>
-    </div>
-    <label class="form-control">
-      <span class="label-text text-xs">Notes</span>
-      <textarea name="notes" rows="2" class="textarea textarea-bordered text-sm">{{ link.notes }}</textarea>
-    </label>
-
-    <div class="flex flex-wrap gap-2">
-      <div class="btn-group">
-        <button type="submit" name="status" value="approved" class="btn btn-xs {% if link.status == 'approved' %}btn-active{% endif %}">Approve</button>
-        <button type="submit" name="status" value="pending" class="btn btn-xs {% if link.status == 'pending' %}btn-active{% endif %}">Pending</button>
-        <button type="submit" name="status" value="rejected" class="btn btn-xs {% if link.status == 'rejected' %}btn-active{% endif %}">Reject</button>
+    <div class="flex gap-1">
+      <input type="number" name="order_index" class="input input-bordered input-xs w-12" value="{{ link.order_index }}" min="1" title="Order">
+      <div class="join join-vertical">
+        <button type="submit" name="status" value="approved" class="btn btn-xs join-item {% if link.status == 'approved' %}btn-success{% endif %}" title="Approve">A</button>
+        <button type="submit" name="status" value="pending" class="btn btn-xs join-item {% if link.status == 'pending' %}btn-warning{% endif %}" title="Pending">P</button>
+        <button type="submit" name="status" value="rejected" class="btn btn-xs join-item {% if link.status == 'rejected' %}btn-error{% endif %}" title="Reject">R</button>
       </div>
+    </div>
+
+    <div class="space-y-1">
+      <input type="text" name="label_override" class="input input-bordered input-xs w-full" value="{{ link.label_override }}" placeholder="Label override">
+      <textarea name="notes" rows="1" class="textarea textarea-bordered textarea-xs w-full" placeholder="Notes">{{ link.notes }}</textarea>
+    </div>
+
+    <div class="flex flex-col gap-1">
       <button type="submit" class="btn btn-xs btn-primary">Save</button>
       {% if link.is_stale %}
-        <button type="submit" name="clear_stale" value="1" class="btn btn-xs">Clear stale</button>
+        <button type="submit" name="clear_stale" value="1" class="btn btn-xs">Clear</button>
       {% endif %}
     </div>
   </form>
@@ -69,13 +59,13 @@
     hx-post="{% url 'oai:oai_media_link_delete' link.id %}"
     hx-target="#project-{{ row.resource.id }}"
     hx-swap="outerHTML"
-    class="flex justify-end"
-    onsubmit="return confirm('Remove this digital object from the project?');"
+    class="mt-1"
+    onsubmit="return confirm('Remove this digital object?');"
   >
     {% csrf_token %}
     <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
     <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
     <input type="hidden" name="page" value="{{ current_page }}">
-    <button type="submit" class="btn btn-xs btn-error">Delete</button>
+    <button type="submit" class="btn btn-xs btn-error btn-outline w-full">Delete</button>
   </form>
 </div>
