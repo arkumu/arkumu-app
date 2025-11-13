@@ -34,7 +34,7 @@
         </button>
 
         <!-- OAI-PMH API Links -->
-        <a href="{% url 'oai_admin:oai_proxy' %}?verb=ListRecords&metadataPrefix=oai_dc" target="_blank"
+        <a href="{% url 'oai:endpoint' %}?verb=ListRecords&metadataPrefix=oai_dc" target="_blank"
            class="btn btn-outline btn-secondary btn-sm">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
                stroke="currentColor">
@@ -43,7 +43,7 @@
           </svg>
           OAI Dublin Core
         </a>
-            <a href="{% url 'oai_admin:oai_proxy' %}?verb=ListRecords&metadataPrefix=mets" target="_blank" class="btn btn-outline btn-secondary btn-sm">
+            <a href="{% url 'oai:endpoint' %}?verb=ListRecords&metadataPrefix=mets" target="_blank" class="btn btn-outline btn-secondary btn-sm">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
                stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
