@@ -20,7 +20,7 @@
   </div>
 
   <div id="oai-media-links-alerts" class="space-y-2">
-    {% include 'metadata/partials/oai_media_links_alerts.html' %}
+    {% include 'oai/partials/oai_media_links_alerts.html' %}
   </div>
 
   <div id="oai-media-links-seed-modal"></div>
@@ -28,7 +28,7 @@
   <div class="card bg-base-100 shadow">
     <div class="card-body">
       <form
-        hx-get="{% url 'metadata:oai_media_links_panel' %}"
+        hx-get="{% url 'oai:oai_media_links_panel' %}"
         hx-target="#oai-media-links-panel"
         hx-swap="innerHTML"
         hx-push-url="true"
@@ -55,7 +55,7 @@
 
   <div id="oai-media-links-panel">
     {% if panel_context %}
-      {% include 'metadata/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page %}
+      {% include 'oai/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page %}
     {% elif selected_org %}
       <div class="alert alert-info shadow">
         <span>No curated links yet. Run the seed process or add a digital object manually to get started.</span>

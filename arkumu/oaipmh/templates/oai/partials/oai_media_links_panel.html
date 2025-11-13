@@ -1,4 +1,4 @@
-{% include 'metadata/partials/oai_media_links_summary.html' with summary=summary %}
+{% include 'oai/partials/oai_media_links_summary.html' with summary=summary %}
 
 <div class="space-y-4 mt-4">
   {% if builder_errors %}
@@ -12,7 +12,7 @@
 
   {% if project_rows %}
     {% for row in project_rows %}
-      {% include 'metadata/partials/oai_media_links_project_row.html' with row=row summary=summary current_page=current_page status_choices=status_choices include_summary=False %}
+      {% include 'oai/partials/oai_media_links_project_row.html' with row=row summary=summary current_page=current_page status_choices=status_choices include_summary=False %}
     {% endfor %}
   {% else %}
     <div class="alert alert-info shadow">
@@ -27,7 +27,7 @@
         {% if page_obj.has_previous %}
           <a
             class="btn btn-sm join-item"
-            hx-get="{% url 'metadata:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.previous_page_number }}"
+            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.previous_page_number }}"
             hx-target="#oai-media-links-panel"
             hx-swap="innerHTML"
             hx-push-url="true"
@@ -38,7 +38,7 @@
         {% if page_obj.has_next %}
           <a
             class="btn btn-sm join-item"
-            hx-get="{% url 'metadata:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.next_page_number }}"
+            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&page={{ page_obj.next_page_number }}"
             hx-target="#oai-media-links-panel"
             hx-swap="innerHTML"
             hx-push-url="true"

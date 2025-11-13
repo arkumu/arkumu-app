@@ -38,7 +38,7 @@
                          if (!uri) { alert('Please enter a project URI'); return; }
                          const encodedUri = encodeURIComponent(uri);
                          const oaiIdentifier = 'oai:arkumu:resource:' + encodedUri;
-                         const url = '{% url 'metadata:oai_proxy' %}?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
+                         const url = '{% url 'oai:oai_proxy' %}?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
                          window.open(url, '_blank');">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
@@ -112,7 +112,7 @@
             <p class="text-xs text-base-content/60">General repository metadata and capabilities</p>
           </div>
           <div class="flex-none">
-            <a href="{% url 'metadata:oai_proxy' %}?verb=Identify"
+            <a href="{% url 'oai:oai_proxy' %}?verb=Identify"
                target="_blank"
                class="btn btn-sm btn-outline btn-info gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -133,7 +133,7 @@
             <p class="text-xs text-base-content/60">All institutional collections in the repository</p>
           </div>
           <div class="flex-none">
-            <a href="{% url 'metadata:oai_proxy' %}?verb=ListSets"
+            <a href="{% url 'oai:oai_proxy' %}?verb=ListSets"
                target="_blank"
                class="btn btn-sm btn-outline btn-secondary gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -154,7 +154,7 @@
             <p class="text-xs text-base-content/60">Available formats for metadata harvesting (e.g., METS)</p>
           </div>
           <div class="flex-none">
-            <a href="{% url 'metadata:oai_proxy' %}?verb=ListMetadataFormats"
+            <a href="{% url 'oai:oai_proxy' %}?verb=ListMetadataFormats"
                target="_blank"
                class="btn btn-sm btn-outline btn-accent gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -198,7 +198,7 @@
                 <p class="text-sm text-base-content/70">Record identifiers in METS format</p>
               </div>
               <div class="flex-none">
-                <a href="{% url 'metadata:oai_proxy' %}?verb=ListIdentifiers&metadataPrefix=mets&set={{ endpoint.code }}"
+                <a href="{% url 'oai:oai_proxy' %}?verb=ListIdentifiers&metadataPrefix=mets&set={{ endpoint.code }}"
                    target="_blank"
                    class="btn btn-sm btn-outline btn-warning gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -219,7 +219,7 @@
                 <p class="text-xs text-base-content/60">Complete project metadata with digital objects</p>
               </div>
               <div class="flex-none">
-                <a href="{% url 'metadata:oai_proxy' %}?verb=ListRecords&metadataPrefix=mets&set={{ endpoint.code }}"
+                <a href="{% url 'oai:oai_proxy' %}?verb=ListRecords&metadataPrefix=mets&set={{ endpoint.code }}"
                    target="_blank"
                    class="btn btn-sm btn-primary gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">

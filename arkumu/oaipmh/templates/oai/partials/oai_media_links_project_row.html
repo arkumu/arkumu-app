@@ -23,7 +23,7 @@
       <div class="space-y-3">
         {% if row.links %}
           {% for link in row.links %}
-            {% include 'metadata/partials/oai_media_link_entry.html' with link=link row=row current_page=current_page %}
+            {% include 'oai/partials/oai_media_link_entry.html' with link=link row=row current_page=current_page %}
           {% endfor %}
         {% else %}
           <div class="alert alert-info shadow">
@@ -37,7 +37,7 @@
           <div class="card-body space-y-2">
             <h4 class="font-semibold text-sm">Add digital object</h4>
             <form
-              hx-post="{% url 'metadata:oai_media_link_add' %}"
+              hx-post="{% url 'oai:oai_media_link_add' %}"
               hx-target="#project-{{ row.resource.id }}"
               hx-swap="outerHTML"
               class="space-y-2"
@@ -116,7 +116,7 @@
     </div>
   </div>
 </div>
-{% include 'metadata/partials/oai_media_links_alerts.html' %}
+{% include 'oai/partials/oai_media_links_alerts.html' %}
 {% if include_summary %}
-  {% include 'metadata/partials/oai_media_links_summary.html' with summary=summary %}
+  {% include 'oai/partials/oai_media_links_summary.html' with summary=summary %}
 {% endif %}

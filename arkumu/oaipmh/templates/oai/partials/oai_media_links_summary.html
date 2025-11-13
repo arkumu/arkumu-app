@@ -31,7 +31,7 @@
       <div class="btn-group flex-wrap">
         <button
           class="btn btn-sm {% if summary.status_filter == 'all' %}btn-active{% endif %}"
-          hx-get="{% url 'metadata:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status=all"
+          hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status=all"
           hx-target="#oai-media-links-panel"
           hx-swap="innerHTML"
           hx-push-url="true"
@@ -41,7 +41,7 @@
         {% for stat in summary.status_totals %}
           <button
             class="btn btn-sm {% if summary.status_filter == stat.status %}btn-active{% endif %}"
-            hx-get="{% url 'metadata:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ stat.status }}"
+            hx-get="{% url 'oai:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ stat.status }}"
             hx-target="#oai-media-links-panel"
             hx-swap="innerHTML"
             hx-push-url="true"
@@ -53,7 +53,7 @@
       <div class="ml-auto">
         <button
           class="btn btn-outline btn-primary"
-          hx-get="{% url 'metadata:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
+          hx-get="{% url 'oai:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
           hx-target="#oai-media-links-seed-modal"
           hx-swap="innerHTML"
         >

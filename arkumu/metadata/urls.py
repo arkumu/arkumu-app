@@ -69,23 +69,6 @@ urlpatterns = [
     path('dashboard/ingest-stats/<uuid:session_id>/', dashboard_views.ingest_session_stats, name='ingest_session_stats'),
     path('dashboard/upload-stats/<uuid:session_id>/', dashboard_views.upload_session_stats, name='upload_session_stats'),
     path('dashboard/upload-session/<uuid:session_id>/verify/', dashboard_views.trigger_upload_verification, name='upload_session_verify'),
-    path('dashboard/oai/', dashboard_views.oai_proxy, name='oai_proxy'),
-    path('dashboard/oai/db/', dashboard_views.oai_db_proxy, name='oai_db_proxy'),
-    path('dashboard/oai-widget/', dashboard_views.oai_widget, name='metadata_dashboard_oai_widget'),
-
-    # OAI dashboards
-    path('oai/snapshot/', dashboard_views.oai_snapshot_dashboard, name='oai_snapshot_dashboard'),
-    path('oai/db/', dashboard_views.oai_db_dashboard, name='oai_db_dashboard'),
-    path('oai/media-links/', dashboard_views.oai_media_links_dashboard, name='oai_media_links_dashboard'),
-    path('oai/media-links/panel/', dashboard_views.oai_media_links_panel, name='oai_media_links_panel'),
-    path('oai/media-links/link/<int:link_id>/update/', dashboard_views.oai_media_link_update, name='oai_media_link_update'),
-    path('oai/media-links/link/<int:link_id>/delete/', dashboard_views.oai_media_link_delete, name='oai_media_link_delete'),
-    path('oai/media-links/link/add/', dashboard_views.oai_media_link_add, name='oai_media_link_add'),
-    path('oai/media-links/seed/preview/', dashboard_views.oai_media_link_seed_preview, name='oai_media_link_seed_preview'),
-    path('oai/media-links/seed/run/', dashboard_views.oai_media_link_seed_execute, name='oai_media_link_seed_execute'),
-    path('api/oai_tailored/', oai_views.oai_tailored_endpoint, name='metadata_oai_tailored_endpoint'),
-    # Legacy URL for backwards compatibility
-    path('oai-endpoints/', dashboard_views.oai_endpoints_info, name='oai_endpoints_info'),
 
     # SUPERUSER ONLY: Mapping selector widget
     path('dashboard/mapping-selector/', dashboard_views.mapping_selector_widget, name='mapping_selector_widget'),
