@@ -276,7 +276,7 @@ def oai_db_dashboard(request):
         logger.exception("Failed to build DB OAI dashboard snapshot: %s", exc)
         oai_snapshot = None
 
-    db_endpoint_url = request.build_absolute_uri(reverse('oai:db-endpoint'))
+    db_endpoint_url = request.build_absolute_uri(reverse('oai_admin:db-endpoint'))
     snapshot_endpoint_url = request.build_absolute_uri(reverse('oai:endpoint'))
     endpoints = _build_oai_endpoint_summaries(oai_snapshot)
 
@@ -288,7 +288,6 @@ def oai_db_dashboard(request):
             'endpoints': endpoints,
             'db_endpoint_url': db_endpoint_url,
             'snapshot_endpoint_url': snapshot_endpoint_url,
-            'db_proxy_base_url': reverse('oai_admin:oai_db_proxy'),
         },
     )
 
