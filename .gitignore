@@ -344,3 +344,4 @@ AGENTS.md
 missing_fks/
 .playwright-mcp/
 data/*_fixity.tsv
+schemas/
