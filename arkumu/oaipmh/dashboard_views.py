@@ -76,6 +76,17 @@ _PROJECT_URI_FALLBACK_REGEX = r'/entities/projekt/[^/]+$'
 _oai_proxy_request_factory = RequestFactory()
 
 
+def _has_oai_admin_access(user) -> bool:
+    """
+    Allow access for Django superusers or Arkumu system administrators.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    return getattr(user, "role", None) == "system_admin"
+
+
 def _proxy_oai_request(request, *, handler, internal_path: str):
     """Shared proxy helper for snapshot and DB OAI endpoints."""
 
@@ -367,9 +378,9 @@ def _run_media_link_seed(org: Organization) -> dict[str, int]:
 @general_login_required
 @require_http_methods(["GET"])
 def oai_media_links_dashboard(request):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organizations = list(Organization.objects.filter(is_active=True).order_by('name'))
@@ -871,9 +882,9 @@ def _preview_media_link_seed(org: Organization) -> dict[str, int]:
 @general_login_required
 @require_http_methods(["GET"])
 def oai_media_links_panel(request):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organization = _resolve_organization_by_code(request.GET.get('organization'))
@@ -912,9 +923,9 @@ def oai_media_links_panel(request):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_update(request, link_id):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organization = _resolve_organization_by_code(request.POST.get('organization'))
@@ -994,9 +1005,9 @@ def oai_media_link_update(request, link_id):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_delete(request, link_id):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organization = _resolve_organization_by_code(request.POST.get('organization'))
@@ -1052,9 +1063,9 @@ def oai_media_link_delete(request, link_id):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_add(request):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organization = _resolve_organization_by_code(request.POST.get('organization'))
@@ -1141,9 +1152,9 @@ def oai_media_link_add(request):
 @general_login_required
 @require_http_methods(["GET"])
 def oai_media_link_seed_preview(request):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organization = _resolve_organization_by_code(request.GET.get('organization'))
@@ -1162,9 +1173,9 @@ def oai_media_link_seed_preview(request):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_seed_execute(request):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organization = _resolve_organization_by_code(request.POST.get('organization'))
@@ -1363,9 +1374,9 @@ def _build_digital_object_centric_context(
 @require_http_methods(["GET"])
 def oai_media_links_digital_view(request):
     """Digital object-centric view showing digital objects grouped by object with their projects."""
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     organization = _resolve_organization_by_code(request.GET.get('organization'))
@@ -1411,9 +1422,9 @@ def oai_media_links_digital_view(request):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_project_status_update(request, resource_id):
-    if not request.user.is_superuser:
+    if not _has_oai_admin_access(request.user):
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: superuser membership required</div>"
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
     try:

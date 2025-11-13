@@ -30,7 +30,7 @@ import shutil
 from dataclasses import is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import DCTERMS, OWL, RDF, RDFS, SKOS, XSD
@@ -292,7 +292,7 @@ def _update_latest_pointer(target_dir: Path, link_path: Path) -> str:
         return "copy"
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export Arkumu schemas as RDFS.")
     parser.add_argument(
         "--output-dir",
@@ -315,15 +315,25 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Update schemas/latest to point at the generated snapshot",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
-    output_dir: Path = args.output_dir or _default_output_dir()
-    output_dir.mkdir(parents=True, exist_ok=True)
+def export_schemas(
+    *,
+    output_dir: Optional[Path] = None,
+    formats: Optional[Sequence[str]] = None,
+    mark_latest: bool = False,
+    emitter: Optional[Callable[[str], None]] = None,
+) -> Path:
+    """
+    Export canonical and institutional schemas in the requested formats.
 
-    selected_formats = args.formats or list(DEFAULT_SCHEMA_FORMATS)
+    Returns the directory containing the generated files.
+    """
+    output_path = Path(output_dir) if output_dir else _default_output_dir()
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    selected_formats = list(formats) if formats else list(DEFAULT_SCHEMA_FORMATS)
     # Preserve order while removing duplicates
     seen = set()
     ordered_formats: List[str] = []
@@ -331,6 +341,8 @@ def main() -> None:
         if fmt not in seen:
             seen.add(fmt)
             ordered_formats.append(fmt)
+
+    logger = emitter or print
 
     canonical_graph = build_canonical_graph()
     institutional_graph = build_institutional_graph()
@@ -340,18 +352,29 @@ def main() -> None:
         serializer = fmt_meta["serializer"]
         ext = fmt_meta["ext"]
 
-        canonical_path = output_dir / f"{SCHEMA_VARIANTS['canonical']}.{ext}"
+        canonical_path = output_path / f"{SCHEMA_VARIANTS['canonical']}.{ext}"
         canonical_graph.serialize(destination=str(canonical_path), format=serializer)
-        print(f"Wrote canonical schema ({fmt}) to {canonical_path}")
+        logger(f"Wrote canonical schema ({fmt}) to {canonical_path}")
 
-        institutional_path = output_dir / f"{SCHEMA_VARIANTS['institutional']}.{ext}"
+        institutional_path = output_path / f"{SCHEMA_VARIANTS['institutional']}.{ext}"
         institutional_graph.serialize(destination=str(institutional_path), format=serializer)
-        print(f"Wrote institutional schema ({fmt}) to {institutional_path}")
+        logger(f"Wrote institutional schema ({fmt}) to {institutional_path}")
 
-    if args.mark_latest:
+    if mark_latest:
         marker = BASE_SCHEMA_DIR / "latest"
-        strategy = _update_latest_pointer(output_dir, marker)
-        print(f"Updated {marker} via {strategy}")
+        strategy = _update_latest_pointer(output_path, marker)
+        logger(f"Updated {marker} via {strategy}")
+
+    return output_path
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    args = parse_args(argv)
+    export_schemas(
+        output_dir=args.output_dir,
+        formats=args.formats,
+        mark_latest=args.mark_latest,
+    )
 
 
 if __name__ == "__main__":
