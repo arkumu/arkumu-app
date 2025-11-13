@@ -35,7 +35,7 @@ SCHEMA_FORMATS = {
 
 DEFAULT_SCHEMA_FORMATS = ("ttl", "xml")
 
-SCHEMA_RELATIVE_DIR = Path("docs") / "schemas"
+SCHEMA_RELATIVE_DIR = Path("schemas")
 
 __all__ = [
     "SCHEMA_VARIANTS",

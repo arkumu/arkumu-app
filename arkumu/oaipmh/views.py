@@ -2329,6 +2329,8 @@ def _append_arkumu_identifier(dc_parent: ET._Element, resource: Resource) -> Non
 def _build_simplified_mets_from_project(
     project: OAIProject,
     resource: Resource,
+    *,
+    request: Optional[HttpRequest] = None,
 ) -> ET._Element:
     """Emit the pared-down METS variant used exclusively by the DB endpoint."""
 
@@ -2392,18 +2394,7 @@ def _build_simplified_mets_from_project(
     rights_record = _create_dnx_element(rights_section, "record")
     _create_dnx_element(rights_record, "key", {"id": "policyId"}, "graph-managed")
 
-    schema_href_map: Dict[str, str] = {}
-    snapshot = schema_utils.get_latest_snapshot()
-    fmt_meta = schema_utils.SCHEMA_FORMATS.get("xml")
-    if snapshot and fmt_meta:
-        ext = fmt_meta["ext"]
-        for variant in ("canonical", "institutional"):
-            try:
-                snapshot.file_path(variant, "xml")
-            except (FileNotFoundError, KeyError):
-                continue
-            path = reverse("oai:schema_download", args=(snapshot.tag, variant, ext))
-            schema_href_map[variant] = path
+    schema_href_map = schema_utils.build_schema_href_map(request=request)
 
     def _append_rdf_md(
         md_id: str,
@@ -2539,6 +2530,8 @@ def _build_mets_from_project(
             elem.set(attr_name, attr_value)
     _append_arkumu_identifier(dc_record, resource)
 
+    schema_href_map = schema_utils.build_schema_href_map()
+
     rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
     if not rights_meta:
         rights_meta = _default_rights_metadata(resource, record)
@@ -2607,10 +2600,17 @@ def _build_mets_from_project(
         },
     )
     source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+    schema_href_map = schema_utils.build_schema_href_map(request=request)
     org_code = resource.organization.code if resource.organization else None
     try:
         rdf_service = CanonicalGraphService(org_code=org_code)
         rdf_element = build_rdf_graph(resource, graph_service=rdf_service)
+        schema_href = schema_href_map.get("canonical")
+        if schema_href:
+            rdf_element.set(
+                ET.QName(XSI_NS, "schemaLocation"),
+                f"{RDF_NS} {schema_href}",
+            )
         source_xml.append(rdf_element)
     except Exception:
         logger.exception("Failed to build RDF metadata for %s", getattr(resource, "uri", "unknown"))
@@ -2632,6 +2632,12 @@ def _build_mets_from_project(
                 },
             )
             inst_xml = ET.SubElement(inst_wrap, ET.QName(METS_NS, "xmlData"))
+            schema_href = schema_href_map.get("institutional")
+            if schema_href:
+                inst_element.set(
+                    ET.QName(XSI_NS, "schemaLocation"),
+                    f"{RDF_NS} {schema_href}",
+                )
             inst_xml.append(inst_element)
 
     digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
@@ -3172,6 +3178,8 @@ def _build_metadata_element(
     resource: Resource,
     metadata_prefix: str,
     project_hint: Optional[OAIProject] = None,
+    *,
+    request: Optional[HttpRequest] = None,
 ) -> ET._Element:
     """Build metadata element for different formats."""
     metadata = ET.Element("metadata")
@@ -3198,7 +3206,7 @@ def _build_metadata_element(
                 continue
 
             if simplified_mode:
-                mets_root = _build_simplified_mets_from_project(project, resource)
+                mets_root = _build_simplified_mets_from_project(project, resource, request=request)
             else:
                 dc_payload_core = _build_dc_payload_from_project(
                     project,
@@ -3211,6 +3219,7 @@ def _build_metadata_element(
                     resource,
                     dc_payload_core,
                     dc_source_payloads=dc_payload_source,
+                    request=request,
                 )
 
             candidate_wrapper = ET.Element("metadata")
@@ -3307,7 +3316,7 @@ def _mint_arkumu_pid(resource: Resource) -> Optional[str]:
         return None
 
 
-def _list_records(oai: ET._Element, params) -> ET._Element:
+def _list_records(oai: ET._Element, params, request: HttpRequest) -> ET._Element:
     """Implement ListRecords verb with complete metadata and pagination."""
     metadata_prefix = params.get("metadataPrefix")
     set_spec = params.get("set")
@@ -3369,7 +3378,8 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
         snapshot_marker_from_token = token_data.get("snapshot")
         cursor_position_from_token = token_data.get("cursor_position")
 
-    if _db_mode_enabled():
+    db_mode = _db_mode_enabled()
+    if db_mode:
         return _list_records_db(
             oai,
             metadata_prefix=metadata_prefix,
@@ -3379,6 +3389,7 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
             offset=offset,
             cursor_marker_from_token=cursor_marker_from_token,
             cursor_position_from_token=cursor_position_from_token,
+            request=request,
         )
 
     snapshot, harvestable_projects = _harvestable_snapshot_projects()
@@ -3494,6 +3505,7 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
             resource,
             metadata_prefix,
             project_hint=project_hint,
+            request=request,
         )
 
         if metadata_prefix == 'mets' and not _metadata_element_is_valid(
@@ -3581,6 +3593,7 @@ def _list_records_db(
     offset: int,
     cursor_marker_from_token: Optional[str],
     cursor_position_from_token: Optional[str],
+    request: HttpRequest,
 ) -> ET._Element:
     queryset = _get_resources_queryset(
         set_spec,
@@ -3595,34 +3608,36 @@ def _list_records_db(
         return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
 
     page_size = resumption_service.page_size
-    cached_page = oai_cache.get_cached_page(
-        verb='ListRecords',
-        metadata_prefix=metadata_prefix,
-        set_spec=set_spec or '',
-        from_date=from_date or '',
-        until_date=until_date or '',
-        offset=offset,
-        snapshot_marker=cursor_marker,
-        cursor_marker=cursor_marker,
-    )
-    if cached_page and not (
-        metadata_prefix == 'mets'
-        and any(
-            not _metadata_xml_is_valid(record_data['metadata'])
-            for record_data in cached_page.get('records', [])
+    cached_page = None
+    if not _db_mode_enabled():
+        cached_page = oai_cache.get_cached_page(
+            verb='ListRecords',
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec or '',
+            from_date=from_date or '',
+            until_date=until_date or '',
+            offset=offset,
+            snapshot_marker=cursor_marker,
+            cursor_marker=cursor_marker,
         )
-    ):
-        list_records = ET.SubElement(oai, "ListRecords")
-        for record_data in cached_page['records']:
-            record = ET.SubElement(list_records, "record")
-            header = ET.fromstring(record_data['header'])
-            metadata = ET.fromstring(record_data['metadata'])
-            record.append(header)
-            record.append(metadata)
-        if cached_page.get('resumption_token'):
-            resumption_elem = ET.SubElement(list_records, "resumptionToken")
-            resumption_elem.text = cached_page['resumption_token']
-        return oai
+        if cached_page and not (
+            metadata_prefix == 'mets'
+            and any(
+                not _metadata_xml_is_valid(record_data['metadata'])
+                for record_data in cached_page.get('records', [])
+            )
+        ):
+            list_records = ET.SubElement(oai, "ListRecords")
+            for record_data in cached_page['records']:
+                record = ET.SubElement(list_records, "record")
+                header = ET.fromstring(record_data['header'])
+                metadata = ET.fromstring(record_data['metadata'])
+                record.append(header)
+                record.append(metadata)
+            if cached_page.get('resumption_token'):
+                resumption_elem = ET.SubElement(list_records, "resumptionToken")
+                resumption_elem.text = cached_page['resumption_token']
+            return oai
 
     page = _harvestable_page_from_db(
         queryset,
@@ -3649,6 +3664,7 @@ def _list_records_db(
             resource,
             metadata_prefix,
             project_hint=project_hint,
+            request=request,
         )
 
         if metadata_prefix == 'mets' and not _metadata_element_is_valid(
@@ -3663,14 +3679,15 @@ def _list_records_db(
 
         header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
         metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
-        _cache_record(
-            resource,
-            metadata_prefix,
-            header_xml,
-            metadata_xml,
-            snapshot_marker=cursor_marker,
-            cursor_marker=cursor_marker,
-        )
+        if not _db_mode_enabled():
+            _cache_record(
+                resource,
+                metadata_prefix,
+                header_xml,
+                metadata_xml,
+                snapshot_marker=cursor_marker,
+                cursor_marker=cursor_marker,
+            )
         records_data.append({
             'header': header_xml,
             'metadata': metadata_xml,
@@ -3704,17 +3721,18 @@ def _list_records_db(
         'cached_at': timezone.now().isoformat()
     }
 
-    oai_cache.cache_page(
-        verb='ListRecords',
-        metadata_prefix=metadata_prefix,
-        page_data=page_payload,
-        set_spec=set_spec or '',
-        from_date=from_date or '',
-        until_date=until_date or '',
-        offset=offset,
-        snapshot_marker=cursor_marker,
-        cursor_marker=cursor_marker,
-    )
+    if not _db_mode_enabled():
+        oai_cache.cache_page(
+            verb='ListRecords',
+            metadata_prefix=metadata_prefix,
+            page_data=page_payload,
+            set_spec=set_spec or '',
+            from_date=from_date or '',
+            until_date=until_date or '',
+            offset=offset,
+            snapshot_marker=cursor_marker,
+            cursor_marker=cursor_marker,
+        )
 
     return oai
 
@@ -3803,7 +3821,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
             if not has_resumption_param and not params.get("metadataPrefix"):
                 return _xml_response(_error(oai, "badArgument", "metadataPrefix is required"))
 
-            return _xml_response(_list_records(oai, params))
+            return _xml_response(_list_records(oai, params, request))
 
         if verb == "GetRecord":
             identifier = params.get("identifier")
@@ -3942,6 +3960,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                 resource,
                 metadata_prefix,
                 project_hint=project_hint,
+                request=request,
             )
 
             if metadata_prefix == 'mets' and not _metadata_element_is_valid(
@@ -4000,10 +4019,11 @@ def oai_schema_download(request: HttpRequest, snapshot: str, variant: str, ext: 
     if not snapshot_info:
         raise Http404("Schema snapshot not found.")
     fmt = schema_utils.format_from_extension(ext)
-    if not fmt or variant not in schema_utils.SCHEMA_VARIANTS:
+    variant_key = schema_utils.resolve_variant_key(variant)
+    if not fmt or not variant_key:
         raise Http404("Unknown schema variant or format.")
     try:
-        file_path = snapshot_info.file_path(variant, fmt)
+        file_path = snapshot_info.file_path(variant_key, fmt)
     except FileNotFoundError:
         raise Http404("Schema file is unavailable.")
 

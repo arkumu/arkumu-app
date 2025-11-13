@@ -12,6 +12,7 @@ from django.conf.urls.i18n import i18n_patterns
 
 # Import staticfiles_urlpatterns
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+from arkumu.oaipmh.views import oai_schema_download
 
 # from arkumu.pages.views import ImpressumView
 urlpatterns = [
@@ -52,6 +53,7 @@ urlpatterns = [
     path('catalog/', include('arkumu.catalog.urls', namespace='catalog')),
     # OAI-PMH provider (minimal)
     path('oai/', include('arkumu.oaipmh.urls', namespace='oai')),
+    path('schemas/<slug:snapshot>/<slug:variant>.<slug:ext>', oai_schema_download, name='schema_download_public'),
     # SSE URLs removed - migrated to HTMX polling
 
     # ============================================================================

@@ -15,7 +15,7 @@ Usage (run from the repository root):
 
     uv run python scripts/export_schema_rdfs.py
 
-Use `--output-dir` to change the destination (defaults to `docs/schemas`) and
+Use `--output-dir` to change the destination (defaults to `schemas`) and
 `--format` to pick a serialization supported by rdflib (default: turtle/ttl).
 """
 
@@ -272,8 +272,8 @@ def build_institutional_graph() -> Graph:
 
 
 def _default_output_dir() -> Path:
-    today = datetime.now(timezone.utc).date().isoformat()
-    return BASE_SCHEMA_DIR / today
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+    return BASE_SCHEMA_DIR / timestamp
 
 
 def _update_latest_pointer(target_dir: Path, link_path: Path) -> str:
@@ -298,7 +298,7 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=None,
-        help="Directory for the generated schema files (default: docs/schemas/<ISO date>)",
+        help="Directory for the generated schema files (default: schemas/<ISO date-time>)",
     )
     parser.add_argument(
         "--format",
@@ -313,7 +313,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mark-latest",
         action="store_true",
-        help="Update docs/schemas/latest to point at the generated snapshot",
+        help="Update schemas/latest to point at the generated snapshot",
     )
     return parser.parse_args()
 
