@@ -288,7 +288,7 @@ def oai_db_dashboard(request):
             'endpoints': endpoints,
             'db_endpoint_url': db_endpoint_url,
             'snapshot_endpoint_url': snapshot_endpoint_url,
-            'db_proxy_base_url': reverse('oai:oai_db_proxy'),
+            'db_proxy_base_url': reverse('oai_admin:oai_db_proxy'),
         },
     )
 
@@ -917,7 +917,7 @@ def oai_media_links_panel(request):
 
     # If not an HTMX request, redirect to the full dashboard with params
     if not request.headers.get('HX-Request'):
-        return redirect(f"{reverse('oai:oai_media_links_dashboard')}?organization={organization.code}&status={status_filter}")
+        return redirect(f"{reverse('oai_admin:oai_media_links_dashboard')}?organization={organization.code}&status={status_filter}")
 
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
@@ -1414,7 +1414,7 @@ def oai_media_links_digital_view(request):
     # If not an HTMX request, redirect to the full dashboard with params
     if not request.headers.get('HX-Request'):
         return redirect(
-            f"{reverse('oai:oai_media_links_dashboard')}?organization={organization.code}"
+            f"{reverse('oai_admin:oai_media_links_dashboard')}?organization={organization.code}"
             f"&status={status_filter}&view=digital&shared={shared_filter}"
         )
 
