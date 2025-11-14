@@ -854,3 +854,25 @@ def test_filter_public_projects_excludes_non_public(db):
     )
 
     assert [record.subject_id for record in filtered] == [str(public_resource.id)]
+
+
+def test_expand_event_graph_includes_parent_events():
+    service = ProjectSnapshotService()
+    edges_by_subject = {
+        "child": [
+            {"predicate_canonical": service.EVENT_RELATION_URI, "object_id": "parent"},
+        ],
+        "parent": [
+            {"predicate_canonical": service.EVENT_RELATION_URI, "object_id": "grandparent"},
+        ],
+        "grandparent": [],
+    }
+    nodes = {
+        "child": {"uri": "child"},
+        "parent": {"uri": "parent"},
+        "grandparent": {"uri": "grandparent"},
+    }
+
+    expanded = service._expand_event_graph(["child"], edges_by_subject, nodes)
+
+    assert set(expanded) == {"child", "parent", "grandparent"}

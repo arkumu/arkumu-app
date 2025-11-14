@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}OAI-PMH Endpoints (DB Mode) - arkumu{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="mb-8">
+    <h1 class="text-4xl font-bold mb-3">OAI-PMH (DB Mode)</h1>
+    <p class="text-base-content/70 text-lg">
+      Use the DB-backed endpoint for parity checks and ad-hoc QA. All requests go directly against the live database assembler.
+    </p>
+  </div>
+
+  <div class="card bg-base-100 shadow-xl mb-8">
+    <div class="card-body">
+      <h2 class="card-title text-2xl mb-2">Get Individual Record</h2>
+      <p class="text-base-content/70 mb-4">
+        Enter a project URI to retrieve its DB-backed OAI-PMH record (METS).
+      </p>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Project URI</span>
+        </label>
+        <div class="join w-full">
+          <input
+            type="text"
+            id="db-project-uri-input"
+            placeholder="http://arkumu.org/data/fuk/entities/projekt/8"
+            class="input input-bordered join-item flex-1" />
+          <button
+            type="button"
+            class="btn btn-primary join-item"
+            hx-on:click="const uri = document.getElementById('db-project-uri-input').value.trim();
+                         if (!uri) { alert('Please enter a project URI'); return; }
+                         const encodedUri = encodeURIComponent(uri);
+                         const oaiIdentifier = 'oai:arkumu:resource:' + encodedUri;
+                         const baseUrl = '{{ db_endpoint_url|escapejs }}';
+                         const url = baseUrl + '?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
+                         window.open(url, '_blank');">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+            View Record
+          </button>
+        </div>
+        <label class="label">
+          <span class="label-text-alt text-base-content/60">Example: http://arkumu.org/data/fuk/entities/projekt/8</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert alert-info shadow-lg">
+    <div>
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <div>
+        <p class="font-semibold">Direct DB endpoint</p>
+        <p class="text-sm">
+          <code class="bg-base-200 px-2 py-1 rounded break-all">{{ db_endpoint_url }}</code>
+        </p>
+        <p class="text-xs text-base-content/70 mt-2">
+          Use the controls above for spot checks. For bulk harvesting, keep using the harvester IP against this endpoint.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
