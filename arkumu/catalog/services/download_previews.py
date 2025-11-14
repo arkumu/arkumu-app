@@ -19,8 +19,18 @@ class DownloadPreviews:
     storage = BaseStorageService()
 
     def download_previews(self, force=False):
-        paths = self._get_download_paths(force)
+        paths = self._dedupe_dicts(self._get_download_paths(force))
         self._download(paths)
+
+    def _dedupe_dicts(self, dicts):
+        seen = set()
+        result = []
+        for d in dicts:
+            sig = tuple(sorted(d.items()))
+            if sig not in seen:
+                seen.add(sig)
+                result.append(d)
+        return result
 
     def _get_download_paths(self, force=False):
         preview_objs = [triple.object for triple in Triple.objects.filter(predicate__in=self.preview_pred)]
@@ -40,9 +50,11 @@ class DownloadPreviews:
 
     def _digital_objs_path_khm(self):
         preview_obj = Triple.objects.filter(predicate__uri='http://arkumu.org/data/khm/properties/ist-arkumu-preview', object__value='1')
-        paths_obj = Triple.objects.filter(subject__in=preview_obj.values_list('subject', flat=True), predicate__uri='http://arkumu.org/data/khm/properties/dateiname-arkumu-web')
-        paths = [obj.object.value for obj in paths_obj]
-        return [{'bucket': 'khm', 'path': f"data/Paket1_12_arkumu_previews/{path}", 'orig_path': path} for path in paths]
+
+        short_paths = [path.object.value for path in Triple.objects.filter(subject__in=preview_obj.values_list('subject', flat=True), predicate__uri='http://arkumu.org/data/khm/properties/dateiname-arkumu-web')]
+        long_paths = [path.object.value for path in Triple.objects.filter(subject__in=preview_obj.values_list('subject', flat=True), predicate__uri='http://arkumu.org/data/khm/properties/dateipfad-absolut')]
+
+        return [{'bucket': 'khm', 'path': f"data/Paket1_12_arkumu_previews/{path}", 'orig_path': long_paths[i]} for i, path in enumerate(short_paths)]
 
     def _download(self, paths):
         download_count = 0
@@ -54,10 +66,12 @@ class DownloadPreviews:
                     PreviewImages.objects.update_or_create(
                         bucket=path['bucket'],
                         path=path['orig_path'],
-                        img=img['content'],
-                        content_length=img['metadata']['content_length'],
-                        content_type=img['metadata']['content_type'],
-                        defaults={'last_download': timezone.now()}
+                        defaults={
+                            'img': img['content'],
+                            'content_length': img['metadata']['content_length'],
+                            'content_type': img['metadata']['content_type'],
+                            'last_download': timezone.now(),
+                        }
                     )
                     download_count += 1
         logger.info(f"Downloaded {download_count}/{len(paths)} previews.")
