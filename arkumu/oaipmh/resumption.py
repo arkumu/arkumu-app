@@ -44,6 +44,8 @@ class ResumptionTokenService:
         until_date: Optional[str] = None,
         total_count: Optional[int] = None,
         snapshot_marker: Optional[str] = None,
+        cursor_marker: Optional[str] = None,
+        cursor_position: Optional[str] = None,
     ) -> str:
         """
         Create a resumption token with the given parameters.
@@ -78,6 +80,10 @@ class ResumptionTokenService:
             token_data['total_count'] = total_count
         if snapshot_marker:
             token_data['snapshot'] = snapshot_marker
+        if cursor_marker:
+            token_data['cursor'] = cursor_marker
+        if cursor_position:
+            token_data['cursor_position'] = cursor_position
 
         # Serialize and encode
         token_json = json.dumps(token_data, sort_keys=True)

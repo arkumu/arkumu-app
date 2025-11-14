@@ -41,7 +41,7 @@ class Command(BaseCommand):
         configured_orgs = getattr(
             settings,
             "OAI_DIGITAL_OBJECT_LINK_ORGS",
-            ("fuk", "det", "rsh"),
+            ("fuk", "det", "rsh", "khm", "hmt"),
         )
         digital_orgs = {
             code.lower().strip()

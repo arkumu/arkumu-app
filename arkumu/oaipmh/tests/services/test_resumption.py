@@ -103,6 +103,50 @@ class TestResumptionTokenService:
         assert is_valid
         assert token_data["page_size"] == 100
 
+    def test_create_token_with_snapshot_marker_sets_cursor(self):
+        """Snapshot marker should populate both snapshot and cursor fields."""
+        token = self.service.create_token(
+            offset=25,
+            verb="ListRecords",
+            metadata_prefix="mets",
+            snapshot_marker="snapshot-123",
+        )
+
+        is_valid, token_data, error = self.service.parse_token(token)
+
+        assert is_valid
+        assert token_data["snapshot"] == "snapshot-123"
+        assert token_data["cursor"] == "snapshot-123"
+
+    def test_create_token_with_cursor_marker_only(self):
+        """Cursor marker should populate cursor even when snapshot is absent."""
+        token = self.service.create_token(
+            offset=25,
+            verb="ListRecords",
+            metadata_prefix="mets",
+            cursor_marker="cursor-xyz",
+        )
+
+        is_valid, token_data, error = self.service.parse_token(token)
+
+        assert is_valid
+        assert "snapshot" not in token_data
+        assert token_data["cursor"] == "cursor-xyz"
+
+    def test_create_token_with_cursor_position(self):
+        """Cursor position should be stored when provided."""
+        token = self.service.create_token(
+            offset=10,
+            verb="ListIdentifiers",
+            metadata_prefix="oai_dc",
+            cursor_position="2024-01-01T00:00:00+00:00|123",
+        )
+
+        is_valid, token_data, error = self.service.parse_token(token)
+
+        assert is_valid
+        assert token_data["cursor_position"] == "2024-01-01T00:00:00+00:00|123"
+
     # ============================================================================
     # TOKEN PARSING TESTS
     # ============================================================================

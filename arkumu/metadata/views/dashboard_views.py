@@ -2,13 +2,15 @@ import json
 import logging
 from collections import defaultdict
 from functools import wraps
+from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlencode
 
 from django.conf import settings
 
 from django.contrib import messages
 from django.core.management import call_command
-from django.db import models
-from django.db.models import Count, Q
+from django.db import models, transaction
+from django.db.models import Count, Q, Prefetch, Max, F
 from django.core.paginator import Paginator, EmptyPage
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -16,7 +18,6 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
 from django.views.decorators.http import require_POST, require_http_methods
-from django.test import RequestFactory
 from io import StringIO
 
 from arkumu.importer.models import IngestSession
@@ -28,7 +29,6 @@ from arkumu.storage.tasks import verify_upload_session, recalculate_s3_checksums
 from arkumu.storage.services.bucket_service import BucketService
 from arkumu.users.mixins import general_login_required
 from arkumu.users.models import Organization
-from arkumu.oaipmh.views import oai_endpoint
 from arkumu.metadata.services.oai_stats import build_oai_dashboard_snapshot
 from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.projects.services import ProjectSnapshotService
@@ -59,8 +59,6 @@ def superuser_required(view_func):
             )
         return view_func(request, *args, **kwargs)
     return wrapper
-
-_oai_proxy_request_factory = RequestFactory()
 
 
 def _maintenance_response(request, message: str, *, level: str = "info", details: str | None = None):
@@ -400,36 +398,6 @@ def all_ingest_sessions(request):
             "total_stats": total_stats,
         },
     )
-
-
-@general_login_required
-def oai_proxy(request):
-    """Proxy the OAI-PMH endpoint for authenticated dashboard users."""
-
-    if request.method != "GET":
-        return HttpResponseBadRequest("Only GET requests are supported")
-
-    if "verb" not in request.GET:
-        return HttpResponseBadRequest("Missing required 'verb' parameter")
-
-    query_items = [(key, value) for key, values in request.GET.lists() for value in values]
-    internal_request = _oai_proxy_request_factory.get("/oai/", data=query_items)
-
-    # Propagate authenticated user and session context for downstream checks
-    internal_request.user = request.user
-    internal_request.session = request.session
-
-    # Preserve host/scheme metadata so OAI responses build correct URLs
-    internal_request.META["HTTP_HOST"] = request.get_host()
-    internal_request.META["SERVER_NAME"] = request.META.get("SERVER_NAME", request.get_host())
-    internal_request.META["SERVER_PORT"] = request.META.get("SERVER_PORT", "443" if request.is_secure() else "80")
-    internal_request.META["wsgi.url_scheme"] = request.scheme
-
-    # Mark the request as trusted internal traffic
-    internal_request.META["REMOTE_ADDR"] = "127.0.0.1"
-    internal_request.META["HTTP_X_INTERNAL_OAI_BYPASS"] = "1"
-
-    return oai_endpoint(internal_request)
 
 
 @general_login_required
@@ -831,57 +799,22 @@ def trigger_preview_images_refresh(request):
 
 
 @general_login_required
-def oai_widget(request):
-    """Return the OAI snapshot widget content on demand (HTMX-friendly)."""
-
-    oai_snapshot = None
-    try:
-        oai_snapshot = build_oai_dashboard_snapshot()
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
-
-    template_name = "partials/oai_widget_card.html"
-    return render(
-        request,
-        template_name,
-        {
-            "oai_snapshot": oai_snapshot,
-        },
-    )
-
-
 @general_login_required
-def oai_endpoints_info(request):
-    """Display OAI-PMH endpoints information page with clickable links."""
-
-    oai_snapshot = None
-    try:
-        oai_snapshot = build_oai_dashboard_snapshot()
-    except Exception as exc:
-        logger.exception("Failed to build OAI dashboard snapshot: %s", exc)
-
-    # Build endpoint examples for each institution
-    endpoints = []
-    if oai_snapshot and oai_snapshot.institution_summaries:
-        for summary in oai_snapshot.institution_summaries:
-            if summary.accessible_count > 0:
-                endpoints.append({
-                    'code': summary.code,
-                    'label': summary.label or summary.code.upper(),
-                    'project_count': summary.project_count,
-                    'accessible_count': summary.accessible_count,
-                })
-
-    return render(
-        request,
-        'metadata/oai_endpoints_info.html',
-        {
-            'endpoints': endpoints,
-            'oai_snapshot': oai_snapshot,
-        },
-    )
-
-
+@general_login_required
+@general_login_required
+@require_http_methods(["GET"])
+@general_login_required
+@require_http_methods(["GET"])
+@general_login_required
+@require_http_methods(["POST"])
+@general_login_required
+@require_http_methods(["POST"])
+@general_login_required
+@require_http_methods(["POST"])
+@general_login_required
+@require_http_methods(["GET"])
+@general_login_required
+@require_http_methods(["POST"])
 @require_http_methods(["GET", "POST"])
 @superuser_required
 def mapping_selector_widget(request):

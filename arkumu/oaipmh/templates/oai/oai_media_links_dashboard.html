@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}OAI Media Links - arkumu{% endblock %}
+
+{% block container_type %}
+<div class="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+{% endblock container_type %}
+
+{% block content %}
+<div class="space-y-6">
+  <div class="card bg-base-100 shadow">
+    <div class="card-body space-y-2">
+      <h1 class="card-title text-3xl">OAI Media Links</h1>
+      <p class="text-base-content/70 text-sm">
+        Approve, annotate, and order project → digital-object links before exposing them via the tailored OAI endpoint.
+        Curated links always win over the canonical graph, so treat this dashboard as the source of truth.
+      </p>
+    </div>
+  </div>
+
+  <div id="oai-media-links-alerts" class="space-y-2">
+    {% include 'oai/partials/oai_media_links_alerts.html' %}
+  </div>
+
+  <div id="oai-media-links-seed-modal"></div>
+
+  <div class="card bg-base-100 shadow">
+    <div class="card-body py-4">
+      <div class="flex flex-wrap items-center gap-4">
+        <form
+          hx-get="{% url 'oai_admin:oai_media_links_panel' %}"
+          hx-target="#oai-media-links-panel"
+          hx-swap="innerHTML"
+          hx-push-url="true"
+          class="flex items-center gap-2"
+        >
+          <select id="org-select" name="organization" class="select select-bordered select-sm">
+            <option value="">Select organization</option>
+            {% for org in organizations %}
+              <option value="{{ org.code }}" {% if org == selected_org %}selected{% endif %}>{{ org.name }} ({{ org.code }})</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="status" value="{{ status_filter }}">
+          <button type="submit" class="btn btn-primary btn-sm">Load</button>
+        </form>
+        <div id="oai-media-links-summary-stats" class="flex-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="oai-media-links-summary"></div>
+
+  <div id="oai-media-links-panel">
+    {% if panel_context %}
+      {% include 'oai/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page %}
+    {% elif selected_org %}
+      <div class="alert alert-info shadow">
+        <span>No curated links yet. Run the seed process or add a digital object manually to get started.</span>
+      </div>
+    {% else %}
+      <div class="alert alert-info shadow">
+        <span>Select an organization to review curated media links.</span>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% block container_type_end %}
+</div>
+{% endblock container_type_end %}
+{% endblock %}

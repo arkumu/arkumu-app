@@ -32,7 +32,7 @@ urlpatterns = [
     path('advancedSearch/', login_required(TemplateView.as_view(template_name="catalog/advancedSearch.html")), name='advancedSearch'),
     path('university/', login_required(TemplateView.as_view(template_name="catalog/university_page.html")), name='university_page'),
     path('documentation/', login_required(TemplateView.as_view(template_name="catalog/documentation.html")), name='documentation'),
-    path('impressum/', login_required(TemplateView.as_view(template_name="catalog/impressum.html")), name='impressum'),
+    path('impressum/', TemplateView.as_view(template_name="catalog/impressum.html"), name='impressum'),
     path('datenschutz/', login_required(TemplateView.as_view(template_name="catalog/datenschutz.html")), name='datenschutz'),
     path('university_page_FUK/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_FUK.html")), name='university_page_FUK'),
     path('university_page_RSH/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_RSH.html")), name='university_page_RSH'),

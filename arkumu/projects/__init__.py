@@ -12,6 +12,11 @@ from .models import (
     ProjectCatchphrase,
     ProjectType,
     ProjectSnapshot,
+    ProjectPropertyBundle,
+    ProjectStatusSignatures,
+    ProjectAuthorityLinks,
+    ProjectSubmitterInfo,
+    ProjectLicenseInfo,
 )
 
 __all__ = [
@@ -27,4 +32,9 @@ __all__ = [
     "ProjectCatchphrase",
     "ProjectType",
     "ProjectSnapshot",
+    "ProjectPropertyBundle",
+    "ProjectStatusSignatures",
+    "ProjectAuthorityLinks",
+    "ProjectSubmitterInfo",
+    "ProjectLicenseInfo",
 ]
