@@ -55,17 +55,6 @@
       </p>
       {% endif %}
       
-      <!-- Description (if exists) -->
-      {% if description %}
-      <p class="text-sm mb-3 leading-relaxed transition-colors
-                text-gray-700
-                theme-dark:text-gray-300
-                theme-blue:text-arkumu-blue/80"
-         data-rdf-property="http://arkumu.org/data/properties/beschreibung">
-        {{ description|truncatewords:30 }}
-      </p>
-      {% endif %}
-      
       <!-- Contributors (inline, separados por comas) -->
       <div class="text-sm mb-3 transition-colors
                   text-arkumu-dark
@@ -132,6 +121,20 @@
         {% endif %}
         {% if additional_categories %}{{ additional_categories }}{% endif %}
       </div>
+    </div>
+    
+    <!-- Middle Section: Description -->
+    <div class="flex-shrink-0" style="width: 200px;">
+      <!-- Description (if exists) -->
+      {% if description %}
+      <p class="text-sm leading-relaxed transition-colors
+                text-gray-700
+                theme-dark:text-gray-300
+                theme-blue:text-arkumu-blue/80"
+         data-rdf-property="http://arkumu.org/data/properties/beschreibung">
+        {{ description|truncatewords:30 }}
+      </p>
+      {% endif %}
     </div>
     
     <!-- Right Section: Image + Button (fijo, más pequeño) -->

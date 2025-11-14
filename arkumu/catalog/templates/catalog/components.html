@@ -331,6 +331,30 @@
         </div>
         <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/cards/card.html</p>
       </div>
+
+          <!-- Individual Card -->
+  <div class="mb-10">
+        <h3 class="text-lg font-medium mb-3">Lateral Card</h3>
+        <div class="p-4 border transition-colors
+             bg-white
+             theme-dark:bg-arkumu-dark 
+             theme-dark:border-arkumu-light">
+    {% include 'components/cards/card_lateral.html' with year="2024" description="description something" image="images/main/card_1.png" institution="Folkwang Universität der Kunst" title="Handmade in Ethiopia" subtitle="Projekt" contributor1_name="Johanna Schwer" contributor1_role="Betreuerin" contributor2_name="Judith Schanz" contributor2_role="Betreuerin" contributor3_name="Martina Allerbech" contributor3_role="Designerin, Beraterin" category1="Industrial Design" category2="Transformation Design" button_text="Projekt ansehen" %}
+        </div>
+        <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/cards/card_lateral.html</p>
+      </div>
+
+          <!-- Individual Card -->
+      <div class="mb-10">
+        <h3 class="text-lg font-medium mb-3">Minimal Card</h3>
+        <div class="p-4 border transition-colors
+             bg-white
+             theme-dark:bg-arkumu-dark 
+             theme-dark:border-arkumu-light">
+    {% include 'components/cards/minimal_card.html' with uri="http://arkumu.org/data/projekt/123" year="2024" institution="Folkwang Universität der Künste" title="Handmade in Ethiopia" category1="Q12345" category1_name="Industrial Design" category2="1" category2_count="1" button_text="Projektdetails" %}
+        </div>
+        <p class="mt-2 text-sm transition-colors text-gray-600 theme-dark:text-gray-400">Path: components/cards/minimal_card.html</p>
+      </div>
       
       <!-- Card Grid -->
       <div class="mb-10">
