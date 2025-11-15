@@ -39,14 +39,8 @@
                   <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
                   <input type="hidden" name="page" value="{{ current_page }}">
                   <input type="hidden" name="project_uri" value="{{ row.project_uri }}">
-                  <input type="text" name="digital_uri" class="input input-bordered input-xs w-full" placeholder="Digital object URI">
-                  <div class="grid grid-cols-3 gap-1">
-                    <select name="status" class="select select-bordered select-xs">
-                      {% for value,label in status_choices %}
-                        <option value="{{ value }}" {% if value == 'pending' %}selected{% endif %}>{{ label }}</option>
-                      {% endfor %}
-                    </select>
-                    <input type="number" name="order_index" class="input input-bordered input-xs" placeholder="Order" min="1">
+                  <div class="flex gap-1">
+                    <input type="text" name="digital_uri" class="input input-bordered input-xs flex-1" placeholder="Digital object URI">
                     <button type="submit" class="btn btn-xs btn-secondary">Add</button>
                   </div>
                 </form>
