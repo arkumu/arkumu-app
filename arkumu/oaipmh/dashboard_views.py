@@ -733,6 +733,11 @@ def _build_project_row_context(
         row["builder_error"] = True
         return row
 
+    # Prefer assembled ProjectRecord title for display label when available
+    record_title = getattr(record, "title", None)
+    if record_title:
+        row["project_label"] = record_title
+
     row["harvestable_count"] = sum(1 for obj in curated_project.digital_objects if obj.harvestable)
     row["has_harvestable_files"] = row["harvestable_count"] > 0
     selection = curated_project.curated_selection
