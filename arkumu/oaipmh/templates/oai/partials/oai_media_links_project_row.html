@@ -38,6 +38,18 @@
       </details>
     </div>
   </td>
+  <td class="align-top border-l border-base-300 text-center">
+    <div class="p-2 space-y-1">
+      <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">
+        H:{{ row.harvestable_count }}
+      </div>
+      {% if row.has_harvestable_files %}
+        <div class="text-[10px] text-success">Has files</div>
+      {% else %}
+        <div class="text-[10px] text-error">No files</div>
+      {% endif %}
+    </div>
+  </td>
   <td class="align-top border-l border-base-300">
     <div class="p-2">
       {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
