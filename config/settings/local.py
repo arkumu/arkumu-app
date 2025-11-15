@@ -122,3 +122,6 @@ LOGGING["loggers"]["arkumu.projects.services.snapshot_service"] = {
     "level": env("ARKUMU_PROJECTS_LOG_LEVEL", default=root_log_level).upper(),
     "propagate": False,
 }
+
+# Use the lightweight in-memory snapshot service during local development.
+OAI_SNAPSHOT_SERVICE_CLASS = "arkumu.oaipmh.services.snapshot_stub.InMemorySnapshotService"

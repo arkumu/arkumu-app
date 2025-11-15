@@ -23,11 +23,10 @@ from arkumu.storage.models.s3_file_objects import S3FileObject
 from arkumu.projects import ProjectSnapshot
 from arkumu.projects.services.dump_fixity_index import FixityRecord
 from arkumu.oaipmh import views, path_mapping
-from arkumu.oaipmh.views import HARVESTABLE_FILE_STATUSES, _fallback_record_from_storage
+from arkumu.oaipmh.views import _fallback_record_from_storage
 from arkumu.projects.services import dump_fixity_index, s3_key_index
 
 User = get_user_model()
-_FAST_SNAPSHOT_SERVICE = None
 
 
 @pytest.fixture
@@ -149,6 +148,7 @@ def sample_resources(db, sample_organizations):
     )
     resources.append(resource)
 
+    views.snapshot_service.refresh_cross_institutional_snapshot()
     return resources
 
 
@@ -254,7 +254,8 @@ def parity_dataset(db):
         source=primary_org,
     )
     dataset["non_harvestable_uri"] = orphan_resource.uri
-
+    # Ensure snapshot-backed endpoints see the freshly created parity dataset.
+    views.snapshot_service.refresh_cross_institutional_snapshot()
     return dataset
 
 
@@ -306,70 +307,6 @@ def mock_canonical_graph_service():
         }
 
         yield mock_instance
-
-
-@pytest.fixture(autouse=True)
-def _fast_snapshot_service(monkeypatch):
-    """Patch snapshot service with a lightweight fallback-driven implementation."""
-    from arkumu.metadata.models.resource import Resource  # Local import for Django readiness
-
-    global _FAST_SNAPSHOT_SERVICE
-
-    class _SnapshotStub:
-        def __init__(self):
-            self._snapshot = None
-            self._index = {}
-
-        def _build(self):
-            resources = (
-                Resource.objects.filter(
-                    s3fileobject__status__in=HARVESTABLE_FILE_STATUSES,
-                    s3fileobject__s3_key__isnull=False,
-                )
-                .exclude(s3fileobject__s3_key="")
-                .distinct()
-            )
-
-            records = []
-            index = {}
-            for resource in resources:
-                record = _fallback_record_from_storage(resource)
-                if not record or not record.uri:
-                    continue
-                records.append(record)
-                index[record.uri] = record
-
-            self._snapshot = ProjectSnapshot(
-                projects=records,
-                counts={"projects": len(records)},
-                generated_at=dj_timezone.now(),
-            )
-            self._index = index
-
-        def _ensure_snapshot(self):
-            if self._snapshot is None:
-                self._build()
-
-        def get_cross_institutional_snapshot(self, *, force_refresh: bool = False):
-            if force_refresh or self._snapshot is None:
-                self._build()
-            return self._snapshot
-
-        def refresh_cross_institutional_snapshot(self):
-            self._build()
-            return self._snapshot
-
-        def get_record_by_uri(self, uri: str):
-            if not uri:
-                return None
-            self._ensure_snapshot()
-            return self._index.get(uri)
-
-    if _FAST_SNAPSHOT_SERVICE is None:
-        _FAST_SNAPSHOT_SERVICE = _SnapshotStub()
-
-    monkeypatch.setattr(views, "snapshot_service", _FAST_SNAPSHOT_SERVICE)
-    yield
 
 
 @pytest.fixture(autouse=True)
@@ -615,6 +552,7 @@ def large_dataset(db, sample_organizations):
             status='completed'
         )
 
+    views.snapshot_service.refresh_cross_institutional_snapshot()
     return resources
 
 

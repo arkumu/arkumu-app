@@ -338,15 +338,23 @@ class OAIProjectBuilder:
             return record
 
         # Collect all event IDs
-        event_ids = [str(getattr(event, 'id', None)) for event in events if getattr(event, 'id', None)]
-        if not event_ids:
+        raw_event_ids = [getattr(event, 'id', None) for event in events if getattr(event, 'id', None)]
+        valid_event_ids: List[str] = []
+        for candidate in raw_event_ids:
+            try:
+                UUID(str(candidate))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            valid_event_ids.append(str(candidate))
+
+        if not valid_event_ids:
             return record
 
         # OPTIMIZED: Single query to get all event-project relationships
         # Instead of N queries (one per event), we fetch all relationships at once
         event_project_relationships = Triple.objects.filter(
             predicate__canonical_uri=event_predicate,
-            object_id__in=event_ids
+            object_id__in=valid_event_ids
         ).values('object_id', 'subject_id')
 
         # Build a mapping of event_id -> set of project_ids that reference it
