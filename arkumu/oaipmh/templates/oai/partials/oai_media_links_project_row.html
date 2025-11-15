@@ -31,7 +31,7 @@
                 <form
                   hx-post="{% url 'oai_admin:oai_media_link_add' %}"
                   hx-target="#project-{{ row.resource.id }}"
-                  hx-swap="none"
+                  hx-swap="outerHTML"
                   class="space-y-1"
                 >
                   {% csrf_token %}
@@ -60,12 +60,7 @@
             {% endif %}
           </div>
         </td>
-        <td
-          id="oai-project-digital-objects-{{ row.resource.id }}"
-          rowspan="{{ row.links|length }}"
-          class="align-top border-l border-base-300"
-          hx-swap-oob="outerHTML"
-        >
+        <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300">
           <div class="p-2">
             {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
           </div>
@@ -103,11 +98,7 @@
         {% endif %}
       </div>
     </td>
-    <td
-      id="oai-project-digital-objects-{{ row.resource.id }}"
-      class="align-top border-l border-base-300"
-      hx-swap-oob="outerHTML"
-    >
+    <td class="align-top border-l border-base-300">
       <div class="p-2">
         {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
       </div>
