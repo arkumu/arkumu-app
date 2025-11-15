@@ -23,28 +23,13 @@
     <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
     <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
     <input type="hidden" name="page" value="{{ current_page }}">
-    <input type="hidden" name="oai_publish_action" value="approve">
+    <input type="hidden" name="oai_publish_action" value="{% if row.oai_is_approved %}revoke{% else %}approve{% endif %}">
     <button type="submit" class="btn btn-xs btn-primary w-full">
       {% if row.oai_is_approved %}
-        Update OAI approval
+        Disable OAI
       {% else %}
-        Approve for OAI
+        Enable OAI
       {% endif %}
     </button>
   </form>
-  {% if row.oai_is_approved %}
-    <form
-      hx-post="{% url 'oai_admin:oai_project_status_update' row.resource.id %}"
-      hx-target="#project-{{ row.resource.id }}"
-      hx-swap="outerHTML"
-      hx-confirm="Revoke OAI approval for this project?"
-    >
-      {% csrf_token %}
-      <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
-      <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
-      <input type="hidden" name="page" value="{{ current_page }}">
-      <input type="hidden" name="oai_publish_action" value="revoke">
-      <button type="submit" class="btn btn-xs btn-outline btn-error w-full">Revoke OAI approval</button>
-    </form>
-  {% endif %}
 </div>
