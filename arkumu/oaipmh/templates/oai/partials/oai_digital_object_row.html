@@ -10,6 +10,9 @@
             </div>
             <div class="flex flex-wrap gap-1">
               <div class="badge badge-xs badge-outline" title="Total projects">{{ row.project_count }}</div>
+              {% if row.has_s3_file %}
+                <div class="badge badge-xs badge-info" title="{{ row.s3_key_preview }}">S3</div>
+              {% endif %}
               {% if row.approved_count > 0 %}
                 <div class="badge badge-xs badge-success" title="Approved">{{ row.approved_count }}</div>
               {% endif %}
@@ -26,6 +29,11 @@
                 <div class="badge badge-xs badge-warning" title="Has stale references">Stale</div>
               {% endif %}
             </div>
+            {% if row.has_s3_file %}
+              <div class="text-[10px] text-base-content/70 break-all">
+                S3: {{ row.s3_key_preview|truncatechars:64 }}
+              </div>
+            {% endif %}
           </div>
         </td>
         <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300 text-center">
@@ -46,6 +54,9 @@
                 <div class="badge badge-xs {% if link.project.public_access_level == 'public' %}badge-success{% elif link.project.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
                   {{ link.project.public_access_level }}
                 </div>
+                {% if link.has_s3_file %}
+                  <span class="badge badge-xs badge-info" title="{{ link.s3_key_preview }}">S3</span>
+                {% endif %}
                 {% if link.is_stale %}
                   <span class="badge badge-xs badge-warning">Stale</span>
                 {% endif %}

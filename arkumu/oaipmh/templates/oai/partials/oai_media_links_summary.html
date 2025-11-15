@@ -14,7 +14,7 @@
   <div class="btn-group">
     <button
       class="btn btn-xs {% if view_mode != 'digital' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
       hx-target="#oai-media-links-panel"
       hx-swap="innerHTML"
       hx-push-url="true"
@@ -23,7 +23,7 @@
     </button>
     <button
       class="btn btn-xs {% if view_mode == 'digital' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}"
+      hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
       hx-target="#oai-media-links-panel"
       hx-swap="innerHTML"
       hx-push-url="true"
@@ -36,7 +36,7 @@
   <div class="btn-group">
     <button
       class="btn btn-xs {% if summary.status_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status=all&project_access={{ summary.project_access_filter|default:'all' }}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status=all&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
       hx-target="#oai-media-links-panel"
       hx-swap="innerHTML"
       hx-push-url="true"
@@ -46,7 +46,7 @@
     {% for stat in summary.status_totals %}
       <button
         class="btn btn-xs {% if summary.status_filter == stat.status %}btn-active{% endif %}"
-        hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ stat.status }}&project_access={{ summary.project_access_filter|default:'all' }}"
+        hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ stat.status }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
         hx-target="#oai-media-links-panel"
         hx-swap="innerHTML"
         hx-push-url="true"
@@ -60,7 +60,7 @@
   <div class="btn-group">
     <button
       class="btn btn-xs {% if summary.project_access_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=all"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=all&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
       hx-target="#oai-media-links-panel"
       hx-swap="innerHTML"
       hx-push-url="true"
@@ -69,7 +69,7 @@
     </button>
     <button
       class="btn btn-xs {% if summary.project_access_filter == 'private' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=private"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=private&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
       hx-target="#oai-media-links-panel"
       hx-swap="innerHTML"
       hx-push-url="true"
@@ -78,7 +78,7 @@
     </button>
     <button
       class="btn btn-xs {% if summary.project_access_filter == 'restricted' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=restricted"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=restricted&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
       hx-target="#oai-media-links-panel"
       hx-swap="innerHTML"
       hx-push-url="true"
@@ -87,7 +87,7 @@
     </button>
     <button
       class="btn btn-xs {% if summary.project_access_filter == 'public' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=public"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=public&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
       hx-target="#oai-media-links-panel"
       hx-swap="innerHTML"
       hx-push-url="true"
@@ -95,11 +95,42 @@
       Public
     </button>
   </div>
+  <div class="divider divider-horizontal"></div>
+  <div class="text-xs font-semibold">OAI:</div>
+  <div class="btn-group">
+    <button
+      class="btn btn-xs {% if summary.oai_publish_filter == 'all' %}btn-active{% endif %}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish=all"
+      hx-target="#oai-media-links-panel"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+    >
+      All
+    </button>
+    <button
+      class="btn btn-xs {% if summary.oai_publish_filter == 'approved' %}btn-active{% endif %}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish=approved"
+      hx-target="#oai-media-links-panel"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+    >
+      Approved
+    </button>
+    <button
+      class="btn btn-xs {% if summary.oai_publish_filter == 'pending' %}btn-active{% endif %}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish=pending"
+      hx-target="#oai-media-links-panel"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+    >
+      Pending
+    </button>
+  </div>
 </div>
 
 <div id="oai-media-links-summary" class="card bg-base-100 shadow" hx-swap-oob="innerHTML">
   <div class="card-body py-3">
-    <div class="flex justify-end">
+    <div class="flex justify-end gap-2">
       <button
         class="btn btn-outline btn-primary btn-sm"
         hx-get="{% url 'oai_admin:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
@@ -108,6 +139,22 @@
       >
         Seed curated entries
       </button>
+      <form
+        method="post"
+        hx-post="{% url 'oai_admin:oai_publication_sync' %}"
+        hx-target="#oai-media-links-panel"
+        hx-swap="innerHTML"
+      >
+        {% csrf_token %}
+        <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+        <input type="hidden" name="status" value="{{ summary.status_filter }}">
+        <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+        <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+        <input type="hidden" name="page" value="1">
+        <button type="submit" class="btn btn-outline btn-secondary btn-sm">
+          Sync OAI approvals
+        </button>
+      </form>
     </div>
   </div>
 </div>

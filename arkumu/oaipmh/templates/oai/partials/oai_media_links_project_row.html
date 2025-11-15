@@ -3,14 +3,17 @@
     <tr id="{% if forloop.first %}project-{{ row.resource.id }}{% endif %}" class="{% if forloop.first %}border-t-2 border-base-300{% endif %}">
       {% if forloop.first %}
         <td rowspan="{{ row.links|length }}" class="align-top bg-base-200">
-          <div class="space-y-2 p-2">
+            <div class="space-y-2 p-2">
             <div>
               <div class="font-bold text-base text-secondary">{{ row.project_label }}</div>
               <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
             </div>
             <div class="flex flex-wrap gap-1">
-              <div class="badge badge-xs badge-outline">{{ row.total_links }}</div>
-              <div class="badge badge-xs badge-outline">H:{{ row.harvestable_count }}</div>
+              <div class="badge badge-xs badge-outline" title="Curated digital objects">C:{{ row.total_links }}</div>
+              <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">H:{{ row.harvestable_count }}</div>
+              {% if not row.has_harvestable_files %}
+                <div class="badge badge-xs badge-warning" title="Project currently has no harvestable files and will not be exported via OAI">No harvestable files</div>
+              {% endif %}
               {% if row.warnings %}
                 {% for warning in row.warnings %}
                   <div class="badge badge-xs badge-warning" title="{{ warning.message|default:'Conflict detected' }}">
@@ -82,6 +85,7 @@
               <option value="restricted" {% if row.resource.public_access_level == 'restricted' %}selected{% endif %}>restricted</option>
               <option value="public" {% if row.resource.public_access_level == 'public' %}selected{% endif %}>public</option>
             </select>
+            {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
           </div>
         </td>
       {% endif %}
@@ -101,8 +105,11 @@
           <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
         </div>
         <div class="flex flex-wrap gap-1">
-          <div class="badge badge-xs badge-outline">{{ row.total_links }}</div>
-          <div class="badge badge-xs badge-outline">H:{{ row.harvestable_count }}</div>
+          <div class="badge badge-xs badge-outline" title="Curated digital objects">C:{{ row.total_links }}</div>
+          <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">H:{{ row.harvestable_count }}</div>
+          {% if not row.has_harvestable_files %}
+            <div class="badge badge-xs badge-warning" title="Project currently has no harvestable files and will not be exported via OAI">No harvestable files</div>
+          {% endif %}
         </div>
       </div>
     </td>
@@ -122,6 +129,7 @@
           <option value="restricted" {% if row.resource.public_access_level == 'restricted' %}selected{% endif %}>restricted</option>
           <option value="public" {% if row.resource.public_access_level == 'public' %}selected{% endif %}>public</option>
         </select>
+        {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
       </div>
     </td>
     <td class="align-top border-l border-base-300">

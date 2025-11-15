@@ -125,3 +125,54 @@ class OAIProjectMediaLink(models.Model):
     @property
     def is_approved(self) -> bool:
         return self.status == self.STATUS_APPROVED
+
+
+class OAIProjectPublicationQuerySet(models.QuerySet):
+    """Helpers for project-level OAI publication approvals."""
+
+    def approved(self):
+        return self.filter(is_approved=True)
+
+
+class OAIProjectPublication(models.Model):
+    """Per-project OAI publication approval state and audit metadata."""
+
+    project = models.OneToOneField(
+        Resource,
+        on_delete=models.CASCADE,
+        related_name="oai_publication",
+        help_text="Project resource this OAI publication state applies to.",
+    )
+    is_approved = models.BooleanField(
+        default=False,
+        help_text="Whether this project is approved for OAI harvesting.",
+    )
+    approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When OAI publication was last approved.",
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="oai_project_publications",
+        help_text="User who last approved OAI publication for this project.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = OAIProjectPublicationQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "OAI Project Publication"
+        verbose_name_plural = "OAI Project Publications"
+        indexes = [
+            models.Index(fields=("project",), name="oai_project_pub_project_idx"),
+            models.Index(fields=("is_approved",), name="oai_project_pub_approved_idx"),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover - debug helper
+        state = "approved" if self.is_approved else "pending"
+        return f"{self.project_id} ({state})"

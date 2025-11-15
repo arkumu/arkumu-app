@@ -24,7 +24,7 @@ from arkumu.metadata.models.resource import PublicAccessLevel, Resource, Resourc
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.mixins import general_login_required
 from arkumu.users.models import Organization
-from arkumu.oaipmh.models import OAIProjectMediaLink
+from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
 from arkumu.oaipmh.services import OAIProjectMediaSyncService
 from arkumu.oaipmh.views import (
     oai_endpoint,
@@ -33,7 +33,7 @@ from arkumu.oaipmh.views import (
     _project_type_filter,
 )
 from arkumu.oaipmh.services.oai_project_assembler import OAIProjectAssembler, AssemblyContext
-from arkumu.oaipmh.oai_project import OAIProjectBuilder
+from arkumu.oaipmh.oai_project import OAIProjectBuilder, HARVESTABLE_STORAGE_STATUSES
 from arkumu.metadata.services.oai_stats import (
     build_oai_dashboard_snapshot,
     classify_project_access,
@@ -41,6 +41,7 @@ from arkumu.metadata.services.oai_stats import (
     _summarize_by_institution,
 )
 from arkumu.cache.services.project_cache_service import ProjectCacheService
+from arkumu.storage.models.s3_file_objects import S3FileObject
 
 
 logger = logging.getLogger(__name__)
@@ -462,6 +463,7 @@ def _build_media_links_summary(
     *,
     status_filter: str,
     project_access_filter: str = "all",
+    oai_publish_filter: str = "all",
 ) -> dict[str, Any]:
     links_total = link_qs.count()
     filtered_total = links_total if status_filter == "all" else link_qs.filter(status=status_filter).count()
@@ -489,7 +491,61 @@ def _build_media_links_summary(
         "organization": organization,
         "status_filter": status_filter,
         "project_access_filter": project_access_filter,
+        "oai_publish_filter": oai_publish_filter,
     }
+
+
+def _sync_oai_publication_for_org(
+    organization: Organization,
+    *,
+    user=None,
+) -> dict[str, int]:
+    """Auto-approve OAI publication for projects that already have harvestable files."""
+
+    assembler = OAIProjectAssembler()
+    builder = OAIProjectBuilder()
+    summary: dict[str, int] = {"projects": 0, "auto_approved": 0, "errors": 0}
+
+    for project in _oai_project_queryset_for_org(organization).iterator(chunk_size=100):
+        summary["projects"] += 1
+
+        context = AssemblyContext(resource=project)
+        try:
+            record = assembler.build_record(context)
+        except Exception:
+            logger.exception("OAI publish sync: failed to assemble record for %s", project.uri)
+            summary["errors"] += 1
+            continue
+
+        if record is None:
+            continue
+
+        try:
+            oai_project = builder.from_project_record(
+                record,
+                skip_shared_event_filter=True,
+                skip_format_exclusion=True,
+                use_curated_media_links=True,
+            )
+        except Exception:
+            logger.exception("OAI publish sync: failed to build project for %s", project.uri)
+            summary["errors"] += 1
+            continue
+
+        has_harvestable = any(obj.harvestable for obj in oai_project.digital_objects)
+        if not has_harvestable:
+            continue
+
+        publication, created = OAIProjectPublication.objects.get_or_create(project=project)
+        if not publication.is_approved:
+            publication.is_approved = True
+            publication.approved_at = timezone.now()
+            if user is not None and getattr(user, "is_authenticated", False):
+                publication.approved_by = user
+            publication.save()
+            summary["auto_approved"] += 1
+
+    return summary
 
 
 def _resource_display_label(
@@ -610,6 +666,7 @@ def _build_project_row_context(
     status_filter: str,
     org_code: str,
     label_lookup: Optional[Dict[Any, str]] = None,
+    publication_by_id: Optional[Dict[Any, OAIProjectPublication]] = None,
 ) -> dict[str, Any]:
     prefetched_links: List[OAIProjectMediaLink] = list(getattr(resource, "prefetched_media_links", []) or [])
     for link in prefetched_links:
@@ -624,6 +681,10 @@ def _build_project_row_context(
         else [link for link in prefetched_links if link.status == status_filter]
     )
 
+    publication = None
+    if publication_by_id is not None:
+        publication = publication_by_id.get(resource.id)
+
     row = {
         "resource": resource,
         "project_uri": resource.uri,
@@ -637,6 +698,10 @@ def _build_project_row_context(
         "curated_missing_uris": (),
         "warnings": (),
         "harvestable_count": 0,
+        "has_harvestable_files": False,
+        "oai_is_approved": bool(getattr(publication, "is_approved", False)),
+        "oai_approved_at": getattr(publication, "approved_at", None),
+        "oai_approved_by": getattr(publication, "approved_by", None),
         "curated_selection": None,
     }
 
@@ -665,6 +730,7 @@ def _build_project_row_context(
         return row
 
     row["harvestable_count"] = sum(1 for obj in curated_project.digital_objects if obj.harvestable)
+    row["has_harvestable_files"] = row["harvestable_count"] > 0
     selection = curated_project.curated_selection
     if selection:
         row["curated_selection"] = selection
@@ -681,6 +747,7 @@ def _build_media_links_panel_context(
     status_filter: str,
     page_number: int,
     project_access_filter: str = "all",
+    oai_publish_filter: str = "all",
     search_query: str = "",
 ) -> dict[str, Any]:
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
@@ -689,6 +756,7 @@ def _build_media_links_panel_context(
         link_base_qs,
         status_filter=status_filter,
         project_access_filter=project_access_filter,
+        oai_publish_filter=oai_publish_filter,
     )
 
     project_prefetch = Prefetch(
@@ -708,6 +776,13 @@ def _build_media_links_panel_context(
 
     if project_access_filter != "all":
         projects_qs = projects_qs.filter(public_access_level=project_access_filter)
+
+    if oai_publish_filter == "approved":
+        projects_qs = projects_qs.filter(oai_publication__is_approved=True)
+    elif oai_publish_filter == "pending":
+        projects_qs = projects_qs.filter(
+            models.Q(oai_publication__isnull=True) | models.Q(oai_publication__is_approved=False)
+        )
 
     paginator = Paginator(projects_qs, MEDIA_LINKS_PAGE_SIZE)
     page_obj = paginator.get_page(page_number)
@@ -729,6 +804,49 @@ def _build_media_links_panel_context(
     if digital_resources:
         label_lookup = _prefetch_resource_labels(digital_resources, cache=label_lookup)
 
+        # Attach S3 presence metadata for curated digital objects (FUK/DET/RSH).
+        digital_ids = {resource.id for resource in digital_resources}
+        if digital_ids:
+            s3_qs = (
+                S3FileObject.objects.filter(
+                    related_resource_id__in=digital_ids,
+                    status__in=HARVESTABLE_STORAGE_STATUSES,
+                    s3_key__isnull=False,
+                )
+                .exclude(s3_key="")
+            )
+
+            best_file_by_resource: Dict[Any, S3FileObject] = {}
+            for file_obj in s3_qs:
+                rid = file_obj.related_resource_id
+                existing = best_file_by_resource.get(rid)
+                if existing is None:
+                    best_file_by_resource[rid] = file_obj
+                    continue
+
+                # Prefer verified over completed, keep existing otherwise.
+                if existing.status != "verified" and file_obj.status == "verified":
+                    best_file_by_resource[rid] = file_obj
+
+            for project_resource in project_resources:
+                for link in getattr(project_resource, "prefetched_media_links", []) or []:
+                    digital = getattr(link, "digital_object", None)
+                    has_s3 = False
+                    s3_key_preview = ""
+                    if digital and digital.id in best_file_by_resource:
+                        file_obj = best_file_by_resource[digital.id]
+                        has_s3 = True
+                        s3_key_preview = file_obj.s3_key or ""
+                    # Attach transient attributes for template rendering.
+                    setattr(link, "has_s3_file", has_s3)
+                    setattr(link, "s3_key_preview", s3_key_preview)
+
+    # Attach OAI publication metadata per project
+    publication_by_id: Dict[Any, OAIProjectPublication] = {}
+    if project_resources:
+        publication_qs = OAIProjectPublication.objects.filter(project_id__in=[p.id for p in project_resources])
+        publication_by_id = {pub.project_id: pub for pub in publication_qs}
+
     # Apply search filter if provided
     if search_query:
         search_lower = search_query.lower()
@@ -748,6 +866,7 @@ def _build_media_links_panel_context(
             status_filter=status_filter,
             org_code=organization.code or "",
             label_lookup=label_lookup,
+            publication_by_id=publication_by_id,
         )
         if row["builder_error"]:
             builder_errors.append(project_resource.uri)
@@ -767,6 +886,7 @@ def _build_media_links_panel_context(
         "builder_errors": builder_errors,
         "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
         "view_mode": "project",
+        "oai_publish_filter": oai_publish_filter,
     }
 
 
@@ -800,6 +920,11 @@ def _build_single_project_row_context(
     if digital_resources:
         label_lookup = _prefetch_resource_labels(digital_resources, cache=label_lookup)
 
+    publication = OAIProjectPublication.objects.filter(project=resource).first()
+    publication_by_id: Dict[Any, OAIProjectPublication] = {}
+    if publication:
+        publication_by_id[resource.id] = publication
+
     return _build_project_row_context(
         resource,
         builder=builder,
@@ -807,6 +932,7 @@ def _build_single_project_row_context(
         status_filter=status_filter,
         org_code=organization.code or "",
         label_lookup=label_lookup,
+        publication_by_id=publication_by_id,
     )
 
 
@@ -897,6 +1023,10 @@ def oai_media_links_panel(request):
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
         project_access_filter = 'all'
 
+    oai_publish_filter = request.GET.get('oai_publish', 'all').strip().lower()
+    if oai_publish_filter not in ['all', 'approved', 'pending']:
+        oai_publish_filter = 'all'
+
     search_query = (request.GET.get('search') or '').strip()
 
     page_param = request.GET.get('page') or '1'
@@ -910,6 +1040,7 @@ def oai_media_links_panel(request):
         status_filter=status_filter,
         page_number=page_number,
         project_access_filter=project_access_filter,
+        oai_publish_filter=oai_publish_filter,
         search_query=search_query,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
@@ -1214,9 +1345,11 @@ def _build_digital_object_centric_context(
     project_access_filter: str = "all",
     shared_filter: str = "all",
     search_query: str = "",
+    oai_publish_filter: str = "all",
 ) -> dict[str, Any]:
     """Build context for digital object-centric view (groups by digital object, shows projects)."""
 
+    search_query = (search_query or "").strip()
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
 
     # Apply filters to the link queryset
@@ -1225,6 +1358,27 @@ def _build_digital_object_centric_context(
         filtered_qs = filtered_qs.filter(status=status_filter)
     if project_access_filter != "all":
         filtered_qs = filtered_qs.filter(project__public_access_level=project_access_filter)
+    if oai_publish_filter == "approved":
+        filtered_qs = filtered_qs.filter(project__oai_publication__is_approved=True)
+    elif oai_publish_filter == "pending":
+        filtered_qs = filtered_qs.filter(
+            models.Q(project__oai_publication__isnull=True)
+            | models.Q(project__oai_publication__is_approved=False)
+        )
+    if search_query:
+        digital_match_filter = (
+            Q(uri__icontains=search_query)
+            | Q(name__icontains=search_query)
+            | Q(value__icontains=search_query)
+            | Q(subject_triples__object__value__icontains=search_query)
+        )
+        matching_digital_object_ids = (
+            Resource.objects.filter(id__in=filtered_qs.values('digital_object_id'))
+            .filter(digital_match_filter)
+            .values_list('id', flat=True)
+            .distinct()
+        )
+        filtered_qs = filtered_qs.filter(digital_object_id__in=matching_digital_object_ids)
 
     # Group by digital object and aggregate project information
     digital_objects_data = (
@@ -1258,6 +1412,26 @@ def _build_digital_object_centric_context(
         for res in Resource.objects.filter(id__in=digital_object_ids)
     }
 
+    # Determine S3 presence for digital objects (FUK/DET/RSH orgs)
+    s3_file_by_resource: Dict[Any, S3FileObject] = {}
+    if digital_object_ids:
+        s3_qs = (
+            S3FileObject.objects.filter(
+                related_resource_id__in=digital_object_ids,
+                status__in=HARVESTABLE_STORAGE_STATUSES,
+                s3_key__isnull=False,
+            )
+            .exclude(s3_key="")
+        )
+        for file_obj in s3_qs:
+            rid = file_obj.related_resource_id
+            existing = s3_file_by_resource.get(rid)
+            if existing is None:
+                s3_file_by_resource[rid] = file_obj
+                continue
+            if existing.status != "verified" and file_obj.status == "verified":
+                s3_file_by_resource[rid] = file_obj
+
     # Prefetch all links for these digital objects with their projects
     links_for_page = (
         OAIProjectMediaLink.objects
@@ -1277,6 +1451,13 @@ def _build_digital_object_centric_context(
         links_for_page = links_for_page.filter(status=status_filter)
     if project_access_filter != "all":
         links_for_page = links_for_page.filter(project__public_access_level=project_access_filter)
+    if oai_publish_filter == "approved":
+        links_for_page = links_for_page.filter(project__oai_publication__is_approved=True)
+    elif oai_publish_filter == "pending":
+        links_for_page = links_for_page.filter(
+            models.Q(project__oai_publication__isnull=True)
+            | models.Q(project__oai_publication__is_approved=False)
+        )
 
     # Group links by digital object
     links_by_digital_object: Dict[Any, List[OAIProjectMediaLink]] = defaultdict(list)
@@ -1299,13 +1480,19 @@ def _build_digital_object_centric_context(
 
         links = links_by_digital_object.get(digital_object_id, [])
 
-        # Add display labels to links
+        s3_file = s3_file_by_resource.get(digital_object_id)
+        has_s3_file = s3_file is not None
+        s3_key_preview = s3_file.s3_key if s3_file else ""
+
+        # Add display labels and S3 info to links
         for link in links:
             link.project_display_label = _resource_display_label(  # type: ignore[attr-defined]
                 link.project,
                 fallback="Untitled project",
                 label_lookup=label_lookup,
             )
+            setattr(link, "has_s3_file", has_s3_file)
+            setattr(link, "s3_key_preview", s3_key_preview)
 
         digital_object_label = _resource_display_label(
             digital_resource,
@@ -1313,16 +1500,12 @@ def _build_digital_object_centric_context(
             label_lookup=label_lookup,
         )
 
-        # Apply search filter if provided
-        if search_query:
-            search_lower = search_query.lower()
-            if search_lower not in digital_object_label.lower() and search_lower not in digital_resource.uri.lower():
-                continue
-
         digital_object_rows.append({
             "digital_object": digital_resource,
             "digital_object_uri": digital_resource.uri,
             "digital_object_label": digital_object_label,
+            "has_s3_file": has_s3_file,
+            "s3_key_preview": s3_key_preview,
             "project_count": item['project_count'],
             "approved_count": item['approved_count'],
             "pending_count": item['pending_count'],
@@ -1338,6 +1521,7 @@ def _build_digital_object_centric_context(
         link_base_qs,
         status_filter=status_filter,
         project_access_filter=project_access_filter,
+        oai_publish_filter=oai_publish_filter,
     )
 
     # Calculate digital object statistics
@@ -1393,6 +1577,10 @@ def oai_media_links_digital_view(request):
     if shared_filter not in ['all', 'shared', 'single']:
         shared_filter = 'all'
 
+    oai_publish_filter = request.GET.get('oai_publish', 'all').strip().lower()
+    if oai_publish_filter not in ['all', 'approved', 'pending']:
+        oai_publish_filter = 'all'
+
     search_query = (request.GET.get('search') or '').strip()
 
     page_param = request.GET.get('page') or '1'
@@ -1408,6 +1596,7 @@ def oai_media_links_digital_view(request):
         project_access_filter=project_access_filter,
         shared_filter=shared_filter,
         search_query=search_query,
+        oai_publish_filter=oai_publish_filter,
     )
 
     # If not an HTMX request, redirect to the full dashboard with params
@@ -1433,22 +1622,111 @@ def oai_project_status_update(request, resource_id):
     except Resource.DoesNotExist:
         return HttpResponseBadRequest("<div class='alert alert-error'>Project not found.</div>")
 
-    new_status = request.POST.get('public_access_level', '').strip().lower()
-    valid_statuses = ['private', 'restricted', 'public']
-
-    if new_status not in valid_statuses:
-        return HttpResponseBadRequest("<div class='alert alert-error'>Invalid status.</div>")
-
-    resource.public_access_level = new_status
-    resource.save()
-
     organization = resource.organization
-    status_filter = request.GET.get('status', 'all')
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Project organization missing.</div>")
+
+    page_number = 1
+    status_filter = (request.POST.get('status_filter') or request.GET.get('status') or 'all')
+    page_param = request.POST.get('page')
+    if page_param:
+        try:
+            page_number = max(int(page_param), 1)
+        except ValueError:
+            page_number = 1
+
+    oai_publish_action = (request.POST.get('oai_publish_action') or '').strip().lower()
+    if oai_publish_action:
+        row_context = _build_single_project_row_context(
+            organization=organization,
+            project_id=resource.id,
+            status_filter=status_filter,
+        )
+        if row_context is None:
+            return HttpResponseBadRequest("<div class='alert alert-error'>Unable to load project context.</div>")
+
+        has_harvestable = bool(row_context.get("has_harvestable_files"))
+
+        publication, _ = OAIProjectPublication.objects.get_or_create(project=resource)
+
+        if oai_publish_action == 'approve':
+            publication.is_approved = True
+            publication.approved_at = timezone.now()
+            publication.approved_by = request.user if request.user.is_authenticated else None
+            publication.save()
+            if has_harvestable:
+                messages.success(request, "Project approved for OAI harvesting.")
+            else:
+                messages.warning(request, "Project approved for OAI harvesting, but no harvestable files were detected.")
+        elif oai_publish_action == 'revoke':
+            publication.is_approved = False
+            publication.approved_at = None
+            publication.approved_by = None
+            publication.save()
+            messages.info(request, "OAI harvesting approval revoked for this project.")
+        else:
+            return HttpResponseBadRequest("<div class='alert alert-error'>Invalid OAI publish action.</div>")
+    else:
+        new_status = request.POST.get('public_access_level', '').strip().lower()
+        valid_statuses = ['private', 'restricted', 'public']
+
+        if new_status not in valid_statuses:
+            return HttpResponseBadRequest("<div class='alert alert-error'>Invalid status.</div>")
+
+        resource.public_access_level = new_status
+        resource.save(update_fields=["public_access_level", "updated_at"])
 
     panel_context = _build_media_links_panel_context(
         organization=organization,
         status_filter=status_filter,
-        page_number=1,
+        page_number=page_number,
+    )
+    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def oai_publication_sync(request):
+    if not _has_oai_admin_access(request.user):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.POST.get('status'))
+    project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
+    if project_access_filter not in ['all', 'private', 'restricted', 'public']:
+        project_access_filter = 'all'
+
+    oai_publish_filter = (request.POST.get('oai_publish') or 'all').strip().lower()
+    if oai_publish_filter not in ['all', 'approved', 'pending']:
+        oai_publish_filter = 'all'
+
+    page_param = request.POST.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    summary = _sync_oai_publication_for_org(organization, user=request.user)
+    if summary["auto_approved"]:
+        messages.success(
+            request,
+            f"Auto-approved OAI publication for {summary['auto_approved']} project(s) with harvestable files.",
+        )
+    else:
+        messages.info(request, "No additional projects were auto-approved for OAI.")
+
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        status_filter=status_filter,
+        page_number=page_number,
+        project_access_filter=project_access_filter,
+        oai_publish_filter=oai_publish_filter,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
