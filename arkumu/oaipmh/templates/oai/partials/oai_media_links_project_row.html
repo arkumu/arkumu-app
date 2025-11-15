@@ -86,20 +86,6 @@
         </td>
         <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300">
           <div class="p-2">
-            <div class="badge badge-sm w-full {% if row.resource.public_access_level == 'public' %}badge-success{% elif row.resource.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
-              {{ row.resource.public_access_level }}
-            </div>
-            <select
-              name="public_access_level"
-              class="select select-bordered select-xs w-full mt-2"
-              hx-post="{% url 'oai_admin:oai_project_status_update' row.resource.id %}"
-              hx-target="#project-{{ row.resource.id }}"
-              hx-swap="outerHTML"
-            >
-              <option value="private" {% if row.resource.public_access_level == 'private' %}selected{% endif %}>private</option>
-              <option value="restricted" {% if row.resource.public_access_level == 'restricted' %}selected{% endif %}>restricted</option>
-              <option value="public" {% if row.resource.public_access_level == 'public' %}selected{% endif %}>public</option>
-            </select>
             {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
           </div>
         </td>
@@ -138,20 +124,6 @@
     </td>
     <td class="align-top border-l border-base-300">
       <div class="p-2">
-        <div class="badge badge-sm w-full {% if row.resource.public_access_level == 'public' %}badge-success{% elif row.resource.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
-          {{ row.resource.public_access_level }}
-        </div>
-        <select
-          name="public_access_level"
-          class="select select-bordered select-xs w-full mt-2"
-          hx-post="{% url 'oai_admin:oai_project_status_update' row.resource.id %}"
-          hx-target="#project-{{ row.resource.id }}"
-          hx-swap="outerHTML"
-        >
-          <option value="private" {% if row.resource.public_access_level == 'private' %}selected{% endif %}>private</option>
-          <option value="restricted" {% if row.resource.public_access_level == 'restricted' %}selected{% endif %}>restricted</option>
-          <option value="public" {% if row.resource.public_access_level == 'public' %}selected{% endif %}>public</option>
-        </select>
         {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
       </div>
     </td>

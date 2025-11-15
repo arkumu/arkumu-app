@@ -59,46 +59,6 @@
     {% endfor %}
   </div>
   <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">Projects:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=all&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      All
-    </button>
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'private' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=private&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Private
-    </button>
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'restricted' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=restricted&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Restricted
-    </button>
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'public' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=public&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Public
-    </button>
-  </div>
-  <div class="divider divider-horizontal"></div>
   <div class="text-xs font-semibold">Harvestable:</div>
   <div class="btn-group">
     <button

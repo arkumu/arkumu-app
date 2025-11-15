@@ -45,9 +45,6 @@
                 <a href="{{ link.project.uri }}" target="_blank" rel="noopener" class="link link-hover">{{ link.project.uri }}</a>
               </div>
               <div class="flex flex-wrap gap-1 mt-1">
-                <div class="badge badge-xs {% if link.project.public_access_level == 'public' %}badge-success{% elif link.project.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
-                  {{ link.project.public_access_level }}
-                </div>
                 {% if link.has_s3_file %}
                   <span class="badge badge-xs badge-info" title="{{ link.s3_key_preview }}">S3</span>
                 {% endif %}

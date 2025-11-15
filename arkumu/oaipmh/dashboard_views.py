@@ -294,14 +294,10 @@ def oai_db_dashboard(request):
 
 
 def _oai_project_queryset_for_org(org: Organization):
-    access_clause = (
-        Q(public_access_level=PublicAccessLevel.RESTRICTED)
-        | (Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True))
-    )
     queryset = Resource.objects.filter(
         organization=org,
         resource_type=ResourceType.ENTITY,
-    ).filter(access_clause)
+    )
 
     scope_clauses: List[Q] = []
 
