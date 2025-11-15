@@ -44,24 +44,6 @@
                     <button type="submit" class="btn btn-xs btn-secondary">Add</button>
                   </div>
                 </form>
-                <div class="text-[10px] space-y-1 pt-1 border-t">
-                  <div>
-                    <span class="font-semibold">Uncurated:</span>
-                    {% if row.graph_only_uris %}
-                      <span class="text-warning">{{ row.graph_only_uris|length }}</span>
-                    {% else %}
-                      <span class="text-base-content/60">0</span>
-                    {% endif %}
-                  </div>
-                  <div>
-                    <span class="font-semibold">Missing:</span>
-                    {% if row.curated_missing_uris %}
-                      <span class="text-error">{{ row.curated_missing_uris|length }}</span>
-                    {% else %}
-                      <span class="text-base-content/60">0</span>
-                    {% endif %}
-                  </div>
-                </div>
               </div>
             </details>
           </div>
