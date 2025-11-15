@@ -1684,23 +1684,17 @@ def oai_project_status_update(request, resource_id):
             messages.info(request, "OAI harvesting approval revoked for this project.")
         else:
             return HttpResponseBadRequest("<div class='alert alert-error'>Invalid OAI publish action.</div>")
-    else:
-        new_status = request.POST.get('public_access_level', '').strip().lower()
-        valid_statuses = ['private', 'restricted', 'public']
 
-        if new_status not in valid_statuses:
-            return HttpResponseBadRequest("<div class='alert alert-error'>Invalid status.</div>")
+        # Refresh only the affected project row and summary via OOB swap
+        return _render_project_row_response(
+            request,
+            organization=organization,
+            project_id=resource.id,
+            status_filter=status_filter,
+            page_number=page_number,
+        )
 
-        resource.public_access_level = new_status
-        resource.save(update_fields=["public_access_level", "updated_at"])
-
-    panel_context = _build_media_links_panel_context(
-        organization=organization,
-        status_filter=status_filter,
-        page_number=page_number,
-    )
-    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
-    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+    return HttpResponseBadRequest("<div class='alert alert-error'>Invalid request.</div>")
 
 
 @general_login_required
