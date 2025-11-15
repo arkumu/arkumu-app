@@ -32,4 +32,15 @@
       {% endif %}
     </button>
   </form>
+  {% if row.project_uri and row.oai_identifier %}
+    <a
+      href="{% url 'oai_admin:tailored-endpoint' %}?verb=GetRecord&identifier={{ row.oai_identifier }}&metadataPrefix=mets"
+      class="btn btn-xs btn-ghost w-full"
+      target="_blank"
+      rel="noopener"
+      title="Open the tailored OAI GetRecord response in a new tab"
+    >
+      View tailored record
+    </a>
+  {% endif %}
 </div>

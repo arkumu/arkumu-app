@@ -31,6 +31,7 @@ from arkumu.oaipmh.views import (
     oai_db_endpoint,
     _restrict_to_harvestable_files,
     _project_type_filter,
+    _build_identifier,
 )
 from arkumu.oaipmh.services.oai_project_assembler import OAIProjectAssembler, AssemblyContext
 from arkumu.oaipmh.oai_project import OAIProjectBuilder, HARVESTABLE_STORAGE_STATUSES
@@ -689,9 +690,11 @@ def _build_project_row_context(
     if publication_by_id is not None:
         publication = publication_by_id.get(resource.id)
 
+    project_uri = getattr(resource, "uri", "") or ""
+
     row = {
         "resource": resource,
-        "project_uri": resource.uri,
+        "project_uri": project_uri,
         "project_label": _resource_display_label(resource, fallback="Untitled project", label_lookup=label_lookup),
         "links": filtered_links,
         "total_links": len(prefetched_links),
@@ -707,6 +710,7 @@ def _build_project_row_context(
         "oai_approved_at": getattr(publication, "approved_at", None),
         "oai_approved_by": getattr(publication, "approved_by", None),
         "curated_selection": None,
+        "oai_identifier": _build_identifier(project_uri),
     }
 
     context = AssemblyContext(resource=resource)
