@@ -23,7 +23,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from lxml import etree as ET
 
-from django.db.models import Q, Exists, OuterRef
+from django.db.models import Q, Exists, OuterRef, DateTimeField, Value, F, Max
+from django.db.models.functions import Coalesce, Greatest
 
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -56,6 +57,7 @@ from .resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
 from arkumu.oaipmh.oai_project import (
     HARVESTABLE_STORAGE_STATUSES,
     NormalizedDigitalObject,
@@ -135,6 +137,8 @@ SIMPLIFIED_LICENSE_NOTE = (
     "darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen Bearbeitungsrechte eingeräumt. "
     "(Lizenz arkumu-A 1.0)"
 )
+
+_TAILORED_MIN_DATETIME = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
 
 
 def _digital_object_orgs() -> set[str]:
@@ -440,6 +444,7 @@ project_builder = OAIProjectBuilder()
 _db_assembler_override: ContextVar[Optional[bool]] = ContextVar("oai_db_mode_override", default=None)
 _db_project_assembler_instance: Optional[OAIProjectAssembler] = None
 _curated_link_override: ContextVar[bool] = ContextVar("oai_curated_link_override", default=False)
+_tailored_mode_override: ContextVar[bool] = ContextVar("oai_tailored_mode_override", default=False)
 
 # Register stable namespace prefixes so ElementTree uses human-friendly tags
 ET.register_namespace("oai_dc", OAI_DC_NS)
@@ -560,6 +565,19 @@ def _force_curated_links(state: bool):
         _curated_link_override.reset(token)
 
 
+def _tailored_mode_enabled() -> bool:
+    return bool(_tailored_mode_override.get())
+
+
+@contextmanager
+def _force_tailored_mode(state: bool):
+    token = _tailored_mode_override.set(state)
+    try:
+        yield
+    finally:
+        _tailored_mode_override.reset(token)
+
+
 @dataclass
 class HarvestPageResult:
     resources: List[Resource]
@@ -568,8 +586,13 @@ class HarvestPageResult:
     cursor_position: Optional[str]
 
 
-def _format_cursor_position(resource: Resource) -> str:
-    return f"{resource.updated_at.isoformat()}|{resource.pk}"
+def _format_cursor_position(resource: Resource, *, field_name: str = "updated_at") -> str:
+    timestamp = getattr(resource, field_name, None)
+    if timestamp is None:
+        timestamp = getattr(resource, "updated_at", None)
+    if timestamp is None:
+        timestamp = timezone.now()
+    return f"{timestamp.isoformat()}|{resource.pk}"
 
 
 def _parse_cursor_position(token: Optional[str]) -> Optional[tuple[datetime, str]]:
@@ -582,21 +605,26 @@ def _parse_cursor_position(token: Optional[str]) -> Optional[tuple[datetime, str
         return None
 
 
-def _apply_cursor_filter(queryset, cursor_state: Optional[tuple[datetime, str]]):
+def _apply_cursor_filter(
+    queryset,
+    cursor_state: Optional[tuple[datetime, str]],
+    *,
+    field_name: str = "updated_at",
+):
     if not cursor_state:
         return queryset
     timestamp, pk = cursor_state
     return queryset.filter(
-        Q(updated_at__gt=timestamp)
-        | (Q(updated_at=timestamp) & Q(id__gt=pk))
+        Q(**{f"{field_name}__gt": timestamp})
+        | (Q(**{f"{field_name}": timestamp}) & Q(id__gt=pk))
     )
 
 
-def _dataset_marker_for_queryset(queryset) -> str:
+def _dataset_marker_for_queryset(queryset, *, field_name: str = "updated_at") -> str:
     latest = (
         queryset
-        .order_by("-updated_at", "-id")
-        .values_list("updated_at", "id")
+        .order_by(f"-{field_name}", "-id")
+        .values_list(field_name, "id")
         .first()
     )
     if not latest or latest[0] is None:
@@ -769,6 +797,123 @@ def _restrict_to_harvestable_files(queryset):
     queryset = queryset.filter(combined_condition)
 
     return queryset.distinct()
+
+
+def _tailored_resources_queryset(
+    set_spec: Optional[str] = None,
+    from_date: Optional[str] = None,
+    until_date: Optional[str] = None,
+):
+    """Build queryset limited to curated, approved projects for tailored OAI harvests."""
+
+    project_type_clause = _project_type_filter()
+    queryset = (
+        Resource.objects.filter(
+            resource_type=ResourceType.ENTITY,
+            organization__is_active=True,
+            oai_media_links__isnull=False,
+            oai_publication__is_approved=True,
+        )
+        .select_related("organization", "oai_publication")
+    )
+    if project_type_clause is not None:
+        queryset = queryset.filter(project_type_clause).distinct()
+    else:
+        queryset = queryset.filter(uri__regex=r'/entities/projekt/[0-9]+$')
+
+    queryset = queryset.annotate(latest_link_update=Max("oai_media_links__updated_at"))
+    effective_expr = Greatest(
+        F("updated_at"),
+        Coalesce(
+            F("oai_publication__updated_at"),
+            Value(_TAILORED_MIN_DATETIME, output_field=DateTimeField()),
+        ),
+        Coalesce(
+            F("latest_link_update"),
+            Value(_TAILORED_MIN_DATETIME, output_field=DateTimeField()),
+        ),
+    )
+    queryset = queryset.annotate(effective_datestamp=effective_expr).order_by("effective_datestamp", "id")
+
+    if set_spec:
+        queryset = queryset.filter(organization__code__iexact=set_spec)
+
+    if from_date:
+        try:
+            from_dt = _parse_from_datestamp(from_date)
+            queryset = queryset.filter(effective_datestamp__gte=from_dt)
+        except ValueError:
+            pass
+
+    if until_date:
+        try:
+            until_dt = _parse_until_datestamp(until_date)
+            queryset = queryset.filter(effective_datestamp__lt=until_dt)
+        except ValueError:
+            pass
+
+    return queryset
+
+
+def _has_more_tailored_harvestables(queryset, cursor_position: Optional[str]) -> bool:
+    cursor_state = _parse_cursor_position(cursor_position)
+    if cursor_state is None:
+        return False
+
+    ordered = queryset.order_by("effective_datestamp", "id")
+    lookahead_qs = _apply_cursor_filter(
+        ordered,
+        cursor_state,
+        field_name="effective_datestamp",
+    )
+    iterator = lookahead_qs.iterator(chunk_size=100)
+    for resource in iterator:
+        project_hint = _build_project_hint_from_resource(resource)
+        if project_hint and project_hint.harvestable:
+            return True
+    return False
+
+
+def _tailored_harvestable_page(
+    queryset,
+    *,
+    cursor_position: Optional[str],
+    page_size: int,
+    include_hints: bool,
+) -> HarvestPageResult:
+    ordered = queryset.order_by("effective_datestamp", "id")
+    ordered = _apply_cursor_filter(
+        ordered,
+        _parse_cursor_position(cursor_position),
+        field_name="effective_datestamp",
+    )
+
+    iterator = ordered.iterator(chunk_size=max(page_size * 10, 100))
+    resources: List[Resource] = []
+    project_hints: Dict[str, OAIProject] = {}
+    last_cursor_position = cursor_position
+
+    for resource in iterator:
+        last_cursor_position = _format_cursor_position(resource, field_name="effective_datestamp")
+        project_hint = _build_project_hint_from_resource(resource)
+        if not project_hint or not project_hint.harvestable:
+            continue
+        if include_hints:
+            project_hints[resource.uri] = project_hint
+        resources.append(resource)
+        if len(resources) == page_size:
+            break
+
+    has_more = False
+    if resources:
+        has_more = _has_more_tailored_harvestables(ordered, last_cursor_position)
+
+    return HarvestPageResult(
+        resources=resources,
+        project_hints=project_hints,
+        has_more=has_more,
+        cursor_position=last_cursor_position,
+    )
 
 
 def _project_ids_with_dump_digital_objects(org_codes: set[str]) -> set[Any]:
@@ -1188,7 +1333,20 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
         cursor_marker_from_token = token_data.get("cursor") or token_data.get("snapshot")
         cursor_position_from_token = token_data.get("cursor_position")
 
-    if _db_mode_enabled():
+    db_mode = _db_mode_enabled()
+    tailored_mode = _tailored_mode_enabled()
+    if db_mode:
+        if tailored_mode:
+            return _list_identifiers_tailored(
+                oai,
+                metadata_prefix=metadata_prefix,
+                set_spec=set_spec,
+                from_date=from_date,
+                until_date=until_date,
+                offset=offset,
+                cursor_marker_from_token=cursor_marker_from_token,
+                cursor_position_from_token=cursor_position_from_token,
+            )
         return _list_identifiers_db(
             oai,
             metadata_prefix=metadata_prefix,
@@ -1392,6 +1550,63 @@ def _list_identifiers_db(
         snapshot_marker=cursor_marker,
         cursor_marker=cursor_marker,
     )
+
+    return oai
+
+
+def _list_identifiers_tailored(
+    oai: ET._Element,
+    *,
+    metadata_prefix: str,
+    set_spec: Optional[str],
+    from_date: Optional[str],
+    until_date: Optional[str],
+    offset: int,
+    cursor_marker_from_token: Optional[str],
+    cursor_position_from_token: Optional[str],
+) -> ET._Element:
+    queryset = _tailored_resources_queryset(
+        set_spec=set_spec,
+        from_date=from_date,
+        until_date=until_date,
+    )
+    cursor_marker = _dataset_marker_for_queryset(queryset, field_name="effective_datestamp")
+
+    if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
+        return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
+
+    page_size = resumption_service.page_size
+    page = _tailored_harvestable_page(
+        queryset,
+        cursor_position=cursor_position_from_token,
+        page_size=page_size,
+        include_hints=False,
+    )
+    resources = page.resources
+
+    if offset == 0 and not resources:
+        return _error(oai, "noRecordsMatch", "No records found matching the criteria")
+
+    list_identifiers = ET.SubElement(oai, "ListIdentifiers")
+    for resource in resources:
+        header = _build_record_header(resource)
+        list_identifiers.append(header)
+
+    resumption_token_value = None
+    if page.has_more:
+        next_offset = offset + len(resources)
+        resumption_token_value = resumption_service.create_token(
+            offset=next_offset,
+            verb="ListIdentifiers",
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec,
+            from_date=from_date,
+            until_date=until_date,
+            cursor_marker=cursor_marker,
+            cursor_position=page.cursor_position,
+        )
+        resumption_elem = ET.SubElement(list_identifiers, "resumptionToken")
+        resumption_elem.text = resumption_token_value
 
     return oai
 
@@ -3445,7 +3660,20 @@ def _list_records(oai: ET._Element, params, request: HttpRequest) -> ET._Element
         cursor_position_from_token = token_data.get("cursor_position")
 
     db_mode = _db_mode_enabled()
+    tailored_mode = _tailored_mode_enabled()
     if db_mode:
+        if tailored_mode:
+            return _list_records_tailored(
+                oai,
+                metadata_prefix=metadata_prefix,
+                set_spec=set_spec,
+                from_date=from_date,
+                until_date=until_date,
+                offset=offset,
+                cursor_marker_from_token=cursor_marker_from_token,
+                cursor_position_from_token=cursor_position_from_token,
+                request=request,
+            )
         return _list_records_db(
             oai,
             metadata_prefix=metadata_prefix,
@@ -3803,6 +4031,161 @@ def _list_records_db(
     return oai
 
 
+def _list_records_tailored(
+    oai: ET._Element,
+    *,
+    metadata_prefix: str,
+    set_spec: Optional[str],
+    from_date: Optional[str],
+    until_date: Optional[str],
+    offset: int,
+    cursor_marker_from_token: Optional[str],
+    cursor_position_from_token: Optional[str],
+    request: HttpRequest,
+) -> ET._Element:
+    queryset = _tailored_resources_queryset(
+        set_spec=set_spec,
+        from_date=from_date,
+        until_date=until_date,
+    )
+    cursor_marker = _dataset_marker_for_queryset(queryset, field_name="effective_datestamp")
+
+    if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
+        return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
+
+    page_size = resumption_service.page_size
+    page = _tailored_harvestable_page(
+        queryset,
+        cursor_position=cursor_position_from_token,
+        page_size=page_size,
+        include_hints=True,
+    )
+    resources = page.resources
+
+    if offset == 0 and not resources:
+        return _error(oai, "noRecordsMatch", "No records found matching the criteria")
+
+    list_records = ET.SubElement(oai, "ListRecords")
+    records_added = 0
+
+    for resource in resources:
+        project_hint = page.project_hints.get(resource.uri)
+        if not project_hint:
+            continue
+
+        header = _build_record_header(resource)
+        metadata = _build_metadata_element(
+            resource,
+            metadata_prefix,
+            project_hint=project_hint,
+            request=request,
+        )
+
+        if metadata_prefix == 'mets' and not _metadata_element_is_valid(
+            metadata,
+            resource_uri=getattr(resource, 'uri', None),
+        ):
+            continue
+
+        record = ET.SubElement(list_records, "record")
+        record.append(header)
+        record.append(metadata)
+        records_added += 1
+
+    if records_added == 0 and offset == 0 and not page.has_more:
+        return _error(oai, "noRecordsMatch", "No records found matching the criteria")
+
+    resumption_token_value = None
+    if page.has_more:
+        next_offset = offset + records_added
+        resumption_token_value = resumption_service.create_token(
+            offset=next_offset,
+            verb="ListRecords",
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec,
+            from_date=from_date,
+            until_date=until_date,
+            cursor_marker=cursor_marker,
+            cursor_position=page.cursor_position,
+        )
+        resumption_elem = ET.SubElement(list_records, "resumptionToken")
+        resumption_elem.text = resumption_token_value
+
+    return oai
+
+
+def _get_record_tailored(
+    oai: ET._Element,
+    *,
+    resource_uri: str,
+    metadata_prefix: str,
+    request: HttpRequest,
+) -> ET._Element:
+    queryset = _tailored_resources_queryset()
+    resource = queryset.filter(uri=resource_uri).first()
+    if not resource:
+        return _error(oai, "idDoesNotExist", "Identifier not approved for tailored OAI")
+
+    project_hint = _build_project_hint_from_resource(resource)
+    if not project_hint or not project_hint.harvestable:
+        return _error(oai, "idDoesNotExist", "Identifier not harvestable")
+
+    marker_source = getattr(resource, "effective_datestamp", None) or getattr(resource, "updated_at", timezone.now())
+    cursor_marker = f"tailored:{marker_source.isoformat()}"
+
+    cached_record = _get_cached_record(
+        resource,
+        metadata_prefix,
+        snapshot_marker=cursor_marker,
+        cursor_marker=cursor_marker,
+    )
+    if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
+        cached_record['metadata'],
+        resource_uri=getattr(resource, 'uri', None),
+    ):
+        cached_record = None
+
+    get_record = ET.SubElement(oai, "GetRecord")
+    record = ET.SubElement(get_record, "record")
+
+    if cached_record:
+        header_elem = ET.fromstring(cached_record['header'])
+        metadata_elem = ET.fromstring(cached_record['metadata'])
+        record.append(header_elem)
+        record.append(metadata_elem)
+        return oai
+
+    header = _build_record_header(resource)
+    metadata = _build_metadata_element(
+        resource,
+        metadata_prefix,
+        project_hint=project_hint,
+        request=request,
+    )
+
+    if metadata_prefix == 'mets' and not _metadata_element_is_valid(
+        metadata,
+        resource_uri=getattr(resource, 'uri', None),
+    ):
+        return _error(oai, "idDoesNotExist", "Identifier not available for METS dissemination")
+
+    record.append(header)
+    record.append(metadata)
+
+    header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
+    metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
+    _cache_record(
+        resource,
+        metadata_prefix,
+        header_xml,
+        metadata_xml,
+        snapshot_marker=cursor_marker,
+        cursor_marker=cursor_marker,
+    )
+
+    return oai
+
+
 def _handle_oai_request(request: HttpRequest) -> HttpResponse:
     auth_response = _enforce_basic_auth(request)
     if auth_response is not None:
@@ -3899,6 +4282,16 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
 
             # Resolve Arkumu resource by identifier
             resource_uri = _parse_identifier(identifier)
+
+            if _tailored_mode_enabled():
+                return _xml_response(
+                    _get_record_tailored(
+                        oai,
+                        resource_uri=resource_uri,
+                        metadata_prefix=metadata_prefix,
+                        request=request,
+                    )
+                )
 
             access_clause = Q(public_access_level=PublicAccessLevel.RESTRICTED) | (
                 Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
@@ -4079,7 +4472,7 @@ def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
-    with _force_db_mode(True), _force_curated_links(True):
+    with _force_db_mode(True), _force_curated_links(True), _force_tailored_mode(True):
         return _handle_oai_request(request)
 
 
