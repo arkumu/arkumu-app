@@ -1,113 +1,78 @@
-{% if row.links %}
-  {% for link in row.links %}
-    <tr
-      id="{% if forloop.first %}project-{{ row.resource.id }}{% endif %}"
-      class="border-base-300 {% if forloop.first %}border-t-2{% endif %}{% if forloop.last %} border-b-2{% endif %}"
-    >
-      {% if forloop.first %}
-        <td rowspan="{{ row.links|length }}" class="align-top bg-base-200">
-            <div class="space-y-2 p-2">
-            <div>
-              <div class="font-bold text-base text-secondary">{{ row.project_label }}</div>
-              <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
-            </div>
-            <div class="flex flex-wrap gap-1">
-              <div class="badge badge-xs badge-outline" title="Curated digital objects">C:{{ row.total_links }}</div>
-              <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">H:{{ row.harvestable_count }}</div>
-              {% if not row.has_harvestable_files %}
-                <div class="badge badge-xs badge-warning" title="Project currently has no harvestable files and will not be exported via OAI">No harvestable files</div>
-              {% endif %}
-              {% if row.warnings %}
-                {% for warning in row.warnings %}
-                  <div class="badge badge-xs badge-warning" title="{{ warning.message|default:'Conflict detected' }}">
-                    {{ warning.code }}
-                  </div>
-                {% endfor %}
-              {% endif %}
-            </div>
-            <details class="text-xs">
-              <summary class="cursor-pointer font-semibold">Add / Graph Diff</summary>
-              <div class="space-y-2 mt-2">
-                <form
-                  hx-post="{% url 'oai_admin:oai_media_link_add' %}"
-                  hx-target="#project-{{ row.resource.id }}"
-                  hx-swap="outerHTML"
-                  class="space-y-1"
-                >
-                  {% csrf_token %}
-                  <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
-                  <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
-                  <input type="hidden" name="page" value="{{ current_page }}">
-                  <input type="hidden" name="project_uri" value="{{ row.project_uri }}">
-                  <div class="flex gap-1">
-                    <input type="text" name="digital_uri" class="input input-bordered input-xs flex-1" placeholder="Digital object URI">
-                    <button type="submit" class="btn btn-xs btn-secondary">Add</button>
-                  </div>
-                </form>
-              </div>
-            </details>
-          </div>
-        </td>
-        <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300 text-center">
-          <div class="p-2 space-y-1">
-            <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">
-              H:{{ row.harvestable_count }}
-            </div>
-            {% if row.has_harvestable_files %}
-              <div class="text-[10px] text-success">Has files</div>
-            {% else %}
-              <div class="text-[10px] text-error">No files</div>
-            {% endif %}
-          </div>
-        </td>
-        <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300">
-          <div class="p-2">
-            {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
-          </div>
-        </td>
-      {% endif %}
-      <td class="align-top border-l border-base-300">
-        <div class="p-2">
-          {% include 'oai/partials/oai_media_link_entry.html' with link=link row=row current_page=current_page %}
-        </div>
-      </td>
-    </tr>
-  {% endfor %}
-{% else %}
-  <tr id="project-{{ row.resource.id }}" class="border-t-2 border-b-2 border-base-300">
-    <td class="align-top bg-base-200">
-      <div class="space-y-2 p-2">
-        <div>
-          <div class="font-semibold text-sm">{{ row.project_label }}</div>
-          <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
-        </div>
-        <div class="flex flex-wrap gap-1">
-          <div class="badge badge-xs badge-outline" title="Curated digital objects">C:{{ row.total_links }}</div>
-        </div>
+<tr id="project-{{ row.resource.id }}" class="border-t-2 border-b-2 border-base-300">
+  <td class="align-top bg-base-200">
+    <div class="space-y-2 p-2">
+      <div>
+        <div class="font-bold text-base text-secondary">{{ row.project_label }}</div>
+        <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
       </div>
-    </td>
-    <td class="align-top border-l border-base-300 text-center">
-      <div class="p-2 space-y-1">
-        <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">
-          H:{{ row.harvestable_count }}
-        </div>
-        {% if row.has_harvestable_files %}
-          <div class="text-[10px] text-success">Has files</div>
-        {% else %}
-          <div class="text-[10px] text-error">No files</div>
+      <div class="flex flex-wrap gap-1">
+        <div class="badge badge-xs badge-outline" title="Curated digital objects">C:{{ row.total_links }}</div>
+        <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">H:{{ row.harvestable_count }}</div>
+        {% if not row.has_harvestable_files %}
+          <div class="badge badge-xs badge-warning" title="Project currently has no harvestable files and will not be exported via OAI">No harvestable files</div>
+        {% endif %}
+        {% if row.warnings %}
+          {% for warning in row.warnings %}
+            <div class="badge badge-xs badge-warning" title="{{ warning.message|default:'Conflict detected' }}">
+              {{ warning.code }}
+            </div>
+          {% endfor %}
         {% endif %}
       </div>
-    </td>
-    <td class="align-top border-l border-base-300">
-      <div class="p-2">
-        {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
+      <details class="text-xs">
+        <summary class="cursor-pointer font-semibold">Add / Graph Diff</summary>
+        <div class="space-y-2 mt-2">
+          <form
+            hx-post="{% url 'oai_admin:oai_media_link_add' %}"
+            hx-target="#project-{{ row.resource.id }}"
+            hx-swap="outerHTML"
+            class="space-y-1"
+          >
+            {% csrf_token %}
+            <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
+            <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
+            <input type="hidden" name="page" value="{{ current_page }}">
+            <input type="hidden" name="project_uri" value="{{ row.project_uri }}">
+            <div class="flex gap-1">
+              <input type="text" name="digital_uri" class="input input-bordered input-xs flex-1" placeholder="Digital object URI">
+              <button type="submit" class="btn btn-xs btn-secondary">Add</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </div>
+  </td>
+  <td class="align-top border-l border-base-300 text-center">
+    <div class="p-2 space-y-1">
+      <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">
+        H:{{ row.harvestable_count }}
       </div>
-    </td>
-    <td class="align-top border-l border-base-300">
-      <div class="text-sm text-base-content/60 text-center p-2">No links</div>
-    </td>
-  </tr>
-{% endif %}
+      {% if row.has_harvestable_files %}
+        <div class="text-[10px] text-success">Has files</div>
+      {% else %}
+        <div class="text-[10px] text-error">No files</div>
+      {% endif %}
+    </div>
+  </td>
+  <td class="align-top border-l border-base-300">
+    <div class="p-2">
+      {% include 'oai/partials/oai_project_oai_controls.html' with row=row summary=summary current_page=current_page %}
+    </div>
+  </td>
+  <td class="align-top border-l border-base-300">
+    <div class="p-2">
+      {% if row.links %}
+        <div class="space-y-2">
+          {% for link in row.links %}
+            {% include 'oai/partials/oai_media_link_entry.html' with link=link row=row current_page=current_page %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="text-sm text-base-content/60 text-center">No links</div>
+      {% endif %}
+    </div>
+  </td>
+</tr>
 {% include 'oai/partials/oai_media_links_alerts.html' %}
 {% if include_summary %}
   {% include 'oai/partials/oai_media_links_summary.html' with summary=summary %}
