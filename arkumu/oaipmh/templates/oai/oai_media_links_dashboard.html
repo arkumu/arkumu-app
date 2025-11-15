@@ -51,7 +51,7 @@
 
   <div id="oai-media-links-summary">
     {% if panel_context %}
-      {% include 'oai/partials/oai_media_links_summary.html' with summary=panel_context.summary %}
+      {% include 'oai/partials/oai_media_links_summary.html' with summary=panel_context.summary view_mode=panel_context.view_mode %}
     {% endif %}
   </div>
 
