@@ -1,130 +1,13 @@
 {% if summary.organization %}
-<div id="oai-media-links-summary-stats" class="flex-1 flex items-center justify-end gap-4" hx-swap-oob="innerHTML">
-  <div class="text-xs text-base-content/70">
-    <span class="font-semibold">{{ summary.available_project_count }}</span> projects
-  </div>
-  <div class="text-xs text-base-content/70">
-    <span class="font-semibold text-success">{{ summary.harvestable_project_count }}</span> harvestable
-  </div>
-  <div class="text-xs text-base-content/70">
-    <span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects
-  </div>
-  <div class="text-xs text-base-content/70">
-    <span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale
-  </div>
-  <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">View:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if view_mode != 'digital' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Projects
-    </button>
-    <button
-      class="btn btn-xs {% if view_mode == 'digital' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Digital Objects
-    </button>
-  </div>
-  <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">Status:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if summary.status_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status=all&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      All
-    </button>
-    {% for stat in summary.status_totals %}
-      <button
-        class="btn btn-xs {% if summary.status_filter == stat.status %}btn-active{% endif %}"
-        hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ stat.status }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}"
-        hx-target="#oai-media-links-panel"
-        hx-swap="innerHTML"
-        hx-push-url="true"
-      >
-        {{ stat.label }}
-      </button>
-    {% endfor %}
-  </div>
-  <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">Harvestable:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if summary.harvestable_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=all"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      All
-    </button>
-    <button
-      class="btn btn-xs {% if summary.harvestable_filter == 'harvestable' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=harvestable"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Has files
-    </button>
-    <button
-      class="btn btn-xs {% if summary.harvestable_filter == 'non_harvestable' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=non_harvestable"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      No files
-    </button>
-  </div>
-  <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">OAI:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if summary.oai_publish_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish=all"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      All
-    </button>
-    <button
-      class="btn btn-xs {% if summary.oai_publish_filter == 'approved' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish=approved"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Approved
-    </button>
-    <button
-      class="btn btn-xs {% if summary.oai_publish_filter == 'pending' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish=pending"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Pending
-    </button>
-  </div>
-</div>
-
 <div id="oai-media-links-summary" class="card bg-base-100 shadow" hx-swap-oob="innerHTML">
   <div class="card-body py-3">
-    <div class="flex justify-end gap-2">
+    <div class="flex justify-between items-center gap-4">
+      <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
+        <span><span class="font-semibold">{{ summary.available_project_count }}</span> projects</span>
+        <span><span class="font-semibold text-success">{{ summary.harvestable_project_count }}</span> harvestable</span>
+        <span><span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects</span>
+        <span><span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale</span>
+      </div>
       <button
         class="btn btn-outline btn-primary btn-sm"
         hx-get="{% url 'oai_admin:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
