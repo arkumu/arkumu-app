@@ -23,26 +23,6 @@
   </div>
 
   <div class="flex flex-col gap-1 items-end">
-    <div class="badge badge-xs {% if link.status == 'approved' %}badge-success{% elif link.status == 'pending' %}badge-warning{% else %}badge-error{% endif %}">
-      {{ link.status }}
-    </div>
-    <form
-      hx-post="{% url 'oai_admin:oai_media_link_update' link.id %}"
-      hx-target="#project-{{ row.resource.id }}"
-      hx-swap="outerHTML"
-      hx-trigger="change from:select"
-    >
-      {% csrf_token %}
-      <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
-      <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
-      <input type="hidden" name="page" value="{{ current_page }}">
-      <input type="hidden" name="current_status" value="{{ link.status }}">
-      <select name="status" class="select select-bordered select-xs w-24">
-        <option value="approved" {% if link.status == 'approved' %}selected{% endif %}>approved</option>
-        <option value="pending" {% if link.status == 'pending' %}selected{% endif %}>pending</option>
-        <option value="rejected" {% if link.status == 'rejected' %}selected{% endif %}>rejected</option>
-      </select>
-    </form>
     <form
       hx-post="{% url 'oai_admin:oai_media_link_delete' link.id %}"
       hx-target="#project-{{ row.resource.id }}"
