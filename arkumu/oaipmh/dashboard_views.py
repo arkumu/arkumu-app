@@ -689,16 +689,10 @@ def _build_project_row_context(
     if publication_by_id is not None:
         publication = publication_by_id.get(resource.id)
 
-    project_label = getattr(resource, "name", None) or _resource_display_label(
-        resource,
-        fallback="Untitled project",
-        label_lookup=None,
-    )
-
     row = {
         "resource": resource,
         "project_uri": resource.uri,
-        "project_label": project_label,
+        "project_label": _resource_display_label(resource, fallback="Untitled project", label_lookup=label_lookup),
         "links": filtered_links,
         "total_links": len(prefetched_links),
         "selected_org_code": org_code,
