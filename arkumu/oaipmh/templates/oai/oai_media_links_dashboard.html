@@ -49,7 +49,11 @@
     </div>
   </div>
 
-  <div id="oai-media-links-summary"></div>
+  <div id="oai-media-links-summary">
+    {% if panel_context %}
+      {% include 'oai/partials/oai_media_links_summary.html' with summary=panel_context.summary %}
+    {% endif %}
+  </div>
 
   <div id="oai-media-links-panel">
     {% if panel_context %}
