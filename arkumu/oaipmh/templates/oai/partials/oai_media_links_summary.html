@@ -1,42 +1,67 @@
 {% if summary.organization %}
 <div id="oai-media-links-summary" class="card bg-base-100 shadow" hx-swap-oob="innerHTML">
   <div class="card-body py-3 space-y-3">
-    <div class="flex justify-between items-center gap-4">
-      <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
-        <span><span class="font-semibold">{{ summary.available_project_count }}</span> projects</span>
-        <span><span class="font-semibold text-success">{{ summary.harvestable_project_count }}</span> harvestable</span>
-        <span><span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects</span>
-        <span><span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          class="btn btn-outline btn-primary btn-sm"
-          hx-get="{% url 'oai_admin:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
-          hx-target="#oai-media-links-seed-modal"
-          hx-swap="innerHTML"
-        >
-          Seed curated entries
-        </button>
-        <form
-          method="post"
-          hx-post="{% url 'oai_admin:oai_publication_sync' %}"
-          hx-target="#oai-media-links-panel"
-          hx-swap="innerHTML"
-        >
-          {% csrf_token %}
-          <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
-          <input type="hidden" name="status" value="{{ summary.status_filter }}">
-          <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
-          <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
-          <input type="hidden" name="page" value="1">
-          <button type="submit" class="btn btn-outline btn-secondary btn-sm">
-            Sync OAI approvals
-          </button>
-        </form>
-      </div>
-    </div>
-
     {% with mode=view_mode|default:'project' %}
+      <div class="flex justify-between items-center gap-4">
+        <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
+          <span><span class="font-semibold">{{ summary.available_project_count }}</span> projects</span>
+          <span><span class="font-semibold text-success">{{ summary.harvestable_project_count }}</span> harvestable</span>
+          <span><span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects</span>
+          <span><span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale</span>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="font-semibold">View:</span>
+            <div class="btn-group">
+              <button
+                class="btn btn-xs {% if mode != 'digital' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable={{ summary.harvestable_filter|default:'all' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                Projects
+              </button>
+              <button
+                class="btn btn-xs {% if mode == 'digital' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&shared=all"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                Digital objects
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              class="btn btn-outline btn-primary btn-sm"
+              hx-get="{% url 'oai_admin:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
+              hx-target="#oai-media-links-seed-modal"
+              hx-swap="innerHTML"
+            >
+              Seed curated entries
+            </button>
+            <form
+              method="post"
+              hx-post="{% url 'oai_admin:oai_publication_sync' %}"
+              hx-target="#oai-media-links-panel"
+              hx-swap="innerHTML"
+            >
+              {% csrf_token %}
+              <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+              <input type="hidden" name="status" value="{{ summary.status_filter }}">
+              <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+              <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+              <input type="hidden" name="page" value="1">
+              <button type="submit" class="btn btn-outline btn-secondary btn-sm">
+                Sync OAI approvals
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
       {% if mode != 'digital' %}
         <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/80">
           <div class="flex items-center gap-2">
