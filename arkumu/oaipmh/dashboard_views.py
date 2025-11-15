@@ -41,6 +41,7 @@ from arkumu.metadata.services.oai_stats import (
     _summarize_by_institution,
 )
 from arkumu.cache.services.project_cache_service import ProjectCacheService
+from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 from arkumu.storage.models.s3_file_objects import S3FileObject
 
 
@@ -1672,27 +1673,52 @@ def oai_project_status_update(request, resource_id):
             publication.approved_at = timezone.now()
             publication.approved_by = request.user if request.user.is_authenticated else None
             publication.save()
-            if has_harvestable:
-                messages.success(request, "Project approved for OAI harvesting.")
-            else:
-                messages.warning(request, "Project approved for OAI harvesting, but no harvestable files were detected.")
+            toast_type = "success" if has_harvestable else "warning"
+            toast_message = (
+                "Project approved for OAI harvesting."
+                if has_harvestable
+                else "Project approved for OAI harvesting, but no harvestable files were detected."
+            )
         elif oai_publish_action == 'revoke':
             publication.is_approved = False
             publication.approved_at = None
             publication.approved_by = None
             publication.save()
-            messages.info(request, "OAI harvesting approval revoked for this project.")
+            toast_type = "info"
+            toast_message = "OAI harvesting approval revoked for this project."
         else:
             return HttpResponseBadRequest("<div class='alert alert-error'>Invalid OAI publish action.</div>")
 
-        # Refresh only the affected project row and summary via OOB swap
-        return _render_project_row_response(
+        # Refresh only the affected project row and summary via OOB swap + toast
+        row_response = _render_project_row_response(
             request,
             organization=organization,
             project_id=resource.id,
             status_filter=status_filter,
             page_number=page_number,
         )
+
+        # If HTMX, wrap with toast via OOB
+        if request.headers.get("HX-Request") == "true":
+            from django.template.loader import render_to_string
+
+            toast_html = render_to_string(
+                "partials/toast_notification.html",
+                {
+                    "message": toast_message,
+                    "type": toast_type,
+                },
+                request=request,
+            )
+            helper = CSVMappingTemplateHelperMixin()
+            wrapped_html = helper.build_oob_response(
+                row_response.content.decode("utf-8"),
+                {"toast-container": toast_html},
+            )
+            return HttpResponse(wrapped_html)
+
+        messages.add_message(request, messages.INFO, toast_message)
+        return row_response
 
     return HttpResponseBadRequest("<div class='alert alert-error'>Invalid request.</div>")
 
