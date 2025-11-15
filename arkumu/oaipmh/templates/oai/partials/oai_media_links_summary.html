@@ -4,6 +4,9 @@
     <span class="font-semibold">{{ summary.available_project_count }}</span> projects
   </div>
   <div class="text-xs text-base-content/70">
+    <span class="font-semibold text-success">{{ summary.harvestable_project_count }}</span> harvestable
+  </div>
+  <div class="text-xs text-base-content/70">
     <span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects
   </div>
   <div class="text-xs text-base-content/70">
@@ -93,6 +96,37 @@
       hx-push-url="true"
     >
       Public
+    </button>
+  </div>
+  <div class="divider divider-horizontal"></div>
+  <div class="text-xs font-semibold">Harvestable:</div>
+  <div class="btn-group">
+    <button
+      class="btn btn-xs {% if summary.harvestable_filter == 'all' %}btn-active{% endif %}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=all"
+      hx-target="#oai-media-links-panel"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+    >
+      All
+    </button>
+    <button
+      class="btn btn-xs {% if summary.harvestable_filter == 'harvestable' %}btn-active{% endif %}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=harvestable"
+      hx-target="#oai-media-links-panel"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+    >
+      Has files
+    </button>
+    <button
+      class="btn btn-xs {% if summary.harvestable_filter == 'non_harvestable' %}btn-active{% endif %}"
+      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=non_harvestable"
+      hx-target="#oai-media-links-panel"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+    >
+      No files
     </button>
   </div>
   <div class="divider divider-horizontal"></div>

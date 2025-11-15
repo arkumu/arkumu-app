@@ -464,6 +464,7 @@ def _build_media_links_summary(
     status_filter: str,
     project_access_filter: str = "all",
     oai_publish_filter: str = "all",
+    harvestable_filter: str = "all",
 ) -> dict[str, Any]:
     links_total = link_qs.count()
     filtered_total = links_total if status_filter == "all" else link_qs.filter(status=status_filter).count()
@@ -481,17 +482,24 @@ def _build_media_links_summary(
         }
         for row in raw_stats
     ]
+    # Project-level stats for summary header
+    project_qs = _oai_project_queryset_for_org(organization)
+    available_projects = project_qs.count()
+    harvestable_projects = _restrict_to_harvestable_files(project_qs).count()
+
     return {
         "links_total": links_total,
         "filtered_links_total": filtered_total,
         "status_totals": status_totals,
         "stale_count": link_qs.filter(is_stale=True).count(),
-        "available_project_count": _oai_project_queryset_for_org(organization).count(),
+        "available_project_count": available_projects,
+        "harvestable_project_count": harvestable_projects,
         "selected_org_code": organization.code or "",
         "organization": organization,
         "status_filter": status_filter,
         "project_access_filter": project_access_filter,
         "oai_publish_filter": oai_publish_filter,
+        "harvestable_filter": harvestable_filter,
     }
 
 
@@ -748,6 +756,7 @@ def _build_media_links_panel_context(
     page_number: int,
     project_access_filter: str = "all",
     oai_publish_filter: str = "all",
+    harvestable_filter: str = "all",
     search_query: str = "",
 ) -> dict[str, Any]:
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
@@ -757,6 +766,7 @@ def _build_media_links_panel_context(
         status_filter=status_filter,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
+        harvestable_filter=harvestable_filter,
     )
 
     project_prefetch = Prefetch(
@@ -783,6 +793,12 @@ def _build_media_links_panel_context(
         projects_qs = projects_qs.filter(
             models.Q(oai_publication__isnull=True) | models.Q(oai_publication__is_approved=False)
         )
+
+    if harvestable_filter == "harvestable":
+        projects_qs = _restrict_to_harvestable_files(projects_qs)
+    elif harvestable_filter == "non_harvestable":
+        harvestable_qs = _restrict_to_harvestable_files(projects_qs)
+        projects_qs = projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
 
     paginator = Paginator(projects_qs, MEDIA_LINKS_PAGE_SIZE)
     page_obj = paginator.get_page(page_number)
@@ -887,6 +903,7 @@ def _build_media_links_panel_context(
         "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
         "view_mode": "project",
         "oai_publish_filter": oai_publish_filter,
+        "harvestable_filter": harvestable_filter,
     }
 
 
@@ -1027,6 +1044,10 @@ def oai_media_links_panel(request):
     if oai_publish_filter not in ['all', 'approved', 'pending']:
         oai_publish_filter = 'all'
 
+    harvestable_filter = request.GET.get('harvestable', 'all').strip().lower()
+    if harvestable_filter not in ['all', 'harvestable', 'non_harvestable']:
+        harvestable_filter = 'all'
+
     search_query = (request.GET.get('search') or '').strip()
 
     page_param = request.GET.get('page') or '1'
@@ -1041,6 +1062,7 @@ def oai_media_links_panel(request):
         page_number=page_number,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
+        harvestable_filter=harvestable_filter,
         search_query=search_query,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES

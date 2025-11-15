@@ -1,6 +1,9 @@
 {% if row.links %}
   {% for link in row.links %}
-    <tr id="{% if forloop.first %}project-{{ row.resource.id }}{% endif %}" class="{% if forloop.first %}border-t-2 border-base-300{% endif %}">
+    <tr
+      id="{% if forloop.first %}project-{{ row.resource.id }}{% endif %}"
+      class="border-base-300 {% if forloop.first %}border-t-2{% endif %}{% if forloop.last %} border-b-2{% endif %}"
+    >
       {% if forloop.first %}
         <td rowspan="{{ row.links|length }}" class="align-top bg-base-200">
             <div class="space-y-2 p-2">
@@ -69,6 +72,18 @@
             </details>
           </div>
         </td>
+        <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300 text-center">
+          <div class="p-2 space-y-1">
+            <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">
+              H:{{ row.harvestable_count }}
+            </div>
+            {% if row.has_harvestable_files %}
+              <div class="text-[10px] text-success">Has files</div>
+            {% else %}
+              <div class="text-[10px] text-error">No files</div>
+            {% endif %}
+          </div>
+        </td>
         <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300">
           <div class="p-2">
             <div class="badge badge-sm w-full {% if row.resource.public_access_level == 'public' %}badge-success{% elif row.resource.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
@@ -97,7 +112,7 @@
     </tr>
   {% endfor %}
 {% else %}
-  <tr id="project-{{ row.resource.id }}" class="border-t-2 border-base-300">
+  <tr id="project-{{ row.resource.id }}" class="border-t-2 border-b-2 border-base-300">
     <td class="align-top bg-base-200">
       <div class="space-y-2 p-2">
         <div>
@@ -106,11 +121,19 @@
         </div>
         <div class="flex flex-wrap gap-1">
           <div class="badge badge-xs badge-outline" title="Curated digital objects">C:{{ row.total_links }}</div>
-          <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">H:{{ row.harvestable_count }}</div>
-          {% if not row.has_harvestable_files %}
-            <div class="badge badge-xs badge-warning" title="Project currently has no harvestable files and will not be exported via OAI">No harvestable files</div>
-          {% endif %}
         </div>
+      </div>
+    </td>
+    <td class="align-top border-l border-base-300 text-center">
+      <div class="p-2 space-y-1">
+        <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">
+          H:{{ row.harvestable_count }}
+        </div>
+        {% if row.has_harvestable_files %}
+          <div class="text-[10px] text-success">Has files</div>
+        {% else %}
+          <div class="text-[10px] text-error">No files</div>
+        {% endif %}
       </div>
     </td>
     <td class="align-top border-l border-base-300">

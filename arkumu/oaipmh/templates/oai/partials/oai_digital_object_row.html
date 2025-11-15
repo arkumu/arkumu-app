@@ -1,6 +1,9 @@
 {% if row.links %}
   {% for link in row.links %}
-    <tr id="{% if forloop.first %}digital-object-{{ row.digital_object.id }}{% endif %}" class="{% if forloop.first %}border-t-2 border-base-300{% endif %}">
+    <tr
+      id="{% if forloop.first %}digital-object-{{ row.digital_object.id }}{% endif %}"
+      class="border-base-300 {% if forloop.first %}border-t-2{% endif %}{% if forloop.last %} border-b-2{% endif %}"
+    >
       {% if forloop.first %}
         <td rowspan="{{ row.links|length }}" class="align-top bg-base-200">
           <div class="space-y-2 p-2">
@@ -94,7 +97,7 @@
     </tr>
   {% endfor %}
 {% else %}
-  <tr id="digital-object-{{ row.digital_object.id }}" class="border-t-2 border-base-300">
+  <tr id="digital-object-{{ row.digital_object.id }}" class="border-t-2 border-b-2 border-base-300">
     <td class="align-top bg-base-200">
       <div class="space-y-2 p-2">
         <div>
