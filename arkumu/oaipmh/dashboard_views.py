@@ -738,8 +738,31 @@ def _build_project_row_context(
     if record_title:
         row["project_label"] = record_title
 
-    row["harvestable_count"] = sum(1 for obj in curated_project.digital_objects if obj.harvestable)
-    row["has_harvestable_files"] = row["harvestable_count"] > 0
+    # All normalized objects in curated_project.digital_objects are harvestable;
+    # use them to derive per-project and per-link harvestable flags.
+    normalized_objects = list(curated_project.digital_objects or ())
+    row["harvestable_count"] = len(normalized_objects)
+    harvestable_resource_ids: set[str] = set()
+    harvestable_uris: set[str] = set()
+    for obj in normalized_objects:
+        resource_id = getattr(obj, "resource_id", None)
+        if resource_id not in (None, ""):
+            harvestable_resource_ids.add(str(resource_id))
+        uri = getattr(obj, "uri", None)
+        if uri:
+            harvestable_uris.add(uri)
+    row["has_harvestable_files"] = bool(harvestable_resource_ids or harvestable_uris)
+
+    # Attach per-link harvestable flag for UI (digital object column).
+    for link in filtered_links:
+        digital = getattr(link, "digital_object", None)
+        is_harvestable = False
+        if digital:
+            if str(getattr(digital, "id", "")) in harvestable_resource_ids:
+                is_harvestable = True
+            elif getattr(digital, "uri", None) in harvestable_uris:
+                is_harvestable = True
+        setattr(link, "is_harvestable", is_harvestable)
     selection = curated_project.curated_selection
     if selection:
         row["curated_selection"] = selection

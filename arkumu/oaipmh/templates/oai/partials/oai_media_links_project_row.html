@@ -39,14 +39,11 @@
     </div>
   </td>
   <td class="align-top border-l border-base-300 text-center">
-    <div class="p-2 space-y-1">
-      <div class="badge badge-xs badge-outline" title="Digital objects with harvestable files">
-        H:{{ row.harvestable_count }}
-      </div>
+    <div class="p-2">
       {% if row.has_harvestable_files %}
-        <div class="text-[10px] text-success">Has files</div>
+        <span class="badge badge-xs badge-success" title="At least one digital object is harvestable">Yes</span>
       {% else %}
-        <div class="text-[10px] text-error">No files</div>
+        <span class="badge badge-xs badge-error" title="No harvestable digital objects for this project">No</span>
       {% endif %}
     </div>
   </td>
