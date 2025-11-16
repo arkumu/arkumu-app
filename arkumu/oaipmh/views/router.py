@@ -21,7 +21,7 @@ from .config import (
     OAI_NS,
     SUPPORTED_METADATA_FORMATS,
     XSI_NS,
-    _curated_links_enabled,
+    _curated_media_links_active,
     _db_mode_enabled,
     _enforce_basic_auth,
     _force_curated_links,
@@ -206,7 +206,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                     record,
                     skip_shared_event_filter=_db_mode_enabled(),
                     skip_format_exclusion=_db_mode_enabled(),
-                    use_curated_media_links=_curated_links_enabled(),
+                    use_curated_media_links=_curated_media_links_active(),
                 )
 
             project_type_clause = _project_type_filter()
@@ -355,7 +355,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
-    with _force_db_mode(True), _force_curated_links(True):
+    with _force_db_mode(True):
         return _handle_oai_request(request)
 @general_login_required
 @csrf_exempt

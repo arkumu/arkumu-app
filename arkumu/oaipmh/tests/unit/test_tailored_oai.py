@@ -8,6 +8,8 @@ from django.utils import timezone
 from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.oaipmh import views
 from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
+from arkumu.oaipmh.views import projects as project_views
+from arkumu.projects import ProjectDigitalObject, ProjectInstitution, ProjectRecord
 from arkumu.users.models import Organization
 
 
@@ -140,3 +142,90 @@ def test_tailored_harvestable_page_uses_effective_datestamp(monkeypatch):
     first_resource = first_page.resources[0]
     second_resource = second_page.resources[0]
     assert first_resource.effective_datestamp <= second_resource.effective_datestamp
+
+
+@pytest.mark.django_db
+def test_project_hint_uses_curated_links_only_when_tailored(monkeypatch):
+    org = Organization.objects.create(code="khm", name="KHM", is_active=True)
+    project = Resource.objects.create(
+        uri="https://arkumu.org/entities/projekt/curated",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+    digital_a = Resource.objects.create(
+        uri="https://arkumu.org/entities/digital/a",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+    digital_b = Resource.objects.create(
+        uri="https://arkumu.org/entities/digital/b",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+
+    record = ProjectRecord(
+        subject_id=str(project.id),
+        uri=project.uri,
+        title="Curated Project",
+        institution=ProjectInstitution(label=org.name, code=org.code),
+        digital_objects=[
+            ProjectDigitalObject(
+                path="s3://bucket/a.tif",
+                storage_key="s3://bucket/a.tif",
+                file_name="a.tif",
+                content_type="image/tiff",
+                storage_status="completed",
+                resource_id=str(digital_a.id),
+                uri=digital_a.uri,
+            ),
+            ProjectDigitalObject(
+                path="s3://bucket/b.tif",
+                storage_key="s3://bucket/b.tif",
+                file_name="b.tif",
+                content_type="image/tiff",
+                storage_status="completed",
+                resource_id=str(digital_b.id),
+                uri=digital_b.uri,
+            ),
+        ],
+    )
+
+    OAIProjectMediaLink.objects.create(
+        project=project,
+        digital_object=digital_b,
+        status=OAIProjectMediaLink.STATUS_APPROVED,
+        order_index=1,
+    )
+    OAIProjectMediaLink.objects.create(
+        project=project,
+        digital_object=digital_a,
+        status=OAIProjectMediaLink.STATUS_APPROVED,
+        order_index=2,
+    )
+
+    monkeypatch.setattr(project_views, "_assemble_record_from_db", lambda resource: record)
+    monkeypatch.setattr(
+        project_views,
+        "snapshot_service",
+        SimpleNamespace(get_record_by_uri=lambda uri: None),
+    )
+
+    base_hint = project_views._build_project_hint_from_resource(project)
+    assert [obj.resource_id for obj in base_hint.digital_objects] == [
+        str(digital_a.id),
+        str(digital_b.id),
+    ]
+
+    with views._force_tailored_mode(True):
+        curated_hint = project_views._build_project_hint_from_resource(project)
+
+    assert [obj.resource_id for obj in curated_hint.digital_objects] == [
+        str(digital_b.id),
+        str(digital_a.id),
+    ]

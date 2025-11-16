@@ -23,7 +23,7 @@ from arkumu.storage.models.s3_file_objects import S3FileObject
 from .config import (
     HARVESTABLE_FILE_STATUSES,
     _DIGITAL_OBJECT_ORG_DEFAULT,
-    _curated_links_enabled,
+    _curated_media_links_active,
     _db_mode_enabled,
 )
 
@@ -68,7 +68,7 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
             record,
             skip_shared_event_filter=_db_mode_enabled(),
             skip_format_exclusion=_db_mode_enabled(),
-            use_curated_media_links=_curated_links_enabled(),
+            use_curated_media_links=_curated_media_links_active(),
         )
     except Exception:
         logger.exception("Failed to build OAI project for %s", resource.uri)
@@ -358,7 +358,7 @@ def _candidate_projects_for_resource(
                 record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),
-                use_curated_media_links=_curated_links_enabled(),
+                use_curated_media_links=_curated_media_links_active(),
             )
             candidates.append(project)
             seen.add(project.uri)
@@ -370,7 +370,7 @@ def _candidate_projects_for_resource(
                 fallback_record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),
-                use_curated_media_links=_curated_links_enabled(),
+                use_curated_media_links=_curated_media_links_active(),
             )
             if fallback_project.uri not in seen:
                 candidates.append(fallback_project)

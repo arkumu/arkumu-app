@@ -110,6 +110,11 @@ def _curated_links_enabled() -> bool:
     return bool(_curated_link_override.get() or _db_mode_enabled())
 
 
+def _curated_media_links_active() -> bool:
+    """Return True when curated link ordering should be applied."""
+    return bool(_curated_link_override.get() or _tailored_mode_enabled())
+
+
 @contextmanager
 def _force_curated_links(state: bool):
     token = _curated_link_override.set(state)
@@ -198,6 +203,7 @@ __all__ = [
     "_db_mode_enabled",
     "_force_db_mode",
     "_curated_links_enabled",
+    "_curated_media_links_active",
     "_force_curated_links",
     "_tailored_mode_enabled",
     "_force_tailored_mode",

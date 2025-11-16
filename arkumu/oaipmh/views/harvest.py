@@ -23,7 +23,7 @@ from .config import (
     HARVESTABLE_FILE_STATUSES,
     _PROJECT_TYPE_URIS,
     _RDF_TYPE_URI,
-    _curated_links_enabled,
+    _curated_media_links_active,
     _db_mode_enabled,
 )
 from .projects import (
@@ -340,7 +340,7 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
             record,
             skip_shared_event_filter=_db_mode_enabled(),
             skip_format_exclusion=_db_mode_enabled(),
-            use_curated_media_links=_curated_links_enabled(),
+            use_curated_media_links=_curated_media_links_active(),
         )
         if project.harvestable:
             harvestable[project.uri] = project
@@ -399,7 +399,7 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
                 record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),
-                use_curated_media_links=_curated_links_enabled(),
+                use_curated_media_links=_curated_media_links_active(),
             )
             if not project.harvestable:
                 continue

@@ -46,7 +46,7 @@ from .config import (
     SIMPLIFIED_LICENSE_LABEL,
     SIMPLIFIED_LICENSE_NOTE,
     XML_NS,
-    _curated_links_enabled,
+    _curated_media_links_active,
     _db_mode_enabled,
     _tailored_mode_enabled,
 )
@@ -748,7 +748,7 @@ def _build_dc_payload_from_record(
         record,
         skip_shared_event_filter=_db_mode_enabled(),
         skip_format_exclusion=_db_mode_enabled(),
-        use_curated_media_links=_curated_links_enabled(),
+        use_curated_media_links=_curated_media_links_active(),
     )
     return _build_dc_payload_from_project(
         project,
