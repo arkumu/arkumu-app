@@ -57,7 +57,7 @@ from .institutional import (
     _should_emit_institutional_rdf,
     _KHM_HMT_LICENSE_ORGS,
 )
-from .projects import _candidate_projects_for_resource, project_builder
+from .projects import _candidate_projects_for_resource, get_project_builder
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +206,8 @@ def _build_record_header(resource: Resource) -> ET._Element:
     """Build OAI record header."""
     header = ET.Element("header")
     ET.SubElement(header, "identifier").text = _build_identifier(resource.uri)
-    ET.SubElement(header, "datestamp").text = _format_datestamp(resource.updated_at)
+    datestamp_source = getattr(resource, "effective_datestamp", None) or resource.updated_at
+    ET.SubElement(header, "datestamp").text = _format_datestamp(datestamp_source)
     if resource.organization:
         ET.SubElement(header, "setSpec").text = resource.organization.code
     return header
@@ -744,7 +745,8 @@ def _build_dc_payload_from_record(
 ) -> Dict[str, List[str]]:
     """Compatibility wrapper to build DC payloads from legacy ProjectRecord inputs."""
 
-    project = project_builder.from_project_record(
+    builder = get_project_builder()
+    project = builder.from_project_record(
         record,
         skip_shared_event_filter=_db_mode_enabled(),
         skip_format_exclusion=_db_mode_enabled(),

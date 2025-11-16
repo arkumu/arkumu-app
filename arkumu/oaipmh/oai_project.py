@@ -93,6 +93,7 @@ class CuratedLinkWarning:
 class CuratedMediaSelection:
     ordered_resource_ids: Tuple[str, ...]
     ordered_object_uris: Tuple[str, ...]
+    resource_uri_pairs: Tuple[Tuple[str, Optional[str]], ...]
     label_overrides_by_id: Mapping[str, str]
     label_overrides_by_uri: Mapping[str, str]
     curated_missing_uris: Tuple[str, ...]
@@ -845,6 +846,7 @@ class OAIProjectBuilder:
             for link in links
             if getattr(link.digital_object, "uri", None)
         )
+        resource_uri_pairs: List[Tuple[str, Optional[str]]] = []
 
         curated_missing: List[str] = []
         label_overrides_by_id: Dict[str, str] = {}
@@ -854,6 +856,7 @@ class OAIProjectBuilder:
         for link in links:
             resource_key = str(link.digital_object_id)
             digital_uri = getattr(link.digital_object, "uri", None)
+            resource_uri_pairs.append((resource_key, digital_uri))
             if link.label_override:
                 label_overrides_by_id[resource_key] = link.label_override
                 if digital_uri:
@@ -910,6 +913,7 @@ class OAIProjectBuilder:
         return CuratedMediaSelection(
             ordered_resource_ids=ordered_resource_ids,
             ordered_object_uris=ordered_uri_tuple,
+            resource_uri_pairs=tuple(resource_uri_pairs),
             label_overrides_by_id=label_overrides_by_id,
             label_overrides_by_uri=label_overrides_by_uri,
             curated_missing_uris=curated_missing_tuple,

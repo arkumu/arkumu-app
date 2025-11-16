@@ -13,6 +13,7 @@ from arkumu.catalog.services.project_views import ProjectURIs
 from arkumu.metadata.models.resource import Resource
 from arkumu.metadata.models.triples import Triple
 from arkumu.oaipmh.oai_project import OAIProject, OAIProjectBuilder
+from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
 from arkumu.oaipmh.services import AssemblyContext, OAIProjectAssembler
 from arkumu.projects import ProjectDigitalObject, ProjectRecord, ProjectSnapshot
 from arkumu.projects.fixity import parse_fixity
@@ -30,7 +31,13 @@ from .config import (
 logger = logging.getLogger(__name__)
 
 project_builder = OAIProjectBuilder()
+_tailored_project_builder = OAIProjectBuilderTailored()
 _db_project_assembler_instance: Optional[OAIProjectAssembler] = None
+
+
+def get_project_builder() -> OAIProjectBuilder:
+    """Return the baseline project builder for non-tailored consumers."""
+    return project_builder
 
 
 def _digital_object_orgs() -> set[str]:
@@ -64,7 +71,8 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
     if record is None:
         return None
     try:
-        return project_builder.from_project_record(
+        builder = get_project_builder()
+        return builder.from_project_record(
             record,
             skip_shared_event_filter=_db_mode_enabled(),
             skip_format_exclusion=_db_mode_enabled(),
@@ -72,6 +80,27 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
         )
     except Exception:
         logger.exception("Failed to build OAI project for %s", resource.uri)
+        return None
+
+
+def _build_tailored_project_hint_from_resource(resource: Resource) -> Optional[OAIProject]:
+    """Build a tailored project using the tailored-only builder."""
+
+    record = _assemble_record_from_db(resource)
+    if record is None and not _db_mode_enabled():
+        record = snapshot_service.get_record_by_uri(resource.uri)
+    if record is None:
+        return None
+
+    try:
+        return _tailored_project_builder.from_project_record(
+            record,
+            skip_shared_event_filter=False,
+            skip_format_exclusion=_db_mode_enabled(),
+            use_curated_media_links=True,
+        )
+    except Exception:
+        logger.exception("Failed to build tailored OAI project for %s", resource.uri)
         return None
 def _assemble_record_from_db(resource: Optional[Resource]) -> Optional[ProjectRecord]:
     """Attempt to assemble a ProjectRecord via the DB-backed assembler."""
@@ -354,7 +383,8 @@ def _candidate_projects_for_resource(
     else:
         record = _get_snapshot_record(resource)
         if record:
-            project = project_builder.from_project_record(
+            builder = get_project_builder()
+            project = builder.from_project_record(
                 record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),
@@ -366,7 +396,8 @@ def _candidate_projects_for_resource(
     if not _db_mode_enabled():
         fallback_record = _fallback_record_from_storage(resource)
         if fallback_record:
-            fallback_project = project_builder.from_project_record(
+            builder = get_project_builder()
+            fallback_project = builder.from_project_record(
                 fallback_record,
                 skip_shared_event_filter=_db_mode_enabled(),
                 skip_format_exclusion=_db_mode_enabled(),

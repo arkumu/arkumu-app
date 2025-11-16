@@ -32,7 +32,7 @@ from .metadata import (
     _metadata_element_is_valid,
     _metadata_xml_is_valid,
 )
-from .projects import _build_project_hint_from_resource
+from .projects import _build_tailored_project_hint_from_resource
 from .router import _error
 
 __all__ = [
@@ -113,7 +113,7 @@ def _has_more_tailored_harvestables(queryset, cursor_position: Optional[str]) ->
     )
     iterator = lookahead_qs.iterator(chunk_size=100)
     for resource in iterator:
-        project_hint = _build_project_hint_from_resource(resource)
+        project_hint = _build_tailored_project_hint_from_resource(resource)
         if project_hint and project_hint.harvestable:
             return True
     return False
@@ -143,7 +143,7 @@ def _tailored_harvestable_page(
             resource,
             field_name="effective_datestamp",
         )
-        project_hint = _build_project_hint_from_resource(resource)
+        project_hint = _build_tailored_project_hint_from_resource(resource)
         if not project_hint or not project_hint.harvestable:
             continue
         if include_hints:
@@ -316,7 +316,7 @@ def _get_record_tailored(
     if not resource:
         return _error(oai, "idDoesNotExist", "Identifier not approved for tailored OAI")
 
-    project_hint = _build_project_hint_from_resource(resource)
+    project_hint = _build_tailored_project_hint_from_resource(resource)
     if not project_hint or not project_hint.harvestable:
         return _error(oai, "idDoesNotExist", "Identifier not harvestable")
 
