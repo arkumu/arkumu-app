@@ -27,12 +27,12 @@ from arkumu.users.models import Organization
 from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
 from arkumu.oaipmh.services import OAIProjectMediaSyncService
 from arkumu.oaipmh.views import (
-    oai_endpoint,
     oai_db_endpoint,
     _restrict_to_harvestable_files,
     _project_type_filter,
     _build_identifier,
 )
+from arkumu.oaipmh.views.legacy import oai_endpoint
 from arkumu.oaipmh.services.oai_project_assembler import OAIProjectAssembler, AssemblyContext
 from arkumu.oaipmh.oai_project import OAIProjectBuilder, HARVESTABLE_STORAGE_STATUSES
 from arkumu.metadata.services.oai_stats import (

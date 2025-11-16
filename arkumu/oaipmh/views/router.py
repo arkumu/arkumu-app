@@ -36,7 +36,11 @@ from .metadata import (
     _metadata_element_is_valid,
     _metadata_xml_is_valid,
 )
-from .projects import project_builder, snapshot_service
+from .projects import (
+    _build_project_hint_from_resource,
+    project_builder,
+    snapshot_service,
+)
 from .base import (
     _cache_record,
     _error,

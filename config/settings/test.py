@@ -68,6 +68,3 @@ HUEY = {
         'host': 'localhost',
     }
 }
-
-# Use lightweight snapshot provider during tests to avoid expensive builds
-OAI_SNAPSHOT_SERVICE_CLASS = "arkumu.oaipmh.services.snapshot_stub.InMemorySnapshotService"

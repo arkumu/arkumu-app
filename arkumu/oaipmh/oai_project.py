@@ -368,7 +368,7 @@ class OAIProjectBuilder:
 
         # Filter to find exclusive events (only linked to this project)
         exclusive_event_ids = set()
-        for event_id in event_ids:
+        for event_id in valid_event_ids:
             project_refs = event_to_projects.get(event_id, set())
 
             # Only include events exclusively linked to this project
