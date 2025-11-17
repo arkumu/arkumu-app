@@ -11,6 +11,7 @@ from django.http import JsonResponse, HttpResponse
 from django.urls import reverse
 
 from arkumu.storage.services.bucket_service import BucketService
+from arkumu.storage.services.verification_service import annotate_verified_flags
 
 # Import UploadSession model and get_user_model
 from arkumu.storage.models import UploadSession
@@ -138,6 +139,7 @@ def organization_contents(request, organization=None):
         
         # Get contents of the bucket with the given prefix
         contents = bucket_service.list_bucket_contents(bucket_name, prefix)
+        annotate_verified_flags(contents, organization)
         
         # Check if HTMX request for partial content
         is_htmx_request = request.headers.get('HX-Request') == 'true'
@@ -170,7 +172,8 @@ def organization_contents(request, organization=None):
                 return render(request, "dashboard/organization_folder_contents_partial.html", {
                     "structure": structure,
                     "organization": organization,
-                    "bucket_type": f"org-{organization}"
+                    "bucket_type": f"org-{organization}",
+                    "prefix": prefix,
                 })
             else:
                 # Initial load - show full template with header

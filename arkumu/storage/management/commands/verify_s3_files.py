@@ -8,6 +8,7 @@ from django.db.models import Q
 
 from arkumu.storage.models import S3FileObject
 from arkumu.storage.services.base_storage_service import BaseStorageService
+from arkumu.storage.services.verification_service import verify_single_object
 
 VALID_STATUSES = {"pending", "uploading", "completed", "failed", "missing", "verified"}
 
@@ -106,18 +107,38 @@ class Command(BaseCommand):
                 )
                 key = obj.s3_key or ""
 
-                try:
-                    head = service.s3_client.head_object(Bucket=bucket_name, Key=key)
-                except Exception:  # noqa: BLE001
+                result = verify_single_object(
+                    bucket_name,
+                    key,
+                    bucket_name,
+                    missing_status=missing_status,
+                    dry_run=dry_run,
+                )
+
+                if result.missing:
                     missing += 1
                     failures.append(key)
                     if dry_run:
                         continue
-                    obj.status = missing_status
-                    obj.error_message = "File missing in S3"
-                    obj.save(update_fields=["status", "error_message", "updated_at"])
+                    if obj.status != missing_status or obj.error_message != "File missing in S3":
+                        obj.status = missing_status
+                        obj.error_message = "File missing in S3"
+                        obj.save(update_fields=["status", "error_message", "updated_at"])
                     continue
 
+                if result.error:
+                    missing += 1
+                    failures.append(key)
+                    if dry_run:
+                        continue
+                    desired_error = f"S3 verification error: {result.error or 'Unknown error'}"
+                    if obj.status != missing_status or obj.error_message != desired_error:
+                        obj.status = missing_status
+                        obj.error_message = desired_error
+                        obj.save(update_fields=["status", "error_message", "updated_at"])
+                    continue
+
+                head = result.metadata or {}
                 etag = (head.get("ETag") or "").strip('"')
                 if dry_run:
                     updated_checksums += 1

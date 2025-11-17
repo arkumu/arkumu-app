@@ -1,5 +1,6 @@
 import pytest
 import json
+from urllib.parse import urlencode
 from unittest.mock import MagicMock, PropertyMock
 from django.test import RequestFactory
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -43,10 +44,11 @@ def prepared_request(request_factory, auth_user):
                 # For views that expect to parse JSON from request.body
                 setattr(request, '_body', json.dumps(data).encode('utf-8'))
             else:
-                # For form data, use data parameter
+                # For form data, encode via urlencode to produce deterministic POST bodies
+                encoded = urlencode(data or {})
                 request = request_factory.post(
                     request_path, 
-                    data=data,
+                    data=encoded,
                     content_type='application/x-www-form-urlencoded'
                 )
         

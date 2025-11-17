@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from botocore.exceptions import ClientError
 from django.core.management.base import BaseCommand
 
 from arkumu.storage.models import S3FileObject
-from arkumu.storage.services.base_storage_service import BaseStorageService
+from arkumu.storage.services.verification_service import verify_single_object
 
 
 def _split_s3_location(
@@ -61,85 +60,72 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("No S3FileObject rows to process."))
             return
 
-        service = BaseStorageService()
         verified = 0
         newly_verified = 0
         missing = 0
         newly_missing = 0
         skipped = 0
 
-        try:
-            for obj in queryset.iterator():
-                bucket, key = _split_s3_location(obj.s3_key or "")
-                if not bucket and obj.session_id:
-                    session_bucket = (getattr(obj.session, "s3_bucket", "") or "").strip()
-                    if session_bucket:
-                        bucket = session_bucket
-                if not bucket or not key:
-                    skipped += 1
-                    self.stderr.write(
-                        self.style.WARNING(
-                            f"Skipping {obj.pk}: unable to determine bucket for key '{obj.s3_key}'."
-                        )
+        for obj in queryset.iterator():
+            bucket, key = _split_s3_location(obj.s3_key or "")
+            if not bucket and obj.session_id:
+                session_bucket = (getattr(obj.session, "s3_bucket", "") or "").strip()
+                if session_bucket:
+                    bucket = session_bucket
+            if not bucket or not key:
+                skipped += 1
+                self.stderr.write(
+                    self.style.WARNING(
+                        f"Skipping {obj.pk}: unable to determine bucket for key '{obj.s3_key}'."
                     )
-                    continue
+                )
+                continue
 
-                try:
-                    head = service.s3_client.head_object(Bucket=bucket, Key=key)
-                except ClientError as exc:
-                    missing += 1
-                    self.stderr.write(self.style.WARNING(f"{bucket}/{key} missing: {exc}"))
-                    if obj.status != "missing":
-                        newly_missing += 1
-                    if dry_run:
-                        continue
+            status_was_verified = obj.status == "verified"
+            previously_missing = obj.status == "missing"
+
+            result = verify_single_object(
+                bucket,
+                key,
+                bucket,
+                dry_run=dry_run,
+            )
+
+            if result.missing:
+                missing += 1
+                self.stderr.write(self.style.WARNING(f"{bucket}/{key} missing during verification"))
+                if not previously_missing:
+                    newly_missing += 1
+                if dry_run:
+                    continue
+                if obj.status != "missing" or obj.error_message != "File missing in S3":
                     obj.status = "missing"
                     obj.error_message = "File missing in S3"
                     obj.save(update_fields=["status", "error_message", "updated_at"])
-                    continue
-                except Exception as exc:  # noqa: BLE001
-                    missing += 1
-                    self.stderr.write(self.style.WARNING(f"{bucket}/{key} unable to verify: {exc}"))
-                    if obj.status != "missing":
-                        newly_missing += 1
-                    if dry_run:
-                        continue
-                    obj.status = "missing"
-                    obj.error_message = f"S3 verification error: {exc}"
-                    obj.save(update_fields=["status", "error_message", "updated_at"])
-                    continue
+                continue
 
-                verified += 1
-                status_was_verified = obj.status == "verified"
+            if result.error:
+                missing += 1
+                self.stderr.write(self.style.WARNING(f"{bucket}/{key} unable to verify: {result.error}"))
+                if not previously_missing:
+                    newly_missing += 1
                 if dry_run:
-                    if not status_was_verified:
-                        newly_verified += 1
                     continue
+                desired_error = f"S3 verification error: {result.error or 'Unknown error'}"
+                if obj.status != "missing" or obj.error_message != desired_error:
+                    obj.status = "missing"
+                    obj.error_message = desired_error
+                    obj.save(update_fields=["status", "error_message", "updated_at"])
+                continue
 
-                updates: list[str] = []
+            verified += 1
+            if dry_run:
                 if not status_was_verified:
-                    obj.status = "verified"
-                    updates.append("status")
                     newly_verified += 1
+                continue
 
-                etag = head.get("ETag") or ""
-                if etag and etag != obj.etag:
-                    obj.etag = etag
-                    updates.append("etag")
-
-                if obj.organization != bucket:
-                    obj.organization = bucket
-                    updates.append("organization")
-
-                if updates:
-                    updates.append("updated_at")
-                    obj.save(update_fields=updates)
-        finally:
-            if hasattr(service, "close"):
-                try:
-                    service.close()  # type: ignore[attr-defined]
-                except Exception:  # noqa: BLE001
-                    pass
+            if not status_was_verified:
+                newly_verified += 1
 
         summary = (
             f"{'Would verify' if dry_run else 'Verified'} {verified} object(s); "
