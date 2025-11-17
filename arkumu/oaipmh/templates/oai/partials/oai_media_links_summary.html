@@ -34,19 +34,12 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button
-              class="btn btn-outline btn-primary btn-sm"
-              hx-get="{% url 'oai_admin:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
-              hx-target="#oai-media-links-seed-modal"
-              hx-swap="innerHTML"
-            >
-              Seed curated entries
-            </button>
             <form
               method="post"
-              hx-post="{% url 'oai_admin:oai_publication_sync' %}"
+              hx-post="{% url 'oai_admin:oai_media_link_seed_and_sync' %}"
               hx-target="#oai-media-links-panel"
               hx-swap="innerHTML"
+              class="flex"
             >
               {% csrf_token %}
               <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
@@ -54,8 +47,8 @@
               <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
               <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
               <input type="hidden" name="page" value="1">
-              <button type="submit" class="btn btn-outline btn-secondary btn-sm">
-                Sync OAI approvals
+              <button type="submit" class="btn btn-outline btn-primary btn-sm" title="Seed curated links and sync OAI approvals">
+                Sync curated data
               </button>
             </form>
           </div>

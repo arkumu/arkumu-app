@@ -1391,6 +1391,67 @@ def oai_media_link_seed_execute(request):
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
 
+@general_login_required
+@require_http_methods(["POST"])
+def oai_media_link_seed_and_sync(request):
+    if not _has_oai_admin_access(request.user):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    status_filter = _normalized_media_link_status(request.POST.get('status'))
+    project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
+    if project_access_filter not in ['all', 'private', 'restricted', 'public']:
+        project_access_filter = 'all'
+
+    oai_publish_filter = (request.POST.get('oai_publish') or 'all').strip().lower()
+    if oai_publish_filter not in ['all', 'approved', 'pending']:
+        oai_publish_filter = 'all'
+
+    page_param = request.POST.get('page') or '1'
+    try:
+        page_number = max(int(page_param), 1)
+    except ValueError:
+        page_number = 1
+
+    seed_summary = _run_media_link_seed(organization)
+    if seed_summary["projects"] == 0:
+        messages.warning(request, f"No eligible projects found for organization {organization.code.upper()}.")
+    else:
+        messages.success(
+            request,
+            (
+                f"Seeded {seed_summary['projects']} project(s): "
+                f"created {seed_summary['created']}, refreshed {seed_summary['refreshed']}, "
+                f"marked stale {seed_summary['stale']}."
+            ),
+        )
+
+    sync_summary = _sync_oai_publication_for_org(organization, user=request.user)
+    if sync_summary["auto_approved"]:
+        messages.success(
+            request,
+            f"Auto-approved OAI publication for {sync_summary['auto_approved']} project(s) with harvestable files.",
+        )
+    else:
+        messages.info(request, "No additional projects were auto-approved for OAI.")
+
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        status_filter=status_filter,
+        page_number=page_number,
+        project_access_filter=project_access_filter,
+        oai_publish_filter=oai_publish_filter,
+    )
+    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    panel_context['include_summary_partial'] = True
+    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+
+
 def _build_digital_object_centric_context(
     *,
     organization: Organization,

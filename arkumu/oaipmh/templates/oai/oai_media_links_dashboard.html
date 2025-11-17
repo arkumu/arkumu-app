@@ -23,8 +23,6 @@
     {% include 'oai/partials/oai_media_links_alerts.html' %}
   </div>
 
-  <div id="oai-media-links-seed-modal"></div>
-
   <div class="card bg-base-100 shadow">
     <div class="card-body py-4">
       <div class="flex flex-wrap items-center gap-4">
@@ -60,7 +58,7 @@
       {% include 'oai/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page %}
     {% elif selected_org %}
       <div class="alert alert-info shadow">
-        <span>No curated links yet. Run the seed process or add a digital object manually to get started.</span>
+        <span>No curated links yet. Use the sync action or add a digital object manually to get started.</span>
       </div>
     {% else %}
       <div class="alert alert-info shadow">
