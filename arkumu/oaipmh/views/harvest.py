@@ -18,6 +18,7 @@ from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.oai_stats import classify_project_access
 from arkumu.projects import ProjectRecord, ProjectSnapshot
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.oaipmh.models import OAIProjectMediaLink
 
 from .config import (
     HARVESTABLE_FILE_STATUSES,
@@ -205,10 +206,11 @@ def _restrict_to_harvestable_files(queryset):
         for code in getattr(settings, "OAI_ROSETTA_HARVESTABLE_ORGS", ())
         if code
     }
-
-    rosetta_condition = Q()
-    for code in rosetta_orgs:
-        rosetta_condition |= Q(organization__code__iexact=code)
+    s3_harvestable_orgs = {
+        code.lower().strip()
+        for code in getattr(settings, "OAI_S3_HARVESTABLE_ORGS", ())
+        if code
+    }
 
     event_file_event_ids = S3FileObject.objects.filter(
         status__in=HARVESTABLE_FILE_STATUSES,
@@ -259,9 +261,35 @@ def _restrict_to_harvestable_files(queryset):
         )
     )
 
-    combined_condition = s3_condition | event_condition | digital_object_s3_condition
+    curated_links = OAIProjectMediaLink.objects.filter(
+        project_id=OuterRef('pk'),
+        digital_object__isnull=False,
+    )
+
+    curated_condition = None
+    if s3_harvestable_orgs:
+        s3_link_condition = Exists(
+            curated_links.filter(
+                project__organization__code__in=s3_harvestable_orgs,
+                digital_object__s3fileobject__status__in=HARVESTABLE_FILE_STATUSES,
+                digital_object__s3fileobject__s3_key__isnull=False,
+            ).exclude(digital_object__s3fileobject__s3_key="")
+        )
+        curated_condition = s3_link_condition
+
     if rosetta_orgs:
-        combined_condition |= rosetta_condition
+        rosetta_link_condition = Exists(
+            curated_links.filter(project__organization__code__in=rosetta_orgs)
+        )
+        curated_condition = (
+            rosetta_link_condition
+            if curated_condition is None
+            else (curated_condition | rosetta_link_condition)
+        )
+
+    combined_condition = s3_condition | event_condition | digital_object_s3_condition
+    if curated_condition is not None:
+        combined_condition |= curated_condition
     if dump_project_ids:
         combined_condition |= Q(pk__in=list(dump_project_ids))
 

@@ -932,6 +932,7 @@ def _build_media_links_panel_context(
         "view_mode": "project",
         "oai_publish_filter": oai_publish_filter,
         "harvestable_filter": harvestable_filter,
+        "include_summary_partial": False,
     }
 
 
@@ -1094,6 +1095,7 @@ def oai_media_links_panel(request):
         search_query=search_query,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    panel_context['include_summary_partial'] = True
 
     # If not an HTMX request, redirect to the full dashboard with params
     if not request.headers.get('HX-Request'):
@@ -1231,6 +1233,7 @@ def oai_media_link_delete(request, link_id):
             page_number=1,
         )
         panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+        panel_context['include_summary_partial'] = True
         return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
     return _render_project_row_response(
@@ -1384,6 +1387,7 @@ def oai_media_link_seed_execute(request):
         page_number=1,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    panel_context['include_summary_partial'] = True
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
 
@@ -1602,6 +1606,7 @@ def _build_digital_object_centric_context(
         "per_page": MEDIA_LINKS_PAGE_SIZE,
         "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
         "view_mode": "digital",
+        "include_summary_partial": False,
     }
 
 
@@ -1648,6 +1653,7 @@ def oai_media_links_digital_view(request):
         search_query=search_query,
         oai_publish_filter=oai_publish_filter,
     )
+    context['include_summary_partial'] = True
 
     # If not an HTMX request, redirect to the full dashboard with params
     if not request.headers.get('HX-Request'):
@@ -1768,4 +1774,5 @@ def oai_publication_sync(request):
         oai_publish_filter=oai_publish_filter,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
+    panel_context['include_summary_partial'] = True
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
