@@ -204,9 +204,17 @@ def test_tailored_endpoint_curates_media_links(client, monkeypatch, settings):
     db_hrefs = _file_hrefs(db_root)
     tailored_titles = _file_titles(tailored_root)
     db_titles = _file_titles(db_root)
+    download_base = (
+        getattr(settings, "AWS_S3_BROWSER_ENDPOINT_URL", "")
+        or getattr(settings, "S3_HOSTNAME", "")
+        or "http://localhost:9000"
+    )
+    if not download_base.startswith("http://") and not download_base.startswith("https://"):
+        download_base = f"https://{download_base}"
+
     expected_tailored = [
-        "s3://bucket/b.tif",
-        "s3://bucket/a.tif",
+        f"{download_base}/fuk/bucket/b.tif",
+        f"{download_base}/fuk/bucket/a.tif",
     ]
     for href, expected in zip(tailored_hrefs, expected_tailored):
         assert expected in href

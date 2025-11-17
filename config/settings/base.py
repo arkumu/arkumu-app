@@ -515,6 +515,8 @@ OAI_S3_HARVESTABLE_ORGS = tuple(
     if org.strip()
 )
 
+S3_HOSTNAME = env("S3_HOSTNAME", default="")
+
 OAI_ROSETTA_HARVESTABLE_ORGS = tuple(
     org.strip()
     for org in env.list(

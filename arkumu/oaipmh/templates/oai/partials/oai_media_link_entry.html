@@ -6,6 +6,11 @@
     <div class="font-mono text-[10px] text-base-content/70 break-all">
       <a href="{{ link.digital_object.uri }}" target="_blank" rel="noopener" class="link link-hover">{{ link.digital_object.uri }}</a>
     </div>
+    {% if link.has_s3_file and link.s3_key_preview %}
+      <div class="font-mono text-[10px] text-base-content/60 break-all">
+        {{ link.s3_key_preview }}
+      </div>
+    {% endif %}
     <div class="flex flex-wrap gap-1 mt-1">
       {% if link.is_harvestable %}
         <span class="badge badge-xs badge-success" title="This digital object is harvestable for OAI">H</span>

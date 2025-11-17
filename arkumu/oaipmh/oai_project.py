@@ -9,6 +9,7 @@ from uuid import UUID
 
 import logging
 import mimetypes
+import os
 
 from django.conf import settings
 from django.db.models import Count, Q
@@ -127,6 +128,7 @@ class NormalizedDigitalObject:
     license: Optional[ProjectDigitalObjectLicense] = None
     resource_id: Optional[str] = None
     label_override: Optional[str] = None
+    download_href: Optional[str] = None
 
     @property
     def harvestable(self) -> bool:
@@ -148,6 +150,8 @@ class NormalizedDigitalObject:
     def preferred_location(self) -> Optional[str]:
         """Return the location that should appear in METS FLocat."""
 
+        if self.download_href:
+            return self.download_href
         if self.rosetta_path:
             return self.rosetta_path
         if self.storage_key:
@@ -703,8 +707,13 @@ class OAIProjectBuilder:
         rosetta_candidates: Tuple[str, ...] = ()
         rosetta_path: Optional[str] = None
 
+        is_s3_org = bool(institution_code and institution_code in self._s3_orgs)
+        is_rosetta_org = not is_s3_org and bool(
+            institution_code and institution_code in self._rosetta_orgs
+        )
+
         # For S3 orgs (FUK, DET, RSH): check if file exists in dump/fixity index
-        if institution_code and institution_code in self._s3_orgs:
+        if is_s3_org:
             from arkumu.projects.services.dump_fixity_index import find_fixity
 
             candidates = [original_path, storage_key, access_url, file_name]
@@ -727,7 +736,7 @@ class OAIProjectBuilder:
             if fixity_record.checksum_or_etag and not fixity.digest:
                 fixity = parse_fixity(fixity_record.checksum_or_etag)
 
-        if institution_code and institution_code in self._rosetta_orgs:
+        if is_rosetta_org and not is_s3_org:
             resolved = self._path_resolver(
                 institution_code,
                 path=original_path or storage_key,
@@ -746,7 +755,13 @@ class OAIProjectBuilder:
                 )
                 return None
 
-        if not rosetta_path and institution_code and institution_code in self._s3_rosetta_bases and storage_key:
+        if (
+            not is_s3_org
+            and not rosetta_path
+            and institution_code
+            and institution_code in self._s3_rosetta_bases
+            and storage_key
+        ):
             base = self._s3_rosetta_bases[institution_code]
             candidate = f"{base}/{storage_key.lstrip('/')}"
             rosetta_path = candidate
@@ -756,11 +771,8 @@ class OAIProjectBuilder:
             rosetta_candidates = (original_path,)
             rosetta_path = original_path
 
-        source = "unknown"
-        if rosetta_path:
-            source = "rosetta"
-        elif institution_code and institution_code in self._s3_orgs:
-            source = "s3"
+        is_s3_org = bool(institution_code and institution_code in self._s3_orgs)
+        source = "s3" if is_s3_org else ("rosetta" if rosetta_path else "unknown")
 
         size_bytes = getattr(obj, "size_bytes", None)
         if isinstance(size_bytes, str) and size_bytes.isdigit():
@@ -777,6 +789,10 @@ class OAIProjectBuilder:
                 license_info = ProjectDigitalObjectLicense(**license_info)  # type: ignore[call-arg]
             except TypeError:
                 license_info = None
+
+        download_href = None
+        if is_s3_org and storage_key:
+            download_href = self._build_s3_download_href(storage_key, institution_code)
 
         return NormalizedDigitalObject(
             uri=object_uri,
@@ -800,7 +816,56 @@ class OAIProjectBuilder:
             significant_properties_en=significant_en,
             license=license_info,
             resource_id=resource_id,
+            download_href=download_href,
         )
+
+    def _build_s3_download_href(
+        self,
+        storage_key: Optional[str],
+        institution_code: Optional[str],
+    ) -> Optional[str]:
+        if not storage_key:
+            return None
+        host = (
+            getattr(settings, "AWS_S3_BROWSER_ENDPOINT_URL", "")
+            or getattr(settings, "S3_HOSTNAME", "")
+            or os.environ.get("AWS_S3_BROWSER_ENDPOINT_URL", "")
+            or os.environ.get("S3_HOSTNAME", "")
+        ).strip()
+        if not host:
+            host = "http://localhost:9000"
+        base = host.rstrip("/")
+        if not base.startswith("http://") and not base.startswith("https://"):
+            base = f"https://{base}"
+
+        token = storage_key.strip()
+        if token.startswith("s3://"):
+            token = token[5:]
+        token = token.lstrip("/")
+        if not token:
+            return None
+
+        normalized_code = (institution_code or "").strip().lower()
+        bucket = normalized_code or None
+        if bucket:
+            prefix = f"{bucket}/"
+            if token.lower().startswith(prefix):
+                token = token[len(prefix):]
+        else:
+            candidate_bucket, sep, remainder = token.partition('/')
+            if not sep:
+                return None
+            bucket = candidate_bucket.strip()
+            token = remainder
+
+        token = token.lstrip('/')
+        if not bucket or not token:
+            return None
+
+        from urllib.parse import quote
+
+        escaped_key = quote(token, safe="/-_.~")
+        return f"{base}/{bucket}/{escaped_key}"
 
     def _resolve_curated_selection(
         self,
