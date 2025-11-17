@@ -4,7 +4,7 @@ import json
 import logging
 from collections import defaultdict
 from io import StringIO
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 from django.conf import settings
 from django.contrib import messages
@@ -482,6 +482,7 @@ def _build_media_links_summary(
     project_access_filter: str = "all",
     oai_publish_filter: str = "all",
     harvestable_filter: str = "all",
+    s3_harvestable_ids: Optional[Set[int]] = None,
 ) -> dict[str, Any]:
     links_total = link_qs.count()
     filtered_total = links_total if status_filter == "all" else link_qs.filter(status=status_filter).count()
@@ -502,7 +503,10 @@ def _build_media_links_summary(
     # Project-level stats for summary header
     project_qs = _oai_project_queryset_for_org(organization)
     available_projects = project_qs.count()
-    harvestable_projects = _restrict_to_harvestable_files(project_qs).count()
+    if s3_harvestable_ids is not None:
+        harvestable_projects = len(s3_harvestable_ids)
+    else:
+        harvestable_projects = _restrict_to_harvestable_files(project_qs).count()
 
     return {
         "links_total": links_total,
@@ -518,6 +522,32 @@ def _build_media_links_summary(
         "oai_publish_filter": oai_publish_filter,
         "harvestable_filter": harvestable_filter,
     }
+
+
+def _is_s3_org(organization: Organization) -> bool:
+    codes = {
+        code.lower().strip()
+        for code in getattr(settings, "OAI_S3_HARVESTABLE_ORGS", ())
+        if code
+    }
+    org_code = (organization.code or "").strip().lower()
+    return org_code in codes
+
+
+def _s3_harvestable_project_ids(organization: Organization) -> Set[int]:
+    statuses = HARVESTABLE_STORAGE_STATUSES
+    qs = (
+        OAIProjectMediaLink.objects.filter(
+            project__organization=organization,
+            status__in=[OAIProjectMediaLink.STATUS_APPROVED, OAIProjectMediaLink.STATUS_PENDING],
+            digital_object__s3fileobject__status__in=statuses,
+        )
+        .exclude(digital_object__s3fileobject__s3_key__isnull=True)
+        .exclude(digital_object__s3fileobject__s3_key__exact="")
+        .values_list("project_id", flat=True)
+        .distinct()
+    )
+    return set(qs)
 
 
 def _sync_oai_publication_for_org(
@@ -852,6 +882,9 @@ def _build_media_links_panel_context(
     search_query: str = "",
 ) -> dict[str, Any]:
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
+    s3_harvestable_ids: Optional[Set[int]] = None
+    if _is_s3_org(organization):
+        s3_harvestable_ids = _s3_harvestable_project_ids(organization)
     summary = _build_media_links_summary(
         organization,
         link_base_qs,
@@ -859,6 +892,7 @@ def _build_media_links_panel_context(
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
         harvestable_filter=harvestable_filter,
+        s3_harvestable_ids=s3_harvestable_ids,
     )
 
     project_prefetch = Prefetch(
@@ -887,10 +921,20 @@ def _build_media_links_panel_context(
         )
 
     if harvestable_filter == "harvestable":
-        projects_qs = _restrict_to_harvestable_files(projects_qs)
+        if s3_harvestable_ids is not None:
+            if s3_harvestable_ids:
+                projects_qs = projects_qs.filter(id__in=s3_harvestable_ids)
+            else:
+                projects_qs = projects_qs.none()
+        else:
+            projects_qs = _restrict_to_harvestable_files(projects_qs)
     elif harvestable_filter == "non_harvestable":
-        harvestable_qs = _restrict_to_harvestable_files(projects_qs)
-        projects_qs = projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
+        if s3_harvestable_ids is not None:
+            if s3_harvestable_ids:
+                projects_qs = projects_qs.exclude(id__in=s3_harvestable_ids)
+        else:
+            harvestable_qs = _restrict_to_harvestable_files(projects_qs)
+            projects_qs = projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
 
     paginator = Paginator(projects_qs, MEDIA_LINKS_PAGE_SIZE)
     page_obj = paginator.get_page(page_number)
@@ -1072,6 +1116,7 @@ def _render_project_row_response(
         organization,
         OAIProjectMediaLink.objects.filter(project__organization=organization),
         status_filter=status_filter,
+        s3_harvestable_ids=_s3_harvestable_project_ids(organization) if _is_s3_org(organization) else None,
     )
     context = {
         "row": row,
