@@ -75,6 +75,15 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             curated_selection=curated_selection,
         )
 
+    # Tailored profile keeps "Oberwerk" umbrella assets so override the parent
+    # suppression hook with a no-op. Canonical feeds still inherit base behavior.
+    def _filter_overarching_projects(
+        self,
+        record: ProjectRecord,
+        institution_code: Optional[str],
+    ) -> ProjectRecord:  # pragma: no cover - trivial override
+        return record
+
     def _resolve_curated_selection(
         self,
         record: ProjectRecord,
