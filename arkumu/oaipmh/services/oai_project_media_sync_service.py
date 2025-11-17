@@ -244,12 +244,16 @@ class OAIProjectMediaSyncService:
                 OAIProjectMediaLink.objects.create(
                     project=project,
                     digital_object=candidate.resource,
-                    status=OAIProjectMediaLink.STATUS_PENDING,
+                    status=OAIProjectMediaLink.STATUS_APPROVED,
                     source=candidate.source,
                     order_index=next_order,
                 )
                 created += 1
                 next_order += 1
+                continue
+
+            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
+                # Hard veto: never revive or mutate rejected links.
                 continue
 
             updates: List[str] = []
@@ -274,13 +278,12 @@ class OAIProjectMediaSyncService:
         seen: Iterable[UUID],
     ) -> int:
         seen_ids = {pk for pk in seen}
-        stale_links = [
-            link
-            for pk, link in existing.items()
-            if pk not in seen_ids
-            and not link.is_stale
-            and link.status == OAIProjectMediaLink.STATUS_APPROVED
-        ]
+        stale_links = []
+        for pk, link in existing.items():
+            if pk in seen_ids or link.is_stale:
+                continue
+            if link.status in (OAIProjectMediaLink.STATUS_APPROVED, OAIProjectMediaLink.STATUS_PENDING):
+                stale_links.append(link)
         if not stale_links:
             return 0
 
@@ -295,7 +298,11 @@ class OAIProjectMediaSyncService:
     def _mark_project_stale(self, project: Resource) -> SyncResult:
         links = (
             OAIProjectMediaLink.objects.select_for_update()
-            .filter(project=project, status=OAIProjectMediaLink.STATUS_APPROVED, is_stale=False)
+            .filter(
+                project=project,
+                status__in=[OAIProjectMediaLink.STATUS_APPROVED, OAIProjectMediaLink.STATUS_PENDING],
+                is_stale=False,
+            )
         )
         count = 0
         for link in links:

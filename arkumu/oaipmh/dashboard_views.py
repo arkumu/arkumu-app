@@ -24,8 +24,13 @@ from arkumu.metadata.models.resource import PublicAccessLevel, Resource, Resourc
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.mixins import general_login_required
 from arkumu.users.models import Organization
-from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
+from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication, OAIMediaSyncState
 from arkumu.oaipmh.services import OAIProjectMediaSyncService
+from arkumu.oaipmh.services.media_sync_planner import (
+    collect_publication_candidate_ids,
+    collect_seed_candidate_ids,
+    get_sync_state,
+)
 from arkumu.oaipmh.views import (
     oai_db_endpoint,
     _restrict_to_harvestable_files,
@@ -43,6 +48,7 @@ from arkumu.metadata.services.oai_stats import (
 )
 from arkumu.cache.services.project_cache_service import ProjectCacheService
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.oaipmh.services import media_sync_jobs
 
 
 logger = logging.getLogger(__name__)
@@ -344,7 +350,18 @@ def _run_media_link_seed(org: Organization) -> dict[str, int]:
     is_debug_logging = logger.isEnabledFor(logging.DEBUG)
     if is_debug_logging:
         logger.debug("Media link seed run started for org=%s (preview=False)", org_label)
-    for idx, project in enumerate(_oai_project_queryset_for_org(org).iterator(chunk_size=100), start=1):
+
+    state = get_sync_state(org, profile=OAIMediaSyncState.PROFILE_TAILORED)
+    full_refresh, candidate_ids = collect_seed_candidate_ids(org, since=state.last_seed_at)
+    queryset = _oai_project_queryset_for_org(org)
+    if not full_refresh:
+        if not candidate_ids:
+            state.last_seed_at = timezone.now()
+            state.save(update_fields=["last_seed_at", "updated_at"])
+            return summary
+        queryset = queryset.filter(id__in=list(candidate_ids))
+
+    for idx, project in enumerate(queryset.iterator(chunk_size=100), start=1):
         result = service.sync_project(project)
         summary["projects"] += 1
         summary["created"] += getattr(result, "created", 0)
@@ -371,6 +388,9 @@ def _run_media_link_seed(org: Organization) -> dict[str, int]:
             summary["stale"],
             summary["skipped"],
         )
+
+    state.last_seed_at = timezone.now()
+    state.save(update_fields=["last_seed_at", "updated_at"])
     return summary
 
 
@@ -511,7 +531,20 @@ def _sync_oai_publication_for_org(
     builder = OAIProjectBuilder()
     summary: dict[str, int] = {"projects": 0, "auto_approved": 0, "errors": 0}
 
-    for project in _oai_project_queryset_for_org(organization).iterator(chunk_size=100):
+    state = get_sync_state(organization, profile=OAIMediaSyncState.PROFILE_TAILORED)
+    full_refresh, candidate_ids = collect_publication_candidate_ids(
+        organization,
+        since=state.last_publication_sync_at,
+    )
+    queryset = _oai_project_queryset_for_org(organization)
+    if not full_refresh:
+        if not candidate_ids:
+            state.last_publication_sync_at = timezone.now()
+            state.save(update_fields=["last_publication_sync_at", "updated_at"])
+            return summary
+        queryset = queryset.filter(id__in=list(candidate_ids))
+
+    for project in queryset.iterator(chunk_size=100):
         summary["projects"] += 1
 
         context = AssemblyContext(resource=project)
@@ -550,7 +583,36 @@ def _sync_oai_publication_for_org(
             publication.save()
             summary["auto_approved"] += 1
 
+    state.last_publication_sync_at = timezone.now()
+    state.save(update_fields=["last_publication_sync_at", "updated_at"])
     return summary
+
+
+def _emit_media_sync_messages(request, state: dict[str, Any], organization: Organization) -> None:
+    seed_summary = state.get('seed_summary') or {}
+    seed_projects = seed_summary.get('projects', 0)
+    if seed_projects:
+        messages.success(
+            request,
+            (
+                f"Seeded {seed_projects} project(s): "
+                f"created {seed_summary.get('created', 0)}, "
+                f"refreshed {seed_summary.get('refreshed', 0)}, "
+                f"marked stale {seed_summary.get('stale', 0)}."
+            ),
+        )
+    else:
+        messages.warning(request, f"No eligible projects found for organization {organization.code.upper()}.")
+
+    sync_summary = state.get('sync_summary') or {}
+    approved_count = sync_summary.get('auto_approved', 0)
+    if approved_count:
+        messages.success(
+            request,
+            f"Auto-approved OAI publication for {approved_count} project(s) with harvestable files.",
+        )
+    else:
+        messages.info(request, "No additional projects were auto-approved for OAI.")
 
 
 def _resource_display_label(
@@ -680,11 +742,13 @@ def _build_project_row_context(
             fallback="Untitled digital object",
             label_lookup=label_lookup,
         )
-    filtered_links = (
-        prefetched_links
-        if status_filter == "all"
-        else [link for link in prefetched_links if link.status == status_filter]
-    )
+    active_links = [link for link in prefetched_links if link.status != OAIProjectMediaLink.STATUS_REJECTED]
+    if status_filter == "all":
+        filtered_links = active_links
+    elif status_filter == OAIProjectMediaLink.STATUS_REJECTED:
+        filtered_links = [link for link in prefetched_links if link.status == OAIProjectMediaLink.STATUS_REJECTED]
+    else:
+        filtered_links = [link for link in active_links if link.status == status_filter]
 
     publication = None
     if publication_by_id is not None:
@@ -697,7 +761,7 @@ def _build_project_row_context(
         "project_uri": project_uri,
         "project_label": _resource_display_label(resource, fallback="Untitled project", label_lookup=label_lookup),
         "links": filtered_links,
-        "total_links": len(prefetched_links),
+        "total_links": len(active_links),
         "selected_org_code": org_code,
         "status_filter": status_filter,
         "builder_error": False,
@@ -842,6 +906,8 @@ def _build_media_links_panel_context(
     digital_resources: List[Resource] = []
     for project_resource in project_resources:
         for link in getattr(project_resource, "prefetched_media_links", []) or []:
+            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
+                continue
             digital = getattr(link, "digital_object", None)
             if digital:
                 digital_resources.append(digital)
@@ -874,6 +940,8 @@ def _build_media_links_panel_context(
 
             for project_resource in project_resources:
                 for link in getattr(project_resource, "prefetched_media_links", []) or []:
+                    if link.status == OAIProjectMediaLink.STATUS_REJECTED:
+                        continue
                     digital = getattr(link, "digital_object", None)
                     has_s3 = False
                     s3_key_preview = ""
@@ -960,6 +1028,8 @@ def _build_single_project_row_context(
     label_lookup = _prefetch_resource_labels([resource])
     digital_resources: List[Resource] = []
     for link in getattr(resource, "prefetched_media_links", []) or []:
+        if link.status == OAIProjectMediaLink.STATUS_REJECTED:
+            continue
         digital = getattr(link, "digital_object", None)
         if digital:
             digital_resources.append(digital)
@@ -1215,11 +1285,16 @@ def oai_media_link_delete(request, link_id):
         return HttpResponseForbidden("<div class='alert alert-error'>Permission denied for this media link.</div>")
 
     project_id = link.project_id
-    link.delete()
-    messages.success(
-        request,
-        f"Removed digital object {link.digital_object.uri} from project {link.project.uri}.",
-    )
+    if link.status != OAIProjectMediaLink.STATUS_REJECTED or link.is_stale:
+        link.status = OAIProjectMediaLink.STATUS_REJECTED
+        link.is_stale = False
+        link.save(update_fields=["status", "is_stale", "updated_at"])
+        messages.success(
+            request,
+            f"Rejected digital object {link.digital_object.uri} for project {link.project.uri}.",
+        )
+    else:
+        messages.info(request, "Digital object already rejected for this project.")
 
     row_context = _build_single_project_row_context(
         organization=organization,
@@ -1412,33 +1487,108 @@ def oai_media_link_seed_and_sync(request):
     if oai_publish_filter not in ['all', 'approved', 'pending']:
         oai_publish_filter = 'all'
 
+    harvestable_filter = (request.POST.get('harvestable') or 'all').strip().lower()
+    if harvestable_filter not in ['all', 'harvestable', 'non_harvestable']:
+        harvestable_filter = 'all'
+
+    search_query = (request.POST.get('search') or '').strip()
+
     page_param = request.POST.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
     except ValueError:
         page_number = 1
 
-    seed_summary = _run_media_link_seed(organization)
-    if seed_summary["projects"] == 0:
-        messages.warning(request, f"No eligible projects found for organization {organization.code.upper()}.")
-    else:
-        messages.success(
-            request,
-            (
-                f"Seeded {seed_summary['projects']} project(s): "
-                f"created {seed_summary['created']}, refreshed {seed_summary['refreshed']}, "
-                f"marked stale {seed_summary['stale']}."
-            ),
+    filters = {
+        "status_filter": status_filter,
+        "project_access_filter": project_access_filter,
+        "oai_publish_filter": oai_publish_filter,
+        "harvestable_filter": harvestable_filter,
+        "search_query": search_query,
+        "page_number": page_number,
+    }
+
+    job_id = media_sync_jobs.create_job(
+        organization_code=organization.code,
+        user_id=request.user.id if request.user.is_authenticated else None,
+        filters=filters,
+    )
+
+    from arkumu.oaipmh.tasks import run_media_link_seed_and_sync_job  # noqa: WPS433 - local import to avoid cycles
+
+    run_media_link_seed_and_sync_job.schedule(args=(job_id,), delay=0)
+
+    context = {
+        "job_id": job_id,
+        "status": "pending",
+        "message": "Sync job queued…",
+        "organization": organization,
+    }
+    return render(request, 'oai/partials/oai_media_links_job_status.html', context)
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def oai_media_sync_status(request):
+    if not _has_oai_admin_access(request.user):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
         )
 
-    sync_summary = _sync_oai_publication_for_org(organization, user=request.user)
-    if sync_summary["auto_approved"]:
-        messages.success(
-            request,
-            f"Auto-approved OAI publication for {sync_summary['auto_approved']} project(s) with harvestable files.",
+    job_id = (request.GET.get('job_id') or '').strip()
+    if not job_id:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Missing job identifier.</div>")
+
+    state = media_sync_jobs.get_job(job_id)
+    if not state:
+        return HttpResponseBadRequest(
+            "<div class='alert alert-error'>Sync job no longer exists. Please retry.</div>"
         )
+
+    organization = _resolve_organization_by_code(state.get('organization_code'))
+    if not organization:
+        media_sync_jobs.delete_job(job_id)
+        return HttpResponseBadRequest(
+            "<div class='alert alert-error'>Organization not found for sync job.</div>"
+        )
+
+    status = state.get('status') or 'pending'
+    if status in {'pending', 'running'}:
+        context = {
+            "job_id": job_id,
+            "status": status,
+            "message": state.get('message', ''),
+            "organization": organization,
+        }
+        return render(request, 'oai/partials/oai_media_links_job_status.html', context)
+
+    filters = state.get('filters') or {}
+    status_filter = _normalized_media_link_status(filters.get('status_filter'))
+
+    project_access_filter = (filters.get('project_access_filter') or 'all').strip().lower()
+    if project_access_filter not in ['all', 'private', 'restricted', 'public']:
+        project_access_filter = 'all'
+
+    oai_publish_filter = (filters.get('oai_publish_filter') or 'all').strip().lower()
+    if oai_publish_filter not in ['all', 'approved', 'pending']:
+        oai_publish_filter = 'all'
+
+    harvestable_filter = (filters.get('harvestable_filter') or 'all').strip().lower()
+    if harvestable_filter not in ['all', 'harvestable', 'non_harvestable']:
+        harvestable_filter = 'all'
+
+    search_query = (filters.get('search_query') or '').strip()
+
+    page_number = filters.get('page_number', 1)
+    try:
+        page_number = max(int(page_number), 1)
+    except (TypeError, ValueError):
+        page_number = 1
+
+    if status == 'failed':
+        messages.error(request, f"Media sync failed: {state.get('message', 'Unknown error.')}")
     else:
-        messages.info(request, "No additional projects were auto-approved for OAI.")
+        _emit_media_sync_messages(request, state, organization)
 
     panel_context = _build_media_links_panel_context(
         organization=organization,
@@ -1446,9 +1596,13 @@ def oai_media_link_seed_and_sync(request):
         page_number=page_number,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
+        harvestable_filter=harvestable_filter,
+        search_query=search_query,
     )
     panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
     panel_context['include_summary_partial'] = True
+
+    media_sync_jobs.delete_job(job_id)
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
 

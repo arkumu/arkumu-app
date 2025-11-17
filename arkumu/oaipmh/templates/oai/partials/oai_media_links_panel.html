@@ -1,6 +1,6 @@
 <div class="mt-4">
   {% if include_summary_partial %}
-    {% include 'oai/partials/oai_media_links_summary.html' with summary=summary view_mode='project' %}
+    {% include 'oai/partials/oai_media_links_summary.html' with summary=summary view_mode='project' search_query=search_query %}
   {% endif %}
   {% if builder_errors %}
     <div class="alert alert-warning shadow mb-4">

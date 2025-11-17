@@ -5,6 +5,7 @@ from django.db import models
 from django.db.models import F
 
 from arkumu.metadata.models.resource import Resource
+from arkumu.users.models import Organization
 
 
 class OAIProjectMediaLinkQuerySet(models.QuerySet):
@@ -176,3 +177,34 @@ class OAIProjectPublication(models.Model):
     def __str__(self) -> str:  # pragma: no cover - debug helper
         state = "approved" if self.is_approved else "pending"
         return f"{self.project_id} ({state})"
+
+
+class OAIMediaSyncState(models.Model):
+    """Per-organization sync watermarks for tailored/canonical profiles."""
+
+    PROFILE_CANONICAL = "canonical"
+    PROFILE_TAILORED = "tailored"
+
+    PROFILE_CHOICES = (
+        (PROFILE_CANONICAL, "Canonical"),
+        (PROFILE_TAILORED, "Tailored"),
+    )
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="oai_media_sync_states",
+    )
+    profile = models.CharField(max_length=20, choices=PROFILE_CHOICES, default=PROFILE_TAILORED)
+    last_seed_at = models.DateTimeField(null=True, blank=True)
+    last_publication_sync_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "OAI Media Sync State"
+        verbose_name_plural = "OAI Media Sync States"
+        unique_together = ("organization", "profile")
+
+    def __str__(self) -> str:  # pragma: no cover - debug helper
+        return f"{self.organization_id}:{self.profile}"
