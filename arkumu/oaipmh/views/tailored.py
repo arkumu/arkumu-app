@@ -185,7 +185,7 @@ def _list_identifiers_tailored(
     if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
         return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
 
-    page_size = base.resumption_service.page_size
+    page_size = base.tailored_resumption_service.page_size
     page = _tailored_harvestable_page(
         queryset,
         cursor_position=cursor_position_from_token,
@@ -205,7 +205,7 @@ def _list_identifiers_tailored(
     resumption_token_value = None
     if page.has_more:
         next_offset = offset + len(resources)
-        resumption_token_value = base.resumption_service.create_token(
+        resumption_token_value = base.tailored_resumption_service.create_token(
             offset=next_offset,
             verb="ListIdentifiers",
             metadata_prefix=metadata_prefix,
@@ -243,7 +243,7 @@ def _list_records_tailored(
     if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
         return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
 
-    page_size = base.resumption_service.page_size
+    page_size = base.tailored_resumption_service.page_size
     page = _tailored_harvestable_page(
         queryset,
         cursor_position=cursor_position_from_token,
@@ -288,7 +288,7 @@ def _list_records_tailored(
     resumption_token_value = None
     if page.has_more:
         next_offset = offset + records_added
-        resumption_token_value = base.resumption_service.create_token(
+        resumption_token_value = base.tailored_resumption_service.create_token(
             offset=next_offset,
             verb="ListRecords",
             metadata_prefix=metadata_prefix,

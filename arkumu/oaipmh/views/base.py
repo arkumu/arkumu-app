@@ -19,6 +19,7 @@ from arkumu.oaipmh.constants import XSI_NS
 from arkumu.oaipmh.validation import rosetta_mets_validator
 from arkumu.oaipmh.formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
 from arkumu.oaipmh.resumption import ResumptionTokenService
+from arkumu.oaipmh.resumption_tailored import TailoredResumptionTokenService
 from arkumu.cache.services import OAICacheService
 from arkumu.oaipmh import schema_utils
 from .config import (
@@ -94,6 +95,7 @@ from .metadata import (
 
 # Initialize services
 resumption_service = ResumptionTokenService(page_size=10)
+tailored_resumption_service = TailoredResumptionTokenService(page_size=10)
 oai_cache = OAICacheService()
 
 # Register stable namespace prefixes so ElementTree uses human-friendly tags
@@ -275,6 +277,9 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
     until_date = params.get("until")
     resumption_token = params.get("resumptionToken")
     has_resumption_param = "resumptionToken" in params
+    db_mode = _db_mode_enabled()
+    tailored_mode = _tailored_mode_enabled()
+    tailored_flow_active = bool(db_mode and tailored_mode)
 
     # Validate metadata format
     if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
@@ -314,9 +319,13 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
         if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
 
-        is_valid, token_data, error_msg = resumption_service.parse_token(resumption_token)
+        token_service = tailored_resumption_service if tailored_flow_active else resumption_service
+        is_valid, token_data, error_msg = token_service.parse_token(resumption_token)
         if not is_valid:
             return _error(oai, "badResumptionToken", error_msg or "Invalid resumption token")
+
+        if not tailored_flow_active and token_data and token_data.get("profile") == "tailored":
+            return _error(oai, "badResumptionToken", "Token profile does not match endpoint")
 
         # Extract parameters from token
         offset = token_data.get("offset", 0)
@@ -327,8 +336,6 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
         cursor_marker_from_token = token_data.get("cursor") or token_data.get("snapshot")
         cursor_position_from_token = token_data.get("cursor_position")
 
-    db_mode = _db_mode_enabled()
-    tailored_mode = _tailored_mode_enabled()
     if db_mode:
         if tailored_mode:
             from . import tailored
@@ -673,6 +680,9 @@ def _list_records(oai: ET._Element, params, request: Optional[HttpRequest] = Non
     until_date = params.get("until")
     resumption_token = params.get("resumptionToken")
     has_resumption_param = "resumptionToken" in params
+    db_mode = _db_mode_enabled()
+    tailored_mode = _tailored_mode_enabled()
+    tailored_flow_active = bool(db_mode and tailored_mode)
 
     # Validate metadata format
     if not has_resumption_param and (not metadata_prefix or metadata_prefix not in SUPPORTED_METADATA_FORMATS):
@@ -713,9 +723,13 @@ def _list_records(oai: ET._Element, params, request: Optional[HttpRequest] = Non
         if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
 
-        is_valid, token_data, error_msg = resumption_service.parse_token(resumption_token)
+        token_service = tailored_resumption_service if tailored_flow_active else resumption_service
+        is_valid, token_data, error_msg = token_service.parse_token(resumption_token)
         if not is_valid:
             return _error(oai, "badResumptionToken", error_msg or "Invalid resumption token")
+
+        if not tailored_flow_active and token_data and token_data.get("profile") == "tailored":
+            return _error(oai, "badResumptionToken", "Token profile does not match endpoint")
 
         # Extract parameters from token
         offset = token_data.get("offset", 0)
@@ -727,8 +741,6 @@ def _list_records(oai: ET._Element, params, request: Optional[HttpRequest] = Non
         snapshot_marker_from_token = token_data.get("snapshot")
         cursor_position_from_token = token_data.get("cursor_position")
 
-    db_mode = _db_mode_enabled()
-    tailored_mode = _tailored_mode_enabled()
     if db_mode:
         if tailored_mode:
             from . import tailored
