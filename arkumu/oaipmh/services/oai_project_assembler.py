@@ -7,7 +7,6 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Protocol
 
-from django.conf import settings
 from django.db import transaction
 
 from arkumu.metadata.models.resource import Resource, ResourceType
@@ -62,11 +61,6 @@ class OAIProjectAssembler:
         self._graph_service_factory = graph_service_factory or CanonicalGraphService
         self._snapshot_service = snapshot_service or ProjectSnapshotService()
         self._card_schema_cache: MutableMapping[Optional[str], CardSchema] = {}
-        self._event_chain_orgs: set[str] = {
-            str(code).lower().strip()
-            for code in getattr(settings, "OAI_EVENT_CHAIN_ORGS", ("khm", "hmt"))
-            if code
-        }
 
     # ------------------------------------------------------------------
     def build_record(self, context: AssemblyContext) -> Optional[ProjectRecord]:
@@ -196,13 +190,6 @@ class OAIProjectAssembler:
         if record is None:
             return None
 
-        normalized_org = (org_code or "").strip().lower()
-        if normalized_org not in self._event_chain_orgs:
-            return record
-
-        if getattr(record, "digital_objects", None):
-            return record
-
         root_id = graph.get("root_id")
         if not root_id:
             return record
@@ -236,9 +223,6 @@ class OAIProjectAssembler:
                 )
             )
 
-        if not extras:
-            return record
-
         existing = {
             (getattr(obj, "resource_id", None), getattr(obj, "path", None))
             for obj in getattr(record, "digital_objects", []) or []
@@ -247,12 +231,14 @@ class OAIProjectAssembler:
         if not isinstance(sources, dict):
             sources = dict(sources or {})
 
+        appended = False
         for obj in extras:
             key = (getattr(obj, "resource_id", None), getattr(obj, "path", None))
             if key in existing:
                 continue
             record.digital_objects.append(obj)
             existing.add(key)
+            appended = True
             resource_id = getattr(obj, "resource_id", None)
             if resource_id:
                 sources[str(resource_id)] = {
@@ -263,7 +249,8 @@ class OAIProjectAssembler:
                 }
 
         record.digital_object_sources = sources
-        record.harvestable = bool(record.digital_objects)
+        if appended:
+            record.harvestable = bool(record.digital_objects)
         return record
 
     def _collect_event_ids_from_graph(
