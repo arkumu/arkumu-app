@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 
 from django.db.models import Q
-from django.http import FileResponse, Http404, HttpRequest, HttpResponse
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -23,6 +23,7 @@ from .config import (
     XSI_NS,
     _curated_media_links_active,
     _db_mode_enabled,
+    _decode_basic_credentials,
     _enforce_basic_auth,
     _force_curated_links,
     _force_db_mode,
@@ -52,6 +53,11 @@ from .base import (
     _list_sets,
     _parse_identifier,
 )
+from arkumu.oaipmh.tailored_probe import (
+    TailoredProbeError,
+    TailoredProbeOptions,
+    collect_probe_stats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +85,45 @@ def _oai_envelope(request: HttpRequest) -> ET._Element:
 def _xml_response(elem: ET._Element) -> HttpResponse:
     data = ET.tostring(elem, encoding="utf-8", xml_declaration=True)
     return HttpResponse(data, content_type="text/xml")
+
+
+def _query_flag(request: HttpRequest, name: str, default: bool = False) -> bool:
+    raw_value = request.GET.get(name)
+    if raw_value is None:
+        return default
+    return str(raw_value).lower() in {"1", "true", "yes", "on"}
+
+
+def _build_probe_options_from_request(request: HttpRequest) -> TailoredProbeOptions:
+    base_url = request.GET.get("base_url")
+    if base_url:
+        base_url = base_url.rstrip("/")
+    else:
+        base_url = request.build_absolute_uri("/").rstrip("/")
+
+    set_spec = request.GET.get("set") or request.GET.get("set_spec")
+    from_date = request.GET.get("from") or request.GET.get("from_date")
+    until_date = request.GET.get("until") or request.GET.get("until_date")
+
+    credentials = _decode_basic_credentials(request.META.get("HTTP_AUTHORIZATION", ""))
+    basic_auth = None
+    if credentials:
+        basic_auth = f"{credentials[0]}:{credentials[1]}"
+
+    return TailoredProbeOptions(
+        base_url=base_url,
+        verb=request.GET.get("verb", "ListIdentifiers"),
+        metadata_prefix=request.GET.get("metadataPrefix", "oai_dc"),
+        set_spec=set_spec,
+        from_date=from_date,
+        until_date=until_date,
+        basic_auth=basic_auth,
+        internal_bypass=request.META.get("HTTP_X_INTERNAL_OAI_BYPASS") == "1",
+        pause_for_dataset_change=_query_flag(request, "pause_for_dataset_change"),
+        run_tailored_resume=not _query_flag(request, "skip_tailored_resume"),
+        run_db_check=not _query_flag(request, "skip_db"),
+        run_snapshot_check=not _query_flag(request, "skip_snapshot"),
+    )
 def _handle_oai_request(request: HttpRequest) -> HttpResponse:
     auth_response = _enforce_basic_auth(request)
     if auth_response is not None:
@@ -363,6 +408,27 @@ def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
 def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
     with _force_db_mode(True), _force_curated_links(True), _force_tailored_mode(True):
         return _handle_oai_request(request)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def oai_tailored_stats(request: HttpRequest) -> HttpResponse:
+    """Return JSON stats summarizing tailored OAI resumption token checks."""
+
+    auth_response = _enforce_basic_auth(request)
+    if auth_response is not None:
+        return auth_response
+
+    try:
+        options = _build_probe_options_from_request(request)
+        stats = collect_probe_stats(options)
+    except TailoredProbeError as exc:
+        return JsonResponse({"error": str(exc)}, status=502)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Failed to assemble tailored OAI stats", exc_info=exc)
+        return JsonResponse({"error": "internal server error"}, status=500)
+
+    return JsonResponse(stats.to_dict())
 @general_login_required
 @require_http_methods(["GET"])
 def oai_schema_download(request: HttpRequest, snapshot: str, variant: str, ext: str) -> HttpResponse:

@@ -137,6 +137,20 @@ def _force_tailored_mode(state: bool):
         _tailored_mode_override.reset(token)
 
 
+def _decode_basic_credentials(auth_header: str) -> Optional[tuple[str, str]]:
+    if not auth_header.startswith("Basic "):
+        return None
+    encoded = auth_header.split(" ", 1)[1].strip()
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+    username, _, password = decoded.partition(":")
+    if username and password:
+        return username, password
+    return None
+
+
 def _enforce_basic_auth(request: HttpRequest) -> Optional[HttpResponse]:
     """Enforce optional HTTP Basic Auth for the OAI endpoint."""
 
@@ -150,19 +164,12 @@ def _enforce_basic_auth(request: HttpRequest) -> Optional[HttpResponse]:
     if not allowed_users:
         return None
 
-    auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-    if auth_header.startswith("Basic "):
-        encoded = auth_header.split(" ", 1)[1].strip()
-        try:
-            decoded = base64.b64decode(encoded).decode("utf-8")
-        except (binascii.Error, UnicodeDecodeError, ValueError):
-            decoded = ""
-        if decoded:
-            input_username, _, input_password = decoded.partition(":")
-            if input_username and input_password:
-                user = authenticate(request=request, username=input_username, password=input_password)
-                if user is not None and user.is_active and user.username in allowed_users:
-                    return None
+    credentials = _decode_basic_credentials(request.META.get("HTTP_AUTHORIZATION", ""))
+    if credentials:
+        username, password = credentials
+        user = authenticate(request=request, username=username, password=password)
+        if user is not None and user.is_active and user.username in allowed_users:
+            return None
 
     response = HttpResponse(status=401)
     response["WWW-Authenticate"] = 'Basic realm="Arkumu OAI"'
@@ -207,5 +214,6 @@ __all__ = [
     "_force_curated_links",
     "_tailored_mode_enabled",
     "_force_tailored_mode",
+    "_decode_basic_credentials",
     "_enforce_basic_auth",
 ]
