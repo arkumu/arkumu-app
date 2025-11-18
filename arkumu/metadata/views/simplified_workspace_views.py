@@ -282,7 +282,10 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                 {
                     "name": "Digitales Objekt",
                     "label": "Digitale Objekte",
-                    "search_property": ["Titel", "Dateiname"],
+                    "search_property": [
+                        "http://arkumu.org/data/fuk/properties/titel",
+                        "http://arkumu.org/data/fuk/properties/dateiname",
+                    ],
                 },
             ],
         },
@@ -619,7 +622,8 @@ def _filter_properties_for_config(
         for prop in properties:
             label = str(prop.get("label") or "").lower()
             column = str(prop.get("column") or "").lower()
-            if label == token or column == token:
+            uri_value = str(prop.get("uri") or "").lower()
+            if label == token or column == token or uri_value == token:
                 prop_key = (prop.get("uri"), prop.get("label"), prop.get("column"))
                 if prop_key not in seen_keys:
                     filtered.append(prop)
