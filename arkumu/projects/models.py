@@ -394,19 +394,37 @@ class ProjectRecord:
         ).lower()
         return query.lower() in haystack
 
-    def matches_institution(self, instit: str) -> bool:
-        if not instit:
-            return True
 
-        haystack = " ".join(
-            filter(
-                None,
-                [
-                    self.institution.label if self.institution else None,
-                ],
-            )
-        ).lower()
-        return instit.lower() in haystack
+    def matches_institution(self, institution: str) -> bool:
+        if not institution: return True
+        return (self.institution and
+                institution.lower() in self.institution.label.lower())
+
+    def matches_project_type(self, project_type: str) -> bool:
+        if not project_type: return True
+        return (self.project_type and
+                project_type.lower() in self.project_type.label.lower())
+
+    def matches_actor(self, actor: str) -> bool:
+        if not actor: return True
+        return any(a.name and actor.lower() in a.name.lower()
+                  for a in self.actors)
+
+    def matches_category(self, category: str) -> bool:
+        if not category: return True
+        return any(c.label and category.lower() in c.label.lower()
+                  for c in self.categories)
+
+    def matches_keyword(self, keyword: str) -> bool:
+        if not keyword: return True
+        # Suche in Catchphrases und Beschreibung
+        keyword_lower = keyword.lower()
+        in_catchphrases = any(phrase.label and keyword_lower in phrase.label.lower()
+                             for phrase in self.catchphrases)
+        in_description = (self.description and
+                         keyword_lower in self.description.lower())
+        return in_catchphrases or in_description
+
 
 
 @dataclass
