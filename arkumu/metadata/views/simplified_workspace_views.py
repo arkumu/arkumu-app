@@ -282,10 +282,10 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                 {
                     "name": "Digitales Objekt",
                     "label": "Digitale Objekte",
-                    "search_property": [
-                        "http://arkumu.org/data/fuk/properties/titel",
-                        "http://arkumu.org/data/fuk/properties/dateiname",
-                    ],
+                    # Prefer human-friendly labels so configuration
+                    # works across organizations with different local URIs.
+                    # We search primarily by title and filename.
+                    "search_property": ["Titel", "Dateiname"],
                 },
             ],
         },
@@ -1627,6 +1627,12 @@ def _enrich_fk_metadata(
             base_params = {"dataset": dataset_name, "column": field.name}
             base_url = f"{base_suggestion_url}?{urlencode(base_params)}"
             meta["base_suggestion_url"] = base_url
+            logger.info(
+                "🔗 Join field '%s': suggestion endpoint=%s (dataset=%s)",
+                field.name,
+                base_url,
+                dataset_name,
+            )
 
         widget_name = str(meta.get("widget") or "")
         if widget_name != "TripleCreatorWidget":
