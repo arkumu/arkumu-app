@@ -1,12 +1,29 @@
 <!-- Event Component with Theme Support -->
-<div class="event-component w-full p-4 transition-colors
-            bg-arkumu-light border border-gray-300
-            theme-dark:bg-arkumu-dark theme-dark:border-gray-600
-            theme-blue:bg-arkumu-light theme-blue:border-arkumu-blue">
+<div class="event-component w-full pb-8 transition-colors
+            bg-arkumu-light
+            theme-dark:bg-arkumu-dark
+            theme-blue:bg-arkumu-light">
 
   <!-- Header Navigation -->
   <div class="flex space-x-16 mb-6">
-    <span class="text-sm transition-colors
+
+    <a href="#?beginn_ende={{ beginn_ende }}" class="block text-sm underline transition-colors
+                text-arkumu-dark hover:opacity-70
+                theme-dark:text-arkumu-light theme-dark:hover:opacity-70
+                theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+          tabindex="0">
+      {{ beginn_ende|default:"Beginn-Ende" }}
+    </a>
+
+    <a href="#?ereignistyp={{ ereignistyp }}" class="block text-sm underline transition-colors
+                text-arkumu-dark hover:opacity-70
+                theme-dark:text-arkumu-light theme-dark:hover:opacity-70
+                theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+          tabindex="0">
+      {{ ereignistyp|default:"Ereignistyp" }}
+    </a>
+
+    <!-- <span class="text-sm transition-colors
                 text-arkumu-dark
                 theme-dark:text-arkumu-light
                 theme-blue:text-arkumu-blue"
@@ -20,6 +37,7 @@
           tabindex="0">
       {{ ereignistyp|default:"Ereignistyp" }}
     </span>
+  -->
   </div>
 
   <!-- Main Content Layout -->
@@ -37,6 +55,7 @@
 
       <!-- Actors/Participants -->
       <div class="space-y-1">
+        <!-- 
         {% if akteur1 %}
           <a href="#" class="block text-sm underline transition-colors
                            text-arkumu-dark hover:opacity-70
@@ -71,7 +90,32 @@
              tabindex="0">
             Akteur*in
           </a>
-        {% endif %}
+        {% endif %} 
+        -->
+
+        <!-- Show the first two actors with roles and add the actors name to the link -->
+        {% if event.actors %}
+          {% for actor in event.actors|slice:":2" %}
+          <span class="flex">
+            <a href="#?actor={{ actor.name }}" class="block text-sm underline transition-color
+                            text-arkumu-dark hover:opacity-70
+                            theme-dark:text-arkumu-light theme-dark:hover:opacity-70
+                            theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+                tabindex="0">
+                {{ actor.name }}{% if actor.roles %} [{{ actor.roles|join:", " }}] {% endif %}
+            </a>
+          </span>
+          {% endfor %}
+        {% else %}
+          <a href="#" class="block text-sm underline transition-colors
+                           text-arkumu-dark hover:opacity-70
+                           theme-dark:text-arkumu-light theme-dark:hover:opacity-70
+                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
+             tabindex="0">
+            Akteur*in
+          </a>
+        {% endif %} 
+
       </div>
     </div>
 
@@ -80,7 +124,7 @@
       <!-- Media Elements -->
       <div class="flex space-x-2">
         <!-- Large Media Block -->
-        <div class="w-24 h-16 transition-colors
+        <div class="w-24 h-20 transition-colors
                     bg-arkumu-dark
                     theme-dark:bg-arkumu-light
                     theme-blue:bg-arkumu-blue">
@@ -90,7 +134,7 @@
         </div>
 
         <!-- Small Media Block -->
-        <div class="w-16 h-16 transition-colors
+        <div class="w-16 h-20 transition-colors
                     bg-arkumu-dark
                     theme-dark:bg-arkumu-light
                     theme-blue:bg-arkumu-blue"
