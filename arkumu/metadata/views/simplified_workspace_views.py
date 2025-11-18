@@ -282,7 +282,7 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                 {
                     "name": "Digitales Objekt",
                     "label": "Digitale Objekte",
-                    "search_property": "Titel",
+                    "search_property": "Dateiname",
                 },
             ],
         },
