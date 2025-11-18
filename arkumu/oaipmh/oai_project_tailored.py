@@ -259,6 +259,11 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         )
         curated_objects.update(s3_objects)
 
+        normalized_code = (institution_code or "").lower().strip()
+        if normalized_code in self._s3_orgs:
+            # For S3 orgs, only accept objects that have verified S3 inventory.
+            return curated_objects
+
         for rid in resource_ids:
             if rid in curated_objects:
                 continue
@@ -327,9 +332,27 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                 resource_id=rid_str,
                 uri=resource_uri,
             )
+            # Flag for downstream normalization so we can bypass dump lookups.
+            setattr(project_obj, "_from_s3_file_object", True)
             curated_objects.setdefault(rid_str, []).append(project_obj)
 
         return curated_objects
+
+    def _normalize_object(
+        self,
+        obj: ProjectDigitalObject,
+        institution_code: Optional[str],
+    ) -> Optional[NormalizedDigitalObject]:
+        normalized = super()._normalize_object(obj, institution_code)
+        if not normalized:
+            return None
+        normalized_code = (institution_code or "").lower().strip()
+        if normalized_code in self._s3_orgs:
+            if getattr(obj, "_from_s3_file_object", False):
+                return normalized
+            # Objects without verified S3 inventory are not eligible for tailored exports.
+            return None
+        return normalized
 
     def _graph_digital_object(
         self,

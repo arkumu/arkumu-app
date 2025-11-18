@@ -755,6 +755,65 @@ def _prefetch_resource_labels(
     return cache
 
 
+def _attach_s3_metadata(
+    project_resources: Iterable[Resource],
+    organization: Organization,
+) -> None:
+    """
+    Attach transient S3 flags to curated links so the UI and builders can make
+    harvestability decisions based on real storage presence.
+    """
+
+    resources = list(project_resources)
+    if not resources or not _is_s3_org(organization):
+        return
+
+    digital_ids: set[Any] = set()
+    for project_resource in resources:
+        for link in getattr(project_resource, "prefetched_media_links", []) or []:
+            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
+                continue
+            digital = getattr(link, "digital_object", None)
+            if digital and getattr(digital, "id", None):
+                digital_ids.add(digital.id)
+
+    if not digital_ids:
+        return
+
+    s3_qs = (
+        S3FileObject.objects.filter(
+            related_resource_id__in=digital_ids,
+            status__in=HARVESTABLE_STORAGE_STATUSES,
+            s3_key__isnull=False,
+        )
+        .exclude(s3_key="")
+    )
+
+    best_file_by_resource: Dict[Any, S3FileObject] = {}
+    for file_obj in s3_qs:
+        rid = file_obj.related_resource_id
+        existing = best_file_by_resource.get(rid)
+        if existing is None or (
+            existing.status != "verified" and file_obj.status == "verified"
+        ):
+            best_file_by_resource[rid] = file_obj
+
+    for project_resource in resources:
+        for link in getattr(project_resource, "prefetched_media_links", []) or []:
+            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
+                continue
+            digital = getattr(link, "digital_object", None)
+            has_s3 = False
+            s3_key_preview = ""
+            digital_id = getattr(digital, "id", None)
+            if digital_id in best_file_by_resource:
+                file_obj = best_file_by_resource[digital_id]
+                has_s3 = True
+                s3_key_preview = file_obj.s3_key or ""
+            setattr(link, "has_s3_file", has_s3)
+            setattr(link, "s3_key_preview", s3_key_preview)
+
+
 def _build_project_row_context(
     resource: Resource,
     *,
@@ -762,6 +821,7 @@ def _build_project_row_context(
     assembler: OAIProjectAssembler,
     status_filter: str,
     org_code: str,
+    is_s3_org: bool,
     label_lookup: Optional[Dict[Any, str]] = None,
     publication_by_id: Optional[Dict[Any, OAIProjectPublication]] = None,
 ) -> dict[str, Any]:
@@ -860,6 +920,8 @@ def _build_project_row_context(
                 is_harvestable = True
             elif getattr(digital, "uri", None) in harvestable_uris:
                 is_harvestable = True
+        if is_s3_org and not getattr(link, "has_s3_file", False):
+            is_harvestable = False
         setattr(link, "is_harvestable", is_harvestable)
     selection = curated_project.curated_selection
     if selection:
@@ -881,9 +943,10 @@ def _build_media_links_panel_context(
     harvestable_filter: str = "all",
     search_query: str = "",
 ) -> dict[str, Any]:
+    is_s3_org = _is_s3_org(organization)
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
     s3_harvestable_ids: Optional[Set[int]] = None
-    if _is_s3_org(organization):
+    if is_s3_org:
         s3_harvestable_ids = _s3_harvestable_project_ids(organization)
     summary = _build_media_links_summary(
         organization,
@@ -958,44 +1021,7 @@ def _build_media_links_panel_context(
     if digital_resources:
         label_lookup = _prefetch_resource_labels(digital_resources, cache=label_lookup)
 
-        # Attach S3 presence metadata for curated digital objects (FUK/DET/RSH).
-        digital_ids = {resource.id for resource in digital_resources}
-        if digital_ids:
-            s3_qs = (
-                S3FileObject.objects.filter(
-                    related_resource_id__in=digital_ids,
-                    status__in=HARVESTABLE_STORAGE_STATUSES,
-                    s3_key__isnull=False,
-                )
-                .exclude(s3_key="")
-            )
-
-            best_file_by_resource: Dict[Any, S3FileObject] = {}
-            for file_obj in s3_qs:
-                rid = file_obj.related_resource_id
-                existing = best_file_by_resource.get(rid)
-                if existing is None:
-                    best_file_by_resource[rid] = file_obj
-                    continue
-
-                # Prefer verified over completed, keep existing otherwise.
-                if existing.status != "verified" and file_obj.status == "verified":
-                    best_file_by_resource[rid] = file_obj
-
-            for project_resource in project_resources:
-                for link in getattr(project_resource, "prefetched_media_links", []) or []:
-                    if link.status == OAIProjectMediaLink.STATUS_REJECTED:
-                        continue
-                    digital = getattr(link, "digital_object", None)
-                    has_s3 = False
-                    s3_key_preview = ""
-                    if digital and digital.id in best_file_by_resource:
-                        file_obj = best_file_by_resource[digital.id]
-                        has_s3 = True
-                        s3_key_preview = file_obj.s3_key or ""
-                    # Attach transient attributes for template rendering.
-                    setattr(link, "has_s3_file", has_s3)
-                    setattr(link, "s3_key_preview", s3_key_preview)
+    _attach_s3_metadata(project_resources, organization)
 
     # Attach OAI publication metadata per project
     publication_by_id: Dict[Any, OAIProjectPublication] = {}
@@ -1014,6 +1040,8 @@ def _build_media_links_panel_context(
         project_resources = filtered_projects
         page_obj.object_list = project_resources
 
+    _attach_s3_metadata(project_resources, organization)
+
     for project_resource in project_resources:
         row = _build_project_row_context(
             project_resource,
@@ -1021,6 +1049,7 @@ def _build_media_links_panel_context(
             assembler=assembler,
             status_filter=status_filter,
             org_code=organization.code or "",
+            is_s3_org=is_s3_org,
             label_lookup=label_lookup,
             publication_by_id=publication_by_id,
         )
@@ -1080,6 +1109,8 @@ def _build_single_project_row_context(
     if digital_resources:
         label_lookup = _prefetch_resource_labels(digital_resources, cache=label_lookup)
 
+    _attach_s3_metadata([resource], organization)
+
     publication = OAIProjectPublication.objects.filter(project=resource).first()
     publication_by_id: Dict[Any, OAIProjectPublication] = {}
     if publication:
@@ -1091,6 +1122,7 @@ def _build_single_project_row_context(
         assembler=assembler,
         status_filter=status_filter,
         org_code=organization.code or "",
+        is_s3_org=_is_s3_org(organization),
         label_lookup=label_lookup,
         publication_by_id=publication_by_id,
     )
