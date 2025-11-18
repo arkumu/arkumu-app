@@ -83,6 +83,21 @@ def _status_token(status: Optional[str]) -> Optional[str]:
     return status.lower().strip() or None
 
 
+def _apply_rosetta_prefix(prefix: str, path: str) -> str:
+    """Join a configured prefix with a curated Rosetta path."""
+
+    normalized_prefix = (prefix or "").rstrip("/")
+    if not normalized_prefix:
+        return path
+    token = (path or "").lstrip()
+    if token.startswith("/"):
+        return f"{normalized_prefix}{token}"
+    token = token.lstrip("/")
+    if not token:
+        return normalized_prefix
+    return f"{normalized_prefix}/{token}"
+
+
 @dataclass(frozen=True)
 class CuratedLinkWarning:
     code: str
@@ -264,6 +279,26 @@ class OAIProjectBuilder:
             for code, path in base_cfg.items()
             if code and path
         }
+        prefix_cfg = getattr(settings, 'OAI_ROSETTA_CURATED_PREFIXES', {}) or {}
+        curated_prefixes = {
+            str(code).lower().strip(): str(path).rstrip('/')
+            for code, path in prefix_cfg.items()
+            if code and path
+        }
+        fallback_prefixes = getattr(settings, 'OAI_EXTERNAL_PATH_PREFIXES', {}) or {}
+        for code, candidates in fallback_prefixes.items():
+            normalized_code = str(code).lower().strip()
+            if not normalized_code or normalized_code in curated_prefixes:
+                continue
+            if not candidates:
+                continue
+            for candidate in candidates:
+                candidate = str(candidate or '').strip()
+                if not candidate:
+                    continue
+                curated_prefixes[normalized_code] = candidate.rstrip('/')
+                break
+        self._rosetta_curated_prefixes = curated_prefixes
 
     def from_project_record(
         self,
@@ -707,10 +742,18 @@ class OAIProjectBuilder:
         rosetta_candidates: Tuple[str, ...] = ()
         rosetta_path: Optional[str] = None
 
-        is_s3_org = bool(institution_code and institution_code in self._s3_orgs)
-        is_rosetta_org = not is_s3_org and bool(
-            institution_code and institution_code in self._rosetta_orgs
-        )
+        normalized_code = (institution_code or "").strip().lower()
+        is_s3_org = bool(normalized_code and normalized_code in self._s3_orgs)
+        is_rosetta_org = bool(normalized_code and normalized_code in self._rosetta_orgs and not is_s3_org)
+        curated_override = bool(getattr(obj, "_from_curated_media_link", False))
+        curated_rosetta_path: Optional[str] = None
+        if curated_override and is_rosetta_org:
+            curated_rosetta_path = _clean(getattr(obj, "_curated_rosetta_path_override", None))
+            if not curated_rosetta_path:
+                curated_rosetta_path = original_path or storage_key
+            prefix = self._rosetta_curated_prefixes.get(normalized_code)
+            if curated_rosetta_path and prefix:
+                curated_rosetta_path = _apply_rosetta_prefix(prefix, curated_rosetta_path)
 
         from_s3_inventory = getattr(obj, "_from_s3_file_object", False)
         bypass_dump_fixity = getattr(obj, "_bypass_dump_fixity", False)
@@ -745,7 +788,10 @@ class OAIProjectBuilder:
             if fixity_record.checksum_or_etag and not fixity.digest:
                 fixity = parse_fixity(fixity_record.checksum_or_etag)
 
-        if is_rosetta_org and not is_s3_org:
+        if curated_rosetta_path:
+            rosetta_candidates = (curated_rosetta_path,)
+            rosetta_path = curated_rosetta_path
+        elif is_rosetta_org:
             resolved = self._path_resolver(
                 institution_code,
                 path=original_path or storage_key,
@@ -767,11 +813,11 @@ class OAIProjectBuilder:
         if (
             not is_s3_org
             and not rosetta_path
-            and institution_code
-            and institution_code in self._s3_rosetta_bases
+            and normalized_code
+            and normalized_code in self._s3_rosetta_bases
             and storage_key
         ):
-            base = self._s3_rosetta_bases[institution_code]
+            base = self._s3_rosetta_bases[normalized_code]
             candidate = f"{base}/{storage_key.lstrip('/')}"
             rosetta_path = candidate
             rosetta_candidates = (candidate,)
@@ -780,7 +826,7 @@ class OAIProjectBuilder:
             rosetta_candidates = (original_path,)
             rosetta_path = original_path
 
-        is_s3_org = bool(institution_code and institution_code in self._s3_orgs)
+        is_s3_org = bool(normalized_code and normalized_code in self._s3_orgs)
         source = "s3" if is_s3_org else ("rosetta" if rosetta_path else "unknown")
 
         size_bytes = getattr(obj, "size_bytes", None)
