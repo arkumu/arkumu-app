@@ -249,12 +249,24 @@ def _build_media_links_summary(
     links_total = link_qs.count()
     filtered_total = links_total
     # Project-level stats for summary header
-    project_qs = _oai_project_queryset_for_org(organization)
-    available_projects = project_qs.count()
+    project_ids_qs = (
+        link_qs.order_by()
+        .values_list('project_id', flat=True)
+        .distinct()
+    )
+    project_qs = _oai_project_queryset_for_org(organization).filter(id__in=project_ids_qs)
+    distinct_projects_qs = project_qs.order_by().values('uri').distinct()
+    available_projects = distinct_projects_qs.count()
     if s3_harvestable_ids is not None:
         harvestable_projects = len(s3_harvestable_ids)
     else:
-        harvestable_projects = _restrict_to_harvestable_files(project_qs).count()
+        harvestable_projects = (
+            _restrict_to_harvestable_files(project_qs)
+            .order_by()
+            .values('uri')
+            .distinct()
+            .count()
+        )
 
     return {
         "links_total": links_total,
