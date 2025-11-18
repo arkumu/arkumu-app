@@ -31,16 +31,14 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
 
         # Extrahiere Suchparameter
         query = request.GET.get('query', '').strip()
-        institution = request.GET.getlist('institution', '').strip()
-        project_type = request.GET.getlist('project_type', '').strip()
-        actor = request.GET.getlist('actor', '').strip()
-        category = request.GET.getlist('category', '').strip()
-        keyword = request.GET.getlist('keyword', '').strip()
+        institution = request.GET.getlist('hochschule', '')
+        category = request.GET.getlist('kategorie', '')
+        actor = request.GET.getlist('aktuer', '')
+        # keyword = request.GET.getlist('keyword', '').strip()
         page = request.GET.get('page', 1)
         is_htmx = request.headers.get('HX-Request') is not None
-
         logger.info(
-            f"🔍 ADVANCED_SEARCH: Institution={institution}, Type={project_type}, Actor={actor}, Category={category}, Keyword={keyword}")
+            f"🔍 ADVANCED_SEARCH: Institution={institution}, Type={category}, Actor={actor}")
 
         try:
             # Hole alle Projekte
@@ -49,18 +47,16 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             # Filtere Projekte basierend auf Parametern
             filtered_projects = []
             for project in projects:
+                print(project.categories)
                 if query and not project.matches_query(query):
                     continue
                 if institution and not project.matches_institution(institution):
                     continue
-                if project_type and not project.matches_project_type(project_type):
+                if category and not project.matches_category(category):
                     continue
                 if actor and not project.matches_actor(actor):
                     continue
-                if category and not project.matches_category(category):
-                    continue
-                if keyword and not project.matches_keyword(keyword):
-                    continue
+
                 filtered_projects.append(project)
 
             # Paginierung
@@ -73,10 +69,10 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 page_obj = paginator.page(paginator.num_pages)
 
             categories = []
-            for p in filtered_projects:
+            for p in projects:
                 for i in p.categories:
-                    categories.append(i.label)
-            categories = sorted(set(categories))
+                     categories.append(i.label)
+            categories = set(categories).difference(set(category))
             categories_name = []
             wikidata_service = WikidataService()
             for i, w in enumerate(categories):
@@ -85,23 +81,68 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                     {"id": cid, "name": cname}
                     for cid, cname in zip(categories, categories_name)
             ]
+            hochschulen = set([i.institution.label for i in projects])
+            hochschulen = sorted(hochschulen.difference(set(institution)))
+            akteur_options = set({actor.name for p in projects for actor in p.actors})
+            akteur = sorted(akteur_options.difference(set(actor)))
 
             dropdown_option = {
-                "hochschulen": sorted(set([i.institution.label for i in filtered_projects])),
-                "akteur": sorted(set({actor.name for p in filtered_projects for actor in p.actors})),
+                "hochschulen": hochschulen,
+                "akteur": akteur,
                 "kategorien": categories
             }
 
+            # Create active filters list
+            active_filters = []
 
+            # Create mapping for category IDs to names
+            # category_id_to_name = {cat['id']: cat['name'] for cat in dropdown_option['kategorien']}
+
+            # Institution filters
+            for inst in institution:
+                q = request.GET.copy()
+                q.setlist('hochschule', [i for i in institution if i != inst])
+                q['page'] = '1'  # Reset to first page
+                active_filters.append({
+                    'type': 'hochschule',
+                    'value': inst,
+                    'display_name': inst,
+                    'remove_url': f"{request.path}?{q.urlencode()}"
+                })
+
+            # Category filters
+            for cat_id in category:
+                q = request.GET.copy()
+                q.setlist('kategorie', [c for c in category if c != cat_id])
+                q['page'] = '1'
+                active_filters.append({
+                    'type': 'kategorie',
+                    'value': cat_id,
+                    'display_name': wikidata_service.get_entity_label(cat_id),
+                    'remove_url': f"{request.path}?{q.urlencode()}"
+                })
+
+            # Actor filters
+            for act in actor:
+                q = request.GET.copy()
+                q.setlist('aktuer', [a for a in actor if a != act])
+                q['page'] = '1'
+                active_filters.append({
+                    'type': 'aktuer',
+                    'value': act,
+                    'display_name': act,
+                    'remove_url': f"{request.path}?{q.urlencode()}"
+                })
 
 
             # Kontext für Template
             context = {
                 'institution': institution,
-                'project_type': project_type,
+                # 'project_type': project_type,
+                'active_filters': active_filters,
                 'actor': actor,
                 'category': category,
-                'keyword': keyword,
+                # 'keyword': keyword,
                 'results': [p.to_card_dict() for p in page_obj.object_list],
                 'total_results': paginator.count,
                 'current_page': page_obj.number,
