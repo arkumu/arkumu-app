@@ -3,7 +3,17 @@
     <div class="space-y-2 p-2">
       <div>
         <div class="font-bold text-base text-secondary">{{ row.project_label }}</div>
-        <div class="font-mono text-[10px] text-base-content/70 break-all">{{ row.project_uri }}</div>
+        <div class="font-mono text-[10px] text-base-content/70 break-all">
+          <a
+            href="{% url 'metadata:resource_graph' row.resource.id %}"
+            target="_blank"
+            rel="noopener"
+            class="link link-hover"
+            title="Open project graph"
+          >
+            {{ row.project_uri }}
+          </a>
+        </div>
       </div>
       <div class="flex flex-wrap gap-1">
         <div class="badge badge-xs badge-outline" title="Curated digital objects">C:{{ row.total_links }}</div>

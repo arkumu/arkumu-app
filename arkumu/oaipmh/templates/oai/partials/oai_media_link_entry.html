@@ -4,7 +4,15 @@
       {{ link.digital_object_display_label|default:link.digital_object.name|default:link.digital_object.value|default:"Untitled" }}
     </div>
     <div class="font-mono text-[10px] text-base-content/70 break-all">
-      <a href="{{ link.digital_object.uri }}" target="_blank" rel="noopener" class="link link-hover">{{ link.digital_object.uri }}</a>
+      <a
+        href="{% url 'metadata:resource_graph' link.digital_object.id %}"
+        target="_blank"
+        rel="noopener"
+        class="link link-hover"
+        title="Open digital object graph"
+      >
+        {{ link.digital_object.uri }}
+      </a>
     </div>
     {% if link.has_s3_file and link.s3_key_preview %}
       <div class="font-mono text-[10px] text-base-content/60 break-all">
