@@ -50,20 +50,24 @@
     </div>
     <div class="join hidden sm:inline-flex">
       {% if page_obj.paginator.num_pages > 1 %}
-        <a href="{% url url_name %}?page=1&embed=1" class="btn btn-xs join-item"
-           hx-get="{% url url_name %}?page=1&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">«</a>
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page=1" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page=1"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">«</a>
         {% if page_obj.has_previous %}
-        <a href="{% url url_name %}?page={{ page_obj.previous_page_number }}&embed=1" class="btn btn-xs join-item"
-           hx-get="{% url url_name %}?page={{ page_obj.previous_page_number }}&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">‹</a>
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.previous_page_number }}" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.previous_page_number }}"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">‹</a>
         {% else %}
         <button class="btn btn-xs join-item btn-disabled">‹</button>
         {% endif %}
         <span class="btn btn-xs join-item btn-ghost">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
         {% if page_obj.has_next %}
-        <a href="{% url url_name %}?page={{ page_obj.next_page_number }}&embed=1" class="btn btn-xs join-item"
-           hx-get="{% url url_name %}?page={{ page_obj.next_page_number }}&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">›</a>
-        <a href="{% url url_name %}?page={{ page_obj.paginator.num_pages }}&embed=1" class="btn btn-xs join-item"
-           hx-get="{% url url_name %}?page={{ page_obj.paginator.num_pages }}&embed=1" hx-target="#workspace-browse-panel" hx-swap="innerHTML">»</a>
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.next_page_number }}" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.next_page_number }}"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">›</a>
+        <a href="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.paginator.num_pages }}" class="btn btn-xs join-item"
+           hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}page={{ page_obj.paginator.num_pages }}"
+           hx-target="#workspace-browse-panel" hx-swap="innerHTML" hx-push-url="true">»</a>
         {% else %}
         <button class="btn btn-xs join-item btn-disabled">›</button>
         <button class="btn btn-xs join-item btn-disabled">»</button>
@@ -83,7 +87,22 @@
           {% for column in columns %}
           {% if column.name != 'Aktionen' %}
           <th class="bg-base-200 whitespace-nowrap">
-            {{ column.name }}
+            {% if column.sortable and column.slug %}
+            <button class="flex items-center gap-1 text-xs font-semibold hover:text-primary"
+                    hx-get="{% url url_name %}?{% if preserved_query %}{{ preserved_query }}&{% endif %}sort={{ column.slug }}&order={% if current_sort.column == column.slug and current_sort.order == 'asc' %}desc{% else %}asc{% endif %}&page=1"
+                    hx-target="#workspace-browse-panel"
+                    hx-swap="innerHTML"
+                    hx-push-url="true">
+              {{ column.name }}
+              {% if current_sort.column == column.slug %}
+                {% if current_sort.order == 'asc' %}▲{% else %}▼{% endif %}
+              {% else %}
+                <span class="opacity-30">↕</span>
+              {% endif %}
+            </button>
+            {% else %}
+            <span class="text-xs font-semibold">{{ column.name }}</span>
+            {% endif %}
             {% if column.is_fk %}
             <span class="badge badge-xs badge-info ml-1" title="Foreign Key">FK</span>
             {% endif %}

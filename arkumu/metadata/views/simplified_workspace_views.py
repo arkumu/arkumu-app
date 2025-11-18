@@ -47,10 +47,41 @@ from arkumu.metadata.services.entity_label_service import infer_entity_label as 
 from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.users.models import Organization
 from arkumu.storage.models import S3FileObject
-from arkumu.metadata.models.resource import Resource
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 
 logger = logging.getLogger(__name__)
+
+_VISIBILITY_OPTION_DEFINITIONS: Tuple[Tuple[PublicAccessLevel, str], ...] = (
+    (
+        PublicAccessLevel.PRIVATE,
+        "Private - Nur Organisation",
+    ),
+    (
+        PublicAccessLevel.RESTRICTED,
+        "Restricted - Authentifizierte Nutzer",
+    ),
+    (
+        PublicAccessLevel.PUBLIC,
+        "Public - Öffentlich im Katalog",
+    ),
+)
+_VALID_VISIBILITY_VALUES: Set[str] = {level.value for level, _ in _VISIBILITY_OPTION_DEFINITIONS}
+
+
+def _build_visibility_choices() -> List[Dict[str, str]]:
+    return [
+        {"value": level.value, "label": label}
+        for level, label in _VISIBILITY_OPTION_DEFINITIONS
+    ]
+
+
+def _normalize_visibility_value(raw_value: Optional[str], fallback: Optional[str] = None) -> str:
+    if raw_value in _VALID_VISIBILITY_VALUES:
+        return raw_value
+    if fallback in _VALID_VISIBILITY_VALUES:
+        return fallback
+    return PublicAccessLevel.PRIVATE.value
 
 
 # Section configuration shared by simplified edit views. Each section defines
@@ -486,9 +517,15 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
 PROJECT_LINK_FIELD_NAME = "Verknüpftes Projekt"
 PROJECT_LINK_PROPERTY_URI = "http://arkumu.org/data/properties/verknuepftes-projekt"
 PROJECT_DATASET_NAME = "Projekt"
+DIGITAL_OBJECT_DATASET_NAME = "Digitales_Objekt"
 
 
 METADATA_ENTRY_PATH = "/metadata/metadata-entry/"
+
+PREVIEW_PICKER_FIELD_SLUGS_BY_DATASET: Dict[str, Set[str]] = {
+    PROJECT_DATASET_NAME: {"vorschaubild", "vorschaubild_uri"},
+    DIGITAL_OBJECT_DATASET_NAME: {"dateipfad"},
+}
 
 
 def _build_metadata_entry_url(
@@ -1029,7 +1066,7 @@ def _collect_relationship_payloads(
 
         # Skip TripleCreatorWidget fields - they are managed via HTMX endpoints
         widget = meta.get("widget")
-        if widget == "TripleCreatorWidget":
+        if widget == "TripleCreatorWidget" and not meta.get("fk_relationship"):
             logger.info(f"⏭️  Skipping TripleCreatorWidget field: {field_name}")
             continue
 
@@ -1313,50 +1350,58 @@ def _get_preview_field_name(fields_with_metadata: List[Dict[str, Any]]) -> Optio
     return None
 
 
-def _update_project_preview_link(
-    *,
-    project_uri: str,
-    preview_key: str,
-    organization_code: Optional[str],
-) -> None:
-    """Ensure the selected S3 object is linked to the project resource."""
+def _should_use_preview_picker(dataset_name: Optional[str], field_slug: str) -> bool:
+    if not field_slug:
+        return False
+    dataset_key = dataset_name or ""
+    return field_slug in PREVIEW_PICKER_FIELD_SLUGS_BY_DATASET.get(dataset_key, set())
 
+
+def _link_verified_file_to_resource(
+    *,
+    resource_uri: str,
+    file_key: str,
+    organization_code: Optional[str],
+    context_label: str,
+) -> None:
     logger.info(
-        "📷 Preview link requested | project=%s | key=%s | org=%s",
-        project_uri,
-        preview_key,
+        "📷 %s link requested | resource=%s | key=%s | org=%s",
+        context_label,
+        resource_uri,
+        file_key,
         organization_code,
     )
 
-    if not project_uri:
-        logger.info("📷 Preview link skipped: missing project URI")
+    if not resource_uri:
+        logger.info("📷 %s link skipped: missing resource URI", context_label)
         return
 
-    project_resource = Resource.objects.filter(uri=project_uri).first()
-    if project_resource is None:
-        logger.warning("📷 Preview link skipped: project resource %s not found", project_uri)
+    target_resource = Resource.objects.filter(uri=resource_uri).first()
+    if target_resource is None:
+        logger.warning("📷 %s link skipped: resource %s not found", context_label, resource_uri)
         return
 
-    # Clear previous links that no longer match
-    stale_queryset = S3FileObject.objects.filter(related_resource=project_resource)
-    if preview_key:
-        stale_queryset = stale_queryset.exclude(s3_key=preview_key)
+    stale_queryset = S3FileObject.objects.filter(related_resource=target_resource)
+    if file_key:
+        stale_queryset = stale_queryset.exclude(s3_key=file_key)
     stale_count = stale_queryset.update(related_resource=None)
     if stale_count:
-        logger.info("📷 Cleared %s stale preview link(s) for %s", stale_count, project_uri)
+        logger.info("📷 Cleared %s stale %s link(s) for %s", stale_count, context_label, resource_uri)
 
-    if not preview_key:
-        logger.info("📷 Preview cleared for %s", project_uri)
+    if not file_key:
+        logger.info("📷 %s cleared for %s", context_label, resource_uri)
         return
 
-    file_obj = (
-        S3FileObject.objects.filter(status="verified", s3_key=preview_key)
-        .order_by("-updated_at", "-created_at")
-        .first()
-    )
+    queryset = S3FileObject.objects.filter(status="verified", s3_key=file_key).order_by("-updated_at", "-created_at")
+    if organization_code:
+        queryset = queryset.filter(
+            Q(organization__iexact=organization_code)
+            | Q(related_resource__organization__code__iexact=organization_code)
+        )
+    file_obj = queryset.first()
 
     if file_obj is None:
-        logger.warning("📷 Preview link skipped: verified S3 key %s not found", preview_key)
+        logger.warning("📷 %s link skipped: verified S3 key %s not found", context_label, file_key)
         return
 
     update_fields = ["related_resource"]
@@ -1366,13 +1411,46 @@ def _update_project_preview_link(
             file_obj.organization = new_org
             update_fields.append("organization")
 
-    file_obj.related_resource = project_resource
+    file_obj.related_resource = target_resource
     file_obj.save(update_fields=update_fields)
     logger.info(
-        "📷 Preview linked | file=%s | project=%s | org=%s",
+        "📷 %s linked | file=%s | resource=%s | org=%s",
+        context_label,
         file_obj.s3_key,
-        project_uri,
+        resource_uri,
         file_obj.organization,
+    )
+
+
+def _update_project_preview_link(
+    *,
+    project_uri: str,
+    preview_key: str,
+    organization_code: Optional[str],
+) -> None:
+    """Ensure the selected S3 object is linked to the project resource."""
+
+    _link_verified_file_to_resource(
+        resource_uri=project_uri,
+        file_key=preview_key,
+        organization_code=organization_code,
+        context_label="Project preview",
+    )
+
+
+def _update_digital_object_file_link(
+    *,
+    digital_object_uri: str,
+    file_key: str,
+    organization_code: Optional[str],
+) -> None:
+    """Ensure the selected S3 object is linked to the digital object resource."""
+
+    _link_verified_file_to_resource(
+        resource_uri=digital_object_uri,
+        file_key=file_key,
+        organization_code=organization_code,
+        context_label="Digital object file",
     )
 
 
@@ -1415,7 +1493,7 @@ def _enrich_fk_metadata(
         meta["use_single_fk_widget"] = False
 
         field_slug = slugify(field.name or "")
-        if field_slug in {"vorschaubild", "vorschaubild_uri"}:
+        if _should_use_preview_picker(dataset_name, field_slug):
             organization = getattr(schema_service, "organization", None)
             org_code = getattr(organization, "code", None)
             raw_value = form.data.get(field.name) if form.is_bound else None
@@ -2073,6 +2151,18 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
         tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        visibility_choices = _build_visibility_choices()
+        current_visibility = _normalize_visibility_value(
+            request.POST.get("visibility"),
+            fallback=PublicAccessLevel.PRIVATE.value,
+        )
+
+        resource = Resource.objects.filter(uri=entity_uri).first()
+        visibility_choices = _build_visibility_choices()
+        current_visibility = _normalize_visibility_value(
+            resource.public_access_level if resource else None,
+            fallback=PublicAccessLevel.RESTRICTED.value,
+        )
 
         # Render the form
         context = {
@@ -2087,6 +2177,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             "read_only_relationships": read_only_relationships,
             "title": "Projekt bearbeiten",
             "description": "Aktualisiere die wichtigsten Angaben für dieses Projekt.",
+            "visibility_choices": visibility_choices,
+            "current_visibility": current_visibility,
         }
         context["metadata_entry_return_url"] = _build_metadata_entry_url(
             schema_service.organization.code,
@@ -2106,6 +2198,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
 
         if not entity_uri:
             return HttpResponseBadRequest("Missing entity_uri")
+
+        resource = Resource.objects.filter(uri=entity_uri).first()
 
         # Get field metadata and augment with joins (for relationship handling)
         field_metadata = schema_service.get_field_metadata(dataset_name)
@@ -2141,6 +2235,11 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
         tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        visibility_choices = _build_visibility_choices()
+        current_visibility = _normalize_visibility_value(
+            request.POST.get("visibility"),
+            fallback=resource.public_access_level if resource else None,
+        )
 
         if form.is_valid():
             try:
@@ -2182,6 +2281,14 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                         related_uris=related_uris,
                     )
 
+                visibility = request.POST.get("visibility")
+                if visibility in _VALID_VISIBILITY_VALUES:
+                    resource_to_update = Resource.objects.filter(uri=saved_uri).first()
+                    if resource_to_update and resource_to_update.public_access_level != visibility:
+                        resource_to_update.public_access_level = visibility
+                        resource_to_update.save(update_fields=["public_access_level"])
+                        logger.info(f"✅ Updated visibility to {visibility} for {saved_uri}")
+
                 preview_field_name = _get_preview_field_name(fields_with_metadata)
                 preview_key = ""
                 if preview_field_name:
@@ -2212,6 +2319,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                     "error": str(e),
                     "title": "Projekt bearbeiten",
                     "mapping_id": schema_service.mapping.id,
+                    "visibility_choices": visibility_choices,
+                    "current_visibility": current_visibility,
                 }
                 context["metadata_entry_return_url"] = _build_metadata_entry_url(
                     schema_service.organization.code,
@@ -2230,6 +2339,8 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
                 "dataset_name": dataset_name,
                 "title": "Projekt bearbeiten",
                 "mapping_id": schema_service.mapping.id,
+                "visibility_choices": visibility_choices,
+                "current_visibility": current_visibility,
             }
             context["metadata_entry_return_url"] = _build_metadata_entry_url(
                 schema_service.organization.code,
@@ -2313,12 +2424,7 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
         tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         # Get visibility choices
-        from arkumu.metadata.models.resource import PublicAccessLevel
-        visibility_choices = [
-            {"value": PublicAccessLevel.PRIVATE.value, "label": "Private - Nur Organisation"},
-            {"value": PublicAccessLevel.RESTRICTED.value, "label": "Restricted - Authentifizierte Nutzer"},
-            {"value": PublicAccessLevel.PUBLIC.value, "label": "Public - Öffentlich im Katalog"},
-        ]
+        visibility_choices = _build_visibility_choices()
 
         # Render the form
         context = {
@@ -2443,12 +2549,13 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                     )
 
                 # Set visibility on the Resource
-                visibility = request.POST.get("visibility", "private")
-                resource = Resource.objects.filter(uri=saved_uri).first()
-                if resource:
-                    resource.public_access_level = visibility
-                    resource.save()
-                    logger.info(f"✅ Set visibility to {visibility} for {saved_uri}")
+                visibility = request.POST.get("visibility")
+                if visibility in _VALID_VISIBILITY_VALUES:
+                    resource = Resource.objects.filter(uri=saved_uri).first()
+                    if resource and resource.public_access_level != visibility:
+                        resource.public_access_level = visibility
+                        resource.save(update_fields=["public_access_level"])
+                        logger.info(f"✅ Set visibility to {visibility} for {saved_uri}")
 
                 preview_field_name = _get_preview_field_name(fields_with_metadata)
                 preview_key = ""
@@ -2480,6 +2587,8 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                     "error": str(e),
                     "title": "Neues Projekt erstellen",
                     "mapping_id": schema_service.mapping.id,
+                    "visibility_choices": visibility_choices,
+                    "current_visibility": current_visibility,
                 }
                 context["metadata_entry_return_url"] = _build_metadata_entry_url(
                     schema_service.organization.code,
@@ -2498,6 +2607,8 @@ class SimplifiedProjectCreateView(LoginRequiredMixin, View):
                 "dataset_name": dataset_name,
                 "title": "Neues Projekt erstellen",
                 "mapping_id": schema_service.mapping.id,
+                "visibility_choices": visibility_choices,
+                "current_visibility": current_visibility,
             }
             context["metadata_entry_return_url"] = _build_metadata_entry_url(
                 schema_service.organization.code,
@@ -3524,6 +3635,16 @@ class _BaseSimplifiedCreateView(LoginRequiredMixin, _SimplifiedDatasetMixin, Vie
                         related_uris=related_uris,
                     )
 
+                if self.dataset_name == DIGITAL_OBJECT_DATASET_NAME:
+                    preview_field_name = _get_preview_field_name(fields_with_metadata)
+                    if preview_field_name:
+                        preview_key = form.cleaned_data.get(preview_field_name, "") or ""
+                        _update_digital_object_file_link(
+                            digital_object_uri=saved_uri,
+                            file_key=preview_key,
+                            organization_code=schema_service.organization.code,
+                        )
+
                 logger.info(f"✅ Created {self.dataset_name}: {saved_uri}")
                 return _redirect_to_metadata_entry(
                     schema_service.organization.code,
@@ -3717,6 +3838,16 @@ class _BaseSimplifiedEditView(LoginRequiredMixin, _SimplifiedDatasetMixin, View)
                         related_uris=related_uris,
                     )
 
+                if self.dataset_name == DIGITAL_OBJECT_DATASET_NAME:
+                    preview_field_name = _get_preview_field_name(fields_with_metadata)
+                    if preview_field_name:
+                        preview_key = form.cleaned_data.get(preview_field_name, "") or ""
+                        _update_digital_object_file_link(
+                            digital_object_uri=saved_uri,
+                            file_key=preview_key,
+                            organization_code=schema_service.organization.code,
+                        )
+
                 logger.info(f"✅ Updated {self.dataset_name}: {saved_uri}")
                 return _redirect_to_metadata_entry(
                     schema_service.organization.code,
@@ -3779,7 +3910,7 @@ class SimplifiedOrtEditView(_BaseSimplifiedEditView):
 
 
 class SimplifiedDigitalesObjektCreateView(_BaseSimplifiedCreateView):
-    dataset_name = "Digitales_Objekt"
+    dataset_name = DIGITAL_OBJECT_DATASET_NAME
     metadata_entry_entity = "digitales_objekt"
     template_name = "metadata/simplified_workspace/edit_digitales_objekt.html"
     page_title = "Neues Digitales Objekt erstellen"
@@ -3787,7 +3918,7 @@ class SimplifiedDigitalesObjektCreateView(_BaseSimplifiedCreateView):
 
 
 class SimplifiedDigitalesObjektEditView(_BaseSimplifiedEditView):
-    dataset_name = "Digitales_Objekt"
+    dataset_name = DIGITAL_OBJECT_DATASET_NAME
     metadata_entry_entity = "digitales_objekt"
     template_name = "metadata/simplified_workspace/edit_digitales_objekt.html"
     page_title = "Digitales Objekt bearbeiten"

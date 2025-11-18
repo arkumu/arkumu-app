@@ -1,4 +1,5 @@
 """Project detail view backed by cached project snapshots."""
+import json
 import uuid
 from functools import singledispatchmethod
 
@@ -8,8 +9,10 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse
 from django.http import HttpResponseBadRequest, HttpResponseNotFound
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Mapping
+from typing import Any, Dict, List, Optional, Sequence, Mapping, Tuple
 
+from arkumu.catalog.models import PreviewImages
+from arkumu.catalog.services.wikidata_service import WikidataService
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
@@ -78,6 +81,56 @@ class ProjectView(LoginRequiredMixin, View):
     """Render a single project using the shared snapshot."""
 
     snapshot_service_class = ProjectSnapshotService
+    PROPERTY_METADATA_FIELDS: Sequence[Tuple[str, str]] = (
+        ("dauer_hms", "Dauer (HH:MM:SS)"),
+        ("dauer_freitext", "Dauer (Freitext)"),
+        ("tonarten", "Tonarten"),
+        ("produktionsformat", "Produktionsformat"),
+        ("instrumentierung", "Instrumentierung"),
+        ("aspect_ratio", "Bildseitenverhältnis"),
+        ("stimmung_hz", "Stimmung (Hz)"),
+        ("sprachen", "Sprachen"),
+        ("abspielgeschwindigkeit", "Abspielgeschwindigkeit"),
+        ("equalizer", "Equalizer"),
+        ("bandbreite", "Bandbreite"),
+        ("tonaufnahme", "Tonaufnahme"),
+        ("werkverzeichnis", "Werkverzeichnis"),
+        ("musikgattungen", "Musikgattungen"),
+        ("tonformate", "Tonformate"),
+        ("bildfrequenz", "Bildfrequenz"),
+        ("filmentwicklung", "Filmentwicklung"),
+        ("tonmischfassungen", "Tonmischfassungen"),
+        ("fernsehnorm", "Fernsehnorm"),
+        ("spurausrichtung", "Spurausrichtung"),
+        ("ton_kanaele", "Tonkanäle"),
+        ("audio_aufnahmetechnik", "Audio-Aufnahmetechnik"),
+    )
+    STATUS_METADATA_FIELDS: Sequence[Tuple[str, str]] = (
+        ("signatur", "Signatur"),
+        ("signatur_beim_einlieferer", "Signatur beim Einlieferer"),
+        ("werkverzeichnis_nummer", "Werkverzeichnisnummer"),
+    )
+    AUTHORITY_METADATA_FIELDS: Sequence[Tuple[str, str]] = (
+        ("wikidata_ids", "Wikidata IDs"),
+        ("gnd_ids", "GND IDs"),
+        ("weitere_normdaten", "Weitere Normdaten"),
+        ("externe_webseiten", "Externe Webseiten"),
+    )
+    SUBMITTER_METADATA_FIELDS: Sequence[Tuple[str, str]] = (
+        ("hochschule", "Einliefernde Hochschule"),
+        ("hochschule_uri", "Hochschul-URI"),
+        ("organisationseinheiten", "Organisationseinheiten"),
+        ("erstellungsdatum", "Erstellungsdatum"),
+        ("letzte_modifikation", "Letzte Modifikation"),
+    )
+    LICENSE_METADATA_FIELDS: Sequence[Tuple[str, str]] = (
+        ("bestehende_vertraege", "Bestehende Verträge"),
+        ("neuer_lizenzvertrag", "Neuer Lizenzvertrag"),
+        ("angegebene_nutzungsrechte", "Angegebene Nutzungsrechte"),
+        ("sonderregelungen", "Sonderregelungen"),
+        ("weitere_rechtsdokumente", "Weitere Rechtsdokumente"),
+        ("dateiabfrage_dokument", "Dateiabfrage (Dokument)"),
+    )
 
     def get(self, request, *args, **kwargs):
         projekt_uri = request.GET.get('projekt')
@@ -96,6 +149,7 @@ class ProjectView(LoginRequiredMixin, View):
 
         project_context = self._build_context(record)
         metadata = self._build_metadata(record)
+        self._log_project_record_debug(record, project_context, metadata)
 
         logger.debug(
             "ProjectView: resolved project %s with institution_codes=%s category_slugs=%s",
@@ -137,16 +191,54 @@ class ProjectView(LoginRequiredMixin, View):
 
     @staticmethod
     def _build_context(record: ProjectRecord) -> Dict[str, Any]:
-        image = record.image
-        if not image and record.digital_objects:
-            image = record.digital_objects[0].path
-        image = image or 'images/main/card_1.png'
+
+        image = []
+
+        # image = record.image
+        # if not image and record.digital_objects:
+        #     image = record.digital_objects[0].path
+        # image = image or 'images/main/card_1.png'
+
+        for obj in record.digital_objects:
+            image.append(obj.path)
+
+
+        image_preview = []
+        for candidate in image:
+            if PreviewImages.objects.filter(path=candidate).exists():
+                image_preview.append(candidate)
+        image = image_preview
+        #
+        # if valid_preview:
+        #     card["image"] = valid_preview
+        # else:
+        #     fallback_path = _object_display_path(self.digital_objects[0])
+        #     if fallback_path:
+        #         card["image"] = fallback_path
 
         alternative_title = record.alternative_titles[0].value if record.alternative_titles else ''
         catchphrases = [item.label for item in record.catchphrases if item.label]
         categories = [item.label for item in record.categories if item.label]
         digital_objects = [item.path for item in record.digital_objects if item.path]
         actors = []
+
+        categories_name = []
+        for i,w in enumerate(categories):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        categories = [
+            {"id": cid, "name": cname}
+            for cid, cname in zip(categories, categories_name)
+        ]
+
+        catchphrases_name = []
+        for i,w in enumerate(catchphrases):
+            catchphrases_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        catchphrases = [
+            {"id": cid, "name": cname}
+            for cid, cname in zip(catchphrases, catchphrases_name)
+        ]
+
+
         for actor in record.actors or []:
             if not actor:
                 continue
@@ -256,12 +348,6 @@ class ProjectView(LoginRequiredMixin, View):
 
     @staticmethod
     def _build_metadata(record: ProjectRecord) -> List[Dict[str, Any]]:
-        def _entry(label: str, value: Any) -> Dict[str, Any]:
-            if isinstance(value, (list, tuple, set)):
-                values = [item for item in value if item]
-                return {'key': label, 'values': values} if values else {'key': label, 'value': '—'}
-            return {'key': label, 'value': value or '—'}
-
         institution_label = record.institution.label if record.institution and record.institution.label else ''
         project_type = record.project_type.label if record.project_type and record.project_type.label else ''
         rights_status_raw = record.rights_status
@@ -282,35 +368,181 @@ class ProjectView(LoginRequiredMixin, View):
         digital_object_paths = [item.path for item in record.digital_objects if item.path]
         alternative_titles = [item.value for item in record.alternative_titles if item.value]
 
-        # neu
+        categories_name = []
+        for i,w in enumerate(category_labels):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        category_labels = categories_name
+
+        categories_name = []
+        for i,w in enumerate(catchphrase_labels):
+            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
+        catchphrase_labels = categories_name
+
+        # Metadata aus Deutschem und Englischem Kommentar sowie Sprache des Titels und Untertitels extrahieren
         ent = Entity(record.uri)
-        comment_de = ent.resources.get("comment_de")[0].value if ent.resources.get("comment_de") else ''
-        comment_en = ent.resources.get("comment_en")[0].value if ent.resources.get("comment_en") else ''
-        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].value if ent.resources.get(
-            "Sprache des bevorzugten Titels") else ''
-        lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].value if ent.resources.get(
-            "Sprache des bevorzugten Untertitels") else ''
+        comment_de = ent.resources.get("Deutscher Kommentar")[0].value if ent.resources.get("Deutscher Kommentar") else ''
+        comment_en = ent.resources.get("Englischer Kommentar")[0].value if ent.resources.get("Englischer Kommentar") else ''
+        lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].uri if ent.resources.get("Sprache des bevorzugten Titels") else ''
+        lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].uri if ent.resources.get("Sprache des bevorzugten Untertitels") else ''
 
         # Mappe CSV-Spalten auf ProjectRecord-Eigenschaften
         metadata_entries = [
-            _entry('Projekt URI', record.uri),
-            _entry('Institution', institution_label),
-            _entry('Projektart', project_type),
-            _entry('Schlagworte', catchphrase_labels),
-            _entry('Kategorien', category_labels),
-            _entry('Digitale Objekte', digital_object_paths),
-            _entry('Alternative Titel', alternative_titles),
-            _entry('Kommentar DE', comment_de),
-            _entry('Kommentar EN', comment_en),
-            _entry('Sprache Titel', lang_title),
-            _entry('Sprache Untertitel', lang_sub_title),
-            _entry("Rechtsstatus",rights_status),
+            ProjectView._metadata_entry('Projekt URI', record.uri),
+            ProjectView._metadata_entry('Institution', institution_label),
+            ProjectView._metadata_entry('Projektart', project_type),
+            ProjectView._metadata_entry('Schlagworte', catchphrase_labels),
+            ProjectView._metadata_entry('Kategorien', category_labels),
+            ProjectView._metadata_entry('Digitale Objekte', digital_object_paths),
+            ProjectView._metadata_entry('Alternative Titel', alternative_titles),
+            ProjectView._metadata_entry('Kommentar DE', comment_de),
+            ProjectView._metadata_entry('Kommentar EN', comment_en),
+            ProjectView._metadata_entry('Sprache Titel', lang_title),
+            ProjectView._metadata_entry('Sprache Untertitel', lang_sub_title),
+            ProjectView._metadata_entry("Rechtsstatus",rights_status),
         ]
 
         if record.events:
-            metadata_entries.append(_entry('Anzahl Ereignisse', len(record.events)))
+            metadata_entries.append(ProjectView._metadata_entry('Anzahl Ereignisse', len(record.events)))
+
+        metadata_entries.extend(
+            ProjectView._dataclass_metadata_entries(
+                record.properties,
+                ProjectView.PROPERTY_METADATA_FIELDS,
+                prefix="Eigenschaften",
+            )
+        )
+        metadata_entries.extend(
+            ProjectView._dataclass_metadata_entries(
+                record.status,
+                ProjectView.STATUS_METADATA_FIELDS,
+                prefix="Status",
+            )
+        )
+        metadata_entries.extend(
+            ProjectView._dataclass_metadata_entries(
+                record.authority,
+                ProjectView.AUTHORITY_METADATA_FIELDS,
+                prefix="Normdaten",
+            )
+        )
+        metadata_entries.extend(
+            ProjectView._dataclass_metadata_entries(
+                record.submitter,
+                ProjectView.SUBMITTER_METADATA_FIELDS,
+                prefix="Einreichung",
+            )
+        )
+        metadata_entries.extend(
+            ProjectView._dataclass_metadata_entries(
+                record.licenses,
+                ProjectView.LICENSE_METADATA_FIELDS,
+                prefix="Lizenzen",
+            )
+        )
 
         return metadata_entries
+
+    @staticmethod
+    def _log_project_record_debug(
+        record: ProjectRecord,
+        project_context: Dict[str, Any],
+        metadata_entries: List[Dict[str, Any]],
+    ) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
+        institution_label = record.institution.label if record.institution and record.institution.label else ''
+        summary = {
+            'uri': record.uri,
+            'title': record.title,
+            'institution': institution_label,
+            'project_type': record.project_type.label if record.project_type and record.project_type.label else '',
+            'category_slugs': record.category_slugs,
+            'catchphrase_labels': [item.label for item in record.catchphrases if item.label],
+            'digital_object_count': len(record.digital_objects),
+            'event_count': len(record.events),
+            'reference_only': record.reference_only,
+            'harvestable': record.harvestable,
+            'ownership_filtered': record.ownership_filtered,
+        }
+        logger.debug("ProjectView: project record summary %s", summary)
+
+        bundles = {
+            'properties': record.properties,
+            'status': record.status,
+            'authority': record.authority,
+            'submitter': record.submitter,
+            'licenses': record.licenses,
+        }
+        for label, payload in bundles.items():
+            populated, empty = ProjectView._dataclass_field_breakdown(payload)
+            logger.debug(
+                "ProjectView: %s bundle for %s | populated_fields=%s | empty_fields=%s",
+                label,
+                record.uri,
+                populated,
+                empty,
+            )
+
+        try:
+            raw_payload = record.to_dict()
+        except Exception:  # pragma: no cover - defensive
+            raw_payload = {}
+        pretty_record = json.dumps(raw_payload, indent=2, sort_keys=True, default=str)
+
+        logger.debug("ProjectView: render context for %s -> %s", record.uri, project_context)
+        logger.debug("ProjectView: metadata entries for %s -> %s", record.uri, metadata_entries)
+        logger.debug("ProjectView: raw ProjectRecord payload for %s\n%s", record.uri, pretty_record)
+
+    @staticmethod
+    def _metadata_entry(label: str, value: Any) -> Dict[str, Any]:
+        if isinstance(value, (list, tuple, set)):
+            values = [item for item in value if item]
+            return {'key': label, 'values': values} if values else {'key': label, 'value': '—'}
+        return {'key': label, 'value': value or '—'}
+
+    @staticmethod
+    def _dataclass_field_breakdown(payload: Any) -> Tuple[Dict[str, Any], List[str]]:
+        if not payload:
+            return {}, []
+        populated: Dict[str, Any] = {}
+        empty: List[str] = []
+        for field_name, value in vars(payload).items():
+            if ProjectView._is_empty_value(value):
+                empty.append(field_name)
+            else:
+                populated[field_name] = value
+        return populated, sorted(empty)
+
+    @staticmethod
+    def _is_empty_value(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) == 0
+        if isinstance(value, str):
+            return not value.strip()
+        return False
+
+    @classmethod
+    def _dataclass_metadata_entries(
+        cls,
+        source: Any,
+        field_map: Sequence[Tuple[str, str]],
+        *,
+        prefix: str,
+    ) -> List[Dict[str, Any]]:
+        if not source:
+            return []
+
+        entries: List[Dict[str, Any]] = []
+        for field_name, label in field_map:
+            value = getattr(source, field_name, None)
+            entry = cls._metadata_entry(f"{prefix} · {label}", value)
+            if entry.get('value') == '—' and 'values' not in entry:
+                continue
+            entries.append(entry)
+        return entries
 
     @staticmethod
     def _render_error(request, message: str):

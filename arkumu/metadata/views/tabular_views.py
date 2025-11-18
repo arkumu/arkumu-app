@@ -6,8 +6,13 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
+from django.db.models import CharField, Exists, OuterRef, Subquery
+from django.db.models.functions import Coalesce, Lower
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
+from django.utils.formats import date_format
+from django.utils.text import slugify
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -77,6 +82,10 @@ def _build_column_specs(columns_config: List[Any]) -> List[Dict[str, Any]]:
     Specs contain:
         - label: table header / result key
         - matchers: normalized predicate tokens for matching triples
+        - raw_matchers: original matcher strings (URIs/aliases)
+        - sort_predicates: predicate URIs used for sorting
+        - sortable: whether the column supports sorting
+        - slug: slugified label for query params
     """
     specs: List[Dict[str, Any]] = []
     for column in columns_config:
@@ -85,6 +94,12 @@ def _build_column_specs(columns_config: List[Any]) -> List[Dict[str, Any]]:
                 {
                     "label": column,
                     "matchers": {_normalize_match_token(column)},
+                    "raw_matchers": [],
+                    "sort_predicates": [],
+                    "sortable": False,
+                    "sort_key": None,
+                    "slug": slugify(str(column)),
+                    "resource_field": None,
                 }
             )
             continue
@@ -100,10 +115,18 @@ def _build_column_specs(columns_config: List[Any]) -> List[Dict[str, Any]]:
             matchers.add(_normalize_match_token(alias))
         matchers.add(_normalize_match_token(label))
 
+        sort_predicates = column.get("sort_predicates", column.get("matchers", []))
+
         specs.append(
             {
                 "label": label,
                 "matchers": matchers,
+                "raw_matchers": column.get("matchers", []),
+                "sort_predicates": sort_predicates,
+                "sortable": column.get("sortable", True),
+                "sort_key": column.get("sort_key"),
+                "slug": slugify(str(label)),
+                "resource_field": column.get("resource_field"),
             }
         )
     return specs
@@ -134,6 +157,14 @@ def _fallback_uri_segment(res: Resource) -> str:
         last_segment = res.uri.rstrip('/').split('/')[-1]
         return last_segment.replace('-', ' ').replace('_', ' ')
     return str(res.id)
+
+
+def _format_timestamp(value) -> str:
+    """Format audit timestamps in the local timezone."""
+    if not value:
+        return ''
+    localized = timezone.localtime(value)
+    return date_format(localized, "SHORT_DATETIME_FORMAT")
 
 
 def _is_preferred_label_predicate(tokens: Set[str]) -> bool:
@@ -199,6 +230,77 @@ def _build_entity_label_map(entities: List[Resource]) -> Dict[Any, str]:
             label_map[entity.id] = _fallback_uri_segment(entity)
 
     return label_map
+
+
+def _apply_subject_sort(
+    queryset,
+    sort_spec: Optional[Dict[str, Any]],
+    sort_order: str,
+) :
+    """Apply ordering to the base queryset according to selected column."""
+    default_field = 'uri'
+    if not sort_spec:
+        return queryset.order_by(default_field)
+
+    order = '-' if sort_order == 'desc' else ''
+    sort_key = sort_spec.get('sort_key')
+
+    if sort_key == 'visibility':
+        field = f"{order}public_access_level"
+        return queryset.order_by(field, default_field)
+
+    if sort_key == 'organization':
+        field = f"{order}organization__name"
+        return queryset.order_by(field, default_field)
+
+    if sort_key == 'uri':
+        field = f"{order}uri"
+        return queryset.order_by(field)
+    
+    if sort_key in {'created_at', 'updated_at'}:
+        field = f"{order}{sort_key}"
+        return queryset.order_by(field, default_field)
+
+    predicates = [
+        candidate for candidate in sort_spec.get('sort_predicates', [])
+        if isinstance(candidate, str) and candidate.lower().startswith('http')
+    ]
+
+    if sort_key == 'boolean':
+        if not predicates:
+            return queryset.order_by(f"{order}{default_field}")
+        exists_qs = Triple.objects.filter(
+            subject_id=OuterRef('pk'),
+            predicate__uri__in=predicates,
+            object__value__isnull=False,
+        )
+        queryset = queryset.annotate(has_sort_flag=Exists(exists_qs))
+        field = f"{order}has_sort_flag"
+        return queryset.order_by(field, default_field)
+
+    if predicates:
+        coalesced_value = Coalesce(
+            'object__value',
+            'object__name',
+            'object__uri',
+            output_field=CharField(),
+        )
+        sort_subquery = (
+            Triple.objects.filter(
+                subject_id=OuterRef('pk'),
+                predicate__uri__in=predicates,
+            )
+            .annotate(
+                sort_text=Lower(coalesced_value, output_field=CharField()),
+            )
+            .order_by('sort_text')
+            .values('sort_text')[:1]
+        )
+        queryset = queryset.annotate(column_sort_value=Subquery(sort_subquery, output_field=CharField()))
+        field = f"{order}column_sort_value"
+        return queryset.order_by(field, default_field)
+
+    return queryset.order_by(f"{order}{default_field}")
 
 
 PROJECT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
@@ -364,6 +466,16 @@ AKTEUR_RELATION_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 
 # Digitales Objekt column definitions
 DIGITALES_OBJEKT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "label": "S3-Link",
+        "matchers": [],
+        "sort_predicates": _expand_property_variants(
+            ProjectURIs.DIGITAL_OBJECT_PATH,
+            "http://arkumu.org/data/properties/dateipfad",
+            "Dateipfad",
+        ),
+        "sort_key": "boolean",
+    },
     {
         "label": "Dateiname",
         "matchers": _expand_property_variants(
@@ -1080,6 +1192,50 @@ ENTITY_CONFIG: Dict[str, Dict] = {
     },
 }
 
+EDIT_URL_NAMES: Dict[str, str] = {
+    'project': 'metadata:edit_project',
+    'ereignis': 'metadata:edit_ereignis',
+    'akteur': 'metadata:edit_akteur',
+    'actor': 'metadata:edit_actor',
+    'digital_object': 'metadata:edit_digital_object',
+    'digitales_objekt': 'metadata:edit_digital_object',
+    'equipment_software': 'metadata:edit_equipment_software',
+    'ort': 'metadata:edit_ort',
+}
+
+ENTITY_PARAM_MAP: Dict[str, str] = {
+    'project': 'project',
+    'ereignis': 'ereignis',
+    'event': 'ereignis',
+    'akteur': 'akteur',
+    'actor': 'akteur',
+    'digital_object': 'digitales_objekt',
+    'digitales_objekt': 'digitales_objekt',
+    'equipment_software': 'equipment_software',
+    'ort': 'ort',
+}
+
+AUDIT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "label": "Erstellt am",
+        "matchers": ["__internal_created_at__"],
+        "sortable": True,
+        "sort_key": "created_at",
+        "resource_field": "created_at",
+    },
+    {
+        "label": "Aktualisiert am",
+        "matchers": ["__internal_updated_at__"],
+        "sortable": True,
+        "sort_key": "updated_at",
+        "resource_field": "updated_at",
+    },
+]
+
+
+def _entity_has_actions(entity_type: Optional[str]) -> bool:
+    return bool(entity_type) and entity_type in EDIT_URL_NAMES
+
 
 def _resolve_current_org(request, override_code: Optional[str] = None) -> Organization | None:
     coord = BaseCoordinatorMixin()
@@ -1243,7 +1399,7 @@ def _resolve_entities_through_junction_tables(
 
 def _build_rows_for_subjects(
     subjects: List[Resource],
-    desired_columns: List[Any],
+    column_specs: List[Dict[str, Any]],
     entity_type: str = None,
     org: Organization = None,
     label_resolver: Optional[EntityLabelResolver] = None,
@@ -1255,35 +1411,21 @@ def _build_rows_for_subjects(
 
     Returns (rows, columns_meta). columns_meta contains [{'name': label, 'is_fk': bool}]
     """
-    column_specs = _build_column_specs(desired_columns)
-
-    edit_url_names = {
-        'project': 'metadata:edit_project',
-        'ereignis': 'metadata:edit_ereignis',
-        'akteur': 'metadata:edit_akteur',
-        'actor': 'metadata:edit_actor',
-        'digital_object': 'metadata:edit_digital_object',
-        'digitales_objekt': 'metadata:edit_digital_object',
-        'equipment_software': 'metadata:edit_equipment_software',
-        'ort': 'metadata:edit_ort',
-    }
-    entity_param_map = {
-        'project': 'project',
-        'ereignis': 'ereignis',
-        'event': 'ereignis',
-        'akteur': 'akteur',
-        'actor': 'akteur',
-        'digital_object': 'digitales_objekt',
-        'digitales_objekt': 'digitales_objekt',
-        'equipment_software': 'equipment_software',
-        'ort': 'ort',
-    }
-    add_actions = entity_type in edit_url_names
+    add_actions = _entity_has_actions(entity_type)
 
     if not subjects:
-        columns = [{'name': spec['label'], 'is_fk': False} for spec in column_specs]
+        columns = [
+            {
+                'name': spec['label'],
+                'is_fk': False,
+                'slug': spec.get('slug'),
+                'sortable': spec.get('sortable', False),
+            }
+            for spec in column_specs
+        ]
         if add_actions:
-            columns.insert(0, {'name': 'Aktionen', 'is_fk': False})
+            columns.insert(0, {'name': 'Aktionen', 'is_fk': False, 'slug': None, 'sortable': False})
+            columns.insert(1, {'name': 'Sichtbarkeit', 'is_fk': False, 'slug': slugify("Sichtbarkeit"), 'sortable': True})
         return [], columns
 
     subject_ids = [s.id for s in subjects]
@@ -1342,8 +1484,8 @@ def _build_rows_for_subjects(
 
     rows: List[Dict[str, str]] = []
     if add_actions:
-        edit_url = reverse(edit_url_names[entity_type])
-        entity_param_value = entity_param_map.get(entity_type)
+        edit_url = reverse(EDIT_URL_NAMES[entity_type])
+        entity_param_value = ENTITY_PARAM_MAP.get(entity_type)
 
     for s in subjects:
         row: Dict[str, str] = {spec['label']: '' for spec in column_specs}
@@ -1353,6 +1495,8 @@ def _build_rows_for_subjects(
             predicate_tokens = _predicate_tokens(t.predicate)
             matched_spec = None
             for spec in column_specs:
+                if spec.get('resource_field'):
+                    continue
                 if predicate_tokens & spec['matchers']:
                     matched_spec = spec
                     break
@@ -1389,6 +1533,22 @@ def _build_rows_for_subjects(
                         column_is_fk[spec['label']] = True
                         break
         
+        if entity_type in {"digital_object", "digitales_objekt"} and "S3-Link" in row:
+            has_s3_path = bool(row.get("Dateipfad"))
+            row["S3-Link"] = "Ja" if has_s3_path else "Nein"
+
+        for spec in column_specs:
+            resource_field = spec.get('resource_field')
+            if not resource_field:
+                continue
+            if resource_field == 'created_at':
+                row[spec['label']] = _format_timestamp(s.created_at)
+            elif resource_field == 'updated_at':
+                row[spec['label']] = _format_timestamp(s.updated_at)
+            else:
+                value = getattr(s, resource_field, '')
+                row[spec['label']] = value or ''
+
         if add_actions:
             if s.uri:
                 query_params = {'uri': s.uri}
@@ -1405,14 +1565,20 @@ def _build_rows_for_subjects(
         rows.append(row)
 
     columns_meta = [
-        {'name': spec['label'], 'is_fk': column_is_fk.get(spec['label'], False)}
+        {
+            'name': spec['label'],
+            'is_fk': column_is_fk.get(spec['label'], False),
+            'slug': spec.get('slug'),
+            'sortable': spec.get('sortable', False),
+        }
         for spec in column_specs
     ]
 
     if add_actions:
-        columns_meta.insert(0, {'name': 'Aktionen', 'is_fk': False})
+        columns_meta.insert(0, {'name': 'Aktionen', 'is_fk': False, 'slug': None, 'sortable': False})
         # Add visibility column after actions for project entities
-        columns_meta.insert(1, {'name': 'Sichtbarkeit', 'is_fk': False})
+        visibility_slug = slugify("Sichtbarkeit")
+        columns_meta.insert(1, {'name': 'Sichtbarkeit', 'is_fk': False, 'slug': visibility_slug, 'sortable': True})
         # Add visibility to rows
         for row, subject_res in zip(rows, subjects):
             visibility_label = {
@@ -1441,6 +1607,21 @@ def _tabular_view(request, entity_type: str):
 
     uri_contains = cfg['uri_contains']
     desired_columns = cfg['columns']
+    column_specs = _build_column_specs(desired_columns)
+    column_specs.extend(_build_column_specs(AUDIT_COLUMN_DEFINITIONS))
+    add_actions = _entity_has_actions(entity_type)
+    sort_specs = list(column_specs)
+    visibility_spec = {
+        'label': 'Sichtbarkeit',
+        'matchers': set(),
+        'raw_matchers': [],
+        'sort_predicates': [],
+        'sortable': True,
+        'sort_key': 'visibility',
+        'slug': slugify("Sichtbarkeit"),
+    }
+    if add_actions:
+        sort_specs.append(visibility_spec)
 
     # Query organization resources for this entity by URI pattern
     subjects_qs = (
@@ -1448,8 +1629,16 @@ def _tabular_view(request, entity_type: str):
         .for_organization(org)
         .exclude(resource_type=ResourceType.LITERAL)
         .filter(uri__icontains=uri_contains)
-        .order_by('uri')
     )
+
+    sort_slug = request.GET.get('sort')
+    requested_order = request.GET.get('order', 'asc')
+    sort_order = 'desc' if requested_order == 'desc' else 'asc'
+    sort_spec = next(
+        (spec for spec in sort_specs if spec.get('slug') == sort_slug and spec.get('sortable')),
+        None,
+    )
+    subjects_qs = _apply_subject_sort(subjects_qs, sort_spec, sort_order)
 
     # Paginate subjects
     page_number = request.GET.get('page', 1)
@@ -1478,7 +1667,7 @@ def _tabular_view(request, entity_type: str):
     # Build rows for current page
     rows, columns_meta = _build_rows_for_subjects(
         list(page_obj.object_list),
-        desired_columns,
+        column_specs,
         entity_type=entity_type,
         org=org,
         label_resolver=label_resolver,
@@ -1533,6 +1722,11 @@ def _tabular_view(request, entity_type: str):
     }
     url_name = entity_type_to_url.get(entity_type, 'metadata:tabular_projects')
     
+    base_query = request.GET.copy()
+    for key in ("sort", "order", "page"):
+        base_query.pop(key, None)
+    preserved_query = base_query.urlencode()
+
     context = {
         'entity_type': entity_type,
         'dataset_name': cfg['dataset_name'],
@@ -1540,6 +1734,11 @@ def _tabular_view(request, entity_type: str):
         'page_obj': rows_page,
         'url_name': url_name,  # URL name for pagination links
         'organization_code': org.code if org else None,
+        'current_sort': {
+            'column': sort_spec['slug'] if sort_spec else '',
+            'order': sort_order,
+        },
+        'preserved_query': preserved_query,
     }
 
     # Embed compact table inside other pages

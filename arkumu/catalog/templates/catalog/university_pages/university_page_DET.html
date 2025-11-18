@@ -1,0 +1,142 @@
+{% extends "base_design.html" %}
+{% load static %}
+{% block title %}arkumu{% endblock title %}
+
+{% block content %}
+  <div class="w-full min-h-screen">
+    <!-- Main Content Area -->
+    <main class="w-full px-4">
+      <div class="w-full">
+        <div class="w-full transition-colors
+            bg-arkumu-light text-arkumu-dark
+            theme-dark:bg-arkumu-dark theme-dark:text-arkumu-light
+            theme-blue:bg-arkumu-light theme-blue:text-arkumu-blue">
+          <div class="container mx-auto px-6 py-12">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
+              <!-- Left side - Logo and text as image -->
+              <div class="flex-shrink-0">
+                <img src="{% static 'images/Logo_08.svg' %}"
+                     alt="Hochschule für Musik Detmold"
+                     class="w-full max-w-xs">
+              </div>
+
+              <!-- Right side - Description text -->
+              <div class="lg:col-span-2">
+                <h2 class="text-base font-medium mb-4"><b>Hochschule für Musik Detmold</b></h2>
+                <div class="space-y-4 text-sm leading-relaxed">
+                  <p>
+                    Vielfalt prägt die Hochschule für Musik Detmold. Künstlerische Spitzenförderung von jungen
+                    Musikerinnen und Musikern wird eng mit Breitenförderung in der Gesellschaft verknüpft. Beide
+                    Bereiche bedingen sich gegenseitig.</p>
+                  <p>
+                    Innerhalb des Studienangebots beschäftigen sich deshalb Studierende und Lehrende zahlreicher
+                    Nationalitäten mit dem Ausüben, Lehren, Vermitteln, der Übertragung und der wissenschaftlichen
+                    Analyse von Musik. Allem voran steht der Blick auf die künstlerischen Fächer. Hier richtet die
+                    Hochschule ihr Augenmerk auf die Instrumente des klassischen Sinfonieorchesters sowie das Klavier,
+                    die Orgel und den Gesang in Oper und Lied von der historisch informierten Aufführungspraxis bis hin
+                    zur Zeitgenössischen Musik. Hinzu kommen die Instrumente Akkordeon, Gitarre, Blockflöte und
+                    Saxophon. Das kammermusikalische Musizieren hat einen hohen Stellenwert und spielt bereits bei der
+                    Nachwuchsausbildung junger Musikerinnen und Musiker im Detmolder Jungstudierenden-Institut oder bei
+                    den Stipendiatinnen und Stipendiaten der Detmolder Sommerakademie eine Rolle. Die Tonmeisterinnen
+                    und Tonmeister des Erich-Thienhaus-Instituts halten die künstlerische Arbeit fest. Ob CD,
+                    Live-Stream oder Audio-File – bei der Übertragung von Musik nehmen künstlerische Kriterien eine
+                    entscheidende Rolle ein.</p>
+                  <p>
+                    Im öffentlichen Kulturleben unterstreichen Studierende, Lehrende sowie hochkarätige Gäste in über
+                    400 Veranstaltungen die Bedeutung der Hochschule für Musik Detmold als Kulturträgerin der Region.
+                    Zentrum ist das Konzerthaus, das 600 Plätze umfasst und über eine hervorragende Akustik sowie ein
+                    integriertes Wellenfeldsynthese-System verfügt. Zur Unterstützung der Arbeit bereiten zahlreiche
+                    Fördererinnen und Förderer vor Ort sowie eine eigene Stiftung den optimalen Nährboden.</p>
+                  <p>
+                    Einem breit angelegten Verständnis von Musik widmen sich die pädagogischen Studiengänge und
+                    Angebote. Sei es im Bereich der Elementaren Musikpädagogik, verbunden mit der Möglichkeit,
+                    frühkindliche Erziehung in der hauseigenen Musik-Kita praxisnah nachvollziehen zu können, innerhalb
+                    des dichten Partnernetzwerks der Schulen im Rahmen des Lehramtsstudiums oder im Herausbilden der
+                    Fähigkeit, Instrumentalunterricht über alle Altersgrenzen hinweg zu erteilen. Nicht zuletzt geben
+                    Studierende des Weiterbildungsstudiengangs Musikvermittlung Antworten, wie Musik das Publikum am
+                    besten erreichen kann.</p>
+                  <p>
+                    Unterstützt wird die Ausübung von Musik durch die Erkenntnisse aus den wissenschaftlichen Fächern.
+                    Hierbei kooperiert die Hochschule mit verschiedenen Partnerinnen: der Technischen Hochschule OWL und
+                    der Universität Paderborn. Eine gemeinsame Einrichtung ist das Musikwissenschaftliche Seminar
+                    Detmold/Paderborn mit dem Zentrum Musik – Edition – Medien, das sich beispielsweise auf digitale
+                    Notenausgaben für Orchester spezialisiert hat. Im Zentrum für Musik- und Filminformatik wird
+                    gemeinsam mit der Technischen Hochschule OWL die Beziehung zwischen Mensch und Computer untersucht.
+                    Fragen der klanglichen Optimierung eines Raums geht der Forschungsbereich Musikalische Akustik nach.
+                    Im Netzwerk Musikhochschulen werden aktuelle Tendenzen rund um die Themen Qualitätsmanagement und
+                    Lehrentwicklung hinterfragt und das Institut für Lebenslanges Lernen in der Musik (L³Musik)
+                    verknüpft Erkenntnisse zum Musizieren über die Lebensspanne mit Aspekten der Weiterbildung und
+                    Musizierpraxis.</p>
+                  <p>
+                    Das Erich-Thienhaus-Institut (ETI) der Hochschule für Musik Detmold ist als Wiege der Tonmeisterei
+                    für seine exzellente Tonmeister-Ausbildung und den Promotionsstudiengang Musikalische Akustik
+                    bekannt. Im Bandarchiv des Instituts befindet sich eine Sammlung von mehreren Tausend Aufnahmen, die
+                    im Rahmen des Studiums in den letzten 60 Jahren entstanden sind.</p>
+                  <ul class="list-disc pl-5 space-y-2">
+                    <li><b>Retrodigitalisierung von Tonaufnahmen:</b> Umwandlung dieser größtenteils analogen
+                      Audioaufnahmen in digitale Formate, um ihre Langlebigkeit zu sichern und sie für Forschungszwecke
+                      sowie die Öffentlichkeit zugänglich zu machen. Studierende des Instituts erlernen hierbei einen
+                      Umgang mit analoger Studiotechnik.
+                    </li>
+                    <li><b>Archivierung aktueller Aufnahmen:</b> Ausarbeitung und Implementierung von Strategien und
+                      Arbeitsabläufen zur langfristigen Sicherung digitaler Musikdateien, um das kulturelle Erbe für
+                      zukünftige Generationen zu bewahren.
+                    </li>
+                    <li><b>Kooperationen mit anderen kulturellen und akademischen Institutionen:</b> Aufbau und Pflege
+                      von Partnerschaften mit anderen Universitäten, Forschungseinrichtungen und kulturellen
+                      Organisationen, um Wissenstransfer und technologische Innovationen voranzutreiben.
+                    </li>
+                  </ul>
+                  <p>
+                    Diese Maßnahmen ermöglichen es der Hochschule für Musik, ihre Rolle als bewahrende und lehrende
+                    Institution zu stärken und einen wertvollen Beitrag zur akademischen Gemeinschaft und zur breiteren
+                    kulturellen Landschaft zu leisten.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% include 'components/text/blue_line.html' %}
+
+        <!-- Contact Information Component -->
+        <div class="w-full transition-colors
+            bg-arkumu-light text-arkumu-dark
+            theme-dark:bg-arkumu-dark theme-dark:text-arkumu-light
+            theme-blue:bg-arkumu-light theme-blue:text-arkumu-blue">
+          <div class="container mx-auto px-6 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <!-- Left Column -->
+              <div class="space-y-1">
+                <p class="text-sm"><b>Weitere</b></p>
+                <p class="text-sm">Informationen</p>
+              </div>
+
+              <!-- Right Column -->
+              <div class="space-y-1">
+                <p class="text-sm font-medium"><b>Hochschule für Musik Detmold</b></p>
+                <p class="text-sm">Neustadt 22</p>
+                <p class="text-sm">32756 Detmold</p>
+                <a href="https://www.hfm-detmold.de"
+                   class="text-sm underline hover:no-underline transition-all
+                  text-arkumu-dark
+                  theme-dark:text-arkumu-light
+                  theme-blue:text-arkumu-blue">
+                  www.hfm-detmold.de
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% include 'components/text/blue_line.html' %}
+        <h3 class="text-lg font-medium mb-3 mt-6 px-6">Projekte der Hochschule für Musik Detmold</h3>
+        <!-- Results Container -->
+        <div id="results-container" class="w-full mt-2">
+          {% if results %}
+            <!-- Include with all context variables -->
+            {% include 'catalog/partials/results_container.html' %}
+          {% endif %}
+        </div>
+      </div>
+    </main>
+  </div>
+{% endblock content %}

@@ -29,20 +29,27 @@ class OAICacheService(BaseCacheService):
         super().__init__('oai')
         self.graph_cache = GraphCacheService()
 
+    @staticmethod
+    def _resolve_marker(snapshot_marker: str = "", cursor_marker: str = "") -> str:
+        """Return the active marker used for cache keying."""
+        return (cursor_marker or snapshot_marker or "").strip()
+
     def get_cached_record(
         self,
         resource,
         metadata_prefix: str,
         profile_version: str = "",
         snapshot_marker: str = "",
+        cursor_marker: str = "",
     ) -> Optional[Dict]:
         """Get cached record data if available."""
+        marker = self._resolve_marker(snapshot_marker, cursor_marker)
         cache_params = {
             'uri': resource.uri,
             'metadata_prefix': metadata_prefix,
             'timestamp': int(resource.updated_at.timestamp()),
             'profile_version': profile_version,
-            'snapshot_marker': snapshot_marker,
+            'snapshot_marker': marker,
         }
         return self.get_cached('record', **cache_params)
 
@@ -54,14 +61,16 @@ class OAICacheService(BaseCacheService):
         metadata_xml: str,
         profile_version: str = "",
         snapshot_marker: str = "",
+        cursor_marker: str = "",
     ):
         """Cache individual record data."""
+        marker = self._resolve_marker(snapshot_marker, cursor_marker)
         cache_params = {
             'uri': resource.uri,
             'metadata_prefix': metadata_prefix,
             'timestamp': int(resource.updated_at.timestamp()),
             'profile_version': profile_version,
-            'snapshot_marker': snapshot_marker,
+            'snapshot_marker': marker,
         }
 
         cached_record = {
@@ -83,8 +92,10 @@ class OAICacheService(BaseCacheService):
         until_date: str = '',
         offset: int = 0,
         snapshot_marker: str = '',
+        cursor_marker: str = '',
     ) -> Optional[Dict]:
         """Get cached page data if available."""
+        marker = self._resolve_marker(snapshot_marker, cursor_marker)
         cache_params = {
             'verb': verb,
             'metadata_prefix': metadata_prefix,
@@ -92,7 +103,7 @@ class OAICacheService(BaseCacheService):
             'from_date': from_date,
             'until_date': until_date,
             'offset': offset,
-            'snapshot_marker': snapshot_marker,
+            'snapshot_marker': marker,
         }
         return self.get_cached('page', **cache_params)
 
@@ -106,8 +117,10 @@ class OAICacheService(BaseCacheService):
         until_date: str = '',
         offset: int = 0,
         snapshot_marker: str = '',
+        cursor_marker: str = '',
     ):
         """Cache page data."""
+        marker = self._resolve_marker(snapshot_marker, cursor_marker)
         cache_params = {
             'verb': verb,
             'metadata_prefix': metadata_prefix,
@@ -115,7 +128,7 @@ class OAICacheService(BaseCacheService):
             'from_date': from_date,
             'until_date': until_date,
             'offset': offset,
-            'snapshot_marker': snapshot_marker,
+            'snapshot_marker': marker,
         }
 
         enriched_data = {
@@ -148,6 +161,7 @@ class OAICacheService(BaseCacheService):
                 resource,
                 metadata_prefix,
                 snapshot_marker=snapshot_marker,
+                cursor_marker=snapshot_marker,
             ):
                 logger.debug(f"Record already cached: {resource.uri} ({metadata_prefix})")
                 return
@@ -177,6 +191,7 @@ class OAICacheService(BaseCacheService):
                 header_xml,
                 metadata_xml,
                 snapshot_marker=snapshot_marker,
+                cursor_marker=snapshot_marker,
             )
             logger.info(f"Warmed cache for {resource.uri} ({metadata_prefix})")
 

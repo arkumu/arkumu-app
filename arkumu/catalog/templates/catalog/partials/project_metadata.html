@@ -11,25 +11,27 @@
           class="divide-y divide-arkumu-dark theme-dark:divide-arkumu-light theme-blue:divide-arkumu-blue">
         {% for item in metadata %}
           <!-- Hauptzeile -->
-          <tr class="border-b border-arkumu-dark theme-dark:border-arkumu-light theme-blue:border-arkumu-blue">
-            <th class="text-left py-3 font-mono uppercase tracking-wide text-xs
-                        text-arkumu-dark/70 theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
-                tabindex="0">
-              {{ item.key }}
-            </th>
-            <td class="py-3 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
-                tabindex="0">
-              {% if item.values %}
-                {% for entry in item.values %}
-                  {% if item.key != entry %}
-                    <div>{{ entry }}</div>
-                  {% endif %}
-                {% endfor %}
-              {% else %}
-                {{ item.value }}
-              {% endif %}
-            </td>
-          </tr>
+          {% if item.value != "—" %}
+            <tr class="border-b border-arkumu-dark theme-dark:border-arkumu-light theme-blue:border-arkumu-blue">
+              <th class="text-left py-3 font-mono uppercase tracking-wide text-xs
+                          text-arkumu-dark/70 theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
+                  tabindex="0">
+                {{ item.key }}
+              </th>
+              <td class="py-3 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
+                  tabindex="0">
+                {% if item.values %}
+                  {% for entry in item.values %}
+                    {% if item.key != entry %}
+                      <div>{{ entry }}</div>
+                    {% endif %}
+                  {% endfor %}
+                {% else %}
+                  {{ item.value }}
+                {% endif %}
+              </td>
+            </tr>
+          {% endif %}
 
           <!-- Zusätzliche Stichpunkte -->
           {% if item.additionalNotes %}

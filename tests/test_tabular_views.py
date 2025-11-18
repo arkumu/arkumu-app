@@ -1,11 +1,18 @@
 import pytest
+from datetime import timedelta
 from django.urls import reverse
+from django.utils import timezone
+from django.utils.formats import date_format
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
-from arkumu.metadata.views.tabular_views import _build_rows_for_subjects
+from arkumu.metadata.views.tabular_views import (
+    AUDIT_COLUMN_DEFINITIONS,
+    _build_column_specs,
+    _build_rows_for_subjects,
+)
 
 
 @pytest.mark.django_db
@@ -198,6 +205,53 @@ def test_project_tabular_maps_digikunst_columns(client):
 
 
 @pytest.mark.django_db
+def test_tabular_rows_include_audit_timestamps():
+    org = Organization.objects.create(name="FUK", code="fuk")
+    subject = Resource.objects.create(
+        uri="http://arkumu.org/data/fuk/entities/projekt/proj-3",
+        resource_type=ResourceType.ENTITY,
+        organization=org,
+    )
+
+    # Set deterministic timestamps to compare formatted output
+    created_at = timezone.now() - timedelta(days=2)
+    updated_at = timezone.now() - timedelta(hours=1)
+    Resource.objects.filter(id=subject.id).update(
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+    subject.refresh_from_db()
+
+    column_specs = _build_column_specs(
+        [
+            {
+                "label": "Dummy",
+                "matchers": ["http://arkumu.org/data/fuk/properties/dummy"],
+            }
+        ]
+    )
+    column_specs.extend(_build_column_specs(AUDIT_COLUMN_DEFINITIONS))
+
+    rows, columns_meta = _build_rows_for_subjects(
+        [subject],
+        column_specs,
+        entity_type="project",
+        org=org,
+    )
+
+    expected_created = date_format(timezone.localtime(subject.created_at), "SHORT_DATETIME_FORMAT")
+    expected_updated = date_format(timezone.localtime(subject.updated_at), "SHORT_DATETIME_FORMAT")
+
+    row = rows[0]
+    assert row["Erstellt am"] == expected_created
+    assert row["Aktualisiert am"] == expected_updated
+
+    column_names = [meta["name"] for meta in columns_meta]
+    assert "Erstellt am" in column_names
+    assert "Aktualisiert am" in column_names
+
+
+@pytest.mark.django_db
 def test_build_rows_uses_label_resolver_for_entity_fk():
     org = Organization.objects.create(name="FUK", code="fuk")
 
@@ -244,9 +298,11 @@ def test_build_rows_uses_label_resolver_for_entity_fk():
 
     resolver = StubResolver()
 
+    column_specs = _build_column_specs(desired_columns)
+
     rows, columns_meta = _build_rows_for_subjects(
         [subject],
-        desired_columns,
+        column_specs,
         entity_type="project",
         org=org,
         label_resolver=resolver,
@@ -254,4 +310,6 @@ def test_build_rows_uses_label_resolver_for_entity_fk():
 
     assert rows[0]["related"] == "Resolved Label"
     assert resolver.calls == ["http://arkumu.org/data/fuk/entities/akteurin/actor-1"]
-    assert columns_meta[0]["is_fk"] is True
+    related_meta = next((meta for meta in columns_meta if meta["name"] == "related"), None)
+    assert related_meta is not None
+    assert related_meta["is_fk"] is True

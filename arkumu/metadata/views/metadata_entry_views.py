@@ -32,7 +32,7 @@ from arkumu.users.models import Organization
 class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin):
     """Shared helpers for metadata entry views."""
 
-    allowed_org_codes = {"fuk", "det", "rsh", "hmt", "khm"}
+    allowed_org_codes = {"fuk", "det", "rsh"}
 
     tab_config = (
         (

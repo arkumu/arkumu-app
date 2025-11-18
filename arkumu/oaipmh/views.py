@@ -5,7 +5,10 @@ import binascii
 import logging
 import mimetypes
 import re
-from collections import defaultdict, Counter
+from collections import defaultdict, Counter, OrderedDict
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timezone as dt_timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
@@ -13,19 +16,22 @@ from urllib.parse import unquote, urlparse
 
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.http import HttpRequest, HttpResponse
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse, HttpResponseForbidden
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from lxml import etree as ET
 
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 
-from arkumu.metadata.models.resource import Resource, PublicAccessLevel
+from arkumu.metadata.models.resource import Resource, PublicAccessLevel, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.metadata.services.institutional_graph_service import InstitutionalGraphService
 from arkumu.metadata.services.oai_stats import classify_project_access
 from arkumu.users.models import Organization
+from arkumu.users.mixins import general_login_required
 from arkumu.projects import (
     ProjectDigitalObject,
     ProjectDigitalObjectLicense,
@@ -56,13 +62,15 @@ from arkumu.oaipmh.oai_project import (
     OAIProject,
     OAIProjectBuilder,
 )
-from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
+from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph, RDF_NS
 from arkumu.common.arkumu_license import (
     ARKUMU_LICENSE_LABELS,
     ARKUMU_LICENSE_TEXTS,
     ARKUMU_LICENSE_URIS,
     license_token_from_license_info,
 )
+from arkumu.oaipmh.services import AssemblyContext, OAIProjectAssembler
+from arkumu.oaipmh import schema_utils
 
 
 # Minimal repository config (can be moved to settings)
@@ -73,6 +81,7 @@ REPO_PROTOCOL_VERSION = "2.0"
 REPO_EARLIEST_DATASTAMP = "1970-01-01T00:00:00Z"
 REPO_DELETED_RECORD = "no"
 REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
+SCHEMA_DESCRIPTION_NS = "http://arkumu.org/oai/schema-info/1.0"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
 METS_NS = DEFAULT_METS_NS
@@ -105,10 +114,27 @@ METS_NSMAP = {
     None: DNX_NS
 }
 
-_DIGITAL_OBJECT_ORG_DEFAULT = ("fuk", "det", "rsh")
+_DIGITAL_OBJECT_ORG_DEFAULT = ("fuk", "det", "rsh", "khm", "hmt")
 _DIGITAL_OBJECT_URI_REGEX = r'/entities/digitales-objekt/[0-9]+$'
+_PROJECT_TYPE_URIS: tuple[str, ...] = tuple(
+    uri.strip()
+    for uri in getattr(settings, "OAI_PROJECT_TYPE_URIS", ())
+    if uri and str(uri).strip()
+)
+_RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 _KHM_HMT_LICENSE_ORGS: set[str] = {"khm", "hmt"}
+SIMPLIFIED_LICENSE_LABEL = "Lizenz arkumu-A 1.0"
+SIMPLIFIED_LICENSE_NOTE = (
+    "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich "
+    "unbeschränkte Recht, das Werk oder werkähnliche \"Projekt\" zum Zweck der Langzeitverfügbarkeit "
+    "zu vervielfältigen (§16 UrhG), zu speichern und gegebenenfalls in langzeitstabile Dateiformate "
+    "zu überführen. Dies umfasst auch das Recht, ein Werk erstmalig zu digitalisieren oder eine digitale "
+    "Dokumentation des Werkes zu erstellen. Sofern für Zwecke der Langzeitverfügbarkeit eine Umwandlung "
+    "bestehender Dateiformate in andere Dateiformate erforderlich ist und diese Umwandlung eine Bearbeitung "
+    "darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen Bearbeitungsrechte eingeräumt. "
+    "(Lizenz arkumu-A 1.0)"
+)
 
 
 def _digital_object_orgs() -> set[str]:
@@ -118,6 +144,129 @@ def _digital_object_orgs() -> set[str]:
         for code in configured
         if code
     }
+
+
+def _project_type_filter() -> Optional[Q]:
+    if not _PROJECT_TYPE_URIS:
+        return None
+    predicate_filter = (
+        Q(subject_triples__predicate__uri=_RDF_TYPE_URI)
+        | Q(subject_triples__predicate__canonical_uri=_RDF_TYPE_URI)
+    )
+    object_filter = (
+        Q(subject_triples__object__uri__in=_PROJECT_TYPE_URIS)
+        | Q(subject_triples__object__canonical_uri__in=_PROJECT_TYPE_URIS)
+    )
+    return predicate_filter & object_filter
+
+
+def _split_namespace(uri: str) -> tuple[str, str]:
+    if "#" in uri:
+        base, local = uri.rsplit("#", 1)
+        return f"{base}#", local
+    if "/" in uri:
+        base, local = uri.rsplit("/", 1)
+        if not base.endswith("/"):
+            base = f"{base}/"
+        return base, local
+    return uri, ""
+
+
+def _should_emit_institutional_rdf(org_code: Optional[str]) -> bool:
+    configured = {
+        str(code).strip().lower()
+        for code in getattr(settings, "OAI_INSTITUTIONAL_RDF_ORGS", ())
+        if code
+    }
+    normalized = (org_code or "").strip().lower()
+    return normalized in configured
+
+
+def _build_institutional_rdf_element(
+    resource: Resource,
+    *,
+    require_org_opt_in: bool = True,
+) -> Optional[ET._Element]:
+    organization = getattr(resource, "organization", None)
+    if not organization or not getattr(organization, "code", None):
+        return None
+    org_code = str(organization.code).strip().lower()
+    if require_org_opt_in and not _should_emit_institutional_rdf(org_code):
+        return None
+
+    graph_service = InstitutionalGraphService(org_code=org_code)
+    try:
+        graph = graph_service.get_entity_graph(
+            resource.uri,
+            include_incoming=True,
+            expand_neighbors=True,
+            depth=2,
+        )
+    except ValueError:
+        return None
+
+    nodes = graph.get("nodes") or {}
+    edges = graph.get("edges") or []
+    if not nodes or not edges:
+        return None
+
+    namespaces = OrderedDict()
+    for edge in edges:
+        ns_uri, _ = _split_namespace(edge.get("predicate_uri", ""))
+        if ns_uri:
+            namespaces.setdefault(ns_uri, None)
+
+    nsmap = OrderedDict({"rdf": RDF_NS})
+    preferred_namespace = f"http://arkumu.org/data/{org_code}/properties/"
+    prefix_index = 1
+    for ns_uri in namespaces.keys():
+        if ns_uri == preferred_namespace:
+            prefix = org_code
+        else:
+            prefix = f"ns{prefix_index}"
+            prefix_index += 1
+        nsmap[prefix] = ns_uri
+        namespaces[ns_uri] = prefix
+
+    root = ET.Element(ET.QName(RDF_NS, "RDF"), nsmap=nsmap)
+
+    description_map: Dict[str, ET._Element] = {}
+    for node_id, node in nodes.items():
+        uri = node.get("uri")
+        if not uri or node.get("resource_type") != ResourceType.ENTITY:
+            continue
+        description = ET.SubElement(root, ET.QName(RDF_NS, "Description"))
+        description.set(ET.QName(RDF_NS, "about"), uri)
+        description_map[node_id] = description
+
+    for edge in edges:
+        subject_elem = description_map.get(edge.get("subject_id"))
+        if subject_elem is None:
+            continue
+        predicate_uri = edge.get("predicate_uri")
+        ns_uri, local_name = _split_namespace(predicate_uri or "")
+        if not ns_uri or not local_name:
+            continue
+        element = ET.SubElement(subject_elem, ET.QName(ns_uri, local_name))
+
+        obj_node = nodes.get(edge.get("object_id") or "")
+        if not obj_node:
+            continue
+        obj_type = obj_node.get("resource_type")
+        if obj_type == ResourceType.LITERAL:
+            element.text = obj_node.get("value") or edge.get("object_value")
+        elif obj_type == ResourceType.ENTITY:
+            obj_uri = obj_node.get("uri")
+            if not obj_uri:
+                continue
+            element.set(ET.QName(RDF_NS, "resource"), obj_uri)
+        else:
+            obj_uri = obj_node.get("uri")
+            if not obj_uri:
+                continue
+            element.set(ET.QName(RDF_NS, "resource"), obj_uri)
+
+    return root if len(root) else None
 
 
 def _normalized_org_code(
@@ -288,6 +437,9 @@ resumption_service = ResumptionTokenService(page_size=10)
 oai_cache = OAICacheService()
 snapshot_service = ProjectSnapshotService()
 project_builder = OAIProjectBuilder()
+_db_assembler_override: ContextVar[Optional[bool]] = ContextVar("oai_db_mode_override", default=None)
+_db_project_assembler_instance: Optional[OAIProjectAssembler] = None
+_curated_link_override: ContextVar[bool] = ContextVar("oai_curated_link_override", default=False)
 
 # Register stable namespace prefixes so ElementTree uses human-friendly tags
 ET.register_namespace("oai_dc", OAI_DC_NS)
@@ -335,6 +487,7 @@ def _get_cached_record(
     metadata_prefix: str,
     *,
     snapshot_marker: str = "",
+    cursor_marker: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Get cached OAI-PMH record if available."""
     profile_version = METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
@@ -343,6 +496,7 @@ def _get_cached_record(
         metadata_prefix,
         profile_version=profile_version,
         snapshot_marker=snapshot_marker,
+        cursor_marker=cursor_marker,
     )
 
 
@@ -353,6 +507,7 @@ def _cache_record(
     metadata_xml: str,
     *,
     snapshot_marker: str = "",
+    cursor_marker: str = "",
 ):
     """Cache OAI-PMH record data."""
     profile_version = METS_PROFILE_VERSION if metadata_prefix == "mets" else ""
@@ -363,7 +518,178 @@ def _cache_record(
         metadata_xml,
         profile_version=profile_version,
         snapshot_marker=snapshot_marker,
+        cursor_marker=cursor_marker,
     )
+
+
+def _db_mode_enabled() -> bool:
+    override = _db_assembler_override.get()
+    if override is not None:
+        return override
+    return getattr(settings, "OAI_USE_DB_ASSEMBLER", False)
+
+
+def _get_db_project_assembler() -> Optional[OAIProjectAssembler]:
+    if not _db_mode_enabled():
+        return None
+    global _db_project_assembler_instance
+    if _db_project_assembler_instance is None:
+        _db_project_assembler_instance = OAIProjectAssembler()
+    return _db_project_assembler_instance
+
+
+@contextmanager
+def _force_db_mode(state: bool):
+    token = _db_assembler_override.set(state)
+    try:
+        yield
+    finally:
+        _db_assembler_override.reset(token)
+
+
+def _curated_links_enabled() -> bool:
+    return bool(_curated_link_override.get() or _db_mode_enabled())
+
+
+@contextmanager
+def _force_curated_links(state: bool):
+    token = _curated_link_override.set(state)
+    try:
+        yield
+    finally:
+        _curated_link_override.reset(token)
+
+
+@dataclass
+class HarvestPageResult:
+    resources: List[Resource]
+    project_hints: Dict[str, OAIProject]
+    has_more: bool
+    cursor_position: Optional[str]
+
+
+def _format_cursor_position(resource: Resource) -> str:
+    return f"{resource.updated_at.isoformat()}|{resource.pk}"
+
+
+def _parse_cursor_position(token: Optional[str]) -> Optional[tuple[datetime, str]]:
+    if not token:
+        return None
+    try:
+        timestamp_str, pk_str = token.rsplit("|", 1)
+        return datetime.fromisoformat(timestamp_str), pk_str
+    except ValueError:
+        return None
+
+
+def _apply_cursor_filter(queryset, cursor_state: Optional[tuple[datetime, str]]):
+    if not cursor_state:
+        return queryset
+    timestamp, pk = cursor_state
+    return queryset.filter(
+        Q(updated_at__gt=timestamp)
+        | (Q(updated_at=timestamp) & Q(id__gt=pk))
+    )
+
+
+def _dataset_marker_for_queryset(queryset) -> str:
+    latest = (
+        queryset
+        .order_by("-updated_at", "-id")
+        .values_list("updated_at", "id")
+        .first()
+    )
+    if not latest or latest[0] is None:
+        return "empty"
+    updated_at, _ = latest
+    return updated_at.isoformat()
+
+
+def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject]:
+    record = _assemble_record_from_db(resource)
+    if record is None and not _db_mode_enabled():
+        record = snapshot_service.get_record_by_uri(resource.uri)
+    if record is None:
+        return None
+    try:
+        return project_builder.from_project_record(
+            record,
+            skip_shared_event_filter=_db_mode_enabled(),
+            skip_format_exclusion=_db_mode_enabled(),
+            use_curated_media_links=_curated_links_enabled(),
+        )
+    except Exception:
+        logger.exception("Failed to build OAI project for %s", resource.uri)
+        return None
+
+
+def _has_more_db_harvestables(queryset, cursor_position: Optional[str]) -> bool:
+    cursor_state = _parse_cursor_position(cursor_position)
+    if cursor_state is None:
+        return False
+
+    lookahead_qs = _apply_cursor_filter(
+        queryset.order_by("updated_at", "id"),
+        cursor_state,
+    )
+    iterator = lookahead_qs.iterator(chunk_size=100)
+    for resource in iterator:
+        project_hint = _build_project_hint_from_resource(resource)
+        if project_hint and project_hint.harvestable:
+            return True
+    return False
+
+
+def _harvestable_page_from_db(
+    queryset,
+    *,
+    cursor_position: Optional[str],
+    page_size: int,
+    include_hints: bool,
+) -> HarvestPageResult:
+    ordered = queryset.order_by("updated_at", "id")
+    ordered = _apply_cursor_filter(ordered, _parse_cursor_position(cursor_position))
+
+    iterator = ordered.iterator(chunk_size=max(page_size * 10, 100))
+    resources: List[Resource] = []
+    project_hints: Dict[str, OAIProject] = {}
+    last_cursor_position = cursor_position
+
+    for resource in iterator:
+        last_cursor_position = _format_cursor_position(resource)
+        project_hint = _build_project_hint_from_resource(resource)
+        if not project_hint or not project_hint.harvestable:
+            continue
+        if include_hints:
+            project_hints[resource.uri] = project_hint
+        resources.append(resource)
+        if len(resources) == page_size:
+            break
+
+    has_more = False
+    if resources:
+        has_more = _has_more_db_harvestables(ordered, last_cursor_position)  # type: ignore[arg-type]
+
+    return HarvestPageResult(
+        resources=resources,
+        project_hints=project_hints,
+        has_more=has_more,
+        cursor_position=last_cursor_position,
+    )
+
+
+def _assemble_record_from_db(resource: Optional[Resource]) -> Optional[ProjectRecord]:
+    """Attempt to assemble a ProjectRecord via the DB-backed assembler."""
+    assembler = _get_db_project_assembler()
+    if not assembler or not resource:
+        return None
+
+    try:
+        context = AssemblyContext(resource=resource)
+        return assembler.build_record(context)
+    except Exception:  # pragma: no cover - defensive logging
+        logger.exception("DB-backed OAI assembler failed for %s", getattr(resource, "uri", "unknown"))
+    return None
 
 
 def _restrict_to_harvestable_files(queryset):
@@ -406,7 +732,35 @@ def _restrict_to_harvestable_files(queryset):
     if digital_object_orgs:
         event_condition = project_event_condition & ~Q(organization__code__in=digital_object_orgs)
 
-    combined_condition = s3_condition | event_condition
+    # Digital-object S3 linkage: project -> digital object -> S3FileObject
+    digital_object_files = Triple.objects.filter(
+        predicate__uri__endswith="/properties/digitales-objekt",
+        subject_id=OuterRef("pk"),
+    ).values("object_id")
+
+    event_ids_for_project = Triple.objects.filter(
+        predicate__uri__endswith="/properties/ereignis",
+        subject_id=OuterRef("pk"),
+    ).values("object_id")
+
+    digital_object_files_via_events = Triple.objects.filter(
+        predicate__uri__endswith="/properties/digitales-objekt",
+        subject_id__in=event_ids_for_project,
+    ).values("object_id")
+
+    digital_object_s3_condition = Exists(
+        S3FileObject.objects.filter(
+            status__in=HARVESTABLE_FILE_STATUSES,
+            s3_key__isnull=False,
+        )
+        .exclude(s3_key="")
+        .filter(
+            Q(related_resource_id__in=digital_object_files)
+            | Q(related_resource_id__in=digital_object_files_via_events)
+        )
+    )
+
+    combined_condition = s3_condition | event_condition | digital_object_s3_condition
     if rosetta_orgs:
         combined_condition |= rosetta_condition
     if dump_project_ids:
@@ -644,7 +998,7 @@ def _oai_envelope(request: HttpRequest) -> ET._Element:
     response_date.text = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     req = ET.SubElement(oai, ET.QName(OAI_NS, "request"))
-    req.text = request.build_absolute_uri(REPO_BASEURL)
+    req.text = request.build_absolute_uri(request.path)
     return oai
 
 
@@ -665,7 +1019,7 @@ def _identify(oai: ET._Element, request: HttpRequest) -> ET._Element:
     identify = ET.SubElement(oai, "Identify")
     ET.SubElement(identify, "repositoryName").text = REPO_NAME
     # Absolute baseURL per spec
-    absolute_base = request.build_absolute_uri(REPO_BASEURL)
+    absolute_base = request.build_absolute_uri(request.path)
     ET.SubElement(identify, "baseURL").text = absolute_base
     ET.SubElement(identify, "protocolVersion").text = REPO_PROTOCOL_VERSION
     ET.SubElement(identify, "adminEmail").text = REPO_ADMIN_EMAIL
@@ -690,6 +1044,26 @@ def _identify(oai: ET._Element, request: HttpRequest) -> ET._Element:
 
     ET.SubElement(identify, "deletedRecord").text = REPO_DELETED_RECORD
     ET.SubElement(identify, "granularity").text = REPO_GRANULARITY
+
+    schema_bundle = schema_utils.build_schema_url_bundle(request)
+    if schema_bundle:
+        description = ET.SubElement(identify, "description")
+        schema_info = ET.SubElement(
+            description,
+            ET.QName(SCHEMA_DESCRIPTION_NS, "schemaInfo"),
+            nsmap={"arkschema": SCHEMA_DESCRIPTION_NS},
+        )
+        schema_info.set("snapshot", schema_bundle.snapshot_tag)
+        for variant, format_map in schema_bundle.urls.items():
+            for fmt, urls in format_map.items():
+                schema_elem = ET.SubElement(
+                    schema_info,
+                    ET.QName(SCHEMA_DESCRIPTION_NS, "schema"),
+                )
+                schema_elem.set("type", variant)
+                schema_elem.set("format", fmt)
+                schema_elem.set("latest", urls.get("latest", ""))
+                schema_elem.set("snapshot", urls.get("snapshot", ""))
 
     return oai
 
@@ -795,7 +1169,8 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
 
     # Handle resumption token
     offset = 0
-    snapshot_marker_from_token: Optional[str] = None
+    cursor_marker_from_token: Optional[str] = None
+    cursor_position_from_token: Optional[str] = None
     if has_resumption_param:
         if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
@@ -810,12 +1185,25 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
         set_spec = token_data.get("set")
         from_date = token_data.get("from")
         until_date = token_data.get("until")
-        snapshot_marker_from_token = token_data.get("snapshot")
+        cursor_marker_from_token = token_data.get("cursor") or token_data.get("snapshot")
+        cursor_position_from_token = token_data.get("cursor_position")
+
+    if _db_mode_enabled():
+        return _list_identifiers_db(
+            oai,
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec,
+            from_date=from_date,
+            until_date=until_date,
+            offset=offset,
+            cursor_marker_from_token=cursor_marker_from_token,
+            cursor_position_from_token=cursor_position_from_token,
+        )
 
     snapshot, harvestable_projects = _harvestable_snapshot_projects()
     snapshot_version = snapshot.generated_at.isoformat()
 
-    if snapshot_marker_from_token and snapshot_marker_from_token != snapshot_version:
+    if cursor_marker_from_token and cursor_marker_from_token != snapshot_version:
         return _error(oai, "badResumptionToken", "Snapshot has changed; restart harvesting")
 
     allowed_uris = list(harvestable_projects.keys())
@@ -846,6 +1234,7 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
         until_date=until_date or '',
         offset=offset,
         snapshot_marker=snapshot_version,
+        cursor_marker=snapshot_version,
     )
     if cached_page:
         # Rebuild from cached data
@@ -907,6 +1296,101 @@ def _list_identifiers(oai: ET._Element, params) -> ET._Element:
         until_date=until_date or '',
         offset=offset,
         snapshot_marker=snapshot_version,
+        cursor_marker=snapshot_version,
+    )
+
+    return oai
+
+
+def _list_identifiers_db(
+    oai: ET._Element,
+    *,
+    metadata_prefix: str,
+    set_spec: Optional[str],
+    from_date: Optional[str],
+    until_date: Optional[str],
+    offset: int,
+    cursor_marker_from_token: Optional[str],
+    cursor_position_from_token: Optional[str],
+) -> ET._Element:
+    queryset = _get_resources_queryset(set_spec, from_date, until_date, metadata_prefix, allowed_uris=None)
+    cursor_marker = _dataset_marker_for_queryset(queryset)
+
+    if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
+        return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
+
+    page_size = resumption_service.page_size
+    cached_page = oai_cache.get_cached_page(
+        verb='ListIdentifiers',
+        metadata_prefix=metadata_prefix,
+        set_spec=set_spec or '',
+        from_date=from_date or '',
+        until_date=until_date or '',
+        offset=offset,
+        snapshot_marker=cursor_marker,
+        cursor_marker=cursor_marker,
+    )
+    if cached_page:
+        list_identifiers = ET.SubElement(oai, "ListIdentifiers")
+        for record_data in cached_page['headers']:
+            header = ET.fromstring(record_data)
+            list_identifiers.append(header)
+        if cached_page.get('resumption_token'):
+            resumption_elem = ET.SubElement(list_identifiers, "resumptionToken")
+            resumption_elem.text = cached_page['resumption_token']
+        return oai
+
+    page = _harvestable_page_from_db(
+        queryset,
+        cursor_position=cursor_position_from_token,
+        page_size=page_size,
+        include_hints=False,
+    )
+    resources = page.resources
+
+    if offset == 0 and not resources:
+        return _error(oai, "noRecordsMatch", "No records found matching the criteria")
+
+    list_identifiers = ET.SubElement(oai, "ListIdentifiers")
+    headers_data: List[str] = []
+    for resource in resources:
+        header = _build_record_header(resource)
+        list_identifiers.append(header)
+        headers_data.append(ET.tostring(header, encoding='utf-8').decode('utf-8'))
+
+    resumption_token_value = None
+    if page.has_more:
+        next_offset = offset + len(resources)
+        resumption_token_value = resumption_service.create_token(
+            offset=next_offset,
+            verb="ListIdentifiers",
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec,
+            from_date=from_date,
+            until_date=until_date,
+            cursor_marker=cursor_marker,
+            cursor_position=page.cursor_position,
+        )
+        resumption_elem = ET.SubElement(list_identifiers, "resumptionToken")
+        resumption_elem.text = resumption_token_value
+
+    list_page_data = {
+        'headers': headers_data,
+        'resumption_token': resumption_token_value,
+        'count': len(headers_data),
+        'cached_at': timezone.now().isoformat()
+    }
+
+    oai_cache.cache_page(
+        verb='ListIdentifiers',
+        metadata_prefix=metadata_prefix,
+        page_data=list_page_data,
+        set_spec=set_spec or '',
+        from_date=from_date or '',
+        until_date=until_date or '',
+        offset=offset,
+        snapshot_marker=cursor_marker,
+        cursor_marker=cursor_marker,
     )
 
     return oai
@@ -966,6 +1450,8 @@ def _get_resources_queryset(
         Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
     )
 
+    project_type_clause = _project_type_filter()
+
     if allowed_uris is not None:
         uris = list(dict.fromkeys(allowed_uris))
         if not uris:
@@ -977,13 +1463,12 @@ def _get_resources_queryset(
             .order_by('updated_at', 'id')
         )
     else:
-        queryset = (
-            Resource.objects.filter(
-                Q(uri__regex=r'/entities/projekt/[0-9]+$') & access_clause
-            )
-            .select_related('organization')
-            .order_by('updated_at', 'id')
-        )
+        queryset = Resource.objects.filter(access_clause).select_related('organization')
+        if project_type_clause is not None:
+            queryset = queryset.filter(project_type_clause).distinct()
+        else:
+            queryset = queryset.filter(uri__regex=r'/entities/projekt/[0-9]+$')
+        queryset = queryset.order_by('updated_at', 'id')
 
     if allowed_uris is None:
         queryset = _restrict_to_harvestable_files(queryset)
@@ -1070,6 +1555,12 @@ def _get_snapshot_record(resource: Resource) -> Optional[ProjectRecord]:
     if not project_uri:
         return None
 
+    assembled_record = _assemble_record_from_db(resource)
+    if assembled_record:
+        return assembled_record
+    if _db_mode_enabled():
+        return None
+
     record = snapshot_service.get_record_by_uri(project_uri)
     if record:
         return record
@@ -1098,15 +1589,26 @@ def _candidate_projects_for_resource(
     else:
         record = _get_snapshot_record(resource)
         if record:
-            project = project_builder.from_project_record(record)
+            project = project_builder.from_project_record(
+                record,
+                skip_shared_event_filter=_db_mode_enabled(),
+                skip_format_exclusion=_db_mode_enabled(),
+                use_curated_media_links=_curated_links_enabled(),
+            )
             candidates.append(project)
             seen.add(project.uri)
 
-    fallback_record = _fallback_record_from_storage(resource)
-    if fallback_record:
-        fallback_project = project_builder.from_project_record(fallback_record)
-        if fallback_project.uri not in seen:
-            candidates.append(fallback_project)
+    if not _db_mode_enabled():
+        fallback_record = _fallback_record_from_storage(resource)
+        if fallback_record:
+            fallback_project = project_builder.from_project_record(
+                fallback_record,
+                skip_shared_event_filter=_db_mode_enabled(),
+                skip_format_exclusion=_db_mode_enabled(),
+                use_curated_media_links=_curated_links_enabled(),
+            )
+            if fallback_project.uri not in seen:
+                candidates.append(fallback_project)
 
     return candidates
 
@@ -1118,7 +1620,12 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
     harvestable: Dict[str, OAIProject] = {}
 
     for record in snapshot.projects:
-        project = project_builder.from_project_record(record)
+        project = project_builder.from_project_record(
+            record,
+            skip_shared_event_filter=_db_mode_enabled(),
+            skip_format_exclusion=_db_mode_enabled(),
+            use_curated_media_links=_curated_links_enabled(),
+        )
         if project.harvestable:
             harvestable[project.uri] = project
 
@@ -1172,7 +1679,12 @@ def _harvestable_snapshot_projects() -> tuple[ProjectSnapshot, Dict[str, OAIProj
             record = _fallback_record_from_storage(resource)
             if not record:
                 continue
-            project = project_builder.from_project_record(record)
+            project = project_builder.from_project_record(
+                record,
+                skip_shared_event_filter=_db_mode_enabled(),
+                skip_format_exclusion=_db_mode_enabled(),
+                use_curated_media_links=_curated_links_enabled(),
+            )
             if not project.harvestable:
                 continue
             harvestable[project.uri] = project
@@ -1780,7 +2292,12 @@ def _build_dc_payload_from_record(
 ) -> Dict[str, List[str]]:
     """Compatibility wrapper to build DC payloads from legacy ProjectRecord inputs."""
 
-    project = project_builder.from_project_record(record)
+    project = project_builder.from_project_record(
+        record,
+        skip_shared_event_filter=_db_mode_enabled(),
+        skip_format_exclusion=_db_mode_enabled(),
+        use_curated_media_links=_curated_links_enabled(),
+    )
     return _build_dc_payload_from_project(
         project,
         resource,
@@ -1849,11 +2366,213 @@ def _append_arkumu_identifier(dc_parent: ET._Element, resource: Resource) -> Non
     dc_parent.insert(0, identifier_elem)
 
 
+def _build_simplified_mets_from_project(
+    project: OAIProject,
+    resource: Resource,
+    *,
+    request: Optional[HttpRequest] = None,
+) -> ET._Element:
+    """Emit the pared-down METS variant used exclusively by the DB endpoint."""
+
+    _register_rosetta_namespaces()
+
+    record = project.record
+    mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
+    mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
+    mets_root.set("OBJID", getattr(record, "uri", getattr(resource, "uri", "")) or "")
+
+    timestamp = datetime.now(dt_timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    mets_hdr = ET.SubElement(
+        mets_root,
+        ET.QName(METS_NS, "metsHdr"),
+        {
+            "CREATEDATE": timestamp,
+            "LASTMODDATE": timestamp,
+        },
+    )
+    agent = ET.SubElement(
+        mets_hdr,
+        ET.QName(METS_NS, "agent"),
+        {
+            "ROLE": "CREATOR",
+            "TYPE": "OTHER",
+            "OTHERTYPE": "SOFTWARE",
+        },
+    )
+    ET.SubElement(agent, ET.QName(METS_NS, "name")).text = "Arkumu OAI Simplified METS"
+    ET.SubElement(agent, ET.QName(METS_NS, "note")).text = "Generated by Arkumu DB-backed OAI profile"
+
+    dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "simplified-dmd"})
+    md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
+    xml_data = ET.SubElement(md_wrap, ET.QName(METS_NS, "xmlData"))
+    dc_record = ET.SubElement(xml_data, ET.QName(DC_NS, "record"))
+
+    identifier_value = getattr(resource, "uri", None) or getattr(record, "uri", None)
+    publisher_value = None
+    if getattr(record, "institution", None) and getattr(record.institution, "label", None):
+        publisher_value = record.institution.label
+    elif getattr(resource, "organization", None) and getattr(resource.organization, "name", None):
+        publisher_value = resource.organization.name
+
+    if identifier_value:
+        identifier_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "identifier"))
+        identifier_elem.text = identifier_value
+
+    if publisher_value:
+        publisher_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "publisher"))
+        publisher_elem.text = publisher_value
+
+    # Add hardcoded Arkumu license rights for simplified METS
+    rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
+    rights_elem.text = SIMPLIFIED_LICENSE_LABEL
+
+    rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
+    rights_elem.text = SIMPLIFIED_LICENSE_NOTE
+
+    ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "simplified-amd"})
+    tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "simplified-amd-tech"})
+    tech_wrap = ET.SubElement(tech_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    tech_xml = ET.SubElement(tech_wrap, ET.QName(METS_NS, "xmlData"))
+    tech_dnx = _create_dnx_element(tech_xml, "dnx")
+    general_section = _create_dnx_element(tech_dnx, "section", {"id": "generalRepCharacteristics"})
+    general_record = _create_dnx_element(general_section, "record")
+    _create_dnx_element(general_record, "key", {"id": "usageType"}, "VIEW")
+    rights_section = _create_dnx_element(tech_dnx, "section", {"id": "accessRightsPolicy"})
+    rights_record = _create_dnx_element(rights_section, "record")
+    _create_dnx_element(rights_record, "key", {"id": "policyId"}, "graph-managed")
+
+    rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "simplified-amd-rights"})
+    rights_wrap = ET.SubElement(
+        rights_md,
+        ET.QName(METS_NS, "mdWrap"),
+        {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"},
+    )
+    rights_xml = ET.SubElement(rights_wrap, ET.QName(METS_NS, "xmlData"))
+    rights_dnx = _create_dnx_element(rights_xml, "dnx")
+    granted_section = _create_dnx_element(rights_dnx, "section", {"id": "grantedRightsStatement"})
+    granted_record = _create_dnx_element(granted_section, "record")
+    _create_dnx_element(
+        granted_record,
+        "key",
+        {"id": "grantedRightsStatementValue"},
+        SIMPLIFIED_LICENSE_NOTE,
+    )
+
+    schema_href_map = schema_utils.build_schema_href_map(request=request)
+
+    def _append_rdf_md(
+        md_id: str,
+        other_type: str,
+        rdf_elem: ET._Element,
+        schema_href: Optional[str] = None,
+    ) -> None:
+        source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": md_id})
+        source_wrap = ET.SubElement(
+            source_md,
+            ET.QName(METS_NS, "mdWrap"),
+            {
+                "MDTYPE": "OTHER",
+                "OTHERMDTYPE": other_type,
+            },
+        )
+        source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+        if schema_href:
+            rdf_elem.set(
+                ET.QName(XSI_NS, "schemaLocation"),
+                f"{RDF_NS} {schema_href}",
+            )
+        source_xml.append(rdf_elem)
+
+    try:
+        rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
+        canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
+        _append_rdf_md(
+            "simplified-rdf-canonical",
+            "RDF",
+            canonical_rdf,
+            schema_href=schema_href_map.get("canonical"),
+        )
+    except Exception:
+        logger.exception("Failed to build canonical RDF metadata for %s", getattr(resource, "uri", "unknown"))
+
+    institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+    if institutional_rdf is not None:
+        _append_rdf_md(
+            "simplified-rdf-institutional",
+            "RDF-INSTITUTIONAL",
+            institutional_rdf,
+            schema_href=schema_href_map.get("institutional"),
+        )
+    else:
+        logger.info(
+            "Simplified METS could not build institutional RDF for %s",
+            getattr(resource, "uri", "unknown"),
+        )
+
+    harvestable_objects = [
+        obj for obj in project.digital_objects
+        if obj.harvestable and obj.preferred_location
+    ]
+
+    file_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "fileSec"))
+    file_grp = ET.SubElement(file_sec, ET.QName(METS_NS, "fileGrp"), {"USE": "SIMPLIFIED"})
+
+    struct_map = ET.SubElement(mets_root, ET.QName(METS_NS, "structMap"), {"TYPE": "physical"})
+    project_label = record.title or getattr(resource, "name", None) or identifier_value or "Project"
+    struct_root = ET.SubElement(
+        struct_map,
+        ET.QName(METS_NS, "div"),
+        {"TYPE": "project", "LABEL": project_label},
+    )
+
+    for index, obj in enumerate(harvestable_objects, start=1):
+        href = _escape_flocat_href(obj.preferred_location)
+        if not href:
+            continue
+        file_id = f"simplified-file-{index}"
+        file_attrs: Dict[str, str] = {"ID": file_id, "ADMID": "simplified-amd"}
+        if obj.content_type:
+            file_attrs["MIMETYPE"] = obj.content_type
+        if obj.size_bytes:
+            file_attrs["SIZE"] = str(obj.size_bytes)
+        if obj.checksum:
+            file_attrs["CHECKSUM"] = obj.checksum
+        checksum_type = obj.checksum_label()
+        if checksum_type:
+            file_attrs["CHECKSUMTYPE"] = checksum_type
+
+        file_element = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), file_attrs)
+        flocat_attrs = {
+            "LOCTYPE": "URL",
+            f"{{{XLINK_NS}}}href": href,
+            f"{{{XLINK_NS}}}type": "simple",
+        }
+        label_value = obj.display_label or obj.file_name
+        if label_value:
+            flocat_attrs[f"{{{XLINK_NS}}}title"] = label_value
+        ET.SubElement(file_element, ET.QName(METS_NS, "FLocat"), flocat_attrs)
+
+        file_label = obj.display_label or obj.file_name or f"Digital Object {index}"
+        file_div = ET.SubElement(
+            struct_root,
+            ET.QName(METS_NS, "div"),
+            {
+                "TYPE": "item",
+                "LABEL": file_label,
+            },
+        )
+        ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_id})
+
+    return mets_root
+
+
 def _build_mets_from_project(
     project: OAIProject,
     resource: Resource,
     dc_payload: Dict[str, List[str]],
     dc_source_payloads: Optional[List[Dict[str, List[Any]]]] = None,
+    *,
+    request: Optional[HttpRequest] = None,
 ) -> ET._Element:
     _register_rosetta_namespaces()
 
@@ -1876,6 +2595,8 @@ def _build_mets_from_project(
                 continue
             elem.set(attr_name, attr_value)
     _append_arkumu_identifier(dc_record, resource)
+
+    schema_href_map = schema_utils.build_schema_href_map()
 
     rights_meta = _rights_metadata_from_status(getattr(record, "rights_status", None))
     if not rights_meta:
@@ -1935,7 +2656,7 @@ def _build_mets_from_project(
                     if attr_value is None:
                         continue
                     elem.set(attr_name, attr_value)
-    source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-OTHER"})
+    source_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "sourceMD"), {"ID": "ie-amd-source-RDF"})
     source_wrap = ET.SubElement(
         source_md,
         ET.QName(METS_NS, "mdWrap"),
@@ -1945,13 +2666,45 @@ def _build_mets_from_project(
         },
     )
     source_xml = ET.SubElement(source_wrap, ET.QName(METS_NS, "xmlData"))
+    schema_href_map = schema_utils.build_schema_href_map(request=request)
     org_code = resource.organization.code if resource.organization else None
     try:
         rdf_service = CanonicalGraphService(org_code=org_code)
         rdf_element = build_rdf_graph(resource, graph_service=rdf_service)
+        schema_href = schema_href_map.get("canonical")
+        if schema_href:
+            rdf_element.set(
+                ET.QName(XSI_NS, "schemaLocation"),
+                f"{RDF_NS} {schema_href}",
+            )
         source_xml.append(rdf_element)
     except Exception:
         logger.exception("Failed to build RDF metadata for %s", getattr(resource, "uri", "unknown"))
+
+    if _should_emit_institutional_rdf(normalized_org_code):
+        inst_element = _build_institutional_rdf_element(resource)
+        if inst_element is not None:
+            inst_md = ET.SubElement(
+                ie_amd,
+                ET.QName(METS_NS, "sourceMD"),
+                {"ID": "ie-amd-source-RDF-INSTITUTIONAL"},
+            )
+            inst_wrap = ET.SubElement(
+                inst_md,
+                ET.QName(METS_NS, "mdWrap"),
+                {
+                    "MDTYPE": "OTHER",
+                    "OTHERMDTYPE": "RDF-INSTITUTIONAL",
+                },
+            )
+            inst_xml = ET.SubElement(inst_wrap, ET.QName(METS_NS, "xmlData"))
+            schema_href = schema_href_map.get("institutional")
+            if schema_href:
+                inst_element.set(
+                    ET.QName(XSI_NS, "schemaLocation"),
+                    f"{RDF_NS} {schema_href}",
+                )
+            inst_xml.append(inst_element)
 
     digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
     digiprov_wrap = ET.SubElement(digiprov_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
@@ -2063,11 +2816,12 @@ def _build_mets_from_project(
             file_id = f"fid-{rep_index}-{file_index}"
             file_counter += 1
             preferred_location = obj.preferred_location or ""
-            file_label_source = obj.file_name or preferred_location or obj.original_path or f"Digital Object {file_index}"
+            preferred_label = obj.display_label or obj.file_name
+            file_label_source = preferred_label or preferred_location or obj.original_path or f"Digital Object {file_index}"
             label_normalized = _normalize_reference(file_label_source)
             file_label = label_normalized or file_label_source
-            if obj.file_name:
-                file_label = obj.file_name
+            if preferred_label:
+                file_label = preferred_label
 
             file_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
             file_tech = ET.SubElement(file_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
@@ -2079,7 +2833,7 @@ def _build_mets_from_project(
             _create_dnx_element(characteristics_record, "key", {"id": "objectType"}, "FILE")
 
             general_keys: List[tuple[str, str]] = []
-            label_value = obj.file_name or file_label
+            label_value = preferred_label or file_label
             if label_value:
                 general_keys.append(("label", label_value))
             if obj.file_name:
@@ -2243,7 +2997,7 @@ def _build_mets_from_project(
                 identifier_elem.text = obj.uuid
                 identifier_elem.set(ET.QName(XML_NS, "type"), "Digital-Object-ID")
 
-            file_title = obj.file_name or file_label
+            file_title = obj.display_label or obj.file_name or file_label
             if file_title:
                 title_elem = ET.SubElement(file_source_record, ET.QName(DC_NS, "title"))
                 title_elem.text = file_title
@@ -2490,6 +3244,8 @@ def _build_metadata_element(
     resource: Resource,
     metadata_prefix: str,
     project_hint: Optional[OAIProject] = None,
+    *,
+    request: Optional[HttpRequest] = None,
 ) -> ET._Element:
     """Build metadata element for different formats."""
     metadata = ET.Element("metadata")
@@ -2510,22 +3266,27 @@ def _build_metadata_element(
         dc_root = _append_dc_metadata(metadata, dc_payload)
         _append_arkumu_identifier(dc_root, resource)
     elif metadata_prefix == "mets":
+        simplified_mode = _db_mode_enabled()
         for project in projects:
             if not project.harvestable:
                 continue
 
-            dc_payload_core = _build_dc_payload_from_project(
-                project,
-                resource,
-                include_event_details=False,
-            )
-            dc_payload_source = _build_event_dc_payloads(project.record)
-            mets_root = _build_mets_from_project(
-                project,
-                resource,
-                dc_payload_core,
-                dc_source_payloads=dc_payload_source,
-            )
+            if simplified_mode:
+                mets_root = _build_simplified_mets_from_project(project, resource, request=request)
+            else:
+                dc_payload_core = _build_dc_payload_from_project(
+                    project,
+                    resource,
+                    include_event_details=False,
+                )
+                dc_payload_source = _build_event_dc_payloads(project.record)
+                mets_root = _build_mets_from_project(
+                    project,
+                    resource,
+                    dc_payload_core,
+                    dc_source_payloads=dc_payload_source,
+                    request=request,
+                )
 
             candidate_wrapper = ET.Element("metadata")
             candidate_wrapper.append(ET.fromstring(ET.tostring(mets_root)))
@@ -2621,7 +3382,7 @@ def _mint_arkumu_pid(resource: Resource) -> Optional[str]:
         return None
 
 
-def _list_records(oai: ET._Element, params) -> ET._Element:
+def _list_records(oai: ET._Element, params, request: HttpRequest) -> ET._Element:
     """Implement ListRecords verb with complete metadata and pagination."""
     metadata_prefix = params.get("metadataPrefix")
     set_spec = params.get("set")
@@ -2663,6 +3424,8 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
     # Handle resumption token
     offset = 0
     snapshot_marker_from_token: Optional[str] = None
+    cursor_marker_from_token: Optional[str] = None
+    cursor_position_from_token: Optional[str] = None
     if has_resumption_param:
         if not resumption_token or not resumption_token.strip():
             return _error(oai, "badResumptionToken", "Empty resumption token")
@@ -2677,12 +3440,29 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
         set_spec = token_data.get("set")
         from_date = token_data.get("from")
         until_date = token_data.get("until")
+        cursor_marker_from_token = token_data.get("cursor") or token_data.get("snapshot")
         snapshot_marker_from_token = token_data.get("snapshot")
+        cursor_position_from_token = token_data.get("cursor_position")
+
+    db_mode = _db_mode_enabled()
+    if db_mode:
+        return _list_records_db(
+            oai,
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec,
+            from_date=from_date,
+            until_date=until_date,
+            offset=offset,
+            cursor_marker_from_token=cursor_marker_from_token,
+            cursor_position_from_token=cursor_position_from_token,
+            request=request,
+        )
 
     snapshot, harvestable_projects = _harvestable_snapshot_projects()
     snapshot_version = snapshot.generated_at.isoformat()
 
-    if snapshot_marker_from_token and snapshot_marker_from_token != snapshot_version:
+    effective_marker = cursor_marker_from_token or snapshot_marker_from_token
+    if effective_marker and effective_marker != snapshot_version:
         return _error(oai, "badResumptionToken", "Snapshot has changed; restart harvesting")
 
     allowed_uris = list(harvestable_projects.keys())
@@ -2719,6 +3499,7 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
         until_date=until_date or '',
         offset=offset,
         snapshot_marker=snapshot_version,
+        cursor_marker=snapshot_version,
     )
     if cached_page and not (
         metadata_prefix == 'mets'
@@ -2756,6 +3537,7 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
             resource,
             metadata_prefix,
             snapshot_marker=snapshot_version,
+            cursor_marker=snapshot_version,
         )
 
         if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
@@ -2789,6 +3571,7 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
             resource,
             metadata_prefix,
             project_hint=project_hint,
+            request=request,
         )
 
         if metadata_prefix == 'mets' and not _metadata_element_is_valid(
@@ -2814,6 +3597,7 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
             header_xml,
             metadata_xml,
             snapshot_marker=snapshot_version,
+            cursor_marker=snapshot_version,
         )
 
         records_data.append({
@@ -2859,14 +3643,167 @@ def _list_records(oai: ET._Element, params) -> ET._Element:
         until_date=until_date or '',
         offset=offset,
         snapshot_marker=snapshot_version,
+        cursor_marker=snapshot_version,
     )
 
     return oai
 
 
-@csrf_exempt
-@require_http_methods(["GET", "POST"])
-def oai_endpoint(request: HttpRequest) -> HttpResponse:
+def _list_records_db(
+    oai: ET._Element,
+    *,
+    metadata_prefix: str,
+    set_spec: Optional[str],
+    from_date: Optional[str],
+    until_date: Optional[str],
+    offset: int,
+    cursor_marker_from_token: Optional[str],
+    cursor_position_from_token: Optional[str],
+    request: HttpRequest,
+) -> ET._Element:
+    queryset = _get_resources_queryset(
+        set_spec,
+        from_date,
+        until_date,
+        metadata_prefix,
+        allowed_uris=None,
+    )
+    cursor_marker = _dataset_marker_for_queryset(queryset)
+
+    if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
+        return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
+
+    page_size = resumption_service.page_size
+    cached_page = None
+    if not _db_mode_enabled():
+        cached_page = oai_cache.get_cached_page(
+            verb='ListRecords',
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec or '',
+            from_date=from_date or '',
+            until_date=until_date or '',
+            offset=offset,
+            snapshot_marker=cursor_marker,
+            cursor_marker=cursor_marker,
+        )
+        if cached_page and not (
+            metadata_prefix == 'mets'
+            and any(
+                not _metadata_xml_is_valid(record_data['metadata'])
+                for record_data in cached_page.get('records', [])
+            )
+        ):
+            list_records = ET.SubElement(oai, "ListRecords")
+            for record_data in cached_page['records']:
+                record = ET.SubElement(list_records, "record")
+                header = ET.fromstring(record_data['header'])
+                metadata = ET.fromstring(record_data['metadata'])
+                record.append(header)
+                record.append(metadata)
+            if cached_page.get('resumption_token'):
+                resumption_elem = ET.SubElement(list_records, "resumptionToken")
+                resumption_elem.text = cached_page['resumption_token']
+            return oai
+
+    page = _harvestable_page_from_db(
+        queryset,
+        cursor_position=cursor_position_from_token,
+        page_size=page_size,
+        include_hints=True,
+    )
+    resources = page.resources
+
+    if offset == 0 and not resources:
+        return _error(oai, "noRecordsMatch", "No records found matching the criteria")
+
+    list_records = ET.SubElement(oai, "ListRecords")
+    records_data: List[Dict[str, str]] = []
+    records_added = 0
+
+    for resource in resources:
+        project_hint = page.project_hints.get(resource.uri)
+        if not project_hint:
+            continue
+
+        header = _build_record_header(resource)
+        metadata = _build_metadata_element(
+            resource,
+            metadata_prefix,
+            project_hint=project_hint,
+            request=request,
+        )
+
+        if metadata_prefix == 'mets' and not _metadata_element_is_valid(
+            metadata,
+            resource_uri=getattr(resource, 'uri', None),
+        ):
+            continue
+
+        record = ET.SubElement(list_records, "record")
+        record.append(header)
+        record.append(metadata)
+
+        header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
+        metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
+        if not _db_mode_enabled():
+            _cache_record(
+                resource,
+                metadata_prefix,
+                header_xml,
+                metadata_xml,
+                snapshot_marker=cursor_marker,
+                cursor_marker=cursor_marker,
+            )
+        records_data.append({
+            'header': header_xml,
+            'metadata': metadata_xml,
+            'timestamp': int(resource.updated_at.timestamp())
+        })
+        records_added += 1
+
+    if records_added == 0 and offset == 0 and not page.has_more:
+        return _error(oai, "noRecordsMatch", "No records found matching the criteria")
+
+    resumption_token_value = None
+    if page.has_more:
+        next_offset = offset + records_added
+        resumption_token_value = resumption_service.create_token(
+            offset=next_offset,
+            verb="ListRecords",
+            metadata_prefix=metadata_prefix,
+            set_spec=set_spec,
+            from_date=from_date,
+            until_date=until_date,
+            cursor_marker=cursor_marker,
+            cursor_position=page.cursor_position,
+        )
+        resumption_elem = ET.SubElement(list_records, "resumptionToken")
+        resumption_elem.text = resumption_token_value
+
+    page_payload = {
+        'records': records_data,
+        'resumption_token': resumption_token_value,
+        'count': len(records_data),
+        'cached_at': timezone.now().isoformat()
+    }
+
+    if not _db_mode_enabled():
+        oai_cache.cache_page(
+            verb='ListRecords',
+            metadata_prefix=metadata_prefix,
+            page_data=page_payload,
+            set_spec=set_spec or '',
+            from_date=from_date or '',
+            until_date=until_date or '',
+            offset=offset,
+            snapshot_marker=cursor_marker,
+            cursor_marker=cursor_marker,
+        )
+
+    return oai
+
+
+def _handle_oai_request(request: HttpRequest) -> HttpResponse:
     auth_response = _enforce_basic_auth(request)
     if auth_response is not None:
         return auth_response
@@ -2950,7 +3887,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
             if not has_resumption_param and not params.get("metadataPrefix"):
                 return _xml_response(_error(oai, "badArgument", "metadataPrefix is required"))
 
-            return _xml_response(_list_records(oai, params))
+            return _xml_response(_list_records(oai, params, request))
 
         if verb == "GetRecord":
             identifier = params.get("identifier")
@@ -2967,29 +3904,45 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 Q(public_access_level=PublicAccessLevel.PUBLIC) & Q(is_public_approved=True)
             )
 
-            def _project_from_snapshot(uri: str) -> Optional[OAIProject]:
-                record = snapshot_service.get_record_by_uri(uri)
+            db_mode_active = _db_mode_enabled()
+
+            def _project_from_resource(res: Optional[Resource]) -> Optional[OAIProject]:
+                if not res:
+                    return None
+                if db_mode_active:
+                    return _build_project_hint_from_resource(res)
+                record = snapshot_service.get_record_by_uri(res.uri)
                 if not record:
                     return None
-                return project_builder.from_project_record(record)
+                return project_builder.from_project_record(
+                    record,
+                    skip_shared_event_filter=_db_mode_enabled(),
+                    skip_format_exclusion=_db_mode_enabled(),
+                    use_curated_media_links=_curated_links_enabled(),
+                )
+
+            project_type_clause = _project_type_filter()
 
             # Filter to only project entities
             resource_qs = (
-                Resource.objects.filter(
-                    uri=resource_uri,
-                    uri__regex=r'/entities/projekt/[0-9]+$',
-                )
+                Resource.objects.filter(uri=resource_uri)
                 .filter(access_clause)
                 .select_related("organization")
             )
+            if project_type_clause is not None:
+                resource_qs = resource_qs.filter(project_type_clause).distinct()
+            else:
+                resource_qs = resource_qs.filter(uri__regex=r'/entities/projekt/[0-9]+$')
             resource = resource_qs.first()
 
-            snapshot = snapshot_service.get_cross_institutional_snapshot()
-            snapshot_marker = snapshot.generated_at.isoformat()
+            snapshot_marker: Optional[str] = None
+            if not db_mode_active:
+                snapshot = snapshot_service.get_cross_institutional_snapshot()
+                snapshot_marker = snapshot.generated_at.isoformat()
             project_hint: Optional[OAIProject] = None
 
             if resource:
-                project_candidate = _project_from_snapshot(resource.uri)
+                project_candidate = _project_from_resource(resource)
                 if project_candidate and project_candidate.harvestable:
                     project_hint = project_candidate
                 else:
@@ -2999,7 +3952,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 restricted = _restrict_to_harvestable_files(resource_qs)
                 resource = restricted.first()
                 if resource:
-                    project_hint = project_hint or _project_from_snapshot(resource.uri)
+                    project_hint = project_hint or _project_from_resource(resource)
 
             if not resource:
                 fallback_qs = (
@@ -3009,14 +3962,14 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 )
                 fallback_resource = fallback_qs.first()
                 if fallback_resource:
-                    fallback_project = _project_from_snapshot(fallback_resource.uri)
+                    fallback_project = _project_from_resource(fallback_resource)
                     if fallback_project and fallback_project.harvestable:
                         resource = fallback_resource
                         project_hint = fallback_project
                 if not resource:
                     resource = _restrict_to_harvestable_files(fallback_qs).first()
                     if resource:
-                        project_hint = project_hint or _project_from_snapshot(resource.uri)
+                        project_hint = project_hint or _project_from_resource(resource)
 
             if not resource:
                 return _xml_response(_error(oai, "idDoesNotExist", "Identifier not found"))
@@ -3025,13 +3978,21 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 return _xml_response(_error(oai, "idDoesNotExist", "Resource has no organization"))
 
             if project_hint is None:
-                project_hint = _project_from_snapshot(resource.uri)
+                project_hint = _project_from_resource(resource)
+
+            if db_mode_active:
+                marker_source = getattr(resource, "updated_at", None) or timezone.now()
+                snapshot_marker = f"db:{marker_source.isoformat()}"
+
+            if snapshot_marker is None:
+                snapshot_marker = timezone.now().isoformat()
 
             # Check cache first
             cached_record = _get_cached_record(
                 resource,
                 metadata_prefix,
                 snapshot_marker=snapshot_marker,
+                cursor_marker=snapshot_marker,
             )
             if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
                 cached_record['metadata'],
@@ -3065,6 +4026,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 resource,
                 metadata_prefix,
                 project_hint=project_hint,
+                request=request,
             )
 
             if metadata_prefix == 'mets' and not _metadata_element_is_valid(
@@ -3082,6 +4044,7 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
                 ET.tostring(header, encoding="unicode"),
                 ET.tostring(metadata, encoding="unicode"),
                 snapshot_marker=snapshot_marker,
+                cursor_marker=snapshot_marker,
             )
 
             return _xml_response(oai)
@@ -3094,3 +4057,49 @@ def oai_endpoint(request: HttpRequest) -> HttpResponse:
         logger.exception("Unhandled error in OAI endpoint", exc_info=e)
         oai = _oai_envelope(request)
         return _xml_response(_error(oai, "internalError", f"Internal server error: {str(e)}"))
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def oai_endpoint(request: HttpRequest) -> HttpResponse:
+    """Snapshot-based OAI endpoint - always uses pre-built snapshots, never DB mode."""
+    with _force_db_mode(False):
+        return _handle_oai_request(request)
+
+
+@general_login_required
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def oai_db_endpoint(request: HttpRequest) -> HttpResponse:
+    with _force_db_mode(True), _force_curated_links(True):
+        return _handle_oai_request(request)
+
+
+@general_login_required
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def oai_tailored_endpoint(request: HttpRequest) -> HttpResponse:
+    with _force_db_mode(True), _force_curated_links(True):
+        return _handle_oai_request(request)
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def oai_schema_download(request: HttpRequest, snapshot: str, variant: str, ext: str) -> HttpResponse:
+    snapshot_info = schema_utils.get_snapshot(snapshot)
+    if not snapshot_info:
+        raise Http404("Schema snapshot not found.")
+    fmt = schema_utils.format_from_extension(ext)
+    variant_key = schema_utils.resolve_variant_key(variant)
+    if not fmt or not variant_key:
+        raise Http404("Unknown schema variant or format.")
+    try:
+        file_path = snapshot_info.file_path(variant_key, fmt)
+    except FileNotFoundError:
+        raise Http404("Schema file is unavailable.")
+
+    content_type = schema_utils.SCHEMA_FORMATS[fmt]["content_type"]
+    response = FileResponse(file_path.open("rb"), content_type=content_type)
+    response["Content-Disposition"] = f'inline; filename="{file_path.name}"'
+    response["Cache-Control"] = "public, max-age=3600"
+    return response

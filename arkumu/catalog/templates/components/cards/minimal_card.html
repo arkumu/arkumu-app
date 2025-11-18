@@ -1,0 +1,81 @@
+<!-- Minimal Project Card Component -->
+{% load catalog_tags %}
+<div class="minimal-project-card w-full transition-colors py-4 border-b transition-colors
+            border-gray-300
+            theme-dark:border-gray-600
+            theme-blue:border-arkumu-blue"
+     data-rdf-type="http://arkumu.org/data/types/projekt"
+     data-uri="{{ uri }}">
+  
+  <div class="flex items-center justify-between gap-6">
+    
+    <!-- Left Section: Year + Institution + Title -->
+    <div class="flex items-center gap-4 flex-1 min-w-0">
+      
+      <!-- Year -->
+      <div class="flex-shrink-0 px-3 py-1 text-xs font-mono transition-colors
+                  border border-arkumu-dark text-arkumu-dark
+                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+        {{ year|default:"2023" }}
+      </div>
+      
+      <!-- Institution -->
+      <div class="flex-shrink-0 px-3 py-1 text-xs font-mono transition-colors
+                  bg-arkumu-dark text-arkumu-light
+                  theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark
+                  theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
+        <a href="/catalog/browse/?orga_code={{ institution }}">{{ institution|default:"Folkwang Universität der Künste" }}</a>
+      </div>
+      
+      <!-- Title -->
+      <h3 class="font-normal text-sm transition-colors truncate
+                 text-arkumu-dark
+                 theme-dark:text-arkumu-light
+                 theme-blue:text-arkumu-blue"
+          data-rdf-property="http://arkumu.org/data/properties/bevorzugter-titel">
+        <a href="{% url 'catalog:projekt' %}?projekt={{ uri }}">
+          {{ title|default:"Handmade in Ethiopia" }}
+        </a>
+      </h3>
+    </div>
+    
+    <!-- Right Section: Categories + Button -->
+    <div class="flex items-center gap-3 flex-shrink-0">
+      
+      <!-- Categories -->
+      <div class="flex gap-2">
+        {% if category1 %}
+        <span class="inline-block px-3 py-1 text-xs transition-colors
+                     border border-arkumu-dark text-arkumu-dark
+                     theme-dark:border-arkumu-light theme-dark:text-arkumu-light
+                     theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
+              data-rdf-type="http://arkumu.org/data/types/projektkategorie">
+          <a href="https://www.wikidata.org/wiki/{{ category1 }}">{{ category1_name|default:"Industrial Design" }}</a>
+        </span>
+        {% endif %}
+        
+        {% if category2 %}
+        <span class="inline-block text-xs transition-colors
+                     text-gray-500
+                     theme-dark:text-gray-400
+                     theme-blue:text-arkumu-blue/60">
+          +{{ category2_count|default:"1" }}
+        </span>
+        {% endif %}
+      </div>
+      
+      <!-- Button -->
+      <a href="{% url 'catalog:projekt' %}?projekt={{ uri }}"
+         aria-label="Projekt '{{ title }}' ansehen">
+        <button class="px-4 py-1 text-xs transition-colors
+                       border border-arkumu-dark text-arkumu-dark hover:bg-arkumu-dark hover:text-white
+                       theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:hover:bg-arkumu-light theme-dark:hover:text-arkumu-dark
+                       theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:hover:bg-arkumu-blue theme-blue:hover:text-white">
+          {{ button_text|default:"Projektdetails" }}
+        </button>
+      </a>
+    </div>
+    
+  </div>
+</div>
