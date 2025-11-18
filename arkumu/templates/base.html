@@ -56,11 +56,12 @@
           <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
           {% if request.user.is_authenticated %}
           <li>
-            <details {% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}open{% endif %}>
-              <summary class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
+            <details {% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_tailored_dashboard oai_media_links_dashboard' %}open{% endif %}>
+              <summary class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_tailored_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
               <ul class="bg-base-100 rounded-t-none p-2 z-[60]">
                 <li><a href="{% url 'oai_admin:oai_snapshot_dashboard' %}" class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info' %}active{% endif %}">Snapshot</a></li>
                 <li><a href="{% url 'oai_admin:oai_db_dashboard' %}" class="{% if current_url_name == 'oai_db_dashboard' %}active{% endif %}">DB</a></li>
+                <li><a href="{% url 'oai_admin:oai_tailored_dashboard' %}" class="{% if current_url_name == 'oai_tailored_dashboard' %}active{% endif %}">Tailored</a></li>
                 {% if request.user.is_superuser or request.user.role == 'system_admin' %}
                 <li><a href="{% url 'oai_admin:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
                 {% endif %}
@@ -106,11 +107,12 @@
         <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
         {% if request.user.is_authenticated %}
           <li>
-            <details {% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}open{% endif %}>
-              <summary class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
+            <details {% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_tailored_dashboard oai_media_links_dashboard' %}open{% endif %}>
+              <summary class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info oai_db_dashboard oai_tailored_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
               <ul class="bg-base-100 rounded-t-none p-2">
                 <li><a href="{% url 'oai_admin:oai_snapshot_dashboard' %}" class="{% if current_url_name in 'oai_snapshot_dashboard oai_endpoints_info' %}active{% endif %}">Snapshot</a></li>
                 <li><a href="{% url 'oai_admin:oai_db_dashboard' %}" class="{% if current_url_name == 'oai_db_dashboard' %}active{% endif %}">DB</a></li>
+                <li><a href="{% url 'oai_admin:oai_tailored_dashboard' %}" class="{% if current_url_name == 'oai_tailored_dashboard' %}active{% endif %}">Tailored</a></li>
                 {% if request.user.is_superuser or request.user.role == 'system_admin' %}
                 <li><a href="{% url 'oai_admin:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
                 {% endif %}

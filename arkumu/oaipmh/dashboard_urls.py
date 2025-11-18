@@ -1,6 +1,6 @@
 """OAI-PMH Dashboard URLs - Admin interface bypassing nginx IP restrictions."""
 from django.urls import path
-from . import dashboard_views
+from . import dashboard_views, tailored_dashboard_views
 from .views import oai_db_endpoint, oai_tailored_endpoint, oai_schema_download
 
 app_name = "oai_admin"
@@ -15,6 +15,7 @@ urlpatterns = [
     path("widget/", dashboard_views.oai_widget, name="oai_widget"),
     path("dashboard/snapshot/", dashboard_views.oai_snapshot_dashboard, name="oai_snapshot_dashboard"),
     path("dashboard/db/", dashboard_views.oai_db_dashboard, name="oai_db_dashboard"),
+    path("dashboard/tailored/", tailored_dashboard_views.oai_tailored_dashboard, name="oai_tailored_dashboard"),
     path("dashboard/endpoints/", dashboard_views.oai_endpoints_info, name="oai_endpoints_info"),
 
     # Media links management
