@@ -713,10 +713,12 @@ class OAIProjectBuilder:
         )
 
         from_s3_inventory = getattr(obj, "_from_s3_file_object", False)
+        bypass_dump_fixity = getattr(obj, "_bypass_dump_fixity", False)
         needs_fixity_lookup = bool(
             is_s3_org
             and not from_s3_inventory
             and not storage_key
+            and not bypass_dump_fixity
         )
 
         # For S3 orgs (FUK, DET, RSH): check if file exists in dump/fixity index

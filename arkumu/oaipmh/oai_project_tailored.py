@@ -401,6 +401,8 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         obj: ProjectDigitalObject,
         institution_code: Optional[str],
     ) -> Optional[NormalizedDigitalObject]:
+        if institution_code and institution_code in self._s3_orgs:
+            setattr(obj, "_bypass_dump_fixity", True)
         normalized = super()._normalize_object(obj, institution_code)
         if not normalized:
             return None
