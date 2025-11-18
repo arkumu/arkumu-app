@@ -52,6 +52,15 @@
                     title="{% if column.is_relationship_context %}Edit{% else %}Add{% endif %} Context">
                 🏷️ Context
             </button>
+
+            <button class="btn btn-xs {% if column.is_canonical_mapped %}btn-primary{% else %}btn-outline btn-primary{% endif %}"
+                    hx-post="{% url 'metadata:csv_toggle_canonical_form' %}"
+                    hx-include="#canonical-data-form-{{ column.id|slugify }}"
+                    hx-target="#canonical-form-{{ column.id|slugify }}"
+                    hx-swap="outerHTML"
+                    title="{% if column.is_canonical_mapped %}Edit{% else %}Add{% endif %} Canonical mapping">
+                🧭 Canonical
+            </button>
             
             <button class="btn btn-xs btn-outline"
                     hx-post="{% url 'metadata:csv_toggle_external_ontology_form' %}"
@@ -73,7 +82,7 @@
         </div>
         
         <!-- Compact Status Badges -->
-        {% if column.is_anchor or column.is_fk or column.is_multi_value or column.is_relationship_context or column.is_external_ontology %}
+        {% if column.is_anchor or column.is_fk or column.is_multi_value or column.is_relationship_context or column.is_canonical_mapped or column.is_external_ontology %}
         <div class="flex flex-wrap gap-1 mt-2">
             {% if column.is_anchor %}
             <span class="badge badge-warning badge-xs">⚓ Anchor</span>
@@ -89,6 +98,12 @@
             {% if column.is_relationship_context %}
             <span class="badge badge-info badge-xs">🏷️ Context</span>
             {% endif %}
+            {% if column.is_canonical_mapped and column.canonical_mapping %}
+            <span class="badge badge-primary badge-xs"
+                  title="{{ column.canonical_mapping.canonical_property_uri }}">
+                🧭 {{ column.canonical_mapping.canonical_property_label|default:"Canonical" }}
+            </span>
+            {% endif %}
             {% if column.is_external_ontology %}
                 {% if column.external_ontologies %}
                     {% for ontology in column.external_ontologies %}
@@ -102,7 +117,7 @@
         {% endif %}
         
         <!-- Expandable Details (collapsed by default) -->
-        {% if column.is_fk or column.is_relationship_context %}
+        {% if column.is_fk or column.is_relationship_context or column.is_canonical_mapped %}
         <details class="mt-2">
             <summary class="text-xs text-base-content/60 cursor-pointer hover:text-base-content">
                 View configuration details
@@ -122,6 +137,17 @@
                     <div class="font-semibold text-info">Context:</div>
                     {% if column.relationship_context.context_predicate %}
                     <div class="truncate">{{ column.relationship_context.context_predicate }}</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if column.is_canonical_mapped and column.canonical_mapping %}
+                <div class="p-1 bg-primary/10 rounded">
+                    <div class="font-semibold text-primary">Canonical:</div>
+                    {% if column.canonical_mapping.canonical_property_uri %}
+                    <div class="truncate font-mono text-[11px]">
+                        {{ column.canonical_mapping.canonical_property_uri }}
+                    </div>
                     {% endif %}
                 </div>
                 {% endif %}
@@ -168,11 +194,18 @@
                 <input type="hidden" name="organization" value="{{ organization_id }}">
                 <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
             </form>
+
+            <form id="canonical-data-form-{{ column.id|slugify }}">
+                <input type="hidden" name="column_id" value="{{ column.id }}">
+                <input type="hidden" name="organization" value="{{ organization_id }}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </form>
         </div>
         
         <!-- Form Placeholders for HTMX -->
         <div id="fk-form-{{ column.id|slugify }}"></div>
         <div id="relationship-context-form-{{ column.id|slugify }}"></div>
         <div id="external-ontology-form-{{ column.id|slugify }}"></div>
+        <div id="canonical-form-{{ column.id|slugify }}"></div>
     </div>
 </div>
