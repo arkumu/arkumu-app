@@ -54,7 +54,7 @@
       </div>
       {% endif %}
 
-      <form method="post" class="space-y-6" id="simplified_create_project_form">
+      <form method="post" class="space-y-6" data-prevent-enter-submit="true">
         {% csrf_token %}
         <input type="hidden" name="entity_uri" value="{{ entity_uri }}">
 
@@ -96,15 +96,3 @@
   </div>
 </div>
 {% endblock simplified_content %}
-
-{% block javascript %} {{ block.super }}
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      document.getElementById('simplified_create_project_form').addEventListener('keydown', function (event) {
-        if (event.key === "Enter") {
-          event.preventDefault();
-        }
-      });
-    })
-  </script>
-{% endblock javascript %}
