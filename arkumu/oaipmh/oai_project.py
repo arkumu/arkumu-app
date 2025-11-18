@@ -712,8 +712,15 @@ class OAIProjectBuilder:
             institution_code and institution_code in self._rosetta_orgs
         )
 
+        from_s3_inventory = getattr(obj, "_from_s3_file_object", False)
+        needs_fixity_lookup = bool(
+            is_s3_org
+            and not from_s3_inventory
+            and not storage_key
+        )
+
         # For S3 orgs (FUK, DET, RSH): check if file exists in dump/fixity index
-        if is_s3_org:
+        if needs_fixity_lookup:
             from arkumu.projects.services.dump_fixity_index import find_fixity
 
             candidates = [original_path, storage_key, access_url, file_name]
@@ -794,7 +801,7 @@ class OAIProjectBuilder:
         if is_s3_org and storage_key:
             download_href = self._build_s3_download_href(storage_key, institution_code)
 
-        return NormalizedDigitalObject(
+        normalized_obj = NormalizedDigitalObject(
             uri=object_uri,
             original_path=original_path,
             storage_key=storage_key,
@@ -818,6 +825,11 @@ class OAIProjectBuilder:
             resource_id=resource_id,
             download_href=download_href,
         )
+        if getattr(obj, "_from_s3_file_object", False):
+            object.__setattr__(normalized_obj, "_from_s3_file_object", True)
+            if storage_key and storage_key.lower().startswith("metadata/"):
+                object.__setattr__(normalized_obj, "_allow_metadata_exports", True)
+        return normalized_obj
 
     def _build_s3_download_href(
         self,
@@ -1118,7 +1130,7 @@ class OAIProjectBuilder:
             if not obj.storage_key:
                 return False
             key_normalized = obj.storage_key.lower()
-            if key_normalized.startswith("metadata/"):
+            if key_normalized.startswith("metadata/") and not getattr(obj, "_allow_metadata_exports", False):
                 return False
             status = _status_token(obj.storage_status)
             if status is None:

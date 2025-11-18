@@ -67,6 +67,11 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             curated_selection=curated_selection,
             extra_objects=original_digital_objects,
         )
+        if use_curated_media_links and curated_selection and not normalized_objects:
+            normalized_objects = self._normalize_curated_only_objects(
+                curated_selection,
+                institution_code,
+            )
 
         return OAIProject(
             record=filtered_record,
@@ -110,7 +115,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         grouped_by_uri: Dict[str, List[NormalizedDigitalObject]] = {}
 
         if curated_selection:
-            allowed_resource_ids = {rid for rid in curated_selection.ordered_resource_ids if rid}
+            allowed_resource_ids = {str(rid) for rid in curated_selection.ordered_resource_ids if rid}
             allowed_uris = {uri for uri in curated_selection.ordered_object_uris if uri}
             label_by_id = dict(curated_selection.label_overrides_by_id)
             label_by_uri = dict(curated_selection.label_overrides_by_uri)
@@ -173,11 +178,15 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             return objects
 
         missing_resource_ids = [
-            rid for rid in curated_selection.ordered_resource_ids if rid and rid not in grouped_by_resource
+            normalized_id
+            for normalized_id in (
+                str(rid) for rid in curated_selection.ordered_resource_ids if rid
+            )
+            if normalized_id and normalized_id not in grouped_by_resource
         ]
         if missing_resource_ids:
             uri_by_resource = {
-                pair[0]: pair[1]
+                str(pair[0]): pair[1]
                 for pair in curated_selection.resource_uri_pairs
                 if pair[0]
             }
@@ -187,9 +196,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                 institution_code,
             )
             for rid in missing_resource_ids:
-                project_objects = list(extra_by_resource.get(rid, []))
-                if not project_objects and rid in curated_objects:
-                    project_objects.extend(curated_objects.get(rid, []))
+                project_objects = list(curated_objects.get(rid, []))
+                if not project_objects:
+                    project_objects = list(extra_by_resource.get(rid, []))
                 if not project_objects:
                     continue
 
@@ -234,7 +243,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                 consumed_ids.add(candidate_id)
 
         for resource_id in curated_selection.ordered_resource_ids:
-            matches = grouped_by_resource.get(resource_id, [])
+            matches = grouped_by_resource.get(str(resource_id), [])
             _extend_with_candidates(matches)
 
         for uri in curated_selection.ordered_object_uris:
@@ -242,6 +251,55 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             _extend_with_candidates(matches)
 
         return ordered_objects
+
+    def _normalize_curated_only_objects(
+        self,
+        curated_selection: CuratedMediaSelection,
+        institution_code: Optional[str],
+    ) -> List[NormalizedDigitalObject]:
+        resource_ids = [str(rid) for rid in curated_selection.ordered_resource_ids if rid]
+        if not resource_ids:
+            return []
+
+        uri_by_resource = {
+            str(pair[0]): pair[1]
+            for pair in curated_selection.resource_uri_pairs
+            if pair[0]
+        }
+        curated_objects = self._load_curated_project_objects(
+            resource_ids,
+            uri_by_resource,
+            institution_code,
+        )
+        if not curated_objects:
+            return []
+
+        label_by_id = dict(curated_selection.label_overrides_by_id)
+        label_by_uri = dict(curated_selection.label_overrides_by_uri)
+        normalized: List[NormalizedDigitalObject] = []
+        seen: set[str] = set()
+
+        for resource_id in resource_ids:
+            for project_obj in curated_objects.get(resource_id, []):
+                normalized_obj = self._normalize_object(project_obj, institution_code)
+                if not normalized_obj or not self._is_harvestable(normalized_obj):
+                    continue
+                identity = normalized_obj.preferred_location
+                if identity:
+                    identity_key = identity.lower()
+                    if identity_key in seen:
+                        continue
+                    seen.add(identity_key)
+                label_override = None
+                if normalized_obj.resource_id and normalized_obj.resource_id in label_by_id:
+                    label_override = label_by_id[normalized_obj.resource_id]
+                elif normalized_obj.uri and normalized_obj.uri in label_by_uri:
+                    label_override = label_by_uri[normalized_obj.uri]
+                if label_override:
+                    normalized_obj = replace(normalized_obj, label_override=label_override)
+                normalized.append(normalized_obj)
+
+        return normalized
 
     def _load_curated_project_objects(
         self,
