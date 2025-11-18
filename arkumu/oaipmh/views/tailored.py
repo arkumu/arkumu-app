@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+from django.conf import settings
 from django.db.models import DateTimeField, Value, F, Max
 from django.db.models.functions import Coalesce, Greatest
 from django.http import HttpRequest
@@ -323,17 +324,20 @@ def _get_record_tailored(
     marker_source = getattr(resource, "effective_datestamp", None) or getattr(resource, "updated_at", timezone.now())
     cursor_marker = f"tailored:{marker_source.isoformat()}"
 
-    cached_record = _get_cached_record(
-        resource,
-        metadata_prefix,
-        snapshot_marker=cursor_marker,
-        cursor_marker=cursor_marker,
-    )
-    if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
-        cached_record['metadata'],
-        resource_uri=getattr(resource, 'uri', None),
-    ):
-        cached_record = None
+    cache_enabled = bool(getattr(settings, "OAI_CACHE_TAILORED", False))
+    cached_record = None
+    if cache_enabled:
+        cached_record = _get_cached_record(
+            resource,
+            metadata_prefix,
+            snapshot_marker=cursor_marker,
+            cursor_marker=cursor_marker,
+        )
+        if cached_record and metadata_prefix == 'mets' and not _metadata_xml_is_valid(
+            cached_record['metadata'],
+            resource_uri=getattr(resource, 'uri', None),
+        ):
+            cached_record = None
 
     get_record = ET.SubElement(oai, "GetRecord")
     record = ET.SubElement(get_record, "record")
@@ -364,13 +368,14 @@ def _get_record_tailored(
 
     header_xml = ET.tostring(header, encoding='utf-8').decode('utf-8')
     metadata_xml = ET.tostring(metadata, encoding='utf-8').decode('utf-8')
-    _cache_record(
-        resource,
-        metadata_prefix,
-        header_xml,
-        metadata_xml,
-        snapshot_marker=cursor_marker,
-        cursor_marker=cursor_marker,
-    )
+    if cache_enabled:
+        _cache_record(
+            resource,
+            metadata_prefix,
+            header_xml,
+            metadata_xml,
+            snapshot_marker=cursor_marker,
+            cursor_marker=cursor_marker,
+        )
 
     return oai
