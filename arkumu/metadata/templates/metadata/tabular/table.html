@@ -53,6 +53,36 @@
         <span class="badge badge-primary">{{ page_obj.paginator.count }} rows</span>
       </h2>
 
+      <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-base-content/70">Filter by URI, name, or literal value.</p>
+        <form class="flex flex-wrap items-center gap-2"
+              hx-get="{{ request.path }}"
+              hx-target="#table-container"
+              hx-swap="innerHTML"
+              hx-push-url="true">
+          {% for key, value in preserved_query_params %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+          {% endfor %}
+          <input type="hidden" name="page" value="1">
+          <div class="join">
+            <input type="text" name="search" value="{{ search_query }}" placeholder="Search…" class="input input-sm input-bordered join-item w-48">
+            <button type="submit" class="btn btn-sm btn-primary join-item">
+              Search
+            </button>
+            {% if search_query %}
+            <button type="button"
+                    class="btn btn-sm join-item"
+                    hx-get="{{ request.path }}?{% if clear_query %}{{ clear_query }}&{% endif %}page=1"
+                    hx-target="#table-container"
+                    hx-swap="innerHTML"
+                    hx-push-url="true">
+              Clear
+            </button>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+
       <!-- Table Container with HTMX -->
       <div id="table-container">
         {% include "metadata/tabular/partials/table_rows.html" %}
