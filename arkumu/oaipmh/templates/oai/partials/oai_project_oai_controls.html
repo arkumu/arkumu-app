@@ -21,7 +21,6 @@
   >
     {% csrf_token %}
     <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
-    <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
     <input type="hidden" name="page" value="{{ current_page }}">
     <input type="hidden" name="oai_publish_action" value="{% if row.oai_is_approved %}revoke{% else %}approve{% endif %}">
     <button type="submit" class="btn btn-xs btn-primary w-full">

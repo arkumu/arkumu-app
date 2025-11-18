@@ -70,14 +70,12 @@ def test_tailored_endpoint_curates_media_links(client, monkeypatch, settings):
     link_b = OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_b,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
         label_override="Curated Beta",
     )
     link_a = OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_a,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=2,
     )
     OAIProjectMediaLink.objects.filter(pk=link_b.pk).update(updated_at=link_newest)
@@ -276,7 +274,6 @@ def test_tailored_resumption_tokens_include_profile_and_invalidate_on_dataset_ch
         link = OAIProjectMediaLink.objects.create(
             project=project,
             digital_object=digital,
-            status=OAIProjectMediaLink.STATUS_APPROVED,
         )
         OAIProjectMediaLink.objects.filter(pk=link.pk).update(updated_at=base_ts + timedelta(days=delta))
         return project

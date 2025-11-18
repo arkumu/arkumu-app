@@ -27,6 +27,8 @@ class MediaLinkCandidate:
 
     resource: Resource
     source: str
+    uri: Optional[str]
+    path: Optional[str]
 
 
 @dataclass
@@ -110,7 +112,14 @@ class OAIProjectMediaSyncService:
                 obj.uri = resource.uri
 
             source = self._normalize_source(getattr(obj, "source", None))
-            candidates.append(MediaLinkCandidate(resource=resource, source=source))
+            candidates.append(
+                MediaLinkCandidate(
+                    resource=resource,
+                    source=source,
+                    uri=getattr(obj, "uri", None),
+                    path=getattr(obj, "path", None),
+                )
+            )
 
         return candidates
 
@@ -227,33 +236,59 @@ class OAIProjectMediaSyncService:
                 .filter(project=project)
             )
         }
+        existing_by_uri: Dict[str, OAIProjectMediaLink] = {}
+        existing_by_value: Dict[str, OAIProjectMediaLink] = {}
+        for link in existing_links.values():
+            digital = getattr(link, "digital_object", None)
+            if not digital:
+                continue
+            uri = getattr(digital, "uri", None)
+            if uri and uri not in existing_by_uri:
+                existing_by_uri[uri] = link
+            value = getattr(digital, "value", None)
+            if value:
+                normalized_value = value.strip()
+                if normalized_value and normalized_value not in existing_by_value:
+                    existing_by_value[normalized_value] = link
 
         next_order = 1
         if existing_links:
             next_order = max((link.order_index or 0) for link in existing_links.values()) + 1
 
         seen: set[UUID] = set()
+        seen_uris: set[str] = set()
+        seen_paths: set[str] = set()
         created = 0
         refreshed = 0
 
         for candidate in candidates:
             digital_pk = candidate.resource.id
-            seen.add(digital_pk)
+            candidate_uri = (candidate.uri or getattr(candidate.resource, "uri", None) or "").strip()
+            candidate_path = (candidate.path or getattr(candidate.resource, "value", None) or "").strip()
+            if candidate_uri:
+                seen_uris.add(candidate_uri)
+            if candidate_path:
+                seen_paths.add(candidate_path)
+
             link = existing_links.get(digital_pk)
+            if link is None and candidate_uri:
+                link = existing_by_uri.get(candidate_uri)
+            if link is None and candidate_path:
+                link = existing_by_value.get(candidate_path)
+
+            if link is None:
+                seen.add(digital_pk)
+            else:
+                seen.add(link.digital_object_id)
             if link is None:
                 OAIProjectMediaLink.objects.create(
                     project=project,
                     digital_object=candidate.resource,
-                    status=OAIProjectMediaLink.STATUS_APPROVED,
                     source=candidate.source,
                     order_index=next_order,
                 )
                 created += 1
                 next_order += 1
-                continue
-
-            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
-                # Hard veto: never revive or mutate rejected links.
                 continue
 
             updates: List[str] = []
@@ -268,7 +303,7 @@ class OAIProjectMediaSyncService:
                 link.save(update_fields=[*updates, "updated_at"])
                 refreshed += 1
 
-        stale = self._mark_missing_as_stale(project, existing_links, seen)
+        stale = self._mark_missing_as_stale(project, existing_links, seen, seen_uris, seen_paths)
         return SyncResult(created=created, refreshed=refreshed, stale=stale)
 
     def _mark_missing_as_stale(
@@ -276,14 +311,24 @@ class OAIProjectMediaSyncService:
         project: Resource,
         existing: Dict[UUID, OAIProjectMediaLink],
         seen: Iterable[UUID],
+        seen_uris: Iterable[str],
+        seen_paths: Iterable[str],
     ) -> int:
         seen_ids = {pk for pk in seen}
+        seen_uri_set = {uri.strip() for uri in seen_uris if uri and uri.strip()}
+        seen_path_set = {path.strip() for path in seen_paths if path and path.strip()}
         stale_links = []
         for pk, link in existing.items():
             if pk in seen_ids or link.is_stale:
                 continue
-            if link.status in (OAIProjectMediaLink.STATUS_APPROVED, OAIProjectMediaLink.STATUS_PENDING):
-                stale_links.append(link)
+            digital = getattr(link, "digital_object", None)
+            link_uri = getattr(digital, "uri", None) if digital else None
+            link_value = getattr(digital, "value", None) if digital else None
+            if link_uri and link_uri in seen_uri_set:
+                continue
+            if link_value and link_value.strip() in seen_path_set:
+                continue
+            stale_links.append(link)
         if not stale_links:
             return 0
 
@@ -300,7 +345,6 @@ class OAIProjectMediaSyncService:
             OAIProjectMediaLink.objects.select_for_update()
             .filter(
                 project=project,
-                status__in=[OAIProjectMediaLink.STATUS_APPROVED, OAIProjectMediaLink.STATUS_PENDING],
                 is_stale=False,
             )
         )

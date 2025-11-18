@@ -204,13 +204,11 @@ def test_project_hint_uses_curated_links_only_when_tailored(monkeypatch):
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_b,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
     )
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_a,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=2,
     )
 
@@ -298,7 +296,6 @@ def test_tailored_builder_rehydrates_missing_curated_media(monkeypatch):
         OAIProjectMediaLink.objects.create(
             project=project,
             digital_object=resource,
-            status=OAIProjectMediaLink.STATUS_APPROVED,
             order_index=order,
         )
 
@@ -398,7 +395,6 @@ def test_tailored_builder_hydrates_graph_only_curated_media():
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
     )
 
@@ -479,14 +475,12 @@ def test_tailored_builder_uses_pending_curated_links():
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_two,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
         label_override="Second Pending",
     )
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_one,
-        status=OAIProjectMediaLink.STATUS_PENDING,
         order_index=2,
     )
 

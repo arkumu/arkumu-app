@@ -45,12 +45,10 @@ def test_s3_harvestable_project_ids_require_verified_s3(settings):
     OAIProjectMediaLink.objects.create(
         project=project_with_s3,
         digital_object=digital_with_s3,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
     )
     OAIProjectMediaLink.objects.create(
         project=project_without_s3,
         digital_object=digital_without_s3,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
     )
 
     S3FileObject.objects.create(

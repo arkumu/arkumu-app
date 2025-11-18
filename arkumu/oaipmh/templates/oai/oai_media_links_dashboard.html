@@ -39,7 +39,6 @@
               <option value="{{ org.code }}" {% if org == selected_org %}selected{% endif %}>{{ org.name }} ({{ org.code }})</option>
             {% endfor %}
           </select>
-          <input type="hidden" name="status" value="{{ status_filter }}">
           <button type="submit" class="btn btn-primary btn-sm">Load</button>
         </form>
         <div id="oai-media-links-summary-stats" class="flex-1"></div>

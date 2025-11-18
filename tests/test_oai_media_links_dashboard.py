@@ -56,12 +56,10 @@ def test_digital_object_search_filters_before_pagination(monkeypatch):
         OAIProjectMediaLink.objects.create(
             project=project,
             digital_object=digital,
-            status=OAIProjectMediaLink.STATUS_APPROVED,
         )
 
     context = dashboard_views._build_digital_object_centric_context(
         organization=org,
-        status_filter="all",
         page_number=1,
         search_query="lieder",
     )
@@ -84,7 +82,7 @@ def test_oai_project_status_update_approves_for_oai(monkeypatch):
     )
 
     request = rf.post(
-        "/fake?status=approved",
+        "/fake",
         data={
             "oai_publish_action": "approve",
             "page": "2",
@@ -98,25 +96,20 @@ def test_oai_project_status_update_approves_for_oai(monkeypatch):
         "_build_single_project_row_context",
         lambda **kwargs: {"has_harvestable_files": False, "harvestable_count": 0},
     )
-    panel_calls = {}
+    render_context = {}
 
-    def fake_panel_context(**kwargs):
-        panel_calls.update(kwargs)
-        return {}
+    def fake_render(request, template, context):
+        render_context.update(context)
+        return HttpResponse("ok", status=200)
 
-    monkeypatch.setattr(dashboard_views, "_build_media_links_panel_context", fake_panel_context)
-    monkeypatch.setattr(
-        dashboard_views,
-        "render",
-        lambda request, template, context: HttpResponse("ok", status=200),
-    )
+    monkeypatch.setattr(dashboard_views, "render", fake_render)
 
     response = dashboard_views.oai_project_status_update(request, project.id)
     assert response.status_code == 200
     publication = OAIProjectPublication.objects.get(project=project)
     assert publication.is_approved is True
     assert publication.approved_by == user
-    assert panel_calls.get("page_number") == 2
+    assert render_context.get("current_page") == 2
 
 
 @pytest.mark.django_db
@@ -141,18 +134,16 @@ def test_oai_project_status_update_revokes_oai(monkeypatch):
         "_build_single_project_row_context",
         lambda **kwargs: {"has_harvestable_files": True, "harvestable_count": 2},
     )
-    monkeypatch.setattr(
-        dashboard_views,
-        "_build_media_links_panel_context",
-        lambda **kwargs: {},
-    )
-    monkeypatch.setattr(
-        dashboard_views,
-        "render",
-        lambda request, template, context: HttpResponse("ok", status=200),
-    )
+    render_context = {}
+
+    def fake_render(request, template, context):
+        render_context.update(context)
+        return HttpResponse("ok", status=200)
+
+    monkeypatch.setattr(dashboard_views, "render", fake_render)
 
     response = dashboard_views.oai_project_status_update(request, project.id)
     assert response.status_code == 200
     publication = OAIProjectPublication.objects.get(project=project)
     assert publication.is_approved is False
+    assert render_context.get("current_page") == 1

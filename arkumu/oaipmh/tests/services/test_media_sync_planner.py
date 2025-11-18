@@ -56,12 +56,10 @@ def test_collect_seed_candidate_ids_includes_curated_and_new_projects():
     link_existing = OAIProjectMediaLink.objects.create(
         project=project_existing,
         digital_object=_digital(org, "https://arkumu.org/entities/digital/seed-1"),
-        status=OAIProjectMediaLink.STATUS_APPROVED,
     )
     old_link = OAIProjectMediaLink.objects.create(
         project=project_old,
         digital_object=_digital(org, "https://arkumu.org/entities/digital/seed-old"),
-        status=OAIProjectMediaLink.STATUS_APPROVED,
     )
     # Ensure timestamps reflect relative freshness.
     Resource.objects.filter(id=project_existing.id).update(updated_at=timezone.now())

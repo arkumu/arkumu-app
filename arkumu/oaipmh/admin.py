@@ -10,14 +10,12 @@ class OAIProjectMediaLinkAdmin(admin.ModelAdmin):
     list_display = (
         "project_uri",
         "digital_object_uri",
-        "status",
         "source",
         "is_stale",
         "order_index",
         "updated_at",
     )
     list_filter = (
-        "status",
         "source",
         "is_stale",
         ("project__organization", admin.RelatedOnlyFieldListFilter),

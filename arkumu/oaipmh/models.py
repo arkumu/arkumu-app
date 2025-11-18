@@ -15,31 +15,15 @@ class OAIProjectMediaLinkQuerySet(models.QuerySet):
         order_expr = F("order_index").asc(nulls_last=True)
         return self.order_by(order_expr, "created_at", "id")
 
-    def approved(self):
-        return self.filter(status=OAIProjectMediaLink.STATUS_APPROVED)
-
     def for_project(self, project: Resource | str | None):
         if project is None:
             return self.none()
         project_id = getattr(project, "pk", project)
         return self.filter(project_id=project_id)
 
-    def approved_for_project(self, project: Resource | str | None):
-        return self.for_project(project).approved().ordered()
-
 
 class OAIProjectMediaLink(models.Model):
     """Curated link between a project and one of its digital objects."""
-
-    STATUS_PENDING = "pending"
-    STATUS_APPROVED = "approved"
-    STATUS_REJECTED = "rejected"
-
-    STATUS_CHOICES = (
-        (STATUS_PENDING, "Pending"),
-        (STATUS_APPROVED, "Approved"),
-        (STATUS_REJECTED, "Rejected"),
-    )
 
     SOURCE_PROJECT = "project"
     SOURCE_EVENT = "event"
@@ -62,11 +46,6 @@ class OAIProjectMediaLink(models.Model):
         Resource,
         on_delete=models.CASCADE,
         related_name="oai_media_references",
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default=STATUS_PENDING,
     )
     source = models.CharField(
         max_length=20,
@@ -112,7 +91,6 @@ class OAIProjectMediaLink(models.Model):
         indexes = [
             models.Index(fields=("project",), name="oai_media_project_idx"),
             models.Index(fields=("digital_object",), name="oai_media_object_idx"),
-            models.Index(fields=("status",), name="oai_media_status_idx"),
             models.Index(fields=("is_stale",), name="oai_media_stale_idx"),
         ]
         verbose_name = "OAI Project Media Link"
@@ -121,11 +99,7 @@ class OAIProjectMediaLink(models.Model):
     objects = OAIProjectMediaLinkQuerySet.as_manager()
 
     def __str__(self) -> str:  # pragma: no cover - debug helper
-        return f"{self.project_id} → {self.digital_object_id} ({self.status})"
-
-    @property
-    def is_approved(self) -> bool:
-        return self.status == self.STATUS_APPROVED
+        return f"{self.project_id} → {self.digital_object_id}"
 
 
 class OAIProjectPublicationQuerySet(models.QuerySet):

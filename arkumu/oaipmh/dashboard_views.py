@@ -414,7 +414,6 @@ def oai_media_links_dashboard(request):
     if selected_code and not selected_org:
         messages.error(request, f"Unknown organization code '{selected_code}'.")
 
-    status_filter = _normalized_media_link_status(request.GET.get('status'))
     page_param = request.GET.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
@@ -425,7 +424,6 @@ def oai_media_links_dashboard(request):
     if selected_org:
         panel_context = _build_media_links_panel_context(
             organization=selected_org,
-            status_filter=status_filter,
             page_number=page_number,
         )
 
@@ -436,21 +434,9 @@ def oai_media_links_dashboard(request):
             'organizations': organizations,
             'selected_org': selected_org,
             'selected_org_code': selected_org.code if selected_org else '',
-            'status_choices': OAIProjectMediaLink.STATUS_CHOICES,
-            'status_filter': status_filter,
             'panel_context': panel_context,
         },
     )
-
-
-def _normalized_media_link_status(value: Optional[str]) -> str:
-    if not value:
-        return "all"
-    token = value.strip().lower()
-    valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
-    if token in valid_statuses:
-        return token
-    return "all"
 
 
 def _resolve_organization_by_code(code: Optional[str]) -> Optional[Organization]:
@@ -478,28 +464,13 @@ def _build_media_links_summary(
     organization: Organization,
     link_qs,
     *,
-    status_filter: str,
     project_access_filter: str = "all",
     oai_publish_filter: str = "all",
     harvestable_filter: str = "all",
     s3_harvestable_ids: Optional[Set[int]] = None,
 ) -> dict[str, Any]:
     links_total = link_qs.count()
-    filtered_total = links_total if status_filter == "all" else link_qs.filter(status=status_filter).count()
-    raw_stats = (
-        link_qs.values('status')
-        .annotate(count=Count('id'))
-        .order_by('status')
-    )
-    status_map = dict(OAIProjectMediaLink.STATUS_CHOICES)
-    status_totals = [
-        {
-            "status": row["status"],
-            "label": status_map.get(row["status"], row["status"]),
-            "count": row["count"],
-        }
-        for row in raw_stats
-    ]
+    filtered_total = links_total
     # Project-level stats for summary header
     project_qs = _oai_project_queryset_for_org(organization)
     available_projects = project_qs.count()
@@ -511,13 +482,12 @@ def _build_media_links_summary(
     return {
         "links_total": links_total,
         "filtered_links_total": filtered_total,
-        "status_totals": status_totals,
+        "status_totals": [],
         "stale_count": link_qs.filter(is_stale=True).count(),
         "available_project_count": available_projects,
         "harvestable_project_count": harvestable_projects,
         "selected_org_code": organization.code or "",
         "organization": organization,
-        "status_filter": status_filter,
         "project_access_filter": project_access_filter,
         "oai_publish_filter": oai_publish_filter,
         "harvestable_filter": harvestable_filter,
@@ -539,7 +509,6 @@ def _s3_harvestable_project_ids(organization: Organization) -> Set[int]:
     qs = (
         OAIProjectMediaLink.objects.filter(
             project__organization=organization,
-            status__in=[OAIProjectMediaLink.STATUS_APPROVED, OAIProjectMediaLink.STATUS_PENDING],
             digital_object__s3fileobject__status__in=statuses,
         )
         .exclude(digital_object__s3fileobject__s3_key__isnull=True)
@@ -771,8 +740,6 @@ def _attach_s3_metadata(
     digital_ids: set[Any] = set()
     for project_resource in resources:
         for link in getattr(project_resource, "prefetched_media_links", []) or []:
-            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
-                continue
             digital = getattr(link, "digital_object", None)
             if digital and getattr(digital, "id", None):
                 digital_ids.add(digital.id)
@@ -800,8 +767,6 @@ def _attach_s3_metadata(
 
     for project_resource in resources:
         for link in getattr(project_resource, "prefetched_media_links", []) or []:
-            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
-                continue
             digital = getattr(link, "digital_object", None)
             has_s3 = False
             s3_key_preview = ""
@@ -819,7 +784,6 @@ def _build_project_row_context(
     *,
     builder: OAIProjectBuilder,
     assembler: OAIProjectAssembler,
-    status_filter: str,
     org_code: str,
     is_s3_org: bool,
     label_lookup: Optional[Dict[Any, str]] = None,
@@ -832,13 +796,7 @@ def _build_project_row_context(
             fallback="Untitled digital object",
             label_lookup=label_lookup,
         )
-    active_links = [link for link in prefetched_links if link.status != OAIProjectMediaLink.STATUS_REJECTED]
-    if status_filter == "all":
-        filtered_links = active_links
-    elif status_filter == OAIProjectMediaLink.STATUS_REJECTED:
-        filtered_links = [link for link in prefetched_links if link.status == OAIProjectMediaLink.STATUS_REJECTED]
-    else:
-        filtered_links = [link for link in active_links if link.status == status_filter]
+    filtered_links = list(prefetched_links)
 
     publication = None
     if publication_by_id is not None:
@@ -851,9 +809,8 @@ def _build_project_row_context(
         "project_uri": project_uri,
         "project_label": _resource_display_label(resource, fallback="Untitled project", label_lookup=label_lookup),
         "links": filtered_links,
-        "total_links": len(active_links),
+        "total_links": len(prefetched_links),
         "selected_org_code": org_code,
-        "status_filter": status_filter,
         "builder_error": False,
         "graph_only_uris": (),
         "curated_missing_uris": (),
@@ -936,7 +893,6 @@ def _build_project_row_context(
 def _build_media_links_panel_context(
     *,
     organization: Organization,
-    status_filter: str,
     page_number: int,
     project_access_filter: str = "all",
     oai_publish_filter: str = "all",
@@ -951,7 +907,6 @@ def _build_media_links_panel_context(
     summary = _build_media_links_summary(
         organization,
         link_base_qs,
-        status_filter=status_filter,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
         harvestable_filter=harvestable_filter,
@@ -970,8 +925,6 @@ def _build_media_links_panel_context(
         .distinct()
         .order_by('-updated_at', 'uri')
     )
-    if status_filter != "all":
-        projects_qs = projects_qs.filter(oai_media_links__status=status_filter)
 
     if project_access_filter != "all":
         projects_qs = projects_qs.filter(public_access_level=project_access_filter)
@@ -1013,8 +966,6 @@ def _build_media_links_panel_context(
     digital_resources: List[Resource] = []
     for project_resource in project_resources:
         for link in getattr(project_resource, "prefetched_media_links", []) or []:
-            if link.status == OAIProjectMediaLink.STATUS_REJECTED:
-                continue
             digital = getattr(link, "digital_object", None)
             if digital:
                 digital_resources.append(digital)
@@ -1047,7 +998,6 @@ def _build_media_links_panel_context(
             project_resource,
             builder=builder,
             assembler=assembler,
-            status_filter=status_filter,
             org_code=organization.code or "",
             is_s3_org=is_s3_org,
             label_lookup=label_lookup,
@@ -1060,7 +1010,6 @@ def _build_media_links_panel_context(
     return {
         "selected_org": organization,
         "selected_org_code": organization.code or "",
-        "status_filter": status_filter,
         "search_query": search_query,
         "summary": summary,
         "project_rows": rows,
@@ -1069,7 +1018,6 @@ def _build_media_links_panel_context(
         "page_obj": page_obj,
         "per_page": MEDIA_LINKS_PAGE_SIZE,
         "builder_errors": builder_errors,
-        "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
         "view_mode": "project",
         "oai_publish_filter": oai_publish_filter,
         "harvestable_filter": harvestable_filter,
@@ -1081,7 +1029,6 @@ def _build_single_project_row_context(
     *,
     organization: Organization,
     project_id: Any,
-    status_filter: str,
 ) -> Optional[dict[str, Any]]:
     project_prefetch = Prefetch(
         'oai_media_links',
@@ -1101,8 +1048,6 @@ def _build_single_project_row_context(
     label_lookup = _prefetch_resource_labels([resource])
     digital_resources: List[Resource] = []
     for link in getattr(resource, "prefetched_media_links", []) or []:
-        if link.status == OAIProjectMediaLink.STATUS_REJECTED:
-            continue
         digital = getattr(link, "digital_object", None)
         if digital:
             digital_resources.append(digital)
@@ -1120,7 +1065,6 @@ def _build_single_project_row_context(
         resource,
         builder=builder,
         assembler=assembler,
-        status_filter=status_filter,
         org_code=organization.code or "",
         is_s3_org=_is_s3_org(organization),
         label_lookup=label_lookup,
@@ -1133,13 +1077,11 @@ def _render_project_row_response(
     *,
     organization: Organization,
     project_id: Any,
-    status_filter: str,
     page_number: int,
 ):
     row = _build_single_project_row_context(
         organization=organization,
         project_id=project_id,
-        status_filter=status_filter,
     )
     if row is None:
         return HttpResponseBadRequest("<div class='alert alert-error'>Unable to load project row.</div>")
@@ -1147,13 +1089,11 @@ def _render_project_row_response(
     summary = _build_media_links_summary(
         organization,
         OAIProjectMediaLink.objects.filter(project__organization=organization),
-        status_filter=status_filter,
         s3_harvestable_ids=_s3_harvestable_project_ids(organization) if _is_s3_org(organization) else None,
     )
     context = {
         "row": row,
         "summary": summary,
-        "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
         "current_page": page_number,
         "include_summary": True,
     }
@@ -1211,7 +1151,6 @@ def oai_media_links_panel(request):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select a valid organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.GET.get('status'))
     project_access_filter = request.GET.get('project_access', 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
         project_access_filter = 'all'
@@ -1234,19 +1173,17 @@ def oai_media_links_panel(request):
 
     panel_context = _build_media_links_panel_context(
         organization=organization,
-        status_filter=status_filter,
         page_number=page_number,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
         harvestable_filter=harvestable_filter,
         search_query=search_query,
     )
-    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
     panel_context['include_summary_partial'] = True
 
     # If not an HTMX request, redirect to the full dashboard with params
     if not request.headers.get('HX-Request'):
-        return redirect(f"{reverse('oai_admin:oai_media_links_dashboard')}?organization={organization.code}&status={status_filter}")
+        return redirect(f"{reverse('oai_admin:oai_media_links_dashboard')}?organization={organization.code}")
 
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
@@ -1263,7 +1200,6 @@ def oai_media_link_update(request, link_id):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.POST.get('status_filter'))
     page_param = request.POST.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
@@ -1279,17 +1215,7 @@ def oai_media_link_update(request, link_id):
     if link.project.organization_id != organization.id:
         return HttpResponseForbidden("<div class='alert alert-error'>Permission denied for this media link.</div>")
 
-    valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
     updates: set[str] = set()
-
-    requested_status = request.POST.get('status')
-    current_status = request.POST.get('current_status') or link.status
-    new_status = requested_status if requested_status in valid_statuses else current_status
-    if new_status in valid_statuses and new_status != link.status:
-        link.status = new_status
-        link.last_reviewed_by = request.user
-        link.last_reviewed_at = timezone.now()
-        updates.update({'status', 'last_reviewed_by', 'last_reviewed_at'})
 
     order_input = (request.POST.get('order_index') or '').strip()
     if order_input:
@@ -1318,6 +1244,10 @@ def oai_media_link_update(request, link_id):
         updates.add('is_stale')
 
     if updates:
+        if request.user.is_authenticated:
+            link.last_reviewed_by = request.user
+            link.last_reviewed_at = timezone.now()
+            updates.update({'last_reviewed_by', 'last_reviewed_at'})
         updates.add('updated_at')
         link.save(update_fields=list(updates))
         messages.success(request, f"Updated media link for {link.project.uri}.")
@@ -1328,7 +1258,6 @@ def oai_media_link_update(request, link_id):
         request,
         organization=organization,
         project_id=link.project_id,
-        status_filter=status_filter,
         page_number=page_number,
     )
 
@@ -1345,7 +1274,6 @@ def oai_media_link_delete(request, link_id):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.POST.get('status_filter'))
     page_param = request.POST.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
@@ -1362,29 +1290,23 @@ def oai_media_link_delete(request, link_id):
         return HttpResponseForbidden("<div class='alert alert-error'>Permission denied for this media link.</div>")
 
     project_id = link.project_id
-    if link.status != OAIProjectMediaLink.STATUS_REJECTED or link.is_stale:
-        link.status = OAIProjectMediaLink.STATUS_REJECTED
-        link.is_stale = False
-        link.save(update_fields=["status", "is_stale", "updated_at"])
-        messages.success(
-            request,
-            f"Rejected digital object {link.digital_object.uri} for project {link.project.uri}.",
-        )
-    else:
-        messages.info(request, "Digital object already rejected for this project.")
+    project_uri = getattr(link.project, "uri", "")
+    digital_uri = getattr(link.digital_object, "uri", "")
+    link.delete()
+    messages.success(
+        request,
+        f"Removed digital object {digital_uri} from project {project_uri}.",
+    )
 
     row_context = _build_single_project_row_context(
         organization=organization,
         project_id=project_id,
-        status_filter=status_filter,
     )
     if not row_context or row_context["total_links"] == 0:
         panel_context = _build_media_links_panel_context(
             organization=organization,
-            status_filter=status_filter,
             page_number=1,
         )
-        panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
         panel_context['include_summary_partial'] = True
         return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
@@ -1392,7 +1314,6 @@ def oai_media_link_delete(request, link_id):
         request,
         organization=organization,
         project_id=project_id,
-        status_filter=status_filter,
         page_number=page_number,
     )
 
@@ -1409,7 +1330,6 @@ def oai_media_link_add(request):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.POST.get('status_filter'))
     page_param = request.POST.get('page') or '1'
     try:
         page_number = max(int(page_param), 1)
@@ -1446,13 +1366,8 @@ def oai_media_link_add(request):
             request,
             organization=organization,
             project_id=project.id,
-            status_filter=status_filter,
             page_number=page_number,
         )
-
-    valid_statuses = {choice[0] for choice in OAIProjectMediaLink.STATUS_CHOICES}
-    requested_status = (request.POST.get('status') or OAIProjectMediaLink.STATUS_PENDING).strip().lower()
-    status_value = requested_status if requested_status in valid_statuses else OAIProjectMediaLink.STATUS_PENDING
 
     order_input = (request.POST.get('order_index') or '').strip()
     order_value: Optional[int]
@@ -1467,7 +1382,6 @@ def oai_media_link_add(request):
     link = OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_object,
-        status=status_value,
         order_index=order_value,
         label_override=request.POST.get('label_override', ''),
         notes=request.POST.get('notes', ''),
@@ -1481,7 +1395,6 @@ def oai_media_link_add(request):
         request,
         organization=organization,
         project_id=link.project_id,
-        status_filter=status_filter,
         page_number=page_number,
     )
 
@@ -1502,7 +1415,6 @@ def oai_media_link_seed_preview(request):
     context = {
         "organization": organization,
         "seed_summary": summary,
-        "status_filter": _normalized_media_link_status(request.GET.get('status')),
     }
     return render(request, 'oai/partials/oai_media_links_seed_modal.html', context)
 
@@ -1519,7 +1431,6 @@ def oai_media_link_seed_execute(request):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.POST.get('status'))
     summary = _run_media_link_seed(organization)
 
     if summary["projects"] == 0:
@@ -1535,10 +1446,8 @@ def oai_media_link_seed_execute(request):
 
     panel_context = _build_media_links_panel_context(
         organization=organization,
-        status_filter=status_filter,
         page_number=1,
     )
-    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
     panel_context['include_summary_partial'] = True
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
@@ -1555,7 +1464,6 @@ def oai_media_link_seed_and_sync(request):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.POST.get('status'))
     project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
         project_access_filter = 'all'
@@ -1577,7 +1485,6 @@ def oai_media_link_seed_and_sync(request):
         page_number = 1
 
     filters = {
-        "status_filter": status_filter,
         "project_access_filter": project_access_filter,
         "oai_publish_filter": oai_publish_filter,
         "harvestable_filter": harvestable_filter,
@@ -1640,7 +1547,6 @@ def oai_media_sync_status(request):
         return render(request, 'oai/partials/oai_media_links_job_status.html', context)
 
     filters = state.get('filters') or {}
-    status_filter = _normalized_media_link_status(filters.get('status_filter'))
 
     project_access_filter = (filters.get('project_access_filter') or 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
@@ -1669,14 +1575,12 @@ def oai_media_sync_status(request):
 
     panel_context = _build_media_links_panel_context(
         organization=organization,
-        status_filter=status_filter,
         page_number=page_number,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
         harvestable_filter=harvestable_filter,
         search_query=search_query,
     )
-    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
     panel_context['include_summary_partial'] = True
 
     media_sync_jobs.delete_job(job_id)
@@ -1686,7 +1590,6 @@ def oai_media_sync_status(request):
 def _build_digital_object_centric_context(
     *,
     organization: Organization,
-    status_filter: str,
     page_number: int,
     project_access_filter: str = "all",
     shared_filter: str = "all",
@@ -1700,8 +1603,6 @@ def _build_digital_object_centric_context(
 
     # Apply filters to the link queryset
     filtered_qs = link_base_qs
-    if status_filter != "all":
-        filtered_qs = filtered_qs.filter(status=status_filter)
     if project_access_filter != "all":
         filtered_qs = filtered_qs.filter(project__public_access_level=project_access_filter)
     if oai_publish_filter == "approved":
@@ -1732,9 +1633,6 @@ def _build_digital_object_centric_context(
         .values('digital_object_id')
         .annotate(
             project_count=Count('project_id', distinct=True),
-            approved_count=Count('id', filter=Q(status=OAIProjectMediaLink.STATUS_APPROVED)),
-            pending_count=Count('id', filter=Q(status=OAIProjectMediaLink.STATUS_PENDING)),
-            rejected_count=Count('id', filter=Q(status=OAIProjectMediaLink.STATUS_REJECTED)),
             is_shared=Count('project_id', distinct=True, filter=~Q(project_id=F('project_id'))),
             has_stale=Count('id', filter=Q(is_stale=True)),
         )
@@ -1793,8 +1691,6 @@ def _build_digital_object_centric_context(
         .order_by('project__uri')
     )
 
-    if status_filter != "all":
-        links_for_page = links_for_page.filter(status=status_filter)
     if project_access_filter != "all":
         links_for_page = links_for_page.filter(project__public_access_level=project_access_filter)
     if oai_publish_filter == "approved":
@@ -1853,9 +1749,6 @@ def _build_digital_object_centric_context(
             "has_s3_file": has_s3_file,
             "s3_key_preview": s3_key_preview,
             "project_count": item['project_count'],
-            "approved_count": item['approved_count'],
-            "pending_count": item['pending_count'],
-            "rejected_count": item['rejected_count'],
             "is_shared": item['project_count'] > 1,
             "has_stale": item['has_stale'] > 0,
             "links": links,
@@ -1865,7 +1758,6 @@ def _build_digital_object_centric_context(
     summary = _build_media_links_summary(
         organization,
         link_base_qs,
-        status_filter=status_filter,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
     )
@@ -1883,7 +1775,6 @@ def _build_digital_object_centric_context(
     return {
         "selected_org": organization,
         "selected_org_code": organization.code or "",
-        "status_filter": status_filter,
         "project_access_filter": project_access_filter,
         "shared_filter": shared_filter,
         "search_query": search_query,
@@ -1896,7 +1787,6 @@ def _build_digital_object_centric_context(
         "current_page": page_obj.number,
         "page_obj": page_obj,
         "per_page": MEDIA_LINKS_PAGE_SIZE,
-        "status_choices": OAIProjectMediaLink.STATUS_CHOICES,
         "view_mode": "digital",
         "include_summary_partial": False,
     }
@@ -1915,7 +1805,6 @@ def oai_media_links_digital_view(request):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select a valid organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.GET.get('status'))
     project_access_filter = request.GET.get('project_access', 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
         project_access_filter = 'all'
@@ -1938,7 +1827,6 @@ def oai_media_links_digital_view(request):
 
     context = _build_digital_object_centric_context(
         organization=organization,
-        status_filter=status_filter,
         page_number=page_number,
         project_access_filter=project_access_filter,
         shared_filter=shared_filter,
@@ -1951,7 +1839,7 @@ def oai_media_links_digital_view(request):
     if not request.headers.get('HX-Request'):
         return redirect(
             f"{reverse('oai_admin:oai_media_links_dashboard')}?organization={organization.code}"
-            f"&status={status_filter}&view=digital&shared={shared_filter}"
+            f"&view=digital&shared={shared_filter}"
         )
 
     return render(request, 'oai/partials/oai_media_links_digital_panel.html', context)
@@ -1975,7 +1863,6 @@ def oai_project_status_update(request, resource_id):
         return HttpResponseBadRequest("<div class='alert alert-error'>Project organization missing.</div>")
 
     page_number = 1
-    status_filter = (request.POST.get('status_filter') or request.GET.get('status') or 'all')
     page_param = request.POST.get('page')
     if page_param:
         try:
@@ -1988,7 +1875,6 @@ def oai_project_status_update(request, resource_id):
         row_context = _build_single_project_row_context(
             organization=organization,
             project_id=resource.id,
-            status_filter=status_filter,
         )
         if row_context is None:
             return HttpResponseBadRequest("<div class='alert alert-error'>Unable to load project context.</div>")
@@ -2015,7 +1901,6 @@ def oai_project_status_update(request, resource_id):
             request,
             organization=organization,
             project_id=resource.id,
-            status_filter=status_filter,
             page_number=page_number,
         )
 
@@ -2034,7 +1919,6 @@ def oai_publication_sync(request):
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
 
-    status_filter = _normalized_media_link_status(request.POST.get('status'))
     project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
         project_access_filter = 'all'
@@ -2060,11 +1944,9 @@ def oai_publication_sync(request):
 
     panel_context = _build_media_links_panel_context(
         organization=organization,
-        status_filter=status_filter,
         page_number=page_number,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
     )
-    panel_context['status_choices'] = OAIProjectMediaLink.STATUS_CHOICES
     panel_context['include_summary_partial'] = True
     return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)

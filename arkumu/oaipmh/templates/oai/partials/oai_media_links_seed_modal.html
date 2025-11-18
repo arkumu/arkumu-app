@@ -20,7 +20,6 @@
         >
           {% csrf_token %}
           <input type="hidden" name="organization" value="{{ organization.code }}">
-          <input type="hidden" name="status" value="{{ status_filter }}">
           <button type="submit" class="btn btn-primary">Run seed</button>
         </form>
       </div>

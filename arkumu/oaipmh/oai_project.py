@@ -881,7 +881,8 @@ class OAIProjectBuilder:
             return None
 
         links = list(
-            OAIProjectMediaLink.objects.approved_for_project(project_uuid)
+            OAIProjectMediaLink.objects.for_project(project_uuid)
+            .ordered()
             .select_related("digital_object")
             .annotate(
                 other_project_refs=Count(

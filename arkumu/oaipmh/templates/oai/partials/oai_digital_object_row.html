@@ -66,7 +66,6 @@
               >
                 {% csrf_token %}
                 <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
-                <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
                 <input type="hidden" name="page" value="{{ current_page }}">
                 <button type="submit" class="btn btn-xs btn-error btn-outline">Del</button>
               </form>
