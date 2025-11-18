@@ -40,6 +40,7 @@ from arkumu.oaipmh.views import (
 from arkumu.oaipmh.views.legacy import oai_endpoint
 from arkumu.oaipmh.services.oai_project_assembler import OAIProjectAssembler, AssemblyContext
 from arkumu.oaipmh.oai_project import OAIProjectBuilder, HARVESTABLE_STORAGE_STATUSES
+from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
 from arkumu.metadata.services.oai_stats import (
     build_oai_dashboard_snapshot,
     classify_project_access,
@@ -175,7 +176,7 @@ def _build_oai_endpoint_summaries(oai_snapshot):
 def _build_db_oai_dashboard_snapshot() -> OAIDashboardSnapshot:
     """Assemble DB-backed harvest stats without relying on cached snapshots."""
 
-    builder = OAIProjectBuilder()
+    builder = OAIProjectBuilderTailored()
     assembler = OAIProjectAssembler()
 
     # Accept any slug after /entities/projekt/, not just numeric IDs,
