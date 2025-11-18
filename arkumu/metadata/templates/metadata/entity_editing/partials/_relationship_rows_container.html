@@ -1,14 +1,16 @@
+{% load static %}
 {# Container for all relationship rows with property dropdown #}
-<div id="relationship-container-{{ field_name }}" class="space-y-3">
+{% with field_slug=field_slug|default:field_name|slugify %}
+<div id="relationship-container-{{ field_slug }}" class="space-y-3">
   {% if search_properties and search_properties|length > 0 %}
     <select id="{{ property_select_id }}"
             name="relationship_property_{{ field_name }}"
             class="select select-bordered select-sm w-full max-w-xs"
             hx-get="{% url 'metadata:entity_workspace_relationship_rows' mapping_id %}?dataset={{ dataset_name|urlencode }}&field_name={{ field_name }}"
             hx-trigger="change"
-            hx-target="#relationship-rows-{{ field_name }}"
+            hx-target="#relationship-rows-{{ field_slug }}"
             hx-swap="innerHTML"
-            hx-include="#multi-value-{{ field_name }} input[name^='{{ field_name }}']"
+            hx-include="#multi-value-{{ field_slug }} input[name^='{{ field_name }}']"
             autocomplete="off">
       <option value="" {% if not selected_property %}selected{% endif %}>
         Alle Eigenschaften
@@ -21,7 +23,7 @@
     </select>
   {% endif %}
 
-  <div id="relationship-rows-{{ field_name }}" class="space-y-2">
+  <div id="relationship-rows-{{ field_slug }}" class="space-y-2">
     {% for row in rows %}
       {% include "metadata/entity_creation/partials/_relationship_row.html" with row_id=row.row_id input_id=row.input_id suggestions_id=row.suggestions_id field_name=field_name display_value=row.display_value stored_value=row.stored_value suggestion_url=row.suggestion_url selected_property=selected_property property_select_id=property_select_id mapping_id=mapping_id resource_id=row.resource_id context_columns=meta.context_columns context_options=meta.context_options context_items=row.context_items %}
     {% endfor %}
@@ -30,7 +32,7 @@
   <button type="button"
           class="btn btn-ghost btn-sm mt-2"
           hx-post="{% url 'metadata:entity_workspace_relationship_row' mapping_id %}?dataset={{ dataset_name|urlencode }}&field_name={{ field_name }}"
-          hx-target="#relationship-rows-{{ field_name }}"
+          hx-target="#relationship-rows-{{ field_slug }}"
           hx-swap="beforeend"
           hx-include="#{{ property_select_id }}">
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -39,3 +41,4 @@
     Weiteren Eintrag hinzufügen
   </button>
 </div>
+{% endwith %}
