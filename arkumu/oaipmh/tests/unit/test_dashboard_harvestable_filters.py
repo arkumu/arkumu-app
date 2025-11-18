@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
-from arkumu.oaipmh.dashboard_views import _is_s3_org, _s3_harvestable_project_ids
+from arkumu.oaipmh.media_link_views import _is_s3_org, _s3_harvestable_project_ids
 from arkumu.oaipmh.models import OAIProjectMediaLink
 from arkumu.storage.models import S3FileObject
 from arkumu.users.models import Organization

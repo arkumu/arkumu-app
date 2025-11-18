@@ -561,6 +561,15 @@ OAI_S3_ROSETTA_BASE_PATHS = {
     if key and value
 }
 
+OAI_ROSETTA_CURATED_PREFIXES = {
+    key.strip().lower(): value.rstrip("/")
+    for key, value in {
+        "hmt": env("OAI_ROSETTA_CURATED_PREFIX_HMT", default=""),
+        "khm": env("OAI_ROSETTA_CURATED_PREFIX_KHM", default=""),
+    }.items()
+    if value and value.strip()
+}
+
 OAI_INSTITUTION_CODE_ALIASES = {
     # Canonical code -> alias mapping for snapshot hash identifiers
     "ff8f3b0306bebf6d": "hmt",  # Hochschule für Musik und Tanz Köln

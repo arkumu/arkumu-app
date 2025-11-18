@@ -146,6 +146,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                     if not include:
                         continue
 
+                if curated_selection:
+                    setattr(current_obj, "_from_curated_media_link", True)
+
                 normalized = self._normalize_object(current_obj, institution_code)
                 if not normalized or not self._is_harvestable(normalized):
                     continue
@@ -204,6 +207,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
                 normalized_items: List[NormalizedDigitalObject] = []
                 for project_obj in project_objects:
+                    setattr(project_obj, "_from_curated_media_link", True)
                     normalized = self._normalize_object(project_obj, institution_code)
                     if not normalized or not self._is_harvestable(normalized):
                         continue
@@ -281,6 +285,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
         for resource_id in resource_ids:
             for project_obj in curated_objects.get(resource_id, []):
+                setattr(project_obj, "_from_curated_media_link", True)
                 normalized_obj = self._normalize_object(project_obj, institution_code)
                 if not normalized_obj or not self._is_harvestable(normalized_obj):
                     continue

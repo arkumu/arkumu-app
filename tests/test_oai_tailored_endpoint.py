@@ -15,6 +15,7 @@ from arkumu.oaipmh.views import projects as project_views
 from arkumu.oaipmh.views import tailored as tailored_views
 from arkumu.oaipmh.views.config import METS_NS
 from arkumu.projects import ProjectDigitalObject, ProjectInstitution, ProjectRecord
+from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
 from arkumu.users.models import Organization, User
 from arkumu.storage.models.s3_file_objects import S3FileObject
 
@@ -351,3 +352,55 @@ def test_tailored_token_rejected_by_db_endpoint(client, settings):
     assert error_elem is not None
     assert error_elem.attrib.get("code") == "badResumptionToken"
     assert "profile" in (error_elem.text or "")
+
+
+@pytest.mark.django_db
+def test_tailored_builder_uses_curated_rosetta_paths(monkeypatch, settings):
+    settings.OAI_BASIC_AUTH_ENABLED = False
+    settings.OAI_S3_HARVESTABLE_ORGS = ()
+    settings.OAI_ROSETTA_HARVESTABLE_ORGS = ("hmt",)
+    settings.OAI_ROSETTA_CURATED_PREFIXES = {}
+    settings.OAI_EXTERNAL_PATH_PREFIXES = {"hmt": ["/rosetta/hfmt"]}
+
+    org = Organization.objects.create(name="HMT", code="hmt", is_active=True)
+    project = Resource.objects.create(
+        uri="https://arkumu.org/entities/projekt/300",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+    digital = Resource.objects.create(
+        uri="https://arkumu.org/entities/digital/300",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+
+    OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
+
+    record = ProjectRecord(
+        subject_id=str(project.id),
+        uri=project.uri,
+        title="Curated Rosetta",
+        institution=ProjectInstitution(label=org.name, code=org.code),
+        digital_objects=[
+            ProjectDigitalObject(
+                path="/Volumes/18TB1/hfmt_tonbandarchiv_dateien/TA072_b_002.mp3",
+                file_name="TA072_b_002.mp3",
+                resource_id=str(digital.id),
+                storage_status="completed",
+            )
+        ],
+    )
+
+    builder = OAIProjectBuilderTailored()
+    monkeypatch.setattr(builder, "_path_resolver", lambda *args, **kwargs: ())
+
+    project_hint = builder.from_project_record(record, use_curated_media_links=True)
+    assert len(project_hint.digital_objects) == 1
+    normalized = project_hint.digital_objects[0]
+    assert normalized.rosetta_path == \
+        "/rosetta/hfmt/Volumes/18TB1/hfmt_tonbandarchiv_dateien/TA072_b_002.mp3"
+    assert normalized.harvestable

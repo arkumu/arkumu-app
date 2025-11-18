@@ -5,7 +5,7 @@ from django.test import RequestFactory
 
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
-from arkumu.oaipmh import dashboard_views
+from arkumu.oaipmh import media_link_views
 from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
 from arkumu.users.models import Organization, User
 
@@ -14,6 +14,17 @@ def _attach_messages(request):
     request.session = {}
     storage = FallbackStorage(request)
     setattr(request, "_messages", storage)
+
+
+def _make_project(org: Organization, uri: str, name: str = "Project") -> Resource:
+    return Resource.objects.create(
+        uri=uri,
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+        name=name,
+    )
 
 
 @pytest.mark.django_db
@@ -27,7 +38,7 @@ def test_digital_object_search_filters_before_pagination(monkeypatch):
         name="preferred label",
     )
 
-    monkeypatch.setattr(dashboard_views, "MEDIA_LINKS_PAGE_SIZE", 2)
+    monkeypatch.setattr(media_link_views, "MEDIA_LINKS_PAGE_SIZE", 2)
 
     for idx in range(3):
         project = Resource.objects.create(
@@ -58,7 +69,7 @@ def test_digital_object_search_filters_before_pagination(monkeypatch):
             digital_object=digital,
         )
 
-    context = dashboard_views._build_digital_object_centric_context(
+    context = media_link_views._build_digital_object_centric_context(
         organization=org,
         page_number=1,
         search_query="lieder",
@@ -92,7 +103,7 @@ def test_oai_project_status_update_approves_for_oai(monkeypatch):
     _attach_messages(request)
 
     monkeypatch.setattr(
-        dashboard_views,
+        media_link_views,
         "_build_single_project_row_context",
         lambda **kwargs: {"has_harvestable_files": False, "harvestable_count": 0},
     )
@@ -102,9 +113,9 @@ def test_oai_project_status_update_approves_for_oai(monkeypatch):
         render_context.update(context)
         return HttpResponse("ok", status=200)
 
-    monkeypatch.setattr(dashboard_views, "render", fake_render)
+    monkeypatch.setattr(media_link_views, "render", fake_render)
 
-    response = dashboard_views.oai_project_status_update(request, project.id)
+    response = media_link_views.oai_project_status_update(request, project.id)
     assert response.status_code == 200
     publication = OAIProjectPublication.objects.get(project=project)
     assert publication.is_approved is True
@@ -130,7 +141,7 @@ def test_oai_project_status_update_revokes_oai(monkeypatch):
     _attach_messages(request)
 
     monkeypatch.setattr(
-        dashboard_views,
+        media_link_views,
         "_build_single_project_row_context",
         lambda **kwargs: {"has_harvestable_files": True, "harvestable_count": 2},
     )
@@ -140,10 +151,27 @@ def test_oai_project_status_update_revokes_oai(monkeypatch):
         render_context.update(context)
         return HttpResponse("ok", status=200)
 
-    monkeypatch.setattr(dashboard_views, "render", fake_render)
+    monkeypatch.setattr(media_link_views, "render", fake_render)
 
-    response = dashboard_views.oai_project_status_update(request, project.id)
+    response = media_link_views.oai_project_status_update(request, project.id)
     assert response.status_code == 200
     publication = OAIProjectPublication.objects.get(project=project)
     assert publication.is_approved is False
     assert render_context.get("current_page") == 1
+
+
+@pytest.mark.django_db
+def test_summary_counts_unique_project_uris():
+    org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
+
+    project = _make_project(org, "http://arkumu.test/entities/projekt/duplicate", name="Primary")
+    digital_a = _make_project(org, "http://arkumu.test/entities/digital/a", name="Digital A")
+    digital_b = _make_project(org, "http://arkumu.test/entities/digital/b", name="Digital B")
+
+    OAIProjectMediaLink.objects.create(project=project, digital_object=digital_a)
+    OAIProjectMediaLink.objects.create(project=project, digital_object=digital_b)
+
+    link_qs = media_link_views._media_link_prefetch_queryset(org)
+    summary = media_link_views._build_media_links_summary(org, link_qs)
+
+    assert summary["available_project_count"] == 1
