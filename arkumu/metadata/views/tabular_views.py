@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
-from django.db.models import CharField, Exists, OuterRef, Subquery
+from django.db.models import CharField, Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce, Lower
 from django.shortcuts import render
 from django.urls import reverse
@@ -1631,6 +1631,24 @@ def _tabular_view(request, entity_type: str):
         .filter(uri__icontains=uri_contains)
     )
 
+    search_query = (request.GET.get('search') or '').strip()
+    if search_query:
+        literal_value_q = Q(
+            subject_triples__object__resource_type=ResourceType.LITERAL,
+            subject_triples__object__value__icontains=search_query,
+        )
+        literal_name_q = Q(
+            subject_triples__object__resource_type=ResourceType.LITERAL,
+            subject_triples__object__name__icontains=search_query,
+        )
+        subjects_qs = subjects_qs.filter(
+            Q(uri__icontains=search_query)
+            | Q(name__icontains=search_query)
+            | Q(value__icontains=search_query)
+            | literal_value_q
+            | literal_name_q
+        ).distinct()
+
     sort_slug = request.GET.get('sort')
     requested_order = request.GET.get('order', 'asc')
     sort_order = 'desc' if requested_order == 'desc' else 'asc'
@@ -1723,9 +1741,22 @@ def _tabular_view(request, entity_type: str):
     url_name = entity_type_to_url.get(entity_type, 'metadata:tabular_projects')
     
     base_query = request.GET.copy()
+    if search_query:
+        base_query['search'] = search_query
+    else:
+        base_query.pop('search', None)
     for key in ("sort", "order", "page"):
         base_query.pop(key, None)
     preserved_query = base_query.urlencode()
+    preserved_query_params: List[Tuple[str, str]] = []
+    for key in base_query.keys():
+        if key == "search":
+            continue
+        for value in base_query.getlist(key):
+            preserved_query_params.append((key, value))
+    clear_query_dict = base_query.copy()
+    clear_query_dict.pop("search", None)
+    preserved_query_no_search = clear_query_dict.urlencode()
 
     context = {
         'entity_type': entity_type,
@@ -1739,6 +1770,9 @@ def _tabular_view(request, entity_type: str):
             'order': sort_order,
         },
         'preserved_query': preserved_query,
+        'preserved_query_params': preserved_query_params,
+        'search_query': search_query,
+        'clear_query': preserved_query_no_search,
     }
 
     # Embed compact table inside other pages
