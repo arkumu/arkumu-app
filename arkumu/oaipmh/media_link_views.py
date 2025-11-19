@@ -10,7 +10,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import EmptyPage, Paginator
 from django.db import models, transaction
-from django.db.models import Count, Exists, F, Max, OuterRef, Prefetch, Q
+from django.db.models import Count, F, Max, Prefetch, Q
 from django.http import HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -30,6 +30,7 @@ from arkumu.oaipmh.services.media_sync_planner import (
     get_sync_state,
 )
 from arkumu.oaipmh.services.oai_project_assembler import AssemblyContext, OAIProjectAssembler
+from arkumu.oaipmh.services.project_scope import project_queryset_for_org
 from arkumu.oaipmh.views import _build_identifier, _project_type_filter, _restrict_to_harvestable_files
 from arkumu.storage.models.s3_file_objects import S3FileObject
 from arkumu.users.mixins import general_login_required
@@ -49,22 +50,6 @@ LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = (
 )
 
 MEDIA_LINKS_PAGE_SIZE = 6
-PROJECT_LINK_PREDICATES: tuple[str, ...] = tuple(
-    uri.strip()
-    for uri in getattr(
-        settings,
-        "OAI_PROJECT_LINK_PREDICATES",
-        ("http://arkumu.org/data/properties/projekt",),
-    )
-    if uri and uri.strip()
-)
-_PROJECT_TYPE_URIS: tuple[str, ...] = tuple(
-    uri.strip()
-    for uri in getattr(settings, "OAI_PROJECT_TYPE_URIS", ())
-    if uri and uri.strip()
-)
-_RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-_PROJECT_URI_FALLBACK_REGEX = r'/entities/projekt/[^/]+$'
 
 
 def _has_oai_admin_access(user) -> bool:
@@ -77,49 +62,6 @@ def _has_oai_admin_access(user) -> bool:
     return getattr(user, "role", None) == "system_admin"
 
 
-def _oai_project_queryset_for_org(org: Organization):
-    queryset = Resource.objects.filter(
-        organization=org,
-        resource_type=ResourceType.ENTITY,
-    )
-
-    scope_clauses: List[Q] = []
-
-    scope_clauses: List[Q] = [Q(uri__regex=_PROJECT_URI_FALLBACK_REGEX)]
-
-    # Annotate project type membership using EXISTS to avoid expensive joins/distinct
-    if _PROJECT_TYPE_URIS:
-        type_predicate_filter = (
-            Q(predicate__uri=_RDF_TYPE_URI)
-            | Q(predicate__canonical_uri=_RDF_TYPE_URI)
-        )
-        type_object_filter = (
-            Q(object__uri__in=_PROJECT_TYPE_URIS)
-            | Q(object__canonical_uri__in=_PROJECT_TYPE_URIS)
-        )
-        type_subquery = Triple.objects.filter(
-            subject_id=OuterRef('pk'),
-        ).filter(type_predicate_filter & type_object_filter)
-        queryset = queryset.annotate(has_project_type=Exists(type_subquery))
-        scope_clauses.append(Q(has_project_type=True))
-
-    if PROJECT_LINK_PREDICATES:
-        link_subquery = Triple.objects.filter(
-            object_id=OuterRef('pk'),
-        ).filter(
-            Q(predicate__uri__in=PROJECT_LINK_PREDICATES)
-            | Q(predicate__canonical_uri__in=PROJECT_LINK_PREDICATES)
-        )
-        queryset = queryset.annotate(has_project_link=Exists(link_subquery))
-        scope_clauses.append(Q(has_project_link=True))
-
-    project_scope = scope_clauses[0]
-    for clause in scope_clauses[1:]:
-        project_scope |= clause
-
-    return queryset.filter(project_scope).order_by('updated_at', 'id')
-
-
 def _run_media_link_seed(org: Organization) -> dict[str, int]:
     service = OAIProjectMediaSyncService()
     summary = {"projects": 0, "created": 0, "refreshed": 0, "stale": 0, "skipped": 0}
@@ -130,7 +72,7 @@ def _run_media_link_seed(org: Organization) -> dict[str, int]:
 
     state = get_sync_state(org, profile=OAIMediaSyncState.PROFILE_TAILORED)
     full_refresh, candidate_ids = collect_seed_candidate_ids(org, since=state.last_seed_at)
-    queryset = _oai_project_queryset_for_org(org)
+    queryset = project_queryset_for_org(org)
     if not full_refresh:
         if not candidate_ids:
             state.last_seed_at = timezone.now()
@@ -245,6 +187,7 @@ def _build_media_links_summary(
     oai_publish_filter: str = "all",
     harvestable_filter: str = "all",
     s3_harvestable_ids: Optional[Set[int]] = None,
+    curated_harvestable_ids: Optional[Set[int]] = None,
 ) -> dict[str, Any]:
     links_total = link_qs.count()
     filtered_total = links_total
@@ -254,11 +197,13 @@ def _build_media_links_summary(
         .values_list('project_id', flat=True)
         .distinct()
     )
-    project_qs = _oai_project_queryset_for_org(organization).filter(id__in=project_ids_qs)
+    project_qs = project_queryset_for_org(organization).filter(id__in=project_ids_qs)
     distinct_projects_qs = project_qs.order_by().values('uri').distinct()
     available_projects = distinct_projects_qs.count()
     if s3_harvestable_ids is not None:
         harvestable_projects = len(s3_harvestable_ids)
+    elif curated_harvestable_ids is not None:
+        harvestable_projects = len(curated_harvestable_ids)
     else:
         harvestable_projects = (
             _restrict_to_harvestable_files(project_qs)
@@ -308,15 +253,40 @@ def _s3_harvestable_project_ids(organization: Organization) -> Set[int]:
     return set(qs)
 
 
+def _curated_harvestable_project_ids(organization: Organization) -> Set[int]:
+    qs = (
+        OAIProjectMediaLink.objects.filter(
+            project__organization=organization,
+            is_stale=False,
+        )
+        .values_list("project_id", flat=True)
+        .distinct()
+    )
+    return set(qs)
+
+
+def _curated_harvestable_project_ids(organization: Organization) -> Set[int]:
+    qs = (
+        OAIProjectMediaLink.objects.filter(
+            project__organization=organization,
+            is_stale=False,
+        )
+        .values_list("project_id", flat=True)
+        .distinct()
+    )
+    return set(qs)
+
+
 def _sync_oai_publication_for_org(
     organization: Organization,
     *,
     user=None,
 ) -> dict[str, int]:
-    """Auto-approve OAI publication for projects that already have harvestable files."""
+    """Auto-approve OAI publication according to institution-specific rules."""
 
     assembler = OAIProjectAssembler()
     builder = OAIProjectBuilder()
+    is_s3_org = _is_s3_org(organization)
     summary: dict[str, int] = {"projects": 0, "auto_approved": 0, "errors": 0}
 
     state = get_sync_state(organization, profile=OAIMediaSyncState.PROFILE_TAILORED)
@@ -324,7 +294,7 @@ def _sync_oai_publication_for_org(
         organization,
         since=state.last_publication_sync_at,
     )
-    queryset = _oai_project_queryset_for_org(organization)
+    queryset = project_queryset_for_org(organization)
     if not full_refresh:
         if not candidate_ids:
             state.last_publication_sync_at = timezone.now()
@@ -358,8 +328,10 @@ def _sync_oai_publication_for_org(
             summary["errors"] += 1
             continue
 
-        has_harvestable = any(obj.harvestable for obj in oai_project.digital_objects)
-        if not has_harvestable:
+        digital_objects = list(getattr(oai_project, "digital_objects", []) or [])
+        if not digital_objects:
+            continue
+        if is_s3_org and not any(obj.harvestable for obj in digital_objects):
             continue
 
         publication, created = OAIProjectPublication.objects.get_or_create(project=project)
@@ -374,6 +346,29 @@ def _sync_oai_publication_for_org(
     state.last_publication_sync_at = timezone.now()
     state.save(update_fields=["last_publication_sync_at", "updated_at"])
     return summary
+
+
+def _auto_approve_publication_if_needed(
+    project: Resource,
+    *,
+    has_harvestable: bool,
+    allow_auto_approval: bool,
+    publication: OAIProjectPublication | None,
+    user=None,
+) -> OAIProjectPublication | None:
+    if not allow_auto_approval or not has_harvestable or publication is not None:
+        return publication
+
+    publication, _ = OAIProjectPublication.objects.get_or_create(project=project)
+    if publication.is_approved:
+        return publication
+
+    publication.is_approved = True
+    publication.approved_at = timezone.now()
+    if user is not None and getattr(user, "is_authenticated", False):
+        publication.approved_by = user
+    publication.save(update_fields=["is_approved", "approved_at", "approved_by", "updated_at"])
+    return publication
 
 
 def _emit_media_sync_messages(request, state: dict[str, Any], organization: Organization) -> None:
@@ -397,7 +392,7 @@ def _emit_media_sync_messages(request, state: dict[str, Any], organization: Orga
     if approved_count:
         messages.success(
             request,
-            f"Auto-approved OAI publication for {approved_count} project(s) with harvestable files.",
+            f"Auto-approved OAI publication for {approved_count} project(s).",
         )
     else:
         messages.info(request, "No additional projects were auto-approved for OAI.")
@@ -606,9 +601,6 @@ def _build_project_row_context(
         "warnings": (),
         "harvestable_count": 0,
         "has_harvestable_files": False,
-        "oai_is_approved": bool(getattr(publication, "is_approved", False)),
-        "oai_approved_at": getattr(publication, "approved_at", None),
-        "oai_approved_by": getattr(publication, "approved_by", None),
         "curated_selection": None,
         "oai_identifier": _build_identifier(project_uri),
     }
@@ -655,7 +647,8 @@ def _build_project_row_context(
         uri = getattr(obj, "uri", None)
         if uri:
             harvestable_uris.add(uri)
-    row["has_harvestable_files"] = bool(harvestable_resource_ids or harvestable_uris)
+    has_harvestable = bool(harvestable_resource_ids or harvestable_uris)
+    row["has_harvestable_files"] = has_harvestable
 
     # Attach per-link harvestable flag for UI (digital object column).
     for link in filtered_links:
@@ -676,6 +669,27 @@ def _build_project_row_context(
         row["curated_missing_uris"] = selection.curated_missing_uris
         row["warnings"] = selection.warnings
 
+    has_verified_s3 = False
+    if is_s3_org:
+        has_verified_s3 = any(
+            getattr(link, "is_harvestable", False) and getattr(link, "has_s3_file", False)
+            for link in filtered_links
+        )
+        row["has_harvestable_files"] = has_verified_s3
+
+    publication = _auto_approve_publication_if_needed(
+        resource,
+        has_harvestable=has_harvestable,
+        allow_auto_approval=(not is_s3_org) or has_verified_s3,
+        publication=publication,
+    )
+    if publication and publication_by_id is not None:
+        publication_by_id[resource.id] = publication
+
+    row["oai_is_approved"] = bool(getattr(publication, "is_approved", False))
+    row["oai_approved_at"] = getattr(publication, "approved_at", None)
+    row["oai_approved_by"] = getattr(publication, "approved_by", None)
+
     return row
 
 
@@ -691,8 +705,11 @@ def _build_media_links_panel_context(
     is_s3_org = _is_s3_org(organization)
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
     s3_harvestable_ids: Optional[Set[int]] = None
+    curated_harvestable_ids: Optional[Set[int]] = None
     if is_s3_org:
         s3_harvestable_ids = _s3_harvestable_project_ids(organization)
+    else:
+        curated_harvestable_ids = _curated_harvestable_project_ids(organization)
     summary = _build_media_links_summary(
         organization,
         link_base_qs,
@@ -700,6 +717,7 @@ def _build_media_links_panel_context(
         oai_publish_filter=oai_publish_filter,
         harvestable_filter=harvestable_filter,
         s3_harvestable_ids=s3_harvestable_ids,
+        curated_harvestable_ids=curated_harvestable_ids,
     )
 
     project_prefetch = Prefetch(
@@ -731,12 +749,20 @@ def _build_media_links_panel_context(
                 projects_qs = projects_qs.filter(id__in=s3_harvestable_ids)
             else:
                 projects_qs = projects_qs.none()
+        elif curated_harvestable_ids is not None:
+            if curated_harvestable_ids:
+                projects_qs = projects_qs.filter(id__in=curated_harvestable_ids)
+            else:
+                projects_qs = projects_qs.none()
         else:
             projects_qs = _restrict_to_harvestable_files(projects_qs)
     elif harvestable_filter == "non_harvestable":
         if s3_harvestable_ids is not None:
             if s3_harvestable_ids:
                 projects_qs = projects_qs.exclude(id__in=s3_harvestable_ids)
+        elif curated_harvestable_ids is not None:
+            if curated_harvestable_ids:
+                projects_qs = projects_qs.exclude(id__in=curated_harvestable_ids)
         else:
             harvestable_qs = _restrict_to_harvestable_files(projects_qs)
             projects_qs = projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
@@ -875,10 +901,18 @@ def _render_project_row_response(
     if row is None:
         return HttpResponseBadRequest("<div class='alert alert-error'>Unable to load project row.</div>")
 
+    s3_harvestable_ids: Optional[Set[int]] = None
+    curated_harvestable_ids: Optional[Set[int]] = None
+    if _is_s3_org(organization):
+        s3_harvestable_ids = _s3_harvestable_project_ids(organization)
+    else:
+        curated_harvestable_ids = _curated_harvestable_project_ids(organization)
+
     summary = _build_media_links_summary(
         organization,
         OAIProjectMediaLink.objects.filter(project__organization=organization),
-        s3_harvestable_ids=_s3_harvestable_project_ids(organization) if _is_s3_org(organization) else None,
+        s3_harvestable_ids=s3_harvestable_ids,
+        curated_harvestable_ids=curated_harvestable_ids,
     )
     context = {
         "row": row,
@@ -897,7 +931,7 @@ def _preview_media_link_seed(org: Organization) -> dict[str, int]:
     if is_debug_logging:
         logger.debug("Media link seed preview started for org=%s", org_label)
     with transaction.atomic():
-        for idx, project in enumerate(_oai_project_queryset_for_org(org).iterator(chunk_size=100), start=1):
+        for idx, project in enumerate(project_queryset_for_org(org).iterator(chunk_size=100), start=1):
             result = service.sync_project(project)
             summary["projects"] += 1
             summary["created"] += getattr(result, "created", 0)
@@ -1242,6 +1276,59 @@ def oai_media_link_seed_execute(request):
 
 
 @general_login_required
+@require_POST
+def oai_media_link_clear_data(request):
+    if not _has_oai_admin_access(request.user):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
+        )
+
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
+    if project_access_filter not in ['all', 'private', 'restricted', 'public']:
+        project_access_filter = 'all'
+
+    oai_publish_filter = (request.POST.get('oai_publish') or 'all').strip().lower()
+    if oai_publish_filter not in ['all', 'approved', 'pending']:
+        oai_publish_filter = 'all'
+
+    harvestable_filter = (request.POST.get('harvestable') or 'all').strip().lower()
+    if harvestable_filter not in ['all', 'harvestable', 'non_harvestable']:
+        harvestable_filter = 'all'
+
+    search_query = (request.POST.get('search') or '').strip()
+
+    links_deleted, _ = OAIProjectMediaLink.objects.filter(project__organization=organization).delete()
+    pubs_deleted, _ = OAIProjectPublication.objects.filter(project__organization=organization).delete()
+
+    messages.success(
+        request,
+        (
+            f"Cleared {links_deleted} curated link(s) and "
+            f"{pubs_deleted} OAI publication(s) for {organization.code.upper()}."
+        ),
+    )
+
+    is_htmx = request.headers.get('HX-Request') == 'true'
+    if is_htmx:
+        panel_context = _build_media_links_panel_context(
+            organization=organization,
+            page_number=1,
+            project_access_filter=project_access_filter,
+            oai_publish_filter=oai_publish_filter,
+            harvestable_filter=harvestable_filter,
+            search_query=search_query,
+        )
+        panel_context['include_summary_partial'] = True
+        return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+
+    return redirect('metadata:metadata_dashboard')
+
+
+@general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_seed_and_sync(request):
     if not _has_oai_admin_access(request.user):
@@ -1389,6 +1476,12 @@ def _build_digital_object_centric_context(
 
     search_query = (search_query or "").strip()
     link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
+    is_s3_org = _is_s3_org(organization)
+    harvestable_kwargs: dict[str, Any] = {}
+    if is_s3_org:
+        harvestable_kwargs["s3_harvestable_ids"] = _s3_harvestable_project_ids(organization)
+    else:
+        harvestable_kwargs["curated_harvestable_ids"] = _curated_harvestable_project_ids(organization)
 
     # Apply filters to the link queryset
     filtered_qs = link_base_qs
@@ -1549,6 +1642,7 @@ def _build_digital_object_centric_context(
         link_base_qs,
         project_access_filter=project_access_filter,
         oai_publish_filter=oai_publish_filter,
+        **harvestable_kwargs,
     )
 
     # Calculate digital object statistics
@@ -1726,7 +1820,7 @@ def oai_publication_sync(request):
     if summary["auto_approved"]:
         messages.success(
             request,
-            f"Auto-approved OAI publication for {summary['auto_approved']} project(s) with harvestable files.",
+            f"Auto-approved OAI publication for {summary['auto_approved']} project(s).",
         )
     else:
         messages.info(request, "No additional projects were auto-approved for OAI.")
