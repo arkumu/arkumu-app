@@ -18,7 +18,8 @@ class Command(BaseCommand):
     """Materialize direct project→digital-object triples.
 
     - KHM: direct/shared-subject join (no events). Uses subjects that have both a
-      project edge and the KHM bridge predicate to a digital object.
+      project edge and a ``digitales-objekt`` edge, so we capture project↔digital pairs
+      without traversing events.
     - Others: event-based join (event→project ∩ event→digital).
 
     Inserts derived triples with predicate set to the canonical ``digitales-objekt``.
