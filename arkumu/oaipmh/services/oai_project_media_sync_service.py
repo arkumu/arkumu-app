@@ -12,6 +12,8 @@ from uuid import UUID
 from django.db import IntegrityError, transaction
 
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
+from arkumu.metadata.models.triples import Triple
+from arkumu.metadata.canonical import canonical_uri
 from arkumu.oaipmh.models import OAIProjectMediaLink
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
 
@@ -52,6 +54,8 @@ class OAIProjectMediaSyncService:
 
     def __init__(self, *, assembler: Optional[OAIProjectAssembler] = None) -> None:
         self._assembler = assembler or OAIProjectAssembler()
+        self._digital_predicate_uri = canonical_uri("digital_object")
+        self._direct_only_orgs = {"khm", "hmt"}
 
     # ------------------------------------------------------------------
     def sync_project(
@@ -64,6 +68,14 @@ class OAIProjectMediaSyncService:
 
         if not isinstance(project, Resource):
             raise TypeError("sync_project expects a Resource instance")
+
+        org_code = (getattr(getattr(project, "organization", None), "code", None) or "").strip().lower()
+
+        if org_code in self._direct_only_orgs:
+            candidates = self._candidates_from_shared_subject_triples(project)
+            if not candidates:
+                return SyncResult(skipped=1)
+            return self._upsert_links(project, candidates)
 
         if record is None:
             record = self._assemble_record(project)
@@ -128,6 +140,53 @@ class OAIProjectMediaSyncService:
             )
 
         return candidates
+
+    def _candidates_from_shared_subject_triples(
+        self,
+        project: Resource,
+    ) -> List[MediaLinkCandidate]:
+        """Return candidates from shared-subject project/digital edges (KHM)."""
+
+        org = getattr(project, "organization", None)
+        if not org:
+            return []
+
+        # Find bridge rows that point to this project via project predicate, then grab their digital edges.
+        bridge_subject_ids = set(
+            Triple.objects.filter(
+                predicate__canonical_uri=canonical_uri("project"),
+                object=project,
+            ).values_list("subject_id", flat=True)
+        )
+        if not bridge_subject_ids:
+            return []
+
+        qs = Triple.objects.filter(
+            subject_id__in=bridge_subject_ids,
+            predicate__canonical_uri=self._digital_predicate_uri,
+            object__resource_type=ResourceType.ENTITY,
+        ).select_related("object")
+
+        results: List[MediaLinkCandidate] = []
+        for triple in qs:
+            digital = getattr(triple, "object", None)
+            subject = getattr(triple, "subject", None)
+            if not digital or not subject:
+                continue
+            # Shared-subject rows carry project_id in their own edges.
+            project_id = str(subject.id)
+            if project_id != str(project.id):
+                continue
+            results.append(
+                MediaLinkCandidate(
+                    resource=digital,
+                    source=OAIProjectMediaLink.SOURCE_PROJECT,
+                    uri=getattr(digital, "uri", None),
+                    path=getattr(digital, "value", None),
+                )
+            )
+
+        return results
 
     # ------------------------------------------------------------------
     def _ensure_digital_object_resource(
