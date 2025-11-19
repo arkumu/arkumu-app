@@ -40,6 +40,19 @@ _DIGITAL_OBJECT_FALLBACK_PREDICATES: Mapping[str, Sequence[str]] = getattr(
 class OAIProjectBuilderTailored(OAIProjectBuilder):
     """Customized builder used exclusively for the tailored OAI profile."""
 
+    def __init__(self, **kwargs):
+        def _passthrough_resolver(
+            org_code: Optional[str],
+            *,
+            path: Optional[str] = None,
+            file_name: Optional[str] = None,
+        ) -> List[str]:
+            normalized = (path or "").strip()
+            return [normalized] if normalized else []
+
+        kwargs.setdefault("path_resolver", _passthrough_resolver)
+        super().__init__(**kwargs)
+
     def from_project_record(
         self,
         record: ProjectRecord,

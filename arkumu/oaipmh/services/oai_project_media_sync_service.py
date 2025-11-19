@@ -54,13 +54,19 @@ class OAIProjectMediaSyncService:
         self._assembler = assembler or OAIProjectAssembler()
 
     # ------------------------------------------------------------------
-    def sync_project(self, project: Resource) -> SyncResult:
+    def sync_project(
+        self,
+        project: Resource,
+        *,
+        record: Optional[ProjectRecord] = None,
+    ) -> SyncResult:
         """Discover and upsert curated links for a single project resource."""
 
         if not isinstance(project, Resource):
             raise TypeError("sync_project expects a Resource instance")
 
-        record = self._assemble_record(project)
+        if record is None:
+            record = self._assemble_record(project)
         if record is None:
             return SyncResult(skipped=1)
 

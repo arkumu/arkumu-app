@@ -67,6 +67,31 @@ def test_sync_creates_pending_links_from_record():
 
 
 @pytest.mark.django_db
+def test_sync_uses_provided_record_when_supplied(monkeypatch):
+    org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
+    project = _project_resource(org, "http://arkumu.test/entities/projekt/99")
+    digital = _digital_resource(org, "http://arkumu.test/entities/digital/99")
+
+    digital_object = ProjectDigitalObject(path="s3://bucket/file-99.jpg", uri=digital.uri)
+    digital_object.resource_id = str(digital.id)
+    digital_object.source = "event"
+
+    record = ProjectRecord(subject_id=str(project.id), uri=project.uri, digital_objects=[digital_object])
+
+    def _explode(self, _project):
+        raise AssertionError("Assembler should not be invoked when record is provided")
+
+    monkeypatch.setattr(OAIProjectMediaSyncService, "_assemble_record", _explode)
+
+    service = OAIProjectMediaSyncService(assembler=_StubAssembler(None))
+
+    result = service.sync_project(project, record=record)
+
+    assert result.created == 1
+    assert OAIProjectMediaLink.objects.filter(project=project, digital_object=digital).exists()
+
+
+@pytest.mark.django_db
 def test_sync_updates_existing_links_and_clears_stale():
     org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
     project = _project_resource(org, "http://arkumu.test/entities/projekt/2")
@@ -122,4 +147,3 @@ def test_sync_marks_missing_approved_links_stale():
     assert result.refreshed == 0
     assert result.stale == 1
     assert link.is_stale is True
-
