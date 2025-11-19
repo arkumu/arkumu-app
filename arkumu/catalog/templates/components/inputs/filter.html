@@ -1,6 +1,6 @@
 <!-- Filter Component with Theme Support -->
 <div class="filter-component w-full p-6">
-  
+
   <!-- Search Bar -->
   <div class="flex mb-8">
     <div class="flex-1 relative">
@@ -8,12 +8,12 @@
         <svg class="w-4 h-4 transition-colors
                    text-arkumu-dark
                    theme-dark:text-arkumu-light
-                   theme-blue:text-arkumu-blue" 
+                   theme-blue:text-arkumu-blue"
              fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
         </svg>
       </div>
-      <input type="text" 
+      <input type="text"
              placeholder="{{ search_placeholder|default:'Placeholder' }}"
              class="w-full pl-10 pr-4 py-3 border transition-colors
                     border-gray-300 bg-white
@@ -33,7 +33,7 @@
       {{ button_text|default:"Buttontext" }}
     </button>
   </div>
-  
+
   <!-- Filter Section -->
   <div class="mb-8">
     <h3 class="text-lg font-bold mb-6 transition-colors
@@ -42,13 +42,13 @@
                theme-blue:text-arkumu-blue">
       Filter
     </h3>
-    
+
     <!-- Filter Dropdowns -->
     <div class="grid grid-cols-3 gap-4 mb-8">
-      
+
       <!-- Filter 1 -->
       <div class="relative">
-        <select class="w-full appearance-none border px-4 py-3 transition-colors
+        <select id="filter-hochschule" class="w-full appearance-none border px-4 py-3 transition-colors
                        border-gray-400 bg-white
                        theme-dark:border-gray-600 theme-dark:bg-arkumu-dark
                        theme-blue:border-arkumu-blue theme-blue:bg-white
@@ -58,8 +58,11 @@
                        theme-blue:text-arkumu-blue
                        focus:outline-none focus:border-gray-600">
           <option>{{ filter1_text|default:"Buttontext" }}</option>
-          <option>Option 1</option>
-          <option>Option 2</option>
+          {% if filter1_options %}
+            {% for filter1_option in filter1_options %}
+              <option>{{ filter1_option }}</option>
+            {% endfor %}
+          {% endif %}
         </select>
         <div class="absolute right-0 top-0 h-full flex items-center">
           <div class="h-full w-px transition-colors
@@ -74,10 +77,10 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Filter 2 -->
       <div class="relative">
-        <select class="w-full appearance-none border px-4 py-3 transition-colors
+        <select id="filter-aktuer" class="w-full appearance-none border px-4 py-3 transition-colors
                        border-gray-400 bg-white
                        theme-dark:border-gray-600 theme-dark:bg-arkumu-dark
                        theme-blue:border-arkumu-blue theme-blue:bg-white
@@ -87,8 +90,11 @@
                        theme-blue:text-arkumu-blue
                        focus:outline-none focus:border-gray-600">
           <option>{{ filter2_text|default:"Buttontext" }}</option>
-          <option>Option 1</option>
-          <option>Option 2</option>
+          {% if filter2_options %}
+            {% for filter2_option in filter2_options %}
+              <option>{{ filter2_option }}</option>
+            {% endfor %}
+          {% endif %}
         </select>
         <div class="absolute right-0 top-0 h-full flex items-center pointer-events-none">
           <div class="h-full w-px transition-colors
@@ -103,10 +109,10 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Filter 3 -->
       <div class="relative">
-        <select class="w-full appearance-none border px-4 py-3 transition-colors
+        <select id="filter-kategorie" class="w-full appearance-none border px-4 py-3 transition-colors
                        border-gray-400 bg-white
                        theme-dark:border-gray-600 theme-dark:bg-arkumu-dark
                        theme-blue:border-arkumu-blue theme-blue:bg-white
@@ -116,8 +122,11 @@
                        theme-blue:text-arkumu-blue
                        focus:outline-none focus:border-gray-600">
           <option>{{ filter3_text|default:"Buttontext" }}</option>
-          <option>Option 1</option>
-          <option>Option 2</option>
+          {% if filter3_options %}
+            {% for filter3_option in filter3_options %}
+              <option value="{{ filter3_option.name }}" data-id="{{ filter3_option.id }}">{{ filter3_option.name }}</option>
+            {% endfor %}
+          {% endif %}
         </select>
         <div class="absolute right-0 top-0 h-full flex items-center pointer-events-none">
           <div class="h-full w-px transition-colors
@@ -132,10 +141,10 @@
           </div>
         </div>
       </div>
-      
+
     </div>
   </div>
-  
+
   <!-- Zeitraum Section -->
   <div class="mb-6">
     <h3 class="text-lg font-bold mb-6 transition-colors
@@ -144,11 +153,11 @@
                theme-blue:text-arkumu-blue">
       Zeitraum
     </h3>
-    
+
     <!-- Range Slider -->
     <div class="relative">
-      
-      
+
+
       <!-- Slider Container -->
       <div class="relative h-12 mb-4" id="year-range-slider">
         <!-- Background Track -->
@@ -156,16 +165,16 @@
                     bg-gray-300
                     theme-dark:bg-gray-600
                     theme-blue:bg-gray-300"></div>
-        
+
         <!-- Active Range Track -->
         <div id="range-track" class="absolute top-1/2 transform -translate-y-1/2 h-1 transition-colors
                     bg-arkumu-dark
                     theme-dark:bg-arkumu-light
-                    theme-blue:bg-arkumu-blue pointer-events-none" 
+                    theme-blue:bg-arkumu-blue pointer-events-none"
              style="left: 0%; width: 100%;"></div>
-        
+
           <!-- Left Handle -->
-        <div id="handle-start" 
+        <div id="handle-start"
              class="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 w-1 h-8 cursor-pointer transition-colors
                     bg-arkumu-dark
                     theme-dark:bg-arkumu-light
@@ -173,9 +182,9 @@
                     hover:h-10 active:h-9"
              style="left: 0%;"
              data-value="1950"></div>
-        
+
         <!-- Right Handle -->
-        <div id="handle-end" 
+        <div id="handle-end"
              class="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 w-1 h-8 cursor-pointer transition-colors
                     bg-arkumu-dark
                     theme-dark:bg-arkumu-light
@@ -211,54 +220,54 @@
   const handleEnd = document.getElementById('handle-end');
   const rangeTrack = document.getElementById('range-track');
   const rangeDisplay = document.getElementById('range-display');
-  
+
   const minYear = 1950;
   const maxYear = 2024;
   const yearRange = maxYear - minYear;
-  
+
   let activeHandle = null;
-  
+
   function percentToYear(percent) {
     return Math.round(minYear + (percent / 100) * yearRange);
   }
-  
+
   function yearToPercent(year) {
     return ((year - minYear) / yearRange) * 100;
   }
-  
+
   function updateRange() {
     const startPercent = parseFloat(handleStart.style.left);
     const endPercent = parseFloat(handleEnd.style.left);
-    
+
     rangeTrack.style.left = startPercent + '%';
     rangeTrack.style.width = (endPercent - startPercent) + '%';
-    
+
     const startYear = percentToYear(startPercent);
     const endYear = percentToYear(endPercent);
-    
+
     handleStart.dataset.value = startYear;
     handleEnd.dataset.value = endYear;
-    
+
     rangeDisplay.textContent = startYear + ' - ' + (endYear === maxYear ? 'Heute' : endYear);
   }
-  
+
   function handleMouseDown(e, handle) {
     e.preventDefault();
     activeHandle = handle;
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   }
-  
+
   function handleMouseMove(e) {
     if (!activeHandle) return;
-    
+
     const rect = slider.getBoundingClientRect();
     let percent = ((e.clientX - rect.left) / rect.width) * 100;
     percent = Math.max(0, Math.min(100, percent));
-    
+
     const startPercent = parseFloat(handleStart.style.left);
     const endPercent = parseFloat(handleEnd.style.left);
-    
+
     if (activeHandle === handleStart) {
       if (percent < endPercent - 5) {
         handleStart.style.left = percent + '%';
@@ -268,20 +277,81 @@
         handleEnd.style.left = percent + '%';
       }
     }
-    
+
     updateRange();
   }
-  
+
   function handleMouseUp() {
     activeHandle = null;
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
   }
-  
+
   handleStart.addEventListener('mousedown', (e) => handleMouseDown(e, handleStart));
   handleEnd.addEventListener('mousedown', (e) => handleMouseDown(e, handleEnd));
-  
+
   // Initialize
   updateRange();
 })();
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Hole die Select-Elemente per ID
+    const selectHochschule = document.getElementById('filter-hochschule');
+    const selectAktuer = document.getElementById('filter-aktuer');
+    const selectKategorie = document.getElementById('filter-kategorie');
+
+    // Hole die aktuellen Filter als Array
+    const getFilters = () => {
+        return {
+            hochschule: selectHochschule.value,
+            aktuer: selectAktuer.value,
+                    kategorie: {
+            value: selectKategorie.value,
+            id: selectKategorie.options[selectKategorie.selectedIndex].getAttribute('data-id')
+        }
+        };
+    };
+
+    // Helper-Funktion zum Entfernen von Default-Parametern
+    const removeDefaultParams = (params) => {
+        const defaultOptions = ['Buttontext', 'Placeholder', 'Hochschule', 'Aktuer*in', 'Projektkategorie']; // Liste der Default-Optionen
+        for (let [key, value] of params) {
+            if (defaultOptions.includes(value)) {
+                params.delete(key);
+            }
+        }
+    };
+
+    // Funktion zum Aktualisieren der Seite
+    const updatePage = () => {
+        const filters = getFilters();
+        const urlParams = new URLSearchParams(window.location.search);
+
+        // Entferne vorhandene Default-Parameter
+        removeDefaultParams(urlParams);
+
+        // Füge die Filter als Array-Parameter zur URL hinzu
+        if (filters.hochschule !== 'Hochschule') {
+            urlParams.append('hochschule', filters.hochschule);
+        }
+        if (filters.aktuer !== 'Aktuer*in') {
+            urlParams.append('aktuer', filters.aktuer);
+        }
+        if (filters.kategorie !== 'Projektkategorie' && filters.kategorie.id!=null) {
+        {#urlParams.append('kategorie', filters.kategorie.value);#}
+        urlParams.append('kategorie', filters.kategorie.id);
+        }
+
+        // Lade die Seite neu mit den Filtern
+        window.location.search = urlParams.toString();
+    };
+
+    // Event Listener für Änderungen
+    selectHochschule.addEventListener('change', updatePage);
+    selectAktuer.addEventListener('change', updatePage);
+    selectKategorie.addEventListener('change', updatePage);
+
+    // Initial: Entferne Default-Parameter bei Pageload
+});
 </script>
