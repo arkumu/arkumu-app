@@ -3,6 +3,29 @@
 {% block title %}arkumu{% endblock title %}
 
 {% block content %}
+<style>
+  /* Menor de 1280px: 1 columna */
+  @media (max-width: 1000px) {
+    .schools-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+  
+  /* Entre 1280px y 1999px: 2 columnas */
+  @media (min-width: 1000px) and (max-width: 1300px) {
+    .schools-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+    }
+  }
+  
+  /* 2000px o más: 3 columnas */
+  @media (min-width: 1300px) {
+    .schools-grid {
+      grid-template-columns: repeat(3, 1fr) !important;
+    }
+  }
+</style>
+
 <div class="w-full min-h-screen">
 
   <!-- Main Content Area -->
@@ -54,7 +77,7 @@
         {% include 'components/text/text_dotted_line.html' with text="Teilnehmende Hochschulen" %}
 
         <!-- Responsive Schools Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-y-10 gap-x-24 mt-8">
+        <div class="schools-grid grid gap-y-10 gap-x-24 mt-8">
           <!-- Column 1 -->
           <div>
             {% include 'components/labels/tag.html' with label_text="Folkwang Universität der Künste" %}

@@ -1,5 +1,25 @@
 <!-- Arkumu Navbar Component with Theme Support -->
 <!-- Search Bar -->
+<style>
+  @media (max-width: 720px) {
+    /* Cambia a diseño vertical en pantallas menores a 1280px */
+    .search-container {
+      flex-direction: column !important;
+    }
+    
+    .search-input {
+      width: 100% !important;
+    }
+    
+    .search-button {
+      width: auto !important;
+      margin-left: 0 !important;
+      margin-top: 0.5rem !important;
+      align-self: flex-start !important;
+    }
+  }
+</style>
+
 <div class="container mx-auto px-4 my-5">
   <!-- Search loading indicator -->
   <div class="htmx-indicator flex items-center justify-center mb-2">
@@ -11,9 +31,9 @@
       Searching...
     </div>
   </div>
-  <div class="flex w-full">
+  <div class="search-container flex w-full">
     <input type="text"
-           class="flex-grow px-4 py-3 font-mono transition-colors
+           class="search-input flex-grow px-4 py-3 font-mono transition-colors
                   bg-arkumu-light
                   border border-arkumu-dark
                   text-arkumu-dark
@@ -36,9 +56,8 @@
            hx-indicator="#search-loading"
            hx-push-url="true"
           >
-    <!-- Reducido el margen izquierdo de ml-2 a ml-1 -->
     <button type="button"
-            class="ml-1 px-6 py-3 font-medium font-mono transition-colors
+            class="search-button ml-1 px-6 py-3 font-medium font-mono transition-colors
                    bg-arkumu-dark text-arkumu-light hover:bg-arkumu-dark-hover
                    theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-dark:hover:bg-arkumu-light-hover
                    theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light theme-blue:hover:bg-arkumu-blue-hover"
