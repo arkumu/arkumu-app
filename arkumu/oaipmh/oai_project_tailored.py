@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from uuid import UUID
@@ -36,6 +37,8 @@ _DIGITAL_OBJECT_FALLBACK_PREDICATES: Mapping[str, Sequence[str]] = getattr(
     {},
 )
 
+logger = logging.getLogger(__name__)
+
 
 class OAIProjectBuilderTailored(OAIProjectBuilder):
     """Customized builder used exclusively for the tailored OAI profile."""
@@ -48,9 +51,18 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             file_name: Optional[str] = None,
         ) -> List[str]:
             normalized = (path or "").strip()
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "Tailored path resolver bypass for org=%s raw_path=%s file=%s",
+                    (org_code or "").strip(),
+                    normalized or file_name or "",
+                    file_name or "",
+                )
             return [normalized] if normalized else []
 
         kwargs.setdefault("path_resolver", _passthrough_resolver)
+
+        logger.debug("Tailored builder using passthrough path resolver for curated media links")
         super().__init__(**kwargs)
 
     def from_project_record(

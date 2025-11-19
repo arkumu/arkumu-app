@@ -106,6 +106,12 @@ def _run_media_link_seed(org: Organization) -> dict[str, int]:
         if target_code and target_code not in codes:
             continue
         records_by_id[str(subject_id)] = record
+    logger.info(
+        "Media link seed snapshot ready for org=%s projects=%d total_records=%d",
+        org_label,
+        len(records_by_id),
+        len(snapshot.projects),
+    )
 
     for idx, project in enumerate(queryset.iterator(chunk_size=100), start=1):
         record = records_by_id.get(str(project.id))
