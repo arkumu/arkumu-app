@@ -198,7 +198,7 @@ def run_media_link_seed_and_sync_job(job_id: str) -> None:
     media_sync_jobs.update_job(job_id, status="running", message="Sync in progress")
 
     try:
-        from arkumu.oaipmh.dashboard_views import (  # noqa: WPS433 - local import to avoid circular deps
+        from arkumu.oaipmh.media_link_views import (  # noqa: WPS433 - local import to avoid circular deps
             _resolve_organization_by_code,
             _run_media_link_seed,
             _sync_oai_publication_for_org,

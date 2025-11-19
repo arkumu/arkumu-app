@@ -7,8 +7,8 @@ from typing import Set, Tuple
 
 from django.db.models import Q
 
-from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.oaipmh.models import OAIMediaSyncState, OAIProjectMediaLink
+from arkumu.oaipmh.services.project_scope import project_queryset_for_org
 from arkumu.users.models import Organization
 
 
@@ -36,6 +36,8 @@ def collect_seed_candidate_ids(
     if since is None:
         return True, set()
 
+    project_queryset = project_queryset_for_org(organization)
+
     curated_ids = set(
         OAIProjectMediaLink.objects.filter(
             project__organization=organization,
@@ -48,28 +50,34 @@ def collect_seed_candidate_ids(
         .values_list("project_id", flat=True)
         .distinct()
     )
+
     project_ids_from_resource = set(
-        Resource.objects.filter(
+        project_queryset.filter(
             id__in=project_ids_with_links,
-            organization=organization,
-            resource_type=ResourceType.ENTITY,
             updated_at__gt=since,
-            uri__icontains="/entities/projekt/",
         ).values_list("id", flat=True)
     )
 
     new_project_ids = set(
-        Resource.objects.filter(
-            organization=organization,
-            resource_type=ResourceType.ENTITY,
+        project_queryset.filter(
             updated_at__gt=since,
-            uri__icontains="/entities/projekt/",
         )
         .exclude(oai_media_links__isnull=False)
         .values_list("id", flat=True)
     )
 
-    return False, curated_ids | project_ids_from_resource | new_project_ids
+    # Catch older projects that never received curated links because they were
+    # imported before an initial seed watermark. These have no media links at
+    # all and should be processed once even if their updated_at is <= since.
+    unseeded_project_ids = set(
+        project_queryset.filter(
+            oai_media_links__isnull=True,
+            updated_at__lte=since,
+        )
+        .values_list("id", flat=True)
+    )
+
+    return False, curated_ids | project_ids_from_resource | new_project_ids | unseeded_project_ids
 
 
 def collect_publication_candidate_ids(
@@ -82,13 +90,10 @@ def collect_publication_candidate_ids(
     if since is None:
         return True, set()
 
+    project_queryset = project_queryset_for_org(organization)
+
     ids = set(
-        Resource.objects.filter(
-            organization=organization,
-            resource_type=ResourceType.ENTITY,
-            uri__icontains="/entities/projekt/",
-        )
-        .filter(
+        project_queryset.filter(
             Q(updated_at__gt=since)
             | Q(oai_publication__updated_at__gt=since)
         )

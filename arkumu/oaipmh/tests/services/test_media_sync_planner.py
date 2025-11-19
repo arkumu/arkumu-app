@@ -75,6 +75,38 @@ def test_collect_seed_candidate_ids_includes_curated_and_new_projects():
 
 
 @pytest.mark.django_db
+def test_collect_seed_candidate_ids_includes_unseeded_legacy_projects():
+    org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
+    legacy_project = _project(org, "https://arkumu.org/entities/projekt/unseeded")
+    cutoff = timezone.now() - timedelta(days=3)
+
+    Resource.objects.filter(id=legacy_project.id).update(updated_at=cutoff - timedelta(days=2))
+
+    full_refresh, candidate_ids = collect_seed_candidate_ids(org, since=cutoff)
+
+    assert full_refresh is False
+    assert candidate_ids == {legacy_project.id}
+
+
+@pytest.mark.django_db
+def test_collect_seed_candidate_ids_include_projects_with_links_and_recent_project_updates():
+    org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
+    project = _project(org, "https://arkumu.org/entities/projekt/linked")
+    digital = _digital(org, "https://arkumu.org/entities/digital/linked")
+    link = OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
+    cutoff = timezone.now() - timedelta(days=5)
+
+    # Simulate project updates happening after the watermark while curated links stay untouched.
+    Resource.objects.filter(id=project.id).update(updated_at=timezone.now())
+    OAIProjectMediaLink.objects.filter(id=link.id).update(updated_at=cutoff - timedelta(days=1))
+
+    full_refresh, candidate_ids = collect_seed_candidate_ids(org, since=cutoff)
+
+    assert full_refresh is False
+    assert candidate_ids == {project.id}
+
+
+@pytest.mark.django_db
 def test_collect_publication_candidate_ids_detects_recent_changes():
     org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
     recent_project = _project(org, "https://arkumu.org/entities/projekt/pub-1")

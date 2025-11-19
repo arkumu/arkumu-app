@@ -27,6 +27,7 @@ urlpatterns = [
     path("media-links/link/add/", media_link_views.oai_media_link_add, name="oai_media_link_add"),
     path("media-links/seed/preview/", media_link_views.oai_media_link_seed_preview, name="oai_media_link_seed_preview"),
     path("media-links/seed/run/", media_link_views.oai_media_link_seed_execute, name="oai_media_link_seed_execute"),
+    path("media-links/clear/", media_link_views.oai_media_link_clear_data, name="oai_media_link_clear_data"),
     path("media-links/seed-sync/", media_link_views.oai_media_link_seed_and_sync, name="oai_media_link_seed_and_sync"),
     path("media-links/sync-status/", media_link_views.oai_media_sync_status, name="oai_media_sync_status"),
     path("media-links/project/<uuid:resource_id>/status/", media_link_views.oai_project_status_update, name="oai_project_status_update"),
