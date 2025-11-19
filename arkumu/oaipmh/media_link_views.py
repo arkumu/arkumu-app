@@ -285,7 +285,7 @@ def _sync_oai_publication_for_org(
     """Auto-approve OAI publication according to institution-specific rules."""
 
     assembler = OAIProjectAssembler()
-    builder = OAIProjectBuilder()
+    builder = OAIProjectBuilderTailored()
     is_s3_org = _is_s3_org(organization)
     summary: dict[str, int] = {"projects": 0, "auto_approved": 0, "errors": 0}
 
@@ -772,7 +772,7 @@ def _build_media_links_panel_context(
     project_resources: List[Resource] = list(page_obj.object_list)
     page_obj.object_list = project_resources
 
-    builder = OAIProjectBuilder()
+    builder = OAIProjectBuilderTailored()
     assembler = OAIProjectAssembler()
     rows: List[dict[str, Any]] = []
     builder_errors: List[str] = []
@@ -858,7 +858,7 @@ def _build_single_project_row_context(
     if not resource:
         return None
 
-    builder = OAIProjectBuilder()
+    builder = OAIProjectBuilderTailored()
     assembler = OAIProjectAssembler()
     label_lookup = _prefetch_resource_labels([resource])
     digital_resources: List[Resource] = []
