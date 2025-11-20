@@ -1402,23 +1402,25 @@ def oai_media_link_seed_and_sync(request):
         "page_number": page_number,
     }
 
-    job_id = media_sync_jobs.create_job(
-        organization_code=organization.code,
-        user_id=request.user.id if request.user.is_authenticated else None,
-        filters=filters,
-    )
-
-    from arkumu.oaipmh.tasks import run_media_link_seed_and_sync_job  # noqa: WPS433 - local import to avoid cycles
-
-    run_media_link_seed_and_sync_job.schedule(args=(job_id,), delay=0)
-
-    context = {
-        "job_id": job_id,
-        "status": "pending",
-        "message": "Sync job queued…",
-        "organization": organization,
+    # Run seed + publication sync synchronously (no background job) so results are immediate.
+    seed_summary = _run_media_link_seed(organization)
+    sync_summary = _sync_oai_publication_for_org(organization, user=request.user)
+    media_sync_state = {
+        "seed_summary": seed_summary,
+        "sync_summary": sync_summary,
     }
-    return render(request, 'oai/partials/oai_media_links_job_status.html', context)
+    _emit_media_sync_messages(request, media_sync_state, organization)
+
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        page_number=page_number,
+        project_access_filter=project_access_filter,
+        oai_publish_filter=oai_publish_filter,
+        harvestable_filter=harvestable_filter,
+        search_query=search_query,
+    )
+    panel_context['include_summary_partial'] = True
+    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
 
 @general_login_required
