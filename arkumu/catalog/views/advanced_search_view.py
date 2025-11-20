@@ -174,5 +174,4 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         projects = snapshot.projects
         logger.info(f"📦 LOADED {len(projects)} PROJECTS FROM SNAPSHOT")
 
-        # Cache für zukünftige Anfragen
         return projects
