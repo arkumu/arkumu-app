@@ -13,6 +13,7 @@ from arkumu.metadata.views import (
     database_structure_visualizer,
     blueprint_visualizer_graphviz,
     simplified_resource_views,
+    canonical_graph_views,
 )
 from arkumu.metadata.views import metadata_entry_views, tabular_views, schema_workspace_views
 from arkumu.metadata.views import workspace_quick_create_views
@@ -43,7 +44,7 @@ from arkumu.metadata.views.data_explorer_optimized import (
 )
 from arkumu.metadata.views.csv_mapping import saved_mappings_api
 from arkumu.metadata.views.csv_mapping.views import mapping_validation_views, mapping_save_views, mapping_load_views, mapping_delete_views
-from arkumu.metadata.views.csv_mapping.views import core_editor_views, dataset_views, column_views, utility_views, relationship_views, ontology_views
+from arkumu.metadata.views.csv_mapping.views import core_editor_views, dataset_views, column_views, utility_views, relationship_views, ontology_views, canonical_views
 from arkumu.metadata.views.csv_mapping.views.execution_views import (
     ExecuteGUIMappingView,
     GetMappingExecutionStatusView,
@@ -133,6 +134,13 @@ urlpatterns = [
 
     # Graph Connections Viewer
     path('graph-connections/', bulk_editor_views.graph_connections_view, name='graph_connections'),
+    path('canonical-graph/', canonical_graph_views.canonical_manifest_graph_view, name='canonical_graph_view'),
+    path('canonical-graph/selectors/', canonical_graph_views.canonical_graph_selectors, name='canonical_graph_selectors'),
+    path('canonical-graph/render/', canonical_graph_views.canonical_graph_render, name='canonical_graph_render'),
+    path('canonical-graph/tree/canonical/', canonical_graph_views.canonical_graph_tree_canonical, name='canonical_graph_tree_canonical'),
+    path('canonical-graph/tree/dataset/', canonical_graph_views.canonical_graph_tree_dataset, name='canonical_graph_tree_dataset'),
+    path('canonical-graph/tree/column/edit/', canonical_graph_views.canonical_graph_tree_edit_column, name='canonical_graph_tree_edit_column'),
+    path('canonical-graph/tree/column/update/', canonical_graph_views.canonical_graph_tree_update_column, name='canonical_graph_tree_update_column'),
     path('htmx/datasets/', bulk_editor_views.get_datasets_htmx, name='get_datasets_htmx'),
     path('htmx/dataset/<uuid:dataset_id>/columns/', bulk_editor_views.get_dataset_columns_htmx, name='get_dataset_columns_htmx'),
     path('htmx/column/<str:column_id>/cells/', bulk_editor_views.get_column_cells_htmx, name='get_column_cells_htmx'),
@@ -317,6 +325,12 @@ urlpatterns = [
     path('csv-remove-external-ontology/', ontology_views.RemoveExternalOntologyView.as_view(), name='csv_remove_external_ontology'),
     path('csv-remove-individual-external-ontology/', ontology_views.RemoveIndividualExternalOntologyView.as_view(), name='csv_remove_individual_external_ontology'),
     path('csv-validate-external-ontology-identifier/', ontology_views.ValidateExternalOntologyIdentifierView.as_view(), name='csv_validate_external_ontology_identifier'),
+
+    # Canonical Property Mapping Views
+    path('csv-toggle-canonical-form/', canonical_views.ToggleCanonicalMappingFormView.as_view(), name='csv_toggle_canonical_form'),
+    path('csv-hide-canonical-form/', canonical_views.HideCanonicalMappingFormView.as_view(), name='csv_hide_canonical_form'),
+    path('csv-save-canonical-mapping/', canonical_views.SaveCanonicalMappingView.as_view(), name='csv_save_canonical_mapping'),
+    path('csv-remove-canonical-mapping/', canonical_views.RemoveCanonicalMappingView.as_view(), name='csv_remove_canonical_mapping'),
 
     # CSV Mapping Execution URLs
     path('csv-mapping/execute/', ExecuteGUIMappingView.as_view(), name='execute_gui_mapping'),
