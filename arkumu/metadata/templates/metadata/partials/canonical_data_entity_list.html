@@ -1,0 +1,107 @@
+{% for entity in entities %}
+<details class="bg-base-200 rounded-lg overflow-hidden">
+    <summary class="cursor-pointer p-4 hover:bg-base-300 transition-colors">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="font-semibold text-base-content">{{ entity.label }}</span>
+                {% if entity.uri %}
+                <a href="{% url 'metadata:resource_detail' entity.id %}"
+                   target="_blank"
+                   class="btn btn-xs btn-ghost"
+                   onclick="event.stopPropagation()">
+                    View →
+                </a>
+                {% endif %}
+            </div>
+            <div class="flex gap-2">
+                <span class="badge badge-sm">{{ entity.properties|length }} prop{{ entity.properties|length|pluralize }}</span>
+                {% if entity.has_relationships %}
+                <span class="badge badge-sm badge-primary">has relationships</span>
+                {% endif %}
+            </div>
+        </div>
+    </summary>
+
+    <div class="p-4 space-y-2">
+        {% if entity.uri %}
+        <div class="text-xs text-base-content/60 font-mono mb-3">
+            URI: {{ entity.uri }}
+        </div>
+        {% endif %}
+
+        {% if entity.properties %}
+        <div class="overflow-x-auto">
+            <table class="table table-sm table-zebra w-full">
+                <thead>
+                    <tr>
+                        <th class="w-1/3">Property</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for prop_label, prop_data in entity.properties.items %}
+                    <tr>
+                        <td class="font-medium">
+                            {{ prop_label }}
+                            {% if prop_data.canonical_uri %}
+                            <div class="text-xs text-base-content/50 font-mono mt-1">
+                                {{ prop_data.canonical_uri|truncatechars:40 }}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% for value_obj in prop_data.values %}
+                                {% if value_obj.type == "resource" and value_obj.id %}
+                                <a href="{% url 'metadata:resource_detail' value_obj.id %}"
+                                   target="_blank"
+                                   class="link link-primary">
+                                    {{ value_obj.value }}
+                                </a>
+                                {% else %}
+                                <span>{{ value_obj.value }}</span>
+                                {% endif %}
+                                {% if not forloop.last %}<span class="text-base-content/40"> • </span>{% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span>No properties found for this entity.</span>
+        </div>
+        {% endif %}
+
+        {% if entity.has_relationships %}
+        <div id="relationships-{{ entity.id }}"
+             hx-get="{% url 'metadata:canonical_data_relationships' %}?org={{ selected_org.code }}&entity_id={{ entity.id }}&canonical_type_uri={{ entity.canonical_type_uri }}"
+             hx-trigger="intersect once"
+             hx-swap="innerHTML">
+            <div class="mt-4 pt-4 border-t border-base-300">
+                <div class="flex items-center gap-2 text-sm text-base-content/70">
+                    <span class="loading loading-spinner loading-sm"></span>
+                    <span>Loading relationships...</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</details>
+{% endfor %}
+
+{% if has_more %}
+<div id="load-more-{{ canonical_type_uri|slugify }}"
+     class="text-center my-4">
+    <button class="btn btn-outline btn-sm"
+            hx-get="{% url 'metadata:canonical_data_load_more' %}?org={{ selected_org.code }}&canonical_type_uri={{ canonical_type_uri }}&offset={{ new_offset }}"
+            hx-target="#load-more-{{ canonical_type_uri|slugify }}"
+            hx-swap="outerHTML">
+        Load More ({{ new_offset }}/{{ total_count }})
+    </button>
+</div>
+{% endif %}
