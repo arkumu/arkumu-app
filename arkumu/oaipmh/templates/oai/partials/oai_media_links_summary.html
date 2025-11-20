@@ -34,24 +34,61 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <form
-              method="post"
-              hx-post="{% url 'oai_admin:oai_media_link_seed_and_sync' %}"
-              hx-target="#oai-media-links-panel"
-              hx-swap="innerHTML"
-              class="flex"
-            >
-              {% csrf_token %}
-              <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
-              <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
-              <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
-              <input type="hidden" name="harvestable" value="{{ summary.harvestable_filter|default:'all' }}">
-              <input type="hidden" name="page" value="1">
-              <input type="hidden" name="search" value="{{ search_query|default:'' }}">
-              <button type="submit" class="btn btn-outline btn-primary btn-sm" title="Seed curated links and sync OAI approvals">
-                Sync curated data
-              </button>
-            </form>
+            <div class="flex items-center gap-2">
+              <form
+                method="post"
+                hx-post="{% url 'oai_admin:oai_media_link_seed_and_sync' %}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                class="flex"
+              >
+                {% csrf_token %}
+                <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+                <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+                <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+                <input type="hidden" name="harvestable" value="{{ summary.harvestable_filter|default:'all' }}">
+                <input type="hidden" name="page" value="1">
+                <input type="hidden" name="search" value="{{ search_query|default:'' }}">
+                <button type="submit" class="btn btn-outline btn-primary btn-sm" title="Seed curated links and sync OAI approvals">
+                  Sync curated data
+                </button>
+              </form>
+              <form
+                method="post"
+                hx-post="{% url 'oai_admin:oai_media_link_seed_and_sync' %}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                class="flex"
+              >
+                {% csrf_token %}
+                <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+                <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+                <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+                <input type="hidden" name="harvestable" value="{{ summary.harvestable_filter|default:'all' }}">
+                <input type="hidden" name="page" value="1">
+                <input type="hidden" name="search" value="{{ search_query|default:'' }}">
+                <input type="hidden" name="force_full" value="1">
+                <button type="submit" class="btn btn-outline btn-warning btn-sm" title="Force a full re-sync (ignores watermarks)">
+                  Force full sync
+                </button>
+              </form>
+              <form
+                method="post"
+                hx-post="{% url 'oai_admin:oai_publication_sync' %}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                class="flex"
+              >
+                {% csrf_token %}
+                <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+                <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+                <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+                <input type="hidden" name="page" value="1">
+                <button type="submit" class="btn btn-outline btn-secondary btn-sm" title="Sync OAI publication approvals without reseeding links">
+                  Sync OAI approvals
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>

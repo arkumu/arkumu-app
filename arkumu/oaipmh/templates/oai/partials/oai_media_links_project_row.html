@@ -3,6 +3,22 @@
     <div class="space-y-2 p-2">
       <div>
         <div class="font-bold text-base text-secondary">{{ row.project_label }}</div>
+        {% if row.project_subtitle %}
+          <div class="text-xs text-base-content/70">{{ row.project_subtitle }}</div>
+        {% endif %}
+        {% if row.project_institution or row.project_year_range or row.project_categories %}
+          <div class="flex flex-wrap gap-1 text-[11px] text-base-content/70 mt-1">
+            {% if row.project_institution %}
+              <span class="badge badge-ghost badge-xs">{{ row.project_institution }}</span>
+            {% endif %}
+            {% if row.project_year_range %}
+              <span class="badge badge-outline badge-xs">{{ row.project_year_range }}</span>
+            {% endif %}
+            {% for cat in row.project_categories %}
+              <span class="badge badge-ghost badge-xs">{{ cat }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
         <div class="font-mono text-[10px] text-base-content/70 break-all">
           <a
             href="{% url 'metadata:resource_graph' row.resource.id %}"

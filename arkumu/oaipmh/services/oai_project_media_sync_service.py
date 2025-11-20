@@ -55,7 +55,6 @@ class OAIProjectMediaSyncService:
     def __init__(self, *, assembler: Optional[OAIProjectAssembler] = None) -> None:
         self._assembler = assembler or OAIProjectAssembler()
         self._digital_predicate_uri = canonical_uri("digital_object")
-        self._direct_only_orgs = {"khm", "hmt"}
 
     # ------------------------------------------------------------------
     def sync_project(
@@ -68,14 +67,6 @@ class OAIProjectMediaSyncService:
 
         if not isinstance(project, Resource):
             raise TypeError("sync_project expects a Resource instance")
-
-        org_code = (getattr(getattr(project, "organization", None), "code", None) or "").strip().lower()
-
-        if org_code in self._direct_only_orgs:
-            candidates = self._candidates_from_shared_subject_triples(project)
-            if not candidates:
-                return SyncResult(skipped=1)
-            return self._upsert_links(project, candidates)
 
         if record is None:
             record = self._assemble_record(project)

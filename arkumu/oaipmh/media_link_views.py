@@ -64,7 +64,7 @@ def _has_oai_admin_access(user) -> bool:
     return getattr(user, "role", None) == "system_admin"
 
 
-def _run_media_link_seed(org: Organization) -> dict[str, int]:
+def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False) -> dict[str, int]:
     service = OAIProjectMediaSyncService()
     summary = {"projects": 0, "created": 0, "refreshed": 0, "stale": 0, "skipped": 0}
     org_label = getattr(org, "code", None) or getattr(org, "name", "unknown")
@@ -73,7 +73,12 @@ def _run_media_link_seed(org: Organization) -> dict[str, int]:
         logger.debug("Media link seed run started for org=%s (preview=False)", org_label)
 
     state = get_sync_state(org, profile=OAIMediaSyncState.PROFILE_TAILORED)
-    full_refresh, candidate_ids = collect_seed_candidate_ids(org, since=state.last_seed_at)
+    full_refresh, candidate_ids = collect_seed_candidate_ids(
+        org,
+        since=None if force_full_refresh else state.last_seed_at,
+    )
+    if force_full_refresh:
+        state.last_seed_at = None
     queryset = project_queryset_for_org(org)
     if not full_refresh:
         if not candidate_ids:
@@ -235,14 +240,30 @@ def _build_media_links_summary(
     distinct_projects_qs = project_qs.order_by().values('uri').distinct()
     available_projects = distinct_projects_qs.count()
     if s3_harvestable_ids is not None:
-        harvestable_projects = len(s3_harvestable_ids)
-    elif curated_harvestable_ids is not None:
-        harvestable_projects = len(curated_harvestable_ids)
-    else:
         harvestable_projects = (
-            _restrict_to_harvestable_files(project_qs)
+            Resource.objects.filter(id__in=s3_harvestable_ids)
             .order_by()
-            .values('uri')
+            .values("uri")
+            .distinct()
+            .count()
+        )
+    elif curated_harvestable_ids is not None:
+        harvestable_projects = (
+            Resource.objects.filter(id__in=curated_harvestable_ids)
+            .order_by()
+            .values("uri")
+            .distinct()
+            .count()
+        )
+    else:
+        # Fallback: count projects with at least one curated link (non-stale), de-duped by URI
+        harvestable_projects = (
+            OAIProjectMediaLink.objects.filter(
+                project__organization=organization,
+                is_stale=False,
+                project_id__in=project_qs.values_list("id", flat=True),
+            )
+            .values("project__uri")
             .distinct()
             .count()
         )
@@ -299,24 +320,13 @@ def _curated_harvestable_project_ids(organization: Organization) -> Set[int]:
     return set(qs)
 
 
-def _curated_harvestable_project_ids(organization: Organization) -> Set[int]:
-    qs = (
-        OAIProjectMediaLink.objects.filter(
-            project__organization=organization,
-            is_stale=False,
-        )
-        .values_list("project_id", flat=True)
-        .distinct()
-    )
-    return set(qs)
-
-
 def _sync_oai_publication_for_org(
     organization: Organization,
     *,
     user=None,
+    force_full_refresh: bool = False,
 ) -> dict[str, int]:
-    """Auto-approve OAI publication according to institution-specific rules."""
+    """Auto-approve OAI publication using curated links, with builder fallback."""
 
     assembler = OAIProjectAssembler()
     builder = OAIProjectBuilderTailored()
@@ -324,58 +334,89 @@ def _sync_oai_publication_for_org(
     summary: dict[str, int] = {"projects": 0, "auto_approved": 0, "errors": 0}
 
     state = get_sync_state(organization, profile=OAIMediaSyncState.PROFILE_TAILORED)
-    full_refresh, candidate_ids = collect_publication_candidate_ids(
-        organization,
-        since=state.last_publication_sync_at,
+
+    # Build candidate set from curated links (primary source of truth)
+    link_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
+    curated_project_ids = set(
+        link_qs.values_list("project_id", flat=True).distinct()
     )
-    queryset = project_queryset_for_org(organization)
-    if not full_refresh:
-        if not candidate_ids:
-            state.last_publication_sync_at = timezone.now()
-            state.save(update_fields=["last_publication_sync_at", "updated_at"])
-            return summary
-        queryset = queryset.filter(id__in=list(candidate_ids))
+
+    # Incremental candidates based on watermark (to keep small when not forced)
+    full_refresh = force_full_refresh or state.last_publication_sync_at is None
+    _, incremental_ids = collect_publication_candidate_ids(
+        organization,
+        since=None if force_full_refresh else state.last_publication_sync_at,
+    )
+
+    if full_refresh:
+        candidate_ids = set(project_queryset_for_org(organization).values_list("id", flat=True))
+    else:
+        candidate_ids = set(incremental_ids)
+
+    candidate_ids |= curated_project_ids
+    if not candidate_ids:
+        state.last_publication_sync_at = timezone.now()
+        state.save(update_fields=["last_publication_sync_at", "updated_at"])
+        return summary
+
+    # Harvestable from curated links
+    if is_s3_org:
+        harvestable_ids = _s3_harvestable_project_ids(organization)
+    else:
+        harvestable_ids = _curated_harvestable_project_ids(organization)
+
+    queryset = project_queryset_for_org(organization).filter(id__in=candidate_ids)
 
     for project in queryset.iterator(chunk_size=100):
         summary["projects"] += 1
 
-        context = AssemblyContext(resource=project)
-        try:
-            record = assembler.build_record(context)
-        except Exception:
-            logger.exception("OAI publish sync: failed to assemble record for %s", project.uri)
-            summary["errors"] += 1
-            continue
+        has_harvestable = project.id in harvestable_ids
 
-        if record is None:
-            continue
+        # Fallback to builder when curated links are absent or not marked harvestable
+        if not has_harvestable:
+            context = AssemblyContext(resource=project)
+            try:
+                record = assembler.build_record(context)
+            except Exception:
+                logger.exception("OAI publish sync: failed to assemble record for %s", project.uri)
+                summary["errors"] += 1
+                continue
 
-        try:
-            oai_project = builder.from_project_record(
-                record,
-                skip_shared_event_filter=True,
-                skip_format_exclusion=True,
-                use_curated_media_links=True,
-            )
-        except Exception:
-            logger.exception("OAI publish sync: failed to build project for %s", project.uri)
-            summary["errors"] += 1
-            continue
+            if record is None:
+                continue
 
-        digital_objects = list(getattr(oai_project, "digital_objects", []) or [])
-        if not digital_objects:
-            continue
-        if is_s3_org and not any(obj.harvestable for obj in digital_objects):
-            continue
+            try:
+                oai_project = builder.from_project_record(
+                    record,
+                    skip_shared_event_filter=True,
+                    skip_format_exclusion=True,
+                    use_curated_media_links=True,
+                )
+            except Exception:
+                logger.exception("OAI publish sync: failed to build project for %s", project.uri)
+                summary["errors"] += 1
+                continue
 
-        publication, created = OAIProjectPublication.objects.get_or_create(project=project)
-        if not publication.is_approved:
-            publication.is_approved = True
-            publication.approved_at = timezone.now()
-            if user is not None and getattr(user, "is_authenticated", False):
-                publication.approved_by = user
-            publication.save()
-            summary["auto_approved"] += 1
+            digital_objects = list(getattr(oai_project, "digital_objects", []) or [])
+            if digital_objects and (not is_s3_org or any(obj.harvestable for obj in digital_objects)):
+                has_harvestable = True
+
+        publication, _ = OAIProjectPublication.objects.get_or_create(project=project)
+
+        if has_harvestable:
+            if not publication.is_approved:
+                publication.is_approved = True
+                publication.approved_at = timezone.now()
+                if user is not None and getattr(user, "is_authenticated", False):
+                    publication.approved_by = user
+                publication.save(update_fields=["is_approved", "approved_at", "approved_by", "updated_at"])
+                summary["auto_approved"] += 1
+        else:
+            if publication.is_approved:
+                publication.is_approved = False
+                publication.approved_at = None
+                publication.approved_by = None
+                publication.save(update_fields=["is_approved", "approved_at", "approved_by", "updated_at"])
 
     state.last_publication_sync_at = timezone.now()
     state.save(update_fields=["last_publication_sync_at", "updated_at"])
@@ -651,6 +692,13 @@ def _build_project_row_context(
         row["builder_error"] = True
         return row
 
+    card_data = {}
+    if hasattr(record, "to_card_dict"):
+        try:
+            card_data = record.to_card_dict() or {}
+        except Exception:
+            card_data = {}
+
     try:
         curated_project = builder.from_project_record(
             record,
@@ -667,6 +715,10 @@ def _build_project_row_context(
     record_title = getattr(record, "title", None)
     if record_title:
         row["project_label"] = record_title
+    row["project_subtitle"] = card_data.get("subtitle", "")
+    row["project_year_range"] = card_data.get("year_range", "")
+    row["project_categories"] = card_data.get("categories", []) or []
+    row["project_institution"] = card_data.get("institution", "")
 
     # All normalized objects in curated_project.digital_objects are harvestable;
     # use them to derive per-project and per-link harvestable flags.
@@ -1402,9 +1454,15 @@ def oai_media_link_seed_and_sync(request):
         "page_number": page_number,
     }
 
+    force_full_refresh = bool(request.POST.get("force_full"))
+
     # Run seed + publication sync synchronously (no background job) so results are immediate.
-    seed_summary = _run_media_link_seed(organization)
-    sync_summary = _sync_oai_publication_for_org(organization, user=request.user)
+    seed_summary = _run_media_link_seed(organization, force_full_refresh=force_full_refresh)
+    sync_summary = _sync_oai_publication_for_org(
+        organization,
+        user=request.user,
+        force_full_refresh=force_full_refresh,
+    )
     media_sync_state = {
         "seed_summary": seed_summary,
         "sync_summary": sync_summary,
@@ -1852,7 +1910,13 @@ def oai_publication_sync(request):
     except ValueError:
         page_number = 1
 
-    summary = _sync_oai_publication_for_org(organization, user=request.user)
+    force_full_refresh = bool(request.POST.get("force_full"))
+
+    summary = _sync_oai_publication_for_org(
+        organization,
+        user=request.user,
+        force_full_refresh=force_full_refresh,
+    )
     if summary["auto_approved"]:
         messages.success(
             request,
