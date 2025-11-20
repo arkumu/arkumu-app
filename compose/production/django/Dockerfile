@@ -7,8 +7,9 @@ FROM python AS python-build-stage
 
 ARG BUILD_ENVIRONMENT=production
 
-# Install apt packages
-RUN apt-get update && apt-get install --no-install-recommends -y \
+# Install apt packages (force IPv4 to avoid mirror stalls)
+RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
+  && apt-get install --no-install-recommends -y \
   # dependencies for building Python packages
   build-essential \
   # psycopg dependencies
@@ -42,8 +43,9 @@ RUN addgroup --system django \
     && adduser --system --ingroup django django
 
 
-# Install required system dependencies
-RUN apt-get update && apt-get install --no-install-recommends -y \
+# Install required system dependencies (force IPv4 to avoid mirror stalls)
+RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
+  && apt-get install --no-install-recommends -y \
   # psycopg dependencies
   libpq-dev \
   # Translations dependencies
