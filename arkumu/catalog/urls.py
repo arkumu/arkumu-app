@@ -2,6 +2,7 @@ from django.urls import path
 from django.views.generic import TemplateView
 from django.contrib.auth.decorators import login_required
 
+from .views.advanced_search_view import AdvancedSearchView
 from .views.cards import GraphSearchView
 from .views.catalog_view import CatalogView
 from .views.images import ImagesView
@@ -37,4 +38,6 @@ urlpatterns = [
     path('university_page_FUK/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_FUK.html")), name='university_page_FUK'),
     path('university_page_RSH/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_RSH.html")), name='university_page_RSH'),
     path('university_page_KHM/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_KHM.html")), name='university_page_KHM'),
+    path('advanced-search/', AdvancedSearchView.as_view(), name='advanced_search'),
+
 ]

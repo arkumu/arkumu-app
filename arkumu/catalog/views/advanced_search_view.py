@@ -1,3 +1,4 @@
+import random
 import time
 
 from django.views.generic import View
@@ -11,8 +12,6 @@ from arkumu.cache.services import CacheManager
 from arkumu.projects.services import ProjectSnapshotService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
-from arkumu.metadata.models import ExternalSourcesEntity
-from ..services import wikidata_service
 from ..services.wikidata_service import WikidataService
 from ...projects import ProjectRecord
 
@@ -30,13 +29,11 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         start_time = time.time()
 
         # Extrahiere Suchparameter
+        view = request.GET.get('view', 'card').strip()
         query = request.GET.get('query', '').strip()
         institution = request.GET.getlist('hochschule', '')
         category = request.GET.getlist('kategorie', '')
         actor = request.GET.getlist('aktuer', '')
-        # keyword = request.GET.getlist('keyword', '').strip()
-        page = request.GET.get('page', 1)
-        is_htmx = request.headers.get('HX-Request') is not None
         logger.info(
             f"🔍 ADVANCED_SEARCH: Institution={institution}, Type={category}, Actor={actor}")
 
@@ -45,46 +42,55 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             projects = self._get_all_projects(request)
 
             # Filtere Projekte basierend auf Parametern
+            total_results = 0
             filtered_projects = []
-            for project in projects:
-                print(project.categories)
-                if query and not project.matches_query(query):
-                    continue
-                if institution and not project.matches_institution(institution):
-                    continue
-                if category and not project.matches_category(category):
-                    continue
-                if actor and not project.matches_actor(actor):
-                    continue
-
-                filtered_projects.append(project)
-
-            # Paginierung
-            paginator = Paginator(filtered_projects, self.ITEMS_PER_PAGE)
-            try:
-                page_obj = paginator.page(page)
-            except PageNotAnInteger:
-                page_obj = paginator.page(1)
-            except EmptyPage:
-                page_obj = paginator.page(paginator.num_pages)
+            if not query and not institution and not category and not actor:
+                filtered_projects = random.sample(projects, k=15)
+                total_results = len(projects)
+            else:
+                for project in projects:
+                    if query and not project.matches_query(query):
+                        continue
+                    if institution and not project.matches_institution(institution):
+                        continue
+                    if category and not project.matches_category(category):
+                        continue
+                    if actor and not project.matches_actor(actor):
+                        continue
+                    filtered_projects.append(project)
+                total_results = len(filtered_projects)
 
             categories = []
             for p in projects:
                 for i in p.categories:
-                     categories.append(i.label)
+                    categories.append(i.label)
             categories = set(categories).difference(set(category))
             categories_name = []
             wikidata_service = WikidataService()
             for i, w in enumerate(categories):
                 categories_name.append(wikidata_service.get_entity_label(wikidata_id=w))
             categories = [
-                    {"id": cid, "name": cname}
-                    for cid, cname in zip(categories, categories_name)
+                {"id": cid, "name": cname}
+                for cid, cname in zip(categories, categories_name)
             ]
+            categories = sorted(categories, key=lambda x: x["name"])
             hochschulen = set([i.institution.label for i in projects])
             hochschulen = sorted(hochschulen.difference(set(institution)))
             akteur_options = set({actor.name for p in projects for actor in p.actors})
             akteur = sorted(akteur_options.difference(set(actor)))
+
+            filtered_projects = [p.to_card_dict() for p in filtered_projects]
+            for i, project in enumerate(filtered_projects):
+                print(project)
+                if project["categories"]:
+                    if len(project["categories"]) > 0:
+                        project["category1_name"] = wikidata_service.get_entity_label(wikidata_id=project["categories"][0])
+                    if len(project["categories"]) > 1:
+                        project["category2_name"] = wikidata_service.get_entity_label(wikidata_id=project["categories"][1])
+                    if len(project["categories"]) > 2:
+                        project["category3_name"] = wikidata_service.get_entity_label(wikidata_id=project["categories"][2])
+
+
 
             dropdown_option = {
                 "hochschulen": hochschulen,
@@ -95,14 +101,11 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             # Create active filters list
             active_filters = []
 
-            # Create mapping for category IDs to names
-            # category_id_to_name = {cat['id']: cat['name'] for cat in dropdown_option['kategorien']}
 
             # Institution filters
             for inst in institution:
                 q = request.GET.copy()
                 q.setlist('hochschule', [i for i in institution if i != inst])
-                q['page'] = '1'  # Reset to first page
                 active_filters.append({
                     'type': 'hochschule',
                     'value': inst,
@@ -114,7 +117,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             for cat_id in category:
                 q = request.GET.copy()
                 q.setlist('kategorie', [c for c in category if c != cat_id])
-                q['page'] = '1'
                 active_filters.append({
                     'type': 'kategorie',
                     'value': cat_id,
@@ -126,7 +128,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             for act in actor:
                 q = request.GET.copy()
                 q.setlist('aktuer', [a for a in actor if a != act])
-                q['page'] = '1'
                 active_filters.append({
                     'type': 'aktuer',
                     'value': act,
@@ -134,21 +135,26 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                     'remove_url': f"{request.path}?{q.urlencode()}"
                 })
 
+            query_params = request.GET.copy()  # mutable copy
+
+            # kompletten 'view'-Parameter entfernen
+            query_params.pop('view', None)
+
+            request_path = f"{request.path}?{query_params.urlencode()}"
 
             # Kontext für Template
             context = {
                 'institution': institution,
-                # 'project_type': project_type,
                 'active_filters': active_filters,
                 'actor': actor,
                 'category': category,
-                # 'keyword': keyword,
-                'results': [p.to_card_dict() for p in page_obj.object_list],
-                'total_results': paginator.count,
-                'current_page': page_obj.number,
-                'total_pages': paginator.num_pages,
+                'results': filtered_projects,
+                'total_results': total_results,
                 'csrf_token': get_token(request),
                 'dropdown_option': dropdown_option,
+                'query': query,
+                'view': view,
+                'request_path': request_path,
             }
 
             processing_time = time.time() - start_time
@@ -162,7 +168,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
 
     def _get_all_projects(self, request) -> List[ProjectRecord]:
         snapshot_service = ProjectSnapshotService()
-
 
         # Lade Projekte neu
         snapshot = snapshot_service.get_cross_institutional_snapshot()
