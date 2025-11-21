@@ -6,11 +6,11 @@
     .search-container {
       flex-direction: column !important;
     }
-    
+
     .search-input {
       width: 100% !important;
     }
-    
+
     .search-button {
       width: auto !important;
       margin-left: 0 !important;
@@ -61,13 +61,11 @@
                    bg-arkumu-dark text-arkumu-light hover:bg-arkumu-dark-hover
                    theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-dark:hover:bg-arkumu-light-hover
                    theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light theme-blue:hover:bg-arkumu-blue-hover"
-            hx-get="{% url 'catalog:browse' %}"
-            hx-target="#results-container"
-            hx-swap="innerHTML"
-            hx-include="#searchbar"
-            hx-indicator="#search-loading"
-            hx-push-url="true"
-            hx-trigger="click">
+            onclick="
+              const searchValue = document.getElementById('searchbar').value;
+              const encodedValue = encodeURIComponent(searchValue);
+              window.location.href = `/catalog/advanced-search/?query=${encodedValue}`;
+            ">
       Projekte durchsuchen
     </button>
   </div>
