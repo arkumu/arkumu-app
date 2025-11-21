@@ -3,9 +3,9 @@
 <div class="minimal-project-card w-full transition-colors pt-3"
      data-rdf-type="http://arkumu.org/data/types/projekt"
      data-uri="{{ uri }}">
-  
+
   <div class="flex items-center gap-4">
-    
+
     <!-- Year (pequeño, con borde) -->
     <div class="flex-shrink-0 px-2 py-0.5 text-xs font-mono transition-colors
                 border border-arkumu-dark text-arkumu-dark
@@ -13,7 +13,7 @@
                 theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
       {{ year|default:"2023" }}
     </div>
-    
+
     <!-- Institution (pequeño, con fondo) -->
     <div class="flex-shrink-0 px-2 py-0.5 text-xs font-mono transition-colors
                 bg-arkumu-dark text-arkumu-light
@@ -21,7 +21,7 @@
                 theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
       <a href="/catalog/browse/?orga_code={{ institution }}">{{ institution|default:"Folkwang Universität der Künste" }}</a>
     </div>
-    
+
     <!-- Title (ocupa el espacio restante) -->
     <h3 class="flex-1 font-normal text-sm transition-colors truncate
                text-arkumu-dark
@@ -32,7 +32,7 @@
         {{ title|default:"Handmade in Ethiopia" }}
       </a>
     </h3>
-    
+
     <!-- Category (primera categoría con borde) -->
     {% if category1 %}
     <div class="flex-shrink-0 px-2 py-0.5 text-xs transition-colors
@@ -40,10 +40,10 @@
                 theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                 theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
          data-rdf-type="http://arkumu.org/data/types/projektkategorie">
-      <a href="https://www.wikidata.org/wiki/{{ category1 }}">{{ category1_name|default:"Industrial Design" }}</a>
+      <a href="/catalog/advanced-search/?kategorie={{ category1 }}">{{ category1_name|default:"Industrial Design" }}</a>
     </div>
     {% endif %}
-    
+
     <!-- Additional categories indicator (usando lógica de conteo) -->
     {% if category2 %}
     <span class="flex-shrink-0 text-xs transition-colors
@@ -53,7 +53,7 @@
       +{% if category3 %}{% if category4 %}3{% else %}2{% endif %}{% else %}1{% endif %}
     </span>
     {% endif %}
-    
+
     <!-- Button (Projektdetails) -->
     <a href="{% url 'catalog:projekt' %}?projekt={{ uri }}"
        class="flex-shrink-0"
@@ -65,9 +65,9 @@
         {{ button_text|default:"Projektdetails" }}
       </button>
     </a>
-    
+
   </div>
-  
+
   <!-- Horizontal line -->
   <div class="w-full h-px transition-colors
               bg-arkumu-dark
