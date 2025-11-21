@@ -19,7 +19,7 @@ def get_sync_state(
 ) -> OAIMediaSyncState:
     """Return or create the sync state row for the given organization/profile."""
 
-    state, _ = OAIMediaSyncState.objects.get_or_create(
+    state, _ = OAIMediaSyncState.objects.select_for_update().get_or_create(
         organization=organization,
         profile=profile,
     )

@@ -49,7 +49,7 @@
                 <input type="hidden" name="harvestable" value="{{ summary.harvestable_filter|default:'all' }}">
                 <input type="hidden" name="page" value="1">
                 <input type="hidden" name="search" value="{{ search_query|default:'' }}">
-                <button type="submit" class="btn btn-outline btn-primary btn-sm" title="Seed curated links and sync OAI approvals">
+                <button type="submit" class="btn btn-outline btn-primary btn-sm" title="Regular sync: Creates/updates curated project→digital-object links and auto-approves projects for OAI harvesting. Only processes projects changed since last sync (incremental).">
                   Sync curated data
                 </button>
               </form>
@@ -68,7 +68,7 @@
                 <input type="hidden" name="page" value="1">
                 <input type="hidden" name="search" value="{{ search_query|default:'' }}">
                 <input type="hidden" name="force_full" value="1">
-                <button type="submit" class="btn btn-outline btn-warning btn-sm" title="Force a full re-sync (ignores watermarks)">
+                <button type="submit" class="btn btn-outline btn-warning btn-sm" title="Full refresh: Same as regular sync but processes ALL projects regardless of when they changed. Use for initial setup, after bulk imports, or when data is out of sync. Slower than regular sync.">
                   Force full sync
                 </button>
               </form>
@@ -84,8 +84,8 @@
                 <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
                 <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
                 <input type="hidden" name="page" value="1">
-                <button type="submit" class="btn btn-outline btn-secondary btn-sm" title="Sync OAI publication approvals without reseeding links">
-                  Sync OAI approvals
+                <button type="submit" class="btn btn-outline btn-secondary btn-sm" title="Approval-only sync: Re-evaluates which projects should be approved for OAI harvesting without updating curated links. Faster when you only need to update approval status after changing OAI publication rules.">
+                  Sync OAI project approvals
                 </button>
               </form>
             </div>
