@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import itertools
 import os
+import threading
+import time
 from typing import Iterable, Sequence, Tuple
 
 from django.conf import settings
@@ -294,23 +296,52 @@ class Command(BaseCommand):
 
         pairs: set[Tuple[str, str, str]] = set()
         scanned_batches = 0
+
         if log_interval and log_fn:
             log_fn("  … collecting pairs (may take a moment before the first batch)…")
-        with connection.cursor() as cursor:
-            cursor.execute(sql, params)
-            while True:
-                rows = cursor.fetchmany(batch_size)
-                if not rows:
-                    break
-                scanned_batches += 1
-                if log_interval and log_fn and scanned_batches % log_interval == 0:
-                    log_fn(
-                        f"  … scanned batch {scanned_batches:,} "
-                        f"(unique pairs so far: {len(pairs):,})"
-                    )
-                for project_id, digital_id, predicate_id in rows:
-                    if project_id and digital_id and predicate_id:
-                        pairs.add((str(project_id), str(predicate_id), str(digital_id)))
+            log_fn("  … executing query (this may take 30-60 seconds on large datasets)…")
+
+        # Heartbeat thread to show progress while query executes
+        def heartbeat(interval, log_fn, stop_event):
+            """Print 'still waiting' messages periodically."""
+            count = 0
+            while not stop_event.is_set():
+                time.sleep(interval)
+                if not stop_event.is_set():
+                    count += 1
+                    log_fn(f"  … still waiting for query results ({count * interval}s elapsed)…")
+
+        stop_event = threading.Event()
+        heartbeat_thread = None
+        if log_interval and log_fn:
+            heartbeat_thread = threading.Thread(target=heartbeat, args=(5, log_fn, stop_event), daemon=True)
+            heartbeat_thread.start()
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                if log_interval and log_fn:
+                    stop_event.set()
+                    log_fn("  … query returned, processing results…")
+
+                while True:
+                    rows = cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+                    scanned_batches += 1
+                    if log_interval and log_fn and scanned_batches % log_interval == 0:
+                        log_fn(
+                            f"  … scanned batch {scanned_batches:,} "
+                            f"(unique pairs so far: {len(pairs):,})"
+                        )
+                    for project_id, digital_id, predicate_id in rows:
+                        if project_id and digital_id and predicate_id:
+                            pairs.add((str(project_id), str(predicate_id), str(digital_id)))
+        finally:
+            if log_interval and log_fn:
+                stop_event.set()
+                if heartbeat_thread:
+                    heartbeat_thread.join(timeout=1)
 
         if log_interval and log_fn:
             log_fn(f"  … finished scan after {scanned_batches:,} batches, {len(pairs):,} unique pairs")
@@ -367,23 +398,52 @@ class Command(BaseCommand):
 
         pairs: set[Tuple[str, str, str]] = set()
         scanned_batches = 0
+
         if log_interval and log_fn:
             log_fn("  … collecting shared-subject pairs (may take a moment before first batch)…")
-        with connection.cursor() as cursor:
-            cursor.execute(sql, params)
-            while True:
-                rows = cursor.fetchmany(batch_size)
-                if not rows:
-                    break
-                scanned_batches += 1
-                if log_interval and log_fn and scanned_batches % log_interval == 0:
-                    log_fn(
-                        f"  … scanned batch {scanned_batches:,} "
-                        f"(unique pairs so far: {len(pairs):,})"
-                    )
-                for project_id, digital_id in rows:
-                    if project_id and digital_id:
-                        pairs.add((str(project_id), str(target_predicate_id), str(digital_id)))
+            log_fn("  … executing query (this may take 30-60 seconds on large datasets)…")
+
+        # Heartbeat thread to show progress while query executes
+        def heartbeat(interval, log_fn, stop_event):
+            """Print 'still waiting' messages periodically."""
+            count = 0
+            while not stop_event.is_set():
+                time.sleep(interval)
+                if not stop_event.is_set():
+                    count += 1
+                    log_fn(f"  … still waiting for query results ({count * interval}s elapsed)…")
+
+        stop_event = threading.Event()
+        heartbeat_thread = None
+        if log_interval and log_fn:
+            heartbeat_thread = threading.Thread(target=heartbeat, args=(5, log_fn, stop_event), daemon=True)
+            heartbeat_thread.start()
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                if log_interval and log_fn:
+                    stop_event.set()
+                    log_fn("  … query returned, processing results…")
+
+                while True:
+                    rows = cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+                    scanned_batches += 1
+                    if log_interval and log_fn and scanned_batches % log_interval == 0:
+                        log_fn(
+                            f"  … scanned batch {scanned_batches:,} "
+                            f"(unique pairs so far: {len(pairs):,})"
+                        )
+                    for project_id, digital_id in rows:
+                        if project_id and digital_id:
+                            pairs.add((str(project_id), str(target_predicate_id), str(digital_id)))
+        finally:
+            if log_interval and log_fn:
+                stop_event.set()
+                if heartbeat_thread:
+                    heartbeat_thread.join(timeout=1)
 
         if log_interval and log_fn:
             log_fn(
