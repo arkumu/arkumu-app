@@ -160,7 +160,7 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             processing_time = time.time() - start_time
             logger.info(f"⚡ ADVANCED_SEARCH_COMPLETE: {len(filtered_projects)} results in {processing_time:.3f}s")
 
-            return render(request, 'catalog/advanced_search_test.html', context)
+            return render(request, 'catalog/advanced_search.html', context)
 
         except Exception as e:
             logger.error(f"❌ ADVANCED_SEARCH_ERROR: {e}")
