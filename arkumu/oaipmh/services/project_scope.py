@@ -26,6 +26,21 @@ PROJECT_TYPE_URIS: tuple[str, ...] = tuple(
     if uri and uri.strip()
 )
 RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+# Orgs that bypass the link predicate gate (event-based or indirect media links)
+_DEFAULT_LINK_PREDICATE_BYPASS_ORGS = (
+    "fuk",
+    "det",
+    "rsh",
+)
+PROJECT_LINK_PREDICATE_BYPASS_ORGS: set[str] = {
+    code.strip().lower()
+    for code in getattr(
+        settings,
+        "OAI_PROJECT_LINK_SCOPE_DISABLED_ORGS",
+        _DEFAULT_LINK_PREDICATE_BYPASS_ORGS,
+    )
+    if code and code.strip()
+}
 
 
 def project_queryset_for_org(org: Organization):
@@ -53,7 +68,9 @@ def project_queryset_for_org(org: Organization):
         queryset = queryset.annotate(has_project_type=Exists(type_subquery))
         scope_clauses.append(Q(has_project_type=True))
 
-    if PROJECT_LINK_PREDICATES:
+    org_code = (getattr(org, "code", "") or "").strip().lower()
+
+    if PROJECT_LINK_PREDICATES and org_code not in PROJECT_LINK_PREDICATE_BYPASS_ORGS:
         link_subquery = Triple.objects.filter(
             object_id=OuterRef("pk"),
         ).filter(
@@ -62,6 +79,10 @@ def project_queryset_for_org(org: Organization):
         )
         queryset = queryset.annotate(has_project_link=Exists(link_subquery))
         scope_clauses.append(Q(has_project_link=True))
+
+    if not scope_clauses and org_code in PROJECT_LINK_PREDICATE_BYPASS_ORGS:
+        # Allow bypass orgs (event-based media linkage) to include all entity resources.
+        scope_clauses.append(Q())
 
     if not scope_clauses:
         return queryset.none()
