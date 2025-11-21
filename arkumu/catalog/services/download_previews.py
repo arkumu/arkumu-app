@@ -49,12 +49,12 @@ class DownloadPreviews:
                        for path in Triple.objects.filter(subject__in=digital_objs, predicate__in=self.path_pred)]
 
     def _digital_objs_path_khm(self):
-        preview_obj = Triple.objects.filter(predicate__uri='http://arkumu.org/data/khm/properties/ist-arkumu-preview', object__value='1')
+        preview_obj = Triple.objects.filter(predicate__uri='http://arkumu.org/data/khm/properties/ist-arkumu-preview')
 
         short_paths = [path.object.value for path in Triple.objects.filter(subject__in=preview_obj.values_list('subject', flat=True), predicate__uri='http://arkumu.org/data/khm/properties/dateiname-arkumu-web')]
         long_paths = [path.object.value for path in Triple.objects.filter(subject__in=preview_obj.values_list('subject', flat=True), predicate__uri='http://arkumu.org/data/khm/properties/dateipfad-absolut')]
 
-        return [{'bucket': 'khm', 'path': f"data/Paket1_12_arkumu_previews/{path}", 'orig_path': long_paths[i]} for i, path in enumerate(short_paths)]
+        return [{'bucket': 'khm', 'path': f"data/{path}", 'orig_path': long_paths[i]} for i, path in enumerate(short_paths)]
 
     def _download(self, paths):
         download_count = 0
