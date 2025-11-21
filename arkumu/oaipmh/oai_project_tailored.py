@@ -64,6 +64,12 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
         logger.debug("Tailored builder using passthrough path resolver for curated media links")
         super().__init__(**kwargs)
+        # Normalize curated prefixes for Rosetta orgs (used to shorten FLocat paths)
+        self._rosetta_curated_prefixes = {
+            code: prefix.rstrip("/")
+            for code, prefix in getattr(self, "_rosetta_curated_prefixes", {}).items()
+            if prefix
+        }
 
     def from_project_record(
         self,
@@ -442,6 +448,22 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                 return normalized
             # Objects without verified S3 inventory are not eligible for tailored exports.
             return None
+
+        # For Rosetta orgs (KHM/HMT), prefer prefix+filename to avoid leaking deep ingest paths
+        if (
+            normalized.source == "rosetta"
+            and normalized.file_name
+            and normalized_code in {"khm", "hmt"}
+        ):
+            prefix = self._rosetta_curated_prefixes.get(normalized_code)
+            if prefix:
+                rosetta_path = f"{prefix}/{normalized.file_name}"
+                normalized = replace(
+                    normalized,
+                    rosetta_path=rosetta_path,
+                    rosetta_candidates=(rosetta_path,),
+                )
+
         return normalized
 
     def _graph_digital_object(

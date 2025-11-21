@@ -565,7 +565,7 @@ OAI_ROSETTA_CURATED_PREFIXES = {
     key.strip().lower(): value.rstrip("/")
     for key, value in {
         "hmt": env("OAI_ROSETTA_CURATED_PREFIX_HMT", default=""),
-        "khm": env("OAI_ROSETTA_CURATED_PREFIX_KHM", default=""),
+        "khm": env("OAI_ROSETTA_CURATED_PREFIX_KHM", default="/rosetta/khm/sandbox/input/arkumu/daten"),
     }.items()
     if value and value.strip()
 }
