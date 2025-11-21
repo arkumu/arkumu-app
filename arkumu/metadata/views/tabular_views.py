@@ -22,6 +22,7 @@ from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService
 from arkumu.metadata.services.entity_label_service import EntityLabelResolver
+from arkumu.storage.models import S3FileObject
 
 
 logger = logging.getLogger(__name__)
@@ -483,6 +484,11 @@ DIGITALES_OBJEKT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
             "http://arkumu.org/data/properties/original-dateiname",
             "Dateiname",
         ),
+    },
+    {
+        "label": "S3 Dateiname",
+        "matchers": [],
+        "sortable": False,
     },
     {
         "label": "Dateipfad",
@@ -1479,6 +1485,24 @@ def _build_rows_for_subjects(
     
     entity_labels = _build_entity_label_map(list(entity_objects.values()))
 
+    # For digital objects, check which ones have S3FileObject links
+    s3_linked_resource_ids: Set[Any] = set()
+    s3_filename_map: Dict[Any, str] = {}
+    if entity_type in {"digital_object", "digitales_objekt"}:
+        s3_files = S3FileObject.objects.filter(
+            related_resource_id__in=subject_ids,
+            status__in=['completed', 'verified'],
+        ).exclude(
+            s3_key__isnull=True
+        ).exclude(
+            s3_key__exact=''
+        ).values('related_resource_id', 'file_name')
+
+        for s3_file in s3_files:
+            res_id = s3_file['related_resource_id']
+            s3_linked_resource_ids.add(res_id)
+            s3_filename_map[res_id] = s3_file['file_name']
+
     # Track if a column is FK (any non-literal object for that predicate name)
     column_is_fk: Dict[str, bool] = {spec['label']: False for spec in column_specs}
 
@@ -1533,9 +1557,12 @@ def _build_rows_for_subjects(
                         column_is_fk[spec['label']] = True
                         break
         
-        if entity_type in {"digital_object", "digitales_objekt"} and "S3-Link" in row:
-            has_s3_path = bool(row.get("Dateipfad"))
-            row["S3-Link"] = "Ja" if has_s3_path else "Nein"
+        if entity_type in {"digital_object", "digitales_objekt"}:
+            if "S3-Link" in row:
+                has_s3_link = s.id in s3_linked_resource_ids
+                row["S3-Link"] = "Ja" if has_s3_link else "Nein"
+            if "S3 Dateiname" in row:
+                row["S3 Dateiname"] = s3_filename_map.get(s.id, "—")
 
         for spec in column_specs:
             resource_field = spec.get('resource_field')
