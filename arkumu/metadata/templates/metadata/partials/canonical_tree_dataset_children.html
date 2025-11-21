@@ -1,5 +1,4 @@
 {% if dataset %}
-    {% with container_id=dataset_dom_id|default:'dataset-node-'|add:dataset.name|slugify %}
     <div class="space-y-2">
         <div class="text-xs text-base-content/70">
             {{ dataset.unmapped_count }} unmapped column{{ dataset.unmapped_count|pluralize }} in this dataset.
@@ -21,7 +20,7 @@
                             </div>
                             <button type="button"
                                     class="btn btn-ghost btn-xs"
-                                    hx-get="{% url 'metadata:canonical_graph_tree_edit_column' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset.name|urlencode }}&column_slug={{ column.slug|urlencode }}&target_id={{ container_id }}"
+                                    hx-get="{% url 'metadata:canonical_graph_tree_edit_column' %}?organization={{ organization_code }}&mapping_id={{ mapping.id }}&dataset_name={{ dataset.name|urlencode }}&column_slug={{ column.slug|urlencode }}&target_id={{ dataset_dom_id }}"
                                     hx-target="#{{ column_dom_id }}"
                                     hx-swap="innerHTML">
                                 Edit
@@ -53,7 +52,6 @@
             </div>
         {% endif %}
     </div>
-    {% endwith %}
 {% else %}
     <div class="text-xs text-base-content/60">Dataset data unavailable.</div>
 {% endif %}
