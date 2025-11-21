@@ -65,7 +65,11 @@ def _build_manifest_tree_summary(manifest: Dict[str, Any]) -> Dict[str, Any]:
     total_columns = 0
     mapped_columns = 0
     unmapped_columns: List[Dict[str, str]] = []
+    seen_datasets: set[str] = set()
     for dataset_name, dataset in sorted(manifest.items(), key=lambda item: item[0].lower()):
+        if dataset_name in seen_datasets:
+            continue
+        seen_datasets.add(dataset_name)
         entity_type = dataset.get("entity_type") or {}
         canonical_class_uri = entity_type.get("canonical_uri")
         dataset_label = (
@@ -97,7 +101,11 @@ def _build_manifest_tree_summary(manifest: Dict[str, Any]) -> Dict[str, Any]:
 
         properties = dataset.get("properties") or {}
         column_meta = dataset.get("column_metadata") or {}
+        seen_columns: set[str] = set()
         for slug, prop in sorted(properties.items(), key=lambda item: item[0].lower()):
+            if slug in seen_columns:
+                continue
+            seen_columns.add(slug)
             column_info = {
                 "slug": slug,
                 "label": prop.get("name") or slug,
@@ -135,16 +143,20 @@ def _build_manifest_tree_summary(manifest: Dict[str, Any]) -> Dict[str, Any]:
                         "uri": canonical_prop,
                         "label": prop.get("canonical_label") or prop.get("name") or canonical_prop.rsplit("/", 1)[-1],
                         "columns": [],
+                        "columns_seen": set(),
                     },
                 )
-                prop_entry["columns"].append(
-                    {
-                        "dataset": dataset_name,
-                        "column": slug,
-                        "label": prop.get("name") or slug,
-                        "metadata": column_meta.get(slug, {}),
-                    }
-                )
+                col_sig = (dataset_name, slug)
+                if col_sig not in prop_entry["columns_seen"]:
+                    prop_entry["columns_seen"].add(col_sig)
+                    prop_entry["columns"].append(
+                        {
+                            "dataset": dataset_name,
+                            "column": slug,
+                            "label": prop.get("name") or slug,
+                            "metadata": column_meta.get(slug, {}),
+                        }
+                    )
 
     canonical_class_list: List[Dict[str, Any]] = []
     for cls in canonical_classes.values():

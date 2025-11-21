@@ -38,8 +38,10 @@
                             <span class="text-error font-semibold">Missing canonical property</span>
                         {% endif %}
                     </div>
-                    {% if column.uri %}
+                    {% if column.uri and column.uri != column.canonical_uri %}
                         <p class="text-base-content/60 break-all">Local property: {{ column.uri }}</p>
+                    {% elif column.uri and column.uri == column.canonical_uri %}
+                        <p class="text-xs text-base-content/50">Local property matches canonical.</p>
                     {% endif %}
                     <div id="{{ column_dom_id }}"></div>
                 </div>
