@@ -244,14 +244,21 @@ class METSSerializer:
 
                 file_elem = ET.SubElement(content_grp, f"{{{METS_NS}}}file", attrs)
 
-                # Determine best access URL
+                # Build direct S3 URL without presigning
                 url: Optional[str] = None
                 try:
-                    access = export_svc.prepare_file_for_harvest(f)
-                    url = access.get("url")
+                    # Get bucket and organization
+                    bucket = export_svc.bucket_name
+                    s3_key = f.s3_key
+                    endpoint = export_svc.endpoint_url
+
+                    if endpoint and bucket and s3_key:
+                        # Build direct URL: endpoint/bucket/key
+                        url = f"{endpoint.rstrip('/')}/{bucket}/{s3_key}"
                 except Exception:
                     url = None
 
+                # Fallback to s3_url field if URL construction failed
                 if not url and getattr(f, "s3_url", None):
                     url = f.s3_url
 
