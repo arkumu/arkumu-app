@@ -83,6 +83,7 @@ class HasExecutionStatsFilter(SimpleListFilter):
 class MappingAdmin(admin.ModelAdmin):
     list_display = [
         'name',
+        'id_display',
         'organization_link',
         'validation_status_badge',
         'active_status_badge',
@@ -626,6 +627,12 @@ class MappingAdmin(admin.ModelAdmin):
         return '-'
     created_by_link.short_description = _('Created By')
     created_by_link.admin_order_field = 'created_by'
+
+    def id_display(self, obj):
+        """Expose UUID for quick copy/use in management commands."""
+        return str(obj.id)
+    id_display.short_description = _('UUID')
+    id_display.admin_order_field = 'id'
     
     def mapping_preview(self, obj):
         """Display a formatted preview of the mapping configuration."""
