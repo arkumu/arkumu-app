@@ -85,9 +85,11 @@ class MappingAdmin(admin.ModelAdmin):
         'name',
         'id_display',
         'organization_link',
+        'active_status_badge',
         'dataset_count_display',
         'column_count_display',
         'relationship_count_display',
+        'promoted_manifest_status',
         'created_by_link',
         'created_at'
     ]
@@ -111,6 +113,7 @@ class MappingAdmin(admin.ModelAdmin):
         'dataset_count_display',
         'column_count_display',
         'relationship_count_display',
+        'promoted_manifest_status',
         'mapping_preview',
         'schema_manifest_preview',
         'execution_stats_display',
