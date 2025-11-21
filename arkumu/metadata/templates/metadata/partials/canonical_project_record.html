@@ -1,0 +1,157 @@
+{% if record %}
+<div class="bg-base-100 rounded-lg p-4 shadow-sm space-y-3">
+    <div class="flex items-start justify-between gap-3">
+        <div>
+            <h3 class="text-lg font-semibold text-base-content">{{ record.title|default:"(no title)" }}</h3>
+            {% if record.subtitle %}
+            <p class="text-sm text-base-content/80">{{ record.subtitle }}</p>
+            {% endif %}
+            <p class="text-xs text-base-content/60 break-all">{{ record.uri }}</p>
+        </div>
+        {% if record.project_type and record.project_type.label %}
+        <span class="badge badge-primary badge-sm">{{ record.project_type.label }}</span>
+        {% endif %}
+    </div>
+
+    {% if record.description %}
+    <p class="text-sm text-base-content/80 whitespace-pre-line">{{ record.description }}</p>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {% if record.institution and record.institution.label %}
+        <div>
+            <p class="text-xs text-base-content/60">Institution</p>
+            <p class="font-semibold text-sm">{{ record.institution.label }}</p>
+            {% if record.institution.code %}
+            <p class="text-xs text-base-content/60">Code: {{ record.institution.code|upper }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if record.categories %}
+        <div class="space-y-1">
+            <p class="text-xs text-base-content/60">Categories</p>
+            <div class="flex flex-wrap gap-2">
+                {% for category in record.categories %}
+                <span class="badge badge-outline badge-sm">{{ category.label|default:"(untitled)" }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if record.events %}
+    <div class="space-y-2">
+        <p class="text-xs text-base-content/60">Events</p>
+        <ul class="space-y-2">
+            {% for event in record.events %}
+            <li class="border border-base-200 rounded-md p-2">
+                <p class="font-semibold text-sm">{{ event.name|default:"(untitled event)" }}</p>
+                <p class="text-xs text-base-content/60">
+                    {% if event.start or event.end %}
+                        {{ event.start|default:"?" }} {% if event.end %}– {{ event.end }}{% endif %}
+                    {% else %}
+                        No dates
+                    {% endif %}
+                    {% if event.location %} · {{ event.location }}{% endif %}
+                </p>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if record.actors %}
+    <div class="space-y-2">
+        <p class="text-xs text-base-content/60">Actors</p>
+        <ul class="space-y-1">
+            {% for actor in record.actors %}
+            <li class="text-sm">
+                <span class="font-semibold">{{ actor.name|default:"(unnamed actor)" }}</span>
+                {% if actor.roles %}
+                <span class="text-xs text-base-content/60">— {{ actor.roles|join:", " }}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if record.digital_objects %}
+    <div class="space-y-1">
+        <p class="text-xs text-base-content/60">Digital Objects ({{ record.digital_objects|length }})</p>
+        <ul class="space-y-1">
+            {% for obj in record.digital_objects %}
+            <li class="text-sm break-all">
+                {{ obj.path|default:obj.uri|default:"(no path)" }}
+                {% if obj.license and obj.license.label_de %}
+                <span class="badge badge-ghost badge-xs ml-2">{{ obj.license.label_de }}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if record.catchphrases %}
+    <div>
+        <p class="text-xs text-base-content/60">Catchphrases</p>
+        <div class="flex flex-wrap gap-2">
+            {% for catchphrase in record.catchphrases %}
+            <span class="badge badge-outline badge-xs">{{ catchphrase.label }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if predicate_rows %}
+    <div>
+        <p class="text-xs text-base-content/60 mb-1">Outgoing predicates (from project node)</p>
+        <div class="overflow-x-auto">
+            <table class="table table-xs">
+                <thead>
+                    <tr>
+                        <th>Canonical URI</th>
+                        <th>Predicate URI</th>
+                        <th>Values</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in predicate_rows %}
+                    <tr>
+                        <td class="font-mono text-[11px] break-all align-top">
+                            {% if row.canonical %}{{ row.canonical }}{% else %}<span class="text-base-content/50">—</span>{% endif %}
+                        </td>
+                        <td class="font-mono text-[11px] break-all align-top">
+                            {% if row.uri %}{{ row.uri }}{% else %}<span class="text-base-content/50">—</span>{% endif %}
+                        </td>
+                        <td class="text-xs align-top">
+                            {% if row.values %}
+                                <ul class="space-y-0.5">
+                                    {% for val in row.values %}
+                                    <li class="break-all">{{ val }}</li>
+                                    {% endfor %}
+                                    {% if row.truncated %}
+                                    <li class="text-base-content/50">… +{{ row.extra_count }} more</li>
+                                    {% endif %}
+                                </ul>
+                            {% else %}
+                                <span class="text-base-content/50">(no values)</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="alert alert-error">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+    </svg>
+    <span>Project record could not be rendered.</span>
+</div>
+{% endif %}

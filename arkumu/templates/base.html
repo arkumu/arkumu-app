@@ -78,6 +78,9 @@
                 <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener" class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">Metadata Raw</a></li>
                 <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">Mapping Editor</a></li>
                 <li><a href="{% url 'metadata:canonical_graph_view' %}" class="{% if current_url_name in 'canonical_graph_view canonical_graph_selectors canonical_graph_dataset_options canonical_graph_render' %}active{% endif %}">Canonical Graph</a></li>
+                <li><a href="{% url 'metadata:canonical_manifest_catalog' %}" class="{% if current_url_name in 'canonical_manifest_catalog' %}active{% endif %}">Canonical Manifest Catalog</a></li>
+                <li><a href="{% url 'metadata:canonical_data_catalog' %}" class="{% if current_url_name in 'canonical_data_catalog canonical_data_relationships canonical_data_load_more' %}active{% endif %}">Canonical Data Catalog</a></li>
+                <li><a href="{% url 'metadata:canonical_project_catalog' %}" class="{% if current_url_name in 'canonical_project_catalog canonical_project_record' %}active{% endif %}">Canonical Project Catalog</a></li>
               </ul>
             </details>
           </li>
@@ -130,6 +133,9 @@
                 <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener" class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">Metadata Raw</a></li>
                 <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">Mapping Editor</a></li>
                 <li><a href="{% url 'metadata:canonical_graph_view' %}" class="{% if current_url_name in 'canonical_graph_view canonical_graph_selectors canonical_graph_dataset_options canonical_graph_render' %}active{% endif %}">Canonical Graph</a></li>
+                <li><a href="{% url 'metadata:canonical_manifest_catalog' %}" class="{% if current_url_name in 'canonical_manifest_catalog' %}active{% endif %}">Canonical Manifest Catalog</a></li>
+                <li><a href="{% url 'metadata:canonical_data_catalog' %}" class="{% if current_url_name in 'canonical_data_catalog canonical_data_relationships canonical_data_load_more' %}active{% endif %}">Canonical Data Catalog</a></li>
+                <li><a href="{% url 'metadata:canonical_project_catalog' %}" class="{% if current_url_name in 'canonical_project_catalog canonical_project_record' %}active{% endif %}">Canonical Project Catalog</a></li>
               </ul>
             </details>
           </li>

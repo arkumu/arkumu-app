@@ -14,6 +14,9 @@ from arkumu.metadata.views import (
     blueprint_visualizer_graphviz,
     simplified_resource_views,
     canonical_graph_views,
+    canonical_manifest_catalog_views,
+    canonical_data_catalog_views,
+    canonical_project_catalog_views,
 )
 from arkumu.metadata.views import metadata_entry_views, tabular_views, schema_workspace_views
 from arkumu.metadata.views import workspace_quick_create_views
@@ -141,6 +144,12 @@ urlpatterns = [
     path('canonical-graph/tree/dataset/', canonical_graph_views.canonical_graph_tree_dataset, name='canonical_graph_tree_dataset'),
     path('canonical-graph/tree/column/edit/', canonical_graph_views.canonical_graph_tree_edit_column, name='canonical_graph_tree_edit_column'),
     path('canonical-graph/tree/column/update/', canonical_graph_views.canonical_graph_tree_update_column, name='canonical_graph_tree_update_column'),
+    path('canonical-manifest-catalog/', canonical_manifest_catalog_views.canonical_manifest_catalog_view, name='canonical_manifest_catalog'),
+    path('canonical-data-catalog/', canonical_data_catalog_views.canonical_data_catalog_view, name='canonical_data_catalog'),
+    path('canonical-data/relationships/', canonical_data_catalog_views.canonical_data_relationships_htmx, name='canonical_data_relationships'),
+    path('canonical-data/load-more/', canonical_data_catalog_views.canonical_data_load_more_htmx, name='canonical_data_load_more'),
+    path('canonical-projects/', canonical_project_catalog_views.canonical_project_catalog_view, name='canonical_project_catalog'),
+    path('canonical-projects/record/', canonical_project_catalog_views.canonical_project_record_htmx, name='canonical_project_record'),
     path('htmx/datasets/', bulk_editor_views.get_datasets_htmx, name='get_datasets_htmx'),
     path('htmx/dataset/<uuid:dataset_id>/columns/', bulk_editor_views.get_dataset_columns_htmx, name='get_dataset_columns_htmx'),
     path('htmx/column/<str:column_id>/cells/', bulk_editor_views.get_column_cells_htmx, name='get_column_cells_htmx'),
