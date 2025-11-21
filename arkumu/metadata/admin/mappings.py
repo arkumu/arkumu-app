@@ -123,6 +123,7 @@ class MappingAdmin(admin.ModelAdmin):
         'schema_manifest_preview',
         'execution_stats_display',
         'last_executed_display',
+        'junction_patterns_link',
     ]
     
     fieldsets = (
