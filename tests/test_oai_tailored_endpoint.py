@@ -14,7 +14,7 @@ from arkumu.oaipmh.views import harvest as harvest_views
 from arkumu.oaipmh.views import projects as project_views
 from arkumu.oaipmh.views import tailored as tailored_views
 from arkumu.oaipmh.views.config import METS_NS
-from arkumu.projects import ProjectDigitalObject, ProjectInstitution, ProjectRecord
+from arkumu.projects import ProjectActor, ProjectDigitalObject, ProjectInstitution, ProjectRecord
 from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
 from arkumu.users.models import Organization, User
 from arkumu.storage.models.s3_file_objects import S3FileObject
@@ -105,6 +105,14 @@ def test_tailored_endpoint_curates_media_links(client, monkeypatch, settings):
         digital_objects=[
             _digital_payload(digital_extra, "extra"),
         ],
+        actors=[
+            ProjectActor(name="Primary Creator", roles=["Creator"]),
+            ProjectActor(name="Collab Mate", roles=["Collaborator"]),
+        ],
+        reference_project_uris=[
+            "https://arkumu.org/entities/projekt/parent-1",
+            "https://arkumu.org/entities/projekt/parent-2",
+        ],
     )
 
     monkeypatch.setattr(
@@ -172,6 +180,7 @@ def test_tailored_endpoint_curates_media_links(client, monkeypatch, settings):
         "mets": METS_NS,
         "xlink": "http://www.w3.org/1999/xlink",
         "dc": "http://purl.org/dc/elements/1.1/",
+        "dcterms": "http://purl.org/dc/terms/",
         "xml": "http://www.w3.org/XML/1998/namespace",
     }
 
@@ -231,6 +240,22 @@ def test_tailored_endpoint_curates_media_links(client, monkeypatch, settings):
     expected_datestamp = link_newest.strftime("%Y-%m-%dT%H:%M:%SZ")
     assert tailored_datestamp.text == expected_datestamp
     assert db_datestamp.text == base_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    dc_record = tailored_root.find(".//mets:dmdSec/mets:mdWrap/mets:xmlData/dc:record", ns)
+    assert dc_record is not None
+    title_values = [elem.text for elem in dc_record.findall("./dc:title", ns) if elem.text]
+    assert "Tailored Integration" in title_values
+
+    creator_values = [elem.text for elem in dc_record.findall("./dc:creator", ns) if elem.text]
+    assert "Primary Creator" in creator_values
+    assert "Collab Mate" in creator_values
+
+    contributor_values = [elem.text for elem in dc_record.findall("./dc:contributor", ns) if elem.text]
+    assert any("Primary Creator" in value for value in contributor_values)
+    assert any("Collab Mate" in value for value in contributor_values)
+
+    part_of_values = [elem.text for elem in dc_record.findall("./dcterms:isPartOf", ns) if elem.text]
+    assert part_of_values == ["https://arkumu.org/entities/projekt/parent-1"]
 
 
 @pytest.mark.django_db

@@ -825,6 +825,18 @@ def _build_simplified_mets_from_project(
     _register_rosetta_namespaces()
 
     record = project.record
+    dc_payload = _build_dc_payload_from_project(
+        project,
+        resource,
+        include_event_details=False,
+    )
+    reference_parent = None
+    for candidate in getattr(record, "reference_project_uris", []) or []:
+        if candidate:
+            reference_parent = candidate
+            break
+    if reference_parent:
+        _add_dc_value(dc_payload, 'isPartOf', reference_parent, namespace='dcterms')
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
     mets_root.set("OBJID", getattr(record, "uri", getattr(resource, "uri", "")) or "")
@@ -863,12 +875,29 @@ def _build_simplified_mets_from_project(
         publisher_value = resource.organization.name
 
     if identifier_value:
-        identifier_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "identifier"))
-        identifier_elem.text = identifier_value
+        _add_dc_value(dc_payload, 'identifier', identifier_value)
 
     if publisher_value:
-        publisher_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "publisher"))
-        publisher_elem.text = publisher_value
+        _add_dc_value(dc_payload, 'publisher', publisher_value)
+
+    allowed_terms = {"identifier", "title", "creator", "contributor", "publisher", "isPartOf"}
+    emitted_is_part_of = False
+    for ns_uri, term, text, attrs in _iter_dc_entries(dc_payload):
+        if term not in allowed_terms:
+            continue
+        if term == "isPartOf":
+            if reference_parent:
+                if text != reference_parent:
+                    continue
+            if emitted_is_part_of:
+                continue
+            emitted_is_part_of = True
+        elem = ET.SubElement(dc_record, ET.QName(ns_uri, term))
+        elem.text = text
+        for attr_name, attr_value in attrs.items():
+            if attr_value is None:
+                continue
+            elem.set(attr_name, attr_value)
 
     # Add hardcoded Arkumu license rights for simplified METS
     rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
