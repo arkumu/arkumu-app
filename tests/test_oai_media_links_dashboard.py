@@ -183,6 +183,7 @@ def test_summary_counts_unique_project_uris():
 
     OAIProjectMediaLink.objects.create(project=project, digital_object=digital_a)
     OAIProjectMediaLink.objects.create(project=project, digital_object=digital_b)
+    OAIProjectPublication.objects.create(project=project, is_approved=True)
 
     link_qs = media_link_views._media_link_prefetch_queryset(org)
     summary = media_link_views._build_media_links_summary(org, link_qs)
@@ -195,13 +196,16 @@ def test_summary_counts_curated_projects_for_non_s3_org(monkeypatch):
     org = Organization.objects.create(name="KHM", code="khm", domain="khm", is_active=True)
     harvestable_project = _make_project(org, "https://arkumu.org/entities/projekt/harvestable")
     stale_project = _make_project(org, "https://arkumu.org/entities/projekt/stale")
-    duplicate_uri_project = _make_project(org, "https://arkumu.org/entities/projekt/stale")  # same URI
+    duplicate_uri_project = _make_project(org, "https://arkumu.org/entities/projekt/stale-dup")
     fresh_digital = _make_digital_object(org, "https://arkumu.org/entities/digital/fresh")
     stale_digital = _make_digital_object(org, "https://arkumu.org/entities/digital/stale")
 
     OAIProjectMediaLink.objects.create(project=harvestable_project, digital_object=fresh_digital)
     OAIProjectMediaLink.objects.create(project=stale_project, digital_object=stale_digital, is_stale=True)
     OAIProjectMediaLink.objects.create(project=duplicate_uri_project, digital_object=fresh_digital)
+    OAIProjectPublication.objects.create(project=harvestable_project, is_approved=True)
+    OAIProjectPublication.objects.create(project=stale_project, is_approved=False)
+    OAIProjectPublication.objects.create(project=duplicate_uri_project, is_approved=False)
 
     curated_ids = media_link_views._curated_harvestable_project_ids(org)
     link_qs = media_link_views._media_link_prefetch_queryset(org)
@@ -212,8 +216,8 @@ def test_summary_counts_curated_projects_for_non_s3_org(monkeypatch):
         curated_harvestable_ids=curated_ids,
     )
 
-    assert summary["harvestable_project_count"] == 1  # de-duped by URI
-    assert summary["available_project_count"] == 2
+    assert summary["harvestable_project_count"] == 1
+    assert summary["available_project_count"] == 3
 
 
 @pytest.mark.django_db

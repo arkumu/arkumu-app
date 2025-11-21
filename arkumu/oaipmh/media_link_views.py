@@ -231,42 +231,11 @@ def _build_media_links_summary(
     links_total = link_qs.count()
     filtered_total = links_total
     # Project-level stats for summary header
-    project_ids_qs = (
-        link_qs.order_by()
-        .values_list('project_id', flat=True)
-        .distinct()
+    publication_qs = OAIProjectPublication.objects.filter(
+        project__organization=organization,
     )
-    project_qs = project_queryset_for_org(organization).filter(id__in=project_ids_qs)
-    distinct_projects_qs = project_qs.order_by().values('uri').distinct()
-    available_projects = distinct_projects_qs.count()
-    if s3_harvestable_ids is not None:
-        harvestable_projects = (
-            Resource.objects.filter(id__in=s3_harvestable_ids)
-            .order_by()
-            .values("uri")
-            .distinct()
-            .count()
-        )
-    elif curated_harvestable_ids is not None:
-        harvestable_projects = (
-            Resource.objects.filter(id__in=curated_harvestable_ids)
-            .order_by()
-            .values("uri")
-            .distinct()
-            .count()
-        )
-    else:
-        # Fallback: count projects with at least one curated link (non-stale), de-duped by URI
-        harvestable_projects = (
-            OAIProjectMediaLink.objects.filter(
-                project__organization=organization,
-                is_stale=False,
-                project_id__in=project_qs.values_list("id", flat=True),
-            )
-            .values("project__uri")
-            .distinct()
-            .count()
-        )
+    available_projects = publication_qs.count()
+    harvestable_projects = publication_qs.filter(is_approved=True).count()
 
     return {
         "links_total": links_total,
