@@ -85,23 +85,15 @@ class MappingAdmin(admin.ModelAdmin):
         'name',
         'id_display',
         'organization_link',
-        'validation_status_badge',
-        'active_status_badge',
         'dataset_count_display',
         'column_count_display',
         'relationship_count_display',
-        'promoted_manifest_status',
-        'last_executed_display',
         'created_by_link',
         'created_at'
     ]
     
     list_filter = [
-        'validation_status',
-        ValidationStatusFilter,
-        HasExecutionStatsFilter,
         'created_at',
-        'last_executed',
         ('created_by', admin.RelatedOnlyFieldListFilter),
     ]
     
@@ -119,11 +111,9 @@ class MappingAdmin(admin.ModelAdmin):
         'dataset_count_display',
         'column_count_display',
         'relationship_count_display',
-        'promoted_manifest_status',
         'mapping_preview',
         'schema_manifest_preview',
         'execution_stats_display',
-        'last_executed_display',
         'junction_patterns_link',
     ]
     
