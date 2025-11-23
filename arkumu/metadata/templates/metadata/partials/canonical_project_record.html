@@ -40,14 +40,33 @@
         {% endif %}
     </div>
 
+    {% if record.main_event %}
+    <div class="space-y-2">
+        <p class="text-xs text-base-content/60">Main Event</p>
+        <div class="border border-primary/30 bg-primary/5 rounded-md p-2">
+            <p class="font-semibold text-sm">{{ record.main_event.name|default:"(untitled event)" }}</p>
+            <p class="text-xs text-base-content/60">
+                {% if record.main_event.type %}<span class="badge badge-primary badge-xs mr-1">{{ record.main_event.type }}</span>{% endif %}
+                {% if record.main_event.start or record.main_event.end %}
+                    {{ record.main_event.start|default:"?" }} {% if record.main_event.end %}– {{ record.main_event.end }}{% endif %}
+                {% else %}
+                    No dates
+                {% endif %}
+                {% if record.main_event.location %} · {{ record.main_event.location }}{% endif %}
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
     {% if record.events %}
     <div class="space-y-2">
-        <p class="text-xs text-base-content/60">Events</p>
+        <p class="text-xs text-base-content/60">{% if record.main_event %}Related Events{% else %}Events{% endif %} ({{ record.events|length }})</p>
         <ul class="space-y-2">
             {% for event in record.events %}
             <li class="border border-base-200 rounded-md p-2">
                 <p class="font-semibold text-sm">{{ event.name|default:"(untitled event)" }}</p>
                 <p class="text-xs text-base-content/60">
+                    {% if event.type %}<span class="badge badge-ghost badge-xs mr-1">{{ event.type }}</span>{% endif %}
                     {% if event.start or event.end %}
                         {{ event.start|default:"?" }} {% if event.end %}– {{ event.end }}{% endif %}
                     {% else %}
