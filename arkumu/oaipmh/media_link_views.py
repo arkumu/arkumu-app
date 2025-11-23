@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+import time
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from django.conf import settings
@@ -90,6 +91,8 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
         total_candidates = queryset.count()
         logger.info("Media link seed org=%s filtered candidates=%s (incremental)", org_label, total_candidates)
 
+    start_time = time.monotonic()
+    last_progress_log = start_time
     for idx, project in enumerate(queryset.iterator(chunk_size=100), start=1):
         result = service.sync_project(project)
         summary["projects"] += 1
@@ -97,9 +100,20 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
         summary["refreshed"] += getattr(result, "refreshed", 0)
         summary["stale"] += getattr(result, "stale", 0)
         summary["skipped"] += getattr(result, "skipped", 0)
-        if idx % 50 == 0:
+        now = time.monotonic()
+        if idx == 1:
             logger.info(
-                "Media link seed progress org=%s processed=%s/%s created=%s refreshed=%s stale=%s skipped=%s",
+                "Media link seed first project processed org=%s (1/%s)",
+                org_label,
+                total_candidates,
+            )
+        elapsed = now - start_time
+        if now - last_progress_log >= 5 or idx == total_candidates:
+            rate = summary["projects"] / elapsed if elapsed > 0 else 0
+            remaining = max(total_candidates - summary["projects"], 0)
+            eta_seconds = remaining / rate if rate > 0 else 0
+            logger.info(
+                "Media link seed progress org=%s processed=%s/%s created=%s refreshed=%s stale=%s skipped=%s rate=%.2f proj/s eta=%.1fs",
                 org_label,
                 summary["projects"],
                 total_candidates,
@@ -107,7 +121,11 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
                 summary["refreshed"],
                 summary["stale"],
                 summary["skipped"],
+                rate,
+                eta_seconds,
             )
+            last_progress_log = now
+
     if is_debug_logging:
         logger.debug(
             "Media link seed run completed for org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
