@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Set, Tuple
 
+from django.db import transaction
 from django.db.models import Q
 
 from arkumu.oaipmh.models import OAIMediaSyncState, OAIProjectMediaLink
@@ -19,10 +20,11 @@ def get_sync_state(
 ) -> OAIMediaSyncState:
     """Return or create the sync state row for the given organization/profile."""
 
-    state, _ = OAIMediaSyncState.objects.select_for_update().get_or_create(
-        organization=organization,
-        profile=profile,
-    )
+    with transaction.atomic():
+        state, _ = OAIMediaSyncState.objects.select_for_update().get_or_create(
+            organization=organization,
+            profile=profile,
+        )
     return state
 
 
