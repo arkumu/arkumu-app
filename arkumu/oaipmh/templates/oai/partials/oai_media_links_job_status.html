@@ -10,7 +10,7 @@
           <span class="loading loading-spinner loading-md"></span>
           <div class="text-left">
             <p class="font-semibold">Syncing curated data for {{ organization.name }} ({{ organization.code|upper }})…</p>
-            <p class="text-sm">This may take a moment. You can keep working elsewhere.</p>
+            <p class="text-sm">{{ message|default:"This may take a moment. You can keep working elsewhere." }}</p>
           </div>
         </div>
       {% endif %}
@@ -26,3 +26,4 @@
     ></div>
   {% endif %}
 </div>
+{% include 'oai/partials/oai_media_links_alerts.html' %}

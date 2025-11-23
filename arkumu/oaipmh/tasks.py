@@ -195,7 +195,13 @@ def run_media_link_seed_and_sync_job(job_id: str) -> None:
         logger.warning("⚠️ MEDIA SYNC: job %s missing state", job_id)
         return
 
-    media_sync_jobs.update_job(job_id, status="running", message="Sync in progress")
+    force_full_refresh = bool(state.get("force_full_refresh"))
+    mode_label = "Full refresh" if force_full_refresh else "Incremental sync"
+    media_sync_jobs.update_job(
+        job_id,
+        status="running",
+        message=f"{mode_label} in progress",
+    )
 
     try:
         from arkumu.oaipmh.media_link_views import (  # noqa: WPS433 - local import to avoid circular deps
@@ -215,13 +221,20 @@ def run_media_link_seed_and_sync_job(job_id: str) -> None:
             User = get_user_model()
             user = User.objects.filter(id=user_id).first()
 
-        seed_summary = _run_media_link_seed(organization)
-        sync_summary = _sync_oai_publication_for_org(organization, user=user)
+        seed_summary = _run_media_link_seed(
+            organization,
+            force_full_refresh=force_full_refresh,
+        )
+        sync_summary = _sync_oai_publication_for_org(
+            organization,
+            user=user,
+            force_full_refresh=force_full_refresh,
+        )
 
         media_sync_jobs.update_job(
             job_id,
             status="success",
-            message="Sync completed",
+            message=f"{mode_label} completed",
             seed_summary=seed_summary,
             sync_summary=sync_summary,
         )

@@ -11,7 +11,7 @@ from django.contrib import messages
 from django.core.paginator import EmptyPage, Paginator
 from django.db import models, transaction
 from django.db.models import Count, F, Max, Prefetch, Q
-from django.http import HttpResponseBadRequest, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1425,29 +1425,56 @@ def oai_media_link_seed_and_sync(request):
 
     force_full_refresh = bool(request.POST.get("force_full"))
 
-    # Run seed + publication sync synchronously (no background job) so results are immediate.
-    seed_summary = _run_media_link_seed(organization, force_full_refresh=force_full_refresh)
-    sync_summary = _sync_oai_publication_for_org(
-        organization,
-        user=request.user,
+    job_message = (
+        "Queued background media sync (full refresh)."
+        if force_full_refresh
+        else "Queued background media sync."
+    )
+    user_id = request.user.id if request.user.is_authenticated else None
+    job_id = media_sync_jobs.create_job(
+        organization_code=organization.code or "",
+        user_id=user_id,
+        filters=filters,
         force_full_refresh=force_full_refresh,
+        message=job_message,
     )
-    media_sync_state = {
-        "seed_summary": seed_summary,
-        "sync_summary": sync_summary,
-    }
-    _emit_media_sync_messages(request, media_sync_state, organization)
 
-    panel_context = _build_media_links_panel_context(
-        organization=organization,
-        page_number=page_number,
-        project_access_filter=project_access_filter,
-        oai_publish_filter=oai_publish_filter,
-        harvestable_filter=harvestable_filter,
-        search_query=search_query,
-    )
-    panel_context['include_summary_partial'] = True
-    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+    try:
+        from arkumu.oaipmh.tasks import run_media_link_seed_and_sync_job
+
+        run_media_link_seed_and_sync_job.schedule(args=(job_id,), delay=0)
+    except Exception:
+        logger.exception("Failed to enqueue media sync job for org=%s", organization.code)
+        media_sync_jobs.update_job(
+            job_id,
+            status="failed",
+            message="Failed to queue background sync. Verify Huey worker and Redis are running.",
+        )
+        messages.error(request, "Could not queue background sync. Confirm Huey worker and Redis are running.")
+        panel_context = _build_media_links_panel_context(
+            organization=organization,
+            page_number=page_number,
+            project_access_filter=project_access_filter,
+            oai_publish_filter=oai_publish_filter,
+            harvestable_filter=harvestable_filter,
+            search_query=search_query,
+        )
+        panel_context['include_summary_partial'] = True
+        return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+
+    messages.info(request, job_message)
+    job_state = media_sync_jobs.get_job(job_id) or {}
+    context = {
+        "job_id": job_id,
+        "status": job_state.get("status", "pending"),
+        "message": job_state.get("message", ""),
+        "organization": organization,
+    }
+
+    if not request.headers.get('HX-Request'):
+        return redirect(f"{reverse('oai_admin:oai_media_links_dashboard')}?organization={organization.code}")
+
+    return render(request, 'oai/partials/oai_media_links_job_status.html', context, status=202)
 
 
 @general_login_required
@@ -1460,23 +1487,28 @@ def oai_media_sync_status(request):
 
     job_id = (request.GET.get('job_id') or '').strip()
     if not job_id:
-        return HttpResponseBadRequest("<div class='alert alert-error'>Missing job identifier.</div>")
+        return HttpResponse(
+            "<div id='oai-media-links-panel'><div class='alert alert-error'>Missing job identifier.</div></div>",
+            status=200,
+        )
 
     state = media_sync_jobs.get_job(job_id)
     if not state:
-        return HttpResponseBadRequest(
-            "<div class='alert alert-error'>Sync job no longer exists. Please retry.</div>"
+        return HttpResponse(
+            "<div id='oai-media-links-panel'><div class='alert alert-error'>Sync job no longer exists. Please retry.</div></div>",
+            status=200,
         )
 
     organization = _resolve_organization_by_code(state.get('organization_code'))
     if not organization:
         media_sync_jobs.delete_job(job_id)
-        return HttpResponseBadRequest(
-            "<div class='alert alert-error'>Organization not found for sync job.</div>"
+        return HttpResponse(
+            "<div id='oai-media-links-panel'><div class='alert alert-error'>Organization not found for sync job.</div></div>",
+            status=200,
         )
 
     status = state.get('status') or 'pending'
-    if status in {'pending', 'running'}:
+    if status in {'queued', 'pending', 'running'}:
         context = {
             "job_id": job_id,
             "status": status,

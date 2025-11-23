@@ -20,14 +20,17 @@ def create_job(
     organization_code: str,
     user_id: int | None,
     filters: Dict[str, Any],
+    force_full_refresh: bool = False,
+    message: str = "",
 ) -> str:
     job_id = str(uuid4())
     state: Dict[str, Any] = {
         "status": "pending",
-        "message": "",
+        "message": message or "",
         "organization_code": organization_code,
         "user_id": user_id,
         "filters": filters,
+        "force_full_refresh": force_full_refresh,
         "seed_summary": {},
         "sync_summary": {},
     }
