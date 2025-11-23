@@ -529,6 +529,8 @@ def _prefetch_resource_labels(
             (getattr(triple.predicate, "uri", "") or "")
             + " "
             + (getattr(triple.predicate, "name", "") or "")
+            + " "
+            + (getattr(triple.predicate, "canonical_uri", "") or "")
         ).lower()
         if predicate_value and any(token in predicate_value for token in LABEL_PREFERRED_KEYWORDS):
             literal = _literal_value(triple)
