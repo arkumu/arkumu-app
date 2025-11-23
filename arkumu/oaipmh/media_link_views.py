@@ -79,12 +79,16 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
     if force_full_refresh:
         state.last_seed_at = None
     queryset = project_queryset_for_org(org)
+    total_candidates = queryset.count()
+    logger.info("Media link seed preparing org=%s candidates=%s full_refresh=%s", org_label, total_candidates, full_refresh)
     if not full_refresh:
         if not candidate_ids:
             state.last_seed_at = timezone.now()
             state.save(update_fields=["last_seed_at", "updated_at"])
             return summary
         queryset = queryset.filter(id__in=list(candidate_ids))
+        total_candidates = queryset.count()
+        logger.info("Media link seed org=%s filtered candidates=%s (incremental)", org_label, total_candidates)
 
     for idx, project in enumerate(queryset.iterator(chunk_size=100), start=1):
         result = service.sync_project(project)
@@ -93,11 +97,12 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
         summary["refreshed"] += getattr(result, "refreshed", 0)
         summary["stale"] += getattr(result, "stale", 0)
         summary["skipped"] += getattr(result, "skipped", 0)
-        if is_debug_logging and idx % 25 == 0:
-            logger.debug(
-                "Media link seed progress org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
+        if idx % 50 == 0:
+            logger.info(
+                "Media link seed progress org=%s processed=%s/%s created=%s refreshed=%s stale=%s skipped=%s",
                 org_label,
                 summary["projects"],
+                total_candidates,
                 summary["created"],
                 summary["refreshed"],
                 summary["stale"],
@@ -106,6 +111,16 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
     if is_debug_logging:
         logger.debug(
             "Media link seed run completed for org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
+            org_label,
+            summary["projects"],
+            summary["created"],
+            summary["refreshed"],
+            summary["stale"],
+            summary["skipped"],
+        )
+    else:
+        logger.info(
+            "Media link seed completed for org=%s processed=%s created=%s refreshed=%s stale=%s skipped=%s",
             org_label,
             summary["projects"],
             summary["created"],
