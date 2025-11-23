@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional, Sequence
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -197,11 +198,16 @@ class OAIProjectMediaSyncService:
         if not org:
             return []
 
+        digital_uri = self._digital_predicate_uri
+
         triples = (
             Triple.objects.filter(
                 subject_id=project.id,
-                predicate__canonical_uri=self._digital_predicate_uri,
                 object__resource_type=ResourceType.ENTITY,
+            )
+            .filter(
+                Q(predicate__canonical_uri=digital_uri)
+                | Q(predicate__uri=digital_uri)
             )
             .select_related("object")
         )

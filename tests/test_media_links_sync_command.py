@@ -1,6 +1,7 @@
 import pytest
 from django.core.management import call_command, CommandError
 
+from arkumu.metadata.canonical import canonical_uri
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.oaipmh import media_link_views
 from arkumu.oaipmh.management.commands import media_links_sync as cmd_module
@@ -119,3 +120,21 @@ def test_khm_uses_direct_triples(monkeypatch):
     service = media_link_views.OAIProjectMediaSyncService()
     result = service.sync_project(project)
     assert result.created + result.refreshed + result.stale + result.skipped >= 0
+
+
+@pytest.mark.django_db
+def test_direct_triples_match_on_uri_or_canonical():
+    org = Organization.objects.create(name="HMT", code="hmt", domain="hmt", is_active=True)
+    project = _make_project(org, "http://arkumu.org/data/hmt/entities/projekt/direct")
+    digital = _make_digital_object(org, "http://arkumu.org/data/hmt/entities/digitales-objekt/direct")
+    digital_pred_uri = canonical_uri("digital_object")
+
+    # Predicate without canonical_uri set (URI only) to ensure URI fallback works.
+    predicate = Resource.objects.create(uri=digital_pred_uri, resource_type=ResourceType.PROPERTY)
+
+    Triple = media_link_views.Triple  # reuse imported module path
+    Triple.objects.create(subject=project, predicate=predicate, object=digital, is_derived=True)
+
+    service = media_link_views.OAIProjectMediaSyncService()
+    candidates = service._candidates_from_direct_triples(project)
+    assert any(c.uri == digital.uri for c in candidates)
