@@ -16,6 +16,7 @@ from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.canonical import canonical_uri
 from arkumu.oaipmh.models import OAIProjectMediaLink
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
+from arkumu.users.models import Organization
 
 from .oai_project_assembler import AssemblyContext, OAIProjectAssembler
 
@@ -68,12 +69,22 @@ class OAIProjectMediaSyncService:
         if not isinstance(project, Resource):
             raise TypeError("sync_project expects a Resource instance")
 
-        if record is None:
-            record = self._assemble_record(project)
-        if record is None:
-            return SyncResult(skipped=1)
+        organization: Organization = getattr(project, "organization", None)
+        org_code = (getattr(organization, "code", None) or "").strip().lower()
 
-        candidates = self._candidates_from_record(record, project)
+        candidates: List[MediaLinkCandidate] = []
+
+        # For KHM/HMT, prefer pre-materialized project→digital triples to avoid full assembly.
+        if org_code in {"khm", "hmt"}:
+            candidates = self._candidates_from_direct_triples(project)
+
+        if not candidates:
+            if record is None:
+                record = self._assemble_record(project)
+            if record is None:
+                return SyncResult(skipped=1)
+            candidates = self._candidates_from_record(record, project)
+
         if not candidates:
             return self._mark_project_stale(project)
 
@@ -177,6 +188,37 @@ class OAIProjectMediaSyncService:
                 )
             )
 
+        return results
+
+    def _candidates_from_direct_triples(self, project: Resource) -> List[MediaLinkCandidate]:
+        """Return candidates from direct project→digital-object triples (materialized path)."""
+
+        org = getattr(project, "organization", None)
+        if not org:
+            return []
+
+        triples = (
+            Triple.objects.filter(
+                subject_id=project.id,
+                predicate__canonical_uri=self._digital_predicate_uri,
+                object__resource_type=ResourceType.ENTITY,
+            )
+            .select_related("object")
+        )
+
+        results: List[MediaLinkCandidate] = []
+        for triple in triples:
+            digital = getattr(triple, "object", None)
+            if not digital:
+                continue
+            results.append(
+                MediaLinkCandidate(
+                    resource=digital,
+                    source=OAIProjectMediaLink.SOURCE_PROJECT,
+                    uri=getattr(digital, "uri", None),
+                    path=getattr(digital, "value", None),
+                )
+            )
         return results
 
     # ------------------------------------------------------------------

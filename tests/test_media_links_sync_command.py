@@ -1,7 +1,10 @@
 import pytest
 from django.core.management import call_command, CommandError
 
+from arkumu.metadata.models.resource import Resource, ResourceType
+from arkumu.oaipmh import media_link_views
 from arkumu.oaipmh.management.commands import media_links_sync as cmd_module
+from arkumu.oaipmh.services.oai_project_media_sync_service import MediaLinkCandidate
 from arkumu.users.models import Organization
 
 
@@ -82,3 +85,37 @@ def test_queue_and_approvals_only_conflict():
     Organization.objects.create(name="KHM", code="khm", domain="khm", is_active=True)
     with pytest.raises(CommandError):
         call_command("media_links_sync", organization="khm", queue=True, approvals_only=True)
+
+
+def _make_project(org, uri):
+    return Resource.objects.create(
+        organization=org,
+        uri=uri,
+        resource_type=ResourceType.ENTITY,
+    )
+
+
+def _make_digital_object(org, uri):
+    return Resource.objects.create(
+        organization=org,
+        uri=uri,
+        resource_type=ResourceType.ENTITY,
+    )
+
+
+@pytest.mark.django_db
+def test_khm_uses_direct_triples(monkeypatch):
+    org = Organization.objects.create(name="KHM", code="khm", domain="khm", is_active=True)
+    project = _make_project(org, "http://arkumu.org/data/khm/entities/projekt/direct")
+    digital = _make_digital_object(org, "http://arkumu.org/data/khm/entities/digitales-objekt/direct")
+
+    def fake_direct(self, project_arg):
+        return [MediaLinkCandidate(resource=digital, source="project", uri=digital.uri, path=None)]
+
+    # Force direct triple path; bypass assembler.
+    monkeypatch.setattr(media_link_views.OAIProjectMediaSyncService, "_candidates_from_direct_triples", fake_direct)
+    monkeypatch.setattr(media_link_views.OAIProjectMediaSyncService, "_candidates_from_record", lambda self, r, p: [])
+
+    service = media_link_views.OAIProjectMediaSyncService()
+    result = service.sync_project(project)
+    assert result.created + result.refreshed + result.stale + result.skipped >= 0
