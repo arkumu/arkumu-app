@@ -34,7 +34,6 @@ from arkumu.oaipmh.services.project_scope import project_queryset_for_org
 from arkumu.oaipmh.views import _build_identifier, _project_type_filter, _restrict_to_harvestable_files
 from arkumu.storage.models.s3_file_objects import S3FileObject
 from arkumu.projects import ProjectRecord
-from arkumu.projects.services import ProjectSnapshotService
 from arkumu.users.mixins import general_login_required
 from arkumu.users.models import Organization
 
@@ -87,40 +86,8 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
             return summary
         queryset = queryset.filter(id__in=list(candidate_ids))
 
-    target_code = (org.code or "").strip().lower()
-    snapshot_service = ProjectSnapshotService()
-    if target_code:
-        snapshot_service.organization_codes = (target_code,)
-    snapshot = snapshot_service.get_cross_institutional_snapshot(include_non_public=True)
-    records_by_id: dict[str, ProjectRecord] = {}
-    for record in snapshot.projects:
-        subject_id = getattr(record, "subject_id", None)
-        if not subject_id:
-            continue
-        codes: set[str] = {
-            (getattr(getattr(record, "institution", None), "code", "") or "").strip().lower()
-        }
-        codes.update(
-            {
-                (code or "").strip().lower()
-                for code in getattr(record, "institution_codes", []) or []
-                if code
-            }
-        )
-        codes.discard("")
-        if target_code and target_code not in codes:
-            continue
-        records_by_id[str(subject_id)] = record
-    logger.info(
-        "Media link seed snapshot ready for org=%s projects=%d total_records=%d",
-        org_label,
-        len(records_by_id),
-        len(snapshot.projects),
-    )
-
     for idx, project in enumerate(queryset.iterator(chunk_size=100), start=1):
-        record = records_by_id.get(str(project.id))
-        result = service.sync_project(project, record=record)
+        result = service.sync_project(project)
         summary["projects"] += 1
         summary["created"] += getattr(result, "created", 0)
         summary["refreshed"] += getattr(result, "refreshed", 0)
