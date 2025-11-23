@@ -87,9 +87,9 @@ def project_queryset_for_org(org: Organization):
     if not scope_clauses:
         return queryset.none()
 
-    project_scope = scope_clauses[0]
-    for clause in scope_clauses[1:]:
-        project_scope |= clause
+    project_scope = Q()
+    for clause in scope_clauses:
+        project_scope &= clause
 
     return queryset.filter(project_scope).order_by("updated_at", "id")
 
