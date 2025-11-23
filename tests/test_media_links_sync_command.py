@@ -138,3 +138,20 @@ def test_direct_triples_match_on_uri_or_canonical():
     service = media_link_views.OAIProjectMediaSyncService()
     candidates = service._candidates_from_direct_triples(project)
     assert any(c.uri == digital.uri for c in candidates)
+
+
+@pytest.mark.django_db
+def test_khm_no_direct_triples_skips_without_assembler(monkeypatch):
+    org = Organization.objects.create(name="KHM", code="khm", domain="khm", is_active=True)
+    project = _make_project(org, "http://arkumu.org/data/khm/entities/projekt/empty")
+
+    # Assembler must not be called for KHM/HMT fast path.
+    def explode(*args, **kwargs):
+        raise AssertionError("Assembler should not be invoked for khm/hmt when no direct triples")
+
+    monkeypatch.setattr(media_link_views.OAIProjectMediaSyncService, "_assemble_record", explode)
+
+    service = media_link_views.OAIProjectMediaSyncService()
+    result = service.sync_project(project)
+    assert result.skipped == 1
+    assert result.created == result.refreshed == result.stale == 0

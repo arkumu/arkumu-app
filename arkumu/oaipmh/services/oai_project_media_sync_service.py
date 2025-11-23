@@ -78,8 +78,14 @@ class OAIProjectMediaSyncService:
         # For KHM/HMT, prefer pre-materialized project→digital triples to avoid full assembly.
         if org_code in {"khm", "hmt"}:
             candidates = self._candidates_from_direct_triples(project)
-
-        if not candidates:
+            if not candidates:
+                logger.warning(
+                    "Media link seed: no materialized project→digital triples for %s (%s); skipping",
+                    getattr(project, "uri", None) or project.id,
+                    org_code,
+                )
+                return SyncResult(skipped=1)
+        else:
             if record is None:
                 record = self._assemble_record(project)
             if record is None:
