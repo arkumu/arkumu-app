@@ -56,12 +56,30 @@ MEDIA_LINKS_PAGE_SIZE = 10
 
 def _has_oai_admin_access(user) -> bool:
     """Allow access for Django superusers or Arkumu system administrators."""
-
     if not getattr(user, "is_authenticated", False):
         return False
     if getattr(user, "is_superuser", False):
         return True
     return getattr(user, "role", None) == "system_admin"
+
+
+def _has_oai_org_access(user, organization: Organization) -> bool:
+    """Check if user can access the given organization's media links."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if _has_oai_admin_access(user):
+        return True
+    user_org = getattr(user, "organization", None)
+    if user_org and user_org.id == organization.id:
+        return True
+    return False
+
+
+def _get_user_organization(user) -> Organization | None:
+    """Get the user's organization if they have one."""
+    if not getattr(user, "is_authenticated", False):
+        return None
+    return getattr(user, "organization", None)
 
 
 def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False) -> dict[str, int]:
@@ -155,12 +173,22 @@ def _run_media_link_seed(org: Organization, *, force_full_refresh: bool = False)
 @general_login_required
 @require_http_methods(["GET"])
 def oai_media_links_dashboard(request):
-    if not _has_oai_admin_access(request.user):
+    is_admin = _has_oai_admin_access(request.user)
+    user_org = _get_user_organization(request.user)
+
+    # Access control: must be admin or have an organization
+    if not is_admin and not user_org:
         return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
+            "<div class='alert alert-error'>Access denied: you must belong to an organization</div>"
         )
 
-    organizations = list(Organization.objects.filter(is_active=True).order_by('name'))
+    # For admins: show all organizations in dropdown
+    # For org users: only their organization (no dropdown)
+    if is_admin:
+        organizations = list(Organization.objects.filter(is_active=True).order_by('name'))
+    else:
+        organizations = [user_org] if user_org and user_org.is_active else []
+
     org_lookup = {
         (org.code or '').lower(): org
         for org in organizations
@@ -168,9 +196,18 @@ def oai_media_links_dashboard(request):
     }
 
     selected_code = (request.GET.get('organization') or '').strip().lower()
-    selected_org = org_lookup.get(selected_code) if selected_code else None
-    if selected_code and not selected_org:
-        messages.error(request, f"Unknown organization code '{selected_code}'.")
+
+    # For non-admin users, force their organization
+    if not is_admin and user_org:
+        selected_org = user_org
+        user_org_code = (user_org.code or '').lower()
+        # Redirect if no org specified or trying to access another org
+        if not selected_code or selected_code != user_org_code:
+            return redirect(f"{reverse('oai_admin:oai_media_links_dashboard')}?organization={user_org.code}")
+    else:
+        selected_org = org_lookup.get(selected_code) if selected_code else None
+        if selected_code and not selected_org:
+            messages.error(request, f"Unknown organization code '{selected_code}'.")
 
     page_param = request.GET.get('page') or '1'
     try:
@@ -211,6 +248,7 @@ def oai_media_links_dashboard(request):
             'selected_org': selected_org,
             'selected_org_code': selected_org.code if selected_org else '',
             'panel_context': panel_context,
+            'is_admin': is_admin,
         },
     )
 
@@ -1040,14 +1078,14 @@ def _preview_media_link_seed(org: Organization) -> dict[str, int]:
 @general_login_required
 @require_http_methods(["GET"])
 def oai_media_links_panel(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.GET.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select a valid organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     project_access_filter = request.GET.get('project_access', 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
@@ -1089,14 +1127,14 @@ def oai_media_links_panel(request):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_update(request, link_id):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.POST.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     page_param = request.POST.get('page') or '1'
     try:
@@ -1163,14 +1201,14 @@ def oai_media_link_update(request, link_id):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_delete(request, link_id):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.POST.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     page_param = request.POST.get('page') or '1'
     try:
@@ -1219,14 +1257,14 @@ def oai_media_link_delete(request, link_id):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_add(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.POST.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     page_param = request.POST.get('page') or '1'
     try:
@@ -1300,14 +1338,14 @@ def oai_media_link_add(request):
 @general_login_required
 @require_http_methods(["GET"])
 def oai_media_link_seed_preview(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.GET.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     summary = _preview_media_link_seed(organization)
     context = {
@@ -1320,14 +1358,14 @@ def oai_media_link_seed_preview(request):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_seed_execute(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.POST.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     summary = _run_media_link_seed(organization)
 
@@ -1353,14 +1391,14 @@ def oai_media_link_seed_execute(request):
 @general_login_required
 @require_POST
 def oai_media_link_clear_data(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.POST.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
@@ -1406,14 +1444,14 @@ def oai_media_link_clear_data(request):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_media_link_seed_and_sync(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.POST.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
@@ -1500,11 +1538,6 @@ def oai_media_link_seed_and_sync(request):
 @general_login_required
 @require_http_methods(["GET"])
 def oai_media_sync_status(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     job_id = (request.GET.get('job_id') or '').strip()
     if not job_id:
         return HttpResponse(
@@ -1525,6 +1558,11 @@ def oai_media_sync_status(request):
         return HttpResponse(
             "<div id='oai-media-links-panel'><div class='alert alert-error'>Organization not found for sync job.</div></div>",
             status=200,
+        )
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
         )
 
     status = state.get('status') or 'pending'
@@ -1794,14 +1832,14 @@ def _build_digital_object_centric_context(
 @require_http_methods(["GET"])
 def oai_media_links_digital_view(request):
     """Digital object-centric view showing digital objects grouped by object with their projects."""
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.GET.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select a valid organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     project_access_filter = request.GET.get('project_access', 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
@@ -1846,11 +1884,6 @@ def oai_media_links_digital_view(request):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_project_status_update(request, resource_id):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     try:
         resource = Resource.objects.get(id=resource_id)
     except Resource.DoesNotExist:
@@ -1859,6 +1892,11 @@ def oai_project_status_update(request, resource_id):
     organization = resource.organization
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Project organization missing.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     page_number = 1
     page_param = request.POST.get('page')
@@ -1908,14 +1946,14 @@ def oai_project_status_update(request, resource_id):
 @general_login_required
 @require_http_methods(["POST"])
 def oai_publication_sync(request):
-    if not _has_oai_admin_access(request.user):
-        return HttpResponseForbidden(
-            "<div class='alert alert-error'>Access denied: system administrator permissions required</div>"
-        )
-
     organization = _resolve_organization_by_code(request.POST.get('organization'))
     if not organization:
         return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
 
     project_access_filter = (request.POST.get('project_access') or 'all').strip().lower()
     if project_access_filter not in ['all', 'private', 'restricted', 'public']:
