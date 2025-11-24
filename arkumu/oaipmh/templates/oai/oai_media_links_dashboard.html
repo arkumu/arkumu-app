@@ -54,7 +54,7 @@
 
   <div id="oai-media-links-panel">
     {% if panel_context %}
-      {% include 'oai/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page %}
+      {% include 'oai/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page oai_publish_filter=panel_context.oai_publish_filter harvestable_filter=panel_context.harvestable_filter search_query=panel_context.search_query project_total=panel_context.project_total %}
     {% elif selected_org %}
       <div class="alert alert-info shadow">
         <span>No curated links yet. Use the sync action or add a digital object manually to get started.</span>

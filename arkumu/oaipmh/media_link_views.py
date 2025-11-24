@@ -51,7 +51,7 @@ LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = (
     "dateiname",
 )
 
-MEDIA_LINKS_PAGE_SIZE = 6
+MEDIA_LINKS_PAGE_SIZE = 10
 
 
 def _has_oai_admin_access(user) -> bool:
@@ -178,11 +178,29 @@ def oai_media_links_dashboard(request):
     except ValueError:
         page_number = 1
 
+    project_access_filter = request.GET.get('project_access', 'all').strip().lower()
+    if project_access_filter not in ['all', 'private', 'restricted', 'public']:
+        project_access_filter = 'all'
+
+    oai_publish_filter = request.GET.get('oai_publish', 'all').strip().lower()
+    if oai_publish_filter not in ['all', 'approved', 'pending']:
+        oai_publish_filter = 'all'
+
+    harvestable_filter = request.GET.get('harvestable', 'all').strip().lower()
+    if harvestable_filter not in ['all', 'harvestable', 'non_harvestable']:
+        harvestable_filter = 'all'
+
+    search_query = (request.GET.get('search') or '').strip()
+
     panel_context = None
     if selected_org:
         panel_context = _build_media_links_panel_context(
             organization=selected_org,
             page_number=page_number,
+            project_access_filter=project_access_filter,
+            oai_publish_filter=oai_publish_filter,
+            harvestable_filter=harvestable_filter,
+            search_query=search_query,
         )
 
     return render(
