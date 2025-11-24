@@ -834,6 +834,9 @@ def _build_media_links_panel_context(
 ) -> dict[str, Any]:
     is_s3_org = _is_s3_org(organization)
     project_scope = _project_scope_or_all_entities(organization)
+    base_projects_qs = project_scope.filter(
+        oai_media_links__isnull=False,
+    ).distinct()
     link_base_qs = OAIProjectMediaLink.objects.filter(project_id__in=project_scope.values("id"))
     s3_harvestable_ids: Optional[Set[int]] = None
     curated_harvestable_ids: Optional[Set[int]] = None
@@ -851,58 +854,64 @@ def _build_media_links_panel_context(
         curated_harvestable_ids=curated_harvestable_ids,
     )
 
-    project_prefetch = Prefetch(
-        'oai_media_links',
-        queryset=_media_link_prefetch_queryset(organization),
-        to_attr='prefetched_media_links',
-    )
-    projects_qs = project_scope.prefetch_related(project_prefetch).filter(
-        oai_media_links__isnull=False,
-    ).distinct().order_by('-updated_at', 'uri')
-
     if project_access_filter != "all":
-        projects_qs = projects_qs.filter(public_access_level=project_access_filter)
+        base_projects_qs = base_projects_qs.filter(public_access_level=project_access_filter)
 
     if oai_publish_filter == "approved":
-        projects_qs = projects_qs.filter(oai_publication__is_approved=True)
+        base_projects_qs = base_projects_qs.filter(oai_publication__is_approved=True)
     elif oai_publish_filter == "pending":
-        projects_qs = projects_qs.filter(
+        base_projects_qs = base_projects_qs.filter(
             models.Q(oai_publication__isnull=True) | models.Q(oai_publication__is_approved=False)
         )
 
     if harvestable_filter == "harvestable":
         if s3_harvestable_ids is not None:
             if s3_harvestable_ids:
-                projects_qs = projects_qs.filter(id__in=s3_harvestable_ids)
+                base_projects_qs = base_projects_qs.filter(id__in=s3_harvestable_ids)
             else:
-                projects_qs = projects_qs.none()
+                base_projects_qs = base_projects_qs.none()
         elif curated_harvestable_ids is not None:
             if curated_harvestable_ids:
-                projects_qs = projects_qs.filter(id__in=curated_harvestable_ids)
+                base_projects_qs = base_projects_qs.filter(id__in=curated_harvestable_ids)
             else:
-                projects_qs = projects_qs.none()
+                base_projects_qs = base_projects_qs.none()
         else:
-            projects_qs = _restrict_to_harvestable_files(projects_qs)
+            base_projects_qs = _restrict_to_harvestable_files(base_projects_qs)
     elif harvestable_filter == "non_harvestable":
         if s3_harvestable_ids is not None:
             if s3_harvestable_ids:
-                projects_qs = projects_qs.exclude(id__in=s3_harvestable_ids)
+                base_projects_qs = base_projects_qs.exclude(id__in=s3_harvestable_ids)
         elif curated_harvestable_ids is not None:
             if curated_harvestable_ids:
-                projects_qs = projects_qs.exclude(id__in=curated_harvestable_ids)
+                base_projects_qs = base_projects_qs.exclude(id__in=curated_harvestable_ids)
         else:
-            harvestable_qs = _restrict_to_harvestable_files(projects_qs)
-            projects_qs = projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
+            harvestable_qs = _restrict_to_harvestable_files(base_projects_qs)
+            base_projects_qs = base_projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
 
-    # Apply search filter at database level BEFORE pagination
+    # Apply search BEFORE pagination using label lookup (matches curated labels as well as URIs)
     if search_query:
-        search_filter = (
-            Q(uri__icontains=search_query)
-            | Q(name__icontains=search_query)
-            | Q(value__icontains=search_query)
-            | Q(subject_triples__object__value__icontains=search_query)
+        search_lower = search_query.lower()
+        candidate_resources = list(
+            base_projects_qs.only("id", "uri", "name", "value")
         )
-        projects_qs = projects_qs.filter(search_filter).distinct()
+        label_lookup = _prefetch_resource_labels(candidate_resources)
+        matching_ids = [
+            resource.id
+            for resource in candidate_resources
+            if search_lower in (label_lookup.get(resource.id, "") or "").lower()
+            or search_lower in (resource.uri or "").lower()
+        ]
+        if matching_ids:
+            base_projects_qs = base_projects_qs.filter(id__in=matching_ids)
+        else:
+            base_projects_qs = base_projects_qs.none()
+
+    project_prefetch = Prefetch(
+        'oai_media_links',
+        queryset=_media_link_prefetch_queryset(organization),
+        to_attr='prefetched_media_links',
+    )
+    projects_qs = base_projects_qs.prefetch_related(project_prefetch).order_by('-updated_at', 'uri')
 
     paginator = Paginator(projects_qs, MEDIA_LINKS_PAGE_SIZE)
     page_obj = paginator.get_page(page_number)

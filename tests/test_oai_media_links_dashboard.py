@@ -3,6 +3,8 @@ from django.contrib.messages.storage.fallback import FallbackStorage
 from django.http import HttpResponse
 from django.test import RequestFactory
 from django.urls import reverse
+from django.utils import timezone
+from datetime import timedelta
 from types import SimpleNamespace
 
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
@@ -255,6 +257,34 @@ def test_project_panel_harvestable_filter_uses_curated_links(monkeypatch):
     non_harvestable_rows = [row["project_uri"] for row in non_harvestable_context["project_rows"]]
     assert stale_project.uri in non_harvestable_rows
     assert harvestable_project.uri not in non_harvestable_rows
+
+
+@pytest.mark.django_db
+def test_project_search_filters_before_pagination(monkeypatch):
+    org = Organization.objects.create(name="KHM", code="khm", domain="khm", is_active=True)
+    monkeypatch.setattr(media_link_views, "MEDIA_LINKS_PAGE_SIZE", 1)
+
+    target = _make_project(org, "https://arkumu.org/entities/projekt/match", name="Match Project")
+    other = _make_project(org, "https://arkumu.org/entities/projekt/other", name="Other Project")
+    target_digital = _make_digital_object(org, "https://arkumu.org/entities/digital/target")
+    other_digital = _make_digital_object(org, "https://arkumu.org/entities/digital/other")
+
+    OAIProjectMediaLink.objects.create(project=target, digital_object=target_digital)
+    OAIProjectMediaLink.objects.create(project=other, digital_object=other_digital)
+
+    # Force ordering so the target would normally appear on page 2
+    Resource.objects.filter(id=other.id).update(updated_at=timezone.now())
+    Resource.objects.filter(id=target.id).update(updated_at=timezone.now() - timedelta(days=1))
+
+    context = media_link_views._build_media_links_panel_context(
+        organization=org,
+        page_number=1,
+        search_query="match",
+    )
+
+    project_rows = [row["project_uri"] for row in context["project_rows"]]
+    assert target.uri in project_rows
+    assert context["page_obj"].paginator.count == 1
 
 
 @pytest.mark.django_db
