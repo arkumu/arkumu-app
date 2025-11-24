@@ -356,7 +356,10 @@ class FileResourceMatcherService:
 
         path_triples = (
             Triple.objects
-            .filter(predicate__uri=path_predicate)
+            .filter(
+                models.Q(predicate__uri=path_predicate)
+                | models.Q(predicate__canonical_uri=path_predicate)
+            )
             .select_related('subject', 'object')
         )
 
