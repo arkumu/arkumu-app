@@ -4,17 +4,14 @@ Catalog view with pagination and caching.
 
 from django.views.generic import View
 from django.shortcuts import render
-from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.middleware.csrf import get_token
 import logging
-from typing import Any, Dict, List, Optional
+from typing import List
 
-from arkumu.cache.services import CacheManager
-from arkumu.projects.services import ProjectSnapshotService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
-from arkumu.metadata.models import ExternalSourcesEntity
 from ..services.wikidata_service import WikidataService
+from ..services.project_card_search_service import ProjectCardSearchService
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +30,8 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         start_time = time.time()
 
         query = request.GET.get('query', '').strip()
-        orga_code = request.GET.get('orga_code', "").strip()
-
-        if query == "":
-            query = None
-
-        if orga_code == "" or orga_code.lower() == "none":
-            orga_code = None
+        orga_code = request.GET.get('orga_code', "").strip().lower() or None
+        query = query or None
 
         # Mapping der Kürzel zu vollständigen Namen
         orga_mapping = {
@@ -50,12 +42,12 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             "hmt": "Hochschule für Musik und Tanz Köln"
         }
 
-        # Normalisierung und Ersetzung des Kürzels
-        if orga_code:
-            normalized_code = (orga_code or "").strip().lower()
-            orga_code = orga_mapping.get(normalized_code, orga_code)  # Behält Original bei wenn kein Match
+        orga_display = orga_mapping.get(orga_code) if orga_code else None
 
-        page = request.GET.get('page', 1)
+        try:
+            page = max(int(request.GET.get('page', 1)), 1)
+        except ValueError:
+            page = 1
         is_htmx = request.headers.get('HX-Request') is not None
 
         # Get user's organization (optional for cross-institutional queries)
@@ -67,67 +59,53 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
         try:
             # For HTMX requests without query, return empty results immediately
-            if is_htmx and not query:
+            if is_htmx and not query and not orga_code:
                 logger.info("🚀 FAST_PATH: Empty HTMX request, returning empty results")
                 return self.build_empty_search_response(request, query)
 
-            # Only load projects when there's a search query
-            if query:
-                projects = self._get_all_projects(query, request)
-                logger.info(f"📊 SEARCH_RESULTS: Found {len(projects)} projects for '{query}'")
-            else:
-                # Empty results when no query - lazy loading
-                projects = []
+            search_service = ProjectCardSearchService()
+            cards, total_results = search_service.search_cards(
+                query,
+                org_code=orga_code,
+                page=page,
+                page_size=self.ITEMS_PER_PAGE,
+            )
 
-            if orga_code:
-                projects = self._get_all_projects(query="", request=request, organ_code=orga_code)
-                logger.info(f"📊 ORGA_FILTERED_RESULTS: Found {len(projects)} projects for organization '{orga_code}'")
-
-            # Paginate results
-            paginator = Paginator(projects, self.ITEMS_PER_PAGE)
-
-            try:
-                page_obj = paginator.page(page)
-            except PageNotAnInteger:
-                page_obj = paginator.page(1)
-            except EmptyPage:
-                page_obj = paginator.page(paginator.num_pages)
-
-            for i, page in enumerate(page_obj):
+            # Wikidata resolution for category labels
+            for card in cards:
                 wikidata_service = WikidataService()
-                if page.get("category1"):
-                    page["category1_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category1"))
-                if page.get("category2"):
-                    page["category2_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category2"))
-                if page.get("category3"):
-                    page["category3_name"] = wikidata_service.get_entity_label(wikidata_id=page.get("category3"))
-                if page.get("categories"):
+                if card.get("category1"):
+                    card["category1_name"] = wikidata_service.get_entity_label(wikidata_id=card.get("category1"))
+                if card.get("category2"):
+                    card["category2_name"] = wikidata_service.get_entity_label(wikidata_id=card.get("category2"))
+                if card.get("category3"):
+                    card["category3_name"] = wikidata_service.get_entity_label(wikidata_id=card.get("category3"))
+                if card.get("categories"):
                     categories_name = []
-                    for i, w in enumerate(page.get("categories")):
+                    for w in card.get("categories"):
                         categories_name.append(wikidata_service.get_entity_label(wikidata_id=w))
-                    page["categories"] = [
+                    card["categories"] = [
                         {"id": cid, "name": cname}
-                         for cid, cname in zip(page.get("categories"), categories_name)
+                        for cid, cname in zip(card.get("categories"), categories_name)
                     ]
 
 
             # Calculate result range for display
-            total_results = paginator.count
-            start_result = (page_obj.number - 1) * self.ITEMS_PER_PAGE + 1 if total_results > 0 else 0
-            end_result = min(page_obj.number * self.ITEMS_PER_PAGE, total_results)
+            total_pages = (total_results + self.ITEMS_PER_PAGE - 1) // self.ITEMS_PER_PAGE if total_results else 0
+            start_result = (page - 1) * self.ITEMS_PER_PAGE + 1 if total_results > 0 else 0
+            end_result = min(page * self.ITEMS_PER_PAGE, total_results)
 
-            # Build pagination context
             pagination_context = {
-                'current_page': page_obj.number,
-                'total_pages': paginator.num_pages,
+                'current_page': page,
+                'total_pages': total_pages,
                 'total_results': total_results,
                 'start_result': start_result,
                 'end_result': end_result,
-                'has_previous': page_obj.has_previous(),
-                'has_next': page_obj.has_next(),
-                'previous_page': page_obj.previous_page_number() if page_obj.has_previous() else None,
-                'next_page': page_obj.next_page_number() if page_obj.has_next() else None,
-                'page_range': self._get_page_range(page_obj.number, paginator.num_pages)
+                'has_previous': page > 1,
+                'has_next': total_pages > page,
+                'previous_page': page - 1 if page > 1 else None,
+                'next_page': page + 1 if total_pages > page else None,
+                'page_range': self._get_page_range(page, total_pages) if total_pages else [],
             }
 
             processing_time = time.time() - start_time
@@ -137,7 +115,7 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 logger.info(f"⚡ HTMX_RESPONSE: Returning unified results container in {processing_time:.3f}s")
                 response = self.build_search_response(
                     request=request,
-                    results=page_obj.object_list,
+                    results=cards,
                     pagination_context=pagination_context,
                     query=query,
                     total_results=total_results,
@@ -148,8 +126,8 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             # For regular requests, return full page
             context = {
                 'query': query,
-                'orga_code': orga_code,
-                'results': page_obj.object_list,
+                'orga_code': orga_display or orga_code,
+                'results': cards,
                 'pagination': pagination_context,
                 # Also include individual pagination values for template
                 'total_results': total_results,
@@ -166,15 +144,15 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             }
 
             logger.info(f"📄 FULL_PAGE: Returning full page in {processing_time:.3f}s")
-            if orga_code == "Folkwang Universität der Künste":
+            if orga_display == "Folkwang Universität der Künste":
                 return render(request, 'catalog/university_pages/university_page_FUK.html', context)
-            if orga_code == "Robert Schumann Hochschule Düsseldorf":
+            if orga_display == "Robert Schumann Hochschule Düsseldorf":
                 return render(request, 'catalog/university_pages/university_page_RSH.html', context)
-            if orga_code == "Kunsthochschule für Medien Köln":
+            if orga_display == "Kunsthochschule für Medien Köln":
                 return render(request, 'catalog/university_pages/university_page_KHM.html', context)
-            if orga_code == "Hochschule für Musik Detmold":
+            if orga_display == "Hochschule für Musik Detmold":
                 return render(request, 'catalog/university_pages/university_page_DET.html', context)
-            if orga_code == "Hochschule für Musik und Tanz Köln":
+            if orga_display == "Hochschule für Musik und Tanz Köln":
                 return render(request, 'catalog/university_pages/university_page_HMT.html', context)
             return render(request, 'catalog/design.html', context)
 
@@ -183,89 +161,6 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             if is_htmx:
                 return self.build_empty_search_response(request, query)
             return self._render_error(request, f"Error loading catalog: {str(e)}")
-
-    def _get_all_projects(
-        self,
-        query: str,
-        request=None,
-        organ_code: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return project cards, using cached snapshot and query cache."""
-        cache_manager = CacheManager()
-        skip_cache = bool(request and request.GET.get('nocache') == '1')
-
-        if query and not skip_cache and not organ_code:
-            cached_search = cache_manager.catalog.get_cached_search_results(
-                query=query,
-                property_name="cross_institutional_search",
-                selected_class="projekt",
-                user_org="global",
-            )
-            if cached_search and cached_search.get('results'):
-                logger.info("✅ CATALOG_CACHE_HIT: Using cached search results for '%s'", query)
-                return cached_search['results'].get('entities', [])
-
-        if organ_code and not skip_cache:
-            cached_search = cache_manager.catalog.get_cached_search_results(
-                query="",
-                property_name="institutional_search",
-                selected_class="projekt",
-                user_org="global",
-            )
-            if cached_search and cached_search.get('results'):
-                logger.info("✅ CATALOG_CACHE_HIT: Using cached search results for '%s'", query)
-                return cached_search['results'].get('entities', [])
-
-        if skip_cache:
-            logger.info("🔄 CACHE_BYPASS: nocache=1 forcing snapshot refresh")
-
-        snapshot_service = ProjectSnapshotService()
-        snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=skip_cache)
-        records = snapshot.projects
-        logger.info(
-            "CATALOG_SNAPSHOT: generated %s with %d total projects (force_refresh=%s)",
-            snapshot.generated_at.isoformat(),
-            len(records),
-            skip_cache,
-        )
-
-        if query and not organ_code:
-            matching_records = [record for record in records if record.matches_query(query)]
-            logger.info("🔍 FILTERED: %d projects match '%s'", len(matching_records), query)
-            logger.debug(
-                "🔍 FILTERED_CODES: institutions=%s categories=%s",
-                sorted({code for record in matching_records for code in record.institution_codes}),
-                sorted({slug for record in matching_records for slug in record.category_slugs}),
-            )
-
-        elif organ_code:
-            matching_records = [record for record in records if record.matches_institution(organ_code)]
-            logger.info("🔍 FILTERED: %d projects match institution '%s'", len(matching_records), organ_code)
-        else:
-            matching_records = records
-
-        cards = [record.to_card_dict() for record in matching_records]
-
-        if query and not skip_cache and not organ_code:
-            cache_manager.catalog.cache_search_results(
-                query=query,
-                property_name="institutional_search",
-                results={'entities': cards},
-                selected_class="projekt",
-                user_org="global",
-            )
-            logger.info("💾 CATALOG_CACHED: Stored search results for '%s'", query)
-        if organ_code and not skip_cache:
-            cache_manager.catalog.cache_search_results(
-                query="",
-                property_name="cross_institutional_search",
-                results={'entities': cards},
-                selected_class="projekt",
-                user_org="global",
-            )
-            logger.info("💾 CATALOG_CACHED: Stored search results for '%s'", organ_code)
-        return cards
-
 
     def _get_page_range(self, current: int, total: int) -> List[int]:
         """Get list of page numbers to display in pagination."""
