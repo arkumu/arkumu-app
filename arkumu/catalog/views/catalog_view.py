@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from arkumu.cache.services import CacheManager
-from arkumu.projects.services import ProjectSnapshotService
+from arkumu.catalog.services import ProjectIndexService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.metadata.models import ExternalSourcesEntity
@@ -190,7 +190,7 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         request=None,
         organ_code: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return project cards, using cached snapshot and query cache."""
+        """Return project cards, using cached search results and project index."""
         cache_manager = CacheManager()
         skip_cache = bool(request and request.GET.get('nocache') == '1')
 
@@ -219,32 +219,17 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         if skip_cache:
             logger.info("🔄 CACHE_BYPASS: nocache=1 forcing snapshot refresh")
 
-        snapshot_service = ProjectSnapshotService()
-        snapshot = snapshot_service.get_cross_institutional_snapshot(force_refresh=skip_cache)
-        records = snapshot.projects
+        index_service = ProjectIndexService()
+        cards = index_service.get_cards(
+            query=query if not organ_code else None,
+            organ_code=organ_code,
+            force_refresh=skip_cache,
+        )
         logger.info(
-            "CATALOG_SNAPSHOT: generated %s with %d total projects (force_refresh=%s)",
-            snapshot.generated_at.isoformat(),
-            len(records),
+            "CATALOG_INDEX: materialized %d cards (force_refresh=%s)",
+            len(cards),
             skip_cache,
         )
-
-        if query and not organ_code:
-            matching_records = [record for record in records if record.matches_query(query)]
-            logger.info("🔍 FILTERED: %d projects match '%s'", len(matching_records), query)
-            logger.debug(
-                "🔍 FILTERED_CODES: institutions=%s categories=%s",
-                sorted({code for record in matching_records for code in record.institution_codes}),
-                sorted({slug for record in matching_records for slug in record.category_slugs}),
-            )
-
-        elif organ_code:
-            matching_records = [record for record in records if record.matches_institution(organ_code)]
-            logger.info("🔍 FILTERED: %d projects match institution '%s'", len(matching_records), organ_code)
-        else:
-            matching_records = records
-
-        cards = [record.to_card_dict() for record in matching_records]
 
         if query and not skip_cache and not organ_code:
             cache_manager.catalog.cache_search_results(
