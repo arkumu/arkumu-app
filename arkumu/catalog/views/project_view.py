@@ -170,29 +170,14 @@ class ProjectView(LoginRequiredMixin, View):
     @classmethod
     def _load_record(cls, projekt_uri: str) -> ProjectRecord:
         # Prefer the snapshot-free detail index to avoid global rebuilds
-        try:
-            detail_service = cls.detail_service_class()
-            detail_record = detail_service.get_record(projekt_uri)
-            if detail_record:
-                logger.info("ProjectView: served via detail index (project_found=True)")
-                return detail_record
-        except Exception:
-            logger.exception("ProjectView: detail index lookup failed; falling back to snapshot")
+        detail_service = cls.detail_service_class()
+        detail_record = detail_service.get_record(projekt_uri)
+        if detail_record:
+            logger.info("ProjectView: served via detail index (project_found=True)")
+            return detail_record
 
-        snapshot_service = cls.snapshot_service_class()
-        snapshot = snapshot_service.get_cross_institutional_snapshot()
-
-        record = cls._find_record(snapshot.projects, projekt_uri)
-        logger.info(
-            "ProjectView: using snapshot %s (project_found=%s)",
-            snapshot.generated_at.isoformat(),
-            bool(record),
-        )
-
-        if not record:
-            raise LookupError(projekt_uri)
-
-        return record
+        logger.warning("ProjectView: project not found via detail index: %s", projekt_uri)
+        raise LookupError(projekt_uri)
 
     @staticmethod
     def _find_record(records: List[ProjectRecord], uri: str) -> Optional[ProjectRecord]:
