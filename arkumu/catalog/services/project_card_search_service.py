@@ -11,9 +11,7 @@ from arkumu.catalog.services.project_views import CardURIs
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
 from arkumu.metadata.models import Resource, ResourceType, Triple
 from .project_card_cache import ProjectCardCache
-from django.db import OperationalError
-import threading
-import time
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -196,8 +194,6 @@ class ProjectCardSearchService:
 
         def _preload():
             try:
-                # Small delay to let DB finish startup in containerized envs
-                time.sleep(1.0)
                 # Fetch candidate project URIs via title predicate only to limit scope
                 project_ids = (
                     Triple.objects.filter(
@@ -216,11 +212,10 @@ class ProjectCardSearchService:
                     record = self.detail_service.get_record(uri)
                     if record:
                         ProjectCardCache.set(uri, record.to_card_dict())
-            except OperationalError:
-                logger.warning("ProjectCardSearchService: preload skipped (DB not ready)")
             except Exception:
                 logger.exception("ProjectCardSearchService: preload failed")
             finally:
                 self._preload_in_progress = False
 
-        threading.Thread(target=_preload, daemon=True).start()
+        # Run preload in a safe transaction-less context; defer threading decisions to caller
+        _preload()
