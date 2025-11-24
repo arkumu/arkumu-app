@@ -259,6 +259,17 @@ def _resolve_organization_by_code(code: Optional[str]) -> Optional[Organization]
     return Organization.objects.filter(code__iexact=str(code).strip()).first()
 
 
+def _project_scope_or_all_entities(organization: Organization):
+    """
+    Prefer the canonical project scope; fall back to all entity resources for
+    orgs without configured project filters.
+    """
+    scope_qs = project_queryset_for_org(organization)
+    if scope_qs.exists():
+        return scope_qs
+    return Resource.objects.filter(organization=organization, resource_type=ResourceType.ENTITY)
+
+
 def _media_link_prefetch_queryset(org: Organization):
     return (
         OAIProjectMediaLink.objects.filter(project__organization=org)
@@ -286,9 +297,10 @@ def _build_media_links_summary(
 ) -> dict[str, Any]:
     links_total = link_qs.count()
     filtered_total = links_total
-    # Project-level stats for summary header
+    # Project-level stats for summary header (restricted to canonical project scope)
+    project_scope = _project_scope_or_all_entities(organization)
     publication_qs = OAIProjectPublication.objects.filter(
-        project__organization=organization,
+        project_id__in=project_scope.values("id"),
     )
     available_projects = publication_qs.count()
     harvestable_projects = publication_qs.filter(is_approved=True).count()
@@ -319,10 +331,11 @@ def _is_s3_org(organization: Organization) -> bool:
 
 
 def _s3_harvestable_project_ids(organization: Organization) -> Set[int]:
+    scope_qs = _project_scope_or_all_entities(organization)
     statuses = HARVESTABLE_STORAGE_STATUSES
     qs = (
         OAIProjectMediaLink.objects.filter(
-            project__organization=organization,
+            project_id__in=scope_qs.values("id"),
             digital_object__s3fileobject__status__in=statuses,
         )
         .exclude(digital_object__s3fileobject__s3_key__isnull=True)
@@ -334,9 +347,10 @@ def _s3_harvestable_project_ids(organization: Organization) -> Set[int]:
 
 
 def _curated_harvestable_project_ids(organization: Organization) -> Set[int]:
+    scope_qs = _project_scope_or_all_entities(organization)
     qs = (
         OAIProjectMediaLink.objects.filter(
-            project__organization=organization,
+            project_id__in=scope_qs.values("id"),
             is_stale=False,
         )
         .values_list("project_id", flat=True)
@@ -357,11 +371,12 @@ def _sync_oai_publication_for_org(
     builder = OAIProjectBuilderTailored()
     is_s3_org = _is_s3_org(organization)
     summary: dict[str, int] = {"projects": 0, "auto_approved": 0, "errors": 0}
+    scope_qs = _project_scope_or_all_entities(organization)
 
     state = get_sync_state(organization, profile=OAIMediaSyncState.PROFILE_TAILORED)
 
     # Build candidate set from curated links (primary source of truth)
-    link_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
+    link_qs = OAIProjectMediaLink.objects.filter(project_id__in=scope_qs.values("id"))
     curated_project_ids = set(
         link_qs.values_list("project_id", flat=True).distinct()
     )
@@ -374,11 +389,13 @@ def _sync_oai_publication_for_org(
     )
 
     if full_refresh:
-        candidate_ids = set(project_queryset_for_org(organization).values_list("id", flat=True))
+        candidate_ids = set(scope_qs.values_list("id", flat=True))
     else:
         candidate_ids = set(incremental_ids)
 
     candidate_ids |= curated_project_ids
+    scope_ids = set(scope_qs.values_list("id", flat=True))
+    candidate_ids &= scope_ids
     if not candidate_ids:
         state.last_publication_sync_at = timezone.now()
         state.save(update_fields=["last_publication_sync_at", "updated_at"])
@@ -816,7 +833,8 @@ def _build_media_links_panel_context(
     search_query: str = "",
 ) -> dict[str, Any]:
     is_s3_org = _is_s3_org(organization)
-    link_base_qs = OAIProjectMediaLink.objects.filter(project__organization=organization)
+    project_scope = _project_scope_or_all_entities(organization)
+    link_base_qs = OAIProjectMediaLink.objects.filter(project_id__in=project_scope.values("id"))
     s3_harvestable_ids: Optional[Set[int]] = None
     curated_harvestable_ids: Optional[Set[int]] = None
     if is_s3_org:
@@ -838,13 +856,9 @@ def _build_media_links_panel_context(
         queryset=_media_link_prefetch_queryset(organization),
         to_attr='prefetched_media_links',
     )
-    projects_qs = (
-        Resource.objects.filter(organization=organization, resource_type=ResourceType.ENTITY)
-        .prefetch_related(project_prefetch)
-        .filter(oai_media_links__isnull=False)
-        .distinct()
-        .order_by('-updated_at', 'uri')
-    )
+    projects_qs = project_scope.prefetch_related(project_prefetch).filter(
+        oai_media_links__isnull=False,
+    ).distinct().order_by('-updated_at', 'uri')
 
     if project_access_filter != "all":
         projects_qs = projects_qs.filter(public_access_level=project_access_filter)
@@ -880,6 +894,16 @@ def _build_media_links_panel_context(
             harvestable_qs = _restrict_to_harvestable_files(projects_qs)
             projects_qs = projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
 
+    # Apply search filter at database level BEFORE pagination
+    if search_query:
+        search_filter = (
+            Q(uri__icontains=search_query)
+            | Q(name__icontains=search_query)
+            | Q(value__icontains=search_query)
+            | Q(subject_triples__object__value__icontains=search_query)
+        )
+        projects_qs = projects_qs.filter(search_filter).distinct()
+
     paginator = Paginator(projects_qs, MEDIA_LINKS_PAGE_SIZE)
     page_obj = paginator.get_page(page_number)
     project_resources: List[Resource] = list(page_obj.object_list)
@@ -907,19 +931,6 @@ def _build_media_links_panel_context(
     if project_resources:
         publication_qs = OAIProjectPublication.objects.filter(project_id__in=[p.id for p in project_resources])
         publication_by_id = {pub.project_id: pub for pub in publication_qs}
-
-    # Apply search filter if provided
-    if search_query:
-        search_lower = search_query.lower()
-        filtered_projects = []
-        for project_resource in project_resources:
-            project_label = label_lookup.get(project_resource.id, "")
-            if search_lower in project_label.lower() or search_lower in project_resource.uri.lower():
-                filtered_projects.append(project_resource)
-        project_resources = filtered_projects
-        page_obj.object_list = project_resources
-
-    _attach_s3_metadata(project_resources, organization)
 
     for project_resource in project_resources:
         row = _build_project_row_context(
