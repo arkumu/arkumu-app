@@ -35,10 +35,10 @@
     RDF Property: http://arkumu.org/data/properties/ereignis -> http://arkumu.org/data/properties/ereignisbeginn/ereignisende
     {% endcomment %}
     <div class="inline-block text-xs py-1 px-2 font-bold transition-colors
-                border
+                {% if year %} border 
                 border-arkumu-dark text-arkumu-dark
                 theme-dark:border-arkumu-light theme-dark:text-arkumu-light
-                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
+                theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue {% endif %}"
          data-rdf-property="http://arkumu.org/data/properties/ereignis"
          data-rdf-type="http://arkumu.org/data/types/ereignis">
       {% comment %}
@@ -119,37 +119,45 @@
           <div class="mb-1 underline"
                data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-            <a href="/catalog/advanced-search/?aktuer={{ contributor1_name }}">{{ contributor1_name }}</a>
-            {% if contributor1_role %}
-              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor1_role }}]</span>{% endif %}
+            <a href="/catalog/advanced-search/?aktuer={{ contributor1_name }}">{{ contributor1_name }}
+              {% if contributor1_role %}
+                <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                      data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor1_role }}]</span>
+              {% endif %}
+            </a>
           </div>{% endif %}
         {% if contributor2_name %}
           <div class="mb-1 underline"
                data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-            <a href="/catalog/advanced-search/?aktuer={{ contributor2_name }}">{{ contributor2_name }}</a>
-            {% if contributor2_role %}
-              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor2_role }}]</span>{% endif %}
+            <a href="/catalog/advanced-search/?aktuer={{ contributor2_name }}">{{ contributor2_name }}
+              {% if contributor2_role %}
+                <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                      data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor2_role }}]</span>
+              {% endif %}
+            </a>
           </div>{% endif %}
         {% if contributor3_name %}
           <div class="mb-1 underline"
                data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-            <a href="/catalog/advanced-search/?aktuer={{ contributor3_name }}">{{ contributor3_name }}</a>
-            {% if contributor3_role %}
-              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor3_role }}]</span>{% endif %}
+            <a href="/catalog/advanced-search/?aktuer={{ contributor3_name }}">{{ contributor3_name }}
+              {% if contributor3_role %}
+                <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                      data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor3_role }}]</span>
+              {% endif %}
+            </a>
           </div>{% endif %}
         {% if contributor4_name %}
           <div class="mb-1 underline"
                data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">
-            <a href="/catalog/advanced-search/?aktuer={{ contributor4_name }}">{{ contributor4_name }}</a>
-            {% if contributor4_role %}
-              <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
-                    data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor4_role }}]</span>{% endif %}
+            <a href="/catalog/advanced-search/?aktuer={{ contributor4_name }}">{{ contributor4_name }}
+              {% if contributor4_role %}
+                <span data-rdf-property="http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+                      data-rdf-role-type="http://arkumu.org/data/types/rolle">[{{ contributor4_role }}]</span>
+              {% endif %}
+            </a>
           </div>{% endif %}
         {% if additional_contributors %}
           <div class="mb-1 underline">{{ additional_contributors }}</div>{% endif %}
