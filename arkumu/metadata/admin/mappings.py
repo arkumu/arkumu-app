@@ -116,6 +116,7 @@ class MappingAdmin(admin.ModelAdmin):
         'promoted_manifest_status',
         'mapping_preview',
         'schema_manifest_preview',
+        'last_executed_display',
         'execution_stats_display',
         'junction_patterns_link',
     ]
