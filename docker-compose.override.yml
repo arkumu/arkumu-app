@@ -1,0 +1,22 @@
+services:
+  django:
+    container_name: "${COMPOSE_PROJECT_NAME:-arkumu_graph}_local_django"
+    ports:
+      - "127.0.0.1:8001:8000"
+  postgres:
+    container_name: "${COMPOSE_PROJECT_NAME:-arkumu_graph}_local_postgres"
+    ports:
+      - "127.0.0.1:9432:5432"
+  minio:
+    container_name: "${COMPOSE_PROJECT_NAME:-arkumu_graph}_minio"
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+  redis:
+    container_name: "${COMPOSE_PROJECT_NAME:-arkumu_graph}_redis"
+    ports:
+      - "127.0.0.1:6380:6379"
+  huey:
+    container_name: "${COMPOSE_PROJECT_NAME:-arkumu_graph}_local_huey"
+  node:
+    container_name: "${COMPOSE_PROJECT_NAME:-arkumu_graph}_node_tailwind"
