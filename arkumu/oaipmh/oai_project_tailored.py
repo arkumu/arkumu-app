@@ -87,6 +87,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         filtered_record = self._filter_flagged_digital_objects(filtered_record)
         filtered_record = self._filter_overarching_projects(filtered_record, institution_code)
 
+        # Mark DCP bundle members upfront (before normalization)
+        self._mark_dcp_bundle_members(filtered_record, institution_code)
+
         curated_selection: Optional[CuratedMediaSelection] = None
         if use_curated_media_links:
             curated_selection = self._resolve_curated_selection(filtered_record)
@@ -120,16 +123,172 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
     ) -> ProjectRecord:  # pragma: no cover - trivial override
         return record
 
-    def _expand_dcp_folder_if_needed(  # pragma: no cover - exercised via tailored-specific tests
+    def _expand_dcp_folder_if_needed(
         self,
         obj: ProjectDigitalObject,
         institution_code: Optional[str],
-    ):
+    ) -> Optional[List[ProjectDigitalObject]]:
         """
-        Tailored profile must not consult external KHM path indexes.
-        Keep DCP handling limited to curated/DB-backed objects only.
+        Expand DCP folders using the path index - delegates to parent implementation.
+
+        When a digital object has a `dateipfad-dcp-ordner` triple, look up all files
+        in that folder from the path index and return them as expanded objects.
         """
-        return None
+        # Use the parent class implementation which reads from the path index
+        expanded = super()._expand_dcp_folder_if_needed(obj, institution_code)
+        if expanded:
+            # Mark expanded objects so they bypass curated selection filters
+            for expanded_obj in expanded:
+                setattr(expanded_obj, "_from_dcp_bundle", True)
+        return expanded
+
+    def _mark_dcp_bundle_members(
+        self,
+        record: ProjectRecord,
+        institution_code: Optional[str],
+    ) -> None:
+        """
+        Mark all DCP bundle members upfront before normalization.
+
+        Queries DCP folder triples once and marks all matching digital objects.
+        Also handles CPL/PKL filename heuristic for objects without triples.
+        """
+        # Only KHM uses DCP bundles
+        if (institution_code or "").lower() != "khm":
+            return
+
+        digital_objects = list(getattr(record, "digital_objects", []) or [])
+        if not digital_objects:
+            return
+
+        # Track which folders we've already processed
+        processed_folders: set[str] = set()
+
+        for obj in digital_objects:
+            # Skip if already marked
+            if getattr(obj, "_from_dcp_bundle", False):
+                continue
+
+            # Try to get DCP folder from triple
+            folder_path = self._dcp_folder_from_triple(obj)
+            if folder_path:
+                normalized_folder = folder_path.replace("\\", "/").rstrip("/")
+                folder_name = normalized_folder.split("/")[-1] if "/" in normalized_folder else normalized_folder
+
+                if folder_name in processed_folders:
+                    continue
+                processed_folders.add(folder_name)
+
+                # Mark all objects in this folder
+                for candidate in digital_objects:
+                    candidate_path = _clean(getattr(candidate, "path", None)) or _clean(getattr(candidate, "storage_key", None))
+                    if not candidate_path:
+                        continue
+                    candidate_norm = candidate_path.replace("\\", "/")
+                    if self._path_matches_folder(candidate_norm, folder_name):
+                        setattr(candidate, "_from_dcp_bundle", True)
+                        setattr(candidate, "_dcp_folder", folder_name)
+                continue
+
+            # Fallback: CPL/PKL filename heuristic
+            file_name = (_clean(getattr(obj, "file_name", None)) or "").lower()
+            if not file_name.endswith(".xml"):
+                continue
+            if not any(file_name.startswith(prefix) for prefix in ("cpl_", "pkl_", "assetmap", "volindex")):
+                continue
+
+            raw_path = _clean(getattr(obj, "path", None)) or _clean(getattr(obj, "storage_key", None))
+            if not raw_path:
+                continue
+            normalized_path = raw_path.replace("\\", "/")
+            if "/" not in normalized_path:
+                continue
+            folder = normalized_path.rsplit("/", 1)[0]
+            if not folder or folder in processed_folders:
+                continue
+            processed_folders.add(folder)
+
+            # Mark all objects in this folder
+            for candidate in digital_objects:
+                candidate_path = _clean(getattr(candidate, "path", None)) or _clean(getattr(candidate, "storage_key", None))
+                if not candidate_path:
+                    continue
+                candidate_norm = candidate_path.replace("\\", "/")
+                if candidate_norm.startswith(folder + "/") or candidate_norm == folder:
+                    setattr(candidate, "_from_dcp_bundle", True)
+                    setattr(candidate, "_dcp_folder", folder)
+
+    def _path_matches_folder(self, path: str, folder_name: str) -> bool:
+        """Check if a path is inside a folder with the given name."""
+        if folder_name not in path:
+            return False
+        folder_idx = path.find(folder_name)
+        if folder_idx == -1:
+            return False
+        after_folder = path[folder_idx + len(folder_name):]
+        return after_folder.startswith("/") or after_folder == ""
+
+    def _expand_dcp_folder_from_record(
+        self,
+        obj: ProjectDigitalObject,
+        record: ProjectRecord,
+    ) -> Optional[List[ProjectDigitalObject]]:
+        """
+        Return DCP bundle siblings if the object is marked as a DCP member.
+
+        This method now relies on upfront marking by _mark_dcp_bundle_members.
+        """
+        if not getattr(obj, "_from_dcp_bundle", False):
+            return None
+
+        dcp_folder = getattr(obj, "_dcp_folder", None)
+        if not dcp_folder:
+            return None
+
+        # Collect all objects in the same DCP folder
+        siblings: List[ProjectDigitalObject] = []
+        for candidate in getattr(record, "digital_objects", []) or []:
+            if getattr(candidate, "_dcp_folder", None) == dcp_folder:
+                siblings.append(candidate)
+
+        if not siblings:
+            return None
+
+        # Ensure the trigger object is first
+        if obj in siblings:
+            siblings.remove(obj)
+        siblings.insert(0, obj)
+
+        return siblings
+
+    def _dcp_folder_from_triple(self, obj: ProjectDigitalObject) -> Optional[str]:
+        obj_uri = getattr(obj, "uri", None)
+        if not obj_uri:
+            return None
+
+        from arkumu.metadata.models import Triple
+
+        try:
+            triple = (
+                Triple.objects.filter(
+                    subject__uri=obj_uri,
+                    predicate__uri="http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner",
+                )
+                .select_related("object")
+                .first()
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Error resolving DCP folder triple for %s: %s", obj_uri, exc)
+            return None
+
+        if not triple or not getattr(triple, "object", None):
+            return None
+
+        folder_path = _clean(getattr(triple.object, "value", None))
+        if not folder_path:
+            return None
+
+        return folder_path.replace("\\", "/").rstrip("/")
 
     def _resolve_curated_selection(
         self,
@@ -172,14 +331,16 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         for obj in getattr(record, "digital_objects", []) or []:
             if not skip_format_exclusion and self._should_skip_digital_object(obj, institution_code):
                 continue
-            expanded_objects = self._expand_dcp_folder_if_needed(obj, institution_code)
+            record_dcp_expanded = self._expand_dcp_folder_from_record(obj, record)
+            expanded_objects = record_dcp_expanded if record_dcp_expanded else self._expand_dcp_folder_if_needed(obj, institution_code)
+            from_dcp_bundle = bool(expanded_objects and record_dcp_expanded)
             objects_to_process = expanded_objects if expanded_objects else [obj]
 
             for current_obj in objects_to_process:
                 resource_identifier = getattr(current_obj, "resource_id", None)
                 normalized_resource_id = str(resource_identifier) if resource_identifier else None
                 obj_uri = _clean(getattr(current_obj, "uri", None))
-                if allowed_resource_ids is not None:
+                if allowed_resource_ids is not None and not (from_dcp_bundle or getattr(current_obj, "_from_dcp_bundle", False)):
                     include = False
                     if normalized_resource_id and normalized_resource_id in allowed_resource_ids:
                         include = True
@@ -189,11 +350,16 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                         continue
 
                 if curated_selection:
-                    setattr(current_obj, "_from_curated_media_link", True)
+                    # Don't set _from_curated_media_link for DCP bundle files - they already
+                    # have correct paths from the index and don't need prefix rewriting
+                    if not getattr(current_obj, "_from_dcp_bundle", False):
+                        setattr(current_obj, "_from_curated_media_link", True)
 
                 normalized = self._normalize_object(current_obj, institution_code)
                 if not normalized or not self._is_harvestable(normalized):
                     continue
+                if getattr(current_obj, "_from_dcp_bundle", False):
+                    object.__setattr__(normalized, "_from_dcp_bundle", True)
 
                 identity = normalized.preferred_location
                 if identity:
@@ -249,26 +415,33 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
                 normalized_items: List[NormalizedDigitalObject] = []
                 for project_obj in project_objects:
-                    setattr(project_obj, "_from_curated_media_link", True)
-                    normalized = self._normalize_object(project_obj, institution_code)
-                    if not normalized or not self._is_harvestable(normalized):
-                        continue
-                    identity = normalized.preferred_location
-                    if identity:
-                        identity_key = identity.lower()
-                        if identity_key in seen:
+                    expanded = self._expand_dcp_folder_if_needed(project_obj, institution_code)
+                    objects_to_process = expanded if expanded else [project_obj]
+
+                    for expanded_obj in objects_to_process:
+                        # Don't set _from_curated_media_link for DCP bundle files - they already
+                        # have correct paths from the index and don't need prefix rewriting
+                        if not getattr(expanded_obj, "_from_dcp_bundle", False):
+                            setattr(expanded_obj, "_from_curated_media_link", True)
+                        normalized = self._normalize_object(expanded_obj, institution_code)
+                        if not normalized or not self._is_harvestable(normalized):
                             continue
-                        seen.add(identity_key)
+                        identity = normalized.preferred_location
+                        if identity:
+                            identity_key = identity.lower()
+                            if identity_key in seen:
+                                continue
+                            seen.add(identity_key)
 
-                    label_override = None
-                    if normalized.resource_id and normalized.resource_id in label_by_id:
-                        label_override = label_by_id[normalized.resource_id]
-                    elif normalized.uri and normalized.uri in label_by_uri:
-                        label_override = label_by_uri[normalized.uri]
-                    if label_override:
-                        normalized = replace(normalized, label_override=label_override)
+                        label_override = None
+                        if normalized.resource_id and normalized.resource_id in label_by_id:
+                            label_override = label_by_id[normalized.resource_id]
+                        elif normalized.uri and normalized.uri in label_by_uri:
+                            label_override = label_by_uri[normalized.uri]
+                        if label_override:
+                            normalized = replace(normalized, label_override=label_override)
 
-                    normalized_items.append(normalized)
+                        normalized_items.append(normalized)
 
                 if not normalized_items:
                     continue
@@ -295,6 +468,16 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         for uri in curated_selection.ordered_object_uris:
             matches = grouped_by_uri.get(uri, [])
             _extend_with_candidates(matches)
+
+        # Append any DCP bundle members that were not explicitly ordered by the curated selection.
+        for candidate in objects:
+            if not getattr(candidate, "_from_dcp_bundle", False):
+                continue
+            candidate_id = id(candidate)
+            if candidate_id in consumed_ids:
+                continue
+            ordered_objects.append(candidate)
+            consumed_ids.add(candidate_id)
 
         return ordered_objects
 
@@ -327,24 +510,31 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
         for resource_id in resource_ids:
             for project_obj in curated_objects.get(resource_id, []):
-                setattr(project_obj, "_from_curated_media_link", True)
-                normalized_obj = self._normalize_object(project_obj, institution_code)
-                if not normalized_obj or not self._is_harvestable(normalized_obj):
-                    continue
-                identity = normalized_obj.preferred_location
-                if identity:
-                    identity_key = identity.lower()
-                    if identity_key in seen:
+                expanded = self._expand_dcp_folder_if_needed(project_obj, institution_code)
+                objects_to_process = expanded if expanded else [project_obj]
+
+                for expanded_obj in objects_to_process:
+                    # Don't set _from_curated_media_link for DCP bundle files - they already
+                    # have correct paths from the index and don't need prefix rewriting
+                    if not getattr(expanded_obj, "_from_dcp_bundle", False):
+                        setattr(expanded_obj, "_from_curated_media_link", True)
+                    normalized_obj = self._normalize_object(expanded_obj, institution_code)
+                    if not normalized_obj or not self._is_harvestable(normalized_obj):
                         continue
-                    seen.add(identity_key)
-                label_override = None
-                if normalized_obj.resource_id and normalized_obj.resource_id in label_by_id:
-                    label_override = label_by_id[normalized_obj.resource_id]
-                elif normalized_obj.uri and normalized_obj.uri in label_by_uri:
-                    label_override = label_by_uri[normalized_obj.uri]
-                if label_override:
-                    normalized_obj = replace(normalized_obj, label_override=label_override)
-                normalized.append(normalized_obj)
+                    identity = normalized_obj.preferred_location
+                    if identity:
+                        identity_key = identity.lower()
+                        if identity_key in seen:
+                            continue
+                        seen.add(identity_key)
+                    label_override = None
+                    if normalized_obj.resource_id and normalized_obj.resource_id in label_by_id:
+                        label_override = label_by_id[normalized_obj.resource_id]
+                    elif normalized_obj.uri and normalized_obj.uri in label_by_uri:
+                        label_override = label_by_uri[normalized_obj.uri]
+                    if label_override:
+                        normalized_obj = replace(normalized_obj, label_override=label_override)
+                    normalized.append(normalized_obj)
 
         return normalized
 
@@ -461,10 +651,13 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             return None
 
         # For Rosetta orgs (KHM/HMT), prefer prefix+filename to avoid leaking deep ingest paths
+        # BUT: Don't rewrite paths for DCP bundle files - they need to keep the folder structure
+        is_dcp_bundle = getattr(obj, "_from_dcp_bundle", False)
         if (
             normalized.source == "rosetta"
             and normalized.file_name
             and normalized_code in {"khm", "hmt"}
+            and not is_dcp_bundle
         ):
             prefix = self._rosetta_curated_prefixes.get(normalized_code)
             if prefix:

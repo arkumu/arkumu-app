@@ -92,6 +92,12 @@ def _build_tailored_project_hint_from_resource(resource: Resource) -> Optional[O
     if record is None:
         return None
 
+    # For tailored profile, clear snapshot digital_objects so the builder loads
+    # from curated media links instead. The snapshot's digital_objects lack proper
+    # URIs needed for DCP folder expansion.
+    from dataclasses import replace as dataclass_replace
+    record = dataclass_replace(record, digital_objects=[])
+
     try:
         return _tailored_project_builder.from_project_record(
             record,
