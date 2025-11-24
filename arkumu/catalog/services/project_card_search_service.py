@@ -11,6 +11,7 @@ from arkumu.catalog.services.project_views import CardURIs
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
 from arkumu.metadata.models import Resource, ResourceType, Triple
 from .project_card_cache import ProjectCardCache
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class ProjectCardSearchService:
 
     def __init__(self) -> None:
         self.detail_service = ProjectDetailIndexService()
+        self._preload_in_progress = False
 
     def search_cards(
         self,
@@ -183,3 +185,37 @@ class ProjectCardSearchService:
     @staticmethod
     def _predicate_filter(predicates: Sequence[str]) -> Q:
         return Q(predicate__canonical_uri__in=predicates) | Q(predicate__uri__in=predicates)
+
+    def preload_cache_async(self) -> None:
+        """Lightweight preload of the card cache for search pages."""
+        if self._preload_in_progress:
+            return
+        self._preload_in_progress = True
+
+        def _preload():
+            try:
+                # Fetch candidate project URIs via title predicate only to limit scope
+                project_ids = (
+                    Triple.objects.filter(
+                        self._predicate_filter(self.TITLE_PREDICATES),
+                        subject__resource_type=ResourceType.ENTITY,
+                    )
+                    .values_list("subject_id", flat=True)
+                    .distinct()
+                )
+                uris = list(
+                    Resource.objects.filter(id__in=project_ids).values_list("uri", flat=True)
+                )
+                for uri in uris:
+                    if ProjectCardCache.get(uri):
+                        continue
+                    record = self.detail_service.get_record(uri)
+                    if record:
+                        ProjectCardCache.set(uri, record.to_card_dict())
+            except Exception:
+                logger.exception("ProjectCardSearchService: preload failed")
+            finally:
+                self._preload_in_progress = False
+
+        # Run preload in a safe transaction-less context; defer threading decisions to caller
+        _preload()
