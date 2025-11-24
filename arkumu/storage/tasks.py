@@ -1,5 +1,7 @@
 """Storage-related background tasks."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any, Optional
 
@@ -7,6 +9,7 @@ from huey.contrib.djhuey import db_task
 from django.apps import apps
 from django.db import models
 from django.utils import timezone
+
 
 try:
     from huey.contrib.djhuey import db_periodic_task, crontab
@@ -137,6 +140,55 @@ def verify_upload_session(session_id: str) -> None:
     session.save(update_fields=['status', 'error_message', 'completed_files', 'failed_files', 'completed_at', 'updated_at'])
 
     trigger_ui_refresh(str(session.id), session.organization)
+
+
+@db_task(retries=2, retry_delay=30)
+def verify_s3_file(bucket_name: str, key: str, organization: Optional[str] = None) -> None:
+    """Verify a single S3 object and reconcile its database record."""
+    from arkumu.storage.services.verification_service import verify_single_object
+
+    result = verify_single_object(bucket_name, key, organization)
+    if result.success:
+        logger.info("✅ Verified %s/%s", bucket_name, key)
+    elif result.missing:
+        logger.warning("⚠️ Missing during verification: %s/%s", bucket_name, key)
+    elif result.error:
+        logger.error("❌ Failed to verify %s/%s: %s", bucket_name, key, result.error)
+
+
+@db_task(retries=1, retry_delay=60)
+def verify_s3_prefix(bucket_name: str, prefix: str, organization: Optional[str] = None) -> None:
+    """Iterate over all objects in a prefix and verify them sequentially."""
+    from arkumu.storage.services.verification_service import (
+        iter_objects_under_prefix,
+        verify_single_object,
+    )
+
+    verified = missing = errors = 0
+
+    for key in iter_objects_under_prefix(bucket_name, prefix):
+        try:
+            result = verify_single_object(bucket_name, key, organization)
+        except Exception as exc:  # noqa: BLE001
+            errors += 1
+            logger.exception("❌ Unexpected prefix verification error for %s/%s", bucket_name, key)
+            continue
+
+        if result.success:
+            verified += 1
+        elif result.missing:
+            missing += 1
+        else:
+            errors += 1
+
+    logger.info(
+        "📦 Prefix verification finished for %s/%s: verified=%s missing=%s errors=%s",
+        bucket_name,
+        prefix,
+        verified,
+        missing,
+        errors,
+    )
 
 
 @db_task(retries=2, retry_delay=15)

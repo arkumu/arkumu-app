@@ -1,0 +1,29 @@
+<div id="oai-media-links-panel">
+  <div class="card bg-base-100 shadow">
+    <div class="card-body items-center text-center space-y-3">
+      {% if status == 'failed' %}
+        <div class="alert alert-error shadow w-full">
+          <span>{{ message|default:"Media sync failed." }}</span>
+        </div>
+      {% else %}
+        <div class="flex items-center gap-3 text-base-content/80">
+          <span class="loading loading-spinner loading-md"></span>
+          <div class="text-left">
+            <p class="font-semibold">Syncing curated data for {{ organization.name }} ({{ organization.code|upper }})…</p>
+            <p class="text-sm">{{ message|default:"This may take a moment. You can keep working elsewhere." }}</p>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  {% if status != 'failed' %}
+    <div
+      id="oai-media-links-job-poller"
+      hx-get="{% url 'oai_admin:oai_media_sync_status' %}?job_id={{ job_id }}"
+      hx-trigger="load delay:1500ms"
+      hx-target="#oai-media-links-panel"
+      hx-swap="outerHTML"
+    ></div>
+  {% endif %}
+</div>
+{% include 'oai/partials/oai_media_links_alerts.html' %}

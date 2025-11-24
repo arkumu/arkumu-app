@@ -1027,6 +1027,20 @@ class ProjectSnapshotService:
             owners = event_owner_map.get(key, [])
             event.owning_project_uris = list(owners) if owners else []
 
+        # For KHM: separate Grundereignis (main event) from related events
+        # Only events from 01_Grundereignis table are displayed publicly
+        # Other events (awards, festivals) remain in internal metadata only
+        # For other orgs: all events are displayed together (no distinction)
+        main_event: Optional[ProjectEvent] = None
+        related_events: List[ProjectEvent] = []
+        is_khm = (self.relationship_org_code or "").lower().strip() == "khm"
+        if is_khm:
+            for event in events_all:
+                if self._is_grundereignis_event(event) and main_event is None:
+                    main_event = event
+        else:
+            related_events = list(events_all)
+
         institution_ids = self._related_ids(subject_edges, institution_prop.canonical_uri if institution_prop else None)
         institution: Optional[ProjectInstitution] = None
         institution_codes: List[str] = []
@@ -1646,7 +1660,8 @@ class ProjectSnapshotService:
             image=image,
             institution=institution,
             categories=categories,
-            events=events,
+            main_event=main_event,
+            events=related_events,
             actors=actors,
             alternative_titles=alternative_titles,
             catchphrases=catchphrases,

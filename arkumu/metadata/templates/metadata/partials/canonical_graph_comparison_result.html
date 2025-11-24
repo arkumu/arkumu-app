@@ -1,0 +1,68 @@
+<div class="space-y-4">
+    <div id="graph-loading-indicator" class="loading loading-ring loading-lg" style="display:none;"></div>
+    {% if error %}
+        <div class="alert alert-error">
+            <span class="font-semibold">Unable to render:</span>
+            <span>{{ error }}</span>
+        </div>
+    {% elif comparison_result %}
+        <div class="grid gap-4 text-sm text-base-content/80 md:grid-cols-2">
+            <div>
+                <p class="font-semibold text-base-content">Organization schema</p>
+                <ul class="list-disc list-inside space-y-1 text-base-content/80">
+                    <li>{{ comparison_result.stats.organization_datasets }} datasets</li>
+                    <li>{{ comparison_result.stats.organization_properties }} properties</li>
+                    <li>{{ comparison_result.stats.mapped_properties }} mapped · {{ comparison_result.stats.unmapped_properties }} unmapped</li>
+                </ul>
+            </div>
+            <div>
+                <p class="font-semibold text-base-content">Arkumu canonical</p>
+                <ul class="list-disc list-inside space-y-1 text-base-content/80">
+                    <li>{{ comparison_result.stats.canonical_classes }} canonical classes</li>
+                    <li>{{ comparison_result.stats.canonical_properties }} canonical properties referenced</li>
+                </ul>
+            </div>
+        </div>
+        <div class="relative group">
+            <div class="absolute top-4 right-4 z-10 flex flex-col gap-2 opacity-90 group-hover:opacity-100 transition">
+                <button type="button"
+                        class="btn btn-circle btn-sm"
+                        data-zoom-btn="in"
+                        aria-label="Zoom in">
+                    +
+                </button>
+                <button type="button"
+                        class="btn btn-circle btn-sm"
+                        data-zoom-btn="out"
+                        aria-label="Zoom out">
+                    −
+                </button>
+                <button type="button"
+                        class="btn btn-circle btn-sm"
+                        data-zoom-btn="reset"
+                        aria-label="Reset zoom">
+                    ⟳
+                </button>
+            </div>
+            <div class="border border-base-300 rounded-2xl overflow-auto min-h-[75vh] max-h-[90vh] bg-base-200/50"
+                 data-graph-wrapper>
+                <div class="min-w-[1100px] cursor-grab"
+                     data-graph-surface>
+                    {{ comparison_result.svg|safe }}
+                </div>
+            </div>
+        </div>
+        <div class="text-xs text-base-content/70 space-y-1">
+            <p>Legend:</p>
+            <ul class="list-disc list-inside space-y-1">
+                <li><span class="font-semibold">Blue cluster</span> – organization datasets and properties; <span class="font-semibold">green cluster</span> – Arkumu canonical classes/properties.</li>
+                <li>Purple edges link datasets to their canonical classes; green edges connect properties to canonical predicates; grey dashed edges join canonical predicates back to classes.</li>
+                <li>Use the zoom controls or pinch/scroll (with Ctrl/⌘) to explore dense areas.</li>
+            </ul>
+        </div>
+    {% else %}
+        <div class="text-sm text-base-content/70">
+            Select a mapping and choose “Canonical comparison” to generate the full alignment graph.
+        </div>
+    {% endif %}
+</div>

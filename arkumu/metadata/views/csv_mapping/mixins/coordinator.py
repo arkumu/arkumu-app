@@ -1265,6 +1265,7 @@ class CSVMappingCoordinatorMixin(BaseCoordinatorMixin, CSVDataMixin, MappingWork
         fk_relationships = {}
         relationship_contexts = {}
         external_ontologies = {}
+        canonical_column_mappings = {}
         entity_mappings = {}
         
         # Handle workspace_columns as list (current format)
@@ -1326,6 +1327,19 @@ class CSVMappingCoordinatorMixin(BaseCoordinatorMixin, CSVDataMixin, MappingWork
             # Extract subject column designation (if any)
             if column_data.get('is_subject_column'):
                 entity_mappings['subject_column'] = column_id
+
+            # Extract canonical property mapping (if any)
+            if column_data.get('is_canonical_mapped') and column_data.get('canonical_mapping'):
+                cm = column_data['canonical_mapping'] or {}
+                canonical_uri = cm.get('canonical_property_uri')
+                if canonical_uri:
+                    canonical_column_mappings[column_id] = {
+                        'canonical_property_uri': canonical_uri,
+                        'canonical_property_label': cm.get('canonical_property_label'),
+                        'canonical_class_uri': cm.get('canonical_class_uri'),
+                        'canonical_class_label': cm.get('canonical_class_label'),
+                        'source': cm.get('source', 'manual'),
+                    }
         
         # Convert workspace_columns list to dict for easier storage/lookup
         workspace_columns_dict = {}
@@ -1344,6 +1358,7 @@ class CSVMappingCoordinatorMixin(BaseCoordinatorMixin, CSVDataMixin, MappingWork
             'fk_relationships': fk_relationships,
             'relationship_contexts': relationship_contexts,  # New: relationship context configurations
             'external_ontologies': external_ontologies,  # New: external ontology configurations
+            'canonical_column_mappings': canonical_column_mappings,  # New: canonical property mappings per workspace column
             'entity_mappings': entity_mappings,
             'metadata': {
                 'total_datasets': len(workspace_datasets),  # Only count datasets that have columns
@@ -1415,10 +1430,31 @@ class CSVMappingCoordinatorMixin(BaseCoordinatorMixin, CSVDataMixin, MappingWork
         # Restore workspace columns (convert dict back to list format)
         workspace_columns_dict = mapping_config.get('workspace_columns', {})
         logger.info(f"🟡 DESERIALIZE_MAPPING: Found {len(workspace_columns_dict)} workspace columns in mapping")
+
+        canonical_column_mappings = mapping_config.get('canonical_column_mappings', {}) or {}
+        if canonical_column_mappings:
+            logger.info(
+                "🟡 DESERIALIZE_MAPPING: Found %d canonical column mappings in config",
+                len(canonical_column_mappings),
+            )
         
         if workspace_columns_dict:
-            # Convert dict back to list format expected by workspace
-            workspace_columns_list = list(workspace_columns_dict.values())
+            # Convert dict back to list format expected by workspace and merge canonical mappings
+            workspace_columns_list = []
+            for column_id, col in workspace_columns_dict.items():
+                cm = canonical_column_mappings.get(column_id)
+                if cm:
+                    col = dict(col)
+                    col['is_canonical_mapped'] = True
+                    col['canonical_mapping'] = {
+                        'canonical_property_uri': cm.get('canonical_property_uri'),
+                        'canonical_property_label': cm.get('canonical_property_label'),
+                        'canonical_class_uri': cm.get('canonical_class_uri'),
+                        'canonical_class_label': cm.get('canonical_class_label'),
+                        'source': cm.get('source', 'manual'),
+                    }
+                workspace_columns_list.append(col)
+
             workspace_key = self.get_session_key('workspace_columns', organization_id)
             request.session[workspace_key] = workspace_columns_list
             logger.info(f"🟢 DESERIALIZE_MAPPING: Restored {len(workspace_columns_list)} workspace columns to session")

@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Tailored OAI-PMH - arkumu{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <!-- Header -->
+  <div class="mb-8">
+    <h1 class="text-4xl font-bold mb-3">Tailored OAI-PMH Endpoint</h1>
+    <p class="text-base-content/70 text-lg">
+      This curated feed exposes only the projects and digital objects that archivists approved via the media-links dashboard.
+      Use it to verify what harvesters will see when they request the tailored profile.
+    </p>
+    <div class="mt-4 space-y-1 text-sm text-base-content/70">
+      <p>Direct endpoint: <code class="badge badge-ghost">{{ tailored_endpoint_url }}</code></p>
+      <p>Dashboard proxy: <code class="badge badge-ghost">{{ tailored_proxy_url }}</code></p>
+    </div>
+  </div>
+
+  <!-- Get Individual Record -->
+  <div class="card bg-base-100 shadow-xl mb-8">
+    <div class="card-body">
+      <h2 class="card-title text-2xl mb-2">Get Individual Record</h2>
+      <p class="text-base-content/70 mb-4">
+        Enter a project URI to inspect its curated METS record from the tailored endpoint.
+      </p>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Project URI</span>
+        </label>
+        <div class="join w-full">
+          <input
+            type="text"
+            id="tailored-project-uri-input"
+            placeholder="http://arkumu.org/data/fuk/entities/projekt/8"
+            class="input input-bordered join-item flex-1" />
+          <button
+            type="button"
+            class="btn btn-primary join-item"
+            hx-on:click="const uri = document.getElementById('tailored-project-uri-input').value.trim();
+                         if (!uri) { alert('Please enter a project URI'); return; }
+                         const encodedUri = encodeURIComponent(uri);
+                         const oaiIdentifier = 'oai:arkumu:resource:' + encodedUri;
+                         const url = '{{ tailored_proxy_url }}?verb=GetRecord&identifier=' + encodeURIComponent(oaiIdentifier) + '&metadataPrefix=mets';
+                         window.open(url, '_blank');">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+            View Record
+          </button>
+        </div>
+        <label class="label">
+          <span class="label-text-alt text-base-content/60">Example: http://arkumu.org/data/fuk/entities/projekt/8</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats Overview -->
+  {% if tailored_snapshot %}
+  <div class="stats stats-vertical lg:stats-horizontal shadow mb-8 w-full">
+    <div class="stat">
+      <div class="stat-title">Approved Projects</div>
+      <div class="stat-value text-primary">{{ tailored_snapshot.total_accessible_projects }}</div>
+      <div class="stat-desc">Curated &amp; harvestable</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-title">Curated Digital Objects</div>
+      <div class="stat-value text-secondary">{{ tailored_snapshot.total_harvestable_objects }}</div>
+      <div class="stat-desc">Eligible files</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-title">Institutions</div>
+      <div class="stat-value text-accent">{{ endpoints|length }}</div>
+      <div class="stat-desc">Participating organizations</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning mb-8">
+    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+    <span>The tailored endpoint has no curated projects yet. Seed media links first.</span>
+  </div>
+  {% endif %}
+
+  <!-- Repository-Wide Endpoints -->
+  <h2 class="text-2xl font-bold mb-4">Repository Information</h2>
+
+  <div class="card bg-base-100 shadow-xl mb-8">
+    <div class="card-body">
+      <h3 class="card-title text-xl mb-4">General Tailored Verbs</h3>
+      <p class="text-base-content/70 mb-4">
+        These links hit the tailored endpoint via the dashboard proxy so you can verify responses without leaving the admin UI.
+      </p>
+
+      <div class="grid grid-cols-1 gap-3">
+        <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+          <div class="flex-none"><div class="badge badge-sm badge-info">Identify</div></div>
+          <div class="flex-grow">
+            <p class="text-sm font-semibold">Repository capabilities</p>
+            <p class="text-xs text-base-content/60">Tailored profile metadata</p>
+          </div>
+          <div class="flex-none">
+            <a href="{{ tailored_proxy_url }}?verb=Identify" target="_blank" class="btn btn-sm btn-outline btn-info gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View
+            </a>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+          <div class="flex-none"><div class="badge badge-sm badge-secondary">ListSets</div></div>
+          <div class="flex-grow">
+            <p class="text-sm font-semibold">Available curated sets</p>
+            <p class="text-xs text-base-content/60">Institution codes with tailored approvals</p>
+          </div>
+          <div class="flex-none">
+            <a href="{{ tailored_proxy_url }}?verb=ListSets" target="_blank" class="btn btn-sm btn-outline btn-secondary gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View
+            </a>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+          <div class="flex-none"><div class="badge badge-sm badge-accent">ListMetadataFormats</div></div>
+          <div class="flex-grow">
+            <p class="text-sm font-semibold">Supported formats</p>
+            <p class="text-xs text-base-content/60">Tailored METS + DC profiles</p>
+          </div>
+          <div class="flex-none">
+            <a href="{{ tailored_proxy_url }}?verb=ListMetadataFormats" target="_blank" class="btn btn-sm btn-outline btn-accent gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Endpoints by Institution -->
+  <h2 class="text-2xl font-bold mb-4">Curated Endpoints by Institution</h2>
+
+  {% if endpoints %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {% for endpoint in endpoints %}
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h3 class="card-title text-2xl flex-wrap">
+            {{ endpoint.label }}
+            <div class="badge badge-primary whitespace-nowrap">{{ endpoint.accessible_count }} projects</div>
+          </h3>
+
+          <p class="text-base-content/70 mb-4">
+            Institution code: <code class="badge badge-ghost">{{ endpoint.code }}</code>
+          </p>
+
+          <div class="divider">Harvesting Links</div>
+
+          <div class="grid grid-cols-1 gap-3">
+            <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+              <div class="flex-none"><div class="badge badge-sm badge-warning">ListIdentifiers</div></div>
+              <div class="flex-grow">
+                <p class="text-sm text-base-content/70">Curated identifiers (METS)</p>
+              </div>
+              <div class="flex-none">
+                <a href="{{ tailored_proxy_url }}?verb=ListIdentifiers&amp;metadataPrefix=mets&amp;set={{ endpoint.code }}"
+                   target="_blank"
+                   class="btn btn-sm btn-outline btn-warning gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                  </svg>
+                  View
+                </a>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 p-4 bg-primary/10 border-2 border-primary rounded-lg">
+              <div class="flex-none"><div class="badge badge-sm badge-primary">ListRecords</div></div>
+              <div class="flex-grow">
+                <p class="text-sm font-semibold">Complete METS payloads</p>
+                <p class="text-xs text-base-content/60">Respect curated order &amp; labels</p>
+              </div>
+              <div class="flex-none">
+                <a href="{{ tailored_proxy_url }}?verb=ListRecords&amp;metadataPrefix=mets&amp;set={{ endpoint.code }}"
+                   target="_blank"
+                   class="btn btn-sm btn-primary gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                  </svg>
+                  View Records
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-info">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
+      </svg>
+      <span>No tailored sets are available yet. Approve curated links to expose them here.</span>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

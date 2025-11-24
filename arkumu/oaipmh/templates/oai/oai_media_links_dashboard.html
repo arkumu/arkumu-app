@@ -23,42 +23,50 @@
     {% include 'oai/partials/oai_media_links_alerts.html' %}
   </div>
 
-  <div id="oai-media-links-seed-modal"></div>
-
   <div class="card bg-base-100 shadow">
     <div class="card-body py-4">
       <div class="flex flex-wrap items-center gap-4">
-        <form
-          hx-get="{% url 'oai_admin:oai_media_links_panel' %}"
-          hx-target="#oai-media-links-panel"
-          hx-swap="innerHTML"
-          hx-push-url="true"
-          class="flex items-center gap-2"
-        >
-          <select id="org-select" name="organization" class="select select-bordered select-sm">
-            <option value="">Select organization</option>
-            {% for org in organizations %}
-              <option value="{{ org.code }}" {% if org == selected_org %}selected{% endif %}>{{ org.name }} ({{ org.code }})</option>
-            {% endfor %}
-          </select>
-          <input type="hidden" name="status" value="{{ status_filter }}">
-          <button type="submit" class="btn btn-primary btn-sm">Load</button>
-        </form>
+        {% if is_admin %}
+          <form
+            hx-get="{% url 'oai_admin:oai_media_links_panel' %}"
+            hx-target="#oai-media-links-panel"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+            class="flex items-center gap-2"
+          >
+            <select id="org-select" name="organization" class="select select-bordered select-sm">
+              <option value="">Select organization</option>
+              {% for org in organizations %}
+                <option value="{{ org.code }}" {% if org == selected_org %}selected{% endif %}>{{ org.name }} ({{ org.code }})</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Load</button>
+          </form>
+        {% else %}
+          <div class="flex items-center gap-2">
+            <span class="font-semibold">Organization:</span>
+            <span class="badge badge-lg badge-primary">{{ selected_org.name }} ({{ selected_org.code }})</span>
+          </div>
+        {% endif %}
         <div id="oai-media-links-summary-stats" class="flex-1"></div>
       </div>
     </div>
   </div>
 
-  <div id="oai-media-links-summary"></div>
+  <div id="oai-media-links-summary">
+    {% if panel_context %}
+      {% include 'oai/partials/oai_media_links_summary.html' with summary=panel_context.summary view_mode=panel_context.view_mode search_query=panel_context.search_query %}
+    {% endif %}
+  </div>
 
   <div id="oai-media-links-panel">
     {% if panel_context %}
-      {% include 'oai/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page %}
+      {% include 'oai/partials/oai_media_links_panel.html' with summary=panel_context.summary project_rows=panel_context.project_rows builder_errors=panel_context.builder_errors page_obj=panel_context.page_obj current_page=panel_context.current_page oai_publish_filter=panel_context.oai_publish_filter harvestable_filter=panel_context.harvestable_filter search_query=panel_context.search_query project_total=panel_context.project_total %}
     {% elif selected_org %}
       <div class="alert alert-info shadow">
-        <span>No curated links yet. Run the seed process or add a digital object manually to get started.</span>
+        <span>No curated links yet. Use the sync action or add a digital object manually to get started.</span>
       </div>
-    {% else %}
+    {% elif is_admin %}
       <div class="alert alert-info shadow">
         <span>Select an organization to review curated media links.</span>
       </div>

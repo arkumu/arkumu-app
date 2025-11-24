@@ -1,0 +1,45 @@
+<div class="mt-3 pt-2 border-t border-base-300 space-y-2">
+  <div class="flex items-center justify-between text-xs font-semibold">
+    <span>OAI publish</span>
+    <span class="badge badge-xs {% if row.oai_is_approved %}badge-success{% else %}badge-ghost{% endif %}">
+      {% if row.oai_is_approved %}Approved{% else %}Pending{% endif %}
+    </span>
+  </div>
+  {% if row.oai_approved_by %}
+    <div class="text-[10px] text-base-content/70">
+      Approved by {{ row.oai_approved_by.name|default:row.oai_approved_by.username }}
+      {% if row.oai_approved_at %}
+        on {{ row.oai_approved_at|date:"Y-m-d H:i" }}
+      {% endif %}
+    </div>
+  {% endif %}
+  <form
+    class="space-y-1"
+    hx-post="{% url 'oai_admin:oai_project_status_update' row.resource.id %}"
+    hx-target="#project-{{ row.resource.id }}"
+    hx-swap="outerHTML"
+  >
+    {% csrf_token %}
+    <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
+    <input type="hidden" name="page" value="{{ current_page }}">
+    <input type="hidden" name="oai_publish_action" value="{% if row.oai_is_approved %}revoke{% else %}approve{% endif %}">
+    <button type="submit" class="btn btn-xs btn-primary w-full">
+      {% if row.oai_is_approved %}
+        Disable OAI
+      {% else %}
+        Enable OAI
+      {% endif %}
+    </button>
+  </form>
+  {% if row.project_uri and row.oai_identifier %}
+    <a
+      href="{% url 'oai_admin:tailored-endpoint' %}?verb=GetRecord&identifier={{ row.oai_identifier }}&metadataPrefix=mets"
+      class="btn btn-xs btn-ghost w-full"
+      target="_blank"
+      rel="noopener"
+      title="Open the tailored OAI GetRecord response in a new tab"
+    >
+      View tailored record
+    </a>
+  {% endif %}
+</div>

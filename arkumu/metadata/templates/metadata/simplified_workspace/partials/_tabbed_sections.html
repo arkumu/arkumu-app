@@ -66,12 +66,14 @@
                         {{ item.field }}
                         {% include "metadata/simplified_workspace/partials/_actor_participation_widget.html" with widget=item.widget_context %}
                       {% elif item.meta.is_join %}
-                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.field.name rows=item.rows search_properties=item.meta.search_properties selected_property=item.selected_property property_select_id=item.property_select_id dataset_name=dataset_summary.dataset_name mapping_id=mapping_id %}
+                        {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.field.name field_slug=item.field.name|slugify rows=item.rows search_properties=item.meta.search_properties selected_property=item.selected_property property_select_id=item.property_select_id dataset_name=dataset_summary.dataset_name mapping_id=mapping_id %}
                       {% elif item.meta.is_multi_value and item.widget_context %}
                         {{ item.field }}
-                        <div id="multi-value-{{ item.widget_context.field_name }}">
-                          {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=mapping_id %}
+                        {% with multi_slug=item.widget_context.field_name|slugify %}
+                        <div id="multi-value-{{ multi_slug }}">
+                          {% include "metadata/entity_editing/partials/_relationship_rows_container.html" with field_name=item.widget_context.field_name field_slug=multi_slug rows=item.widget_context.rows search_properties=item.widget_context.search_properties selected_property=item.widget_context.selected_property property_select_id=item.widget_context.property_select_id dataset_name=item.widget_context.dataset_name mapping_id=mapping_id %}
                         </div>
+                        {% endwith %}
                       {% elif item.meta.preview_picker %}
                         {% include "metadata/simplified_workspace/partials/_preview_image_picker.html" with field=item.field meta=item.meta %}
                       {% elif item.meta.use_single_fk_widget %}

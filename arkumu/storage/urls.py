@@ -54,6 +54,8 @@ urlpatterns = [
     path("dashboard/bucket-size/<str:organization>/", dashboard_views.bucket_size_info, name="bucket_size_info"),
     path("dashboard/export-imports/<str:organization>/", dashboard_views.export_successful_imports_csv, name="export_successful_imports_csv"),
     path("dashboard/folder-contents/<str:bucket_type>/<path:folder_path>/", dashboard_views.load_folder_contents, name="load_folder_contents"),
+    path("dashboard/verify-file/", dashboard_views.verify_file, name="verify_file"),
+    path("dashboard/verify-prefix/", dashboard_views.verify_prefix, name="verify_prefix"),
     path("dismiss-message/", dashboard_views.dismiss_message, name="dismiss_message"),
     
     # File operations

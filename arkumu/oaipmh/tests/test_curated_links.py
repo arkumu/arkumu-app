@@ -76,14 +76,12 @@ def test_builder_prefers_curated_links_when_available(settings):
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_b,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
         label_override="Curated B",
     )
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=digital_a,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=2,
     )
 
@@ -117,7 +115,6 @@ def test_builder_reports_conflicts_when_curated_missing_and_graph_only(settings)
     OAIProjectMediaLink.objects.create(
         project=project,
         digital_object=curated_resource,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
     )
 
@@ -152,13 +149,11 @@ def test_builder_flags_duplicate_curated_assignments(settings):
     OAIProjectMediaLink.objects.create(
         project=project_a,
         digital_object=shared_resource,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
     )
     OAIProjectMediaLink.objects.create(
         project=project_b,
         digital_object=shared_resource,
-        status=OAIProjectMediaLink.STATUS_APPROVED,
         order_index=1,
     )
 
@@ -171,4 +166,3 @@ def test_builder_flags_duplicate_curated_assignments(settings):
         warning.code == "digital_object_multi_project"
         for warning in curated_project.curated_selection.warnings
     )
-

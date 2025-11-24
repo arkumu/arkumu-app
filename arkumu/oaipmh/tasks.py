@@ -7,8 +7,10 @@ to improve harvesting performance for external services.
 
 import logging
 from huey.contrib.djhuey import db_task
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from arkumu.cache.services import OAICacheService
+from arkumu.oaipmh.services import media_sync_jobs
 
 try:
     from huey.contrib.djhuey import db_periodic_task, crontab
@@ -184,6 +186,63 @@ def warm_popular_records():
 
     except Exception as e:
         logger.error(f"❌ POPULAR RECORDS: Error warming popular records cache: {str(e)}")
+
+
+@db_task(retries=0)
+def run_media_link_seed_and_sync_job(job_id: str) -> None:
+    state = media_sync_jobs.get_job(job_id)
+    if not state:
+        logger.warning("⚠️ MEDIA SYNC: job %s missing state", job_id)
+        return
+
+    force_full_refresh = bool(state.get("force_full_refresh"))
+    mode_label = "Full refresh" if force_full_refresh else "Incremental sync"
+    media_sync_jobs.update_job(
+        job_id,
+        status="running",
+        message=f"{mode_label} in progress",
+    )
+
+    try:
+        from arkumu.oaipmh.media_link_views import (  # noqa: WPS433 - local import to avoid circular deps
+            _resolve_organization_by_code,
+            _run_media_link_seed,
+            _sync_oai_publication_for_org,
+        )
+
+        organization_code = state.get("organization_code")
+        organization = _resolve_organization_by_code(organization_code)
+        if not organization:
+            raise ValueError(f"Organization '{organization_code}' not found")
+
+        user = None
+        user_id = state.get("user_id")
+        if user_id:
+            User = get_user_model()
+            user = User.objects.filter(id=user_id).first()
+
+        seed_summary = _run_media_link_seed(
+            organization,
+            force_full_refresh=force_full_refresh,
+        )
+        sync_summary = _sync_oai_publication_for_org(
+            organization,
+            user=user,
+            force_full_refresh=force_full_refresh,
+        )
+
+        media_sync_jobs.update_job(
+            job_id,
+            status="success",
+            message=f"{mode_label} completed",
+            seed_summary=seed_summary,
+            sync_summary=sync_summary,
+        )
+        logger.info("✅ MEDIA SYNC: job %s completed", job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("❌ MEDIA SYNC: job %s failed", job_id)
+        media_sync_jobs.update_job(job_id, status="failed", message=str(exc))
+        raise
 
 
 # Periodic cache warming tasks (only if periodic tasks are available)

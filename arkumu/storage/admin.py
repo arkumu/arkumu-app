@@ -166,7 +166,8 @@ class S3FileObjectAdmin(admin.ModelAdmin):
     search_fields = [
         "file_name",
         "s3_key",
-        "session__organization",
+        "organization",
+        "session__institution",
         "session__user__username",
         "related_resource__uri",
         "related_resource__name",

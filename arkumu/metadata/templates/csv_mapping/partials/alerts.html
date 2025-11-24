@@ -1,0 +1,29 @@
+{% if messages %}
+    <div class="space-y-2">
+    {% for message in messages %}
+        {% if 'error' in message.tags %}
+            {% with 'alert-error' as alert_class %}
+                <div class="alert {{ alert_class }}">
+                    <span>{{ message }}</span>
+                </div>
+            {% endwith %}
+        {% elif 'warning' in message.tags %}
+            {% with 'alert-warning' as alert_class %}
+                <div class="alert {{ alert_class }}">
+                    <span>{{ message }}</span>
+                </div>
+            {% endwith %}
+        {% elif 'success' in message.tags %}
+            {% with 'alert-success' as alert_class %}
+                <div class="alert {{ alert_class }}">
+                    <span>{{ message }}</span>
+                </div>
+            {% endwith %}
+        {% else %}
+            <div class="alert alert-info">
+                <span>{{ message }}</span>
+            </div>
+        {% endif %}
+    {% endfor %}
+    </div>
+{% endif %}

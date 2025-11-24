@@ -3,19 +3,28 @@ import logging
 import os
 import time
 from typing import Any
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
+
+from django.contrib import messages
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.shortcuts import redirect, render
 from django.views import View
-from arkumu.storage.services.bucket_service import BucketService
-from arkumu.storage.services.upload.upload_utils import normalize_s3_key
-from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.template.loader import render_to_string
-from arkumu.users.mixins import GeneralLoginRequiredMixin, general_login_required
+
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
+from arkumu.storage.services.bucket_service import BucketService
+from arkumu.storage.services.upload.upload_utils import normalize_s3_key
+from arkumu.storage.services.verification_service import (
+    annotate_verified_flags,
+    verify_single_object,
+)
+from arkumu.storage.tasks import verify_s3_prefix
+from arkumu.users.mixins import GeneralLoginRequiredMixin, general_login_required
 
 logger = logging.getLogger(__name__)
+
+_template_helper = CSVMappingTemplateHelperMixin()
 
 
 @general_login_required
@@ -66,6 +75,7 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
             # Use the same method as the working organization browser
             bucket_name = bucket_service.get_organization_bucket(selected_org_slug)
             contents = bucket_service.list_bucket_contents(bucket_name, '')
+            annotate_verified_flags(contents, selected_org_slug)
             
             # Add file counts for data and metadata folders
             for item in contents:
@@ -212,6 +222,7 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
                         bucket_name = bucket_service.get_organization_bucket(selected_org_slug)
                         # Get bucket contents for the file browser
                         contents = bucket_service.list_bucket_contents(bucket_name, '')
+                        annotate_verified_flags(contents, selected_org_slug)
                         
                         # Add file counts for data and metadata folders (same as dropdown change logic)
                         for item in contents:
@@ -375,6 +386,7 @@ def view_organization_bucket(request):
             try:
                 # Use list_bucket_contents instead of get_root_level_items for consistency
                 contents = bucket_service.list_bucket_contents(bucket_name, '')
+                annotate_verified_flags(contents, organization)
                 
                 # Return the HTML structure for the organization bucket
                 from django.template.loader import render_to_string
@@ -415,6 +427,85 @@ def view_organization_bucket(request):
             "success": False,
             "error": str(e)
         }, status=500)
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def verify_file(request):
+    """Verify a single S3 object and return an updated file row."""
+    organization = (request.POST.get('organization') or '').strip()
+    path = (request.POST.get('path') or '').strip()
+    prefix = (request.POST.get('prefix') or '').strip()
+
+    if not organization or not path:
+        return HttpResponseBadRequest("Missing organization or path.")
+
+    bucket_service = BucketService()
+    bucket_name = bucket_service.get_organization_bucket(organization)
+
+    result = verify_single_object(bucket_name, path, organization)
+
+    if result.success:
+        messages.success(request, f"Verified {path} in {organization}.")
+    elif result.missing:
+        messages.warning(request, f"{path} is missing in {organization}.")
+    else:
+        messages.error(request, f"Failed to verify {path}: {result.error or 'Unknown error'}.")
+
+    contents = bucket_service.list_bucket_contents(bucket_name, prefix)
+    annotate_verified_flags(contents, organization)
+    target = next((item for item in contents if item.get('path') == path), None)
+
+    if not target:
+        messages.error(request, "Unable to render file row; refresh the browser and try again.")
+        alerts_html = render_to_string("csv_mapping/partials/alerts.html", {}, request=request)
+        response_html = _template_helper.build_oob_response(
+            "<!-- missing file -->",
+            {"storage-dashboard-alerts": alerts_html},
+        )
+        return HttpResponse(response_html, status=404)
+
+    bucket_type = f"org-{organization}"
+    file_row_html = render_to_string(
+        "dashboard/partials/file_row.html",
+        {
+            "item": target,
+            "organization": organization,
+            "bucket_type": bucket_type,
+            "listing_prefix": prefix,
+        },
+        request=request,
+    )
+
+    alerts_html = render_to_string("csv_mapping/partials/alerts.html", {}, request=request)
+    response_html = _template_helper.build_oob_response(
+        file_row_html,
+        {"storage-dashboard-alerts": alerts_html},
+    )
+    return HttpResponse(response_html)
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def verify_prefix(request):
+    """Queue verification for every object beneath a prefix."""
+    organization = (request.POST.get('organization') or '').strip()
+    prefix = (request.POST.get('prefix') or '').strip()
+
+    if not organization or not prefix:
+        return HttpResponseBadRequest("Missing organization or prefix.")
+
+    bucket_service = BucketService()
+    bucket_name = bucket_service.get_organization_bucket(organization)
+    verify_s3_prefix.schedule(args=(bucket_name, prefix, organization), delay=0)
+
+    messages.info(request, f"Verification job queued for {prefix} in {organization}.")
+    alerts_html = render_to_string("csv_mapping/partials/alerts.html", {}, request=request)
+    response_html = _template_helper.build_oob_response(
+        "",
+        {"storage-dashboard-alerts": alerts_html},
+    )
+    return HttpResponse(response_html)
 
 
 @general_login_required
@@ -565,6 +656,7 @@ def refresh_file_browser(request, organization):
 
         # Always use force_fresh to bypass cache
         contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
+        annotate_verified_flags(contents, organization)
         
         missing_files: list[str] = []
         retry_payload = None

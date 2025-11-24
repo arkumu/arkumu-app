@@ -7,11 +7,10 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Protocol
 
-from django.conf import settings
 from django.db import transaction
 
 from arkumu.metadata.models.resource import Resource, ResourceType
-from arkumu.projects import ProjectRecord, ProjectDigitalObject
+from arkumu.projects import ProjectInstitution, ProjectRecord, ProjectDigitalObject
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.catalog.services.schema_manifest_service import CardSchema
 from arkumu.catalog.services.project_views import ProjectURIs
@@ -62,11 +61,6 @@ class OAIProjectAssembler:
         self._graph_service_factory = graph_service_factory or CanonicalGraphService
         self._snapshot_service = snapshot_service or ProjectSnapshotService()
         self._card_schema_cache: MutableMapping[Optional[str], CardSchema] = {}
-        self._event_chain_orgs: set[str] = {
-            str(code).lower().strip()
-            for code in getattr(settings, "OAI_EVENT_CHAIN_ORGS", ("khm", "hmt"))
-            if code
-        }
 
     # ------------------------------------------------------------------
     def build_record(self, context: AssemblyContext) -> Optional[ProjectRecord]:
@@ -115,7 +109,7 @@ class OAIProjectAssembler:
             storage_files_map,
         )
         record = self._augment_shared_event_objects(record, nodes, edges_by_subject, graph, org_code)
-        return record
+        return self._ensure_institution_metadata(record, resource)
 
     # ------------------------------------------------------------------
     def _infer_org_code(self, resource: Resource, uri: str) -> Optional[str]:
@@ -196,13 +190,6 @@ class OAIProjectAssembler:
         if record is None:
             return None
 
-        normalized_org = (org_code or "").strip().lower()
-        if normalized_org not in self._event_chain_orgs:
-            return record
-
-        if getattr(record, "digital_objects", None):
-            return record
-
         root_id = graph.get("root_id")
         if not root_id:
             return record
@@ -236,9 +223,6 @@ class OAIProjectAssembler:
                 )
             )
 
-        if not extras:
-            return record
-
         existing = {
             (getattr(obj, "resource_id", None), getattr(obj, "path", None))
             for obj in getattr(record, "digital_objects", []) or []
@@ -247,12 +231,14 @@ class OAIProjectAssembler:
         if not isinstance(sources, dict):
             sources = dict(sources or {})
 
+        appended = False
         for obj in extras:
             key = (getattr(obj, "resource_id", None), getattr(obj, "path", None))
             if key in existing:
                 continue
             record.digital_objects.append(obj)
             existing.add(key)
+            appended = True
             resource_id = getattr(obj, "resource_id", None)
             if resource_id:
                 sources[str(resource_id)] = {
@@ -263,7 +249,39 @@ class OAIProjectAssembler:
                 }
 
         record.digital_object_sources = sources
-        record.harvestable = bool(record.digital_objects)
+        if appended:
+            record.harvestable = bool(record.digital_objects)
+        return record
+
+    def _ensure_institution_metadata(
+        self,
+        record: Optional[ProjectRecord],
+        resource: Optional[Resource],
+    ) -> Optional[ProjectRecord]:
+        if record is None or resource is None:
+            return record
+
+        org = getattr(resource, "organization", None)
+        if not org:
+            return record
+
+        org_code = getattr(org, "code", None)
+        normalized_code = org_code.lower().strip() if isinstance(org_code, str) and org_code.strip() else None
+        org_label = getattr(org, "name", None) or org_code
+
+        institution = getattr(record, "institution", None)
+        if institution is None and (org_label or normalized_code):
+            institution = ProjectInstitution(label=org_label, code=normalized_code)
+            record.institution = institution
+        elif institution and normalized_code and not getattr(institution, "code", None):
+            institution.code = normalized_code
+
+        if normalized_code:
+            codes = [code for code in getattr(record, "institution_codes", []) or [] if code]
+            if normalized_code not in {code.lower() for code in codes}:
+                codes.append(normalized_code)
+                record.institution_codes = codes
+
         return record
 
     def _collect_event_ids_from_graph(

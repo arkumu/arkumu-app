@@ -9,7 +9,7 @@ from arkumu.metadata.models.resource import Resource, PublicAccessLevel, Resourc
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
 from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph, RDF_NS
-from arkumu.oaipmh.views import _build_institutional_rdf_element
+from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
 
 
 def _normalize(xml: str) -> str:
