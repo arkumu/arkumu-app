@@ -27,6 +27,7 @@ class MatchingConfig:
     max_retries: int = 3
     timeout_seconds: int = 300
     log_progress_every: int = 100
+    verbose: bool = False
 
 class FileMatchingError(Exception):
     """Custom exception for file matching operations."""
@@ -142,6 +143,17 @@ class FileResourceMatcherService:
             self._build_resource_path_index()
         )
 
+        # Verbose: log index statistics
+        if self.config.verbose:
+            self._log(f"[VERBOSE] Resource value index size: {len(all_resources)} unique keys")
+            self._log(f"[VERBOSE] Path-based index size: {len(resources_by_normalized_path)} unique paths")
+            if all_resources:
+                sample_keys = list(all_resources.keys())[:5]
+                self._log(f"[VERBOSE] Sample resource value keys: {sample_keys}")
+            if resources_by_normalized_path:
+                sample_paths = list(resources_by_normalized_path.keys())[:5]
+                self._log(f"[VERBOSE] Sample path index keys: {sample_paths}")
+
         # Use iterator with chunk_size for better memory efficiency and to avoid slicing issues
         for s3_file in files_to_process.iterator(chunk_size=batch_size):
             processed_count += 1
@@ -157,6 +169,14 @@ class FileResourceMatcherService:
                 matching_resources: List[Resource] = []
                 path_matched_resources: List[Resource] = []
 
+                # Verbose: log search keys for first 10 files
+                if self.config.verbose and processed_count <= 10:
+                    search_keys_tried = [
+                        (name if self.config.case_sensitive else name.lower())
+                        for name in candidate_names if name
+                    ]
+                    self._log(f"[VERBOSE] File {s3_file.id}: '{s3_file.file_name}' -> searching value keys: {search_keys_tried}")
+
                 for name in candidate_names:
                     if not name:
                         continue
@@ -166,6 +186,11 @@ class FileResourceMatcherService:
                         matching_resources.extend(hits)
 
                 normalized_key_candidates = self._normalized_s3_key_candidates(s3_file)
+
+                # Verbose: log path candidates for first 10 files
+                if self.config.verbose and processed_count <= 10:
+                    self._log(f"[VERBOSE] File {s3_file.id}: path candidates: {list(normalized_key_candidates)}")
+
                 for candidate in normalized_key_candidates:
                     hits = resources_by_normalized_path.get(candidate, [])
                     if hits:
@@ -173,6 +198,10 @@ class FileResourceMatcherService:
 
                 if path_matched_resources:
                     matching_resources = path_matched_resources
+
+                # Verbose: log match results for first 10 files
+                if self.config.verbose and processed_count <= 10:
+                    self._log(f"[VERBOSE] File {s3_file.id}: value matches={len(matching_resources) if not path_matched_resources else 0}, path matches={len(path_matched_resources)}")
 
                 # Deduplicate while preserving order
                 seen_ids = set()
