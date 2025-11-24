@@ -30,7 +30,7 @@
 </div>
 
   <div class="flex gap-8 items-start">
-    
+
     <!-- Middle Section: Content (ocupa todo el espacio disponible) -->
     <div class="flex-1 min-w-0">
       <!-- Title (más grande y bold) -->
@@ -43,7 +43,7 @@
           {{ title }}
         </a>
       </h3>
-      
+
       <!-- Subtitle (más pequeño) -->
       {% if subtitle %}
       <p class="text-sm mb-3 transition-colors
@@ -54,7 +54,7 @@
         {{ subtitle }}
       </p>
       {% endif %}
-      
+
       <!-- Contributors (inline, separados por comas) -->
       <div class="text-sm mb-3 transition-colors
                   text-arkumu-dark
@@ -63,23 +63,23 @@
            data-rdf-type="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle">
         {% if contributor1_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">{{ contributor1_name }}{% if contributor1_role %} [{{ contributor1_role }}]{% endif %}</span>{% if contributor2_name or contributor3_name or contributor4_name %}, {% endif %}
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor1_name }}&view=card_lateral">{{ contributor1_name }}</a>{% if contributor1_role %} [{{ contributor1_role }}]{% endif %}</span>{% if contributor2_name or contributor3_name or contributor4_name %}, {% endif %}
         {% endif %}
         {% if contributor2_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">{{ contributor2_name }}{% if contributor2_role %} [{{ contributor2_role }}]{% endif %}</span>{% if contributor3_name or contributor4_name %}, {% endif %}
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor2_name }}&view=card_lateral">{{ contributor2_name }}</a>{% if contributor2_role %} [{{ contributor2_role }}]{% endif %}</span>{% if contributor3_name or contributor4_name %}, {% endif %}
         {% endif %}
         {% if contributor3_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">{{ contributor3_name }}{% if contributor3_role %} [{{ contributor3_role }}]{% endif %}</span>{% if contributor4_name %}, {% endif %}
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor3_name }}&view=card_lateral">{{ contributor3_name }}</a>{% if contributor3_role %} [{{ contributor3_role }}]{% endif %}</span>{% if contributor4_name %}, {% endif %}
         {% endif %}
         {% if contributor4_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin">{{ contributor4_name }}{% if contributor4_role %} [{{ contributor4_role }}]{% endif %}</span>
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor4_name }}&view=card_lateral">{{ contributor4_name }}</a>{% if contributor4_role %} [{{ contributor4_role }}]{% endif %}</span>
         {% endif %}
         {% if additional_contributors %}{{ additional_contributors }}{% endif %}
       </div>
-      
+
       <!-- Categories (inline con bordes) -->
       <div class="text-xs flex flex-wrap gap-2"
            data-rdf-property="http://arkumu.org/data/properties/projektkategorie">
@@ -89,7 +89,7 @@
                      theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                      theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
               data-rdf-type="http://arkumu.org/data/types/projektkategorie">
-          <a href="https://www.wikidata.org/wiki/{{ category1 }}">{{ category1_name|default:category1 }}</a>
+          <a href="/catalog/advanced-search/?kategorie={{ category1 }}&view=card_lateral">{{ category1_name|default:category1 }}</a>
         </span>
         {% endif %}
         {% if category2 %}
@@ -98,7 +98,7 @@
                      theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                      theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
               data-rdf-type="http://arkumu.org/data/types/projektkategorie">
-          <a href="https://www.wikidata.org/wiki/{{ category2 }}">{{ category2_name|default:category2 }}</a>
+          <a href="/catalog/advanced-search/?kategorie={{ category2 }}&view=card_lateral">{{ category2_name|default:category2 }}</a>
         </span>
         {% endif %}
         {% if category3 %}
@@ -107,7 +107,7 @@
                      theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                      theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
               data-rdf-type="http://arkumu.org/data/types/projektkategorie">
-          <a href="https://www.wikidata.org/wiki/{{ category3 }}">{{ category3_name|default:category3 }}</a>
+          <a href="/catalog/advanced-search/?kategorie={{ category3 }}&view=card_lateral">{{ category3_name|default:category3 }}</a>
         </span>
         {% endif %}
         {% if category4 %}
@@ -116,13 +116,13 @@
                      theme-dark:border-arkumu-light theme-dark:text-arkumu-light
                      theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue"
               data-rdf-type="http://arkumu.org/data/types/projektkategorie">
-          <a href="https://www.wikidata.org/wiki/{{ category4 }}">{{ category4_name|default:category4 }}</a>
+          <a href="/catalog/advanced-search/?kategorie={{ category4 }}&view=card_lateral">{{ category4_name|default:category4 }}</a>
         </span>
         {% endif %}
         {% if additional_categories %}{{ additional_categories }}{% endif %}
       </div>
     </div>
-    
+
     <!-- Middle Section: Description -->
     <div class="flex-shrink-0" style="width: 200px;">
       <!-- Description (if exists) -->
@@ -136,7 +136,7 @@
       </p>
       {% endif %}
     </div>
-    
+
     <!-- Right Section: Image + Button (fijo, más pequeño) -->
     <div class="flex-shrink-0 flex flex-col items-end" style="width: 240px;">
       <!-- Image con borde punteado -->
@@ -145,15 +145,15 @@
                   theme-dark:border-gray-600
                   theme-blue:border-arkumu-blue overflow-hidden">
         {% if image %}
-          <img src="/catalog/images/?query={{ image }}" 
-               class="w-full h-full object-cover" 
+          <img src="/catalog/images/?query={{ image }}"
+               class="w-full h-full object-cover"
                alt="{{ title }}"
                data-rdf-property="http://arkumu.org/data/properties/vorschaubild">
         {% else %}
           <div class="w-full h-full bg-gray-100 theme-dark:bg-gray-800 theme-blue:bg-arkumu-blue/5"></div>
         {% endif %}
       </div>
-      
+
       <!-- View Details Button (alineado a la derecha) -->
       <a href="{% url 'catalog:projekt' %}?projekt={{ uri }}"
          aria-label="Projekt '{{ title }}' ansehen">

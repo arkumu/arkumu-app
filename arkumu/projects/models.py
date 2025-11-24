@@ -398,19 +398,91 @@ class ProjectRecord:
         ).lower()
         return query.lower() in haystack
 
-    def matches_institution(self, instit: str) -> bool:
-        if not instit:
-            return True
 
-        haystack = " ".join(
-            filter(
-                None,
-                [
-                    self.institution.label if self.institution else None,
-                ],
-            )
-        ).lower()
-        return instit.lower() in haystack
+    def matches_institution(self, institution: List[str]) -> bool:
+        """
+        Überprüft, ob die Institution des Objekts mit einer der angegebenen Institutionen übereinstimmt.
+
+        Args:
+            institution (List[str]): Liste von Institutionen, die überprüft werden sollen.
+
+        Returns:
+            bool: True, wenn die Institution des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not institution:  # Wenn die Liste leer oder None ist, returniere True
+            return True
+        return any(
+            self.institution and  # Stelle sicher, dass self.institution existiert
+            inst.lower() in self.institution.label.lower()  # Case-insensitive Überprüfung
+            for inst in institution
+        )
+
+    def matches_project_type(self, project_type: List[str]) -> bool:
+        """
+        Überprüft, ob der Projekttyp des Objekts mit einem der angegebenen Projekttypen übereinstimmt.
+
+        Args:
+            project_type (List[str]): Liste von Projekttypen, die überprüft werden sollen.
+
+        Returns:
+            bool: True, wenn der Projekttyp des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not project_type:
+            return True
+        return any(
+            self.project_type and
+            pt.lower() in self.project_type.label.lower()
+            for pt in project_type
+        )
+
+    def matches_actor(self, actor: List[str]) -> bool:
+        """
+        Überprüft, ob einer der Akteure des Objekts mit einem der angegebenen Akteure übereinstimmt.
+
+        Args:
+            actor (List[str]): Liste von Akteuren, die überprüft werden sollen.
+
+        Returns:
+            bool: True, wenn ein Akteur des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not actor:
+            return True
+        return any(
+            a.name and  # Stelle sicher, dass der Akteur einen Namen hat
+            act.lower() in a.name.lower()  # Case-insensitive Überprüfung
+            for act in actor
+            for a in self.actors
+        )
+
+    def matches_category(self, category: List[str]) -> bool:
+        """
+        Überprüft, ob eine der Kategorien des Objekts mit einer der angegebenen Kategorien übereinstimmt.
+
+        Args:
+            category (List[str]): Liste von Kategorien, die überprüft werden sollen.
+
+        Returns:
+            bool: True, wenn eine Kategorie des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not category:
+            return True
+        return any(
+            c.label and  # Stelle sicher, dass die Kategorie eine Bezeichnung hat
+            cat.lower() in c.label.lower()  # Case-insensitive Überprüfung
+            for cat in category
+            for c in self.categories
+        )
+
+    def matches_keyword(self, keyword: str) -> bool:
+        if not keyword: return True
+        # Suche in Catchphrases und Beschreibung
+        keyword_lower = keyword.lower()
+        in_catchphrases = any(phrase.label and keyword_lower in phrase.label.lower()
+                             for phrase in self.catchphrases)
+        in_description = (self.description and
+                         keyword_lower in self.description.lower())
+        return in_catchphrases or in_description
+
 
 
 @dataclass
