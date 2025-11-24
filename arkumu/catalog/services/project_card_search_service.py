@@ -10,7 +10,6 @@ from django.db.models import Q
 from arkumu.catalog.services.project_views import CardURIs
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
 from arkumu.metadata.models import Resource, ResourceType, Triple
-from .project_card_cache import ProjectCardCache
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +50,9 @@ class ProjectCardSearchService:
 
         cards: List[dict] = []
         for uri in page_uris:
-            cached = ProjectCardCache.get(uri)
-            if cached:
-                cards.append(cached)
-                continue
             record = self.detail_service.get_record(uri)
             if record:
-                card = record.to_card_dict()
-                cards.append(card)
-                ProjectCardCache.set(uri, card)
+                cards.append(record.to_card_dict())
 
         return cards, total
 
