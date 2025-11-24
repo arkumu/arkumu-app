@@ -270,6 +270,8 @@ class ProjectSnapshotService:
         self.cache = ProjectCacheService()
         self.schema_service = SchemaManifestService()
         self._graph_service_factory = CanonicalGraphService
+        self._project_predicate_whitelist: Optional[Tuple[str, ...]] = None
+        self._neighbor_predicate_whitelist: Optional[Tuple[str, ...]] = None
         raw_org_codes = getattr(
             settings,
             "PROJECT_SNAPSHOT_ORG_CODES",
@@ -442,12 +444,16 @@ class ProjectSnapshotService:
         self._record_index_version = marker
 
     def _fetch_cross_institutional_graph(self) -> Dict[str, Any]:
+        project_predicates, neighbor_predicates = self._card_predicate_whitelists()
+
         if not self._force_org_graphs and self.organization_codes == self.DEFAULT_ORGANIZATION_CODES:
             logger.info("Building cross-institutional project graph via CanonicalGraphService")
             primary_graph = self._graph_service_factory().get_project_graph(
                 dataset_name="Projekt",
                 type_canonical_uri=CardURIs.PROJECT_TYPE,
                 expand_neighbors=True,
+                predicate_canon_whitelist=project_predicates,
+                neighbor_predicate_canon_whitelist=neighbor_predicates,
             )
 
             if primary_graph.get('subjects'):
@@ -461,7 +467,10 @@ class ProjectSnapshotService:
                 "No subjects found for canonical project type; falling back to per-organization graphs",
             )
 
-        combined_graph = self._build_combined_organization_graphs()
+        combined_graph = self._build_combined_organization_graphs(
+            predicate_whitelist=project_predicates,
+            neighbor_predicate_whitelist=neighbor_predicates,
+        )
         logger.info(
             "Combined per-organization graphs: %d subjects, %d nodes, %d edges",
             len(combined_graph.get('subjects', [])),
@@ -566,7 +575,12 @@ class ProjectSnapshotService:
                 counts['edges'] = len(edges)
                 counts['nodes'] = len(nodes)
 
-    def _build_combined_organization_graphs(self) -> Dict[str, Any]:
+    def _build_combined_organization_graphs(
+        self,
+        *,
+        predicate_whitelist: Optional[Sequence[str]] = None,
+        neighbor_predicate_whitelist: Optional[Sequence[str]] = None,
+    ) -> Dict[str, Any]:
         subjects: List[str] = []
         nodes: Dict[str, Dict[str, Any]] = {}
         edges: List[Dict[str, Any]] = []
@@ -595,6 +609,8 @@ class ProjectSnapshotService:
                     dataset_name="Projekt",
                     expand_neighbors=True,
                     type_canonical_uri=CardURIs.PROJECT_TYPE,
+                    predicate_canon_whitelist=predicate_whitelist,
+                    neighbor_predicate_canon_whitelist=neighbor_predicate_whitelist,
                 )
             except ValueError as exc:  # Happens when schema is unavailable
                 logger.warning(
@@ -637,6 +653,67 @@ class ProjectSnapshotService:
                 'edges': len(edges),
             },
         }
+
+    def _card_predicate_whitelists(self) -> Tuple[Optional[Tuple[str, ...]], Optional[Tuple[str, ...]]]:
+        """
+        Build lightweight predicate whitelists derived from card schemas and known project constants.
+        Returns (project_predicates, neighbor_predicates). None values mean no filtering.
+        """
+        if self._project_predicate_whitelist is not None:
+            return self._project_predicate_whitelist, self._neighbor_predicate_whitelist
+
+        project_predicates: set[str] = set()
+        neighbor_predicates: set[str] = set()
+
+        def _add_pred(value: Optional[str]) -> None:
+            if value:
+                project_predicates.add(value)
+
+        def _add_neighbor(value: Optional[str]) -> None:
+            if value:
+                neighbor_predicates.add(value)
+
+        for org_code in self.organization_codes:
+            try:
+                schema = self.schema_service.get_card_schema(org_code)
+            except Exception:
+                continue
+            for section in schema.sections.values():
+                for prop in section.properties.values():
+                    _add_pred(prop.canonical_uri)
+                    for binding in prop.bindings:
+                        _add_pred(binding.canonical_uri)
+                        _add_pred(binding.local_uri)
+                for rel in section.fk_relationships:
+                    _add_neighbor(rel.get("source_property"))
+                    _add_neighbor(rel.get("target_property"))
+                    _add_neighbor(rel.get("source_canonical_property"))
+                    _add_neighbor(rel.get("target_canonical_property"))
+
+        # Add known constants to avoid accidental omissions
+        for attr in dir(self):
+            if not attr.isupper():
+                continue
+            if not ("PROPERTY" in attr or "PROPERTIES" in attr or attr.endswith("_URI")):
+                continue
+            value = getattr(self, attr, None)
+            if isinstance(value, (tuple, list)):
+                for uri in value:
+                    _add_pred(uri)
+            elif isinstance(value, str):
+                _add_pred(value)
+            elif isinstance(value, dict):
+                for v in value.values():
+                    if isinstance(v, (tuple, list)):
+                        for uri in v:
+                            _add_pred(uri)
+
+        # Ensure neighbor whitelist at least matches project whitelist
+        neighbor_predicates.update(project_predicates)
+
+        self._project_predicate_whitelist = tuple(project_predicates) if project_predicates else None
+        self._neighbor_predicate_whitelist = tuple(neighbor_predicates) if neighbor_predicates else None
+        return self._project_predicate_whitelist, self._neighbor_predicate_whitelist
 
     def _deduplicate_graph(self, graph: Dict[str, Any]) -> Dict[str, Any]:
         subjects = []
