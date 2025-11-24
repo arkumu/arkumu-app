@@ -1,29 +1,19 @@
 from django.apps import AppConfig
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class CatalogConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'arkumu.catalog'
+    name = "arkumu.catalog"
 
     def ready(self):
-        # Automatic preview refresh on startup disabled – dashboards provide explicit trigger.
-        return
+        """Warm card cache asynchronously on startup."""
+        try:
+            from arkumu.catalog.services.project_card_search_service import ProjectCardSearchService
 
-    def _is_server_startup(self):
-        """Check if this is a server startup (not migration, test, or management command)"""
-        import sys
-
-        # Skip during migrations
-        if 'migrate' in sys.argv:
-            return False
-
-        # Skip during management commands (except runserver)
-        if 'manage.py' in sys.argv[0]:
-            if len(sys.argv) > 1 and sys.argv[1] not in ['runserver', 'runserver_plus']:
-                return False
-
-        # Skip during tests
-        if 'test' in sys.argv or 'pytest' in sys.modules:
-            return False
-
-        return True
+            service = ProjectCardSearchService()
+            service.preload_cache_async()
+        except Exception:
+            logger.exception("CatalogConfig: failed to schedule card cache preload")
