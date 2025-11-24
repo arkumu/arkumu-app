@@ -120,6 +120,17 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
     ) -> ProjectRecord:  # pragma: no cover - trivial override
         return record
 
+    def _expand_dcp_folder_if_needed(  # pragma: no cover - exercised via tailored-specific tests
+        self,
+        obj: ProjectDigitalObject,
+        institution_code: Optional[str],
+    ):
+        """
+        Tailored profile must not consult external KHM path indexes.
+        Keep DCP handling limited to curated/DB-backed objects only.
+        """
+        return None
+
     def _resolve_curated_selection(
         self,
         record: ProjectRecord,
