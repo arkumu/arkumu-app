@@ -15,7 +15,7 @@
             <div class="btn-group">
               <button
                 class="btn btn-xs {% if mode != 'digital' %}btn-active{% endif %}"
-                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable={{ summary.harvestable_filter|default:'all' }}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable={{ summary.harvestable_filter|default:'all' }}&search={{ search_query|default:'' }}"
                 hx-target="#oai-media-links-panel"
                 hx-swap="innerHTML"
                 hx-push-url="true"
@@ -24,7 +24,7 @@
               </button>
               <button
                 class="btn btn-xs {% if mode == 'digital' %}btn-active{% endif %}"
-                hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&shared=all"
+                hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&shared=all&search={{ search_query|default:'' }}"
                 hx-target="#oai-media-links-panel"
                 hx-swap="innerHTML"
                 hx-push-url="true"
