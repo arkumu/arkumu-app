@@ -887,16 +887,21 @@ class OAIProjectBuilder:
         if not storage_key:
             return None
         host = (
-            getattr(settings, "AWS_S3_BROWSER_ENDPOINT_URL", "")
-            or getattr(settings, "S3_HOSTNAME", "")
-            or os.environ.get("AWS_S3_BROWSER_ENDPOINT_URL", "")
-            or os.environ.get("S3_HOSTNAME", "")
+            os.environ.get("AWS_S3_BROWSER_ENDPOINT_URL", "")
+            or os.environ.get("AWS_S3_ENDPOINT_URL", "")
         ).strip()
         if not host:
             host = "http://localhost:9000"
         base = host.rstrip("/")
         if not base.startswith("http://") and not base.startswith("https://"):
             base = f"https://{base}"
+
+        # Check for S3 namespace (used by Dell EMC systems like digikunst)
+        # When USE_MINIO=false, use DJANGO_AWS_STORAGE_BUCKET_NAME as namespace
+        use_minio = os.environ.get("USE_MINIO", "true").lower() in ("true", "1", "yes")
+        s3_namespace = ""
+        if not use_minio:
+            s3_namespace = os.environ.get("DJANGO_AWS_STORAGE_BUCKET_NAME", "").strip()
 
         token = storage_key.strip()
         if token.startswith("s3://"):
@@ -925,6 +930,8 @@ class OAIProjectBuilder:
         from urllib.parse import quote
 
         escaped_key = quote(token, safe="/-_.~")
+        if s3_namespace:
+            return f"{base}/{s3_namespace}/{bucket}/{escaped_key}"
         return f"{base}/{bucket}/{escaped_key}"
 
     def _resolve_curated_selection(
