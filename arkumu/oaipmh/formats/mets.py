@@ -466,6 +466,16 @@ class METSSerializer:
             for res in Resource.objects.filter(id__in=actor_ids).only("id", "name", "uri"):
                 actor_names[str(res.id)] = res.name or res.uri.split("/")[-1]
 
+        # Institution keywords to filter out (these should be dc:publisher, not contributor)
+        institution_keywords = [
+            "universität", "hochschule", "akademie", "institut", "university",
+            "college", "school", "academy", "institute", "stiftung", "foundation",
+        ]
+
+        def is_institution(name: str) -> bool:
+            name_lower = name.lower()
+            return any(kw in name_lower for kw in institution_keywords)
+
         # Build creator/contributor lists
         seen = set()
         for jdata in junction_data.values():
@@ -475,6 +485,11 @@ class METSSerializer:
             seen.add(actor_id)
 
             actor_name = actor_names.get(actor_id, "Unknown")
+
+            # Skip institutions - they should be dc:publisher, not creator/contributor
+            if is_institution(actor_name):
+                continue
+
             role = jdata.get("role")
 
             if role:
