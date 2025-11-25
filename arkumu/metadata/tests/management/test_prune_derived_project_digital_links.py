@@ -4,7 +4,6 @@ import pytest
 
 from django.core.management import call_command
 
-from arkumu.catalog.services.project_views import ProjectURIs
 from arkumu.metadata.models import Resource, ResourceType, Triple
 from arkumu.users.models import Organization
 
@@ -15,7 +14,8 @@ def test_prune_derived_project_digital_links_removes_only_derived_for_org():
     org_fuk = Organization.objects.create(code="fuk", name="FUK", is_active=True)
 
     pred_digital = Resource.objects.create(
-        uri=ProjectURIs.DIGITAL_OBJECT,
+        uri="http://arkumu.org/data/properties/digitales-objekt",
+        canonical_uri="http://arkumu.org/data/properties/digitales-objekt",
         resource_type=ResourceType.PROPERTY,
     )
 
@@ -50,11 +50,16 @@ def test_prune_derived_project_digital_links_removes_only_derived_for_org():
         object=digital_khm,
         is_derived=False,
     )
-    # Derived KHM triple (should be pruned)
+    # Derived KHM triple (use different digital to avoid unique constraint)
+    digital_khm_derived = Resource.objects.create(
+        uri="http://arkumu.org/data/khm/entities/digitales-objekt/2",
+        organization=org_khm,
+        resource_type=ResourceType.ENTITY,
+    )
     Triple.objects.create(
         subject=project_khm,
         predicate=pred_digital,
-        object=digital_khm,
+        object=digital_khm_derived,
         is_derived=True,
     )
 
@@ -68,7 +73,7 @@ def test_prune_derived_project_digital_links_removes_only_derived_for_org():
 
     assert (
         Triple.objects.filter(
-            predicate__canonical_uri=ProjectURIs.DIGITAL_OBJECT,
+            predicate__canonical_uri="http://arkumu.org/data/properties/digitales-objekt",
             subject__organization__code__iexact="khm",
             subject__uri__contains="/entities/projekt/",
         ).count()
@@ -79,7 +84,7 @@ def test_prune_derived_project_digital_links_removes_only_derived_for_org():
 
     # Only one KHM triple (non-derived) should remain
     remaining_khm = Triple.objects.filter(
-        predicate__canonical_uri=ProjectURIs.DIGITAL_OBJECT,
+        predicate__canonical_uri="http://arkumu.org/data/properties/digitales-objekt",
         subject__organization__code__iexact="khm",
         subject__uri__contains="/entities/projekt/",
     )
@@ -88,9 +93,8 @@ def test_prune_derived_project_digital_links_removes_only_derived_for_org():
 
     # FUK derived triple must still exist
     assert Triple.objects.filter(
-        predicate__canonical_uri=ProjectURIs.DIGITAL_OBJECT,
+        predicate__canonical_uri="http://arkumu.org/data/properties/digitales-objekt",
         subject__organization__code__iexact="fuk",
         subject__uri__contains="/entities/projekt/",
         is_derived=True,
     ).count() == 1
-
