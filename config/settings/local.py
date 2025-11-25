@@ -122,3 +122,10 @@ LOGGING["loggers"]["arkumu.projects.services.snapshot_service"] = {
     "level": env("ARKUMU_PROJECTS_LOG_LEVEL", default=root_log_level).upper(),
     "propagate": False,
 }
+
+# Project index backend for local development
+# ------------------------------------------------------------------------------
+# Use the graph-backed card index by default in local/dev so catalog card
+# searches exercise the canonical graph + cached card projection pipeline.
+PROJECT_INDEX_BACKEND = "graph"
+PROJECT_CARD_INDEX_TTL_SECONDS = 3600

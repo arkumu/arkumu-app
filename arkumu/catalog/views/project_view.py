@@ -1,4 +1,11 @@
-"""Project detail view backed by cached project snapshots."""
+"""Project detail view.
+
+In snapshot-backed mode, this view uses ProjectSnapshotService to load a
+ProjectRecord for the requested URI. In graph-backed mode (when
+PROJECT_INDEX_BACKEND is set to 'graph'), it falls back to the lighter
+triple-based ProjectView service from arkumu.catalog.services.project_views
+to avoid rebuilding the full cross-institutional snapshot.
+"""
 import json
 import uuid
 from functools import singledispatchmethod
@@ -8,11 +15,13 @@ from django.shortcuts import render
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse
 from django.http import HttpResponseBadRequest, HttpResponseNotFound
+from django.conf import settings
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Mapping, Tuple
 
 from arkumu.catalog.models import PreviewImages
 from arkumu.catalog.services.wikidata_service import WikidataService
+from arkumu.catalog.services.project_views import get_project_view_data
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
@@ -140,6 +149,11 @@ class ProjectView(LoginRequiredMixin, View):
             logger.error("ProjectView: missing 'projekt' query parameter")
             return self._render_error(request, 'No project URI provided')
 
+        # In graph-backed index mode, avoid rebuilding the full snapshot and
+        # use the lighter triple-based project view service instead.
+        if self._use_graph_backend():
+            return self._render_graph_detail(request, projekt_uri)
+
         try:
             record = self._load_record(projekt_uri)
         except LookupError:
@@ -159,6 +173,28 @@ class ProjectView(LoginRequiredMixin, View):
             record.institution_codes,
             record.category_slugs,
         )
+
+        context = {
+            'project': project_context,
+            'metadata': metadata,
+            'tab_endpoint': reverse('catalog:projekt_tab'),
+        }
+        return render(request, 'catalog/projekt.html', context)
+
+    @staticmethod
+    def _use_graph_backend() -> bool:
+        return getattr(settings, "PROJECT_INDEX_BACKEND", "snapshot") == "graph"
+
+    def _render_graph_detail(self, request, projekt_uri: str):
+        """Render project detail using the triple-based ProjectView service."""
+
+        project_data = get_project_view_data(projekt_uri)
+        if not project_data:
+            logger.warning("ProjectView[graph]: project not found via triple-based view: %s", projekt_uri)
+            return self._render_error(request, f'Project not found: {projekt_uri}')
+
+        project_context = self._build_context_from_project_data(project_data)
+        metadata: List[Dict[str, Any]] = []
 
         context = {
             'project': project_context,
@@ -265,6 +301,81 @@ class ProjectView(LoginRequiredMixin, View):
             'institution': record.institution.label if record.institution and record.institution.label else '',
             'projektart': record.project_type.label if record.project_type and record.project_type.label else '',
             'year_range': year_range or '',
+            'categories': categories,
+            'actors': actors,
+            'catchphrases': catchphrases,
+            'digital_objects': digital_objects,
+            'events': events,
+        }
+
+    @staticmethod
+    def _build_context_from_project_data(project_data: Any) -> Dict[str, Any]:
+        """Build project context dict from ProjectData (triple-based service)."""
+
+        # Images: prefer any associated digital object paths that have previews.
+        image_candidates: List[str] = []
+        if getattr(project_data, "image", None):
+            image_candidates.append(project_data.image)
+        for path in getattr(project_data, "digital_objects", []) or []:
+            if path:
+                image_candidates.append(path)
+
+        image_preview: List[str] = []
+        for candidate in image_candidates:
+            if not candidate:
+                continue
+            if PreviewImages.objects.filter(path=candidate).exists():
+                image_preview.append(candidate)
+        image = image_preview or image_candidates
+
+        alternative_titles = getattr(project_data, "alternative_titles", []) or []
+        alternative_title = alternative_titles[0] if alternative_titles else ""
+
+        raw_catchphrases = getattr(project_data, "catchphrases", []) or []
+        catchphrases: List[Dict[str, str]] = []
+        for cid in raw_catchphrases:
+            if not cid:
+                continue
+            name = WikidataService().get_entity_label(wikidata_id=cid) or cid
+            catchphrases.append({"id": cid, "name": name})
+
+        raw_categories = getattr(project_data, "categories", []) or []
+        categories: List[Dict[str, str]] = []
+        for label in raw_categories:
+            if not label:
+                continue
+            # For graph-backed local mode we treat category labels as plain
+            # text and do not resolve them against Wikidata.
+            categories.append({"id": "", "name": label})
+
+        digital_objects = list(getattr(project_data, "digital_objects", []) or [])
+
+        actors = []
+        for actor in getattr(project_data, "actors", []) or []:
+            if not actor:
+                continue
+            name = actor.get('name')
+            roles = actor.get('roles') or []
+            if not name:
+                continue
+            actors.append({'name': name, 'roles': roles})
+
+        events = []
+        for event in getattr(project_data, "events", []) or []:
+            events.append(ProjectView._serialize_event(event))
+
+        year_range = ProjectView._derive_year_range(events)
+
+        return {
+            'uri': getattr(project_data, "uri", ""),
+            'title': getattr(project_data, "title", "") or 'Untitled Project',
+            'subtitle': getattr(project_data, "subtitle", "") or "",
+            'alternative_title': alternative_title,
+            'descriptions': [getattr(project_data, "description", "")] if getattr(project_data, "description", None) else [],
+            'image': image,
+            'institution': getattr(project_data, "institution", "") or "",
+            'projektart': getattr(project_data, "project_type", "") or "",
+            'year_range': year_range or "",
             'categories': categories,
             'actors': actors,
             'catchphrases': catchphrases,
@@ -556,16 +667,24 @@ class ProjectTabView(LoginRequiredMixin, View):
         if not projekt_uri:
             return HttpResponseBadRequest("Missing project URI")
 
-        try:
-            record = ProjectView._load_record(projekt_uri)
-        except LookupError:
-            return HttpResponseNotFound("Project not found")
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("ProjectTabView: error loading project %s", projekt_uri)
-            return HttpResponseNotFound("Project not found")
+        # Mirror ProjectView backend selection for tabs.
+        if ProjectView._use_graph_backend():
+            project_data = get_project_view_data(projekt_uri)
+            if not project_data:
+                return HttpResponseNotFound("Project not found")
+            project_context = ProjectView._build_context_from_project_data(project_data)
+            metadata: List[Dict[str, Any]] = []
+        else:
+            try:
+                record = ProjectView._load_record(projekt_uri)
+            except LookupError:
+                return HttpResponseNotFound("Project not found")
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.exception("ProjectTabView: error loading project %s", projekt_uri)
+                return HttpResponseNotFound("Project not found")
 
-        project_context = ProjectView._build_context(record)
-        metadata = ProjectView._build_metadata(record)
+            project_context = ProjectView._build_context(record)
+            metadata = ProjectView._build_metadata(record)
 
         if tab == 'events':
             return render(request, 'catalog/partials/project_events.html', {'events': project_context['events']})

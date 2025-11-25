@@ -1,11 +1,11 @@
-"""Card search view backed by reusable project snapshots."""
+"""Card search view backed by project index service."""
 
 from django.views.generic import View
 from django.shortcuts import render
 from django.contrib.auth.mixins import LoginRequiredMixin
 import logging
 
-from arkumu.projects.services import ProjectSnapshotService
+from arkumu.catalog.services import ProjectIndexService
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +30,9 @@ class GraphSearchView(LoginRequiredMixin, View):
             return self._render_empty_results(request, query, "User has no organization")
 
         try:
-            snapshot_service = ProjectSnapshotService()
-            snapshot = snapshot_service.get_cross_institutional_snapshot()
-            records = snapshot.projects
-            logger.info(
-                "GraphSearchView: snapshot generated %s with %d projects",
-                snapshot.generated_at.isoformat(),
-                len(records),
-            )
-
-            if query:
-                records = [record for record in records if record.matches_query(query)]
-
-            logger.info("Project snapshot returned %d matching projects", len(records))
-
-            cards = [record.to_card_dict() for record in records]
+            index_service = ProjectIndexService()
+            cards = index_service.get_cards(query=query)
+            logger.info("GraphSearchView: index returned %d matching projects", len(cards))
 
             context = {
                 'query': query,
@@ -55,7 +43,7 @@ class GraphSearchView(LoginRequiredMixin, View):
             return render(request, 'catalog/card_grid_template.html', context)
 
         except Exception as e:
-            logger.error(f"Project snapshot error: {e}")
+            logger.error(f"Project index error: {e}")
             return self._render_empty_results(request, query, f"Search error: {str(e)}")
 
     def _render_empty_results(self, request, query: str, error: str = None):
