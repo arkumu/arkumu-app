@@ -84,6 +84,11 @@ def build_rdf_graph(
         restrict_to_org=bool(org_code),
     )
 
+    # NOTE: Junction entity fetching (Kreuztabelle for actor-event-role) is disabled
+    # for now due to performance and cross-org data issues. The existing depth=2
+    # expansion already captures most actor relationships. To re-enable, uncomment
+    # and fix the filtering to only include junctions from THIS project's org.
+
     rdf_graph = rdflib.Graph()
     nodes = graph_data.get("nodes", {})
 

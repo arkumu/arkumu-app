@@ -363,3 +363,65 @@ class CanonicalGraphService:
                 )
             )
         return edges
+
+    def fetch_junction_entities(
+        self,
+        target_ids: Sequence[str],
+        *,
+        junction_type_uris: Optional[Sequence[str]] = None,
+    ) -> List[GraphEdge]:
+        """Find junction entities (Kreuztabelle) pointing TO target entities.
+
+        Junction tables in Arkumu model n-ary relationships like Actor-Event-Role.
+        They have edges pointing TO events and FROM actors, plus properties like
+        'ist-urheberin' (is copyright holder) and 'rolle' (role).
+
+        This method finds junction entities that point to any of the target_ids,
+        then returns ALL edges from those junction entities.
+
+        Args:
+            target_ids: Entity IDs to find junctions pointing to (e.g., Event IDs)
+            junction_type_uris: Canonical type URIs for junction tables.
+                               Defaults to actor-event and actor-actor junctions.
+
+        Returns:
+            List of GraphEdges from junction entities (including their properties).
+        """
+        if not target_ids:
+            return []
+
+        # Default junction types
+        if junction_type_uris is None:
+            junction_type_uris = [
+                "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
+                "http://arkumu.org/data/types/akteurin-akteurin-kreuztabelle",
+            ]
+
+        # Single optimized query: find junction entities by type that point to targets
+        # Using subquery to find subjects of junction type, then filter by target
+        junction_type_subjects = (
+            Triple.objects.filter(
+                Q(predicate__uri=RDF_TYPE_URI)
+                & (
+                    Q(object__canonical_uri__in=junction_type_uris)
+                    | Q(object__uri__in=junction_type_uris)
+                )
+            )
+            .values_list("subject_id", flat=True)
+        )
+
+        # Find junction entities that point to our targets
+        junction_ids = set(
+            Triple.objects.filter(
+                subject_id__in=junction_type_subjects,
+                object_id__in=list(target_ids),
+            )
+            .values_list("subject_id", flat=True)
+            .distinct()
+        )
+
+        if not junction_ids:
+            return []
+
+        # Fetch ALL edges from junction entities
+        return self._fetch_triples_for_subjects(list(junction_ids), None)
