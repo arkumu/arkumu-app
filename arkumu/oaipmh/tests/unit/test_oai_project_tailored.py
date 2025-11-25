@@ -4,6 +4,7 @@ from arkumu.oaipmh.oai_project import CuratedMediaSelection
 from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
 from arkumu.projects import ProjectDigitalObject, ProjectInstitution, ProjectRecord
 from arkumu.oaipmh import oai_project as base_builder_module
+from arkumu.oaipmh.services import dcp_index
 
 
 def test_tailored_builder_path_resolver_passthrough():
@@ -170,10 +171,22 @@ def test_tailored_builder_expands_dcp_via_folder_triple(monkeypatch):
 
     folder = "/rosetta/khm/sandbox/input/arkumu/daten/9999_bundle_dcp"
 
+    def fake_get_bundle_members(org_code, folder_name, folder_path=None):
+        assert org_code == "khm"
+        assert folder_name.endswith("_dcp")
+        return dcp_index.BundleLookupResult(
+            org_code="khm",
+            folder_name=folder_name,
+            relative_file_paths=(
+                "9999_bundle_dcp/feature.mxf",
+                "9999_bundle_dcp/audio.wav",
+            ),
+        )
+
     monkeypatch.setattr(
-        OAIProjectBuilderTailored,
-        "_dcp_folder_from_triple",
-        lambda self, obj: folder,
+        dcp_index,
+        "get_bundle_members",
+        fake_get_bundle_members,
     )
     monkeypatch.setattr(
         OAIProjectBuilderTailored,

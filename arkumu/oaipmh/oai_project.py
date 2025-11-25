@@ -17,6 +17,7 @@ from django.db.models import Count, Q
 from arkumu.projects import ProjectDigitalObject, ProjectDigitalObjectLicense, ProjectRecord
 from arkumu.projects.fixity import FixityInfo, parse_fixity
 from arkumu.oaipmh.models import OAIProjectMediaLink
+from arkumu.oaipmh.services import dcp_index
 
 from .path_mapping import resolve_external_paths
 
@@ -1064,106 +1065,87 @@ class OAIProjectBuilder:
         Returns None if not a DCP folder, or list of ProjectDigitalObject for all files in folder.
         """
         # Only check for KHM institution
-        if institution_code != 'khm':
+        if (institution_code or "").strip().lower() != "khm":
             return None
 
         # Import here to avoid circular dependencies
         from arkumu.metadata.models import Triple
 
-        # Get the digital object URI
-        obj_uri = getattr(obj, 'uri', None)
+        obj_uri = getattr(obj, "uri", None)
         if not obj_uri:
             return None
 
         # Query for the DCP folder property
         try:
-            dcp_folder_triples = Triple.objects.filter(
-                subject__uri=obj_uri,
-                predicate__uri='http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner'
-            ).select_related('object')
-
-            if not dcp_folder_triples.exists():
-                return None
-
-            # Get the folder path
-            dcp_triple = dcp_folder_triples.first()
-            folder_path = dcp_triple.object.value if dcp_triple.object else None
-
-            if not folder_path:
-                return None
-
-        except Exception as e:
-            logger.error(f"Error querying DCP folder property: {e}")
+            dcp_folder_triple = (
+                Triple.objects.filter(
+                    subject__uri=obj_uri,
+                    predicate__uri="http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner",
+                )
+                .select_related("object")
+                .first()
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Error querying DCP folder property for %s: %s", obj_uri, exc)
             return None
 
-        # Clean and normalize the folder path
-        folder_path = folder_path.strip().replace('\\', '/')
+        if not dcp_folder_triple or not getattr(dcp_folder_triple, "object", None):
+            return None
+
+        raw_folder_path = getattr(dcp_folder_triple.object, "value", None)
+        if not raw_folder_path:
+            return None
+
+        folder_path = str(raw_folder_path).strip().replace("\\", "/")
+        if not folder_path:
+            return None
 
         # Extract just the folder name (last component of the path)
-        # E.g., "/Volumes/.../Deflower_de_UT_170529.dcp/" -> "Deflower_de_UT_170529.dcp"
-        folder_path = folder_path.rstrip('/')
-        folder_name = folder_path.split('/')[-1] if '/' in folder_path else folder_path
+        folder_path_no_slash = folder_path.rstrip("/")
+        folder_name = folder_path_no_slash.split("/")[-1] if "/" in folder_path_no_slash else folder_path_no_slash
 
-        logger.info(f"Looking for DCP folder: {folder_name} (from path: {folder_path})")
+        logger.info("Looking for DCP folder %s (from path: %s)", folder_name, folder_path)
 
-        # Load the path index and find all files in this folder
-        path_index_file = getattr(settings, 'OAI_EXTERNAL_PATH_FILES', {}).get('khm')
-        if not path_index_file:
-            logger.warning("No path index file configured for KHM")
+        # Use the DCP index service to resolve bundle members as relative paths
+        lookup = dcp_index.get_bundle_members("khm", folder_name, folder_path=folder_path)
+        if not lookup.relative_file_paths:
+            logger.info("No files found in DCP folder %s via index", folder_name)
             return None
 
-        try:
-            with open(path_index_file, 'r', encoding='utf-8') as f:
-                all_paths = [line.strip() for line in f if line.strip()]
-        except (IOError, OSError) as e:
-            logger.error(f"Failed to read path index: {e}")
-            return None
+        rosetta_root = getattr(settings, "OAI_EXTERNAL_ROSETTA_ROOTS", {}).get("khm") or ""
+        rosetta_root = str(rosetta_root).rstrip("/")
 
-        # Find all files that are direct children of this folder
-        matching_files = []
-        for path in all_paths:
-            # Normalize path for comparison
-            normalized_path = path.replace('\\', '/')
-
-            # Check if the folder name appears in the path
-            if folder_name not in normalized_path:
+        expanded_objects: List[ProjectDigitalObject] = []
+        for rel_path in lookup.relative_file_paths:
+            rel_path_clean = str(rel_path).lstrip("/")
+            if not rel_path_clean:
                 continue
+            abs_path = f"{rosetta_root}/{rel_path_clean}" if rosetta_root else rel_path_clean
 
-            # Find the position of the folder in the path
-            folder_idx = normalized_path.find(folder_name)
-            if folder_idx == -1:
-                continue
-
-            # Get the part after the folder name
-            after_folder = normalized_path[folder_idx + len(folder_name):]
-
-            # Check if this is a direct child file (starts with / and has no more /)
-            if after_folder.startswith('/'):
-                filename = after_folder[1:]  # Remove leading /
-                if filename and '/' not in filename:  # No subdirectories
-                    matching_files.append(path)
-
-        if not matching_files:
-            logger.info(f"No files found in DCP folder: {folder_name}")
-            return None
-
-        # Create ProjectDigitalObject instances for each file
-        expanded_objects = []
-        for file_path in matching_files:
-            # Create a new object based on the original
             new_obj = ProjectDigitalObject(
-                path=file_path,
-                uri=obj.uri,  # Same logical entity
+                path=abs_path,
+                uri=obj.uri,
             )
             new_obj.resource_id = getattr(obj, "resource_id", None)
 
             # Copy other relevant attributes from the original object
-            # Don't copy path-specific attributes like file_name, storage_key
-            for attr in ['content_type', 'size_bytes', 'checksum',
-                         'checksum_algorithm', 'checksum_provenance',
-                         'access_url', 'storage_status', 'created_at', 'updated_at',
-                         'license', 'uuid', 'genesis_type', 'media_type',
-                         'significant_properties_de', 'significant_properties_en']:
+            for attr in [
+                "content_type",
+                "size_bytes",
+                "checksum",
+                "checksum_algorithm",
+                "checksum_provenance",
+                "access_url",
+                "storage_status",
+                "created_at",
+                "updated_at",
+                "license",
+                "uuid",
+                "genesis_type",
+                "media_type",
+                "significant_properties_de",
+                "significant_properties_en",
+            ]:
                 if hasattr(obj, attr):
                     value = getattr(obj, attr)
                     if value is not None:
@@ -1171,7 +1153,7 @@ class OAIProjectBuilder:
 
             expanded_objects.append(new_obj)
 
-        logger.info(f"Expanded DCP folder {folder_name} to {len(expanded_objects)} files")
+        logger.info("Expanded DCP folder %s to %d files using index", folder_name, len(expanded_objects))
         return expanded_objects
 
     @staticmethod

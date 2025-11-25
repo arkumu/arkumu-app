@@ -182,3 +182,46 @@ class OAIMediaSyncState(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - debug helper
         return f"{self.organization_id}:{self.profile}"
+
+
+class OAIDcpPathIndex(models.Model):
+    """Indexed KHM DCP bundle file paths, stored relative to the Rosetta root."""
+
+    org_code = models.CharField(max_length=16)
+    bundle_key = models.TextField(
+        help_text="Canonical relative identifier for the DCP folder (e.g. '2265_auf_der_strecke_dcp').",
+    )
+    folder_name = models.CharField(
+        max_length=255,
+        help_text="Last segment of the DCP directory (e.g. '2265_auf_der_strecke_dcp').",
+    )
+    relative_file_path = models.TextField(
+        help_text="File path relative to the Rosetta root (e.g. '2265_auf_der_strecke_dcp/asset.mxf').",
+    )
+    file_name = models.CharField(
+        max_length=255,
+        help_text="Basename of the file within the DCP bundle.",
+    )
+
+    class Meta:
+        verbose_name = "OAI DCP Path Index"
+        verbose_name_plural = "OAI DCP Path Index Entries"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("org_code", "relative_file_path"),
+                name="uniq_oai_dcp_org_relative_path",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("org_code", "bundle_key"),
+                name="oai_dcp_bundle_key_idx",
+            ),
+            models.Index(
+                fields=("org_code", "folder_name"),
+                name="oai_dcp_folder_name_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover - debug helper
+        return f"{self.org_code}:{self.relative_file_path}"

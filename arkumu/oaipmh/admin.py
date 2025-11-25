@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
+from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication, OAIDcpPathIndex
 
 
 @admin.register(OAIProjectMediaLink)
@@ -78,3 +78,28 @@ class OAIProjectPublicationAdmin(admin.ModelAdmin):
     @admin.display(description="Project URI")
     def project_uri(self, obj: OAIProjectPublication) -> str:
         return getattr(obj.project, "uri", "") or getattr(obj.project, "canonical_uri", "")
+
+
+@admin.register(OAIDcpPathIndex)
+class OAIDcpPathIndexAdmin(admin.ModelAdmin):
+    """Admin for KHM DCP path index entries."""
+
+    list_display = (
+        "org_code",
+        "folder_name",
+        "bundle_key",
+        "relative_file_path",
+        "file_name",
+    )
+    list_filter = (
+        "org_code",
+        "folder_name",
+    )
+    search_fields = (
+        "bundle_key",
+        "folder_name",
+        "relative_file_path",
+        "file_name",
+    )
+    ordering = ("org_code", "bundle_key", "relative_file_path")
+    list_per_page = 100

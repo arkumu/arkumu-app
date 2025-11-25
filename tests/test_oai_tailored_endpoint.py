@@ -15,9 +15,12 @@ from arkumu.oaipmh.views import projects as project_views
 from arkumu.oaipmh.views import tailored as tailored_views
 from arkumu.oaipmh.views.config import METS_NS
 from arkumu.projects import ProjectActor, ProjectDigitalObject, ProjectInstitution, ProjectRecord
-from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
 from arkumu.users.models import Organization, User
 from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.metadata.models.triples import Triple
+from arkumu.oaipmh.models import OAIDcpPathIndex
+from arkumu.catalog.services.project_views import ProjectURIs
+from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
 
 
 @pytest.mark.django_db
@@ -259,6 +262,145 @@ def test_tailored_endpoint_curates_media_links(client, monkeypatch, settings):
 
 
 @pytest.mark.django_db
+def test_tailored_endpoint_expands_khm_dcp_bundle_with_index(client, monkeypatch, settings):
+    settings.OAI_BASIC_AUTH_ENABLED = False
+    settings.OAI_ROSETTA_HARVESTABLE_ORGS = ("khm",)
+    settings.OAI_S3_HARVESTABLE_ORGS = ()
+
+    rosetta_root = "/rosetta/khm/sandbox/input/arkumu/daten"
+    settings.OAI_EXTERNAL_ROSETTA_ROOTS = {"khm": rosetta_root}
+
+    user = User.objects.create_user(username="oai-admin-dcp", password="test", role="system_admin")
+    client.force_login(user)
+
+    org = Organization.objects.create(name="KHM", code="khm", is_active=True)
+    base_ts = timezone.now()
+    project = Resource.objects.create(
+        uri="https://arkumu.org/entities/projekt/9999",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+    Resource.objects.filter(pk=project.pk).update(updated_at=base_ts)
+
+    # Digital object resource that will act as the DCP bundle anchor
+    digital = Resource.objects.create(
+        uri="https://arkumu.org/entities/digital/9999_dcp",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+    )
+
+    # DCP folder triple: use the dedicated KHM predicate with an absolute folder path
+    dcp_predicate_uri = "http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner"
+    dcp_predicate = Resource.objects.create(
+        uri=dcp_predicate_uri,
+        canonical_uri=dcp_predicate_uri,
+        resource_type=ResourceType.PROPERTY,
+    )
+    folder_name = "9999_bundle_dcp"
+    folder_path = f"{rosetta_root}/{folder_name}"
+    folder_literal = Resource.objects.create(
+        value=folder_path,
+        resource_type=ResourceType.LITERAL,
+    )
+    Triple.objects.create(subject=digital, predicate=dcp_predicate, object=folder_literal)
+
+    # Curated media link and publication so the project is harvestable in tailored mode
+    link = OAIProjectMediaLink.objects.create(
+        project=project,
+        digital_object=digital,
+        order_index=1,
+    )
+    publication = OAIProjectPublication.objects.create(project=project, is_approved=True)
+    OAIProjectMediaLink.objects.filter(pk=link.pk).update(updated_at=base_ts)
+    OAIProjectPublication.objects.filter(pk=publication.pk).update(updated_at=base_ts + timedelta(seconds=1))
+
+    # Seed the DCP path index directly for this bundle (relative to the Rosetta root)
+    OAIDcpPathIndex.objects.create(
+        org_code="khm",
+        bundle_key=folder_name,
+        folder_name=folder_name,
+        relative_file_path=f"{folder_name}/feature.mxf",
+        file_name="feature.mxf",
+    )
+    OAIDcpPathIndex.objects.create(
+        org_code="khm",
+        bundle_key=folder_name,
+        folder_name=folder_name,
+        relative_file_path=f"{folder_name}/audio.wav",
+        file_name="audio.wav",
+    )
+
+    # Ensure tailored builder treats KHM as a Rosetta org and uses a simple path resolver
+    monkeypatch.setattr(project_views._tailored_project_builder, "_s3_orgs", set())
+    monkeypatch.setattr(project_views._tailored_project_builder, "_rosetta_orgs", {"khm"})
+
+    def _fake_resolver(org_code, *, path=None, file_name=None):
+        candidate = path or file_name
+        return [candidate] if candidate else []
+
+    monkeypatch.setattr(project_views._tailored_project_builder, "_path_resolver", _fake_resolver)
+
+    # Disable project-type filters so the synthetic project is visible
+    monkeypatch.setattr(harvest_views, "_project_type_filter", lambda: None)
+    monkeypatch.setattr(tailored_views, "_project_type_filter", lambda: None)
+    monkeypatch.setattr(oai_views, "_project_type_filter", lambda: None)
+
+    # Use the real tailored builder on a minimal record via a stubbed project hint helper
+    record = ProjectRecord(
+        subject_id=str(project.id),
+        uri=project.uri,
+        title="KHM DCP integration",
+        institution=ProjectInstitution(label=org.name, code=org.code),
+        digital_objects=[],
+    )
+
+    def _build_hint(resource: Resource):
+        assert resource.uri == project.uri
+        builder = project_views._tailored_project_builder
+        return builder.from_project_record(
+            record,
+            skip_shared_event_filter=False,
+            skip_format_exclusion=False,
+            use_curated_media_links=True,
+        )
+
+    monkeypatch.setattr(tailored_views, "_build_tailored_project_hint_from_resource", _build_hint)
+
+    identifier = f"oai:arkumu:resource:{quote(project.uri)}"
+    params = {"verb": "GetRecord", "identifier": identifier, "metadataPrefix": "mets"}
+    headers = {"HTTP_X_INTERNAL_OAI_BYPASS": "1"}
+
+    response = client.get("/oai/tailored/", params, **headers)
+    assert response.status_code == 200
+
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "mets": METS_NS,
+        "xlink": "http://www.w3.org/1999/xlink",
+    }
+
+    document = ET.fromstring(response.content)
+    record_elem = document.find(".//oai:GetRecord/oai:record", ns)
+    if record_elem is None:
+        assert False, ET.tostring(document, encoding="unicode")
+
+    hrefs = {
+        node.attrib[f"{{{ns['xlink']}}}href"]
+        for node in record_elem.findall(".//mets:fileSec//mets:FLocat", ns)
+    }
+
+    expected_paths = {
+        f"{rosetta_root}/{folder_name}/feature.mxf",
+        f"{rosetta_root}/{folder_name}/audio.wav",
+    }
+    assert expected_paths.issubset(hrefs), hrefs
+
+
+@pytest.mark.django_db
 def test_tailored_resumption_tokens_include_profile_and_invalidate_on_dataset_change(client, monkeypatch, settings):
     settings.OAI_BASIC_AUTH_ENABLED = False
 
@@ -426,6 +568,5 @@ def test_tailored_builder_uses_curated_rosetta_paths(monkeypatch, settings):
     project_hint = builder.from_project_record(record, use_curated_media_links=True)
     assert len(project_hint.digital_objects) == 1
     normalized = project_hint.digital_objects[0]
-    assert normalized.rosetta_path == \
-        "/rosetta/hfmt/Volumes/18TB1/hfmt_tonbandarchiv_dateien/TA072_b_002.mp3"
+    assert normalized.rosetta_path == "/rosetta/hfmt/TA072_b_002.mp3"
     assert normalized.harvestable
