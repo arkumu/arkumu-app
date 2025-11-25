@@ -397,6 +397,11 @@ class CanonicalGraphService:
                 "http://arkumu.org/data/types/akteurin-akteurin-kreuztabelle",
             ]
 
+        # Build org filter if organization is set
+        org_filter = Q()
+        if self.organization:
+            org_filter = Q(subject__organization=self.organization)
+
         # Single optimized query: find junction entities by type that point to targets
         # Using subquery to find subjects of junction type, then filter by target
         junction_type_subjects = (
@@ -407,6 +412,7 @@ class CanonicalGraphService:
                     | Q(object__uri__in=junction_type_uris)
                 )
             )
+            .filter(org_filter)
             .values_list("subject_id", flat=True)
         )
 
