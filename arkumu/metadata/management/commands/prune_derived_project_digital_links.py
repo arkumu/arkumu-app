@@ -17,7 +17,6 @@ from typing import Iterable, Optional
 
 from django.core.management.base import BaseCommand
 
-from arkumu.catalog.services.project_views import ProjectURIs
 from arkumu.metadata.models import Triple
 
 
@@ -55,7 +54,7 @@ class Command(BaseCommand):
 
         for org_code in sorted(org_codes):
             qs = Triple.objects.filter(
-                predicate__canonical_uri=ProjectURIs.DIGITAL_OBJECT,
+                predicate__canonical_uri="http://arkumu.org/data/properties/digitales-objekt",
                 subject__organization__code__iexact=org_code,
                 subject__uri__contains="/entities/projekt/",
                 is_derived=True,
@@ -84,4 +83,3 @@ class Command(BaseCommand):
                     f"Prune complete. Total deleted derived project→digital triples: {total_deleted}"
                 )
             )
-
