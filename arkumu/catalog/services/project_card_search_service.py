@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 from typing import List, Optional, Sequence, Tuple
 
+from django.conf import settings
 from django.db.models import Q
 
 from arkumu.catalog.services.project_views import CardURIs
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
+from arkumu.catalog.services.project_index_service import ProjectIndexService
 from arkumu.metadata.models import Resource, ResourceType, Triple
 from .project_card_cache import ProjectCardCache
 from django.db import OperationalError
@@ -46,6 +48,17 @@ class ProjectCardSearchService:
         page_size: int,
     ) -> Tuple[List[dict], int]:
         """Return card dicts and total count without using the snapshot."""
+        backend = getattr(settings, "PROJECT_INDEX_BACKEND", "snapshot")
+
+        if backend == "db":
+            index_service = ProjectIndexService(backend="db")
+            cards = index_service.get_cards(query=query, organ_code=org_code)
+            total = len(cards)
+
+            start = max(page - 1, 0) * page_size
+            end = start + page_size
+            return cards[start:end], total
+
         project_uris = self._search_project_uris(query, org_code=org_code)
         total = len(project_uris)
 

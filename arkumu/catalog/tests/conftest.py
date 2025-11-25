@@ -11,7 +11,7 @@ User = get_user_model()
 
 
 @pytest.fixture
-def organization():
+def organization(db):
     """Create a test organization."""
     return Organization.objects.create(
         name="Test University",
@@ -20,7 +20,7 @@ def organization():
 
 
 @pytest.fixture
-def user(organization):
+def user(db, organization):
     """Create a test user with organization."""
     return User.objects.create_user(
         username="testuser",

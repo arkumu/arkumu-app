@@ -16,6 +16,7 @@ from .schema_manifest_service import (
 )
 from .triple_relationship_service import TripleRelationshipService
 from .project_index_service import ProjectIndexService
+from .project_index_db_service import ProjectIndexDbService
 
 __all__ = [
     'GraphSearchService',
@@ -27,4 +28,5 @@ __all__ = [
     'CanonicalPropertyBinding',
     'TripleRelationshipService',
     'ProjectIndexService',
+    'ProjectIndexDbService',
 ]

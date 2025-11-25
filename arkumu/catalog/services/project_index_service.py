@@ -19,11 +19,13 @@ import logging
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db.models import Q
 
 from arkumu.projects import ProjectRecord, ProjectSnapshot
 from arkumu.metadata.models import Resource, PublicAccessLevel
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.catalog.services.schema_manifest_service import CardSchema, CARD_SCHEMA_TEMPLATE
+from arkumu.catalog.models import ProjectIndex, ProjectRecordIndex
 
 if TYPE_CHECKING:
     # Only imported for type checking to avoid circular imports at runtime.
@@ -451,6 +453,32 @@ class ProjectIndexService:
             )
             return cards
 
+        if self.backend == "db":
+            base_qs = ProjectIndex.objects.filter(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+            )
+
+            if organ_code:
+                base_qs = base_qs.filter(org_code__iexact=organ_code.strip())
+
+            if query:
+                normalized_query = query.strip()
+                base_qs = base_qs.filter(
+                    Q(title__icontains=normalized_query)
+                    | Q(subtitle__icontains=normalized_query)
+                    | Q(institution_label__icontains=normalized_query)
+                )
+
+            cards = [entry.to_card_dict() for entry in base_qs.order_by("title")]
+            logger.info(
+                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s')",
+                len(cards),
+                (query or "").strip(),
+                (organ_code or "").strip(),
+            )
+            return cards
+
         if self.backend == "graph":
             # Experimental: build cards from canonical project graph with caching.
             cards = self._get_graph_cards(force_refresh=force_refresh)
@@ -509,6 +537,17 @@ class ProjectIndexService:
                     return record.to_card_dict()
             return None
 
+        if self.backend == "db":
+            try:
+                entry = ProjectIndex.objects.get(
+                    uri=uri,
+                    public_access_level=PublicAccessLevel.PUBLIC,
+                    is_public_approved=True,
+                )
+                return entry.to_card_dict()
+            except ProjectIndex.DoesNotExist:
+                return None
+
         if self.backend == "graph":
             # For now, rely on full card set and filter in memory.
             cards = self.get_cards(force_refresh=force_refresh)
@@ -536,6 +575,17 @@ class ProjectIndexService:
                 if record.uri == uri:
                     return record
             return None
+
+        if self.backend == "db":
+            try:
+                entry = ProjectRecordIndex.objects.get(
+                    uri=uri,
+                    public_access_level=PublicAccessLevel.PUBLIC,
+                    is_public_approved=True,
+                )
+                return entry.to_record()
+            except ProjectRecordIndex.DoesNotExist:
+                return None
 
         if self.backend == "graph":
             # Graph backend currently does not build full ProjectRecord.

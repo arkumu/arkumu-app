@@ -26,6 +26,7 @@ from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
+from arkumu.catalog.services import ProjectIndexService
 
 logger = logging.getLogger(__name__)
 
@@ -149,15 +150,20 @@ class ProjectView(LoginRequiredMixin, View):
             logger.error("ProjectView: missing 'projekt' query parameter")
             return self._render_error(request, 'No project URI provided')
 
+        backend = self._backend()
+
         # In graph-backed index mode, avoid rebuilding the full snapshot and
         # use the lighter triple-based project view service instead.
-        if self._use_graph_backend():
+        if backend == "graph":
             return self._render_graph_detail(request, projekt_uri)
 
         try:
-            record = self._load_record(projekt_uri)
+            if backend == "db":
+                record = self._load_record_from_index(projekt_uri)
+            else:
+                record = self._load_record(projekt_uri)
         except LookupError:
-            logger.warning("ProjectView: project not found in snapshot: %s", projekt_uri)
+            logger.warning("ProjectView: project not found via backend '%s': %s", backend, projekt_uri)
             return self._render_error(request, f'Project not found: {projekt_uri}')
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("ProjectView: error loading project %s", projekt_uri)
@@ -182,8 +188,8 @@ class ProjectView(LoginRequiredMixin, View):
         return render(request, 'catalog/projekt.html', context)
 
     @staticmethod
-    def _use_graph_backend() -> bool:
-        return getattr(settings, "PROJECT_INDEX_BACKEND", "snapshot") == "graph"
+    def _backend() -> str:
+        return getattr(settings, "PROJECT_INDEX_BACKEND", "snapshot")
 
     def _render_graph_detail(self, request, projekt_uri: str):
         """Render project detail using the triple-based ProjectView service."""
@@ -213,6 +219,25 @@ class ProjectView(LoginRequiredMixin, View):
             return detail_record
 
         logger.warning("ProjectView: project not found via detail index: %s", projekt_uri)
+        raise LookupError(projekt_uri)
+
+    def _load_record_from_index(self, projekt_uri: str) -> ProjectRecord:
+        index_service = ProjectIndexService(backend="db")
+        indexed = index_service.get_record_by_uri(projekt_uri)
+        if indexed:
+            logger.info("ProjectView: served via project_records index (project_found=True)")
+            return indexed
+
+        # Fallback to on-demand detail assembly to avoid snapshot rebuilds.
+        detail_service = self.detail_service_class()
+        detail_record = detail_service.get_record(projekt_uri)
+        if detail_record:
+            logger.info(
+                "ProjectView: detail index fallback for missing project_records entry (project_found=True)",
+            )
+            return detail_record
+
+        logger.warning("ProjectView: project not found via project_records index: %s", projekt_uri)
         raise LookupError(projekt_uri)
 
     @staticmethod

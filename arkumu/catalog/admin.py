@@ -3,7 +3,7 @@ from django.template.defaultfilters import filesizeformat
 from django.utils.html import format_html
 import base64
 
-from arkumu.catalog.models import PreviewImages
+from arkumu.catalog.models import PreviewImages, ProjectIndex, ProjectRecordIndex
 
 
 @admin.register(PreviewImages)
@@ -48,3 +48,33 @@ class PreviewImagesAdmin(admin.ModelAdmin):
             return "(No content length provided)"
         return filesizeformat(obj.content_length)
     human_filesize.short_description = "Content length"
+
+
+@admin.register(ProjectIndex)
+class ProjectIndexAdmin(admin.ModelAdmin):
+    list_display = (
+        "uri",
+        "org_code",
+        "public_access_level",
+        "is_public_approved",
+        "built_at",
+    )
+    search_fields = ("uri", "title", "subtitle", "institution_label")
+    list_filter = ("org_code", "public_access_level", "is_public_approved")
+    readonly_fields = ("source_updated_at", "built_at", "source_version")
+    ordering = ("org_code", "title")
+
+
+@admin.register(ProjectRecordIndex)
+class ProjectRecordIndexAdmin(admin.ModelAdmin):
+    list_display = (
+        "uri",
+        "org_code",
+        "public_access_level",
+        "is_public_approved",
+        "built_at",
+    )
+    search_fields = ("uri", "title", "subtitle", "institution_label", "project_type_label")
+    list_filter = ("org_code", "public_access_level", "is_public_approved", "reference_only", "harvestable")
+    readonly_fields = ("source_updated_at", "built_at", "source_version")
+    ordering = ("org_code", "title")
