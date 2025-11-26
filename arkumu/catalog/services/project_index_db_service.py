@@ -25,6 +25,7 @@ class _CanonicalURIs:
     TITLE = "http://arkumu.org/data/properties/bevorzugter-titel"
     SUBTITLE = "http://arkumu.org/data/properties/bevorzugter-untertitel"
     DESCRIPTION = "http://arkumu.org/data/properties/kurzbeschreibung"
+    DESCRIPTION_ENTITY = "http://arkumu.org/data/properties/beschreibung"  # Nested description entity
     IMAGE = "http://arkumu.org/data/properties/vorschaubild"
     EVENT = "http://arkumu.org/data/properties/ereignis"
     INSTITUTION = "http://arkumu.org/data/properties/einliefernde-hochschule"
@@ -36,9 +37,12 @@ class _CanonicalURIs:
     # Event properties
     EVENT_START = "http://arkumu.org/data/properties/ereignisbeginn"
     EVENT_END = "http://arkumu.org/data/properties/ereignisende"
-    EVENT_ACTOR_JUNCTION = "http://arkumu.org/data/properties/akteurinnen-am-ereignis"
-    EVENT_NAME = "http://arkumu.org/data/properties/name-des-ereignisses"
+    EVENT_ACTOR_JUNCTION = "http://arkumu.org/data/properties/akteurinnen-am-ereignis"  # Legacy junction
+    EVENT_DIRECT_ACTOR = "http://arkumu.org/data/properties/ereignis-hat-akteurin"  # Direct event->actor
+    EVENT_NAME = "http://arkumu.org/data/properties/name-des-ereignisses"  # Legacy event name
+    EVENT_NAME_ALT = "http://arkumu.org/data/properties/ereignisname"  # Canonical event name
     EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
+    EVENT_DESCRIPTION = "http://arkumu.org/data/properties/ereignisbeschreibung"
 
     # Actor junction properties
     ACTOR_LINK = "http://arkumu.org/data/properties/akteurin-im-ereignis"
@@ -70,6 +74,7 @@ class _CanonicalURIs:
             cls.TITLE,
             cls.SUBTITLE,
             cls.DESCRIPTION,
+            cls.DESCRIPTION_ENTITY,
             cls.IMAGE,
             cls.EVENT,
             cls.INSTITUTION,
@@ -85,8 +90,11 @@ class _CanonicalURIs:
             cls.EVENT_START,
             cls.EVENT_END,
             cls.EVENT_ACTOR_JUNCTION,
+            cls.EVENT_DIRECT_ACTOR,
             cls.EVENT_NAME,
+            cls.EVENT_NAME_ALT,
             cls.EVENT_LOCATION,
+            cls.EVENT_DESCRIPTION,
             cls.ACTOR_LINK,
             cls.ACTOR_ROLE,
             cls.ACTOR_NAME,
@@ -96,6 +104,7 @@ class _CanonicalURIs:
             cls.PROJECT_TYPE_NAME,
             cls.CATCHPHRASE_NAME,
             cls.DO_PATH,
+            cls.DESCRIPTION_ENTITY,  # For nested description text
         ]
 
 
@@ -524,6 +533,10 @@ class ProjectIndexDbService:
         nodes = graph.get("nodes", {}) or {}
         edges_by_subject = self._build_edge_index(edges)
 
+        # Fetch 2nd level neighbors: actors linked from events via direct links
+        # FUK uses direct event->actor links, so we need to also fetch actor properties
+        self._expand_second_level_actors(edges_by_subject, nodes, graph_service)
+
         # Batch-fetch Resources for visibility and org info
         resource_map = self._fetch_resources_batch(subject_ids)
 
@@ -595,12 +608,15 @@ class ProjectIndexDbService:
                 logger.debug("rebuild_from_graph: resource not found for %s", subject_id)
                 continue
 
-            node = nodes.get(subject_id, {})
+            # Convert to string for dict lookups (nodes/edges are keyed by string)
+            subject_id_str = str(subject_id)
+
+            node = nodes.get(subject_id_str, {})
             project_uri = node.get("uri") or node.get("canonical_uri")
             if not project_uri:
                 continue
 
-            subject_edges = edges_by_subject.get(subject_id, [])
+            subject_edges = edges_by_subject.get(subject_id_str, [])
 
             # Extract fields from graph
             title = self._first_literal(subject_edges, _CanonicalURIs.TITLE)
@@ -609,7 +625,12 @@ class ProjectIndexDbService:
                 continue
 
             subtitle = self._first_literal(subject_edges, _CanonicalURIs.SUBTITLE)
+            # Try direct description first, then nested beschreibung entity
             description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION)
+            if not description:
+                description = self._extract_nested_description(
+                    subject_edges, edges_by_subject, nodes
+                )
             image = self._first_literal(subject_edges, _CanonicalURIs.IMAGE)
 
             # Institution
@@ -708,7 +729,7 @@ class ProjectIndexDbService:
             # Build record_jsonb for ProjectRecordIndex
             record_jsonb = self._build_record_jsonb_from_graph(
                 project_uri=project_uri,
-                subject_id=subject_id,
+                subject_id=subject_id_str,
                 title=title or "",
                 subtitle=subtitle or "",
                 description=description or "",
@@ -952,6 +973,94 @@ class ProjectIndexDbService:
                 if obj_id:
                     results.append(str(obj_id))
         return results
+
+    def _expand_second_level_actors(
+        self,
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+        graph_service: Any,
+    ) -> None:
+        """Fetch 2nd level neighbor data: actors linked from events via direct links.
+
+        The canonical model uses direct event->actor links (ereignis-hat-akteurin),
+        so actors are 2 hops from projects. This method fetches actor properties separately.
+        """
+        # Collect all actor IDs linked from events via direct links
+        actor_ids: Set[str] = set()
+        for subject_id, subject_edges in edges_by_subject.items():
+            for edge in subject_edges:
+                predicate = self._canonical(edge)
+                if predicate == _CanonicalURIs.EVENT_DIRECT_ACTOR:
+                    actor_id = edge.get("object_id")
+                    if actor_id:
+                        actor_ids.add(str(actor_id))
+
+        if not actor_ids:
+            return
+
+        logger.debug("_expand_second_level_actors: fetching %d actors", len(actor_ids))
+
+        # Also collect actor-event junction IDs (akteurin-im-ereignis links)
+        # so we can get roles
+        actor_junction_predicates = [
+            _CanonicalURIs.ACTOR_NAME,
+            _CanonicalURIs.ACTOR_LINK,  # akteurin-im-ereignis
+            _CanonicalURIs.ACTOR_ROLE,
+        ]
+
+        # Fetch actor edges
+        actor_edges = graph_service._fetch_triples_for_subjects(
+            list(actor_ids),
+            actor_junction_predicates,
+        )
+
+        # Add actor edges to the index
+        for edge in actor_edges:
+            edge_dict = edge.__dict__ if hasattr(edge, "__dict__") else edge
+            subject_id = str(edge_dict.get("subject_id", ""))
+            if subject_id:
+                edges_by_subject.setdefault(subject_id, []).append(edge_dict)
+
+        # Also fetch actor-event junction edges for roles
+        junction_ids: Set[str] = set()
+        for edge_dict in actor_edges:
+            if isinstance(edge_dict, dict):
+                predicate = edge_dict.get("predicate_canonical") or edge_dict.get("predicate_uri")
+            else:
+                predicate = getattr(edge_dict, "predicate_canonical", None) or getattr(edge_dict, "predicate_uri", None)
+            if predicate == _CanonicalURIs.ACTOR_LINK:
+                obj_id = edge_dict.get("object_id") if isinstance(edge_dict, dict) else getattr(edge_dict, "object_id", None)
+                if obj_id:
+                    junction_ids.add(str(obj_id))
+
+        if junction_ids:
+            junction_edges = graph_service._fetch_triples_for_subjects(
+                list(junction_ids),
+                [_CanonicalURIs.ACTOR_ROLE],
+            )
+            for edge in junction_edges:
+                edge_dict = edge.__dict__ if hasattr(edge, "__dict__") else edge
+                subject_id = str(edge_dict.get("subject_id", ""))
+                if subject_id:
+                    edges_by_subject.setdefault(subject_id, []).append(edge_dict)
+
+    def _extract_nested_description(
+        self,
+        subject_edges: List[Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> Optional[str]:
+        """Extract description from nested beschreibung entity (canonical model)."""
+        desc_ids = self._related_ids(subject_edges, _CanonicalURIs.DESCRIPTION_ENTITY)
+        if not desc_ids:
+            return None
+
+        desc_id = desc_ids[0]
+        desc_edges = edges_by_subject.get(desc_id, [])
+
+        # The beschreibung entity has a beschreibung property with the text
+        description = self._first_literal(desc_edges, _CanonicalURIs.DESCRIPTION_ENTITY)
+        return description
 
     def _extract_institution_label(
         self,
@@ -1281,6 +1390,8 @@ class ProjectIndexDbService:
 
         for event_id in event_ids:
             event_edges = edges_by_subject.get(event_id, [])
+
+            # Try junction table approach first (akteurinnen-am-ereignis)
             junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
 
             for junction_id in junction_ids:
@@ -1308,6 +1419,35 @@ class ProjectIndexDbService:
                             })
                             seen_names.add(normalized)
 
+            # Also try direct event->actor links (ereignis-hat-akteurin) - canonical model
+            direct_actor_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_DIRECT_ACTOR)
+            for actor_id in direct_actor_ids:
+                actor_edges = edges_by_subject.get(actor_id, [])
+                actor_node = nodes.get(actor_id, {})
+
+                name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
+                if not name:
+                    name = actor_node.get("name") or actor_node.get("value")
+
+                # Get role from actor's junction link (akteurin-im-ereignis -> role)
+                actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
+                role = None
+                for aj_id in actor_junction_ids:
+                    aj_edges = edges_by_subject.get(aj_id, [])
+                    role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
+                    if role:
+                        break
+
+                if name:
+                    normalized = str(name).strip()
+                    if normalized not in seen_names:
+                        actors.append({
+                            "name": normalized,
+                            "roles": [role] if role else [],
+                            "uri": actor_node.get("uri") or "",
+                        })
+                        seen_names.add(normalized)
+
         return actors
 
     def _extract_events_structured(
@@ -1324,7 +1464,10 @@ class ProjectIndexDbService:
             event_edges = edges_by_subject.get(event_id, [])
             event_node = nodes.get(event_id, {})
 
+            # Try primary event name, then alternative
             event_name = self._first_literal(event_edges, _CanonicalURIs.EVENT_NAME)
+            if not event_name:
+                event_name = self._first_literal(event_edges, _CanonicalURIs.EVENT_NAME_ALT)
             if not event_name:
                 event_name = event_node.get("name") or event_node.get("value") or ""
 
@@ -1361,8 +1504,11 @@ class ProjectIndexDbService:
         nodes: Dict[str, Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """Extract actors for a specific event."""
-        junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
         actors: List[Dict[str, Any]] = []
+        seen_names: Set[str] = set()
+
+        # Try junction table approach (akteurinnen-am-ereignis)
+        junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
 
         for junction_id in junction_ids:
             junction_edges = edges_by_subject.get(junction_id, [])
@@ -1378,10 +1524,41 @@ class ProjectIndexDbService:
                     name = actor_node.get("name") or actor_node.get("value")
 
                 if name:
+                    normalized = str(name).strip()
+                    if normalized not in seen_names:
+                        actors.append({
+                            "name": normalized,
+                            "roles": [role] if role else [],
+                        })
+                        seen_names.add(normalized)
+
+        # Also try direct event->actor links (ereignis-hat-akteurin) - canonical model
+        direct_actor_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_DIRECT_ACTOR)
+        for actor_id in direct_actor_ids:
+            actor_edges = edges_by_subject.get(actor_id, [])
+            actor_node = nodes.get(actor_id, {})
+
+            name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
+            if not name:
+                name = actor_node.get("name") or actor_node.get("value")
+
+            # Get role from actor's junction link
+            actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
+            role = None
+            for aj_id in actor_junction_ids:
+                aj_edges = edges_by_subject.get(aj_id, [])
+                role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
+                if role:
+                    break
+
+            if name:
+                normalized = str(name).strip()
+                if normalized not in seen_names:
                     actors.append({
-                        "name": str(name).strip(),
+                        "name": normalized,
                         "roles": [role] if role else [],
                     })
+                    seen_names.add(normalized)
 
         return actors
 

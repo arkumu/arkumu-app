@@ -153,13 +153,8 @@ class ProjectView(LoginRequiredMixin, View):
 
         backend = self._backend()
 
-        # In graph-backed index mode, avoid rebuilding the full snapshot and
-        # use the lighter triple-based project view service instead.
-        if backend == "graph":
-            return self._render_graph_detail(request, projekt_uri)
-
-        # For db backend, prefer ProjectDetailIndex for fast structured access
-        if backend == "db":
+        # For db/graph backends, prefer ProjectDetailIndex for fast structured access
+        if backend in ("db", "graph"):
             detail_entry = self._load_detail_from_index(projekt_uri)
             if detail_entry:
                 project_context = detail_entry.to_view_context()
