@@ -22,7 +22,11 @@ class ProjectDetailIndexService:
     def __init__(self) -> None:
         self.snapshot_service = ProjectSnapshotService()
 
-    def get_record(self, project_uri: str) -> Optional[ProjectRecord]:
+    def get_record(
+        self,
+        project_uri: str,
+        card_schema: Optional[CardSchema] = None,
+    ) -> Optional[ProjectRecord]:
         if not project_uri:
             return None
 
@@ -36,14 +40,15 @@ class ProjectDetailIndexService:
 
         org_code = getattr(getattr(resource, "organization", None), "code", None)
 
-        try:
-            card_schema: CardSchema = self.snapshot_service.schema_service.get_card_schema(org_code or "")
-        except Exception:
-            logger.warning(
-                "ProjectDetailIndexService: falling back to template card schema for org=%s",
-                org_code,
-            )
-            card_schema = CARD_SCHEMA_TEMPLATE
+        if card_schema is None:
+            try:
+                card_schema = self.snapshot_service.schema_service.get_card_schema(org_code or "")
+            except Exception:
+                logger.warning(
+                    "ProjectDetailIndexService: falling back to template card schema for org=%s",
+                    org_code,
+                )
+                card_schema = CARD_SCHEMA_TEMPLATE
 
         project_predicates, neighbor_predicates = self.snapshot_service._card_predicate_whitelists()
 

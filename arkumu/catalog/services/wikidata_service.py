@@ -3,6 +3,7 @@ Wikidata service for resolving entity information.
 """
 
 import logging
+import time
 import requests
 from typing import Dict, Optional, Any, List
 from django.core.cache import cache
@@ -15,6 +16,33 @@ class WikidataService:
 
     WIKIDATA_API = "https://www.wikidata.org/w/api.php"
     CACHE_TIMEOUT = 86400  # 24 hours
+    _cache_warmed = False
+    _circuit_breaker_until = None  # Timestamp when to retry after failures
+
+    @classmethod
+    def warm_cache_from_db(cls) -> int:
+        """Load all Wikidata labels from DB into memory cache."""
+        from arkumu.metadata.models import ExternalSourcesEntity
+
+        if cls._cache_warmed:
+            return 0
+
+        entries = ExternalSourcesEntity.objects.filter(
+            source=ExternalSourcesEntity.SourceEnum.WIKIDATA,
+            property__startswith="label_",
+        )
+
+        count = 0
+        for entry in entries:
+            # property is "label_de" -> extract language
+            language = entry.property.split("_")[-1] if "_" in entry.property else "de"
+            cache_key = f"wikidata_label:{entry.data_id}:{language}"
+            cache.set(cache_key, entry.datum or "", cls.CACHE_TIMEOUT)
+            count += 1
+
+        cls._cache_warmed = True
+        logger.info(f"WikidataService: warmed cache with {count} labels from DB")
+        return count
 
     def get_location_info(self, wikidata_id: str, language: str = 'de') -> Dict[str, Any]:
         """
@@ -100,16 +128,42 @@ class WikidataService:
 
     def get_entity_label(self, wikidata_id: str, language: str = 'de') -> Optional[str]:
         """Get just the label for a Wikidata entity."""
+        from arkumu.metadata.models import ExternalSourcesEntity
 
+        if not wikidata_id:
+            return None
+
+        # Normalize ID
+        if not wikidata_id.startswith('Q'):
+            wikidata_id = f'Q{wikidata_id}'
+
+        property_key = f"label_{language}"
+
+        # 1. Check in-memory cache first (fastest)
         cache_key = f"wikidata_label:{wikidata_id}:{language}"
         cached_label = cache.get(cache_key)
-        if cached_label:
-            return cached_label
+        if cached_label is not None:
+            return cached_label if cached_label != "" else None
+
+        # 2. Check database (ExternalSourcesEntity)
+        db_entry = ExternalSourcesEntity.objects.filter(
+            data_id=wikidata_id,
+            property=property_key,
+            source=ExternalSourcesEntity.SourceEnum.WIKIDATA,
+        ).first()
+
+        if db_entry:
+            label = db_entry.datum if db_entry.datum else None
+            cache.set(cache_key, label or "", self.CACHE_TIMEOUT)
+            return label
+
+        # 3. Fetch from Wikidata API (with circuit breaker)
+        if WikidataService._circuit_breaker_until and time.time() < WikidataService._circuit_breaker_until:
+            # Circuit breaker is open - skip API call
+            cache.set(cache_key, "", 60)  # Short cache for circuit breaker period
+            return None
 
         try:
-            if not wikidata_id.startswith('Q'):
-                wikidata_id = f'Q{wikidata_id}'
-
             params = {
                 'action': 'wbgetentities',
                 'ids': wikidata_id,
@@ -124,18 +178,42 @@ class WikidataService:
             response = requests.get(self.WIKIDATA_API, params=params, headers=headers, timeout=1)
             response.raise_for_status()
             data = response.json()
+            # Success - reset circuit breaker
+            WikidataService._circuit_breaker_until = None
 
             if 'entities' not in data or wikidata_id not in data['entities']:
+                # Store negative result in DB and cache
+                ExternalSourcesEntity.objects.update_or_create(
+                    data_id=wikidata_id,
+                    property=property_key,
+                    source=ExternalSourcesEntity.SourceEnum.WIKIDATA,
+                    defaults={"datum": ""},
+                )
+                cache.set(cache_key, "", 3600)
                 return None
 
             entity = data['entities'][wikidata_id]
             label = self._get_label(entity, language, wikidata_id)
 
+            # Persist to database
+            ExternalSourcesEntity.objects.update_or_create(
+                data_id=wikidata_id,
+                property=property_key,
+                source=ExternalSourcesEntity.SourceEnum.WIKIDATA,
+                defaults={"datum": label},
+            )
             cache.set(cache_key, label, self.CACHE_TIMEOUT)
             return label
 
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Network error fetching label for {wikidata_id}: {e}")
+            # Trip circuit breaker for 5 minutes on connection errors
+            WikidataService._circuit_breaker_until = time.time() + 300
+            cache.set(cache_key, "", 300)
+            return None
         except Exception as e:
             logger.error(f"Error fetching label for {wikidata_id}: {e}")
+            cache.set(cache_key, "", 300)
             return None
 
     def resolve_multiple_locations(self, wikidata_ids: List[str], language: str = 'de') -> Dict[str, Dict[str, Any]]:

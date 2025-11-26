@@ -50,8 +50,8 @@ class ProjectCardSearchService:
         """Return card dicts and total count without using the snapshot."""
         backend = getattr(settings, "PROJECT_INDEX_BACKEND", "snapshot")
 
-        if backend == "db":
-            index_service = ProjectIndexService(backend="db")
+        if backend in ("db", "graph"):
+            index_service = ProjectIndexService(backend=backend)
             cards = index_service.get_cards(query=query, organ_code=org_code)
             total = len(cards)
 
@@ -220,13 +220,28 @@ class ProjectCardSearchService:
                     .values_list("subject_id", flat=True)
                     .distinct()
                 )
-                uris = list(
-                    Resource.objects.filter(id__in=project_ids).values_list("uri", flat=True)
+                # Fetch URIs with their org codes to batch schema lookups
+                uri_org_pairs = list(
+                    Resource.objects.filter(id__in=project_ids)
+                    .select_related("organization")
+                    .values_list("uri", "organization__code")
                 )
-                for uri in uris:
+
+                # Pre-cache schemas by org to avoid repeated lookups
+                schema_cache: dict = {}
+                schema_service = self.detail_service.snapshot_service.schema_service
+                for _, org_code in uri_org_pairs:
+                    if org_code and org_code not in schema_cache:
+                        try:
+                            schema_cache[org_code] = schema_service.get_card_schema(org_code)
+                        except Exception:
+                            pass
+
+                for uri, org_code in uri_org_pairs:
                     if ProjectCardCache.get(uri):
                         continue
-                    record = self.detail_service.get_record(uri)
+                    cached_schema = schema_cache.get(org_code) if org_code else None
+                    record = self.detail_service.get_record(uri, card_schema=cached_schema)
                     if record:
                         ProjectCardCache.set(uri, record.to_card_dict())
             except OperationalError:

@@ -52,7 +52,8 @@
            hx-get="{% url 'catalog:browse' %}"
            hx-target="#results-container"
            hx-swap="innerHTML"
-           hx-trigger="input changed delay:50ms, keyup[keyCode==13]"
+           hx-trigger="input changed delay:400ms, keyup[keyCode==13]"
+           hx-sync="this:abort"
            hx-indicator="#search-loading"
            hx-push-url="true"
           >
