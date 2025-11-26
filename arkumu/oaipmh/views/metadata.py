@@ -470,20 +470,41 @@ def _extract_creators_from_junctions(resource: Resource, record: ProjectRecord) 
         if uri:
             event_uris.append(uri)
 
-    if not event_uris:
-        return creators, contributors
-
     # Find event resource IDs
     from arkumu.metadata.models.resource import Resource as ResourceModel
-    event_resources = ResourceModel.objects.filter(uri__in=event_uris).values_list("id", flat=True)
-    event_ids = list(event_resources)
+    event_ids = []
+    if event_uris:
+        event_resources = ResourceModel.objects.filter(uri__in=event_uris).values_list("id", flat=True)
+        event_ids = list(event_resources)
 
-    if not event_ids:
+    # For KHM/HMT, junctions link to event entities which link to projects
+    # KHM: junctions link to 01-grundereignis
+    # HMT: junctions link to 02-hfm-ereignis
+    linked_event_ids = []
+    if resource.id and org_code in ("khm", "hmt"):
+        # Find event entities that link to the project via projekt-id type predicates
+        # KHM uses grundereignis, HMT uses hfm-ereignis
+        linked_events_qs = Triple.objects.filter(
+            Q(predicate__uri__icontains="projekt-id") | Q(predicate__uri__icontains="proj-id-fk"),
+            object_id=resource.id,
+        ).filter(
+            Q(subject__uri__icontains="grundereignis") | Q(subject__uri__icontains="hfm-ereignis")
+        ).values_list("subject_id", flat=True).distinct()[:20]
+        linked_event_ids = list(linked_events_qs)
+
+    if not event_ids and not resource.id and not linked_event_ids:
         return creators, contributors
 
-    # Query junction entities
+    # Query junction entities - include both canonical and institution-specific type URIs
     junction_type_uris = [
+        # Canonical type
         "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
+        # KHM institution-specific types
+        "http://arkumu.org/data/khm/types/02-kreuz-projekte-personen",
+        "http://arkumu.org/data/khm/types/04-kreuz-betreuende-projekte",
+        # HMT institution-specific types
+        "http://arkumu.org/data/hmt/types/03-hfm-kreuz-ereignis-akteure",
+        "http://arkumu.org/data/hmt/types/05-hfm-kreuz-ereignis-koerperschaften",
     ]
 
     RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -505,11 +526,16 @@ def _extract_creators_from_junctions(resource: Resource, record: ProjectRecord) 
             .values_list("subject_id", flat=True)
         )
 
-        # Find junctions pointing to our events
+        # Find junctions pointing to our events, linked events (grundereignis/hfm-ereignis), or the project
+        target_ids = list(event_ids)
+        target_ids.extend(linked_event_ids)
+        if resource.id:
+            target_ids.append(resource.id)
+
         junction_ids = list(
             Triple.objects.filter(
                 subject_id__in=junction_type_subjects,
-                object_id__in=event_ids,
+                object_id__in=target_ids,
             )
             .values_list("subject_id", flat=True)
             .distinct()[:50]
@@ -548,34 +574,65 @@ def _extract_creators_from_junctions(resource: Resource, record: ProjectRecord) 
         elif "leistungsschutz" in pred_uri:
             val = t.object.value if hasattr(t.object, "value") else None
             junction_data[jid]["leistungsschutz"] = val in ("1", "true", True, 1)
-        elif "akteurin-im-ereignis" in pred_uri or "akteur" in pred_uri.split("/")[-1].lower():
-            if t.object.uri and "/akteur" in t.object.uri.lower():
+        elif (
+            "akteurin-im-ereignis" in pred_uri
+            or "akteur" in pred_uri.split("/")[-1].lower()
+            # KHM-specific: as-pers-id links to persons
+            or "as-pers-id" in pred_uri
+            or "pe-id-fk" in pred_uri
+            # HMT-specific: hfmt-akteur-id-fk, hfmt-koerperschaft-id-fk
+            or "hfmt-akteur-id-fk" in pred_uri
+            or "hfmt-koerperschaft-id-fk" in pred_uri
+        ):
+            # Check if object is an actor/person entity
+            obj_uri = (t.object.uri or "").lower()
+            # Match various actor/person entity patterns:
+            # - /akteurinnen/ (canonical)
+            # - /personen-akteurinnen/ (KHM: 03-personen-akteurinnen)
+            # - /koerperschaft/ (HMT corporations)
+            if (
+                "akteur" in obj_uri
+                or "personen" in obj_uri
+                or "koerperschaft" in obj_uri
+            ):
                 junction_data[jid]["actor_id"] = str(t.object.id)
         elif "hat-rolle" in pred_uri.lower() or "akteurin-hat-rolle" in pred_uri.lower():
             # Link to role entity - store ID to look up name later
             if t.object.uri and "/rolle/" in t.object.uri.lower():
                 junction_data[jid]["role_id"] = str(t.object.id)
 
-    # Fetch actor names via deutscher-name property
+    # Fetch actor names via deutscher-name property (check both uri and canonical_uri)
+    # Also check institution-specific name predicates
     actor_ids = [d["actor_id"] for d in junction_data.values() if d.get("actor_id")]
     actor_names = {}
     if actor_ids:
-        # Query triples to get deutscher-name for each actor
+        # Query triples to get name for each actor - check canonical and institution-specific predicates
         name_triples = Triple.objects.filter(
-            subject_id__in=actor_ids,
-            predicate__uri__icontains="deutscher-name",
+            Q(subject_id__in=actor_ids)
+            & (
+                Q(predicate__uri__icontains="deutscher-name")
+                | Q(predicate__canonical_uri__icontains="deutscher-name")
+                # KHM-specific: name-gesamt-natuerlichereihenfolge-calc-export
+                | Q(predicate__uri__icontains="name-gesamt")
+                # HMT-specific: akteurin-name, koerperschaft-name
+                | Q(predicate__uri__icontains="akteurin-name")
+                | Q(predicate__uri__icontains="koerperschaft-name")
+            )
         ).select_related("object").only("subject_id", "object__value")
         for t in name_triples:
             if t.object.value:
                 actor_names[str(t.subject_id)] = t.object.value
 
-    # Fetch role names via deutscher-name-der-rolle-breadcrumb
+    # Fetch role names via deutscher-name-der-rolle-breadcrumb (check both uri and canonical_uri)
     role_ids = [d["role_id"] for d in junction_data.values() if d.get("role_id")]
     role_names = {}
     if role_ids:
         role_triples = Triple.objects.filter(
-            subject_id__in=role_ids,
-            predicate__uri__icontains="deutscher-name",
+            Q(subject_id__in=role_ids)
+            & (
+                Q(predicate__uri__icontains="deutscher-name")
+                | Q(predicate__canonical_uri__icontains="deutscher-name")
+            )
         ).select_related("object").only("subject_id", "object__value")
         for t in role_triples:
             if t.object.value:
@@ -648,11 +705,27 @@ def _build_dc_payload_from_project(
         _add_dc_value(payload, 'publisher', record.institution.label)
 
     # Extract creators/contributors from junction entities (ist-urheberin based)
+    # This works for KHM/HMT that have junction tables with ist-urheberin flags
     creators, contributors = _extract_creators_from_junctions(resource, record)
     for creator in creators:
         _add_dc_value(payload, 'creator', creator)
     for contributor in contributors:
         _add_dc_value(payload, 'contributor', contributor)
+
+    # Fallback: If no creators found from junctions, use primary event actors from record
+    # This maintains compatibility with canonical entities (FUK/DET/RSH) and tests
+    if not creators and not contributors:
+        primary_actors = _select_primary_event_actors(record)
+        seen_creators: set[str] = set()
+        for actor in primary_actors:
+            name = actor.get('name')
+            if name and name not in seen_creators:
+                _add_dc_value(payload, 'creator', name)
+                seen_creators.add(name)
+
+            for role in actor.get('roles') or []:
+                contributor_value = f"{name} ({role})" if name else role
+                _add_dc_value(payload, 'contributor', contributor_value)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
