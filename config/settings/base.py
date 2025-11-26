@@ -595,3 +595,6 @@ PROJECT_SNAPSHOT_PROPERTY_DEBUG_ENABLED = env.bool(
     "PROJECT_SNAPSHOT_PROPERTY_DEBUG_ENABLED",
     default=False,
 )
+
+# Project index backend: "db" for database-backed, "graph" for direct graph queries, "snapshot" for legacy
+PROJECT_INDEX_BACKEND = env("PROJECT_INDEX_BACKEND", default="db")

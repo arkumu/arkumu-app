@@ -19,9 +19,10 @@ from django.conf import settings
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Mapping, Tuple
 
-from arkumu.catalog.models import PreviewImages
+from arkumu.catalog.models import PreviewImages, ProjectDetailIndex
 from arkumu.catalog.services.wikidata_service import WikidataService
 from arkumu.catalog.services.project_views import get_project_view_data
+from arkumu.catalog.services.project_detail_loader import ProjectDetailLoader
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
@@ -157,6 +158,21 @@ class ProjectView(LoginRequiredMixin, View):
         if backend == "graph":
             return self._render_graph_detail(request, projekt_uri)
 
+        # For db backend, prefer ProjectDetailIndex for fast structured access
+        if backend == "db":
+            detail_entry = self._load_detail_from_index(projekt_uri)
+            if detail_entry:
+                project_context = detail_entry.to_view_context()
+                metadata = self._build_metadata_from_detail_index(detail_entry)
+                context = {
+                    'project': project_context,
+                    'metadata': metadata,
+                    'tab_endpoint': reverse('catalog:projekt_tab'),
+                }
+                logger.info("ProjectView: served via ProjectDetailIndex (project_found=True)")
+                return render(request, 'catalog/projekt.html', context)
+
+        # Fallback to ProjectRecord for non-db backends or missing detail index
         try:
             if backend == "db":
                 record = self._load_record_from_index(projekt_uri)
@@ -239,6 +255,41 @@ class ProjectView(LoginRequiredMixin, View):
 
         logger.warning("ProjectView: project not found via project_records index: %s", projekt_uri)
         raise LookupError(projekt_uri)
+
+    def _load_detail_from_index(self, projekt_uri: str) -> Optional[ProjectDetailIndex]:
+        """Load detail data from ProjectDetailIndex table."""
+        try:
+            return ProjectDetailIndex.objects.get(uri=projekt_uri)
+        except ProjectDetailIndex.DoesNotExist:
+            logger.debug("ProjectView: ProjectDetailIndex not found for %s", projekt_uri)
+            return None
+        except Exception:
+            logger.exception("ProjectView: error loading ProjectDetailIndex for %s", projekt_uri)
+            return None
+
+    def _build_metadata_from_detail_index(self, entry: ProjectDetailIndex) -> List[Dict[str, Any]]:
+        """Build metadata list from ProjectDetailIndex properties/status/etc fields."""
+        metadata: List[Dict[str, Any]] = []
+
+        # Extract property metadata from properties dict
+        for key, label in self.PROPERTY_METADATA_FIELDS:
+            value = entry.properties.get(key)
+            if value:
+                metadata.append({"key": key, "label": label, "value": value})
+
+        # Extract status metadata from status dict
+        for key, label in self.STATUS_METADATA_FIELDS:
+            value = entry.status.get(key)
+            if value:
+                metadata.append({"key": key, "label": label, "value": value})
+
+        # Extract license metadata from licenses dict
+        for key, label in self.LICENSE_METADATA_FIELDS:
+            value = entry.licenses.get(key)
+            if value:
+                metadata.append({"key": key, "label": label, "value": value})
+
+        return metadata
 
     @staticmethod
     def _find_record(records: List[ProjectRecord], uri: str) -> Optional[ProjectRecord]:
@@ -693,7 +744,7 @@ class ProjectTabView(LoginRequiredMixin, View):
             return HttpResponseBadRequest("Missing project URI")
 
         # Mirror ProjectView backend selection for tabs.
-        if ProjectView._use_graph_backend():
+        if ProjectView._backend() == "graph":
             project_data = get_project_view_data(projekt_uri)
             if not project_data:
                 return HttpResponseNotFound("Project not found")
