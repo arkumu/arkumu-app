@@ -332,14 +332,9 @@
         };
 
         // URL-Parameter erstellen
-        const urlParams = new URLSearchParams();
+        const urlParams = new URLSearchParams(window.location.search);
 
         if (searchTerm) urlParams.set('query', searchTerm);
-        if (filters.hochschule !== 'Hochschule') urlParams.set('hochschule', filters.hochschule);
-        if (filters.aktuer !== 'Aktuer*in') urlParams.set('aktuer', filters.aktuer);
-        if (filters.kategorie.id && filters.kategorie.value !== 'Projektkategorie') {
-          urlParams.set('kategorie', filters.kategorie.id);
-        }
 
         // Seite neu laden mit Suchparametern
         window.location.search = urlParams.toString();
