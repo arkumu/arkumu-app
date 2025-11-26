@@ -9,6 +9,7 @@ from uuid import UUID
 
 import logging
 import mimetypes
+import os
 
 from django.conf import settings
 from django.db.models import Count, Q
@@ -82,6 +83,21 @@ def _status_token(status: Optional[str]) -> Optional[str]:
     return status.lower().strip() or None
 
 
+def _apply_rosetta_prefix(prefix: str, path: str) -> str:
+    """Join a configured prefix with a curated Rosetta path."""
+
+    normalized_prefix = (prefix or "").rstrip("/")
+    if not normalized_prefix:
+        return path
+    token = (path or "").lstrip()
+    if token.startswith("/"):
+        return f"{normalized_prefix}{token}"
+    token = token.lstrip("/")
+    if not token:
+        return normalized_prefix
+    return f"{normalized_prefix}/{token}"
+
+
 @dataclass(frozen=True)
 class CuratedLinkWarning:
     code: str
@@ -93,6 +109,7 @@ class CuratedLinkWarning:
 class CuratedMediaSelection:
     ordered_resource_ids: Tuple[str, ...]
     ordered_object_uris: Tuple[str, ...]
+    resource_uri_pairs: Tuple[Tuple[str, Optional[str]], ...]
     label_overrides_by_id: Mapping[str, str]
     label_overrides_by_uri: Mapping[str, str]
     curated_missing_uris: Tuple[str, ...]
@@ -126,6 +143,7 @@ class NormalizedDigitalObject:
     license: Optional[ProjectDigitalObjectLicense] = None
     resource_id: Optional[str] = None
     label_override: Optional[str] = None
+    download_href: Optional[str] = None
 
     @property
     def harvestable(self) -> bool:
@@ -147,6 +165,8 @@ class NormalizedDigitalObject:
     def preferred_location(self) -> Optional[str]:
         """Return the location that should appear in METS FLocat."""
 
+        if self.download_href:
+            return self.download_href
         if self.rosetta_path:
             return self.rosetta_path
         if self.storage_key:
@@ -259,6 +279,26 @@ class OAIProjectBuilder:
             for code, path in base_cfg.items()
             if code and path
         }
+        prefix_cfg = getattr(settings, 'OAI_ROSETTA_CURATED_PREFIXES', {}) or {}
+        curated_prefixes = {
+            str(code).lower().strip(): str(path).rstrip('/')
+            for code, path in prefix_cfg.items()
+            if code and path
+        }
+        fallback_prefixes = getattr(settings, 'OAI_EXTERNAL_PATH_PREFIXES', {}) or {}
+        for code, candidates in fallback_prefixes.items():
+            normalized_code = str(code).lower().strip()
+            if not normalized_code or normalized_code in curated_prefixes:
+                continue
+            if not candidates:
+                continue
+            for candidate in candidates:
+                candidate = str(candidate or '').strip()
+                if not candidate:
+                    continue
+                curated_prefixes[normalized_code] = candidate.rstrip('/')
+                break
+        self._rosetta_curated_prefixes = curated_prefixes
 
     def from_project_record(
         self,
@@ -338,15 +378,23 @@ class OAIProjectBuilder:
             return record
 
         # Collect all event IDs
-        event_ids = [str(getattr(event, 'id', None)) for event in events if getattr(event, 'id', None)]
-        if not event_ids:
+        raw_event_ids = [getattr(event, 'id', None) for event in events if getattr(event, 'id', None)]
+        valid_event_ids: List[str] = []
+        for candidate in raw_event_ids:
+            try:
+                UUID(str(candidate))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            valid_event_ids.append(str(candidate))
+
+        if not valid_event_ids:
             return record
 
         # OPTIMIZED: Single query to get all event-project relationships
         # Instead of N queries (one per event), we fetch all relationships at once
         event_project_relationships = Triple.objects.filter(
             predicate__canonical_uri=event_predicate,
-            object_id__in=event_ids
+            object_id__in=valid_event_ids
         ).values('object_id', 'subject_id')
 
         # Build a mapping of event_id -> set of project_ids that reference it
@@ -360,7 +408,7 @@ class OAIProjectBuilder:
 
         # Filter to find exclusive events (only linked to this project)
         exclusive_event_ids = set()
-        for event_id in event_ids:
+        for event_id in valid_event_ids:
             project_refs = event_to_projects.get(event_id, set())
 
             # Only include events exclusively linked to this project
@@ -694,8 +742,30 @@ class OAIProjectBuilder:
         rosetta_candidates: Tuple[str, ...] = ()
         rosetta_path: Optional[str] = None
 
+        normalized_code = (institution_code or "").strip().lower()
+        is_s3_org = bool(normalized_code and normalized_code in self._s3_orgs)
+        is_rosetta_org = bool(normalized_code and normalized_code in self._rosetta_orgs and not is_s3_org)
+        curated_override = bool(getattr(obj, "_from_curated_media_link", False))
+        curated_rosetta_path: Optional[str] = None
+        if curated_override and is_rosetta_org:
+            curated_rosetta_path = _clean(getattr(obj, "_curated_rosetta_path_override", None))
+            if not curated_rosetta_path:
+                curated_rosetta_path = original_path or storage_key
+            prefix = self._rosetta_curated_prefixes.get(normalized_code)
+            if curated_rosetta_path and prefix:
+                curated_rosetta_path = _apply_rosetta_prefix(prefix, curated_rosetta_path)
+
+        from_s3_inventory = getattr(obj, "_from_s3_file_object", False)
+        bypass_dump_fixity = getattr(obj, "_bypass_dump_fixity", False)
+        needs_fixity_lookup = bool(
+            is_s3_org
+            and not from_s3_inventory
+            and not storage_key
+            and not bypass_dump_fixity
+        )
+
         # For S3 orgs (FUK, DET, RSH): check if file exists in dump/fixity index
-        if institution_code and institution_code in self._s3_orgs:
+        if needs_fixity_lookup:
             from arkumu.projects.services.dump_fixity_index import find_fixity
 
             candidates = [original_path, storage_key, access_url, file_name]
@@ -718,7 +788,10 @@ class OAIProjectBuilder:
             if fixity_record.checksum_or_etag and not fixity.digest:
                 fixity = parse_fixity(fixity_record.checksum_or_etag)
 
-        if institution_code and institution_code in self._rosetta_orgs:
+        if curated_rosetta_path:
+            rosetta_candidates = (curated_rosetta_path,)
+            rosetta_path = curated_rosetta_path
+        elif is_rosetta_org:
             resolved = self._path_resolver(
                 institution_code,
                 path=original_path or storage_key,
@@ -737,8 +810,14 @@ class OAIProjectBuilder:
                 )
                 return None
 
-        if not rosetta_path and institution_code and institution_code in self._s3_rosetta_bases and storage_key:
-            base = self._s3_rosetta_bases[institution_code]
+        if (
+            not is_s3_org
+            and not rosetta_path
+            and normalized_code
+            and normalized_code in self._s3_rosetta_bases
+            and storage_key
+        ):
+            base = self._s3_rosetta_bases[normalized_code]
             candidate = f"{base}/{storage_key.lstrip('/')}"
             rosetta_path = candidate
             rosetta_candidates = (candidate,)
@@ -747,11 +826,8 @@ class OAIProjectBuilder:
             rosetta_candidates = (original_path,)
             rosetta_path = original_path
 
-        source = "unknown"
-        if rosetta_path:
-            source = "rosetta"
-        elif institution_code and institution_code in self._s3_orgs:
-            source = "s3"
+        is_s3_org = bool(normalized_code and normalized_code in self._s3_orgs)
+        source = "s3" if is_s3_org else ("rosetta" if rosetta_path else "unknown")
 
         size_bytes = getattr(obj, "size_bytes", None)
         if isinstance(size_bytes, str) and size_bytes.isdigit():
@@ -769,7 +845,11 @@ class OAIProjectBuilder:
             except TypeError:
                 license_info = None
 
-        return NormalizedDigitalObject(
+        download_href = None
+        if is_s3_org and storage_key:
+            download_href = self._build_s3_download_href(storage_key, institution_code)
+
+        normalized_obj = NormalizedDigitalObject(
             uri=object_uri,
             original_path=original_path,
             storage_key=storage_key,
@@ -791,7 +871,68 @@ class OAIProjectBuilder:
             significant_properties_en=significant_en,
             license=license_info,
             resource_id=resource_id,
+            download_href=download_href,
         )
+        if getattr(obj, "_from_s3_file_object", False):
+            object.__setattr__(normalized_obj, "_from_s3_file_object", True)
+            if storage_key and storage_key.lower().startswith("metadata/"):
+                object.__setattr__(normalized_obj, "_allow_metadata_exports", True)
+        return normalized_obj
+
+    def _build_s3_download_href(
+        self,
+        storage_key: Optional[str],
+        institution_code: Optional[str],
+    ) -> Optional[str]:
+        if not storage_key:
+            return None
+        host = (
+            os.environ.get("AWS_S3_BROWSER_ENDPOINT_URL", "")
+            or os.environ.get("AWS_S3_ENDPOINT_URL", "")
+        ).strip()
+        if not host:
+            host = "http://localhost:9000"
+        base = host.rstrip("/")
+        if not base.startswith("http://") and not base.startswith("https://"):
+            base = f"https://{base}"
+
+        # Check for S3 namespace (used by Dell EMC systems like digikunst)
+        # When USE_MINIO=false, use DJANGO_AWS_STORAGE_BUCKET_NAME as namespace
+        use_minio = os.environ.get("USE_MINIO", "true").lower() in ("true", "1", "yes")
+        s3_namespace = ""
+        if not use_minio:
+            s3_namespace = os.environ.get("DJANGO_AWS_STORAGE_BUCKET_NAME", "").strip()
+
+        token = storage_key.strip()
+        if token.startswith("s3://"):
+            token = token[5:]
+        token = token.lstrip("/")
+        if not token:
+            return None
+
+        normalized_code = (institution_code or "").strip().lower()
+        bucket = normalized_code or None
+        if bucket:
+            prefix = f"{bucket}/"
+            if token.lower().startswith(prefix):
+                token = token[len(prefix):]
+        else:
+            candidate_bucket, sep, remainder = token.partition('/')
+            if not sep:
+                return None
+            bucket = candidate_bucket.strip()
+            token = remainder
+
+        token = token.lstrip('/')
+        if not bucket or not token:
+            return None
+
+        from urllib.parse import quote
+
+        escaped_key = quote(token, safe="/-_.~")
+        if s3_namespace:
+            return f"{base}/{s3_namespace}/{bucket}/{escaped_key}"
+        return f"{base}/{bucket}/{escaped_key}"
 
     def _resolve_curated_selection(
         self,
@@ -807,7 +948,8 @@ class OAIProjectBuilder:
             return None
 
         links = list(
-            OAIProjectMediaLink.objects.approved_for_project(project_uuid)
+            OAIProjectMediaLink.objects.for_project(project_uuid)
+            .ordered()
             .select_related("digital_object")
             .annotate(
                 other_project_refs=Count(
@@ -837,6 +979,7 @@ class OAIProjectBuilder:
             for link in links
             if getattr(link.digital_object, "uri", None)
         )
+        resource_uri_pairs: List[Tuple[str, Optional[str]]] = []
 
         curated_missing: List[str] = []
         label_overrides_by_id: Dict[str, str] = {}
@@ -846,6 +989,7 @@ class OAIProjectBuilder:
         for link in links:
             resource_key = str(link.digital_object_id)
             digital_uri = getattr(link.digital_object, "uri", None)
+            resource_uri_pairs.append((resource_key, digital_uri))
             if link.label_override:
                 label_overrides_by_id[resource_key] = link.label_override
                 if digital_uri:
@@ -902,6 +1046,7 @@ class OAIProjectBuilder:
         return CuratedMediaSelection(
             ordered_resource_ids=ordered_resource_ids,
             ordered_object_uris=ordered_uri_tuple,
+            resource_uri_pairs=tuple(resource_uri_pairs),
             label_overrides_by_id=label_overrides_by_id,
             label_overrides_by_uri=label_overrides_by_uri,
             curated_missing_uris=curated_missing_tuple,
@@ -1040,7 +1185,7 @@ class OAIProjectBuilder:
             if not obj.storage_key:
                 return False
             key_normalized = obj.storage_key.lower()
-            if key_normalized.startswith("metadata/"):
+            if key_normalized.startswith("metadata/") and not getattr(obj, "_allow_metadata_exports", False):
                 return False
             status = _status_token(obj.storage_status)
             if status is None:

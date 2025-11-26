@@ -515,6 +515,8 @@ OAI_S3_HARVESTABLE_ORGS = tuple(
     if org.strip()
 )
 
+S3_HOSTNAME = env("S3_HOSTNAME", default="")
+
 OAI_ROSETTA_HARVESTABLE_ORGS = tuple(
     org.strip()
     for org in env.list(
@@ -557,6 +559,15 @@ OAI_S3_ROSETTA_BASE_PATHS = {
         "det": env("OAI_S3_ROSETTA_BASE_DET", default="/rosetta/hfmdt/sandbox/input/arkumu/daten"),
     }.items()
     if key and value
+}
+
+OAI_ROSETTA_CURATED_PREFIXES = {
+    key.strip().lower(): value.rstrip("/")
+    for key, value in {
+        "hmt": env("OAI_ROSETTA_CURATED_PREFIX_HMT", default=""),
+        "khm": env("OAI_ROSETTA_CURATED_PREFIX_KHM", default="/rosetta/khm/sandbox/input/arkumu/daten"),
+    }.items()
+    if value and value.strip()
 }
 
 OAI_INSTITUTION_CODE_ALIASES = {

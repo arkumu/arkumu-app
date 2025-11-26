@@ -9,6 +9,8 @@ import logging
 from django.template.loader import render_to_string
 from django.middleware.csrf import get_token
 
+from arkumu.storage.services.verification_service import annotate_verified_flags
+
 logger = logging.getLogger(__name__)
 
 
@@ -308,6 +310,7 @@ class CSVMappingTemplateHelperMixin:
             bucket_name = bucket_service.get_organization_bucket(organization)
             # Force fresh listing for OOB updates to ensure new files appear
             contents = bucket_service.list_bucket_contents(bucket_name, '', force_fresh=True)
+            annotate_verified_flags(contents, organization)
             
             logger.info(f"🔍 FILE_BROWSER_TEMPLATE: organization={organization}")
             logger.info(f"🔍 FILE_BROWSER_TEMPLATE: bucket_name={bucket_name}")
@@ -325,6 +328,7 @@ class CSVMappingTemplateHelperMixin:
                             item['path'],
                             force_fresh=True
                         )
+                        annotate_verified_flags(subfolder_contents, organization)
                         item['preloaded_contents'] = subfolder_contents
                         # Add file count for data and metadata folders - force fresh count for OOB updates
                         item['file_count'] = bucket_service.count_files_in_folder(bucket_name, item['path'], force_fresh=True)

@@ -22,22 +22,6 @@
           tabindex="0">
       {{ ereignistyp|default:"Ereignistyp" }}
     </a>
-
-    <!-- <span class="text-sm transition-colors
-                text-arkumu-dark
-                theme-dark:text-arkumu-light
-                theme-blue:text-arkumu-blue"
-          tabindex="0">
-      {{ beginn_ende|default:"Beginn-Ende" }}
-    </span>
-    <span class="text-sm transition-colors
-                text-arkumu-dark
-                theme-dark:text-arkumu-light
-                theme-blue:text-arkumu-blue"
-          tabindex="0">
-      {{ ereignistyp|default:"Ereignistyp" }}
-    </span>
-  -->
   </div>
 
   <!-- Main Content Layout -->
@@ -55,49 +39,11 @@
 
       <!-- Actors/Participants -->
       <div class="space-y-1">
-        <!-- 
-        {% if akteur1 %}
-          <a href="#" class="block text-sm underline transition-colors
-                           text-arkumu-dark hover:opacity-70
-                           theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
-             tabindex="0">
-            {{ akteur1 }}
-          </a>
-        {% else %}
-          <a href="#" class="block text-sm underline transition-colors
-                           text-arkumu-dark hover:opacity-70
-                           theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
-             tabindex="0">
-            Akteur*in
-          </a>
-        {% endif %}
-
-        {% if akteur2 %}
-          <a href="#" class="block text-sm underline transition-colors
-                           text-arkumu-dark hover:opacity-70
-                           theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
-             tabindex="0">
-            {{ akteur2 }}
-          </a>
-        {% else %}
-          <a href="#" class="block text-sm underline transition-colors
-                           text-arkumu-dark hover:opacity-70
-                           theme-dark:text-arkumu-light theme-dark:hover:opacity-70
-                           theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"
-             tabindex="0">
-            Akteur*in
-          </a>
-        {% endif %} 
-        -->
-
         <!-- Show the first two actors with roles and add the actors name to the link -->
         {% if event.actors %}
           {% for actor in event.actors|slice:":2" %}
           <span class="flex">
-            <a href="#?actor={{ actor.name }}" class="block text-sm underline transition-color
+            <a href="/catalog/advanced-search/?aktuer={{ actor.name }}" class="block text-sm underline transition-color
                             text-arkumu-dark hover:opacity-70
                             theme-dark:text-arkumu-light theme-dark:hover:opacity-70
                             theme-blue:text-arkumu-blue theme-blue:hover:opacity-70"

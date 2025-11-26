@@ -56,3 +56,29 @@ class DirectoryImportSerializer(serializers.Serializer):
         if not data.get('directory_path') and not data.get('zip_file'):
             raise serializers.ValidationError("Either directory_path or zip_file must be provided")
         return data
+
+
+class TailoredProbeRequestSerializer(serializers.Serializer):
+    base_url = serializers.CharField(required=False, allow_blank=True)
+    verb = serializers.ChoiceField(
+        choices=["ListIdentifiers", "ListRecords"],
+        default="ListIdentifiers",
+    )
+    metadata_prefix = serializers.CharField(default="oai_dc")
+    set_spec = serializers.CharField(required=False, allow_blank=True)
+    from_date = serializers.CharField(required=False, allow_blank=True)
+    until_date = serializers.CharField(required=False, allow_blank=True)
+    skip_tailored_resume = serializers.BooleanField(required=False, default=False)
+    skip_db = serializers.BooleanField(required=False, default=False)
+    skip_snapshot = serializers.BooleanField(required=False, default=False)
+    pause_for_dataset_change = serializers.BooleanField(required=False, default=False)
+    internal_bypass = serializers.BooleanField(required=False, default=False)
+    basic_auth_username = serializers.CharField(required=False, allow_blank=True)
+    basic_auth_password = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        username = attrs.get("basic_auth_username")
+        password = attrs.get("basic_auth_password")
+        if bool(username) ^ bool(password):
+            raise serializers.ValidationError("basic_auth_username and basic_auth_password must be provided together")
+        return attrs

@@ -6,10 +6,8 @@ class CatalogConfig(AppConfig):
     name = 'arkumu.catalog'
 
     def ready(self):
-        from arkumu.catalog.tasks import download_previews_task
-        # Only run cleanup on server startup, not during migrations or commands
-        if self._is_server_startup():
-            download_previews_task.schedule(delay=0)
+        # Automatic preview refresh on startup disabled – dashboards provide explicit trigger.
+        return
 
     def _is_server_startup(self):
         """Check if this is a server startup (not migration, test, or management command)"""

@@ -80,6 +80,8 @@ class ResumptionTokenService:
             token_data['total_count'] = total_count
         if snapshot_marker:
             token_data['snapshot'] = snapshot_marker
+            if not cursor_marker:
+                token_data['cursor'] = snapshot_marker
         if cursor_marker:
             token_data['cursor'] = cursor_marker
         if cursor_position:

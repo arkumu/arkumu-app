@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Canonical Manifest Graph{% endblock %}
+
+{% block container_type %}
+<div class="w-full px-0 py-0">
+{% endblock container_type %}
+
+{% block container_type_end %}
+</div>
+{% endblock container_type_end %}
+
+{% block content %}
+<div class="w-full px-4 md:px-10 lg:px-16 py-8 space-y-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-semibold text-base-content">Canonical Manifest Graph</h1>
+            <p class="text-sm text-base-content/70">
+                Visualize how KHM and HMT manifest labels line up with Arkumu canonical URIs. Runs directly on the stored schema_manifest data.
+            </p>
+        </div>
+        <a href="{% url 'metadata:metadata_dashboard' %}" class="btn btn-ghost btn-sm">← Back to dashboard</a>
+    </div>
+
+    <div class="alert alert-warning text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <div>
+            <p class="font-semibold text-base-content">Edits here update the schema_manifest directly.</p>
+            <p class="text-base-content/70">If the schema is regenerated (e.g., from the CSV mapping editor), these manual changes can be overwritten. Use the CSV mapping editor for durable canonical mappings.</p>
+        </div>
+    </div>
+
+    <div class="bg-base-100 shadow rounded-2xl p-6">
+        <form id="canonical-graph-form"
+              method="post"
+              class="space-y-4"
+              hx-post="{% url 'metadata:canonical_graph_render' %}"
+              hx-target="#graph-preview"
+              hx-swap="innerHTML"
+              hx-trigger="submit">
+            {% csrf_token %}
+            <div class="grid md:grid-cols-2 gap-4">
+                <div>
+                    <label for="id_organization" class="label">
+                        <span class="label-text font-semibold">Organization</span>
+                    </label>
+                    {% if organizations %}
+                        <select name="organization"
+                                id="id_organization"
+                                class="select select-bordered w-full"
+                                hx-get="{% url 'metadata:canonical_graph_selectors' %}"
+                                hx-target="#graph-selectors"
+                                hx-indicator="#selectors-indicator">
+                            {% for org in organizations %}
+                                <option value="{{ org.code }}" {% if org.code == selected_org_code %}selected{% endif %}>
+                                    {{ org.name }} ({{ org.code|upper }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-xs text-base-content/60 mt-1">
+                            Limited to organizations with canonical label mapping projects.
+                        </p>
+                    {% else %}
+                        <div class="alert alert-warning text-sm">
+                            Add KHM or HMT organizations first to enable this view.
+                        </div>
+                    {% endif %}
+                </div>
+                <div id="graph-selectors">
+                    {% include "metadata/partials/canonical_graph_selectors.html" %}
+                </div>
+            </div>
+            <div class="flex items-center gap-3 text-sm">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    Refresh tree
+                </button>
+                <span id="selectors-indicator" class="loading loading-spinner loading-sm hidden"></span>
+                <span class="text-base-content/60">
+                    Changing the organization or mapping automatically refreshes the tree; use the button to re-run manually if needed.
+                </span>
+            </div>
+        </form>
+    </div>
+    <div id="graph-preview"
+         class="bg-base-100 shadow rounded-2xl p-6 min-h-[70vh]"
+         hx-post="{% url 'metadata:canonical_graph_render' %}"
+         hx-trigger="load delay:200ms"
+         hx-include="#canonical-graph-form"
+         hx-target="#graph-preview"
+         hx-indicator="#graph-loading-indicator">
+        <div class="flex items-center gap-2 text-sm text-base-content/70 h-full">
+            <span id="graph-loading-indicator" class="loading loading-ring loading-lg" style="display:none;"></span>
+            <span>Select an organization + mapping to render the tree overview.</span>
+        </div>
+    </div>
+</div>
+{% endblock %}

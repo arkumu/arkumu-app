@@ -32,6 +32,7 @@ from arkumu.metadata.schema_workspace.services import JoinRelationship, Relation
 from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.metadata.views.csv_mapping.mixins.template_helpers import CSVMappingTemplateHelperMixin
 from arkumu.users.models import Organization
+from . import simplified_workspace_views
 
 STEP_LABELS: Dict[str, str] = {
     "project": "Projekt",
@@ -2616,6 +2617,9 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
         if not field_meta:
             return HttpResponseBadRequest("Unknown field")
 
+        fk_info = field_meta.get("fk_relationship") or {}
+        relationship = join_field_map.get(column_name) if field_meta.get("is_join") else None
+
         column_alias = f"{column_name}[]"
         query = (
             request.GET.get("q")
@@ -2624,10 +2628,24 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             or ""
         ).strip()
 
+        # When no explicit property is requested, prefer simplified workspace
+        # configuration for this dataset/field, falling back to any
+        # selected_property from the legacy workspace metadata.
         if not property_uri:
-            property_uri = field_meta.get("selected_property") or ""
+            property_uri = (
+                self._select_simplified_search_property_uri(
+                    service=service,
+                    dataset_name=dataset_name,
+                    column_name=column_name,
+                    field_meta=field_meta,
+                    fk_info=fk_info,
+                    relationship=relationship,
+                    current_property_uri=None,
+                )
+                or field_meta.get("selected_property")
+                or ""
+            )
 
-        fk_info = field_meta.get("fk_relationship")
         if field_meta.get("is_join"):
             relationship = join_field_map.get(column_name)
             suggestions = self._collect_join_entity_suggestions(service, relationship, query, property_uri)
@@ -2668,6 +2686,94 @@ class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
             "metadata/entity_creation/partials/_dataset_field_suggestions.html",
             context,
         )
+
+    @staticmethod
+    def _select_simplified_search_property_uri(
+        *,
+        service: SchemaWorkspaceService,
+        dataset_name: str,
+        column_name: str,
+        field_meta: Dict[str, Any],
+        fk_info: Dict[str, Any] | None,
+        relationship: Optional[JoinRelationship],
+        current_property_uri: Optional[str],
+    ) -> Optional[str]:
+        """
+        Determine a search property URI using simplified workspace configuration.
+
+        This allows specific widgets (e.g. Digitales Objekt on Ereignis)
+        to restrict search to configured properties such as Titel or Dateiname,
+        while preserving legacy behavior for datasets without configuration.
+        """
+        # Preserve explicit user selection or existing property overrides.
+        if current_property_uri:
+            return current_property_uri
+
+        # Prefer any search_property configuration defined for this dataset/field.
+        dataset_config = getattr(simplified_workspace_views, "SIMPLIFIED_FIELD_PROPS", {}).get(dataset_name) or {}
+        field_config = dataset_config.get(column_name)
+        if not field_config:
+            # Also try matching by human-readable property label.
+            property_label = str(field_meta.get("property_label") or "")
+            if property_label:
+                field_config = dataset_config.get(property_label)
+        if not field_config:
+            return current_property_uri
+
+        configured_tokens = simplified_workspace_views._configured_search_properties(field_config)
+        if not configured_tokens:
+            return current_property_uri
+
+        target_dataset: Optional[str] = None
+        if relationship is not None:
+            target_dataset = getattr(relationship, "other_dataset", None)
+        elif fk_info:
+            target_dataset = fk_info.get("target_dataset")
+
+        if not target_dataset:
+            return current_property_uri
+
+        try:
+            target_schema = service.get_dataset_schema(target_dataset)
+        except ValueError:
+            return current_property_uri
+
+        properties: List[Dict[str, str]] = []
+        for column, prop in (target_schema.get("properties", {}) or {}).items():
+            uri = getattr(prop, "uri", None)
+            if not uri:
+                continue
+            label = getattr(prop, "name", column) or column
+            properties.append(
+                {
+                    "uri": str(uri),
+                    "label": str(label),
+                    "column": str(column),
+                }
+            )
+
+        filtered = simplified_workspace_views._filter_properties_for_config(properties, configured_tokens)
+        if filtered:
+            logger.info(
+                "[DatasetFieldValueOptionsView] Using simplified search config | dataset=%s field=%s tokens=%s -> %s",
+                dataset_name,
+                column_name,
+                configured_tokens,
+                filtered[0].get("uri"),
+            )
+        for prop in filtered:
+            uri = prop.get("uri")
+            if uri:
+                return str(uri)
+
+        logger.info(
+            "[DatasetFieldValueOptionsView] Simplified search config did not match any property | dataset=%s field=%s tokens=%s",
+            dataset_name,
+            column_name,
+            configured_tokens,
+        )
+
+        return current_property_uri
 
     def _collect_fk_suggestions(
         self,
@@ -2921,7 +3027,8 @@ class RelationshipRowView(LoginRequiredMixin, View):
 
         # Generate unique IDs for this row
         import uuid
-        row_id = f"relationship-row-{field_name}-{uuid.uuid4().hex[:8]}"
+        field_dom_slug = slugify(field_name or "") or field_name.replace(" ", "-")
+        row_id = f"relationship-row-{field_dom_slug}-{uuid.uuid4().hex[:8]}"
         input_id = f"input-{row_id}"
         suggestions_id = f"suggestions-{row_id}"
 
@@ -2934,7 +3041,7 @@ class RelationshipRowView(LoginRequiredMixin, View):
         suggestion_url = f"{base_suggestion_url}?{urlencode(base_params)}"
 
         # Determine property select ID
-        property_select_id = f"relationship-property-{field_name}"
+        property_select_id = f"relationship-property-{field_dom_slug}"
 
         context = {
             "row_id": row_id,

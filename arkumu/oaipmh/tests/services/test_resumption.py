@@ -15,6 +15,7 @@ import hashlib
 from urllib.parse import quote, unquote
 
 from arkumu.oaipmh.resumption import ResumptionTokenService
+from arkumu.oaipmh.resumption_tailored import TailoredResumptionTokenService
 
 
 class TestResumptionTokenService:
@@ -483,3 +484,110 @@ class TestResumptionTokenService:
         assert token_data2["set"] == original_params["set_spec"]
         assert token_data2["from"] == original_params["from_date"]
         assert token_data2["until"] == original_params["until_date"]
+
+
+class TestTailoredResumptionTokenService:
+    """Tailored service specific token guarantees."""
+
+    def setup_method(self):
+        self.service = TailoredResumptionTokenService(
+            secret_key="test-tailored",
+            page_size=5,
+        )
+
+    def test_tailored_tokens_include_profile_and_version(self):
+        token = self.service.create_token(
+            offset=5,
+            verb="ListIdentifiers",
+            metadata_prefix="oai_dc",
+            cursor_marker="tailored-marker",
+            cursor_position="2024-01-01T00:00:00+00:00|42",
+        )
+
+        is_valid, token_data, error = self.service.parse_token(token)
+
+        assert is_valid
+        assert error is None
+        assert token_data["profile"] == "tailored"
+        assert token_data["rt_version"] == 1
+        assert token_data["cursor"] == "tailored-marker"
+        assert token_data["cursor_position"] == "2024-01-01T00:00:00+00:00|42"
+
+    def test_tailored_token_requires_cursor_marker(self):
+        with pytest.raises(ValueError):
+            self.service.create_token(
+                offset=0,
+                verb="ListRecords",
+                metadata_prefix="mets",
+            )
+
+    def test_tailored_service_accepts_legacy_tokens_when_allowed(self):
+        base_service = ResumptionTokenService(secret_key="shared", page_size=3)
+        legacy_token = base_service.create_token(
+            offset=0,
+            verb="ListIdentifiers",
+            metadata_prefix="oai_dc",
+            cursor_marker="legacy-cursor",
+        )
+
+        compat_service = TailoredResumptionTokenService(
+            secret_key="shared",
+            page_size=3,
+            accept_legacy_tokens=True,
+        )
+        is_valid, token_data, error = compat_service.parse_token(legacy_token)
+
+        assert is_valid
+        assert error is None
+        assert token_data is not None
+        assert token_data.get("cursor") == "legacy-cursor"
+
+    def test_tailored_service_rejects_legacy_tokens_when_disallowed(self):
+        base_service = ResumptionTokenService(secret_key="shared", page_size=3)
+        legacy_token = base_service.create_token(
+            offset=0,
+            verb="ListIdentifiers",
+            metadata_prefix="oai_dc",
+            cursor_marker="legacy-cursor",
+        )
+
+        strict_service = TailoredResumptionTokenService(
+            secret_key="shared",
+            page_size=3,
+            accept_legacy_tokens=False,
+        )
+        is_valid, token_data, error = strict_service.parse_token(legacy_token)
+
+        assert not is_valid
+        assert token_data is None
+        assert error == "Tailored resumption token missing profile"
+
+    def test_tailored_service_rejects_wrong_profile(self):
+        token = self.service.create_token(
+            offset=0,
+            verb="ListIdentifiers",
+            metadata_prefix="oai_dc",
+            cursor_marker="tailored-marker",
+            profile="other",
+        )
+
+        is_valid, token_data, error = self.service.parse_token(token)
+
+        assert not is_valid
+        assert token_data is None
+        assert error == "Token profile does not match endpoint"
+
+    def test_tailored_service_rejects_version_mismatch(self):
+        token = self.service.create_token(
+            offset=0,
+            verb="ListRecords",
+            metadata_prefix="oai_dc",
+            cursor_marker="tailored-marker",
+            rt_version=99,
+        )
+
+        is_valid, token_data, error = self.service.parse_token(token)
+
+        assert not is_valid
+        assert token_data is None
+        assert error == "Unsupported tailored resumption token version"

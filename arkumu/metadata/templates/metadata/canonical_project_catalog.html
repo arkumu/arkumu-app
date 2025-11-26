@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Canonical Project Catalog{% endblock %}
+
+{% block container_type %}
+<div class="w-full px-0 py-0">
+{% endblock container_type %}
+
+{% block container_type_end %}
+</div>
+{% endblock container_type_end %}
+
+{% block content %}
+<div class="w-full px-4 md:px-10 lg:px-16 py-8 space-y-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-semibold text-base-content">Canonical Project Catalog</h1>
+            <p class="text-sm text-base-content/70">
+                List every project by institution with canonical project IDs and titles. Load a full project record on demand via the canonical data graph.
+            </p>
+        </div>
+        <a href="{% url 'metadata:metadata_dashboard' %}" class="btn btn-ghost btn-sm">← Back to dashboard</a>
+    </div>
+
+    <div class="bg-base-100 shadow rounded-xl p-3">
+        <div class="flex items-center gap-3">
+            <div class="badge badge-lg badge-ghost">
+                <span class="text-sm font-semibold">Institutions</span>
+                <span class="ml-2 font-mono text-sm">{{ stats.org_count }}</span>
+            </div>
+            <div class="badge badge-lg badge-ghost">
+                <span class="text-sm font-semibold">Projects</span>
+                <span class="ml-2 font-mono text-sm">{{ stats.project_count }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-base-100 shadow rounded-2xl p-4">
+        <form method="get" class="grid gap-3 md:grid-cols-2 lg:grid-cols-3 items-end">
+            <div class="space-y-1">
+                <label for="id_org" class="label">
+                    <span class="label-text font-semibold">Choose institution</span>
+                </label>
+                <select id="id_org" name="org" class="select select-bordered w-full" onchange="this.form.submit()">
+                    <option value="">All institutions</option>
+                    {% for org in all_orgs %}
+                    <option value="{{ org.code }}" {% if selected_org and selected_org.code == org.code %}selected{% endif %}>
+                        {{ org.name }} ({{ org.code|upper }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="space-y-1">
+                <label for="id_search" class="label">
+                    <span class="label-text font-semibold">Search by title or ID</span>
+                </label>
+                <input id="id_search" name="q" type="text" value="{{ search_query }}" class="input input-bordered w-full" placeholder="Search projects..." />
+            </div>
+            <div class="space-y-1">
+                <button type="submit" class="btn btn-primary w-full">Apply filters</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="bg-base-100 shadow rounded-2xl p-0 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="table table-zebra">
+                <thead>
+                    <tr class="text-xs">
+                        <th>Project ID</th>
+                        <th>Title</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if page_obj.object_list %}
+                        {% for project in page_obj.object_list %}
+                        <tr>
+                            <td colspan="2" class="p-0">
+                                <details class="collapse collapse-plus bg-base-100 border-b border-base-200 rounded-none">
+                                    <summary class="px-4 py-3 flex gap-4 items-start hover:bg-base-200 cursor-pointer">
+                                        <span class="badge badge-outline badge-sm mt-0.5">{{ project.project_id|default:"—" }}</span>
+                                        <span class="text-sm font-semibold text-left">{{ project.title }}</span>
+                                    </summary>
+                                    <div class="collapse-content px-4 py-3">
+                                        <div
+                                            id="project-record-{{ project.id }}"
+                                            hx-get="{% url 'metadata:canonical_project_record' %}?org={{ project.org_code }}&project_id={{ project.id }}"
+                                            hx-trigger="toggle from:closest details once"
+                                            hx-target="this"
+                                            hx-swap="innerHTML"
+                                            hx-indicator="#project-record-spinner-{{ project.id }}"
+                                        >
+                                            <div id="project-record-spinner-{{ project.id }}" class="htmx-indicator">
+                                                <span class="loading loading-spinner loading-sm text-primary"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </details>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="2">
+                            <div class="alert alert-info m-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>No projects match your filters.</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-between px-4 py-3 border-t border-base-200 text-sm">
+            <div>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} — {{ page_obj.paginator.count }} project{{ page_obj.paginator.count|pluralize }}</div>
+            <div class="join">
+                {% if page_obj.has_previous %}
+                <a class="btn btn-sm join-item" href="?{% if selected_org %}org={{ selected_org.code }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}">« Prev</a>
+                {% else %}
+                <button class="btn btn-sm join-item" disabled>« Prev</button>
+                {% endif %}
+                {% if page_obj.has_next %}
+                <a class="btn btn-sm join-item" href="?{% if selected_org %}org={{ selected_org.code }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}page={{ page_obj.next_page_number }}">Next »</a>
+                {% else %}
+                <button class="btn btn-sm join-item" disabled>Next »</button>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

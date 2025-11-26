@@ -51,8 +51,8 @@ from arkumu.oaipmh.constants import (
     XSI_NS,
 )
 from arkumu.oaipmh.validation import rosetta_mets_validator
-from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
-from .resumption import ResumptionTokenService
+from ..formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
+from ..resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
 from arkumu.storage.models.s3_file_objects import S3FileObject

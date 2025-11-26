@@ -255,14 +255,14 @@ KREUZ_DATASET_PROFILES: Dict[str, Dict[str, DatasetProfile]] = {
         ),
         "02_kreuz_projekte_personen": DatasetProfile(
             name="02_Kreuz_Projekte_Personen",
-            canonical_predicates=(EVENT, ACTOR_IN_EVENT, ROLE_IN_EVENT),
-            pattern_names=("event_actor",),
+            canonical_predicates=(PROJECT, EVENT, ACTOR_IN_EVENT, ROLE_IN_EVENT),
+            pattern_names=("event_actor", "project_event_actor_bridge"),
             notes=("Event-person assignments (actors participating in events)",),
         ),
         "04_kreuz_betreuende_projekte": DatasetProfile(
             name="04_Kreuz_Betreuende_Projekte",
-            canonical_predicates=(EVENT, ACTOR_IN_EVENT),
-            pattern_names=("event_actor",),
+            canonical_predicates=(PROJECT, EVENT, ACTOR_IN_EVENT),
+            pattern_names=("event_actor", "project_event_actor_bridge"),
             notes=("Supervisor/mentor relationships captured as event actors",),
         ),
         "07_kreuz_projekte_keywords": DatasetProfile(

@@ -7,13 +7,14 @@ FROM python AS python-build-stage
 
 ARG BUILD_ENVIRONMENT=production
 
-# Install apt packages
-RUN apt-get update && apt-get install --no-install-recommends -y \
+# Install apt packages (force IPv4 to avoid mirror stalls)
+RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
+  && apt-get install --no-install-recommends -y \
   # dependencies for building Python packages
   build-essential \
   # psycopg dependencies
   libpq-dev \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/archives/partial/*
 
 # Install uv using the more reliable COPY method from official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -42,8 +43,9 @@ RUN addgroup --system django \
     && adduser --system --ingroup django django
 
 
-# Install required system dependencies
-RUN apt-get update && apt-get install --no-install-recommends -y \
+# Install required system dependencies (force IPv4 to avoid mirror stalls)
+RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
+  && apt-get install --no-install-recommends -y \
   # psycopg dependencies
   libpq-dev \
   # Translations dependencies
@@ -54,7 +56,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
   wait-for-it \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/archives/partial/*
 
 # Copy Python packages from build stage - SAME Python base image ensures compatibility
 COPY --from=python-build-stage /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages

@@ -1,0 +1,29 @@
+{% if mappings %}
+    <div>
+        <label for="id_mapping" class="label">
+            <span class="label-text font-semibold">Mapping</span>
+        </label>
+        <select name="mapping_id"
+                id="id_mapping"
+                class="select select-bordered w-full"
+                hx-post="{% url 'metadata:canonical_graph_render' %}"
+                hx-trigger="change"
+                hx-target="#graph-preview"
+                hx-include="#canonical-graph-form"
+                hx-indicator="#graph-loading-indicator">
+            {% for mapping in mappings %}
+                <option value="{{ mapping.id }}" {% if mapping.id|stringformat:"s" == selected_mapping_id %}selected{% endif %}>
+                    {{ mapping.name }}{% if mapping.is_active %} · Active{% endif %}
+                </option>
+            {% endfor %}
+        </select>
+        <p class="text-xs text-base-content/60 mt-1">
+            Selecting a mapping refreshes the tree automatically. Active mappings surface at the top.
+        </p>
+    </div>
+{% else %}
+    <div class="alert alert-warning text-sm">
+        No mappings found for this organization. Create a mapping with a schema_manifest first.
+        <input type="hidden" name="mapping_id" value="">
+    </div>
+{% endif %}

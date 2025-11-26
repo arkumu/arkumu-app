@@ -1,6 +1,9 @@
 {% if row.links %}
   {% for link in row.links %}
-    <tr id="{% if forloop.first %}digital-object-{{ row.digital_object.id }}{% endif %}" class="{% if forloop.first %}border-t-2 border-base-300{% endif %}">
+    <tr
+      id="{% if forloop.first %}digital-object-{{ row.digital_object.id }}{% endif %}"
+      class="border-base-300 {% if forloop.first %}border-t-2{% endif %}{% if forloop.last %} border-b-2{% endif %}"
+    >
       {% if forloop.first %}
         <td rowspan="{{ row.links|length }}" class="align-top bg-base-200">
           <div class="space-y-2 p-2">
@@ -10,14 +13,8 @@
             </div>
             <div class="flex flex-wrap gap-1">
               <div class="badge badge-xs badge-outline" title="Total projects">{{ row.project_count }}</div>
-              {% if row.approved_count > 0 %}
-                <div class="badge badge-xs badge-success" title="Approved">{{ row.approved_count }}</div>
-              {% endif %}
-              {% if row.pending_count > 0 %}
-                <div class="badge badge-xs badge-warning" title="Pending">{{ row.pending_count }}</div>
-              {% endif %}
-              {% if row.rejected_count > 0 %}
-                <div class="badge badge-xs badge-error" title="Rejected">{{ row.rejected_count }}</div>
+              {% if row.has_s3_file %}
+                <div class="badge badge-xs badge-info" title="{{ row.s3_key_preview }}">S3</div>
               {% endif %}
               {% if row.is_shared %}
                 <div class="badge badge-xs badge-info" title="Shared across multiple projects">Shared</div>
@@ -26,6 +23,11 @@
                 <div class="badge badge-xs badge-warning" title="Has stale references">Stale</div>
               {% endif %}
             </div>
+            {% if row.has_s3_file %}
+              <div class="text-[10px] text-base-content/70 break-all">
+                S3: {{ row.s3_key_preview|truncatechars:64 }}
+              </div>
+            {% endif %}
           </div>
         </td>
         <td rowspan="{{ row.links|length }}" class="align-top border-l border-base-300 text-center">
@@ -43,9 +45,9 @@
                 <a href="{{ link.project.uri }}" target="_blank" rel="noopener" class="link link-hover">{{ link.project.uri }}</a>
               </div>
               <div class="flex flex-wrap gap-1 mt-1">
-                <div class="badge badge-xs {% if link.project.public_access_level == 'public' %}badge-success{% elif link.project.public_access_level == 'restricted' %}badge-warning{% else %}badge-ghost{% endif %}">
-                  {{ link.project.public_access_level }}
-                </div>
+                {% if link.has_s3_file %}
+                  <span class="badge badge-xs badge-info" title="{{ link.s3_key_preview }}">S3</span>
+                {% endif %}
                 {% if link.is_stale %}
                   <span class="badge badge-xs badge-warning">Stale</span>
                 {% endif %}
@@ -56,25 +58,16 @@
             </div>
 
             <div class="flex flex-col gap-1 items-end">
-              <div class="badge badge-xs {% if link.status == 'approved' %}badge-success{% elif link.status == 'pending' %}badge-warning{% else %}badge-error{% endif %}">
-                {{ link.status }}
-              </div>
               <form
-                hx-post="{% url 'oai_admin:oai_media_link_update' link.id %}"
+                hx-post="{% url 'oai_admin:oai_media_link_delete' link.id %}"
                 hx-target="#digital-object-{{ row.digital_object.id }}"
                 hx-swap="outerHTML"
-                hx-trigger="change from:select"
+                hx-confirm="Remove this project link?"
               >
                 {% csrf_token %}
                 <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
-                <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
                 <input type="hidden" name="page" value="{{ current_page }}">
-                <input type="hidden" name="current_status" value="{{ link.status }}">
-                <select name="status" class="select select-bordered select-xs w-24">
-                  <option value="approved" {% if link.status == 'approved' %}selected{% endif %}>approved</option>
-                  <option value="pending" {% if link.status == 'pending' %}selected{% endif %}>pending</option>
-                  <option value="rejected" {% if link.status == 'rejected' %}selected{% endif %}>rejected</option>
-                </select>
+                <button type="submit" class="btn btn-xs btn-error btn-outline">Del</button>
               </form>
             </div>
           </div>
@@ -83,7 +76,7 @@
     </tr>
   {% endfor %}
 {% else %}
-  <tr id="digital-object-{{ row.digital_object.id }}" class="border-t-2 border-base-300">
+  <tr id="digital-object-{{ row.digital_object.id }}" class="border-t-2 border-b-2 border-base-300">
     <td class="align-top bg-base-200">
       <div class="space-y-2 p-2">
         <div>

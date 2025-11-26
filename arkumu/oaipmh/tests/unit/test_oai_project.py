@@ -46,6 +46,7 @@ def test_builder_marks_s3_project_harvestable(settings):
     settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
     settings.OAI_ROSETTA_HARVESTABLE_ORGS = ()
     settings.OAI_S3_ROSETTA_BASE_PATHS = {}
+    settings.AWS_S3_BROWSER_ENDPOINT_URL = 'https://downloads.example.org'
 
     builder = OAIProjectBuilder()
     record = _make_record(
@@ -69,9 +70,36 @@ def test_builder_marks_s3_project_harvestable(settings):
     assert len(project.digital_objects) == 1
     obj = project.digital_objects[0]
     assert obj.storage_key == 's3://fuk/object_master.tif'
-    assert obj.preferred_location == 's3://fuk/object_master.tif'
+    assert obj.download_href == 'https://downloads.example.org/fuk/object_master.tif'
+    assert obj.preferred_location == obj.download_href
     assert obj.source == 's3'
     assert obj.harvestable is True
+
+
+@pytest.mark.usefixtures("stub_s3_fixity")
+def test_builder_prefers_https_download_for_s3(settings):
+    settings.OAI_S3_HARVESTABLE_ORGS = ('fuk',)
+    settings.OAI_ROSETTA_HARVESTABLE_ORGS = ()
+    settings.AWS_S3_BROWSER_ENDPOINT_URL = 'https://downloads.example.org'
+
+    builder = OAIProjectBuilder()
+    record = _make_record(
+        digital_objects=[
+            ProjectDigitalObject(
+                path='incoming/object_master.tif',
+                storage_key='s3://fuk/assets/object_master.tif',
+                file_name='object_master.tif',
+                content_type='image/tiff',
+                storage_status='completed',
+            )
+        ],
+    )
+
+    project = builder.from_project_record(record)
+    obj = project.digital_objects[0]
+    assert obj.download_href == 'https://downloads.example.org/fuk/assets/object_master.tif'
+    assert obj.preferred_location == obj.download_href
+    assert obj.source == 's3'
 
 
 def test_builder_resolves_khm_rosetta_path(tmp_path, settings):
