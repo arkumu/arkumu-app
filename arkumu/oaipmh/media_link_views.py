@@ -41,14 +41,16 @@ from arkumu.users.models import Organization
 
 logger = logging.getLogger(__name__)
 
-LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = (
-    "bevorzugter",
-    "preferred",
-    "titel",
-    "title",
-    "name",
-    "label",
-    "dateiname",
+# Keywords ordered by priority - earlier keywords take precedence
+LABEL_PREFERRED_KEYWORDS_PRIORITY: tuple[tuple[str, ...], ...] = (
+    ("bevorzugter", "preferred"),  # Highest priority
+    ("titel", "title"),            # High priority
+    ("label", "dateiname"),        # Medium priority
+    ("name",),                     # Low priority - too generic, matches many predicates
+)
+# Flat list for backward compatibility
+LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = tuple(
+    kw for group in LABEL_PREFERRED_KEYWORDS_PRIORITY for kw in group
 )
 
 MEDIA_LINKS_PAGE_SIZE = 10
@@ -594,23 +596,26 @@ def _prefetch_resource_labels(
         value = obj.value or obj.name
         return str(value).strip() if value else None
 
-    for triple in literal_triples:
-        subject_id = triple.subject_id
-        if subject_id not in pending:
-            continue
-        predicate_value = (
-            (getattr(triple.predicate, "uri", "") or "")
-            + " "
-            + (getattr(triple.predicate, "name", "") or "")
-            + " "
-            + (getattr(triple.predicate, "canonical_uri", "") or "")
-        ).lower()
-        if predicate_value and any(token in predicate_value for token in LABEL_PREFERRED_KEYWORDS):
-            literal = _literal_value(triple)
-            if literal:
-                cache[subject_id] = literal
-                pending.pop(subject_id, None)
+    # Process triples in keyword priority order (higher priority keywords first)
+    for keyword_group in LABEL_PREFERRED_KEYWORDS_PRIORITY:
+        for triple in literal_triples:
+            subject_id = triple.subject_id
+            if subject_id not in pending:
+                continue
+            predicate_value = (
+                (getattr(triple.predicate, "uri", "") or "")
+                + " "
+                + (getattr(triple.predicate, "name", "") or "")
+                + " "
+                + (getattr(triple.predicate, "canonical_uri", "") or "")
+            ).lower()
+            if predicate_value and any(token in predicate_value for token in keyword_group):
+                literal = _literal_value(triple)
+                if literal:
+                    cache[subject_id] = literal
+                    pending.pop(subject_id, None)
 
+    # Fallback: use any literal value
     for triple in literal_triples:
         subject_id = triple.subject_id
         if subject_id not in pending:
