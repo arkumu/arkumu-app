@@ -4,6 +4,7 @@ import itertools
 import os
 import threading
 import time
+from collections import defaultdict
 from typing import Iterable, Sequence, Tuple
 
 from django.conf import settings
@@ -100,13 +101,36 @@ class Command(BaseCommand):
         event_predicate_uri = canonical_uri("event")
         digital_predicate_uri = canonical_uri("digital_object")
 
+        # Pre-fetch all predicate IDs to avoid repeated canonical_uri joins in SQL
+        # Multiple orgs may have their own predicate resource with same canonical_uri
+        # so we collect ALL IDs for each predicate type
         predicate_model = Resource
-        digital_predicate_id = predicate_model.objects.filter(
-            canonical_uri=digital_predicate_uri
-        ).values_list("id", flat=True).first()
-        if not digital_predicate_id:
+        predicate_resources = predicate_model.objects.filter(
+            canonical_uri__in=[project_predicate_uri, event_predicate_uri, digital_predicate_uri],
+            resource_type=ResourceType.PROPERTY,
+        ).values_list("canonical_uri", "id")
+
+        # Group IDs by canonical_uri
+        predicate_ids_by_uri: dict[str, list[str]] = defaultdict(list)
+        for uri, pid in predicate_resources:
+            predicate_ids_by_uri[uri].append(str(pid))
+
+        project_predicate_ids = predicate_ids_by_uri.get(project_predicate_uri, [])
+        event_predicate_ids = predicate_ids_by_uri.get(event_predicate_uri, [])
+        digital_predicate_ids = predicate_ids_by_uri.get(digital_predicate_uri, [])
+
+        if not digital_predicate_ids:
             self.stdout.write(self.style.ERROR("Digital predicate resource not found; aborting."))
             return
+        if not project_predicate_ids:
+            self.stdout.write(self.style.ERROR("Project predicate resource not found; aborting."))
+            return
+        if not event_predicate_ids:
+            self.stdout.write(self.style.ERROR("Event predicate resource not found; aborting."))
+            return
+
+        # For the derived triple, use the first digital predicate ID
+        digital_predicate_id = digital_predicate_ids[0]
 
         triple_table = Triple._meta.db_table
         resource_table = Triple._meta.get_field("subject").related_model._meta.db_table
@@ -126,8 +150,8 @@ class Command(BaseCommand):
                     org_id=str(org.id),
                     triple_table=triple_table,
                     resource_table=resource_table,
-                    project_predicate_uri=project_predicate_uri,
-                    digital_bridge_predicate=digital_predicate_uri,
+                    project_predicate_ids=project_predicate_ids,
+                    digital_predicate_ids=digital_predicate_ids,
                     target_predicate_id=digital_predicate_id,
                     log_interval=log_interval,
                     log_fn=self.stdout.write if log_interval else None,
@@ -141,9 +165,10 @@ class Command(BaseCommand):
                     org_id=str(org.id),
                     triple_table=triple_table,
                     resource_table=resource_table,
-                    project_predicate_uri=project_predicate_uri,
-                    digital_predicate_uri=digital_predicate_uri,
-                    event_predicate_uri=event_predicate_uri,
+                    project_predicate_ids=project_predicate_ids,
+                    digital_predicate_ids=digital_predicate_ids,
+                    event_predicate_ids=event_predicate_ids,
+                    target_predicate_id=digital_predicate_id,
                     log_interval=log_interval,
                     log_fn=self.stdout.write if log_interval else None,
                     batch_size=batch_size,
@@ -224,74 +249,81 @@ class Command(BaseCommand):
         org_id: str,
         triple_table: str,
         resource_table: str,
-        project_predicate_uri: str,
-        digital_predicate_uri: str,
-        event_predicate_uri: str | None = None,
+        project_predicate_ids: list[str],
+        digital_predicate_ids: list[str],
+        event_predicate_ids: list[str],
+        target_predicate_id: str,
         log_interval: int = 0,
         log_fn=None,
         batch_size: int = 2000,
     ) -> set[Tuple[str, str, str]]:
-        """Event-based: project_id from event→project; digital_id from event→digital."""
+        """Event-based: project_id from event→project; digital_id from event→digital.
 
-        event_predicate_uri = event_predicate_uri or project_predicate_uri
+        Optimized query using pre-fetched predicate IDs to eliminate canonical_uri joins.
+        Uses IN (...) to match all predicate variants across organizations.
+        """
+
         log_interval = max(int(log_interval or 0), 0)
         batch_size = max(int(batch_size or 2000), 1)
 
         if log_fn:
             log_fn(
-                f"  … query predicates project={project_predicate_uri}, event={event_predicate_uri}, digital={digital_predicate_uri}"
+                f"  … query with {len(project_predicate_ids)} project, {len(event_predicate_ids)} event, {len(digital_predicate_ids)} digital predicate IDs"
             )
 
+        # Build placeholders for IN clauses
+        project_placeholders = ",".join(["%s"] * len(project_predicate_ids))
+        event_placeholders = ",".join(["%s"] * len(event_predicate_ids))
+        digital_placeholders = ",".join(["%s"] * len(digital_predicate_ids))
+
+        # Optimized query: use predicate IDs directly with IN clause
         sql = f"""
             WITH project_events AS (
                 SELECT tp.object_id AS project_id, te.object_id AS event_id
                 FROM {triple_table} tp
                 JOIN {triple_table} te ON te.subject_id = tp.subject_id
                 JOIN {resource_table} subj ON subj.id = tp.subject_id
-                JOIN {resource_table} pred_p ON pred_p.id = tp.predicate_id
-                JOIN {resource_table} pred_e ON pred_e.id = te.predicate_id
                 JOIN {resource_table} obj_p ON obj_p.id = tp.object_id
                 JOIN {resource_table} obj_e ON obj_e.id = te.object_id
-                WHERE pred_p.canonical_uri = %s
-                  AND pred_e.canonical_uri = %s
+                WHERE tp.predicate_id IN ({project_placeholders})
+                  AND te.predicate_id IN ({event_placeholders})
                   AND subj.organization_id = %s
                   AND subj.resource_type = %s
                   AND obj_p.resource_type = %s
                   AND obj_e.resource_type = %s
             ),
             event_digital AS (
-                SELECT te.object_id AS event_id, td.object_id AS digital_id, td.predicate_id AS digital_predicate_id
+                SELECT te.object_id AS event_id, td.object_id AS digital_id
                 FROM {triple_table} td
                 JOIN {triple_table} te ON te.subject_id = td.subject_id
                 JOIN {resource_table} subj ON subj.id = td.subject_id
-                JOIN {resource_table} pred_e ON pred_e.id = te.predicate_id
-                JOIN {resource_table} pred_d ON pred_d.id = td.predicate_id
                 JOIN {resource_table} obj_e ON obj_e.id = te.object_id
                 JOIN {resource_table} obj_d ON obj_d.id = td.object_id
-                WHERE pred_e.canonical_uri = %s
-                  AND pred_d.canonical_uri = %s
+                WHERE te.predicate_id IN ({event_placeholders})
+                  AND td.predicate_id IN ({digital_placeholders})
                   AND subj.organization_id = %s
                   AND subj.resource_type = %s
                   AND obj_e.resource_type = %s
                   AND obj_d.resource_type = %s
             )
-            SELECT pe.project_id, ed.digital_id, ed.digital_predicate_id
+            SELECT pe.project_id, ed.digital_id, %s AS digital_predicate_id
             FROM project_events pe
             JOIN event_digital ed ON ed.event_id = pe.event_id
         """
         params = [
-            project_predicate_uri,
-            event_predicate_uri,
+            *project_predicate_ids,
+            *event_predicate_ids,
             org_id,
             ResourceType.ENTITY,
             ResourceType.ENTITY,
             ResourceType.ENTITY,
-            event_predicate_uri,
-            digital_predicate_uri,
+            *event_predicate_ids,
+            *digital_predicate_ids,
             org_id,
             ResourceType.ENTITY,
             ResourceType.ENTITY,
             ResourceType.ENTITY,
+            target_predicate_id,
         ]
 
         pairs: set[Tuple[str, str, str]] = set()
@@ -354,42 +386,49 @@ class Command(BaseCommand):
         org_id: str,
         triple_table: str,
         resource_table: str,
-        project_predicate_uri: str,
-        digital_bridge_predicate: str,
+        project_predicate_ids: list[str],
+        digital_predicate_ids: list[str],
         target_predicate_id: str,
         log_interval: int = 0,
         log_fn=None,
         batch_size: int = 2000,
     ) -> set[Tuple[str, str, str]]:
-        """KHM-only: subjects with a project edge and a digital bridge edge."""
+        """KHM-only: subjects with a project edge and a digital bridge edge.
+
+        Optimized query using pre-fetched predicate IDs to eliminate canonical_uri joins.
+        Uses IN (...) to match all predicate variants across organizations.
+        """
 
         log_interval = max(int(log_interval or 0), 0)
         batch_size = max(int(batch_size or 2000), 1)
 
         if log_fn:
             log_fn(
-                f"  … shared-subject query predicates project={project_predicate_uri}, bridge={digital_bridge_predicate}"
+                f"  … shared-subject query with {len(project_predicate_ids)} project, {len(digital_predicate_ids)} digital predicate IDs"
             )
 
+        # Build placeholders for IN clauses
+        project_placeholders = ",".join(["%s"] * len(project_predicate_ids))
+        digital_placeholders = ",".join(["%s"] * len(digital_predicate_ids))
+
+        # Optimized query: use predicate IDs directly with IN clause
         sql = f"""
             SELECT tp.object_id AS project_id, td.object_id AS digital_id
             FROM {triple_table} tp
             JOIN {triple_table} td ON td.subject_id = tp.subject_id
             JOIN {resource_table} subj ON subj.id = tp.subject_id
-            JOIN {resource_table} pred_p ON pred_p.id = tp.predicate_id
-            JOIN {resource_table} pred_d ON pred_d.id = td.predicate_id
             JOIN {resource_table} obj_p ON obj_p.id = tp.object_id
             JOIN {resource_table} obj_d ON obj_d.id = td.object_id
-            WHERE pred_p.canonical_uri = %s
-              AND pred_d.canonical_uri = %s
+            WHERE tp.predicate_id IN ({project_placeholders})
+              AND td.predicate_id IN ({digital_placeholders})
               AND subj.organization_id = %s
               AND subj.resource_type = %s
               AND obj_p.resource_type = %s
               AND obj_d.resource_type = %s
         """
         params = [
-            project_predicate_uri,
-            digital_bridge_predicate,
+            *project_predicate_ids,
+            *digital_predicate_ids,
             org_id,
             ResourceType.ENTITY,
             ResourceType.ENTITY,
