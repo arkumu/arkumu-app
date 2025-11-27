@@ -302,6 +302,9 @@ def _build_media_links_summary(
     # Project-level stats for summary header (restricted to canonical project scope)
     project_scope = _project_scope_or_all_entities(organization)
 
+    # Count all projects in scope (regardless of links)
+    total_project_count = project_scope.count()
+
     # Count projects with media links
     projects_with_links = project_scope.filter(oai_media_links__isnull=False).distinct().count()
 
@@ -324,7 +327,8 @@ def _build_media_links_summary(
         "filtered_links_total": filtered_total,
         "status_totals": [],
         "stale_count": link_qs.filter(is_stale=True).count(),
-        "available_project_count": projects_with_links,
+        "total_project_count": total_project_count,
+        "projects_with_links_count": projects_with_links,
         "has_files_count": has_files_count,
         "oai_approved_count": oai_approved_count,
         "selected_org_code": organization.code or "",
