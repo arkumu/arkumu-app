@@ -93,6 +93,32 @@
         </div>
       </div>
 
+      <details class="text-xs">
+        <summary class="cursor-pointer font-semibold link link-primary">Add links manually</summary>
+        <form
+          class="mt-2 p-3 bg-base-200 rounded-lg space-y-2"
+          hx-post="{% url 'oai_admin:oai_media_link_add_bulk' %}"
+          hx-target="#oai-media-links-panel"
+          hx-swap="innerHTML"
+        >
+          {% csrf_token %}
+          <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <label class="label label-text text-xs py-0">Project URI</label>
+              <input type="text" name="project_uri" class="input input-bordered input-sm w-full" placeholder="http://...">
+            </div>
+            <div class="flex-1">
+              <label class="label label-text text-xs py-0">Digital object URIs (one per line)</label>
+              <textarea name="digital_uris" class="textarea textarea-bordered textarea-sm w-full" rows="3" placeholder="http://...&#10;http://..."></textarea>
+            </div>
+            <div class="flex items-end">
+              <button type="submit" class="btn btn-sm btn-primary">Create Links</button>
+            </div>
+          </div>
+        </form>
+      </details>
+
       {% if mode != 'digital' %}
         <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/80">
           <div class="flex items-center gap-2">
