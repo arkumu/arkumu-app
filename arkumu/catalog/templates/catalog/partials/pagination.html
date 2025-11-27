@@ -3,7 +3,7 @@
 <div class="flex items-center justify-center space-x-2 py-8">
   <!-- Previous Button -->
   {% if has_previous %}
-  <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ previous_page }}"
+  <button hx-get="{% url 'catalog:browse' %}?query={{ query|default:'' }}&page={{ previous_page }}"
           hx-target="#search-results-container"
           hx-indicator="#search-loading"
           class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
@@ -43,7 +43,7 @@
       </span>
       {% else %}
       <!-- Other Page Numbers -->
-      <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ page_num }}"
+      <button hx-get="{% url 'catalog:browse' %}?query={{ query|default:'' }}&page={{ page_num }}"
               hx-target="#search-results-container"
               hx-indicator="#search-loading"
               class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
@@ -58,7 +58,7 @@
 
   <!-- Next Button -->
   {% if has_next %}
-  <button hx-get="{% url 'catalog:browse' %}?query={{ query }}&page={{ next_page }}"
+  <button hx-get="{% url 'catalog:browse' %}?query={{ query|default:'' }}&page={{ next_page }}"
           hx-target="#search-results-container"
           hx-indicator="#search-loading"
           class="px-3 py-1 text-sm transition-colors hover:bg-opacity-10
