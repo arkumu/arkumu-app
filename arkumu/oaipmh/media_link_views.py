@@ -910,18 +910,32 @@ def _build_media_links_panel_context(
             harvestable_qs = _restrict_to_harvestable_files(base_projects_qs)
             base_projects_qs = base_projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
 
-    # Apply search BEFORE pagination using label lookup (matches curated labels as well as URIs)
+    # Apply search BEFORE pagination using label lookup (matches labels, URIs, and project IDs)
     if search_query:
         search_lower = search_query.lower()
         candidate_resources = list(
             base_projects_qs.only("id", "uri", "name", "value")
         )
         label_lookup = _prefetch_resource_labels(candidate_resources)
+
+        def _matches_search(resource) -> bool:
+            # Match against label
+            if search_lower in (label_lookup.get(resource.id, "") or "").lower():
+                return True
+            # Match against full URI
+            uri = (resource.uri or "").lower()
+            if search_lower in uri:
+                return True
+            # Match against project ID (last segment of URI)
+            project_id = uri.rsplit("/", 1)[-1] if uri else ""
+            if search_lower in project_id:
+                return True
+            return False
+
         matching_ids = [
             resource.id
             for resource in candidate_resources
-            if search_lower in (label_lookup.get(resource.id, "") or "").lower()
-            or search_lower in (resource.uri or "").lower()
+            if _matches_search(resource)
         ]
         if matching_ids:
             base_projects_qs = base_projects_qs.filter(id__in=matching_ids)
