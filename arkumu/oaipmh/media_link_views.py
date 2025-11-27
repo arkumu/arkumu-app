@@ -1361,6 +1361,95 @@ def oai_media_link_add(request):
 
 
 @general_login_required
+@require_http_methods(["POST"])
+def oai_media_link_add_bulk(request):
+    """Add multiple digital objects to a project at once."""
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
+
+    project_uri = (request.POST.get('project_uri') or '').strip()
+    digital_uris_raw = (request.POST.get('digital_uris') or '').strip()
+
+    if not project_uri:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Project URI is required.</div>")
+    if not digital_uris_raw:
+        return HttpResponseBadRequest("<div class='alert alert-error'>At least one digital object URI is required.</div>")
+
+    # Parse digital URIs (one per line)
+    digital_uris = [uri.strip() for uri in digital_uris_raw.splitlines() if uri.strip()]
+    if not digital_uris:
+        return HttpResponseBadRequest("<div class='alert alert-error'>At least one digital object URI is required.</div>")
+
+    # Look up project
+    project = Resource.objects.filter(
+        organization=organization,
+        uri=project_uri,
+        resource_type=ResourceType.ENTITY,
+    ).first()
+    if not project:
+        return HttpResponseBadRequest(f"<div class='alert alert-error'>Project not found: {escape(project_uri)}</div>")
+
+    # Process each digital object
+    created_count = 0
+    skipped_count = 0
+    not_found_uris = []
+
+    for digital_uri in digital_uris:
+        digital_object = Resource.objects.filter(
+            uri=digital_uri,
+            resource_type=ResourceType.ENTITY,
+        ).first()
+
+        if not digital_object:
+            not_found_uris.append(digital_uri)
+            continue
+
+        exists = OAIProjectMediaLink.objects.filter(
+            project=project,
+            digital_object=digital_object,
+        ).exists()
+
+        if exists:
+            skipped_count += 1
+            continue
+
+        OAIProjectMediaLink.objects.create(
+            project=project,
+            digital_object=digital_object,
+            source=OAIProjectMediaLink.SOURCE_MANUAL,
+            last_reviewed_by=request.user if request.user.is_authenticated else None,
+            last_reviewed_at=timezone.now(),
+        )
+        created_count += 1
+
+    # Build result message
+    if created_count > 0:
+        messages.success(request, f"Created {created_count} link(s) for project.")
+    if skipped_count > 0:
+        messages.info(request, f"Skipped {skipped_count} already linked object(s).")
+    if not_found_uris:
+        messages.warning(request, f"Digital objects not found: {', '.join(not_found_uris[:5])}" +
+                        (f" (+{len(not_found_uris) - 5} more)" if len(not_found_uris) > 5 else ""))
+
+    # Ensure project has publication record
+    OAIProjectPublication.objects.get_or_create(project=project)
+
+    # Return updated panel
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        page_number=1,
+    )
+    panel_context['include_summary_partial'] = True
+    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
+
+
+@general_login_required
 @require_http_methods(["GET"])
 def oai_media_link_seed_preview(request):
     organization = _resolve_organization_by_code(request.GET.get('organization'))
