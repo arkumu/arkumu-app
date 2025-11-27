@@ -4,11 +4,12 @@
     {% with mode=view_mode|default:'project' %}
       <div class="flex justify-between items-center gap-4">
         <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
-          <span><span class="font-semibold">{{ summary.available_project_count }}</span> projects</span>
-          <span><span class="font-semibold text-success">{{ summary.has_files_count }}</span> with files</span>
-          <span><span class="font-semibold text-info">{{ summary.oai_approved_count }}</span> OAI approved</span>
-          <span><span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects</span>
-          <span><span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale</span>
+          <span class="cursor-help" title="Total projects in this organization's scope"><span class="font-semibold">{{ summary.total_project_count }}</span> projects</span>
+          <span class="cursor-help" title="Projects that have at least one digital object link"><span class="font-semibold text-secondary">{{ summary.projects_with_links_count }}</span> linked</span>
+          <span class="cursor-help" title="Projects with harvestable files (non-stale links)"><span class="font-semibold text-success">{{ summary.has_files_count }}</span> with files</span>
+          <span class="cursor-help" title="Projects approved for OAI-PMH harvesting"><span class="font-semibold text-info">{{ summary.oai_approved_count }}</span> OAI approved</span>
+          <span class="cursor-help" title="Total digital object links across all projects"><span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects</span>
+          <span class="cursor-help" title="Links marked as stale (source file may have changed or been removed)"><span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale</span>
         </div>
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2 text-xs">
