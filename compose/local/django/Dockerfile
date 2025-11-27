@@ -32,9 +32,11 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV BUILD_ENV=${BUILD_ENVIRONMENT}
 WORKDIR ${APP_HOME}
 
-# devcontainer dependencies and utils
-RUN apt-get update && apt-get install --no-install-recommends -y \
-    sudo git bash-completion nano ssh
+# devcontainer dependencies and utils (force IPv4 to avoid mirror stalls)
+RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
+    && apt-get install --no-install-recommends -y \
+    sudo git bash-completion nano ssh \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/archives/partial/*
 
 # Create devcontainer user and add it to sudoers
 RUN groupadd --gid 1000 dev-user \
@@ -42,8 +44,9 @@ RUN groupadd --gid 1000 dev-user \
     && echo dev-user ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/dev-user \
     && chmod 0440 /etc/sudoers.d/dev-user
 
-# Install required system dependencies
-RUN apt-get update && apt-get install --no-install-recommends -y \
+# Install required system dependencies (force IPv4 to avoid mirror stalls)
+RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
+    && apt-get install --no-install-recommends -y \
     # psycopg dependencies
     libpq-dev \
     wait-for-it \

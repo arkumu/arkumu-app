@@ -30,6 +30,8 @@ services:
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_DET: /rosetta/hfmdt/sandbox/input/arkumu/daten
+      OAI_ROSETTA_CURATED_PREFIX_HMT: /rosetta/hfmt/sandbox/input/arkumu/daten
+      OAI_ROSETTA_CURATED_PREFIX_KHM: /rosetta/khm/sandbox/input/arkumu/daten
     ports:
       - '127.0.0.1:8000:8000'
     command: /start
@@ -93,6 +95,8 @@ services:
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_DET: /rosetta/hfmdt/sandbox/input/arkumu/daten
+      OAI_ROSETTA_CURATED_PREFIX_HMT: /rosetta/hfmt/sandbox/input/arkumu/daten
+      OAI_ROSETTA_CURATED_PREFIX_KHM: /rosetta/khm/sandbox/input/arkumu/daten
     command: /bin/sh -c "python manage.py run_huey"
     networks:
       - arkumu_dev_network

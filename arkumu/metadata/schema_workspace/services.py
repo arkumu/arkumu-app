@@ -30,6 +30,7 @@ from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.resources import ClassResource, EntityResource, PropertyResource
 from arkumu.metadata.utils.uri_placeholders import decode_placeholder_uri
 from arkumu.users.models import Organization
+from arkumu.storage.models import S3FileObject
 
 
 def generate_auto_id(dataset_name: str) -> str:
@@ -1299,6 +1300,14 @@ class SchemaWorkspaceService:
                     str(value),
                     datatype,
                 )
+
+            # Link S3FileObject to digital object resource if dateipfad was saved
+            if dataset_name == "Digitales_Objekt":
+                logger.info(f"Saving Digitales_Objekt: {entity_resource.uri}, has dateipfad: {'dateipfad' in entity_data}")
+                if "dateipfad" in entity_data or "dateiname" in entity_data:
+                    logger.info(f"Attempting to link S3FileObject for {entity_resource.uri}")
+                    self._link_s3_file_to_resource(entity_resource, entity_data)
+
         return entity_uri, created
 
     # ------------------------------------------------------------------ #
@@ -1435,6 +1444,83 @@ class SchemaWorkspaceService:
                 },
             )
         return PropertyResource(resource)
+
+    def _link_s3_file_to_resource(
+        self,
+        entity_resource: EntityResource,
+        entity_data: Dict[str, Any]
+    ) -> None:
+        """
+        Link S3FileObject to the digital object resource by matching dateipfad to s3_key.
+
+        This is called when saving a Digitales_Objekt to automatically establish
+        the connection between the metadata layer (Resource/Triple) and storage layer
+        (S3FileObject), enabling OAI-PMH harvesting to recognize files.
+
+        Args:
+            entity_resource: The digital object Resource being saved
+            entity_data: Dict containing form data including 'dateipfad'
+        """
+        dateipfad = entity_data.get('dateipfad', '').strip()
+
+        if not dateipfad:
+            logger.debug(
+                f"No dateipfad provided for {entity_resource.uri}, skipping S3 link"
+            )
+            return
+
+        # Normalize path: remove leading/trailing slashes, convert backslashes
+        normalized_path = dateipfad.replace('\\', '/').replace('//', '/').strip('/')
+
+        # Query S3FileObject by matching s3_key to dateipfad
+        # S3FileObject.s3_key may have 'data/fuk/' prefix or other variations
+        s3_qs = S3FileObject.objects.filter(
+            status__in=['completed', 'verified'],
+        ).exclude(
+            s3_key__isnull=True
+        ).exclude(
+            s3_key__exact=''
+        )
+
+        # Filter by organization if available
+        if self.organization:
+            s3_qs = s3_qs.filter(organization=self.organization.code)
+
+        # Try exact match first
+        matching_files = list(s3_qs.filter(s3_key=normalized_path)[:1])
+
+        # If no exact match, try with variations (with/without org prefix)
+        if not matching_files:
+            # Try matching the end of s3_key (in case it has prefixes like 'data/fuk/')
+            matching_files = list(s3_qs.filter(s3_key__endswith=normalized_path)[:2])
+
+        if not matching_files:
+            logger.debug(
+                f"No S3FileObject found for dateipfad '{normalized_path}' "
+                f"(organization: {self.organization.code if self.organization else 'any'})"
+            )
+            return
+
+        if len(matching_files) > 1:
+            logger.warning(
+                f"Multiple S3FileObjects found for dateipfad '{normalized_path}'. "
+                f"Using first match: {matching_files[0].s3_key}"
+            )
+
+        s3file = matching_files[0]
+
+        # Link the S3FileObject to this resource if not already linked
+        if s3file.related_resource_id != entity_resource.id:
+            s3file.related_resource_id = entity_resource.id
+            s3file.save(update_fields=['related_resource'])
+            logger.info(
+                f"Linked S3FileObject {s3file.id} ({s3file.s3_key}) "
+                f"to Resource {entity_resource.uri}"
+            )
+        else:
+            logger.debug(
+                f"S3FileObject {s3file.id} already linked to {entity_resource.uri}"
+            )
 
     def _get_join_entity_records(
         self,

@@ -282,7 +282,10 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                 {
                     "name": "Digitales Objekt",
                     "label": "Digitale Objekte",
-                    "search_property": "Titel",
+                    # Prefer human-friendly labels so configuration
+                    # works across organizations with different local URIs.
+                    # We search primarily by title and filename.
+                    "search_property": ["Titel", "Dateiname"],
                 },
             ],
         },
@@ -594,6 +597,40 @@ SIMPLIFIED_FIELD_PROPS: Dict[str, Dict[str, Dict[str, Any]]] = {
     dataset: _extract_field_config(sections)
     for dataset, sections in SIMPLIFIED_SECTION_CONFIG.items()
 }
+
+def _configured_search_properties(field_config: Dict[str, Any]) -> List[str]:
+    value = field_config.get("search_property")
+    if not value:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if item]
+    return [str(value)]
+
+
+def _filter_properties_for_config(
+    properties: List[Dict[str, str]],
+    configured_tokens: List[str],
+) -> List[Dict[str, str]]:
+    if not configured_tokens:
+        return properties
+
+    normalized_tokens = [token.lower() for token in configured_tokens]
+    filtered: List[Dict[str, str]] = []
+    seen_keys: set[tuple] = set()
+
+    for token in normalized_tokens:
+        for prop in properties:
+            label = str(prop.get("label") or "").lower()
+            column = str(prop.get("column") or "").lower()
+            uri_value = str(prop.get("uri") or "").lower()
+            if label == token or column == token or uri_value == token:
+                prop_key = (prop.get("uri"), prop.get("label"), prop.get("column"))
+                if prop_key not in seen_keys:
+                    filtered.append(prop)
+                    seen_keys.add(prop_key)
+                break
+
+    return filtered or properties
 
 
 def _ensure_project_link_field(metadata: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -1546,25 +1583,25 @@ def _enrich_fk_metadata(
 
                 # Get configured search_property from field config
                 field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
-                configured_search_property = field_config.get("search_property")
+                configured_props = _configured_search_properties(field_config)
 
-                # If search_property is configured, only include that one property
-                if configured_search_property:
-                    filtered_properties = [
-                        prop for prop in properties
-                        if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property
-                    ]
-                    if filtered_properties:
-                        meta["search_properties"] = filtered_properties
+                if configured_props:
+                    filtered_properties = _filter_properties_for_config(properties, configured_props)
+                    if filtered_properties != properties:
                         meta["search_property_configured"] = True
-                        logger.info(f"🔒 Locked search to configured property '{configured_search_property}' for {field.name}")
-                    else:
-                        # Configured property not found, show all but warn
-                        meta["search_properties"] = properties
-                        logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found for {field.name}")
-                else:
-                    # No configuration, show all properties
-                    meta["search_properties"] = properties
+                        first_prop = filtered_properties[0]
+                        if first_prop.get("uri"):
+                            meta["selected_property"] = first_prop["uri"]
+                        logger.info(
+                            f"🔒 Locked search to configured properties {configured_props} for {field.name}"
+                        )
+                    elif filtered_properties == properties:
+                        logger.warning(
+                            f"⚠️  Configured search_property {configured_props} not found for {field.name}"
+                        )
+                    properties = filtered_properties
+
+                meta["search_properties"] = properties
             except ValueError:
                 logger.warning(f"Could not load schema for target dataset: {target_dataset}")
                 meta["search_properties"] = []
@@ -1590,6 +1627,12 @@ def _enrich_fk_metadata(
             base_params = {"dataset": dataset_name, "column": field.name}
             base_url = f"{base_suggestion_url}?{urlencode(base_params)}"
             meta["base_suggestion_url"] = base_url
+            logger.info(
+                "🔗 Join field '%s': suggestion endpoint=%s (dataset=%s)",
+                field.name,
+                base_url,
+                dataset_name,
+            )
 
         widget_name = str(meta.get("widget") or "")
         if widget_name != "TripleCreatorWidget":
@@ -1614,20 +1657,24 @@ def _enrich_fk_metadata(
         if widget_name == "TripleCreatorWidget":
             # Get configured search_property from field config
             field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
-            configured_search_property = field_config.get("search_property")
+            configured_props = _configured_search_properties(field_config)
 
             # Ensure display_property is set for all triple creator widgets
             if not meta.get("display_property"):
-                if configured_search_property:
-                    # Look up the property URI for the configured search property name
+                if configured_props:
                     search_props = meta.get("search_properties", [])
-                    for prop in search_props:
-                        if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property:
-                            meta["display_property"] = prop.get("uri")
-                            logger.info(f"✅ Using configured search_property '{configured_search_property}' -> {prop.get('uri')}")
-                            break
+                    filtered_props = _filter_properties_for_config(search_props, configured_props)
+                    if filtered_props:
+                        meta["search_properties"] = filtered_props
+                        meta["search_property_configured"] = True
+                        meta["display_property"] = filtered_props[0].get("uri")
+                        logger.info(
+                            f"✅ Using configured search_property {configured_props} -> {filtered_props[0].get('uri')}"
+                        )
                     if not meta.get("display_property"):
-                        logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found in search_properties")
+                        logger.warning(
+                            f"⚠️  Configured search_property {configured_props} not found in search_properties"
+                        )
                         meta["display_property"] = _select_display_property(meta)
                 else:
                     # Fallback to heuristic selection
@@ -1721,19 +1768,24 @@ def _enrich_fk_metadata(
 
             # Get configured search_property from field config
             field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
-            configured_search_property = field_config.get("search_property")
+            configured_props = _configured_search_properties(field_config)
 
             display_property_uri = None
-            if configured_search_property:
-                # Look up the property URI for the configured search property name
+            if configured_props:
                 search_props = meta.get("search_properties", [])
-                for prop in search_props:
-                    if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property:
-                        display_property_uri = prop.get("uri")
-                        logger.info(f"✅ Using configured search_property '{configured_search_property}' for {field.name}")
-                        break
+                filtered_props = _filter_properties_for_config(search_props, configured_props)
+                if filtered_props:
+                    meta["search_properties"] = filtered_props
+                    meta["search_property_configured"] = True
+                    display_property_uri = filtered_props[0].get("uri")
+                    if display_property_uri:
+                        logger.info(
+                            f"✅ Using configured search_property {configured_props} for {field.name}"
+                        )
                 if not display_property_uri:
-                    logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found, falling back to heuristic")
+                    logger.warning(
+                        f"⚠️  Configured search_property {configured_props} not found, falling back to heuristic"
+                    )
                     display_property_uri = _select_display_property(meta)
             else:
                 # Fallback to heuristic selection
@@ -1781,22 +1833,27 @@ def _enrich_fk_metadata(
 
             # Get configured search_property from field config
             field_config = SIMPLIFIED_FIELD_PROPS.get(dataset_name, {}).get(field.name, {})
-            configured_search_property = field_config.get("search_property")
+            configured_props = _configured_search_properties(field_config)
 
             # Use configured search property if available
             if not display_prop_uri and target_dataset:
-                if configured_search_property:
-                    # Look up the property URI for the configured search property name
+                if configured_props:
                     search_props = meta.get("search_properties", [])
-                    for prop in search_props:
-                        if prop.get("label") == configured_search_property or prop.get("column") == configured_search_property:
-                            display_prop_uri = prop.get("uri")
-                            meta["display_property"] = display_prop_uri
-                            meta["display_property_label"] = prop.get("label")
-                            logger.info(f"✅ Using configured search_property '{configured_search_property}' for {field.name}")
-                            break
+                    filtered_props = _filter_properties_for_config(search_props, configured_props)
+                    if filtered_props:
+                        meta["search_properties"] = filtered_props
+                        meta["search_property_configured"] = True
+                        first_prop = filtered_props[0]
+                        display_prop_uri = first_prop.get("uri")
+                        meta["display_property"] = display_prop_uri
+                        meta["display_property_label"] = first_prop.get("label")
+                        logger.info(
+                            f"✅ Using configured search_property {configured_props} for {field.name}"
+                        )
                     if not display_prop_uri:
-                        logger.warning(f"⚠️  Configured search_property '{configured_search_property}' not found, falling back to heuristic")
+                        logger.warning(
+                            f"⚠️  Configured search_property {configured_props} not found, falling back to heuristic"
+                        )
 
                 # Fallback to auto-select best display property if not set
                 if not display_prop_uri:

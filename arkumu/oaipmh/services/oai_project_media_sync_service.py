@@ -10,10 +10,14 @@ from typing import Dict, Iterable, List, Optional, Sequence
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource, ResourceType
+from arkumu.metadata.models.triples import Triple
+from arkumu.metadata.canonical import canonical_uri
 from arkumu.oaipmh.models import OAIProjectMediaLink
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
+from arkumu.users.models import Organization
 
 from .oai_project_assembler import AssemblyContext, OAIProjectAssembler
 
@@ -27,6 +31,8 @@ class MediaLinkCandidate:
 
     resource: Resource
     source: str
+    uri: Optional[str]
+    path: Optional[str]
 
 
 @dataclass
@@ -50,19 +56,42 @@ class OAIProjectMediaSyncService:
 
     def __init__(self, *, assembler: Optional[OAIProjectAssembler] = None) -> None:
         self._assembler = assembler or OAIProjectAssembler()
+        self._digital_predicate_uri = canonical_uri("digital_object")
 
     # ------------------------------------------------------------------
-    def sync_project(self, project: Resource) -> SyncResult:
+    def sync_project(
+        self,
+        project: Resource,
+        *,
+        record: Optional[ProjectRecord] = None,
+    ) -> SyncResult:
         """Discover and upsert curated links for a single project resource."""
 
         if not isinstance(project, Resource):
             raise TypeError("sync_project expects a Resource instance")
 
-        record = self._assemble_record(project)
-        if record is None:
-            return SyncResult(skipped=1)
+        organization: Organization = getattr(project, "organization", None)
+        org_code = (getattr(organization, "code", None) or "").strip().lower()
 
-        candidates = self._candidates_from_record(record, project)
+        candidates: List[MediaLinkCandidate] = []
+
+        # For KHM/HMT, prefer pre-materialized project→digital triples to avoid full assembly.
+        if org_code in {"khm", "hmt"}:
+            candidates = self._candidates_from_direct_triples(project)
+            if not candidates:
+                logger.warning(
+                    "Media link seed: no materialized project→digital triples for %s (%s); skipping",
+                    getattr(project, "uri", None) or project.id,
+                    org_code,
+                )
+                return SyncResult(skipped=1)
+        else:
+            if record is None:
+                record = self._assemble_record(project)
+            if record is None:
+                return SyncResult(skipped=1)
+            candidates = self._candidates_from_record(record, project)
+
         if not candidates:
             return self._mark_project_stale(project)
 
@@ -110,9 +139,99 @@ class OAIProjectMediaSyncService:
                 obj.uri = resource.uri
 
             source = self._normalize_source(getattr(obj, "source", None))
-            candidates.append(MediaLinkCandidate(resource=resource, source=source))
+            candidates.append(
+                MediaLinkCandidate(
+                    resource=resource,
+                    source=source,
+                    uri=getattr(obj, "uri", None),
+                    path=getattr(obj, "path", None),
+                )
+            )
 
         return candidates
+
+    def _candidates_from_shared_subject_triples(
+        self,
+        project: Resource,
+    ) -> List[MediaLinkCandidate]:
+        """Return candidates from shared-subject project/digital edges (KHM)."""
+
+        org = getattr(project, "organization", None)
+        if not org:
+            return []
+
+        # Find bridge rows that point to this project via project predicate, then grab their digital edges.
+        bridge_subject_ids = set(
+            Triple.objects.filter(
+                predicate__canonical_uri=canonical_uri("project"),
+                object=project,
+            ).values_list("subject_id", flat=True)
+        )
+        if not bridge_subject_ids:
+            return []
+
+        qs = Triple.objects.filter(
+            subject_id__in=bridge_subject_ids,
+            predicate__canonical_uri=self._digital_predicate_uri,
+            object__resource_type=ResourceType.ENTITY,
+        ).select_related("object")
+
+        results: List[MediaLinkCandidate] = []
+        for triple in qs:
+            digital = getattr(triple, "object", None)
+            subject = getattr(triple, "subject", None)
+            if not digital or not subject:
+                continue
+            # Shared-subject rows carry project_id in their own edges.
+            project_id = str(subject.id)
+            if project_id != str(project.id):
+                continue
+            results.append(
+                MediaLinkCandidate(
+                    resource=digital,
+                    source=OAIProjectMediaLink.SOURCE_PROJECT,
+                    uri=getattr(digital, "uri", None),
+                    path=getattr(digital, "value", None),
+                )
+            )
+
+        return results
+
+    def _candidates_from_direct_triples(self, project: Resource) -> List[MediaLinkCandidate]:
+        """Return candidates from direct project→digital-object triples (materialized path)."""
+
+        org = getattr(project, "organization", None)
+        if not org:
+            return []
+
+        digital_uri = self._digital_predicate_uri
+
+        triples = (
+            Triple.objects.filter(
+                subject_id=project.id,
+                object__resource_type=ResourceType.ENTITY,
+            )
+            .filter(
+                Q(predicate__canonical_uri=digital_uri)
+                | Q(predicate__uri=digital_uri)
+            )
+            .select_related("object")
+        )
+
+        results: List[MediaLinkCandidate] = []
+        for triple in triples:
+            digital = getattr(triple, "object", None)
+            if not digital:
+                continue
+            results.append(
+                MediaLinkCandidate(
+                    resource=digital,
+                    source=OAIProjectMediaLink.SOURCE_PROJECT,
+                    uri=getattr(digital, "uri", None),
+                    path=getattr(digital, "value", None),
+                )
+            )
+        return results
 
     # ------------------------------------------------------------------
     def _ensure_digital_object_resource(
@@ -227,24 +346,54 @@ class OAIProjectMediaSyncService:
                 .filter(project=project)
             )
         }
+        existing_by_uri: Dict[str, OAIProjectMediaLink] = {}
+        existing_by_value: Dict[str, OAIProjectMediaLink] = {}
+        for link in existing_links.values():
+            digital = getattr(link, "digital_object", None)
+            if not digital:
+                continue
+            uri = getattr(digital, "uri", None)
+            if uri and uri not in existing_by_uri:
+                existing_by_uri[uri] = link
+            value = getattr(digital, "value", None)
+            if value:
+                normalized_value = value.strip()
+                if normalized_value and normalized_value not in existing_by_value:
+                    existing_by_value[normalized_value] = link
 
         next_order = 1
         if existing_links:
             next_order = max((link.order_index or 0) for link in existing_links.values()) + 1
 
         seen: set[UUID] = set()
+        seen_uris: set[str] = set()
+        seen_paths: set[str] = set()
         created = 0
         refreshed = 0
 
         for candidate in candidates:
             digital_pk = candidate.resource.id
-            seen.add(digital_pk)
+            candidate_uri = (candidate.uri or getattr(candidate.resource, "uri", None) or "").strip()
+            candidate_path = (candidate.path or getattr(candidate.resource, "value", None) or "").strip()
+            if candidate_uri:
+                seen_uris.add(candidate_uri)
+            if candidate_path:
+                seen_paths.add(candidate_path)
+
             link = existing_links.get(digital_pk)
+            if link is None and candidate_uri:
+                link = existing_by_uri.get(candidate_uri)
+            if link is None and candidate_path:
+                link = existing_by_value.get(candidate_path)
+
+            if link is None:
+                seen.add(digital_pk)
+            else:
+                seen.add(link.digital_object_id)
             if link is None:
                 OAIProjectMediaLink.objects.create(
                     project=project,
                     digital_object=candidate.resource,
-                    status=OAIProjectMediaLink.STATUS_PENDING,
                     source=candidate.source,
                     order_index=next_order,
                 )
@@ -264,7 +413,7 @@ class OAIProjectMediaSyncService:
                 link.save(update_fields=[*updates, "updated_at"])
                 refreshed += 1
 
-        stale = self._mark_missing_as_stale(project, existing_links, seen)
+        stale = self._mark_missing_as_stale(project, existing_links, seen, seen_uris, seen_paths)
         return SyncResult(created=created, refreshed=refreshed, stale=stale)
 
     def _mark_missing_as_stale(
@@ -272,15 +421,24 @@ class OAIProjectMediaSyncService:
         project: Resource,
         existing: Dict[UUID, OAIProjectMediaLink],
         seen: Iterable[UUID],
+        seen_uris: Iterable[str],
+        seen_paths: Iterable[str],
     ) -> int:
         seen_ids = {pk for pk in seen}
-        stale_links = [
-            link
-            for pk, link in existing.items()
-            if pk not in seen_ids
-            and not link.is_stale
-            and link.status == OAIProjectMediaLink.STATUS_APPROVED
-        ]
+        seen_uri_set = {uri.strip() for uri in seen_uris if uri and uri.strip()}
+        seen_path_set = {path.strip() for path in seen_paths if path and path.strip()}
+        stale_links = []
+        for pk, link in existing.items():
+            if pk in seen_ids or link.is_stale:
+                continue
+            digital = getattr(link, "digital_object", None)
+            link_uri = getattr(digital, "uri", None) if digital else None
+            link_value = getattr(digital, "value", None) if digital else None
+            if link_uri and link_uri in seen_uri_set:
+                continue
+            if link_value and link_value.strip() in seen_path_set:
+                continue
+            stale_links.append(link)
         if not stale_links:
             return 0
 
@@ -295,7 +453,10 @@ class OAIProjectMediaSyncService:
     def _mark_project_stale(self, project: Resource) -> SyncResult:
         links = (
             OAIProjectMediaLink.objects.select_for_update()
-            .filter(project=project, status=OAIProjectMediaLink.STATUS_APPROVED, is_stale=False)
+            .filter(
+                project=project,
+                is_stale=False,
+            )
         )
         count = 0
         for link in links:

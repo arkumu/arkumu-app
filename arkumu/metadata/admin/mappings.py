@@ -1,19 +1,30 @@
+import json
+from typing import Dict, List, Optional
+
 from django.contrib import admin, messages
-from django.utils.html import format_html
-from django.utils.translation import gettext_lazy as _
-from django.utils.safestring import mark_safe
 from django.contrib.admin import SimpleListFilter
 from django.db import transaction
 from django.db.models import Count, Q
-from django.urls import reverse
+from django.http import HttpRequest, HttpResponse
+from django.template.response import TemplateResponse
+from django.shortcuts import redirect
+from django.urls import path, reverse
 from django.utils import timezone
-import json
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 
 from arkumu.metadata.models.mappings import Mapping, MappingSelectionAudit
 from arkumu.metadata.tasks import (
     create_promoted_manifest_task,
     promote_legacy_junctions_task,
 )
+from arkumu.metadata.derivations.kreuz_config import (
+    DerivationPattern,
+    iter_applicable_patterns,
+)
+from arkumu.metadata.services.derived_relationship_service import DerivedRelationshipService
+from arkumu.metadata.services.junction_pattern_service import JunctionPatternService
 
 
 class ValidationStatusFilter(SimpleListFilter):
@@ -72,24 +83,19 @@ class HasExecutionStatsFilter(SimpleListFilter):
 class MappingAdmin(admin.ModelAdmin):
     list_display = [
         'name',
+        'id_display',
         'organization_link',
-        'validation_status_badge',
         'active_status_badge',
         'dataset_count_display',
         'column_count_display',
         'relationship_count_display',
         'promoted_manifest_status',
-        'last_executed_display',
         'created_by_link',
         'created_at'
     ]
     
     list_filter = [
-        'validation_status',
-        ValidationStatusFilter,
-        HasExecutionStatsFilter,
         'created_at',
-        'last_executed',
         ('created_by', admin.RelatedOnlyFieldListFilter),
     ]
     
@@ -110,8 +116,9 @@ class MappingAdmin(admin.ModelAdmin):
         'promoted_manifest_status',
         'mapping_preview',
         'schema_manifest_preview',
-        'execution_stats_display',
         'last_executed_display',
+        'execution_stats_display',
+        'junction_patterns_link',
     ]
     
     fieldsets = (
@@ -148,7 +155,21 @@ class MappingAdmin(admin.ModelAdmin):
             ),
             'classes': ('collapse',),
         }),
+        (_('Derivation helpers'), {
+            'fields': ('junction_patterns_link',),
+        }),
     )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                '<path:object_id>/junction-patterns/',
+                self.admin_site.admin_view(self.junction_patterns_view),
+                name='metadata_mapping_junction_patterns',
+            ),
+        ]
+        return custom + urls
     
     def get_queryset(self, request):
         """Optimize queries with select_related."""
@@ -363,6 +384,197 @@ class MappingAdmin(admin.ModelAdmin):
             level=messages.SUCCESS,
         )
 
+    # ------------------------------------------------------------------
+    # Junction pattern admin views
+    # ------------------------------------------------------------------
+    def junction_patterns_view(self, request: HttpRequest, object_id: str) -> HttpResponse:
+        mapping = self.get_object(request, object_id)
+        if not mapping:
+            self.message_user(request, _("Mapping not found."), level=messages.ERROR)
+            return redirect('admin:metadata_mapping_changelist')
+
+        if request.method == "POST":
+            return self._handle_junction_patterns_post(request, mapping)
+
+        context = self._build_junction_patterns_context(request, mapping)
+        return TemplateResponse(
+            request,
+            "admin/metadata/mapping/junction_patterns.html",
+            context,
+        )
+
+    def _handle_junction_patterns_post(self, request: HttpRequest, mapping: Mapping) -> HttpResponse:
+        action = request.POST.get("action")
+        dataset_name = request.POST.get("dataset_name")
+
+        dataset_required_actions = {"remove_pattern", "adopt_pattern"}
+        if action in dataset_required_actions and not dataset_name:
+            self.message_user(request, _("Dataset missing."), level=messages.ERROR)
+            return redirect(reverse('admin:metadata_mapping_junction_patterns', args=[mapping.pk]))
+
+        if action == "remove_pattern":
+            pattern_name = request.POST.get("pattern_name")
+            if pattern_name and self._remove_manifest_pattern(mapping, dataset_name, pattern_name):
+                self.message_user(
+                    request,
+                    _("Removed pattern %(pattern)s from %(dataset)s") % {"pattern": pattern_name, "dataset": dataset_name},
+                    level=messages.SUCCESS,
+                )
+            else:
+                self.message_user(request, _("Pattern not found."), level=messages.WARNING)
+
+        elif action == "adopt_pattern":
+            pattern_name = request.POST.get("pattern_name")
+            pattern = self._find_proposed_pattern(mapping, dataset_name, pattern_name)
+            if pattern and self._add_manifest_pattern(mapping, dataset_name, pattern):
+                self.message_user(
+                    request,
+                    _("Added pattern %(pattern)s to %(dataset)s") % {"pattern": pattern_name, "dataset": dataset_name},
+                    level=messages.SUCCESS,
+                )
+            else:
+                self.message_user(request, _("Could not add pattern."), level=messages.ERROR)
+        elif action == "run_derivation":
+            dry_run = request.POST.get("dry_run") == "1"
+            stats = self._run_derivation(mapping, dry_run=dry_run)
+            if stats:
+                msg = _("Derivation complete: processed %(processed)d, created %(created)d")
+                self.message_user(
+                    request,
+                    msg % {"processed": stats.processed, "created": stats.created},
+                    level=messages.SUCCESS,
+                )
+        else:
+            self.message_user(request, _("Unsupported action."), level=messages.WARNING)
+
+        return redirect(reverse('admin:metadata_mapping_junction_patterns', args=[mapping.pk]))
+
+    def _build_junction_patterns_context(self, request: HttpRequest, mapping: Mapping) -> Dict[str, object]:
+        dataset_rows = self._dataset_rows(mapping, include_proposals=True)
+        return {
+            **self.admin_site.each_context(request),
+            "title": _("Junction patterns for %(mapping)s") % {"mapping": mapping.name},
+            "mapping": mapping,
+            "datasets": dataset_rows,
+            "opts": self.model._meta,
+            "change_url": reverse('admin:metadata_mapping_change', args=[mapping.pk]),
+        }
+
+    def _run_derivation(self, mapping: Mapping, *, dry_run: bool):
+        service = DerivedRelationshipService(
+            mapping.organization_id or "",
+            mapping_config=mapping.mapping_config,
+        )
+        return service.derive(dry_run=dry_run)
+
+    def _dataset_rows(self, mapping: Mapping, *, include_proposals: bool) -> List[Dict[str, object]]:
+        manifest = (mapping.mapping_config or {}).get("schema_manifest") or {}
+        service = JunctionPatternService(
+            mapping_config=mapping.mapping_config,
+            organization_code=mapping.organization_id,
+            include_static_patterns=False,
+        )
+        rows: List[Dict[str, object]] = []
+        for dataset_name in sorted(manifest.keys()):
+            dataset_entry = manifest[dataset_name]
+            canonical_predicates = sorted(self._collect_canonical_predicates(dataset_entry))
+            manifest_patterns = service.get_manifest_patterns(dataset_name)
+            proposals: List[DerivationPattern] = []
+            if include_proposals:
+                manifest_names = {pattern.name for pattern in manifest_patterns}
+                static_patterns = iter_applicable_patterns(
+                    mapping.organization_id or "",
+                    dataset_name,
+                    canonical_predicates,
+                )
+                proposals = [pattern for pattern in static_patterns if pattern.name not in manifest_names]
+
+            rows.append(
+                {
+                    "name": dataset_name,
+                    "canonical_predicates": canonical_predicates,
+                    "existing_patterns": manifest_patterns,
+                    "proposed_patterns": proposals,
+                }
+            )
+        return rows
+
+    def _find_proposed_pattern(self, mapping: Mapping, dataset_name: str, pattern_name: str) -> Optional[DerivationPattern]:
+        rows = self._dataset_rows(mapping, include_proposals=True)
+        for row in rows:
+            if row["name"] != dataset_name:
+                continue
+            for pattern in row["proposed_patterns"]:
+                if pattern.name == pattern_name:
+                    return pattern
+        return None
+
+    def _collect_canonical_predicates(self, dataset_entry: Dict[str, object]) -> set[str]:
+        predicates: set[str] = set()
+        properties = dataset_entry.get("properties") or {}
+        if isinstance(properties, dict):
+            for prop in properties.values():
+                if isinstance(prop, dict):
+                    canonical_uri = prop.get("canonical_uri")
+                    if canonical_uri:
+                        predicates.add(canonical_uri)
+        return predicates
+
+    def _add_manifest_pattern(self, mapping: Mapping, dataset_name: str, pattern: DerivationPattern) -> bool:
+        serialized = self._serialize_pattern(pattern)
+        config = mapping.mapping_config or {}
+        junction_config = config.setdefault("junction_patterns", {})
+        dataset_entry = junction_config.setdefault(dataset_name, {"patterns": []})
+        if isinstance(dataset_entry, list):
+            dataset_entry = {"patterns": dataset_entry}
+            junction_config[dataset_name] = dataset_entry
+
+        patterns = dataset_entry.setdefault("patterns", [])
+        if any(existing.get("name") == serialized["name"] for existing in patterns):
+            return False
+        patterns.append(serialized)
+        mapping.mapping_config = config
+        mapping.save(update_fields=["mapping_config"])
+        return True
+
+    def _remove_manifest_pattern(self, mapping: Mapping, dataset_name: str, pattern_name: str) -> bool:
+        config = mapping.mapping_config or {}
+        junction_config = config.get("junction_patterns") or {}
+        dataset_entry = junction_config.get(dataset_name)
+        patterns = None
+        if isinstance(dataset_entry, dict):
+            patterns = dataset_entry.get("patterns")
+        elif isinstance(dataset_entry, list):
+            patterns = dataset_entry
+
+        if not isinstance(patterns, list):
+            return False
+
+        initial_len = len(patterns)
+        patterns[:] = [pattern for pattern in patterns if pattern.get("name") != pattern_name]
+        if len(patterns) == initial_len:
+            return False
+
+        mapping.mapping_config = config
+        mapping.save(update_fields=["mapping_config"])
+        return True
+
+    def _serialize_pattern(self, pattern: DerivationPattern) -> Dict[str, object]:
+        return {
+            "name": pattern.name,
+            "description": pattern.description,
+            "required_properties": list(pattern.required_properties),
+            "recipes": [
+                {
+                    "subject_property": recipe.subject_property,
+                    "object_property": recipe.object_property,
+                    "predicate_uri": recipe.predicate_uri,
+                    "description": recipe.description,
+                }
+                for recipe in pattern.recipes
+            ],
+        }
+
     def _build_task_preview(self, scheduled_tasks):
         if not scheduled_tasks:
             return ""
@@ -409,6 +621,12 @@ class MappingAdmin(admin.ModelAdmin):
         return '-'
     created_by_link.short_description = _('Created By')
     created_by_link.admin_order_field = 'created_by'
+
+    def id_display(self, obj):
+        """Expose UUID for quick copy/use in management commands."""
+        return str(obj.id)
+    id_display.short_description = _('UUID')
+    id_display.admin_order_field = 'id'
     
     def mapping_preview(self, obj):
         """Display a formatted preview of the mapping configuration."""
@@ -518,6 +736,14 @@ class MappingAdmin(admin.ModelAdmin):
                 str(exc)
             )
     schema_manifest_preview.short_description = _('Schema Manifest')
+
+    def junction_patterns_link(self, obj):
+        if not obj or not obj.pk:
+            return _("Save mapping to manage junction patterns.")
+        url = reverse('admin:metadata_mapping_junction_patterns', args=[obj.pk])
+        return format_html('<a class="button" href="{}">{}</a>', url, _("Manage junction patterns"))
+
+    junction_patterns_link.short_description = _("Junction patterns")
 
     def execution_stats_display(self, obj):
         """Display execution statistics in a formatted way."""

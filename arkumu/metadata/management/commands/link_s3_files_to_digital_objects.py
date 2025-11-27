@@ -53,6 +53,12 @@ class Command(BaseCommand):
             action="store_true",
             help="Compute stats without writing changes to the database.",
         )
+        parser.add_argument(
+            "--verbose",
+            dest="verbose",
+            action="store_true",
+            help="Enable verbose logging to diagnose matching issues.",
+        )
 
     def handle(self, *args, **options):
         bucket = options["bucket"]
@@ -60,6 +66,7 @@ class Command(BaseCommand):
         batch_size = options["batch_size"]
         case_sensitive = options["case_sensitive"]
         dry_run = options["dry_run"]
+        verbose = options["verbose"]
 
         queryset = S3FileObject.objects.filter(
             related_resource__isnull=True,
@@ -94,7 +101,7 @@ class Command(BaseCommand):
         if dry_run:
             return
 
-        config = MatchingConfig(batch_size=batch_size, case_sensitive=case_sensitive)
+        config = MatchingConfig(batch_size=batch_size, case_sensitive=case_sensitive, verbose=verbose)
 
         matcher = FileResourceMatcherService(
             logger_func=lambda msg, level="info": self.stdout.write(msg),

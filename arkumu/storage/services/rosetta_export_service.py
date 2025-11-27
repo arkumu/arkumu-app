@@ -16,14 +16,23 @@ class RosettaExportService:
     """
     
     def __init__(self):
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_S3_REGION_NAME
-        )
+        # Get endpoint URL for S3-compatible storage (MinIO in dev, proper S3 in production)
+        endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', None)
+
+        # Build client config
+        client_config = {
+            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
+            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY,
+            'region_name': settings.AWS_S3_REGION_NAME,
+        }
+
+        if endpoint_url:
+            client_config['endpoint_url'] = endpoint_url
+
+        self.s3_client = boto3.client('s3', **client_config)
         self.bucket_name = settings.AWS_STORAGE_BUCKET_NAME
-        
+        self.endpoint_url = endpoint_url
+
         # Configuration for Rosetta exports
         self.url_expiry_days = getattr(settings, 'ROSETTA_URL_EXPIRY_DAYS', 7)
         self.max_file_size = getattr(settings, 'ROSETTA_MAX_FILE_SIZE', 10 * 1024**3)  # 10GB
@@ -77,15 +86,19 @@ class RosettaExportService:
         """
         if self.enable_acceleration:
             # Use S3 Transfer Acceleration endpoint
-            accelerated_client = boto3.client(
-                's3',
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                region_name=settings.AWS_S3_REGION_NAME,
-                config=boto3.session.Config(
+            client_config = {
+                'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
+                'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY,
+                'region_name': settings.AWS_S3_REGION_NAME,
+                'config': boto3.session.Config(
                     s3={'use_accelerate_endpoint': True}
                 )
-            )
+            }
+
+            if self.endpoint_url:
+                client_config['endpoint_url'] = self.endpoint_url
+
+            accelerated_client = boto3.client('s3', **client_config)
             
             presigned_url = accelerated_client.generate_presigned_url(
                 'get_object',

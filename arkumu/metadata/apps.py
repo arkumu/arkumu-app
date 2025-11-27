@@ -11,12 +11,10 @@ class MetadataConfig(AppConfig):
     def ready(self):
         """Import signals and perform startup tasks when the app is ready"""
         import arkumu.metadata.signals
-        from arkumu.metadata.tasks import ensure_cached_all_task
 
         # Only run cleanup on server startup, not during migrations or commands
         if self._is_server_startup():
             self._cleanup_orphaned_literals()
-            ensure_cached_all_task.schedule(delay=0)
 
     def _is_server_startup(self):
         """Check if this is a server startup (not migration, test, or management command)"""

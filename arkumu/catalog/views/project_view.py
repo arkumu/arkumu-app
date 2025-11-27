@@ -16,6 +16,7 @@ from arkumu.catalog.services.wikidata_service import WikidataService
 from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.projects import ProjectEvent, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
+from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ class ProjectView(LoginRequiredMixin, View):
     """Render a single project using the shared snapshot."""
 
     snapshot_service_class = ProjectSnapshotService
+    detail_service_class = ProjectDetailIndexService
     PROPERTY_METADATA_FIELDS: Sequence[Tuple[str, str]] = (
         ("dauer_hms", "Dauer (HH:MM:SS)"),
         ("dauer_freitext", "Dauer (Freitext)"),
@@ -167,20 +169,15 @@ class ProjectView(LoginRequiredMixin, View):
 
     @classmethod
     def _load_record(cls, projekt_uri: str) -> ProjectRecord:
-        snapshot_service = cls.snapshot_service_class()
-        snapshot = snapshot_service.get_cross_institutional_snapshot()
+        # Prefer the snapshot-free detail index to avoid global rebuilds
+        detail_service = cls.detail_service_class()
+        detail_record = detail_service.get_record(projekt_uri)
+        if detail_record:
+            logger.info("ProjectView: served via detail index (project_found=True)")
+            return detail_record
 
-        record = cls._find_record(snapshot.projects, projekt_uri)
-        logger.info(
-            "ProjectView: using snapshot %s (project_found=%s)",
-            snapshot.generated_at.isoformat(),
-            bool(record),
-        )
-
-        if not record:
-            raise LookupError(projekt_uri)
-
-        return record
+        logger.warning("ProjectView: project not found via detail index: %s", projekt_uri)
+        raise LookupError(projekt_uri)
 
     @staticmethod
     def _find_record(records: List[ProjectRecord], uri: str) -> Optional[ProjectRecord]:

@@ -1,114 +1,168 @@
 {% if summary.organization %}
-<div id="oai-media-links-summary-stats" class="flex-1 flex items-center justify-end gap-4" hx-swap-oob="innerHTML">
-  <div class="text-xs text-base-content/70">
-    <span class="font-semibold">{{ summary.available_project_count }}</span> projects
-  </div>
-  <div class="text-xs text-base-content/70">
-    <span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects
-  </div>
-  <div class="text-xs text-base-content/70">
-    <span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale
-  </div>
-  <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">View:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if view_mode != 'digital' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Projects
-    </button>
-    <button
-      class="btn btn-xs {% if view_mode == 'digital' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access={{ summary.project_access_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Digital Objects
-    </button>
-  </div>
-  <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">Status:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if summary.status_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status=all&project_access={{ summary.project_access_filter|default:'all' }}"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      All
-    </button>
-    {% for stat in summary.status_totals %}
-      <button
-        class="btn btn-xs {% if summary.status_filter == stat.status %}btn-active{% endif %}"
-        hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ stat.status }}&project_access={{ summary.project_access_filter|default:'all' }}"
-        hx-target="#oai-media-links-panel"
-        hx-swap="innerHTML"
-        hx-push-url="true"
-      >
-        {{ stat.label }}
-      </button>
-    {% endfor %}
-  </div>
-  <div class="divider divider-horizontal"></div>
-  <div class="text-xs font-semibold">Projects:</div>
-  <div class="btn-group">
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'all' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=all"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      All
-    </button>
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'private' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=private"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Private
-    </button>
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'restricted' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=restricted"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Restricted
-    </button>
-    <button
-      class="btn btn-xs {% if summary.project_access_filter == 'public' %}btn-active{% endif %}"
-      hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}&project_access=public"
-      hx-target="#oai-media-links-panel"
-      hx-swap="innerHTML"
-      hx-push-url="true"
-    >
-      Public
-    </button>
-  </div>
-</div>
-
 <div id="oai-media-links-summary" class="card bg-base-100 shadow" hx-swap-oob="innerHTML">
-  <div class="card-body py-3">
-    <div class="flex justify-end">
-      <button
-        class="btn btn-outline btn-primary btn-sm"
-        hx-get="{% url 'oai_admin:oai_media_link_seed_preview' %}?organization={{ summary.selected_org_code }}&status={{ summary.status_filter }}"
-        hx-target="#oai-media-links-seed-modal"
-        hx-swap="innerHTML"
-      >
-        Seed curated entries
-      </button>
-    </div>
+  <div class="card-body py-3 space-y-3">
+    {% with mode=view_mode|default:'project' %}
+      <div class="flex justify-between items-center gap-4">
+        <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
+          <span><span class="font-semibold">{{ summary.available_project_count }}</span> projects</span>
+          <span><span class="font-semibold text-success">{{ summary.harvestable_project_count }}</span> harvestable</span>
+          <span><span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects</span>
+          <span><span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale</span>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="font-semibold">View:</span>
+            <div class="btn-group">
+              <button
+                class="btn btn-xs {% if mode != 'digital' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable={{ summary.harvestable_filter|default:'all' }}&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                Projects
+              </button>
+              <button
+                class="btn btn-xs {% if mode == 'digital' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_digital_view' %}?organization={{ summary.selected_org_code }}&project_access={{ summary.project_access_filter|default:'all' }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&shared=all&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                Digital objects
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2">
+              <form
+                method="post"
+                hx-post="{% url 'oai_admin:oai_media_link_seed_and_sync' %}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                class="flex"
+              >
+                {% csrf_token %}
+                <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+                <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+                <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+                <input type="hidden" name="harvestable" value="{{ summary.harvestable_filter|default:'all' }}">
+                <input type="hidden" name="page" value="1">
+                <input type="hidden" name="search" value="{{ search_query|default:'' }}">
+                <button type="submit" class="btn btn-outline btn-primary btn-sm" title="Regular sync: Creates/updates curated project→digital-object links and auto-approves projects for OAI harvesting. Only processes projects changed since last sync (incremental).">
+                  Sync curated data
+                </button>
+              </form>
+              <form
+                method="post"
+                hx-post="{% url 'oai_admin:oai_media_link_seed_and_sync' %}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                class="flex"
+              >
+                {% csrf_token %}
+                <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+                <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+                <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+                <input type="hidden" name="harvestable" value="{{ summary.harvestable_filter|default:'all' }}">
+                <input type="hidden" name="page" value="1">
+                <input type="hidden" name="search" value="{{ search_query|default:'' }}">
+                <input type="hidden" name="force_full" value="1">
+                <button type="submit" class="btn btn-outline btn-warning btn-sm" title="Full refresh: Same as regular sync but processes ALL projects regardless of when they changed. Use for initial setup, after bulk imports, or when data is out of sync. Slower than regular sync.">
+                  Force full sync
+                </button>
+              </form>
+              <form
+                method="post"
+                hx-post="{% url 'oai_admin:oai_publication_sync' %}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                class="flex"
+              >
+                {% csrf_token %}
+                <input type="hidden" name="organization" value="{{ summary.selected_org_code }}">
+                <input type="hidden" name="project_access" value="{{ summary.project_access_filter|default:'all' }}">
+                <input type="hidden" name="oai_publish" value="{{ summary.oai_publish_filter|default:'all' }}">
+                <input type="hidden" name="page" value="1">
+                <button type="submit" class="btn btn-outline btn-secondary btn-sm" title="Approval-only sync: Re-evaluates which projects should be approved for OAI harvesting without updating curated links. Faster when you only need to update approval status after changing OAI publication rules.">
+                  Sync OAI project approvals
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if mode != 'digital' %}
+        <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/80">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold">Harvestable:</span>
+            <div class="btn-group">
+              <button
+                class="btn btn-xs {% if summary.harvestable_filter == 'all' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=all&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                All
+              </button>
+              <button
+                class="btn btn-xs {% if summary.harvestable_filter == 'harvestable' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=harvestable&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                Has files
+              </button>
+              <button
+                class="btn btn-xs {% if summary.harvestable_filter == 'non_harvestable' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&oai_publish={{ summary.oai_publish_filter|default:'all' }}&harvestable=non_harvestable&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                No files
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="font-semibold">OAI:</span>
+            <div class="btn-group">
+              <button
+                class="btn btn-xs {% if summary.oai_publish_filter == 'all' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&oai_publish=all&harvestable={{ summary.harvestable_filter|default:'all' }}&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                All
+              </button>
+              <button
+                class="btn btn-xs {% if summary.oai_publish_filter == 'approved' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&oai_publish=approved&harvestable={{ summary.harvestable_filter|default:'all' }}&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                Approved
+              </button>
+              <button
+                class="btn btn-xs {% if summary.oai_publish_filter == 'pending' %}btn-active{% endif %}"
+                hx-get="{% url 'oai_admin:oai_media_links_panel' %}?organization={{ summary.selected_org_code }}&oai_publish=pending&harvestable={{ summary.harvestable_filter|default:'all' }}&search={{ search_query|default:'' }}"
+                hx-target="#oai-media-links-panel"
+                hx-swap="innerHTML"
+                hx-push-url="true"
+              >
+                Pending
+              </button>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    {% endwith %}
   </div>
 </div>
 {% endif %}

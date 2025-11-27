@@ -4,9 +4,28 @@
       {{ link.digital_object_display_label|default:link.digital_object.name|default:link.digital_object.value|default:"Untitled" }}
     </div>
     <div class="font-mono text-[10px] text-base-content/70 break-all">
-      <a href="{{ link.digital_object.uri }}" target="_blank" rel="noopener" class="link link-hover">{{ link.digital_object.uri }}</a>
+      <a
+        href="{% url 'metadata:resource_graph' link.digital_object.id %}"
+        target="_blank"
+        rel="noopener"
+        class="link link-hover"
+        title="Open digital object graph"
+      >
+        {{ link.digital_object.uri }}
+      </a>
     </div>
+    {% if link.has_s3_file and link.s3_key_preview %}
+      <div class="font-mono text-[10px] text-base-content/60 break-all">
+        {{ link.s3_key_preview }}
+      </div>
+    {% endif %}
     <div class="flex flex-wrap gap-1 mt-1">
+      {% if link.is_harvestable %}
+        <span class="badge badge-xs badge-success" title="This digital object is harvestable for OAI">H</span>
+      {% endif %}
+      {% if link.has_s3_file %}
+        <span class="badge badge-xs badge-info" title="{{ link.s3_key_preview }}">S3</span>
+      {% endif %}
       {% if link.is_stale %}
         <span class="badge badge-xs badge-warning">Stale</span>
       {% endif %}
@@ -20,26 +39,6 @@
   </div>
 
   <div class="flex flex-col gap-1 items-end">
-    <div class="badge badge-xs {% if link.status == 'approved' %}badge-success{% elif link.status == 'pending' %}badge-warning{% else %}badge-error{% endif %}">
-      {{ link.status }}
-    </div>
-    <form
-      hx-post="{% url 'oai_admin:oai_media_link_update' link.id %}"
-      hx-target="#project-{{ row.resource.id }}"
-      hx-swap="outerHTML"
-      hx-trigger="change from:select"
-    >
-      {% csrf_token %}
-      <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
-      <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
-      <input type="hidden" name="page" value="{{ current_page }}">
-      <input type="hidden" name="current_status" value="{{ link.status }}">
-      <select name="status" class="select select-bordered select-xs w-24">
-        <option value="approved" {% if link.status == 'approved' %}selected{% endif %}>approved</option>
-        <option value="pending" {% if link.status == 'pending' %}selected{% endif %}>pending</option>
-        <option value="rejected" {% if link.status == 'rejected' %}selected{% endif %}>rejected</option>
-      </select>
-    </form>
     <form
       hx-post="{% url 'oai_admin:oai_media_link_delete' link.id %}"
       hx-target="#project-{{ row.resource.id }}"
@@ -48,7 +47,6 @@
     >
       {% csrf_token %}
       <input type="hidden" name="organization" value="{{ row.selected_org_code }}">
-      <input type="hidden" name="status_filter" value="{{ summary.status_filter }}">
       <input type="hidden" name="page" value="{{ current_page }}">
       <button type="submit" class="btn btn-xs btn-error btn-outline">Del</button>
     </form>

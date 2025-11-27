@@ -51,17 +51,6 @@
           </svg>
           OAI METS
         </a>
-        <form method="post" action="{% url 'metadata:metadata_dashboard_external_sources_refresh' %}" class="inline">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-warning btn-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"
-                 stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-            </svg>
-            Reload External Sources
-          </button>
-        </form>
         <form method="post" action="{% url 'metadata:metadata_dashboard_preview_images_refresh' %}" class="inline">
           {% csrf_token %}
           <button type="submit" class="btn btn-warning btn-sm">
@@ -92,6 +81,35 @@
       </div>
       <p class="text-xs text-base-content/60 mt-3">
         Snapshot data loads from cache only. Use the cache warmers below when you need to rebuild it.
+      </p>
+    </div>
+
+    <div class="mb-8 p-4 bg-base-200 rounded-lg">
+      <h3 class="text-lg font-semibold mb-2">OAI Maintenance</h3>
+      <p class="text-sm text-base-content/70 mb-3">
+        Need to wipe curated media links and OAI approvals before reseeding? Pick an institution and clear both tables in one go.
+      </p>
+      <form method="post" action="{% url 'oai_admin:oai_media_link_clear_data' %}" class="flex flex-wrap items-center gap-3">
+        {% csrf_token %}
+        <label class="form-control w-full max-w-xs">
+          <div class="label"><span class="label-text text-xs">Organization</span></div>
+          <select name="organization" class="select select-bordered select-sm">
+            <option value="" disabled selected>Select organization</option>
+            {% for org in organizations_with_data %}
+              <option value="{{ org.code }}">{{ org.name }} ({{ org.code }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        <input type="hidden" name="project_access" value="all">
+        <input type="hidden" name="oai_publish" value="all">
+        <input type="hidden" name="harvestable" value="all">
+        <input type="hidden" name="search" value="">
+        <button type="submit" class="btn btn-error btn-sm" onclick="return confirm('This deletes all curated media links and OAI approvals for the selected organization. Continue?');">
+          Clear OAI data
+        </button>
+      </form>
+      <p class="text-xs text-base-content/60 mt-2">
+        This action cannot be undone. Run the curated sync again afterward to repopulate `OAIProjectMediaLink` and `OAIProjectPublication`.
       </p>
     </div>
 
@@ -218,6 +236,24 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M20 4l-6 6M4 20l6-6" />
                             </svg>
                             Refresh Graph
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="bg-base-100 rounded-lg shadow-sm p-4 flex flex-col gap-2">
+                <h4 class="text-sm font-semibold">External Sources Cache</h4>
+                <p class="text-xs text-base-content/70">
+                    Refresh the Wikidata-backed cache that powers external source lookups. Use only when new
+                    authorities need to be pulled in or when the background job reports failures.
+                </p>
+                <div class="flex flex-wrap gap-2 pt-2">
+                    <form method="post" action="{% url 'metadata:metadata_dashboard_external_sources_refresh' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-primary btn-sm" title="Queue a refresh of the external sources cache">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Refresh External Sources
                         </button>
                     </form>
                 </div>

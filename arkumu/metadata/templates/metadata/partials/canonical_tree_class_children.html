@@ -1,0 +1,37 @@
+{% if class_info %}
+    {% if class_info.properties %}
+        <div class="space-y-2 text-xs">
+            {% for prop in class_info.properties %}
+                <div class="border border-base-300 rounded-lg p-2 bg-base-100">
+                    <div class="flex items-center justify-between gap-2">
+                        <div>
+                            <p class="font-semibold text-base-content">{{ prop.label }}</p>
+                            <p class="text-base-content/70 break-all">{{ prop.uri }}</p>
+                        </div>
+                        <span class="badge badge-outline">{{ prop.columns|length }} mapped</span>
+                    </div>
+                    {% if prop.columns %}
+                        <ul class="mt-2 space-y-1">
+                            {% for column in prop.columns %}
+                                <li class="flex items-center justify-between gap-2 rounded bg-base-200/50 px-2 py-1">
+                                    <span class="font-medium text-base-content">{{ column.dataset }} · {{ column.column }}</span>
+                                    <div class="flex flex-wrap gap-1">
+                                        {% if column.metadata.is_anchor %}<span class="badge badge-ghost badge-xs">Anchor</span>{% endif %}
+                                        {% if column.metadata.is_multi_value %}<span class="badge badge-ghost badge-xs">Multi</span>{% endif %}
+                                        {% if column.metadata.has_fk or column.metadata.is_fk %}<span class="badge badge-ghost badge-xs">FK</span>{% endif %}
+                                    </div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="text-error mt-2">No columns mapped.</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-xs text-base-content/70">No mapped canonical properties for this class.</div>
+    {% endif %}
+{% else %}
+    <div class="text-xs text-base-content/60">Class data unavailable.</div>
+{% endif %}

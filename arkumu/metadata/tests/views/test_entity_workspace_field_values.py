@@ -5,7 +5,7 @@ import pytest
 from django.urls import reverse
 
 from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
-from arkumu.metadata.views import schema_workspace_views
+from arkumu.metadata.views import schema_workspace_views, simplified_workspace_views
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.models.mappings import Mapping
@@ -395,3 +395,224 @@ def test_join_relationship_render_and_save(client, monkeypatch, organization, ma
     )
     assert response.status_code == 200
     assert stub_service.synced[-1] == (project_uri, (event_uri, event_uri_two))
+
+
+@pytest.mark.django_db
+def test_relationship_row_view_slugifies_dom_ids(client, monkeypatch, organization, mapping):
+    class RowStubService:
+        def __init__(self):
+            self.mapping = mapping
+            self.organization = organization
+
+        def get_field_metadata(self, dataset_name):
+            return {
+                "Digitales Objekt": {
+                    "column_name": "Digitales Objekt",
+                    "property_label": "Digitales Objekt",
+                    "is_multi_value": True,
+                    "fk_relationship": {"target_dataset": "Digitales Objekt"},
+                }
+            }
+
+        def augment_field_metadata_with_joins(self, dataset_name, metadata):
+            return metadata, {}
+
+    monkeypatch.setattr(
+        schema_workspace_views,
+        "_get_schema_service",
+        lambda request, mapping_id: RowStubService(),
+    )
+
+    user = User.objects.create_user(username="row-user", password="pass1234")
+    user.organization = organization
+    user.save()
+    client.force_login(user)
+
+    url = reverse("metadata:entity_workspace_relationship_row", args=[mapping.id])
+    response = client.post(
+        f"{url}?dataset=Ereignis&field_name=Digitales%20Objekt",
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 200
+    html = response.content.decode()
+    # IDs should use slugified field names (no spaces) so that hx targets work.
+    assert "relationship-row-Digitales Objekt" not in html
+    assert "relationship-row-digitales-objekt" in html
+    assert "suggestions-relationship-row-digitales-objekt" in html
+
+
+@pytest.mark.django_db
+def test_dataset_field_value_options_uses_simplified_search_property(client, monkeypatch):
+    """
+    Ensure DatasetFieldValueOptionsView respects SIMPLIFIED_FIELD_PROPS when
+    resolving the search property for FK fields (e.g. Digitales Objekt on Ereignis).
+    """
+    organization = Organization.objects.create(code="simporg", name="Simplified Org")
+    mapping = Mapping.objects.create(name="Simplified Mapping", organization_id=organization.code)
+
+    # Dataset and property resources
+    dataset_resource = Resource.objects.create(
+        uri="http://arkumu.org/data/simporg/datasets/digitales-objekt",
+        resource_type=ResourceType.IRI,
+        organization=organization,
+        name="Digitales Objekt",
+    )
+    is_part_of = Resource.objects.get_or_create(
+        uri="http://purl.org/dc/terms/isPartOf",
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "name": "isPartOf",
+        },
+    )[0]
+
+    dateiname_property = Resource.objects.create(
+        uri="http://arkumu.org/data/simporg/properties/dateiname",
+        resource_type=ResourceType.PROPERTY,
+        name="Dateiname",
+        organization=organization,
+    )
+    other_property = Resource.objects.create(
+        uri="http://arkumu.org/data/simporg/properties/andere-eigenschaft",
+        resource_type=ResourceType.PROPERTY,
+        name="Andere Eigenschaft",
+        organization=organization,
+    )
+
+    # Two digital objects with the same literal value but different properties
+    obj1 = Resource.objects.create(
+        uri="http://arkumu.org/data/simporg/entities/digitales-objekt/1",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+    )
+    obj2 = Resource.objects.create(
+        uri="http://arkumu.org/data/simporg/entities/digitales-objekt/2",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+    )
+    literal_1 = Resource.objects.create(
+        resource_type=ResourceType.LITERAL,
+        value="Datei X",
+    )
+    literal_2 = Resource.objects.create(
+        resource_type=ResourceType.LITERAL,
+        value="Datei X",
+    )
+
+    # Mark both entities as part of the Digitales Objekt dataset
+    Triple.objects.create(
+        subject=obj1,
+        predicate=is_part_of,
+        object=dataset_resource,
+        source=organization,
+    )
+    Triple.objects.create(
+        subject=obj2,
+        predicate=is_part_of,
+        object=dataset_resource,
+        source=organization,
+    )
+
+    # Link literals using different properties
+    Triple.objects.create(
+        subject=obj1,
+        predicate=dateiname_property,
+        object=literal_1,
+        source=organization,
+    )
+    Triple.objects.create(
+        subject=obj2,
+        predicate=other_property,
+        object=literal_2,
+        source=organization,
+    )
+
+    class StubService:
+        def __init__(self):
+            self.mapping = mapping
+            self.organization = organization
+
+        def get_field_metadata(self, dataset_name):
+            # Simplified Ereignis field referencing Digitales Objekt
+            return {
+                "Digitales Objekt": {
+                    "column_name": "Digitales Objekt",
+                    "property_label": "Digitales Objekt",
+                    "fk_relationship": {
+                        "target_dataset": "Digitales Objekt",
+                    },
+                }
+            }
+
+        def augment_field_metadata_with_joins(self, dataset_name, metadata):
+            return metadata, {}
+
+        def get_dataset_schema(self, dataset_name):
+            if dataset_name == "Digitales Objekt":
+                return {
+                    "dataset_resource": dataset_resource,
+                    "properties": {
+                        "Dateiname": dateiname_property,
+                        "Andere Eigenschaft": other_property,
+                    },
+                }
+            # For the source dataset we only need a minimal schema
+            return {
+                "properties": {},
+                "column_metadata": {},
+                "anchor_columns": [],
+                "fk_relationships": [],
+            }
+
+        def _resolve_dataset_resource(self, dataset_name, schema):
+            if dataset_name == "Digitales Objekt":
+                return dataset_resource
+            return None
+
+    # Wire the stub service into the view
+    monkeypatch.setattr(
+        schema_workspace_views,
+        "_get_schema_service",
+        lambda request, mapping_id: StubService(),
+    )
+
+    # Configure SIMPLIFIED_FIELD_PROPS so that the Ereignis → Digitales Objekt
+    # field searches specifically by the Dateiname property.
+    simplified_config = {
+        "Ereignis": {
+            "Digitales Objekt": {
+                "name": "Digitales Objekt",
+                "search_property": ["Dateiname"],
+            }
+        }
+    }
+    monkeypatch.setattr(
+        simplified_workspace_views,
+        "SIMPLIFIED_FIELD_PROPS",
+        simplified_config,
+        raising=False,
+    )
+
+    user = User.objects.create_user(username="simp-user", password="pass1234")
+    user.organization = organization
+    user.save()
+    client.force_login(user)
+
+    url = reverse("metadata:entity_workspace_field_values", args=[mapping.id])
+    response = client.get(
+        url,
+        {
+            "dataset": "Ereignis",
+            "column": "Digitales Objekt",
+            "input_id": "id_digital",
+            "target_id": "field-suggestions-digital",
+            "q": "Datei",
+        },
+        HTTP_HX_REQUEST="true",
+    )
+
+    assert response.status_code == 200
+    html = response.content.decode()
+
+    # Only the object with a matching Dateiname should be suggested
+    assert obj1.uri in html
+    assert obj2.uri not in html

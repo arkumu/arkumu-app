@@ -1,165 +1,169 @@
 <!-- Filter Bar Component with Theme Support -->
 <div class="filter-bar-component w-full p-6">
-  
+
   <!-- Single Row: Tags and View Controls -->
   <div class="flex items-center justify-between gap-4">
-    
+
     <!-- Left Side: Active Filter Tags -->
     <div class="flex flex-wrap items-center gap-2">
-      {% if tag1 %}
+      {% for active_filter in active_filters %}
       <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
                   border-arkumu-dark text-arkumu-dark bg-white
                   theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
                   theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-        <span class="mr-2">{{ tag1|default:"Video, Spielfilme" }}</span>
-        <button class="hover:opacity-70" 
-                hx-delete="/filter/remove/{{ tag1_id|default:'tag1' }}" 
-                hx-target="closest .filter-bar-component"
-                hx-swap="outerHTML">×</button>
+        <span class="mr-2">{{ active_filter.display_name }}</span>
+        <a href="{{ active_filter.remove_url }}" class="hover:opacity-70"
+                >×</a>
       </div>
-      {% endif %}
-      
-      {% if tag2 %}
-      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                  border-arkumu-dark text-arkumu-dark bg-white
-                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-        <span class="mr-2">{{ tag2|default:"Instrumentalmusik" }}</span>
-        <button class="hover:opacity-70" 
-                hx-delete="/filter/remove/{{ tag2_id|default:'tag2' }}" 
-                hx-target="closest .filter-bar-component"
-                hx-swap="outerHTML">×</button>
-      </div>
-      {% endif %}
-      
-      {% if tag3 %}
-      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                  border-arkumu-dark text-arkumu-dark bg-white
-                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-        <span class="mr-2">{{ tag3|default:"autonome Projekte" }}</span>
-        <button class="hover:opacity-70" 
-                hx-delete="/filter/remove/{{ tag3_id|default:'tag3' }}" 
-                hx-target="closest .filter-bar-component"
-                hx-swap="outerHTML">×</button>
-      </div>
-      {% endif %}
-      
-      {% if not tag1 and not tag2 and not tag3 %}
-      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                  border-arkumu-dark text-arkumu-dark bg-white
-                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-        <span class="mr-2">Video, Spielfilme</span>
-        <button class="hover:opacity-70" 
-                hx-delete="/filter/remove/video-spielfilme" 
-                hx-target="closest .filter-bar-component"
-                hx-swap="outerHTML">×</button>
-      </div>
-      
-      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                  border-arkumu-dark text-arkumu-dark bg-white
-                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-        <span class="mr-2">Instrumentalmusik</span>
-        <button class="hover:opacity-70" 
-                hx-delete="/filter/remove/instrumentalmusik" 
-                hx-target="closest .filter-bar-component"
-                hx-swap="outerHTML">×</button>
-      </div>
-      
-      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors
-                  border-arkumu-dark text-arkumu-dark bg-white
-                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark
-                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">
-        <span class="mr-2">autonome Projekte</span>
-        <button class="hover:opacity-70" 
-                hx-delete="/filter/remove/autonome-projekte" 
-                hx-target="closest .filter-bar-component"
-                hx-swap="outerHTML">×</button>
-      </div>
-      {% endif %}
+    {% endfor %}
+{#      {% if tag1 %}#}
+{#      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors#}
+{#                  border-arkumu-dark text-arkumu-dark bg-white#}
+{#                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark#}
+{#                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">#}
+{#        <span class="mr-2">{{ tag1|default:"Video, Spielfilme" }}</span>#}
+{#        <button class="hover:opacity-70"#}
+{#                hx-delete="/filter/remove/{{ tag1_id|default:'tag1' }}"#}
+{#                hx-target="closest .filter-bar-component"#}
+{#                hx-swap="outerHTML">×</button>#}
+{#      </div>#}
+{#      {% endif %}#}
+{##}
+{#      {% if tag2 %}#}
+{#      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors#}
+{#                  border-arkumu-dark text-arkumu-dark bg-white#}
+{#                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark#}
+{#                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">#}
+{#        <span class="mr-2">{{ tag2|default:"Instrumentalmusik" }}</span>#}
+{#        <button class="hover:opacity-70"#}
+{#                hx-delete="/filter/remove/{{ tag2_id|default:'tag2' }}"#}
+{#                hx-target="closest .filter-bar-component"#}
+{#                hx-swap="outerHTML">×</button>#}
+{#      </div>#}
+{#      {% endif %}#}
+{##}
+{#      {% if tag3 %}#}
+{#      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors#}
+{#                  border-arkumu-dark text-arkumu-dark bg-white#}
+{#                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark#}
+{#                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">#}
+{#        <span class="mr-2">{{ tag3|default:"autonome Projekte" }}</span>#}
+{#        <button class="hover:opacity-70"#}
+{#                hx-delete="/filter/remove/{{ tag3_id|default:'tag3' }}"#}
+{#                hx-target="closest .filter-bar-component"#}
+{#                hx-swap="outerHTML">×</button>#}
+{#      </div>#}
+{#      {% endif %}#}
+{##}
+{#      {% if not tag1 and not tag2 and not tag3 %}#}
+{#      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors#}
+{#                  border-arkumu-dark text-arkumu-dark bg-white#}
+{#                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark#}
+{#                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">#}
+{#        <span class="mr-2">Video, Spielfilme</span>#}
+{#        <button class="hover:opacity-70"#}
+{#                hx-delete="/filter/remove/video-spielfilme"#}
+{#                hx-target="closest .filter-bar-component"#}
+{#                hx-swap="outerHTML">×</button>#}
+{#      </div>#}
+{##}
+{#      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors#}
+{#                  border-arkumu-dark text-arkumu-dark bg-white#}
+{#                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark#}
+{#                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">#}
+{#        <span class="mr-2">Instrumentalmusik</span>#}
+{#        <button class="hover:opacity-70"#}
+{#                hx-delete="/filter/remove/instrumentalmusik"#}
+{#                hx-target="closest .filter-bar-component"#}
+{#                hx-swap="outerHTML">×</button>#}
+{#      </div>#}
+{##}
+{#      <div class="inline-flex items-center px-3 py-1 text-xs border rounded-full transition-colors#}
+{#                  border-arkumu-dark text-arkumu-dark bg-white#}
+{#                  theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-dark:bg-arkumu-dark#}
+{#                  theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue theme-blue:bg-white">#}
+{#        <span class="mr-2">autonome Projekte</span>#}
+{#        <button class="hover:opacity-70"#}
+{#                hx-delete="/filter/remove/autonome-projekte"#}
+{#                hx-target="closest .filter-bar-component"#}
+{#                hx-swap="outerHTML">×</button>#}
+{#      </div>#}
+{#      {% endif %}#}
     </div>
-    
+
     <!-- Right Side: View Controls Only -->
     <div class="flex items-center gap-4 flex-shrink-0">
-      
+
       <!-- View Toggle Icons -->
       <div class="flex border transition-colors
                   border-gray-400
                   theme-dark:border-gray-600
                   theme-blue:border-arkumu-blue">
-        
-        <button class="p-2 transition-colors hover:opacity-70
+
+        <a href="{{ request_path }}&view=card" class="p-2 transition-colors hover:opacity-70
                        bg-white border-r
                        theme-dark:bg-arkumu-dark theme-dark:border-gray-600
                        theme-blue:bg-white theme-blue:border-arkumu-blue
                        border-gray-400
                        theme-dark:border-gray-600
-                       theme-blue:border-arkumu-blue"
-                hx-post="/view/grid" 
-                hx-target="#results-container">
+                       theme-blue:border-arkumu-blue">
           <svg class="w-4 h-4 transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue" 
+                     theme-blue:text-arkumu-blue"
                fill="currentColor" viewBox="0 0 24 24">
             <path d="M3 3h7v7H3V3zm0 11h7v7H3v-7zm11-11h7v7h-7V3zm0 11h7v7h-7v-7z"/>
           </svg>
-        </button>
-        
-        <button class="p-2 transition-colors hover:opacity-70
+        </a>
+
+        <a href="{{ request_path }}&view=card_lateral" class="p-2 transition-colors hover:opacity-70
                        bg-white border-r
                        theme-dark:bg-arkumu-dark theme-dark:border-gray-600
                        theme-blue:bg-white theme-blue:border-arkumu-blue
                        border-gray-400
                        theme-dark:border-gray-600
-                       theme-blue:border-arkumu-blue"
-                hx-post="/view/list" 
-                hx-target="#results-container">
+                       theme-blue:border-arkumu-blue">
           <svg class="w-4 h-4 transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue" 
+                     theme-blue:text-arkumu-blue"
                fill="currentColor" viewBox="0 0 24 24">
             <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
           </svg>
-        </button>
-        
-        <button class="p-2 transition-colors hover:opacity-70
+        </a>
+
+        <a href="{{ request_path }}&view=minimal_card" class="p-2 transition-colors hover:opacity-70
                        bg-white border-r
                        theme-dark:bg-arkumu-dark theme-dark:border-gray-600
                        theme-blue:bg-white theme-blue:border-arkumu-blue
                        border-gray-400
                        theme-dark:border-gray-600
-                       theme-blue:border-arkumu-blue"
-                hx-post="/view/lines" 
-                hx-target="#results-container">
+                       theme-blue:border-arkumu-blue">
           <svg class="w-4 h-4 transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue" 
+                     theme-blue:text-arkumu-blue"
                fill="currentColor" viewBox="0 0 24 24">
             <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/>
           </svg>
-        </button>
-        
-        <button class="p-2 transition-colors hover:opacity-70
+        </a>
+
+        <button  class="p-2 transition-colors hover:opacity-70
                        bg-white
                        theme-dark:bg-arkumu-dark
                        theme-blue:bg-white"
-                hx-post="/view/map" 
+                hx-post="/view/map"
                 hx-target="#results-container">
           <svg class="w-4 h-4 transition-colors
                      text-arkumu-dark
                      theme-dark:text-arkumu-light
-                     theme-blue:text-arkumu-blue" 
+                     theme-blue:text-arkumu-blue"
                fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
           </svg>
         </button>
       </div>
-      
+
     </div>
   </div>
 </div>

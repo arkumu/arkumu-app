@@ -206,6 +206,7 @@ class ProjectRecord:
     image: Optional[str] = None
     institution: Optional[ProjectInstitution] = None
     categories: List[ProjectCategory] = field(default_factory=list)
+    main_event: Optional[ProjectEvent] = None
     events: List[ProjectEvent] = field(default_factory=list)
     actors: List[ProjectActor] = field(default_factory=list)
     alternative_titles: List[ProjectAlternateTitle] = field(default_factory=list)
@@ -252,19 +253,21 @@ class ProjectRecord:
                 return []
             return [factory(**item) for item in items]
 
+        def _build_event(item: Optional[Dict[str, Any]]) -> Optional[ProjectEvent]:
+            if not item:
+                return None
+            return ProjectEvent(
+                **{
+                    **item,
+                    "owning_project_uris": list(item.get("owning_project_uris", [])),
+                    "actors": _build_list(item.get("actors"), ProjectEventActor),
+                }
+            )
+
         def _build_events(items: Optional[List[Dict[str, Any]]]) -> List[ProjectEvent]:
             if not items:
                 return []
-            return [
-                ProjectEvent(
-                    **{
-                        **item,
-                        "owning_project_uris": list(item.get("owning_project_uris", [])),
-                        "actors": _build_list(item.get("actors"), ProjectEventActor),
-                    }
-                )
-                for item in items
-            ]
+            return [_build_event(item) for item in items if item]
 
         def _build_digital_objects(items: Optional[List[Dict[str, Any]]]) -> List[ProjectDigitalObject]:
             if not items:
@@ -288,6 +291,7 @@ class ProjectRecord:
             image=payload.get("image"),
             institution=institution,
             categories=_build_list(payload.get("categories"), ProjectCategory),
+            main_event=_build_event(payload.get("main_event")),
             events=_build_events(payload.get("events")),
             actors=_build_list(payload.get("actors"), ProjectActor),
             alternative_titles=_build_list(payload.get("alternative_titles"), ProjectAlternateTitle),
@@ -395,25 +399,79 @@ class ProjectRecord:
         return query.lower() in haystack
 
 
-    def matches_institution(self, institution: str) -> bool:
-        if not institution: return True
-        return (self.institution and
-                institution.lower() in self.institution.label.lower())
+    def matches_institution(self, institution: List[str]) -> bool:
+        """
+        Überprüft, ob die Institution des Objekts mit einer der angegebenen Institutionen übereinstimmt.
 
-    def matches_project_type(self, project_type: str) -> bool:
-        if not project_type: return True
-        return (self.project_type and
-                project_type.lower() in self.project_type.label.lower())
+        Args:
+            institution (List[str]): Liste von Institutionen, die überprüft werden sollen.
 
-    def matches_actor(self, actor: str) -> bool:
-        if not actor: return True
-        return any(a.name and actor.lower() in a.name.lower()
-                  for a in self.actors)
+        Returns:
+            bool: True, wenn die Institution des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not institution:  # Wenn die Liste leer oder None ist, returniere True
+            return True
+        return any(
+            self.institution and  # Stelle sicher, dass self.institution existiert
+            inst.lower() in self.institution.label.lower()  # Case-insensitive Überprüfung
+            for inst in institution
+        )
 
-    def matches_category(self, category: str) -> bool:
-        if not category: return True
-        return any(c.label and category.lower() in c.label.lower()
-                  for c in self.categories)
+    def matches_project_type(self, project_type: List[str]) -> bool:
+        """
+        Überprüft, ob der Projekttyp des Objekts mit einem der angegebenen Projekttypen übereinstimmt.
+
+        Args:
+            project_type (List[str]): Liste von Projekttypen, die überprüft werden sollen.
+
+        Returns:
+            bool: True, wenn der Projekttyp des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not project_type:
+            return True
+        return any(
+            self.project_type and
+            pt.lower() in self.project_type.label.lower()
+            for pt in project_type
+        )
+
+    def matches_actor(self, actor: List[str]) -> bool:
+        """
+        Überprüft, ob einer der Akteure des Objekts mit einem der angegebenen Akteure übereinstimmt.
+
+        Args:
+            actor (List[str]): Liste von Akteuren, die überprüft werden sollen.
+
+        Returns:
+            bool: True, wenn ein Akteur des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not actor:
+            return True
+        return any(
+            a.name and  # Stelle sicher, dass der Akteur einen Namen hat
+            act.lower() in a.name.lower()  # Case-insensitive Überprüfung
+            for act in actor
+            for a in self.actors
+        )
+
+    def matches_category(self, category: List[str]) -> bool:
+        """
+        Überprüft, ob eine der Kategorien des Objekts mit einer der angegebenen Kategorien übereinstimmt.
+
+        Args:
+            category (List[str]): Liste von Kategorien, die überprüft werden sollen.
+
+        Returns:
+            bool: True, wenn eine Kategorie des Objekts in der Liste enthalten ist, andernfalls False.
+        """
+        if not category:
+            return True
+        return any(
+            c.label and  # Stelle sicher, dass die Kategorie eine Bezeichnung hat
+            cat.lower() in c.label.lower()  # Case-insensitive Überprüfung
+            for cat in category
+            for c in self.categories
+        )
 
     def matches_keyword(self, keyword: str) -> bool:
         if not keyword: return True

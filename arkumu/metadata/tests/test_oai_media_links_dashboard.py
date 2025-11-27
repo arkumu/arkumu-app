@@ -30,7 +30,7 @@ def test_panel_renders_for_staff(client):
     org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
     project = _make_project(org, "http://arkumu.test/entities/projekt/1", name="Demo")
     digital = _make_project(org, "http://arkumu.test/entities/digital/1", name="Asset")
-    OAIProjectMediaLink.objects.create(project=project, digital_object=digital, status=OAIProjectMediaLink.STATUS_APPROVED)
+    OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
 
     user = User.objects.create_user(username="staff", password="pwd", is_staff=True)
     client.force_login(user)
@@ -59,15 +59,13 @@ def test_htmx_add_link_creates_entry(client):
             'organization': org.code,
             'project_uri': project.uri,
             'digital_uri': digital.uri,
-            'status': OAIProjectMediaLink.STATUS_APPROVED,
-            'status_filter': 'all',
             'page': '1',
         },
         follow=False,
     )
 
     assert response.status_code == 200
-    assert OAIProjectMediaLink.objects.filter(project=project, digital_object=digital, status=OAIProjectMediaLink.STATUS_APPROVED).exists()
+    assert OAIProjectMediaLink.objects.filter(project=project, digital_object=digital).exists()
 
 
 @pytest.mark.django_db
@@ -75,7 +73,7 @@ def test_htmx_delete_link_removes_entry(client):
     org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
     project = _make_project(org, "http://arkumu.test/entities/projekt/3")
     digital = _make_project(org, "http://arkumu.test/entities/digital/3")
-    link = OAIProjectMediaLink.objects.create(project=project, digital_object=digital, status=OAIProjectMediaLink.STATUS_PENDING)
+    link = OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
 
     user = User.objects.create_user(username="staff3", password="pwd", is_staff=True)
     client.force_login(user)
@@ -85,7 +83,6 @@ def test_htmx_delete_link_removes_entry(client):
         url,
         {
             'organization': org.code,
-            'status_filter': 'all',
             'page': '1',
         },
         follow=False,
@@ -96,11 +93,11 @@ def test_htmx_delete_link_removes_entry(client):
 
 
 @pytest.mark.django_db
-def test_htmx_update_changes_status(client):
+def test_htmx_update_changes_label(client):
     org = Organization.objects.create(name="Org", code="org", domain="org", is_active=True)
     project = _make_project(org, "http://arkumu.test/entities/projekt/4")
     digital = _make_project(org, "http://arkumu.test/entities/digital/4")
-    link = OAIProjectMediaLink.objects.create(project=project, digital_object=digital, status=OAIProjectMediaLink.STATUS_PENDING)
+    link = OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
 
     user = User.objects.create_user(username="staff4", password="pwd", is_staff=True)
     client.force_login(user)
@@ -110,14 +107,12 @@ def test_htmx_update_changes_status(client):
         url,
         {
             'organization': org.code,
-            'status_filter': 'all',
             'page': '1',
-            'status': OAIProjectMediaLink.STATUS_APPROVED,
-            'current_status': link.status,
+            'label_override': 'Updated label',
         },
         follow=False,
     )
 
     assert response.status_code == 200
     link.refresh_from_db()
-    assert link.status == OAIProjectMediaLink.STATUS_APPROVED
+    assert link.label_override == 'Updated label'

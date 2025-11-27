@@ -48,6 +48,7 @@ class S3FileObject(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
+        related_name='s3fileobject',
         help_text="Direct link to the metadata resource this file is associated with"
     )
     s3_url = models.URLField(max_length=1024, blank=True, help_text="Full S3 URL to access this file")

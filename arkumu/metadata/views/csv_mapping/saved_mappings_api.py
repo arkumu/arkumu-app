@@ -9,6 +9,7 @@ keep the codebase organized and maintainable.
 """
 
 import logging
+import unicodedata
 from django.http import JsonResponse, HttpResponse
 from django.views import View
 from arkumu.users.mixins import GeneralLoginRequiredMixin
@@ -16,6 +17,13 @@ from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.views.csv_mapping.mixins.coordinator import CSVMappingCoordinatorMixin
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_dataset_name(value):
+    """Normalize dataset identifiers to NFC for consistent matching."""
+    if not isinstance(value, str):
+        return value
+    return unicodedata.normalize("NFC", value)
 
 
 class SaveMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, View):
@@ -58,16 +66,19 @@ class SaveMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, Vie
                 validation_result['is_valid'] = False
             
             # 2. Validate datasets exist (support both old and new format)
-            selected_datasets = mapping_config.get('workspace_datasets', mapping_config.get('selected_datasets', []))
+            selected_datasets_raw = mapping_config.get('workspace_datasets', mapping_config.get('selected_datasets', []))
+            selected_datasets = [_normalize_dataset_name(ds) for ds in selected_datasets_raw if ds]
+            selected_dataset_set = set(selected_datasets)
             if not selected_datasets:
                 validation_result['warnings'].append("No datasets selected - mapping will be empty")
             else:
                 try:
                     available_datasets = self.get_csv_datasets_for_organization(organization_id)
-                    available_names = {ds.get('name') for ds in available_datasets if ds.get('name')}
+                    available_names = {_normalize_dataset_name(ds.get('name')) for ds in available_datasets if ds.get('name')}
                     
-                    for dataset_name in selected_datasets:
-                        if dataset_name not in available_names:
+                    for dataset_name in selected_datasets_raw:
+                        normalized = _normalize_dataset_name(dataset_name)
+                        if normalized not in available_names:
                             validation_result['errors'].append(f"Dataset '{dataset_name}' is no longer available")
                             validation_result['is_valid'] = False
                 except Exception as e:
@@ -89,9 +100,10 @@ class SaveMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, Vie
                             continue
                         
                         source, dataset_name, column_name = parts
+                        normalized_dataset = _normalize_dataset_name(dataset_name)
                         
                         # Check dataset is selected
-                        if dataset_name not in selected_datasets:
+                        if normalized_dataset not in selected_dataset_set:
                             validation_result['errors'].append(f"Column '{column_id}' references unselected dataset '{dataset_name}'")
                             validation_result['is_valid'] = False
                         
@@ -121,7 +133,8 @@ class SaveMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, Vie
                 
                 # Check that FK references valid datasets (allow missing references as warnings)
                 target_dataset = fk_config.get('target_dataset')
-                if target_dataset and target_dataset not in selected_datasets:
+                normalized_target = _normalize_dataset_name(target_dataset) if target_dataset else None
+                if normalized_target and normalized_target not in selected_dataset_set:
                     validation_result['warnings'].append(f"FK relationship '{fk_id}' references unselected dataset '{target_dataset}' - relationship will be preserved for future use")
             
             # 4.5. Validate relationship contexts (new feature)
@@ -156,7 +169,7 @@ class SaveMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, Vie
             reported_fks = metadata.get('total_fk_relationships', 0)
             reported_contexts = metadata.get('total_relationship_contexts', 0)
             
-            actual_datasets = len(selected_datasets)
+            actual_datasets = len(selected_dataset_set)
             actual_columns = len(workspace_columns)
             actual_fks = len(fk_relationships)
             actual_contexts = len(relationship_contexts)
@@ -303,7 +316,7 @@ class UpdateMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, V
                     parts = column_id.split('::', 2)
                     if len(parts) == 3:
                         source, dataset_name, column_name = parts
-                        datasets_in_workspace.add(dataset_name)
+                        datasets_in_workspace.add(_normalize_dataset_name(dataset_name))
                     else:
                         validation_result['warnings'].append(f"Column ID has unusual format: {column_id}")
                 except Exception:
@@ -320,7 +333,7 @@ class UpdateMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, V
             # 4. Verify all referenced datasets are available
             try:
                 available_datasets = self.get_csv_datasets_for_organization(organization_id)
-                available_names = {ds.get('name') for ds in available_datasets if ds.get('name')}
+                available_names = {_normalize_dataset_name(ds.get('name')) for ds in available_datasets if ds.get('name')}
                 
                 missing_datasets = datasets_in_workspace - available_names
                 if missing_datasets:
@@ -339,7 +352,8 @@ class UpdateMappingView(GeneralLoginRequiredMixin, CSVMappingCoordinatorMixin, V
                     continue
                 
                 target_dataset = fk_config.get('target_dataset')
-                if target_dataset and target_dataset not in datasets_in_workspace:
+                normalized_target = _normalize_dataset_name(target_dataset) if target_dataset else None
+                if normalized_target and normalized_target not in datasets_in_workspace:
                     validation_result['warnings'].append(f"FK relationship '{fk_id}' references dataset '{target_dataset}' not in workspace")
             
             # 6. Update metadata to reflect current state

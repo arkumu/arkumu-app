@@ -244,14 +244,21 @@ class METSSerializer:
 
                 file_elem = ET.SubElement(content_grp, f"{{{METS_NS}}}file", attrs)
 
-                # Determine best access URL
+                # Build direct S3 URL without presigning
                 url: Optional[str] = None
                 try:
-                    access = export_svc.prepare_file_for_harvest(f)
-                    url = access.get("url")
+                    # Get bucket and organization
+                    bucket = export_svc.bucket_name
+                    s3_key = f.s3_key
+                    endpoint = export_svc.endpoint_url
+
+                    if endpoint and bucket and s3_key:
+                        # Build direct URL: endpoint/bucket/key
+                        url = f"{endpoint.rstrip('/')}/{bucket}/{s3_key}"
                 except Exception:
                     url = None
 
+                # Fallback to s3_url field if URL construction failed
                 if not url and getattr(f, "s3_url", None):
                     url = f.s3_url
 
@@ -315,11 +322,187 @@ class METSSerializer:
 
         # Use the Dublin Core serializer
         serializer = DublinCoreSerializer(predicate_map=DEFAULT_PREDICATE_MAP)
-        return serializer.serialize_from_triples(
+        dc_data = serializer.serialize_from_triples(
             root_literal_edges,
             get_predicate=pred,
             get_object_value=obj_value
         )
+
+        # Add creator/contributor from junction entities (actor-event relationships)
+        creators, contributors = self._extract_creators_from_junctions(graph)
+        if creators:
+            dc_data.setdefault("dc:creator", []).extend(creators)
+        if contributors:
+            dc_data.setdefault("dc:contributor", []).extend(contributors)
+
+        return dc_data
+
+    def _extract_creators_from_junctions(self, graph: Dict[str, Any]) -> tuple[list, list]:
+        """Extract creators and contributors from junction entities.
+
+        Finds actor-event junction entities in the graph and extracts:
+        - dc:creator: actors where ist-urheberin=1 (copyright holders)
+        - dc:contributor: actors where ist-urheberin=0
+
+        Format: "Actor Name (Role)" or just "Actor Name" if no role.
+        """
+        from arkumu.metadata.models.triples import Triple
+        from django.db.models import Q
+        import uuid
+
+        creators = []
+        contributors = []
+
+        root_id = graph.get("root_id")
+        if not root_id:
+            return creators, contributors
+
+        edges = graph.get("edges", []) or []
+        nodes = graph.get("nodes", {}) or {}
+
+        # Find direct event IDs (neighbors of the project)
+        event_ids = set()
+        for edge in edges:
+            subj = edge.get("subject_id")
+            obj = edge.get("object_id")
+            if subj == root_id and obj:
+                event_ids.add(obj)
+
+        if not event_ids:
+            return creators, contributors
+
+        # Validate that event_ids are valid UUIDs (skip if mock data)
+        valid_event_ids = []
+        for eid in event_ids:
+            try:
+                uuid.UUID(str(eid))
+                valid_event_ids.append(eid)
+            except (ValueError, AttributeError):
+                pass
+
+        if not valid_event_ids:
+            return creators, contributors
+
+        # Query junction entities that point to these events
+        junction_type_uris = [
+            "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
+            "http://arkumu.org/data/types/akteurin-akteurin-kreuztabelle",
+        ]
+
+        # Find junction entities by type that point to our events
+        from arkumu.metadata.models.resource import Resource
+        RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+        org_filter = Q()
+        if self.org_code:
+            org_filter = Q(subject__organization__code=self.org_code)
+
+        try:
+            junction_type_subjects = (
+                Triple.objects.filter(
+                    Q(predicate__uri=RDF_TYPE_URI)
+                    & (
+                        Q(object__canonical_uri__in=junction_type_uris)
+                        | Q(object__uri__in=junction_type_uris)
+                    )
+                )
+                .filter(org_filter)
+                .values_list("subject_id", flat=True)
+            )
+
+            # Find junctions pointing to our events
+            junction_ids = list(
+                Triple.objects.filter(
+                    subject_id__in=junction_type_subjects,
+                    object_id__in=valid_event_ids,
+                )
+                .values_list("subject_id", flat=True)
+                .distinct()[:50]  # Limit to avoid performance issues
+            )
+        except Exception:
+            # Handle mock data or DB errors gracefully
+            return creators, contributors
+
+        if not junction_ids:
+            return creators, contributors
+
+        # Fetch junction triples
+        junction_triples = Triple.objects.filter(
+            subject_id__in=junction_ids
+        ).select_related("predicate", "object").only(
+            "subject_id",
+            "predicate__uri",
+            "predicate__canonical_uri",
+            "object__id",
+            "object__uri",
+            "object__value",
+            "object__name",
+        )
+
+        # Group by junction entity
+        junction_data: Dict[str, Dict[str, Any]] = {}
+        for t in junction_triples:
+            jid = str(t.subject_id)
+            if jid not in junction_data:
+                junction_data[jid] = {"ist_urheberin": False, "actor_id": None, "role": None}
+
+            pred_uri = t.predicate.canonical_uri or t.predicate.uri or ""
+
+            if "ist-urheberin" in pred_uri:
+                val = t.object.value if hasattr(t.object, "value") else None
+                junction_data[jid]["ist_urheberin"] = val in ("1", "true", True, 1)
+            elif "akteurin-im-ereignis" in pred_uri or "akteurin" in pred_uri.split("/")[-1]:
+                junction_data[jid]["actor_id"] = str(t.object.id)
+            elif "rollen-der-akteurin" in pred_uri or "rolle" in pred_uri.split("/")[-1]:
+                # Get role name
+                role_val = t.object.value or t.object.name if hasattr(t.object, "value") else None
+                if role_val:
+                    junction_data[jid]["role"] = role_val
+
+        # Fetch actor names
+        actor_ids = [d["actor_id"] for d in junction_data.values() if d.get("actor_id")]
+        actor_names = {}
+        if actor_ids:
+            for res in Resource.objects.filter(id__in=actor_ids).only("id", "name", "uri"):
+                actor_names[str(res.id)] = res.name or res.uri.split("/")[-1]
+
+        # Institution keywords to filter out (these should be dc:publisher, not contributor)
+        institution_keywords = [
+            "universität", "hochschule", "akademie", "institut", "university",
+            "college", "school", "academy", "institute", "stiftung", "foundation",
+        ]
+
+        def is_institution(name: str) -> bool:
+            name_lower = name.lower()
+            return any(kw in name_lower for kw in institution_keywords)
+
+        # Build creator/contributor lists
+        seen = set()
+        for jdata in junction_data.values():
+            actor_id = jdata.get("actor_id")
+            if not actor_id or actor_id in seen:
+                continue
+            seen.add(actor_id)
+
+            actor_name = actor_names.get(actor_id, "Unknown")
+
+            # Skip institutions - they should be dc:publisher, not creator/contributor
+            if is_institution(actor_name):
+                continue
+
+            role = jdata.get("role")
+
+            if role:
+                formatted = f"{actor_name} ({role})"
+            else:
+                formatted = actor_name
+
+            if jdata.get("ist_urheberin"):
+                creators.append(formatted)
+            else:
+                contributors.append(formatted)
+
+        return creators, contributors
 
 
 __all__ = ["METSSerializer"]

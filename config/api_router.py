@@ -7,6 +7,7 @@ from arkumu.users.api.views import UserViewSet
 from arkumu.rest.views.import_viewsets import ImportViewSet
 from arkumu.rest.views.canonical_uri_viewsets import CanonicalUriMappingViewSet
 from arkumu.rest.views.catalog_viewsets import CatalogViewSet
+from arkumu.rest.views.oai_viewsets import TailoredProbeViewSet
 
 if settings.DEBUG:
     router = DefaultRouter()
@@ -24,6 +25,7 @@ if getattr(settings, "ENABLE_IMPORT_API", False):
 
 # Catalog viewsets
 router.register(r'catalog', CatalogViewSet, basename='catalog')
+router.register(r'oai-tailored-probe', TailoredProbeViewSet, basename='oai-tailored-probe')
 
 # Metadata API sub-router
 if getattr(settings, "ENABLE_CANONICAL_URI_API", False):

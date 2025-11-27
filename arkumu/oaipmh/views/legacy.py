@@ -51,8 +51,8 @@ from arkumu.oaipmh.constants import (
     XSI_NS,
 )
 from arkumu.oaipmh.validation import rosetta_mets_validator
-from .formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
-from .resumption import ResumptionTokenService
+from ..formats.dublin_core import DCTERMS_NS, OAI_DC_NS, DC_NS
+from ..resumption import ResumptionTokenService
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.cache.services import OAICacheService
 from arkumu.storage.models.s3_file_objects import S3FileObject
@@ -2007,7 +2007,6 @@ def _build_dc_payload_from_project(
 
     if record.institution and record.institution.label:
         _add_dc_value(payload, 'publisher', record.institution.label)
-        _add_dc_value(payload, 'contributor', record.institution.label)
 
     primary_actors = _select_primary_event_actors(record)
     seen_creators: set[str] = set()
