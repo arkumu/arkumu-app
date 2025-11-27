@@ -218,7 +218,8 @@ def test_summary_counts_curated_projects_for_non_s3_org(monkeypatch):
         curated_harvestable_ids=curated_ids,
     )
 
-    assert summary["harvestable_project_count"] == 1
+    assert summary["oai_approved_count"] == 1
+    assert summary["has_files_count"] == 2  # harvestable_project + duplicate_uri_project have non-stale links
     assert summary["available_project_count"] == 3
 
 

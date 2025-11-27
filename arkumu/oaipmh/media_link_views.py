@@ -301,19 +301,32 @@ def _build_media_links_summary(
     filtered_total = links_total
     # Project-level stats for summary header (restricted to canonical project scope)
     project_scope = _project_scope_or_all_entities(organization)
+
+    # Count projects with media links
+    projects_with_links = project_scope.filter(oai_media_links__isnull=False).distinct().count()
+
+    # Count projects with harvestable files (matches "Has files" filter)
+    if s3_harvestable_ids is not None:
+        has_files_count = len(s3_harvestable_ids)
+    elif curated_harvestable_ids is not None:
+        has_files_count = len(curated_harvestable_ids)
+    else:
+        has_files_count = 0
+
+    # Count OAI-approved projects
     publication_qs = OAIProjectPublication.objects.filter(
         project_id__in=project_scope.values("id"),
     )
-    available_projects = publication_qs.count()
-    harvestable_projects = publication_qs.filter(is_approved=True).count()
+    oai_approved_count = publication_qs.filter(is_approved=True).count()
 
     return {
         "links_total": links_total,
         "filtered_links_total": filtered_total,
         "status_totals": [],
         "stale_count": link_qs.filter(is_stale=True).count(),
-        "available_project_count": available_projects,
-        "harvestable_project_count": harvestable_projects,
+        "available_project_count": projects_with_links,
+        "has_files_count": has_files_count,
+        "oai_approved_count": oai_approved_count,
         "selected_org_code": organization.code or "",
         "organization": organization,
         "project_access_filter": project_access_filter,

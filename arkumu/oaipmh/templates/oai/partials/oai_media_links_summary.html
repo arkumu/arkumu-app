@@ -5,7 +5,8 @@
       <div class="flex justify-between items-center gap-4">
         <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/70">
           <span><span class="font-semibold">{{ summary.available_project_count }}</span> projects</span>
-          <span><span class="font-semibold text-success">{{ summary.harvestable_project_count }}</span> harvestable</span>
+          <span><span class="font-semibold text-success">{{ summary.has_files_count }}</span> with files</span>
+          <span><span class="font-semibold text-info">{{ summary.oai_approved_count }}</span> OAI approved</span>
           <span><span class="font-semibold text-primary">{{ summary.links_total }}</span> digital objects</span>
           <span><span class="font-semibold {% if summary.stale_count %}text-warning{% endif %}">{{ summary.stale_count }}</span> stale</span>
         </div>
@@ -122,7 +123,7 @@
       {% if mode != 'digital' %}
         <div class="flex flex-wrap items-center gap-4 text-xs text-base-content/80">
           <div class="flex items-center gap-2">
-            <span class="font-semibold">Harvestable:</span>
+            <span class="font-semibold">Files:</span>
             <div class="btn-group">
               <button
                 class="btn btn-xs {% if summary.harvestable_filter == 'all' %}btn-active{% endif %}"
