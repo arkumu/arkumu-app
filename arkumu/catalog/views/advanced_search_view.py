@@ -1,177 +1,230 @@
+"""Advanced search view using indexed ProjectIndex for fast queries."""
+
 import random
 import time
 
 from django.views.generic import View
 from django.shortcuts import render
-from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.middleware.csrf import get_token
+from django.core.cache import cache
 import logging
-from typing import Any, Dict, List, Optional
+from typing import List
 
-from arkumu.cache.services import CacheManager
-from arkumu.projects.services import ProjectSnapshotService
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
+from arkumu.catalog.models import ProjectIndex
+from arkumu.catalog.services.project_index_service import ProjectIndexService
+from arkumu.metadata.models import PublicAccessLevel
 from ..services.wikidata_service import WikidataService
-from ...projects import ProjectRecord
 
 logger = logging.getLogger(__name__)
 
 
 class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
-    """
-    Erweiterte Suche mit Filterung nach Institution, Projektart, Akteur, Kategorie und Schlagwort.
-    """
-    ITEMS_PER_PAGE = 10
-    CACHE_TIMEOUT = 3600
+    """Advanced search with filtering by institution, category, and actor using indexed queries."""
+
+    ITEMS_PER_PAGE = 15
+    DROPDOWN_CACHE_TTL = 3600  # 1 hour
 
     def get(self, request, *args, **kwargs):
         start_time = time.time()
 
-        # Extrahiere Suchparameter
+        # Extract search parameters
         view = request.GET.get('view', 'card').strip()
-        query = request.GET.get('query', '').strip()
-        institution = request.GET.getlist('hochschule', '')
-        category = request.GET.getlist('kategorie', '')
-        actor = request.GET.getlist('aktuer', '')
+        query = request.GET.get('query', '').strip() or None
+        institutions = request.GET.getlist('hochschule')
+        categories = request.GET.getlist('kategorie')
+        actors = request.GET.getlist('aktuer')
+
         logger.info(
-            f"🔍 ADVANCED_SEARCH: Institution={institution}, Type={category}, Actor={actor}")
+            "ADVANCED_SEARCH: query=%s, institutions=%s, categories=%s, actors=%s",
+            query, institutions, categories, actors
+        )
 
         try:
-            # Hole alle Projekte
-            projects = self._get_all_projects(request)
-
-            # Filtere Projekte basierend auf Parametern
-            total_results = 0
-            filtered_projects = []
-            if not query and not institution and not category and not actor:
-                filtered_projects = random.sample(projects, k=15)
-                total_results = len(projects)
-            else:
-                for project in projects:
-                    if query and not project.matches_query(query):
-                        continue
-                    if institution and not project.matches_institution(institution):
-                        continue
-                    if category and not project.matches_category(category):
-                        continue
-                    if actor and not project.matches_actor(actor):
-                        continue
-                    filtered_projects.append(project)
-                total_results = len(filtered_projects)
-
-            categories = []
-            for p in projects:
-                for i in p.categories:
-                    categories.append(i.label)
-            categories = set(categories).difference(set(category))
-            categories_name = []
+            index_service = ProjectIndexService(backend="db")
             wikidata_service = WikidataService()
-            for i, w in enumerate(categories):
-                categories_name.append(wikidata_service.get_entity_label(wikidata_id=w))
-            categories = [
-                {"id": cid, "name": cname}
-                for cid, cname in zip(categories, categories_name)
-            ]
-            categories = sorted(categories, key=lambda x: x["name"])
-            hochschulen = set([i.institution.label for i in projects])
-            hochschulen = sorted(hochschulen.difference(set(institution)))
-            akteur_options = set({actor.name for p in projects for actor in p.actors})
-            akteur = sorted(akteur_options.difference(set(actor)))
 
-            filtered_projects = [p.to_card_dict() for p in filtered_projects]
-            for i, project in enumerate(filtered_projects):
-                print(project)
-                if project["categories"]:
-                    if len(project["categories"]) > 0:
-                        project["category1_name"] = wikidata_service.get_entity_label(wikidata_id=project["categories"][0])
-                    if len(project["categories"]) > 1:
-                        project["category2_name"] = wikidata_service.get_entity_label(wikidata_id=project["categories"][1])
-                    if len(project["categories"]) > 2:
-                        project["category3_name"] = wikidata_service.get_entity_label(wikidata_id=project["categories"][2])
+            # Determine if we have any filters
+            has_filters = query or institutions or categories or actors
 
+            if not has_filters:
+                # No filters: show random sample of projects
+                all_cards = index_service.get_cards()
+                total_results = len(all_cards)
+                filtered_cards = random.sample(all_cards, k=min(self.ITEMS_PER_PAGE, total_results))
+            else:
+                # Apply filters via indexed query
+                # Map institution labels to org_codes for filtering
+                org_code = None
+                if institutions:
+                    # For now, use the first institution's org code
+                    org_code = self._institution_label_to_org_code(institutions[0])
 
+                filtered_cards = index_service.get_cards(
+                    query=query,
+                    organ_code=org_code,
+                    categories=categories if categories else None,
+                    actors=actors if actors else None,
+                )
+                total_results = len(filtered_cards)
 
-            dropdown_option = {
-                "hochschulen": hochschulen,
-                "akteur": akteur,
-                "kategorien": categories
-            }
+            # Resolve category Wikidata IDs to labels for display
+            for card in filtered_cards:
+                card_categories = card.get("categories", [])
+                if card_categories:
+                    for idx, cat_id in enumerate(card_categories[:3]):
+                        if cat_id:
+                            card[f"category{idx+1}_name"] = wikidata_service.get_entity_label(wikidata_id=cat_id)
 
-            # Create active filters list
-            active_filters = []
+            # Build dropdown options from indexed data
+            dropdown_options = self._get_dropdown_options(institutions, categories, actors, wikidata_service)
 
+            # Build active filters for display
+            active_filters = self._build_active_filters(request, institutions, categories, actors, wikidata_service)
 
-            # Institution filters
-            for inst in institution:
-                q = request.GET.copy()
-                q.setlist('hochschule', [i for i in institution if i != inst])
-                active_filters.append({
-                    'type': 'hochschule',
-                    'value': inst,
-                    'display_name': inst,
-                    'remove_url': f"{request.path}?{q.urlencode()}"
-                })
-
-            # Category filters
-            for cat_id in category:
-                q = request.GET.copy()
-                q.setlist('kategorie', [c for c in category if c != cat_id])
-                active_filters.append({
-                    'type': 'kategorie',
-                    'value': cat_id,
-                    'display_name': wikidata_service.get_entity_label(cat_id),
-                    'remove_url': f"{request.path}?{q.urlencode()}"
-                })
-
-            # Actor filters
-            for act in actor:
-                q = request.GET.copy()
-                q.setlist('aktuer', [a for a in actor if a != act])
-                active_filters.append({
-                    'type': 'aktuer',
-                    'value': act,
-                    'display_name': act,
-                    'remove_url': f"{request.path}?{q.urlencode()}"
-                })
-
-            query_params = request.GET.copy()  # mutable copy
-
-            # kompletten 'view'-Parameter entfernen
+            query_params = request.GET.copy()
             query_params.pop('view', None)
-
             request_path = f"{request.path}?{query_params.urlencode()}"
 
-            # Kontext für Template
             context = {
-                'institution': institution,
+                'institution': institutions,
                 'active_filters': active_filters,
-                'actor': actor,
-                'category': category,
-                'results': filtered_projects,
+                'actor': actors,
+                'category': categories,
+                'results': filtered_cards,
                 'total_results': total_results,
                 'csrf_token': get_token(request),
-                'dropdown_option': dropdown_option,
-                'query': query,
+                'dropdown_option': dropdown_options,
+                'query': query or '',
                 'view': view,
                 'request_path': request_path,
             }
 
             processing_time = time.time() - start_time
-            logger.info(f"⚡ ADVANCED_SEARCH_COMPLETE: {len(filtered_projects)} results in {processing_time:.3f}s")
+            logger.info("ADVANCED_SEARCH_COMPLETE: %d results in %.3fs", len(filtered_cards), processing_time)
 
             return render(request, 'catalog/advanced_search.html', context)
 
         except Exception as e:
-            logger.error(f"❌ ADVANCED_SEARCH_ERROR: {e}")
+            logger.exception("ADVANCED_SEARCH_ERROR: %s", e)
             return render(request, 'catalog/error.html', {'error': str(e)})
 
-    def _get_all_projects(self, request) -> List[ProjectRecord]:
-        snapshot_service = ProjectSnapshotService()
+    def _institution_label_to_org_code(self, label: str) -> str:
+        """Map institution label to org code."""
+        mapping = {
+            "Folkwang Universität der Künste": "fuk",
+            "Robert Schumann Hochschule Düsseldorf": "rsh",
+            "Kunsthochschule für Medien Köln": "khm",
+            "Hochschule für Musik Detmold": "det",
+            "Hochschule für Musik und Tanz Köln": "hmt",
+        }
+        return mapping.get(label, label.lower()[:3])
 
-        # Lade Projekte neu
-        snapshot = snapshot_service.get_cross_institutional_snapshot()
-        projects = snapshot.projects
-        logger.info(f"📦 LOADED {len(projects)} PROJECTS FROM SNAPSHOT")
+    def _get_dropdown_options(
+        self,
+        selected_institutions: List[str],
+        selected_categories: List[str],
+        selected_actors: List[str],
+        wikidata_service: WikidataService,
+    ) -> dict:
+        """Get dropdown options from indexed data with caching."""
+        cache_key = "arkumu:advanced_search:dropdown_options"
+        cached = cache.get(cache_key)
 
-        return projects
+        if cached:
+            all_institutions, all_categories, all_actors = cached
+        else:
+            # Query indexed data for unique values
+            base_qs = ProjectIndex.objects.filter(
+                public_access_level=PublicAccessLevel.PUBLIC,
+                is_public_approved=True,
+            )
+
+            # Get unique institution labels
+            all_institutions = sorted(set(
+                base_qs.exclude(institution_label='')
+                .values_list('institution_label', flat=True)
+                .distinct()
+            ))
+
+            # Get unique categories (flatten ArrayField)
+            all_categories_raw = set()
+            for cats in base_qs.values_list('categories', flat=True):
+                if cats:
+                    all_categories_raw.update(cats)
+
+            # Resolve Wikidata IDs to labels
+            all_categories = []
+            for cat_id in all_categories_raw:
+                if cat_id:
+                    label = wikidata_service.get_entity_label(wikidata_id=cat_id)
+                    all_categories.append({"id": cat_id, "name": label or cat_id})
+            all_categories = sorted(all_categories, key=lambda x: x["name"])
+
+            # Get unique actor names (flatten ArrayField)
+            all_actors = set()
+            for names in base_qs.values_list('actor_names', flat=True):
+                if names:
+                    all_actors.update(names)
+            all_actors = sorted(all_actors)
+
+            # Cache the results
+            cache.set(cache_key, (all_institutions, all_categories, all_actors), self.DROPDOWN_CACHE_TTL)
+
+        # Filter out already selected values
+        available_institutions = [i for i in all_institutions if i not in selected_institutions]
+        available_categories = [c for c in all_categories if c["id"] not in selected_categories]
+        available_actors = [a for a in all_actors if a not in selected_actors]
+
+        return {
+            "hochschulen": available_institutions,
+            "kategorien": available_categories,
+            "akteur": available_actors,
+        }
+
+    def _build_active_filters(
+        self,
+        request,
+        institutions: List[str],
+        categories: List[str],
+        actors: List[str],
+        wikidata_service: WikidataService,
+    ) -> List[dict]:
+        """Build list of active filters with remove URLs."""
+        active_filters = []
+
+        # Institution filters
+        for inst in institutions:
+            q = request.GET.copy()
+            q.setlist('hochschule', [i for i in institutions if i != inst])
+            active_filters.append({
+                'type': 'hochschule',
+                'value': inst,
+                'display_name': inst,
+                'remove_url': f"{request.path}?{q.urlencode()}"
+            })
+
+        # Category filters
+        for cat_id in categories:
+            q = request.GET.copy()
+            q.setlist('kategorie', [c for c in categories if c != cat_id])
+            active_filters.append({
+                'type': 'kategorie',
+                'value': cat_id,
+                'display_name': wikidata_service.get_entity_label(cat_id) or cat_id,
+                'remove_url': f"{request.path}?{q.urlencode()}"
+            })
+
+        # Actor filters
+        for act in actors:
+            q = request.GET.copy()
+            q.setlist('aktuer', [a for a in actors if a != act])
+            active_filters.append({
+                'type': 'aktuer',
+                'value': act,
+                'display_name': act,
+                'remove_url': f"{request.path}?{q.urlencode()}"
+            })
+
+        return active_filters

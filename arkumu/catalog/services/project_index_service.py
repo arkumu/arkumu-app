@@ -517,6 +517,8 @@ class ProjectIndexService:
         *,
         query: Optional[str] = None,
         organ_code: Optional[str] = None,
+        categories: Optional[List[str]] = None,
+        actors: Optional[List[str]] = None,
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         """Return card dictionaries for projects matching the filters."""
@@ -554,12 +556,23 @@ class ProjectIndexService:
                     | Q(institution_label__icontains=normalized_query)
                 )
 
+            # Filter by categories (ArrayField overlap)
+            if categories:
+                base_qs = base_qs.filter(categories__overlap=categories)
+
+            # Filter by actor names (ArrayField contains)
+            if actors:
+                # Use overlap to match any of the actor names
+                base_qs = base_qs.filter(actor_names__overlap=[a.strip() for a in actors])
+
             cards = [entry.to_card_dict() for entry in base_qs.order_by("title")]
             logger.info(
-                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s')",
+                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s', categories=%s, actors=%s)",
                 len(cards),
                 (query or "").strip(),
                 (organ_code or "").strip(),
+                categories,
+                actors,
             )
             return cards
 
