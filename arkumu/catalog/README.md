@@ -237,6 +237,45 @@ ProjectSnapshot ─────> rebuild_project_index ─────> ProjectI
  ProjectRecord
 ```
 
+### Graph Backend Architecture (Optimized)
+
+The `--backend graph` option uses a batch pre-compute architecture for fast rebuilds (~25-45 seconds for 4700+ projects):
+
+```
+CanonicalGraphService.get_project_graph()
+       |
+       v
+  edges_by_subject (dict)     ← O(1) edge lookups
+       |
+       v
+ _expand_event_junctions()    ← Batch fetch junction entities
+       |
+       v
+ _junctions_by_event          ← Reverse index: event → junctions
+ _junctions_by_project        ← Reverse index: project → junctions
+       |
+       v
+ _batch_precompute_all_fields()  ← Extract ALL fields in ONE pass
+       |                            - Pass 1: Direct project edges
+       |                            - Pass 2: Related entity names
+       |                            - Pass 3: Actors via junctions
+       |                            - Pass 4: Finalize (sets → lists)
+       v
+ _project_cache (dict)        ← project_id → {all fields}
+       |
+       v
+ _write_indexes_from_graph()  ← O(1) dict lookups per project
+       |
+       v
+  bulk_create()               ← Single DB write
+```
+
+**Key optimizations:**
+- Single pass through graph data extracts all fields
+- Pre-built reverse indexes for O(1) junction lookups
+- No per-project DB queries during projection loop
+- Bulk write with upsert (insert or update)
+
 ## When to Rebuild
 
 1. **New projects ingested** - After importing new RDF data

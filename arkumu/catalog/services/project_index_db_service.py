@@ -10,8 +10,9 @@ from django.utils import timezone
 
 from arkumu.catalog.models import ProjectIndex
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
+from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.common.hash_utils import generate_value_hash
-from arkumu.metadata.models import PublicAccessLevel, Resource
+from arkumu.metadata.models import PublicAccessLevel, Resource, ResourceType
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
 
@@ -47,9 +48,11 @@ class _CanonicalURIs:
     EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
     EVENT_DESCRIPTION = "http://arkumu.org/data/properties/ereignisbeschreibung"
 
-    # Actor junction properties
-    ACTOR_LINK = "http://arkumu.org/data/properties/akteurin-im-ereignis"
-    ACTOR_ROLE = "http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
+    # Actor junction properties (FUK uses junction table that links TO events/actors)
+    JUNCTION_TO_EVENT = "http://arkumu.org/data/properties/im-ereignis"  # junction -> event (FUK)
+    JUNCTION_TO_PROJECT = "http://arkumu.org/data/properties/projekt"  # junction -> project (KHM)
+    ACTOR_LINK = "http://arkumu.org/data/properties/akteurin-im-ereignis"  # junction -> actor
+    ACTOR_ROLE = "http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"  # junction -> rolle
 
     # Actor properties
     ACTOR_NAME = "http://arkumu.org/data/properties/deutscher-name"
@@ -630,6 +633,29 @@ class ProjectIndexDbService:
         # FUK uses direct event->actor links, so we need to also fetch actor properties
         self._expand_second_level_actors(edges_by_subject, nodes, graph_service)
 
+        # Discover junction entities for FUK/KHM data models (batch pre-fetch)
+        project_subject_id_set = set(str(sid) for sid in subject_ids)
+        self._expand_event_junctions(edges_by_subject, nodes, project_subject_id_set)
+
+        # Build reverse indexes for O(1) junction lookup
+        self._junctions_by_event: Dict[str, List[str]] = {}
+        self._junctions_by_project: Dict[str, List[str]] = {}
+        for subj_id, subj_edges in edges_by_subject.items():
+            for edge in subj_edges:
+                pred = self._canonical(edge)
+                obj_id = edge.get("object_id")
+                if pred == _CanonicalURIs.JUNCTION_TO_EVENT and obj_id:
+                    self._junctions_by_event.setdefault(obj_id, []).append(subj_id)
+                elif pred == _CanonicalURIs.JUNCTION_TO_PROJECT and obj_id:
+                    self._junctions_by_project.setdefault(obj_id, []).append(subj_id)
+
+        # PRE-COMPUTE all fields for all projects in ONE pass
+        logger.debug("rebuild_from_graph: pre-computing all fields for %d projects", len(subject_ids))
+        self._project_cache = self._batch_precompute_all_fields(
+            subject_ids, edges_by_subject, nodes
+        )
+        logger.debug("rebuild_from_graph: all fields pre-computed for %d projects", len(self._project_cache))
+
         # Batch-fetch Resources for visibility and org info
         resource_map = self._fetch_resources_batch(subject_ids)
 
@@ -688,8 +714,11 @@ class ProjectIndexDbService:
         """Transform graph data into unified ProjectIndex rows."""
         seen_ids: Set[uuid.UUID] = set()
         index_rows: List[ProjectIndex] = []
+        total = len(subject_ids)
 
-        for subject_id in subject_ids:
+        for idx, subject_id in enumerate(subject_ids):
+            if idx % 500 == 0:
+                logger.debug("_write_indexes_from_graph: processing %d/%d", idx, total)
             subject_uuid = _as_uuid(subject_id)
             if not subject_uuid:
                 continue
@@ -705,40 +734,35 @@ class ProjectIndexDbService:
             if not project_uri:
                 continue
 
+            # Use pre-computed cache (O(1) lookup) - all fields extracted in batch
+            cached = self._project_cache.get(subject_id_str, {})
+            if not cached:
+                continue
+
+            # Get edges for property/status/authority extractors (not pre-computed)
             subject_edges = edges_by_subject.get(subject_id_str, [])
 
-            # Extract fields from graph
-            title = self._first_literal(subject_edges, _CanonicalURIs.TITLE)
+            title = cached.get("title")
             if not title:
                 continue
 
-            subtitle = self._first_literal(subject_edges, _CanonicalURIs.SUBTITLE)
-            description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION)
-            if not description:
-                description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION_DE_CONTENT)
-            if not description:
-                description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION_DE)
-            if not description:
-                description = self._first_literal(subject_edges, _CanonicalURIs.EVENT_DESCRIPTION)
-            if not description:
-                description = self._extract_nested_description(subject_edges, edges_by_subject, nodes)
-            image = self._first_literal(subject_edges, _CanonicalURIs.IMAGE)
-
-            # Extract all fields
-            institution_label = self._extract_institution_label(subject_edges, edges_by_subject, nodes)
-            institution_uri = self._extract_institution_uri(subject_edges, nodes)
-            category_labels = self._extract_categories(subject_edges, edges_by_subject, nodes)
-            category_slugs = self._extract_category_slugs(subject_edges, edges_by_subject, nodes)
-            categories_structured = self._extract_categories_structured(subject_edges, edges_by_subject, nodes)
-            project_type_label = self._extract_project_type_label(subject_edges, edges_by_subject, nodes)
-            catchphrase_labels = self._extract_catchphrase_labels(subject_edges, edges_by_subject, nodes)
-            actor_names = self._extract_actor_names(subject_edges, edges_by_subject, nodes)
-            actors_structured = self._extract_actors_structured(subject_edges, edges_by_subject, nodes)
-            events_structured = self._extract_events_structured(subject_edges, edges_by_subject, nodes)
-            year_range = self._extract_year_range(subject_edges, edges_by_subject)
-            year_values = self._extract_year_values(subject_edges, edges_by_subject)
-            digital_object_paths = self._extract_digital_object_paths(subject_edges, edges_by_subject, nodes)
-            digital_objects_structured = self._extract_digital_objects_structured(subject_edges, edges_by_subject, nodes)
+            subtitle = cached.get("subtitle")
+            description = cached.get("description")
+            image = cached.get("image")
+            institution_label = cached.get("institution_label", "")
+            institution_uri = cached.get("institution_uri", "")
+            category_labels = cached.get("category_labels", [])
+            category_slugs = cached.get("category_slugs", [])
+            categories_structured = cached.get("categories_structured", [])
+            project_type_label = cached.get("project_type_label", "")
+            catchphrase_labels = cached.get("catchphrase_labels", [])
+            actor_names = cached.get("actor_names", [])
+            actors_structured = cached.get("actors_structured", [])
+            events_structured = cached.get("events_structured", [])
+            year_range = cached.get("year_range", "")
+            year_values = cached.get("year_values", [])
+            digital_object_paths = cached.get("digital_object_paths", [])
+            digital_objects_structured = cached.get("digital_objects_structured", [])
 
             org_code = self._org_code(resource)
             institution_codes = [org_code] if org_code else []
@@ -917,21 +941,39 @@ class ProjectIndexDbService:
         junction_edges: List[Dict[str, Any]],
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
     ) -> List[str]:
-        """Extract role names from junction edges via rolle entities.
+        """Extract role names from junction edges.
 
-        Structure: junction -> rollen-der-akteurin-im-ereignis -> rolle entity
-                   rolle entity -> deutscher-name-der-rolle-breadcrumb -> name
+        Supports two patterns:
+        1. FUK: junction -> rollen-der-akteurin-im-ereignis -> rolle entity
+                rolle entity -> deutscher-name-der-rolle-breadcrumb -> name literal
+        2. KHM/HMT: junction -> rollen-der-akteurin-im-ereignis -> literal value directly
         """
-        role_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_ROLE)
         roles: List[str] = []
-        for role_id in role_ids:
-            role_edges = edges_by_subject.get(role_id, [])
-            role_name = self._first_literal(role_edges, _CanonicalURIs.ROLE_GERMAN_NAME)
-            if role_name:
-                # Extract final part after '>' if breadcrumb format
-                if '>' in role_name:
-                    role_name = role_name.split('>')[-1].strip()
-                roles.append(role_name)
+
+        for edge in junction_edges:
+            if self._canonical(edge) != _CanonicalURIs.ACTOR_ROLE:
+                continue
+
+            # Pattern 2: KHM/HMT - role stored as literal value directly
+            literal_value = edge.get("object_value")
+            if literal_value:
+                role_name = str(literal_value).strip()
+                if role_name and role_name not in roles:
+                    roles.append(role_name)
+                continue
+
+            # Pattern 1: FUK - role is entity link, need two-step lookup
+            role_id = edge.get("object_id")
+            if role_id:
+                role_edges = edges_by_subject.get(str(role_id), [])
+                role_name = self._first_literal(role_edges, _CanonicalURIs.ROLE_GERMAN_NAME)
+                if role_name:
+                    # Extract final part after '>' if breadcrumb format
+                    if '>' in role_name:
+                        role_name = role_name.split('>')[-1].strip()
+                    if role_name and role_name not in roles:
+                        roles.append(role_name)
+
         return roles
 
     def _expand_second_level_actors(
@@ -1023,6 +1065,491 @@ class ProjectIndexDbService:
                     subject_id = str(edge_dict.get("subject_id", ""))
                     if subject_id:
                         edges_by_subject.setdefault(subject_id, []).append(edge_dict)
+
+    def _expand_event_junctions(
+        self,
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+        project_subject_ids: Optional[Set[str]] = None,
+    ) -> None:
+        """Discover and expand junction entities that link TO events or projects.
+
+        Supports two patterns:
+        1. FUK: Junction -> im-ereignis -> Event (akteurin-ereignis-kreuztabelle)
+        2. KHM: Junction -> projekt -> Project (kreuz-projekte-personen)
+
+        Both patterns have:
+        - Junction -> akteurin-im-ereignis -> Actor
+        - Junction -> rollen-der-akteurin-im-ereignis -> Rolle (or literal)
+
+        This method queries the database to find junctions and adds their edges.
+        """
+        from arkumu.metadata.models import Triple
+
+        # Collect event IDs from the graph (events are neighbors of projects)
+        event_ids: Set[str] = set()
+        for subject_id, subject_edges in edges_by_subject.items():
+            for edge in subject_edges:
+                predicate = self._canonical(edge)
+                if predicate == _CanonicalURIs.EVENT:
+                    event_id = edge.get("object_id")
+                    if event_id:
+                        event_ids.add(str(event_id))
+
+        junction_ids: Set[str] = set()
+
+        # Pattern 1: FUK - junctions that link TO events via im-ereignis
+        if event_ids:
+            logger.debug("_expand_event_junctions: finding junctions for %d events", len(event_ids))
+
+            junction_triples = Triple.objects.filter(
+                predicate__canonical_uri=_CanonicalURIs.JUNCTION_TO_EVENT,
+                object_id__in=[_as_uuid(eid) for eid in event_ids if _as_uuid(eid)],
+            ).select_related("subject", "predicate", "object")
+
+            for t in junction_triples:
+                junction_id = str(t.subject_id)
+                junction_ids.add(junction_id)
+                # Add the im-ereignis edge to the graph
+                edges_by_subject.setdefault(junction_id, []).append({
+                    "subject_id": junction_id,
+                    "predicate_canonical": _CanonicalURIs.JUNCTION_TO_EVENT,
+                    "object_id": str(t.object_id) if t.object_id else None,
+                })
+
+        # Pattern 2: KHM - junctions that link TO projects via projekt
+        if project_subject_ids:
+            logger.debug("_expand_event_junctions: finding junctions for %d projects", len(project_subject_ids))
+
+            project_junction_triples = Triple.objects.filter(
+                predicate__canonical_uri=_CanonicalURIs.JUNCTION_TO_PROJECT,
+                object_id__in=[_as_uuid(pid) for pid in project_subject_ids if _as_uuid(pid)],
+            ).select_related("subject", "predicate", "object")
+
+            for t in project_junction_triples:
+                junction_id = str(t.subject_id)
+                junction_ids.add(junction_id)
+                # Add the projekt edge to the graph
+                edges_by_subject.setdefault(junction_id, []).append({
+                    "subject_id": junction_id,
+                    "predicate_canonical": _CanonicalURIs.JUNCTION_TO_PROJECT,
+                    "object_id": str(t.object_id) if t.object_id else None,
+                })
+
+        if not junction_ids:
+            logger.debug("_expand_event_junctions: no junctions found")
+            return
+
+        logger.debug("_expand_event_junctions: found %d junctions", len(junction_ids))
+
+        # Fetch junction edges: actor links and role links
+        junction_edge_triples = Triple.objects.filter(
+            subject_id__in=[_as_uuid(jid) for jid in junction_ids if _as_uuid(jid)],
+            predicate__canonical_uri__in=[
+                _CanonicalURIs.ACTOR_LINK,
+                _CanonicalURIs.ACTOR_ROLE,
+            ],
+        ).select_related("predicate", "object")
+
+        rolle_ids: Set[str] = set()
+        actor_ids: Set[str] = set()
+
+        for t in junction_edge_triples:
+            junction_id = str(t.subject_id)
+            pred_canonical = t.predicate.canonical_uri
+
+            # Check if object is a literal (KHM pattern) or entity (FUK pattern)
+            # For literals, object.resource_type == 'LITERAL' and value is in object.value
+            is_literal = t.object.resource_type == ResourceType.LITERAL if t.object else False
+            object_value = t.object.value if (t.object and is_literal) else None
+
+            edge_dict = {
+                "subject_id": junction_id,
+                "predicate_canonical": pred_canonical,
+                "object_id": str(t.object_id) if t.object_id and not is_literal else None,
+                "object_value": object_value,
+            }
+            edges_by_subject.setdefault(junction_id, []).append(edge_dict)
+
+            # Collect rolle and actor IDs for further expansion (only for entity links)
+            if pred_canonical == _CanonicalURIs.ACTOR_ROLE and t.object_id and not is_literal:
+                rolle_ids.add(str(t.object_id))
+            if pred_canonical == _CanonicalURIs.ACTOR_LINK and t.object_id:
+                actor_ids.add(str(t.object_id))
+
+        # Fetch rolle entity name edges
+        if rolle_ids:
+            rolle_name_triples = Triple.objects.filter(
+                subject_id__in=[_as_uuid(rid) for rid in rolle_ids if _as_uuid(rid)],
+                predicate__canonical_uri=_CanonicalURIs.ROLE_GERMAN_NAME,
+            ).select_related("predicate", "object")
+
+            for t in rolle_name_triples:
+                rolle_id = str(t.subject_id)
+                edges_by_subject.setdefault(rolle_id, []).append({
+                    "subject_id": rolle_id,
+                    "predicate_canonical": _CanonicalURIs.ROLE_GERMAN_NAME,
+                    "object_value": t.object.value if t.object else None,
+                })
+
+        # Fetch actor name edges (for actors found via junctions)
+        if actor_ids:
+            actor_name_triples = Triple.objects.filter(
+                subject_id__in=[_as_uuid(aid) for aid in actor_ids if _as_uuid(aid)],
+                predicate__canonical_uri=_CanonicalURIs.ACTOR_NAME,
+            ).select_related("predicate", "object", "subject")
+
+            for t in actor_name_triples:
+                actor_id = str(t.subject_id)
+                edges_by_subject.setdefault(actor_id, []).append({
+                    "subject_id": actor_id,
+                    "predicate_canonical": _CanonicalURIs.ACTOR_NAME,
+                    "object_value": t.object.value if t.object else None,
+                })
+                # Also add to nodes
+                nodes.setdefault(actor_id, {})["uri"] = t.subject.uri if t.subject else ""
+
+        logger.debug(
+            "_expand_event_junctions: added %d junction edges, %d rolle edges, %d actor edges",
+            len(junction_ids), len(rolle_ids), len(actor_ids)
+        )
+
+    def _batch_precompute_all_fields(
+        self,
+        subject_ids: Sequence[str],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Pre-compute ALL fields for ALL projects in ONE pass.
+
+        Returns a dict: project_id -> {all extracted fields}
+
+        This is MUCH faster than extracting per-project because we:
+        1. Iterate each project's edges only ONCE
+        2. Extract all related entity data in single passes
+        3. Use pre-built indexes for O(1) junction lookups
+        """
+        result: Dict[str, Dict[str, Any]] = {}
+
+        # Build event_to_projects mapping for actor extraction
+        event_to_projects: Dict[str, Set[str]] = {}
+
+        # PASS 1: Extract all direct project fields in ONE iteration per project
+        for sid in subject_ids:
+            sid_str = str(sid)
+            subject_edges = edges_by_subject.get(sid_str, [])
+
+            # Initialize project data
+            proj = {
+                "title": None,
+                "subtitle": None,
+                "description": None,
+                "image": None,
+                "institution_id": None,
+                "institution_label": "",
+                "institution_uri": "",
+                "category_ids": [],
+                "category_labels": [],
+                "category_slugs": [],
+                "categories_structured": [],
+                "project_type_id": None,
+                "project_type_label": "",
+                "catchphrase_ids": [],
+                "catchphrase_labels": [],
+                "event_ids": [],
+                "events_structured": [],
+                "year_values": set(),
+                "year_range": "",
+                "do_ids": [],
+                "digital_object_paths": [],
+                "digital_objects_structured": [],
+                "actor_names": set(),
+                "actors_structured": {},
+            }
+
+            # Single pass through project edges
+            for edge in subject_edges:
+                pred = self._canonical(edge)
+                obj_id = edge.get("object_id")
+                obj_val = edge.get("object_value")
+
+                if pred == _CanonicalURIs.TITLE and not proj["title"]:
+                    proj["title"] = obj_val
+                elif pred == _CanonicalURIs.SUBTITLE and not proj["subtitle"]:
+                    proj["subtitle"] = obj_val
+                elif pred == _CanonicalURIs.DESCRIPTION and not proj["description"]:
+                    proj["description"] = obj_val
+                elif pred == _CanonicalURIs.DESCRIPTION_DE_CONTENT and not proj["description"]:
+                    proj["description"] = obj_val
+                elif pred == _CanonicalURIs.DESCRIPTION_DE and not proj["description"]:
+                    proj["description"] = obj_val
+                elif pred == _CanonicalURIs.EVENT_DESCRIPTION and not proj["description"]:
+                    proj["description"] = obj_val
+                elif pred == _CanonicalURIs.IMAGE and not proj["image"]:
+                    proj["image"] = obj_val
+                elif pred == _CanonicalURIs.INSTITUTION and obj_id:
+                    proj["institution_id"] = obj_id
+                elif pred == _CanonicalURIs.CATEGORY and obj_id:
+                    proj["category_ids"].append(obj_id)
+                elif pred == _CanonicalURIs.CATCHPHRASE and obj_id:
+                    proj["catchphrase_ids"].append(obj_id)
+                elif pred == _CanonicalURIs.PROJECT_TYPE_LINK and obj_id:
+                    proj["project_type_id"] = obj_id
+                elif pred == _CanonicalURIs.EVENT and obj_id:
+                    proj["event_ids"].append(obj_id)
+                    event_to_projects.setdefault(obj_id, set()).add(sid_str)
+                elif pred == _CanonicalURIs.DIGITAL_OBJECT and obj_id:
+                    proj["do_ids"].append(obj_id)
+                elif pred == _CanonicalURIs.DESCRIPTION_ENTITY and obj_id and not proj["description"]:
+                    # Nested description
+                    desc_edges = edges_by_subject.get(obj_id, [])
+                    for de in desc_edges:
+                        if self._canonical(de) == _CanonicalURIs.DESCRIPTION_ENTITY:
+                            proj["description"] = de.get("object_value")
+                            break
+
+            result[sid_str] = proj
+
+        # PASS 2: Resolve related entity names (institution, categories, etc.)
+        for sid_str, proj in result.items():
+            # Institution
+            if proj["institution_id"]:
+                inst_edges = edges_by_subject.get(proj["institution_id"], [])
+                for e in inst_edges:
+                    if self._canonical(e) == _CanonicalURIs.INSTITUTION_NAME:
+                        proj["institution_label"] = e.get("object_value") or ""
+                        break
+                if not proj["institution_label"]:
+                    inst_node = nodes.get(proj["institution_id"], {})
+                    proj["institution_label"] = inst_node.get("name") or inst_node.get("value") or ""
+                inst_node = nodes.get(proj["institution_id"], {})
+                proj["institution_uri"] = inst_node.get("uri") or ""
+
+            # Categories
+            seen_cats = set()
+            for cat_id in proj["category_ids"]:
+                cat_edges = edges_by_subject.get(cat_id, [])
+                cat_node = nodes.get(cat_id, {})
+                label = None
+                slug = None
+                wikidata = None
+                for e in cat_edges:
+                    p = self._canonical(e)
+                    if p == _CanonicalURIs.CATEGORY_NAME:
+                        label = e.get("object_value")
+                    elif p == _CanonicalURIs.SCHLAGWORT_NAME:
+                        label = label or e.get("object_value")
+                    elif p == _CanonicalURIs.SCHLAGWORT_WIKIDATA_LABEL:
+                        label = label or e.get("object_value")
+                    elif p == _CanonicalURIs.CATEGORY_SLUG:
+                        slug = e.get("object_value")
+                    elif p == _CanonicalURIs.CATEGORY_WIKIDATA:
+                        wikidata = e.get("object_value")
+                if not label:
+                    label = cat_node.get("name") or cat_node.get("value")
+                if not slug:
+                    uri = cat_node.get("uri") or ""
+                    if uri:
+                        slug = uri.rstrip("/").split("/")[-1]
+                if label and label not in seen_cats:
+                    proj["category_labels"].append(label)
+                    seen_cats.add(label)
+                    if slug:
+                        proj["category_slugs"].append(slug.lower())
+                    proj["categories_structured"].append({
+                        "label": label,
+                        "uri": cat_node.get("uri") or "",
+                        "slug": slug or "",
+                        "wikidata": wikidata or "",
+                    })
+
+            # Catchphrases (same structure as categories for some orgs)
+            seen_catch = set()
+            for catch_id in proj["catchphrase_ids"]:
+                catch_edges = edges_by_subject.get(catch_id, [])
+                catch_node = nodes.get(catch_id, {})
+                label = None
+                for e in catch_edges:
+                    p = self._canonical(e)
+                    if p == _CanonicalURIs.CATCHPHRASE_NAME:
+                        label = e.get("object_value")
+                        break
+                    elif p == _CanonicalURIs.SCHLAGWORT_NAME:
+                        label = e.get("object_value")
+                    elif p == _CanonicalURIs.SCHLAGWORT_WIKIDATA_LABEL:
+                        label = label or e.get("object_value")
+                if not label:
+                    label = catch_node.get("name") or catch_node.get("value")
+                if label and label not in seen_catch:
+                    proj["catchphrase_labels"].append(label)
+                    seen_catch.add(label)
+
+            # Project type
+            if proj["project_type_id"]:
+                pt_edges = edges_by_subject.get(proj["project_type_id"], [])
+                for e in pt_edges:
+                    if self._canonical(e) == _CanonicalURIs.PROJECT_TYPE_NAME:
+                        proj["project_type_label"] = e.get("object_value") or ""
+                        break
+                if not proj["project_type_label"]:
+                    pt_node = nodes.get(proj["project_type_id"], {})
+                    proj["project_type_label"] = pt_node.get("name") or pt_node.get("value") or ""
+
+            # Events and years
+            for event_id in proj["event_ids"]:
+                event_edges = edges_by_subject.get(event_id, [])
+                event_node = nodes.get(event_id, {})
+                event_name = None
+                start = None
+                end = None
+                location = None
+                for e in event_edges:
+                    p = self._canonical(e)
+                    if p == _CanonicalURIs.EVENT_NAME:
+                        event_name = e.get("object_value")
+                    elif p == _CanonicalURIs.EVENT_NAME_ALT and not event_name:
+                        event_name = e.get("object_value")
+                    elif p == _CanonicalURIs.EVENT_START:
+                        start = e.get("object_value")
+                    elif p == _CanonicalURIs.EVENT_END:
+                        end = e.get("object_value")
+                    elif p == _CanonicalURIs.EVENT_LOCATION:
+                        location = e.get("object_value")
+                if not event_name:
+                    event_name = event_node.get("name") or event_node.get("value") or ""
+                # Extract years
+                for val in (start, end):
+                    year = _coerce_year(val)
+                    if year:
+                        proj["year_values"].add(year)
+                # Build display date
+                if start and end:
+                    display_date = start if start == end else f"{start} - {end}"
+                else:
+                    display_date = start or end
+                proj["events_structured"].append({
+                    "id": event_id,
+                    "uri": event_node.get("uri") or "",
+                    "name": event_name,
+                    "start": start,
+                    "end": end,
+                    "location": location,
+                    "display_date": display_date,
+                    "actors": [],  # Will be filled in actor pass
+                })
+
+            # Digital objects
+            seen_paths = set()
+            for do_id in proj["do_ids"]:
+                do_edges = edges_by_subject.get(do_id, [])
+                do_node = nodes.get(do_id, {})
+                path = None
+                for e in do_edges:
+                    if self._canonical(e) == _CanonicalURIs.DO_PATH:
+                        path = e.get("object_value")
+                        break
+                if path and path not in seen_paths:
+                    proj["digital_object_paths"].append(path)
+                    seen_paths.add(path)
+                    proj["digital_objects_structured"].append({
+                        "path": path,
+                        "uri": do_node.get("uri") or "",
+                    })
+
+            # Year range
+            years = sorted(proj["year_values"])
+            if years:
+                if len(years) == 1:
+                    proj["year_range"] = str(years[0])
+                else:
+                    proj["year_range"] = f"{min(years)} bis {max(years)}"
+            proj["year_values"] = years
+
+        # PASS 3: Extract actors via junctions (using pre-built indexes)
+        def get_actor_info(actor_id: str) -> Tuple[str, str]:
+            actor_edges = edges_by_subject.get(actor_id, [])
+            name = None
+            for e in actor_edges:
+                if self._canonical(e) == _CanonicalURIs.ACTOR_NAME:
+                    name = e.get("object_value")
+                    break
+            if not name:
+                actor_node = nodes.get(actor_id, {})
+                name = actor_node.get("name") or actor_node.get("value")
+            actor_node = nodes.get(actor_id, {})
+            return name or "", actor_node.get("uri") or ""
+
+        def add_actor(proj: Dict, name: str, uri: str, roles: List[str]) -> None:
+            if not name:
+                return
+            normalized = str(name).strip()
+            if not normalized:
+                return
+            proj["actor_names"].add(normalized)
+            if normalized not in proj["actors_structured"]:
+                proj["actors_structured"][normalized] = {
+                    "name": normalized,
+                    "roles": set(roles),
+                    "uri": uri,
+                }
+            else:
+                proj["actors_structured"][normalized]["roles"].update(roles)
+
+        # Process junctions via events (FUK pattern)
+        for event_id, project_ids in event_to_projects.items():
+            event_edges = edges_by_subject.get(event_id, [])
+            forward_junctions = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
+            reverse_junctions = self._junctions_by_event.get(event_id, [])
+            all_junctions = set(forward_junctions) | set(reverse_junctions)
+
+            for junction_id in all_junctions:
+                junction_edges = edges_by_subject.get(junction_id, [])
+                actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
+                roles = self._get_role_names_from_junction(junction_edges, edges_by_subject)
+                for actor_id in actor_ids:
+                    name, uri = get_actor_info(actor_id)
+                    for pid in project_ids:
+                        if pid in result:
+                            add_actor(result[pid], name, uri, roles)
+
+            # Direct event->actor links
+            for direct_pred in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
+                direct_actors = self._related_ids(event_edges, direct_pred)
+                for actor_id in direct_actors:
+                    name, uri = get_actor_info(actor_id)
+                    for pid in project_ids:
+                        if pid in result:
+                            add_actor(result[pid], name, uri, [])
+
+        # Process junctions via projects (KHM pattern)
+        for project_id, junction_ids in self._junctions_by_project.items():
+            if project_id not in result:
+                continue
+            proj = result[project_id]
+            for junction_id in junction_ids:
+                junction_edges = edges_by_subject.get(junction_id, [])
+                actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
+                roles = self._get_role_names_from_junction(junction_edges, edges_by_subject)
+                for actor_id in actor_ids:
+                    name, uri = get_actor_info(actor_id)
+                    add_actor(proj, name, uri, roles)
+
+        # PASS 4: Finalize - convert sets to lists
+        for sid_str, proj in result.items():
+            proj["actor_names"] = list(proj["actor_names"])
+            proj["actors_structured"] = [
+                {"name": v["name"], "roles": list(v["roles"]), "uri": v["uri"]}
+                for v in proj["actors_structured"].values()
+            ]
+            # Clean up temp fields
+            del proj["institution_id"]
+            del proj["category_ids"]
+            del proj["catchphrase_ids"]
+            del proj["project_type_id"]
+            del proj["event_ids"]
+            del proj["do_ids"]
+
+        return result
 
     def _extract_nested_description(
         self,
@@ -1184,10 +1711,13 @@ class ProjectIndexDbService:
         subject_edges: List[Dict[str, Any]],
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         nodes: Dict[str, Dict[str, Any]],
+        project_subject_id: Optional[str] = None,
     ) -> List[str]:
-        """Extract actor names via two patterns:
+        """Extract actor names via multiple patterns:
         1. FUK: event -> junction (akteurinnen-am-ereignis) -> actor (akteurin-im-ereignis)
-        2. KHM/HMT: event -> actor directly (akteurin-im-ereignis)
+        2. FUK: junction -> im-ereignis -> event (reverse lookup)
+        3. KHM: junction -> projekt -> project (project-based junctions)
+        4. Direct: event -> actor directly (ereignis-hat-akteurin or akteurin-im-ereignis)
         """
         event_ids = self._related_ids(subject_edges, _CanonicalURIs.EVENT)
         actor_names: List[str] = []
@@ -1205,23 +1735,36 @@ class ProjectIndexDbService:
                     actor_names.append(normalized)
                     seen.add(normalized)
 
+        # Collect all junction IDs using pre-built indexes (O(1) lookup)
+        all_junction_ids: Set[str] = set()
+
         for event_id in event_ids:
             event_edges = edges_by_subject.get(event_id, [])
 
-            # Pattern 1: FUK junction path (akteurinnen-am-ereignis -> akteurin-im-ereignis)
+            # Pattern 1: FUK forward junction path (akteurinnen-am-ereignis)
             junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
-            for junction_id in junction_ids:
-                junction_edges = edges_by_subject.get(junction_id, [])
-                actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
-                for actor_id in actor_ids:
-                    _add_actor_name(actor_id)
+            all_junction_ids.update(junction_ids)
 
-            # Pattern 2: Direct actor links on event
-            # FUK uses ereignis-hat-akteurin, KHM/HMT use akteurin-im-ereignis
+            # Pattern 2: FUK reverse lookup using pre-built index
+            if hasattr(self, '_junctions_by_event'):
+                all_junction_ids.update(self._junctions_by_event.get(event_id, []))
+
+            # Pattern 4: Direct actor links on event
             for direct_uri in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
                 direct_actor_ids = self._related_ids(event_edges, direct_uri)
                 for actor_id in direct_actor_ids:
                     _add_actor_name(actor_id)
+
+        # Pattern 3: KHM - junctions via project using pre-built index
+        if project_subject_id and hasattr(self, '_junctions_by_project'):
+            all_junction_ids.update(self._junctions_by_project.get(project_subject_id, []))
+
+        # Process all junctions to extract actor names
+        for junction_id in all_junction_ids:
+            junction_edges = edges_by_subject.get(junction_id, [])
+            actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
+            for actor_id in actor_ids:
+                _add_actor_name(actor_id)
 
         return actor_names
 
@@ -1512,44 +2055,66 @@ class ProjectIndexDbService:
         subject_edges: List[Dict[str, Any]],
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         nodes: Dict[str, Dict[str, Any]],
+        project_subject_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Extract actor data with roles as structured dicts for ProjectDetailIndex."""
+        """Extract actor data with roles as structured dicts for ProjectDetailIndex.
+
+        Supports two patterns:
+        1. FUK: junction -> im-ereignis -> event (find via event_ids)
+        2. KHM: junction -> projekt -> project (find via project_subject_id)
+        """
         event_ids = self._related_ids(subject_edges, _CanonicalURIs.EVENT)
         actors: List[Dict[str, Any]] = []
         seen_names: Set[str] = set()
 
+        # Collect all junction IDs using pre-built indexes (O(1) lookup)
+        all_junction_ids: Set[str] = set()
+
+        # Pattern 1: FUK - junctions via events
         for event_id in event_ids:
             event_edges = edges_by_subject.get(event_id, [])
 
-            # Try junction table approach first (akteurinnen-am-ereignis)
+            # Try junction table approach first (akteurinnen-am-ereignis, event -> junction)
             junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
+            all_junction_ids.update(junction_ids)
 
-            for junction_id in junction_ids:
-                junction_edges = edges_by_subject.get(junction_id, [])
-                actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
+            # Also find junctions via pre-built index (FUK: junction -> im-ereignis -> event)
+            if hasattr(self, '_junctions_by_event'):
+                all_junction_ids.update(self._junctions_by_event.get(event_id, []))
 
-                # Get roles from junction via rolle entities
-                roles = self._get_role_names_from_junction(junction_edges, edges_by_subject)
+        # Pattern 2: KHM - junctions via project using pre-built index
+        if project_subject_id and hasattr(self, '_junctions_by_project'):
+            all_junction_ids.update(self._junctions_by_project.get(project_subject_id, []))
 
-                for actor_id in actor_ids:
-                    actor_edges = edges_by_subject.get(actor_id, [])
-                    actor_node = nodes.get(actor_id, {})
+        # Process all junctions
+        for junction_id in all_junction_ids:
+            junction_edges = edges_by_subject.get(junction_id, [])
+            actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
 
-                    name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
-                    if not name:
-                        name = actor_node.get("name") or actor_node.get("value")
+            # Get roles from junction (supports both entity links and literals)
+            roles = self._get_role_names_from_junction(junction_edges, edges_by_subject)
 
-                    if name:
-                        normalized = str(name).strip()
-                        if normalized not in seen_names:
-                            actors.append({
-                                "name": normalized,
-                                "roles": roles,
-                                "uri": actor_node.get("uri") or "",
-                            })
-                            seen_names.add(normalized)
+            for actor_id in actor_ids:
+                actor_edges = edges_by_subject.get(actor_id, [])
+                actor_node = nodes.get(actor_id, {})
 
-            # Also try direct event->actor links (both FUK and KHM/HMT patterns)
+                name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
+                if not name:
+                    name = actor_node.get("name") or actor_node.get("value")
+
+                if name:
+                    normalized = str(name).strip()
+                    if normalized not in seen_names:
+                        actors.append({
+                            "name": normalized,
+                            "roles": roles,
+                            "uri": actor_node.get("uri") or "",
+                        })
+                        seen_names.add(normalized)
+
+        # Also try direct event->actor links (both FUK and KHM/HMT patterns)
+        for event_id in event_ids:
+            event_edges = edges_by_subject.get(event_id, [])
             for direct_uri in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
                 direct_actor_ids = self._related_ids(event_edges, direct_uri)
                 for actor_id in direct_actor_ids:
@@ -1606,7 +2171,7 @@ class ProjectIndexDbService:
             location = self._first_literal(event_edges, _CanonicalURIs.EVENT_LOCATION)
 
             # Extract actors for this event
-            event_actors = self._extract_event_actors(event_edges, edges_by_subject, nodes)
+            event_actors = self._extract_event_actors(event_id, event_edges, edges_by_subject, nodes)
 
             # Build display date
             if start and end:
@@ -1629,6 +2194,7 @@ class ProjectIndexDbService:
 
     def _extract_event_actors(
         self,
+        event_id: str,
         event_edges: List[Dict[str, Any]],
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         nodes: Dict[str, Dict[str, Any]],
@@ -1637,8 +2203,16 @@ class ProjectIndexDbService:
         actors: List[Dict[str, Any]] = []
         seen_names: Set[str] = set()
 
-        # Try junction table approach (akteurinnen-am-ereignis)
+        # Try junction table approach (akteurinnen-am-ereignis, event -> junction)
         junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
+
+        # Also find junctions via reverse lookup (FUK: junction -> im-ereignis -> event)
+        for subject_id, subject_edges in edges_by_subject.items():
+            for edge in subject_edges:
+                if (self._canonical(edge) == _CanonicalURIs.JUNCTION_TO_EVENT
+                        and edge.get("object_id") == event_id):
+                    if subject_id not in junction_ids:
+                        junction_ids.append(subject_id)
 
         for junction_id in junction_ids:
             junction_edges = edges_by_subject.get(junction_id, [])
@@ -1873,3 +2447,52 @@ class ProjectIndexDbService:
                 })
 
         return objects
+
+    def _get_actors_via_service(
+        self,
+        subject_id: str,
+        subject_edges: List[Dict[str, Any]],
+        org_code: Optional[str] = None,
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Get actors using TripleRelationshipService (proven, handles all org patterns).
+
+        Returns:
+            Tuple of (actor_names, actors_structured)
+        """
+        # Get event IDs from graph edges
+        event_ids = self._related_ids(subject_edges, _CanonicalURIs.EVENT)
+
+        triple_service = TripleRelationshipService(organization_code=org_code)
+        actors_payload = triple_service.get_actor_relationships(
+            subject_id,
+            event_predicate=_CanonicalURIs.EVENT,
+            actor_link_predicate=_CanonicalURIs.ACTOR_LINK,
+            role_link_predicate=_CanonicalURIs.ACTOR_ROLE,
+            actor_name_predicate=_CanonicalURIs.ACTOR_NAME,
+            role_name_predicate=_CanonicalURIs.ROLE_GERMAN_NAME,
+            event_ids=list(event_ids) if event_ids else None,
+            organization_code=org_code,
+        )
+
+        actor_names: List[str] = []
+        actors_structured: List[Dict[str, Any]] = []
+        seen_names: Set[str] = set()
+
+        for payload in actors_payload:
+            name = payload.get("name")
+            if not name:
+                continue
+            normalized = str(name).strip()
+            if normalized in seen_names:
+                continue
+            seen_names.add(normalized)
+
+            roles = list(payload.get("roles", []))
+            actor_names.append(normalized)
+            actors_structured.append({
+                "name": normalized,
+                "roles": roles,
+                "uri": "",  # Service doesn't return URI, leave empty
+            })
+
+        return actor_names, actors_structured
