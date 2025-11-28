@@ -58,10 +58,21 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         logger.info(f"🔍 CATALOG_SEARCH: Query: '{query}', Page: {page}, Org: {org_code}, HTMX: {is_htmx}")
 
         try:
-            # For HTMX requests without query, return empty results immediately
-            if is_htmx and not query and not orga_code:
-                logger.info("🚀 FAST_PATH: Empty HTMX request, returning empty results")
-                return self.build_empty_search_response(request, query)
+            # For requests without query, return empty results immediately
+            if not query and not orga_code:
+                logger.info("FAST_PATH: No query provided, returning empty results")
+                if is_htmx:
+                    return self.build_empty_search_response(request, query)
+                # For initial page load without query, return empty page
+                context = {
+                    'query': None,
+                    'orga_code': None,
+                    'results': [],
+                    'pagination': {},
+                    'total_results': 0,
+                    'csrf_token': get_token(request)
+                }
+                return render(request, 'catalog/design.html', context)
 
             search_service = ProjectCardSearchService()
             cards, total_results = search_service.search_cards(
