@@ -112,3 +112,203 @@ This is a lightweight, experimental interface for exploring RDF graph data. It d
 - HTMX for dynamic UI updates
 - Django view composition with mixins
 - Cache-aware service architecture
+
+---
+
+# Project Index Tables
+
+The catalog module also provides denormalized, indexed tables for fast project search and display. These tables are derived from the canonical RDF triplestore and Resource models.
+
+## Tables Overview
+
+| Table | DB Name | Purpose | Data Source |
+|-------|---------|---------|-------------|
+| `ProjectIndex` | `projects_index` | Card display & text search | Snapshot/Graph |
+| `ProjectRecordIndex` | `project_records` | Full record cache with JSON | Snapshot/Graph |
+| `ProjectDetailIndex` | `project_detail_index` | Structured detail view data | Graph only |
+| `PreviewImages` | `catalog_previewimages` | Cached S3 image binaries | S3 |
+
+## Table Details
+
+### ProjectIndex
+
+Lightweight projection for catalog card listings and search results.
+
+**Key fields:**
+- `title`, `subtitle`, `image` - Display fields
+- `categories` - ArrayField of category labels
+- `actor_names` - ArrayField of actor names
+- `institution_label` - Denormalized institution name
+- `year_range` - Formatted year range string
+
+**Indexes:**
+- GIN trigram indexes on `title`, `subtitle` for fuzzy search
+- GIN indexes on `categories`, `actor_names` for array containment
+- Composite index on `org_code`, `public_access_level`, `is_public_approved`
+
+**Usage:** Powers the catalog card grid and advanced search filtering.
+
+### ProjectRecordIndex
+
+Full project record cache with searchable helper columns.
+
+**Key fields:**
+- All fields from `ProjectIndex` plus:
+- `description` - Project description
+- `category_labels`, `category_slugs` - Separate arrays for display/filtering
+- `year_values` - Integer array for year range queries
+- `record_jsonb` - Complete `ProjectRecord` as JSON
+
+**Usage:** Advanced search with complex filters, full record materialization via `to_record()`.
+
+### ProjectDetailIndex
+
+Structured data for project detail views with typed JSON columns.
+
+**Key fields:**
+- `categories` - JSON array: `[{label, uri, slug}]`
+- `actors` - JSON array: `[{name, roles, uri}]`
+- `events` - JSON array: `[{id, name, start, end, location, actors}]`
+- `digital_objects` - JSON array: `[{path, access_url}]`
+- `properties` - JSON dict: dauer, tonarten, etc.
+- `authority` - JSON dict: wikidata_ids, gnd_ids
+
+**Usage:** Project detail page rendering via `to_view_context()`.
+
+### PreviewImages
+
+Local cache of preview images from S3.
+
+**Key fields:**
+- `bucket`, `path` - S3 location (unique together)
+- `img` - Binary image data
+- `content_type`, `content_length` - HTTP response headers
+
+**Usage:** Serve preview images without S3 round-trips.
+
+## Syncing Data
+
+### Rebuild Project Index Tables
+
+The primary command to sync all index tables:
+
+```bash
+# Default: rebuild from snapshot (ProjectIndex + ProjectRecordIndex)
+docker compose -f docker-compose.local.yml run --rm django \
+    python manage.py rebuild_project_index
+
+# Rebuild from graph (all three tables, faster)
+docker compose -f docker-compose.local.yml run --rm django \
+    python manage.py rebuild_project_index --backend graph
+
+# Rebuild specific project(s) only
+docker compose -f docker-compose.local.yml run --rm django \
+    python manage.py rebuild_project_index --project-uri "http://example.org/project/123"
+
+# Force snapshot refresh before rebuild
+docker compose -f docker-compose.local.yml run --rm django \
+    python manage.py rebuild_project_index --force-snapshot
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--backend snapshot` | Use ProjectSnapshot (default) |
+| `--backend graph` | Use canonical graph directly (faster, includes ProjectDetailIndex) |
+| `--project-uri URI` | Rebuild specific project(s), repeatable |
+| `--force-snapshot` | Force snapshot refresh first (snapshot backend only) |
+
+### Clear Caches After Rebuild
+
+The advanced search caches dropdown options for 1 hour. Clear after rebuilding:
+
+```bash
+# Clear dropdown cache
+docker compose -f docker-compose.local.yml run --rm django \
+    python manage.py shell -c "from django.core.cache import cache; cache.delete('arkumu:advanced_search:dropdown_options')"
+
+# Or clear all cache
+docker compose -f docker-compose.local.yml run --rm django \
+    python manage.py shell -c "from django.core.cache import cache; cache.clear()"
+```
+
+### Download Preview Images
+
+Sync preview images from S3:
+
+```bash
+docker compose -f docker-compose.local.yml run --rm django \
+    python manage.py download_preview_imgs
+```
+
+## Data Flow
+
+```
+Triplestore (RDF)
+       |
+       v
+  Resource Model  ──────────────────────────────┐
+       |                                        |
+       v                                        v
+ProjectSnapshot ─────────> rebuild_project_index
+       |                          |
+       v                          v
+ ProjectRecord          ┌─────────┴─────────┐
+                        |                   |
+                        v                   v
+              ProjectIndex          ProjectRecordIndex
+              (cards/search)        (full records + JSON)
+                                            |
+                                            v
+                                   ProjectDetailIndex
+                                   (detail view data)
+```
+
+## When to Rebuild
+
+Rebuild the index tables when:
+
+1. **New projects ingested** - After importing new RDF data
+2. **Project metadata updated** - After modifying triples
+3. **Resource visibility changed** - After `public_access_level` or `is_public_approved` changes
+4. **Schema changes** - After modifying index table fields
+5. **Fresh deployment** - To ensure indexes match current data
+
+## Index Services
+
+| Service | Purpose |
+|---------|---------|
+| `ProjectIndexDbService` | Builds/updates all three index tables |
+| `ProjectIndexService` | Query interface for cards with filtering |
+| `ProjectDetailIndexService` | Query interface for detail views |
+
+## Admin
+
+All tables are registered in Django admin at `/admin/catalog/`:
+
+- **Project Index** - View/search card projections
+- **Project Record Index** - View full records with JSON preview
+- **Project Detail Index** - View structured detail data
+- **Preview Images** - View cached images with thumbnails
+
+## Troubleshooting
+
+### Actors not appearing in advanced search
+
+1. Rebuild index: `python manage.py rebuild_project_index --backend graph`
+2. Clear cache: `cache.delete('arkumu:advanced_search:dropdown_options')`
+
+### Stale data in catalog
+
+1. Check `built_at` timestamp in admin
+2. Rebuild with `--force-snapshot` or `--backend graph`
+
+### Missing preview images
+
+1. Run `python manage.py download_preview_imgs`
+2. Check S3 credentials in settings
+
+### Index out of sync with Resources
+
+The index tables link to `Resource` via `project_resource` FK. If a Resource is deleted, the index row cascades. If Resource visibility changes, rebuild to update the index.
