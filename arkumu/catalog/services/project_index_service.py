@@ -558,7 +558,7 @@ class ProjectIndexService:
 
             # Filter by categories (ArrayField overlap)
             if categories:
-                base_qs = base_qs.filter(categories__overlap=categories)
+                base_qs = base_qs.filter(category_labels__overlap=categories)
 
             # Filter by actor names (ArrayField contains)
             if actors:

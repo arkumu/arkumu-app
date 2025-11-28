@@ -65,10 +65,9 @@ def test_service_writes_public_rows_and_filters_private(db):
         prune_missing=True,
     )
 
-    assert result["projects_index"] == 2
-    assert result["project_records"] == 2
+    assert result["project_index"] == 2
 
-    stored_public = ProjectRecordIndex.objects.get(project_resource=public_res)
+    stored_public = ProjectIndex.objects.get(project_resource=public_res)
     assert stored_public.uri == public_res.uri
     assert stored_public.to_record().title == "Public Project"
 
@@ -111,7 +110,7 @@ def test_rebuild_project_index_command(monkeypatch, capsys):
 
     def fake_rebuild(self, project_uris=None, force_snapshot=False):
         calls.append({"uris": project_uris, "force": force_snapshot})
-        return {"projects_index": 3, "project_records": 3}
+        return {"project_index": 3}
 
     monkeypatch.setattr(ProjectIndexDbService, "rebuild", fake_rebuild)
 
@@ -124,8 +123,7 @@ def test_rebuild_project_index_command(monkeypatch, capsys):
 
     assert calls == [{"uris": ["http://example.org/project/command"], "force": True}]
     output = capsys.readouterr().out
-    assert "cards=3" in output
-    assert "records=3" in output
+    assert "index=3" in output
 
 
 def test_bulk_write_updates_and_preserves_existing_rows(db):
@@ -282,6 +280,9 @@ def test_rebuild_from_graph_writes_project_index(db, monkeypatch):
         def get_project_graph(self, **kwargs):
             return mock_graph
 
+        def _fetch_triples_for_subjects(self, subject_ids, predicate_whitelist=None):
+            return []
+
     monkeypatch.setattr(
         canonical_graph_service,
         "CanonicalGraphService",
@@ -291,13 +292,13 @@ def test_rebuild_from_graph_writes_project_index(db, monkeypatch):
     service = ProjectIndexDbService(now=timezone.now())
     result = service.rebuild_from_graph()
 
-    assert result["projects_index"] == 1
+    assert result["project_index"] == 1
 
     index_row = ProjectIndex.objects.get(project_resource=resource)
     assert index_row.title == "Graph Test Title"
     assert index_row.subtitle == "Graph Test Subtitle"
     assert index_row.institution_label == "Mock Institution"
-    assert index_row.categories == ["Mock Category"]
+    assert index_row.category_labels == ["Mock Category"]
     assert index_row.year_range == "2020 bis 2023"
     assert index_row.org_code == "graphorg"
 
@@ -308,7 +309,7 @@ def test_rebuild_from_graph_command(monkeypatch, capsys):
 
     def fake_rebuild_from_graph(self, project_uris=None):
         calls.append({"uris": project_uris})
-        return {"projects_index": 5, "project_records": 0}
+        return {"project_index": 5}
 
     monkeypatch.setattr(ProjectIndexDbService, "rebuild_from_graph", fake_rebuild_from_graph)
 
@@ -318,7 +319,7 @@ def test_rebuild_from_graph_command(monkeypatch, capsys):
     assert calls[0]["uris"] is None
     output = capsys.readouterr().out
     assert "graph" in output
-    assert "cards=5" in output
+    assert "index=5" in output
 
 
 def test_rebuild_from_graph_writes_project_record_index(db, monkeypatch):
@@ -376,6 +377,9 @@ def test_rebuild_from_graph_writes_project_record_index(db, monkeypatch):
         def get_project_graph(self, **kwargs):
             return mock_graph
 
+        def _fetch_triples_for_subjects(self, subject_ids, predicate_whitelist=None):
+            return []
+
     monkeypatch.setattr(
         canonical_graph_service,
         "CanonicalGraphService",
@@ -385,9 +389,9 @@ def test_rebuild_from_graph_writes_project_record_index(db, monkeypatch):
     service = ProjectIndexDbService(now=timezone.now())
     result = service.rebuild_from_graph()
 
-    assert result["project_records"] == 1
+    assert result["project_index"] == 1
 
-    record_row = ProjectRecordIndex.objects.get(project_resource=resource)
+    record_row = ProjectIndex.objects.get(project_resource=resource)
     assert record_row.title == "Record Index Test"
     assert record_row.description == "A test description"
     assert record_row.institution_label == "Record Inst"
@@ -486,6 +490,10 @@ def test_rebuild_from_graph_writes_project_detail_index(db, monkeypatch):
         def get_project_graph(self, **kwargs):
             return mock_graph
 
+        def _fetch_triples_for_subjects(self, subject_ids, predicate_whitelist=None):
+            # Return empty for second-level actor expansion
+            return []
+
     monkeypatch.setattr(
         canonical_graph_service,
         "CanonicalGraphService",
@@ -495,9 +503,9 @@ def test_rebuild_from_graph_writes_project_detail_index(db, monkeypatch):
     service = ProjectIndexDbService(now=timezone.now())
     result = service.rebuild_from_graph()
 
-    assert result["project_details"] == 1
+    assert result["project_index"] == 1
 
-    detail_row = ProjectDetailIndex.objects.get(project_resource=resource)
+    detail_row = ProjectIndex.objects.get(project_resource=resource)
     assert detail_row.title == "Detail Index Test"
     assert len(detail_row.events) == 1
     assert detail_row.events[0]["name"] == "Concert Event"

@@ -115,67 +115,59 @@ This is a lightweight, experimental interface for exploring RDF graph data. It d
 
 ---
 
-# Project Index Tables
+# Project Index Table
 
-The catalog module also provides denormalized, indexed tables for fast project search and display. These tables are derived from the canonical RDF triplestore and Resource models.
+The catalog module provides a unified, denormalized index table for fast project search and display. This table is derived from the canonical RDF triplestore and Resource models.
 
 ## Tables Overview
 
-| Table | DB Name | Purpose | Data Source |
-|-------|---------|---------|-------------|
-| `ProjectIndex` | `projects_index` | Card display & text search | Snapshot/Graph |
-| `ProjectRecordIndex` | `project_records` | Full record cache with JSON | Snapshot/Graph |
-| `ProjectDetailIndex` | `project_detail_index` | Structured detail view data | Graph only |
-| `PreviewImages` | `catalog_previewimages` | Cached S3 image binaries | S3 |
+| Table | DB Name | Purpose |
+|-------|---------|---------|
+| `ProjectIndex` | `project_index` | Unified index for cards, search, and detail views |
+| `PreviewImages` | `catalog_previewimages` | Cached S3 image binaries |
 
-## Table Details
+## ProjectIndex
 
-### ProjectIndex
+A single unified table combining card display, search filtering, and detail view data.
 
-Lightweight projection for catalog card listings and search results.
+### Field Categories
 
-**Key fields:**
-- `title`, `subtitle`, `image` - Display fields
-- `categories` - ArrayField of category labels
-- `actor_names` - ArrayField of actor names
-- `institution_label` - Denormalized institution name
+**Core Display Fields:**
+- `title`, `subtitle`, `description`, `image` - Text content
 - `year_range` - Formatted year range string
+- `institution_label`, `institution_uri` - Institution info
 
-**Indexes:**
-- GIN trigram indexes on `title`, `subtitle` for fuzzy search
-- GIN indexes on `categories`, `actor_names` for array containment
-- Composite index on `org_code`, `public_access_level`, `is_public_approved`
-
-**Usage:** Powers the catalog card grid and advanced search filtering.
-
-### ProjectRecordIndex
-
-Full project record cache with searchable helper columns.
-
-**Key fields:**
-- All fields from `ProjectIndex` plus:
-- `description` - Project description
-- `category_labels`, `category_slugs` - Separate arrays for display/filtering
+**Flat Arrays (GIN indexed for search):**
+- `category_labels` - Category names for filtering
+- `category_slugs` - Category slugs
+- `actor_names` - Actor names for filtering
 - `year_values` - Integer array for year range queries
+- `catchphrase_labels` - Catchphrase labels
+- `digital_object_paths` - File paths
+
+**Structured JSON (for detail views):**
+- `categories` - `[{label, uri, slug}]`
+- `actors` - `[{name, roles, uri}]`
+- `events` - `[{id, name, start, end, location, actors}]`
+- `digital_objects` - `[{path, uri}]`
+- `properties`, `status`, `authority` - Metadata bundles
+
+**Full Record:**
 - `record_jsonb` - Complete `ProjectRecord` as JSON
 
-**Usage:** Advanced search with complex filters, full record materialization via `to_record()`.
+### Indexes
 
-### ProjectDetailIndex
+- GIN trigram indexes on `title`, `subtitle` for fuzzy search
+- GIN indexes on `category_labels`, `actor_names`, `year_values` for array filtering
+- Composite index on `org_code`, `public_access_level`, `is_public_approved`
 
-Structured data for project detail views with typed JSON columns.
+### Methods
 
-**Key fields:**
-- `categories` - JSON array: `[{label, uri, slug}]`
-- `actors` - JSON array: `[{name, roles, uri}]`
-- `events` - JSON array: `[{id, name, start, end, location, actors}]`
-- `digital_objects` - JSON array: `[{path, access_url}]`
-- `properties` - JSON dict: dauer, tonarten, etc.
-- `authority` - JSON dict: wikidata_ids, gnd_ids
+- `to_card_dict()` - Build card payload for catalog grid
+- `to_record()` - Materialize full ProjectRecord from JSON
+- `to_view_context()` - Build context for detail view templates
 
-**Usage:** Project detail page rendering via `to_view_context()`.
-
-### PreviewImages
+## PreviewImages
 
 Local cache of preview images from S3.
 
@@ -184,30 +176,22 @@ Local cache of preview images from S3.
 - `img` - Binary image data
 - `content_type`, `content_length` - HTTP response headers
 
-**Usage:** Serve preview images without S3 round-trips.
-
 ## Syncing Data
 
-### Rebuild Project Index Tables
-
-The primary command to sync all index tables:
+### Rebuild Project Index
 
 ```bash
-# Default: rebuild from snapshot (ProjectIndex + ProjectRecordIndex)
+# Rebuild from snapshot (default)
 docker compose -f docker-compose.local.yml run --rm django \
     python manage.py rebuild_project_index
 
-# Rebuild from graph (all three tables, faster)
+# Rebuild from graph (faster, recommended)
 docker compose -f docker-compose.local.yml run --rm django \
     python manage.py rebuild_project_index --backend graph
 
 # Rebuild specific project(s) only
 docker compose -f docker-compose.local.yml run --rm django \
     python manage.py rebuild_project_index --project-uri "http://example.org/project/123"
-
-# Force snapshot refresh before rebuild
-docker compose -f docker-compose.local.yml run --rm django \
-    python manage.py rebuild_project_index --force-snapshot
 ```
 
 **Options:**
@@ -215,13 +199,11 @@ docker compose -f docker-compose.local.yml run --rm django \
 | Flag | Description |
 |------|-------------|
 | `--backend snapshot` | Use ProjectSnapshot (default) |
-| `--backend graph` | Use canonical graph directly (faster, includes ProjectDetailIndex) |
+| `--backend graph` | Use canonical graph directly (faster) |
 | `--project-uri URI` | Rebuild specific project(s), repeatable |
-| `--force-snapshot` | Force snapshot refresh first (snapshot backend only) |
+| `--force-snapshot` | Force snapshot refresh first |
 
 ### Clear Caches After Rebuild
-
-The advanced search caches dropdown options for 1 hour. Clear after rebuilding:
 
 ```bash
 # Clear dropdown cache
@@ -235,8 +217,6 @@ docker compose -f docker-compose.local.yml run --rm django \
 
 ### Download Preview Images
 
-Sync preview images from S3:
-
 ```bash
 docker compose -f docker-compose.local.yml run --rm django \
     python manage.py download_preview_imgs
@@ -248,48 +228,36 @@ docker compose -f docker-compose.local.yml run --rm django \
 Triplestore (RDF)
        |
        v
-  Resource Model  ──────────────────────────────┐
-       |                                        |
-       v                                        v
-ProjectSnapshot ─────────> rebuild_project_index
-       |                          |
-       v                          v
- ProjectRecord          ┌─────────┴─────────┐
-                        |                   |
-                        v                   v
-              ProjectIndex          ProjectRecordIndex
-              (cards/search)        (full records + JSON)
-                                            |
-                                            v
-                                   ProjectDetailIndex
-                                   (detail view data)
+  Resource Model
+       |
+       v
+ProjectSnapshot ─────> rebuild_project_index ─────> ProjectIndex
+       |                                              (unified)
+       v
+ ProjectRecord
 ```
 
 ## When to Rebuild
-
-Rebuild the index tables when:
 
 1. **New projects ingested** - After importing new RDF data
 2. **Project metadata updated** - After modifying triples
 3. **Resource visibility changed** - After `public_access_level` or `is_public_approved` changes
 4. **Schema changes** - After modifying index table fields
-5. **Fresh deployment** - To ensure indexes match current data
+5. **Fresh deployment** - To ensure index matches current data
 
-## Index Services
+## Services
 
 | Service | Purpose |
 |---------|---------|
-| `ProjectIndexDbService` | Builds/updates all three index tables |
+| `ProjectIndexDbService` | Builds/updates the index table |
 | `ProjectIndexService` | Query interface for cards with filtering |
-| `ProjectDetailIndexService` | Query interface for detail views |
+| `ProjectDetailIndexService` | Builds records from graph (bypasses index) |
 
 ## Admin
 
-All tables are registered in Django admin at `/admin/catalog/`:
+Registered in Django admin at `/admin/catalog/`:
 
-- **Project Index** - View/search card projections
-- **Project Record Index** - View full records with JSON preview
-- **Project Detail Index** - View structured detail data
+- **Project Index** - View all project data with search, JSON previews
 - **Preview Images** - View cached images with thumbnails
 
 ## Troubleshooting
@@ -302,7 +270,7 @@ All tables are registered in Django admin at `/admin/catalog/`:
 ### Stale data in catalog
 
 1. Check `built_at` timestamp in admin
-2. Rebuild with `--force-snapshot` or `--backend graph`
+2. Rebuild with `--backend graph`
 
 ### Missing preview images
 
@@ -311,4 +279,4 @@ All tables are registered in Django admin at `/admin/catalog/`:
 
 ### Index out of sync with Resources
 
-The index tables link to `Resource` via `project_resource` FK. If a Resource is deleted, the index row cascades. If Resource visibility changes, rebuild to update the index.
+The index links to `Resource` via `project_resource` FK. If a Resource is deleted, the index row cascades. If visibility changes, rebuild to update.

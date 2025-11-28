@@ -147,7 +147,7 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
 
             # Get unique categories (flatten ArrayField) - already human-readable labels
             all_categories_raw = set()
-            for cats in base_qs.values_list('categories', flat=True):
+            for cats in base_qs.values_list('category_labels', flat=True):
                 if cats:
                     all_categories_raw.update(cats)
 

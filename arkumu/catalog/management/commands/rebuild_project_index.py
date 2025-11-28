@@ -49,7 +49,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Rebuilt project index ({backend}): cards={result.get('projects_index', 0)}, "
-                f"records={result.get('project_records', 0)} in {elapsed:.2f}s",
+                f"Rebuilt project index ({backend}): index={result.get('project_index', 0)} in {elapsed:.2f}s",
             )
         )

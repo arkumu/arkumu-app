@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from django.db import transaction
 from django.utils import timezone
 
-from arkumu.catalog.models import ProjectDetailIndex, ProjectIndex, ProjectRecordIndex
+from arkumu.catalog.models import ProjectIndex
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
 from arkumu.common.hash_utils import generate_value_hash
 from arkumu.metadata.models import PublicAccessLevel, Resource
@@ -315,7 +315,6 @@ class ProjectIndexDbService:
         built_at = self.now
         seen_ids: set[uuid.UUID] = set()
         index_rows: List[ProjectIndex] = []
-        record_rows: List[ProjectRecordIndex] = []
 
         for record in records:
             subject_uuid = _as_uuid(getattr(record, "subject_id", None))
@@ -331,144 +330,165 @@ class ProjectIndexDbService:
                 )
                 continue
 
-            defaults_index = self._index_defaults(record, resource, built_at, source_version)
-            defaults_record = self._record_defaults(record, resource, built_at, source_version)
-
-            index_rows.append(ProjectIndex(project_resource=resource, **defaults_index))
-            record_rows.append(ProjectRecordIndex(project_resource=resource, **defaults_record))
+            defaults = self._unified_defaults(record, resource, built_at, source_version)
+            index_rows.append(ProjectIndex(project_resource=resource, **defaults))
             seen_ids.add(resource.id)
 
         with transaction.atomic():
-            if not index_rows and not record_rows:
+            if not index_rows:
                 if prune_missing:
                     ProjectIndex.objects.all().delete()
-                    ProjectRecordIndex.objects.all().delete()
-                return {"projects_index": 0, "project_records": 0}
+                return {"project_index": 0}
 
-            if index_rows:
-                ProjectIndex.objects.bulk_create(
-                    index_rows,
-                    update_conflicts=True,
-                    unique_fields=["project_resource"],
-                    update_fields=[
-                        "uri",
-                        "org_code",
-                        "public_access_level",
-                        "is_public_approved",
-                        "is_derived",
-                        "title",
-                        "subtitle",
-                        "image",
-                        "institution_label",
-                        "categories",
-                        "actor_names",
-                        "digital_object_paths",
-                        "year_range",
-                        "source_updated_at",
-                        "built_at",
-                        "source_version",
-                    ],
-                )
-
-            if record_rows:
-                ProjectRecordIndex.objects.bulk_create(
-                    record_rows,
-                    update_conflicts=True,
-                    unique_fields=["project_resource"],
-                    update_fields=[
-                        "uri",
-                        "org_code",
-                        "public_access_level",
-                        "is_public_approved",
-                        "is_derived",
-                        "title",
-                        "subtitle",
-                        "description",
-                        "institution_label",
-                        "institution_codes",
-                        "category_labels",
-                        "category_slugs",
-                        "actor_names",
-                        "year_values",
-                        "project_type_label",
-                        "catchphrase_labels",
-                        "image",
-                        "digital_object_paths",
-                        "reference_only",
-                        "harvestable",
-                        "ownership_filtered",
-                        "record_jsonb",
-                        "source_updated_at",
-                        "built_at",
-                        "source_version",
-                    ],
-                )
+            ProjectIndex.objects.bulk_create(
+                index_rows,
+                update_conflicts=True,
+                unique_fields=["project_resource"],
+                update_fields=[
+                    "uri",
+                    "org_code",
+                    "public_access_level",
+                    "is_public_approved",
+                    "is_derived",
+                    "title",
+                    "subtitle",
+                    "description",
+                    "image",
+                    "year_range",
+                    "institution_label",
+                    "institution_uri",
+                    "institution_codes",
+                    "project_type_label",
+                    "category_labels",
+                    "category_slugs",
+                    "actor_names",
+                    "year_values",
+                    "catchphrase_labels",
+                    "digital_object_paths",
+                    "categories",
+                    "actors",
+                    "events",
+                    "digital_objects",
+                    "alternative_titles",
+                    "catchphrases",
+                    "properties",
+                    "status",
+                    "authority",
+                    "submitter",
+                    "licenses",
+                    "rights_status",
+                    "record_jsonb",
+                    "reference_only",
+                    "harvestable",
+                    "ownership_filtered",
+                    "source_updated_at",
+                    "built_at",
+                    "source_version",
+                ],
+            )
 
             if prune_missing and seen_ids:
                 ProjectIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
-                ProjectRecordIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
 
-        return {
-            "projects_index": len(index_rows),
-            "project_records": len(record_rows),
-        }
+        return {"project_index": len(index_rows)}
 
-    def _index_defaults(
+    def _unified_defaults(
         self,
         record: ProjectRecord,
         resource: Resource,
         built_at,
         source_version: str,
     ) -> Dict[str, object]:
-        return {
-            "uri": record.uri,
-            "org_code": self._org_code(resource),
-            "public_access_level": getattr(resource, "public_access_level", PublicAccessLevel.RESTRICTED),
-            "is_public_approved": bool(getattr(resource, "is_public_approved", False)),
-            "is_derived": bool(getattr(resource, "is_public", False)),
-            "title": record.title or "",
-            "subtitle": record.subtitle or "",
-            "image": record.image or "",
-            "institution_label": self._institution_label(record),
-            "categories": self._category_tokens(record),
-            "actor_names": self._actor_names(record),
-            "digital_object_paths": self._digital_object_paths(record),
-            "year_range": record.year_range or self._derive_year_range(record) or "",
-            "source_updated_at": getattr(resource, "updated_at", None),
-            "built_at": built_at,
-            "source_version": source_version,
-        }
+        """Build defaults for the unified ProjectIndex model."""
+        org_code = self._org_code(resource)
+        institution_label = self._institution_label(record)
+        category_labels = self._category_labels(record)
+        actor_names = self._actor_names(record)
+        digital_object_paths = self._digital_object_paths(record)
+        year_values = self._year_values(record)
+        catchphrase_labels = [
+            cp.label for cp in (record.catchphrases or []) if getattr(cp, "label", None)
+        ]
 
-    def _record_defaults(
-        self,
-        record: ProjectRecord,
-        resource: Resource,
-        built_at,
-        source_version: str,
-    ) -> Dict[str, object]:
+        # Build structured data for detail views
+        categories_structured = [
+            {"label": cat.label, "uri": getattr(cat, "uri", ""), "slug": getattr(cat, "slug", "")}
+            for cat in (record.categories or [])
+            if getattr(cat, "label", None)
+        ]
+        actors_structured = [
+            {"name": act.name, "roles": list(getattr(act, "roles", []) or []), "uri": getattr(act, "uri", "")}
+            for act in (record.actors or [])
+            if getattr(act, "name", None)
+        ]
+        events_structured = [
+            {
+                "id": getattr(evt, "id", ""),
+                "name": getattr(evt, "name", ""),
+                "start": getattr(evt, "start", ""),
+                "end": getattr(evt, "end", ""),
+                "location": getattr(evt, "location", ""),
+                "actors": [
+                    {"name": a.name, "roles": list(getattr(a, "roles", []) or [])}
+                    for a in (getattr(evt, "actors", []) or [])
+                    if getattr(a, "name", None)
+                ],
+            }
+            for evt in (record.events or [])
+        ]
+        digital_objects_structured = [
+            {"path": _display_path(obj) or "", "uri": getattr(obj, "uri", "")}
+            for obj in (record.digital_objects or [])
+        ]
+
         return {
             "uri": record.uri,
-            "org_code": self._org_code(resource),
+            "org_code": org_code,
             "public_access_level": getattr(resource, "public_access_level", PublicAccessLevel.RESTRICTED),
             "is_public_approved": bool(getattr(resource, "is_public_approved", False)),
             "is_derived": bool(getattr(resource, "is_public", False)),
+            # Core display fields
             "title": record.title or "",
             "subtitle": record.subtitle or "",
             "description": record.description or "",
-            "institution_label": self._institution_label(record),
-            "institution_codes": list(record.institution_codes or []),
-            "category_labels": self._category_labels(record),
-            "category_slugs": list(record.category_slugs or []),
-            "actor_names": self._actor_names(record),
-            "year_values": self._year_values(record),
-            "project_type_label": getattr(getattr(record, "project_type", None), "label", "") or "",
-            "catchphrase_labels": [cp.label for cp in (record.catchphrases or []) if getattr(cp, "label", None)],
             "image": record.image or "",
-            "digital_object_paths": self._digital_object_paths(record),
+            "year_range": record.year_range or self._derive_year_range(record) or "",
+            # Relationships
+            "institution_label": institution_label,
+            "institution_uri": getattr(getattr(record, "institution", None), "uri", "") or "",
+            "institution_codes": list(record.institution_codes or []) or ([org_code] if org_code else []),
+            "project_type_label": getattr(getattr(record, "project_type", None), "label", "") or "",
+            # Flat arrays for search
+            "category_labels": category_labels,
+            "category_slugs": list(record.category_slugs or []),
+            "actor_names": actor_names,
+            "year_values": year_values,
+            "catchphrase_labels": catchphrase_labels,
+            "digital_object_paths": digital_object_paths,
+            # Structured JSON for detail views
+            "categories": categories_structured,
+            "actors": actors_structured,
+            "events": events_structured,
+            "digital_objects": digital_objects_structured,
+            "alternative_titles": [
+                {"value": t.value} for t in (getattr(record, "alternative_titles", []) or [])
+                if getattr(t, "value", None)
+            ],
+            "catchphrases": [{"label": c} for c in catchphrase_labels],
+            # Metadata bundles (empty for snapshot-based rebuild)
+            "properties": {},
+            "status": {},
+            "authority": {},
+            "submitter": {},
+            "licenses": {},
+            "rights_status": {},
+            # Full record JSON
+            "record_jsonb": record.to_dict(),
+            # Flags
             "reference_only": bool(getattr(record, "reference_only", False)),
             "harvestable": bool(getattr(record, "harvestable", True)),
             "ownership_filtered": bool(getattr(record, "ownership_filtered", False)),
-            "record_jsonb": record.to_dict(),
+            # Metadata
             "source_updated_at": getattr(resource, "updated_at", None),
             "built_at": built_at,
             "source_version": source_version,
@@ -586,7 +606,7 @@ class ProjectIndexDbService:
         subject_ids: List[str] = graph.get("subjects", []) or []
         if not subject_ids:
             logger.warning("rebuild_from_graph: no project subjects found")
-            return {"projects_index": 0, "project_records": 0}
+            return {"project_index": 0}
 
         # Filter to specific URIs if requested
         if project_uris:
@@ -661,11 +681,9 @@ class ProjectIndexDbService:
         source_version: str,
         prune_missing: bool,
     ) -> Dict[str, int]:
-        """Transform graph data into ProjectIndex, ProjectRecordIndex, and ProjectDetailIndex rows."""
+        """Transform graph data into unified ProjectIndex rows."""
         seen_ids: Set[uuid.UUID] = set()
         index_rows: List[ProjectIndex] = []
-        record_rows: List[ProjectRecordIndex] = []
-        detail_rows: List[ProjectDetailIndex] = []
 
         for subject_id in subject_ids:
             subject_uuid = _as_uuid(subject_id)
@@ -677,9 +695,7 @@ class ProjectIndexDbService:
                 logger.debug("rebuild_from_graph: resource not found for %s", subject_id)
                 continue
 
-            # Convert to string for dict lookups (nodes/edges are keyed by string)
             subject_id_str = str(subject_id)
-
             node = nodes.get(subject_id_str, {})
             project_uri = node.get("uri") or node.get("canonical_uri")
             if not project_uri:
@@ -690,119 +706,40 @@ class ProjectIndexDbService:
             # Extract fields from graph
             title = self._first_literal(subject_edges, _CanonicalURIs.TITLE)
             if not title:
-                # Skip projects without title
                 continue
 
             subtitle = self._first_literal(subject_edges, _CanonicalURIs.SUBTITLE)
-            # Try multiple description canonicals
             description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION)
             if not description:
                 description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION_DE_CONTENT)
             if not description:
                 description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION_DE)
             if not description:
-                # KHM maps project descriptions to ereignisbeschreibung canonical
                 description = self._first_literal(subject_edges, _CanonicalURIs.EVENT_DESCRIPTION)
             if not description:
-                description = self._extract_nested_description(
-                    subject_edges, edges_by_subject, nodes
-                )
+                description = self._extract_nested_description(subject_edges, edges_by_subject, nodes)
             image = self._first_literal(subject_edges, _CanonicalURIs.IMAGE)
 
-            # Institution
-            institution_label = self._extract_institution_label(
-                subject_edges, edges_by_subject, nodes
-            )
-            institution_uri = self._extract_institution_uri(
-                subject_edges, nodes
-            )
-
-            # Categories
-            categories = self._extract_categories(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Category slugs
-            category_slugs = self._extract_category_slugs(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Build structured categories for detail index
-            categories_structured = self._extract_categories_structured(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Project type
-            project_type_label = self._extract_project_type_label(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Catchphrases
-            catchphrase_labels = self._extract_catchphrase_labels(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Actors from events (names only for card index)
-            actor_names = self._extract_actor_names(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Actors with roles for detail view
-            actors_structured = self._extract_actors_structured(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Events with full data for detail view
-            events_structured = self._extract_events_structured(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Year range from events
-            year_range = self._extract_year_range(
-                subject_edges, edges_by_subject
-            )
-
-            # Year values as list
-            year_values = self._extract_year_values(
-                subject_edges, edges_by_subject
-            )
-
-            # Digital object paths
-            digital_object_paths = self._extract_digital_object_paths(
-                subject_edges, edges_by_subject, nodes
-            )
-
-            # Digital objects structured
-            digital_objects_structured = self._extract_digital_objects_structured(
-                subject_edges, edges_by_subject, nodes
-            )
+            # Extract all fields
+            institution_label = self._extract_institution_label(subject_edges, edges_by_subject, nodes)
+            institution_uri = self._extract_institution_uri(subject_edges, nodes)
+            category_labels = self._extract_categories(subject_edges, edges_by_subject, nodes)
+            category_slugs = self._extract_category_slugs(subject_edges, edges_by_subject, nodes)
+            categories_structured = self._extract_categories_structured(subject_edges, edges_by_subject, nodes)
+            project_type_label = self._extract_project_type_label(subject_edges, edges_by_subject, nodes)
+            catchphrase_labels = self._extract_catchphrase_labels(subject_edges, edges_by_subject, nodes)
+            actor_names = self._extract_actor_names(subject_edges, edges_by_subject, nodes)
+            actors_structured = self._extract_actors_structured(subject_edges, edges_by_subject, nodes)
+            events_structured = self._extract_events_structured(subject_edges, edges_by_subject, nodes)
+            year_range = self._extract_year_range(subject_edges, edges_by_subject)
+            year_values = self._extract_year_values(subject_edges, edges_by_subject)
+            digital_object_paths = self._extract_digital_object_paths(subject_edges, edges_by_subject, nodes)
+            digital_objects_structured = self._extract_digital_objects_structured(subject_edges, edges_by_subject, nodes)
 
             org_code = self._org_code(resource)
             institution_codes = [org_code] if org_code else []
 
-            # Build ProjectIndex row
-            index_row = ProjectIndex(
-                project_resource=resource,
-                uri=project_uri,
-                org_code=org_code,
-                public_access_level=getattr(resource, "public_access_level", PublicAccessLevel.RESTRICTED),
-                is_public_approved=bool(getattr(resource, "is_public_approved", False)),
-                is_derived=bool(getattr(resource, "is_public", False)),
-                title=title or "",
-                subtitle=subtitle or "",
-                image=image or "",
-                institution_label=institution_label or "",
-                categories=categories,
-                actor_names=actor_names,
-                digital_object_paths=digital_object_paths,
-                year_range=year_range or "",
-                source_updated_at=getattr(resource, "updated_at", None),
-                built_at=built_at,
-                source_version=source_version,
-            )
-            index_rows.append(index_row)
-
-            # Build record_jsonb for ProjectRecordIndex
+            # Build record_jsonb
             record_jsonb = self._build_record_jsonb_from_graph(
                 project_uri=project_uri,
                 subject_id=subject_id_str,
@@ -811,7 +748,7 @@ class ProjectIndexDbService:
                 description=description or "",
                 image=image or "",
                 institution_label=institution_label or "",
-                categories=categories,
+                categories=category_labels,
                 category_slugs=category_slugs,
                 actor_names=actor_names,
                 year_range=year_range or "",
@@ -821,198 +758,119 @@ class ProjectIndexDbService:
                 institution_codes=institution_codes,
             )
 
-            # Build ProjectRecordIndex row
-            record_row = ProjectRecordIndex(
+            # Build unified ProjectIndex row
+            index_row = ProjectIndex(
                 project_resource=resource,
                 uri=project_uri,
                 org_code=org_code,
                 public_access_level=getattr(resource, "public_access_level", PublicAccessLevel.RESTRICTED),
                 is_public_approved=bool(getattr(resource, "is_public_approved", False)),
                 is_derived=bool(getattr(resource, "is_public", False)),
+                # Core display fields
                 title=title or "",
                 subtitle=subtitle or "",
                 description=description or "",
+                image=image or "",
+                year_range=year_range or "",
+                # Relationships
                 institution_label=institution_label or "",
+                institution_uri=institution_uri or "",
                 institution_codes=institution_codes,
-                category_labels=categories,
+                project_type_label=project_type_label or "",
+                # Flat arrays for search
+                category_labels=category_labels,
                 category_slugs=category_slugs,
                 actor_names=actor_names,
                 year_values=year_values,
-                project_type_label=project_type_label or "",
                 catchphrase_labels=catchphrase_labels,
-                image=image or "",
                 digital_object_paths=digital_object_paths,
-                reference_only=False,
-                harvestable=True,
-                ownership_filtered=False,
-                record_jsonb=record_jsonb,
-                source_updated_at=getattr(resource, "updated_at", None),
-                built_at=built_at,
-                source_version=source_version,
-            )
-            record_rows.append(record_row)
-
-            # Build ProjectDetailIndex row with structured data
-            detail_row = ProjectDetailIndex(
-                project_resource=resource,
-                uri=project_uri,
-                org_code=org_code,
-                public_access_level=getattr(resource, "public_access_level", PublicAccessLevel.RESTRICTED),
-                is_public_approved=bool(getattr(resource, "is_public_approved", False)),
-                title=title or "",
-                subtitle=subtitle or "",
-                description=description or "",
-                image=image or "",
-                institution_label=institution_label or "",
-                institution_uri=institution_uri or "",
-                project_type_label=project_type_label or "",
-                year_range=year_range or "",
+                # Structured JSON for detail views
                 categories=categories_structured,
                 actors=actors_structured,
                 events=events_structured,
                 digital_objects=digital_objects_structured,
                 alternative_titles=[],
                 catchphrases=[{"label": c} for c in catchphrase_labels],
+                # Metadata bundles
                 properties=self._extract_properties(subject_edges),
                 status=self._extract_status(subject_edges),
                 authority=self._extract_authority(subject_edges),
                 submitter={},
                 licenses=self._extract_licenses(subject_edges),
                 rights_status={},
+                # Full record JSON
+                record_jsonb=record_jsonb,
+                # Flags
                 reference_only=False,
                 harvestable=True,
                 ownership_filtered=False,
+                # Metadata
                 source_updated_at=getattr(resource, "updated_at", None),
                 built_at=built_at,
                 source_version=source_version,
             )
-            detail_rows.append(detail_row)
+            index_rows.append(index_row)
             seen_ids.add(resource.id)
 
         # Bulk write
         with transaction.atomic():
-            if not index_rows and not record_rows and not detail_rows:
+            if not index_rows:
                 if prune_missing:
                     ProjectIndex.objects.all().delete()
-                    ProjectRecordIndex.objects.all().delete()
-                    ProjectDetailIndex.objects.all().delete()
-                return {"projects_index": 0, "project_records": 0, "project_details": 0}
+                return {"project_index": 0}
 
-            if index_rows:
-                ProjectIndex.objects.bulk_create(
-                    index_rows,
-                    update_conflicts=True,
-                    unique_fields=["project_resource"],
-                    update_fields=[
-                        "uri",
-                        "org_code",
-                        "public_access_level",
-                        "is_public_approved",
-                        "is_derived",
-                        "title",
-                        "subtitle",
-                        "image",
-                        "institution_label",
-                        "categories",
-                        "actor_names",
-                        "digital_object_paths",
-                        "year_range",
-                        "source_updated_at",
-                        "built_at",
-                        "source_version",
-                    ],
-                )
-
-            if record_rows:
-                ProjectRecordIndex.objects.bulk_create(
-                    record_rows,
-                    update_conflicts=True,
-                    unique_fields=["project_resource"],
-                    update_fields=[
-                        "uri",
-                        "org_code",
-                        "public_access_level",
-                        "is_public_approved",
-                        "is_derived",
-                        "title",
-                        "subtitle",
-                        "description",
-                        "institution_label",
-                        "institution_codes",
-                        "category_labels",
-                        "category_slugs",
-                        "actor_names",
-                        "year_values",
-                        "project_type_label",
-                        "catchphrase_labels",
-                        "image",
-                        "digital_object_paths",
-                        "reference_only",
-                        "harvestable",
-                        "ownership_filtered",
-                        "record_jsonb",
-                        "source_updated_at",
-                        "built_at",
-                        "source_version",
-                    ],
-                )
-
-            if detail_rows:
-                ProjectDetailIndex.objects.bulk_create(
-                    detail_rows,
-                    update_conflicts=True,
-                    unique_fields=["project_resource"],
-                    update_fields=[
-                        "uri",
-                        "org_code",
-                        "public_access_level",
-                        "is_public_approved",
-                        "title",
-                        "subtitle",
-                        "description",
-                        "image",
-                        "institution_label",
-                        "institution_uri",
-                        "project_type_label",
-                        "year_range",
-                        "categories",
-                        "actors",
-                        "events",
-                        "digital_objects",
-                        "alternative_titles",
-                        "catchphrases",
-                        "properties",
-                        "status",
-                        "authority",
-                        "submitter",
-                        "licenses",
-                        "rights_status",
-                        "reference_only",
-                        "harvestable",
-                        "ownership_filtered",
-                        "source_updated_at",
-                        "built_at",
-                        "source_version",
-                    ],
-                )
+            ProjectIndex.objects.bulk_create(
+                index_rows,
+                update_conflicts=True,
+                unique_fields=["project_resource"],
+                update_fields=[
+                    "uri",
+                    "org_code",
+                    "public_access_level",
+                    "is_public_approved",
+                    "is_derived",
+                    "title",
+                    "subtitle",
+                    "description",
+                    "image",
+                    "year_range",
+                    "institution_label",
+                    "institution_uri",
+                    "institution_codes",
+                    "project_type_label",
+                    "category_labels",
+                    "category_slugs",
+                    "actor_names",
+                    "year_values",
+                    "catchphrase_labels",
+                    "digital_object_paths",
+                    "categories",
+                    "actors",
+                    "events",
+                    "digital_objects",
+                    "alternative_titles",
+                    "catchphrases",
+                    "properties",
+                    "status",
+                    "authority",
+                    "submitter",
+                    "licenses",
+                    "rights_status",
+                    "record_jsonb",
+                    "reference_only",
+                    "harvestable",
+                    "ownership_filtered",
+                    "source_updated_at",
+                    "built_at",
+                    "source_version",
+                ],
+            )
 
             if prune_missing and seen_ids:
                 ProjectIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
-                ProjectRecordIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
-                ProjectDetailIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
 
-        logger.info(
-            "rebuild_from_graph: wrote %d ProjectIndex, %d ProjectRecordIndex, %d ProjectDetailIndex rows (prune=%s)",
-            len(index_rows),
-            len(record_rows),
-            len(detail_rows),
-            prune_missing,
-        )
-        return {
-            "projects_index": len(index_rows),
-            "project_records": len(record_rows),
-            "project_details": len(detail_rows),
-        }
+        logger.info("rebuild_from_graph: wrote %d ProjectIndex rows (prune=%s)", len(index_rows), prune_missing)
+        return {"project_index": len(index_rows)}
 
     # ------------------------------------------------------------------ #
     # Graph field extraction helpers                                      #
