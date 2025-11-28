@@ -49,10 +49,13 @@ class _CanonicalURIs:
 
     # Actor junction properties
     ACTOR_LINK = "http://arkumu.org/data/properties/akteurin-im-ereignis"
-    ACTOR_ROLE = "http://arkumu.org/data/properties/rolle"
+    ACTOR_ROLE = "http://arkumu.org/data/properties/rollen-der-akteurin-im-ereignis"
 
     # Actor properties
     ACTOR_NAME = "http://arkumu.org/data/properties/deutscher-name"
+
+    # Role properties (rolle entity -> name)
+    ROLE_GERMAN_NAME = "http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb"
 
     # Institution properties
     INSTITUTION_NAME = "http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule"
@@ -163,6 +166,7 @@ class _CanonicalURIs:
             cls.EVENT_DESCRIPTION,
             cls.ACTOR_LINK,
             cls.ACTOR_ROLE,
+            cls.ROLE_GERMAN_NAME,  # For rolle entity name lookup
             cls.ACTOR_NAME,
             cls.INSTITUTION_NAME,
             cls.CATEGORY_NAME,
@@ -908,6 +912,28 @@ class ProjectIndexDbService:
                     results.append(str(obj_id))
         return results
 
+    def _get_role_names_from_junction(
+        self,
+        junction_edges: List[Dict[str, Any]],
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+    ) -> List[str]:
+        """Extract role names from junction edges via rolle entities.
+
+        Structure: junction -> rollen-der-akteurin-im-ereignis -> rolle entity
+                   rolle entity -> deutscher-name-der-rolle-breadcrumb -> name
+        """
+        role_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_ROLE)
+        roles: List[str] = []
+        for role_id in role_ids:
+            role_edges = edges_by_subject.get(role_id, [])
+            role_name = self._first_literal(role_edges, _CanonicalURIs.ROLE_GERMAN_NAME)
+            if role_name:
+                # Extract final part after '>' if breadcrumb format
+                if '>' in role_name:
+                    role_name = role_name.split('>')[-1].strip()
+                roles.append(role_name)
+        return roles
+
     def _expand_second_level_actors(
         self,
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
@@ -978,6 +1004,25 @@ class ProjectIndexDbService:
                 subject_id = str(edge_dict.get("subject_id", ""))
                 if subject_id:
                     edges_by_subject.setdefault(subject_id, []).append(edge_dict)
+
+            # Fetch rolle entity edges (ACTOR_ROLE is now a link to rolle entities)
+            rolle_ids: Set[str] = set()
+            for edge in junction_edges:
+                edge_dict = edge.__dict__ if hasattr(edge, "__dict__") else edge
+                obj_id = edge_dict.get("object_id") if isinstance(edge_dict, dict) else getattr(edge_dict, "object_id", None)
+                if obj_id:
+                    rolle_ids.add(str(obj_id))
+
+            if rolle_ids:
+                rolle_edges = graph_service._fetch_triples_for_subjects(
+                    list(rolle_ids),
+                    [_CanonicalURIs.ROLE_GERMAN_NAME],
+                )
+                for edge in rolle_edges:
+                    edge_dict = edge.__dict__ if hasattr(edge, "__dict__") else edge
+                    subject_id = str(edge_dict.get("subject_id", ""))
+                    if subject_id:
+                        edges_by_subject.setdefault(subject_id, []).append(edge_dict)
 
     def _extract_nested_description(
         self,
@@ -1483,8 +1528,8 @@ class ProjectIndexDbService:
                 junction_edges = edges_by_subject.get(junction_id, [])
                 actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
 
-                # Get role from junction
-                role = self._first_literal(junction_edges, _CanonicalURIs.ACTOR_ROLE)
+                # Get roles from junction via rolle entities
+                roles = self._get_role_names_from_junction(junction_edges, edges_by_subject)
 
                 for actor_id in actor_ids:
                     actor_edges = edges_by_subject.get(actor_id, [])
@@ -1499,7 +1544,7 @@ class ProjectIndexDbService:
                         if normalized not in seen_names:
                             actors.append({
                                 "name": normalized,
-                                "roles": [role] if role else [],
+                                "roles": roles,
                                 "uri": actor_node.get("uri") or "",
                             })
                             seen_names.add(normalized)
@@ -1515,21 +1560,20 @@ class ProjectIndexDbService:
                     if not name:
                         name = actor_node.get("name") or actor_node.get("value")
 
-                    # Get role from actor's junction link (akteurin-im-ereignis -> role)
+                    # Get roles from actor's junction links via rolle entities
                     actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
-                    role = None
+                    roles: List[str] = []
                     for aj_id in actor_junction_ids:
                         aj_edges = edges_by_subject.get(aj_id, [])
-                        role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
-                        if role:
-                            break
+                        aj_roles = self._get_role_names_from_junction(aj_edges, edges_by_subject)
+                        roles.extend(aj_roles)
 
                     if name:
                         normalized = str(name).strip()
                         if normalized not in seen_names:
                             actors.append({
                                 "name": normalized,
-                                "roles": [role] if role else [],
+                                "roles": roles,
                                 "uri": actor_node.get("uri") or "",
                             })
                             seen_names.add(normalized)
@@ -1599,7 +1643,7 @@ class ProjectIndexDbService:
         for junction_id in junction_ids:
             junction_edges = edges_by_subject.get(junction_id, [])
             actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
-            role = self._first_literal(junction_edges, _CanonicalURIs.ACTOR_ROLE)
+            roles = self._get_role_names_from_junction(junction_edges, edges_by_subject)
 
             for actor_id in actor_ids:
                 actor_edges = edges_by_subject.get(actor_id, [])
@@ -1614,7 +1658,7 @@ class ProjectIndexDbService:
                     if normalized not in seen_names:
                         actors.append({
                             "name": normalized,
-                            "roles": [role] if role else [],
+                            "roles": roles,
                         })
                         seen_names.add(normalized)
 
@@ -1629,21 +1673,20 @@ class ProjectIndexDbService:
                 if not name:
                     name = actor_node.get("name") or actor_node.get("value")
 
-                # Get role from actor's junction link
+                # Get roles from actor's junction links via rolle entities
                 actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
-                role = None
+                roles: List[str] = []
                 for aj_id in actor_junction_ids:
                     aj_edges = edges_by_subject.get(aj_id, [])
-                    role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
-                    if role:
-                        break
+                    aj_roles = self._get_role_names_from_junction(aj_edges, edges_by_subject)
+                    roles.extend(aj_roles)
 
                 if name:
                     normalized = str(name).strip()
                     if normalized not in seen_names:
                         actors.append({
                             "name": normalized,
-                            "roles": [role] if role else [],
+                            "roles": roles,
                         })
                         seen_names.add(normalized)
 

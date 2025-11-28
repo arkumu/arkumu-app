@@ -409,6 +409,7 @@ def test_rebuild_from_graph_writes_project_detail_index(db, monkeypatch):
     event_id = uuid.uuid4()
     actor_junction_id = uuid.uuid4()
     actor_id = uuid.uuid4()
+    rolle_id = uuid.uuid4()  # Rolle entity for two-step role lookup
     cat_id = uuid.uuid4()
 
     resource = Resource.objects.create(
@@ -427,6 +428,7 @@ def test_rebuild_from_graph_writes_project_detail_index(db, monkeypatch):
             str(event_id): {"uri": "http://example.org/event/1"},
             str(actor_junction_id): {"uri": "http://example.org/junction/1"},
             str(actor_id): {"uri": "http://example.org/actor/1"},
+            str(rolle_id): {"uri": "http://example.org/rolle/1"},
             str(cat_id): {"uri": "http://example.org/cat/musik"},
         },
         "edges": [
@@ -460,9 +462,16 @@ def test_rebuild_from_graph_writes_project_detail_index(db, monkeypatch):
                 "predicate_canonical": _CanonicalURIs.ACTOR_LINK,
                 "object_id": str(actor_id),
             },
+            # ACTOR_ROLE now links to a rolle entity (not a literal)
             {
                 "subject_id": str(actor_junction_id),
                 "predicate_canonical": _CanonicalURIs.ACTOR_ROLE,
+                "object_id": str(rolle_id),
+            },
+            # Rolle entity has the actual role name via ROLE_GERMAN_NAME
+            {
+                "subject_id": str(rolle_id),
+                "predicate_canonical": _CanonicalURIs.ROLE_GERMAN_NAME,
                 "object_value": "Performer",
             },
             {
