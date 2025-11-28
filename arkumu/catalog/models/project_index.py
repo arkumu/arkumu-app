@@ -284,6 +284,17 @@ class ProjectDetailIndex(models.Model):
 
     def to_view_context(self) -> dict:
         """Build the context dict for project detail view templates."""
+        # Normalize events to include primary_actor/secondary_actor for template
+        normalized_events = []
+        for event in (self.events or []):
+            actors = event.get("actors", [])
+            normalized_event = {
+                **event,
+                "primary_actor": actors[0].get("name", "") if len(actors) > 0 else "",
+                "secondary_actor": actors[1].get("name", "") if len(actors) > 1 else "",
+            }
+            normalized_events.append(normalized_event)
+
         return {
             "uri": self.uri,
             "title": self.title or "Untitled Project",
@@ -298,7 +309,7 @@ class ProjectDetailIndex(models.Model):
             "actors": self.actors or [],
             "catchphrases": self.catchphrases or [],
             "digital_objects": [obj.get("path") for obj in (self.digital_objects or []) if obj.get("path")],
-            "events": self.events or [],
+            "events": normalized_events,
         }
 
     def _resolve_images(self) -> List[str]:

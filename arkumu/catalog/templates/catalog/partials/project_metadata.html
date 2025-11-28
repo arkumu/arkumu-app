@@ -16,15 +16,13 @@
               <th class="text-left py-3 font-mono uppercase tracking-wide text-xs
                           text-arkumu-dark/70 theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
                   tabindex="0">
-                {{ item.key }}
+                {{ item.label|default:item.key }}
               </th>
               <td class="py-3 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
                   tabindex="0">
-                {% if item.values %}
-                  {% for entry in item.values %}
-                    {% if item.key != entry %}
-                      <div>{{ entry }}</div>
-                    {% endif %}
+                {% if item.value_list %}
+                  {% for entry in item.value_list %}
+                    <div>{{ entry }}</div>
                   {% endfor %}
                 {% else %}
                   {{ item.value }}

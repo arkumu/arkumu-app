@@ -68,6 +68,35 @@ class _CanonicalURIs:
     # Digital object properties
     DO_PATH = "http://arkumu.org/data/properties/dateipfad"
 
+    # License properties
+    LICENSE_EXISTING = "http://arkumu.org/data/properties/bestehender-lizenzvertrag"
+    LICENSE_NEW = "http://arkumu.org/data/properties/neuer-lizenzvertrag-digi-kunst-formular"
+    LICENSE_USAGE_RIGHTS = "http://arkumu.org/data/properties/angegebene-nutzungsrechte"
+    LICENSE_SPECIAL_TERMS = "http://arkumu.org/data/properties/sonderregelung"
+    LICENSE_OTHER_DOCS = "http://arkumu.org/data/properties/weiteres-rechtsdokument"
+    LICENSE_FILE_REQUEST = "http://arkumu.org/data/properties/dateiabfragedokument"
+
+    # Property metadata URIs
+    PROPERTY_LANGUAGE_TITLE = "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels"
+    PROPERTY_LANGUAGE_SUBTITLE = "http://arkumu.org/data/properties/sprache-des-bevorzugten-untertitels"
+    PROPERTY_DAUER_FREITEXT = "http://arkumu.org/data/properties/dauer-freitext"
+    PROPERTY_PRODUKTIONSFORMAT = "http://arkumu.org/data/properties/produktionsformat"
+    PROPERTY_INSTRUMENTIERUNG = "http://arkumu.org/data/properties/instrumentierung"
+    PROPERTY_ASPECT_RATIO = "http://arkumu.org/data/properties/aspect-ratio-bildseitenverhaeltnis"
+    PROPERTY_ABSPIELGESCHWINDIGKEIT = "http://arkumu.org/data/properties/abspielgeschwindigkeit"
+    PROPERTY_FERNSEHNORM = "http://arkumu.org/data/properties/fernsehnorm"
+    PROPERTY_BILDFREQUENZ = "http://arkumu.org/data/properties/bildfrequenz"
+
+    # Status/signatur URIs
+    STATUS_SIGNATUR = "http://arkumu.org/data/properties/externe-inventar-signaturnummer"
+    STATUS_SIGNATUR_EINLIEFERER = "http://arkumu.org/data/properties/signatur-beim-einlieferer"
+    STATUS_DATENSATZ_ID = "http://arkumu.org/data/properties/datensatz-id-beim-einlieferer"
+
+    # Authority/normdaten URIs
+    AUTHORITY_WIKIDATA = "http://arkumu.org/data/properties/wikidata-id"
+    AUTHORITY_GND = "http://arkumu.org/data/properties/gnd-nummer"
+    AUTHORITY_EXTERNE_WEBSEITE = "http://arkumu.org/data/properties/externe-projektwebseite"
+
     # Predicate whitelists for efficient graph queries
     @classmethod
     def project_predicates(cls) -> List[str]:
@@ -83,6 +112,31 @@ class _CanonicalURIs:
             cls.DIGITAL_OBJECT,
             cls.PROJECT_TYPE_LINK,
             cls.CATCHPHRASE,
+            # License properties
+            cls.LICENSE_EXISTING,
+            cls.LICENSE_NEW,
+            cls.LICENSE_USAGE_RIGHTS,
+            cls.LICENSE_SPECIAL_TERMS,
+            cls.LICENSE_OTHER_DOCS,
+            cls.LICENSE_FILE_REQUEST,
+            # Property metadata
+            cls.PROPERTY_LANGUAGE_TITLE,
+            cls.PROPERTY_LANGUAGE_SUBTITLE,
+            cls.PROPERTY_DAUER_FREITEXT,
+            cls.PROPERTY_PRODUKTIONSFORMAT,
+            cls.PROPERTY_INSTRUMENTIERUNG,
+            cls.PROPERTY_ASPECT_RATIO,
+            cls.PROPERTY_ABSPIELGESCHWINDIGKEIT,
+            cls.PROPERTY_FERNSEHNORM,
+            cls.PROPERTY_BILDFREQUENZ,
+            # Status
+            cls.STATUS_SIGNATUR,
+            cls.STATUS_SIGNATUR_EINLIEFERER,
+            cls.STATUS_DATENSATZ_ID,
+            # Authority
+            cls.AUTHORITY_WIKIDATA,
+            cls.AUTHORITY_GND,
+            cls.AUTHORITY_EXTERNE_WEBSEITE,
         ]
 
     @classmethod
@@ -799,11 +853,11 @@ class ProjectIndexDbService:
                 digital_objects=digital_objects_structured,
                 alternative_titles=[],
                 catchphrases=[{"label": c} for c in catchphrase_labels],
-                properties={},
-                status={},
-                authority={},
+                properties=self._extract_properties(subject_edges),
+                status=self._extract_status(subject_edges),
+                authority=self._extract_authority(subject_edges),
                 submitter={},
-                licenses={},
+                licenses=self._extract_licenses(subject_edges),
                 rights_status={},
                 reference_only=False,
                 harvestable=True,
@@ -1578,6 +1632,165 @@ class ProjectIndexDbService:
                         seen_names.add(normalized)
 
         return actors
+
+    def _extract_licenses(
+        self,
+        subject_edges: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Extract license metadata from project edges."""
+        licenses: Dict[str, Any] = {}
+
+        # bestehende_vertraege (list)
+        existing = self._all_literals(subject_edges, _CanonicalURIs.LICENSE_EXISTING)
+        if existing:
+            licenses["bestehende_vertraege"] = existing
+
+        # neuer_lizenzvertrag (single)
+        new_license = self._first_literal(subject_edges, _CanonicalURIs.LICENSE_NEW)
+        if new_license:
+            licenses["neuer_lizenzvertrag"] = new_license
+
+        # angegebene_nutzungsrechte (single)
+        usage = self._first_literal(subject_edges, _CanonicalURIs.LICENSE_USAGE_RIGHTS)
+        if usage:
+            licenses["angegebene_nutzungsrechte"] = usage
+
+        # sonderregelungen (list)
+        special = self._all_literals(subject_edges, _CanonicalURIs.LICENSE_SPECIAL_TERMS)
+        if special:
+            licenses["sonderregelungen"] = special
+
+        # weitere_rechtsdokumente (list)
+        other_docs = self._all_literals(subject_edges, _CanonicalURIs.LICENSE_OTHER_DOCS)
+        if other_docs:
+            licenses["weitere_rechtsdokumente"] = other_docs
+
+        # dateiabfrage_dokument (single)
+        file_req = self._first_literal(subject_edges, _CanonicalURIs.LICENSE_FILE_REQUEST)
+        if file_req:
+            licenses["dateiabfrage_dokument"] = file_req
+
+        return licenses
+
+    def _extract_properties(
+        self,
+        subject_edges: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Extract property metadata from project edges."""
+        properties: Dict[str, Any] = {}
+
+        # sprachen (list) - from title and subtitle languages
+        sprachen: List[str] = []
+        lang_title = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_LANGUAGE_TITLE)
+        if lang_title:
+            sprachen.append(lang_title)
+        lang_subtitle = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_LANGUAGE_SUBTITLE)
+        if lang_subtitle and lang_subtitle not in sprachen:
+            sprachen.append(lang_subtitle)
+
+        if sprachen:
+            properties["sprachen"] = ", ".join(sprachen)
+
+        # dauer_freitext
+        dauer = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_DAUER_FREITEXT)
+        if dauer:
+            properties["dauer_freitext"] = dauer
+
+        # produktionsformat
+        produktionsformat = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_PRODUKTIONSFORMAT)
+        if produktionsformat:
+            properties["produktionsformat"] = produktionsformat
+
+        # instrumentierung
+        instrumentierung = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_INSTRUMENTIERUNG)
+        if instrumentierung:
+            properties["instrumentierung"] = instrumentierung
+
+        # aspect_ratio
+        aspect = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_ASPECT_RATIO)
+        if aspect:
+            properties["aspect_ratio"] = aspect
+
+        # abspielgeschwindigkeit
+        abspiel = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_ABSPIELGESCHWINDIGKEIT)
+        if abspiel:
+            properties["abspielgeschwindigkeit"] = abspiel
+
+        # fernsehnorm
+        fernsehnorm = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_FERNSEHNORM)
+        if fernsehnorm:
+            properties["fernsehnorm"] = fernsehnorm
+
+        # bildfrequenz
+        bildfrequenz = self._first_literal(subject_edges, _CanonicalURIs.PROPERTY_BILDFREQUENZ)
+        if bildfrequenz:
+            properties["bildfrequenz"] = bildfrequenz
+
+        return properties
+
+    def _extract_status(
+        self,
+        subject_edges: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Extract status metadata from project edges."""
+        status: Dict[str, Any] = {}
+
+        # signatur
+        signatur = self._first_literal(subject_edges, _CanonicalURIs.STATUS_SIGNATUR)
+        if signatur:
+            status["signatur"] = signatur
+
+        # signatur_beim_einlieferer
+        signatur_einl = self._first_literal(subject_edges, _CanonicalURIs.STATUS_SIGNATUR_EINLIEFERER)
+        if signatur_einl:
+            status["signatur_beim_einlieferer"] = signatur_einl
+
+        # datensatz_id_beim_einlieferer
+        datensatz_id = self._first_literal(subject_edges, _CanonicalURIs.STATUS_DATENSATZ_ID)
+        if datensatz_id:
+            status["datensatz_id_beim_einlieferer"] = datensatz_id
+
+        return status
+
+    def _extract_authority(
+        self,
+        subject_edges: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Extract authority/normdaten metadata from project edges."""
+        authority: Dict[str, Any] = {}
+
+        # wikidata_ids
+        wikidata = self._all_literals(subject_edges, _CanonicalURIs.AUTHORITY_WIKIDATA)
+        if wikidata:
+            authority["wikidata_ids"] = ", ".join(wikidata)
+
+        # gnd_ids
+        gnd = self._all_literals(subject_edges, _CanonicalURIs.AUTHORITY_GND)
+        if gnd:
+            authority["gnd_ids"] = ", ".join(gnd)
+
+        # externe_webseiten
+        externe = self._all_literals(subject_edges, _CanonicalURIs.AUTHORITY_EXTERNE_WEBSEITE)
+        if externe:
+            authority["externe_webseiten"] = ", ".join(externe)
+
+        return authority
+
+    def _all_literals(
+        self,
+        edges: Iterable[Dict[str, Any]],
+        predicate: str,
+    ) -> List[str]:
+        """Get all literal values for predicate."""
+        results: List[str] = []
+        for edge in edges:
+            if self._canonical(edge) == predicate:
+                value = edge.get("object_value")
+                if value:
+                    val_str = str(value).strip()
+                    if val_str and val_str not in results:
+                        results.append(val_str)
+        return results
 
     def _extract_digital_objects_structured(
         self,

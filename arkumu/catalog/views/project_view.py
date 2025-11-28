@@ -262,29 +262,111 @@ class ProjectView(LoginRequiredMixin, View):
             logger.exception("ProjectView: error loading ProjectDetailIndex for %s", projekt_uri)
             return None
 
-    def _build_metadata_from_detail_index(self, entry: ProjectDetailIndex) -> List[Dict[str, Any]]:
-        """Build metadata list from ProjectDetailIndex properties/status/etc fields."""
+    @staticmethod
+    def _metadata_entry(label: str, value: Any) -> Dict[str, Any]:
+        """Create metadata entry dict, using 'value_list' for lists and 'value' for singles."""
+        if isinstance(value, (list, tuple, set)):
+            value_list = [item for item in value if item]
+            return {'key': label, 'label': label, 'value_list': value_list} if value_list else {'key': label, 'label': label, 'value': '—'}
+        return {'key': label, 'label': label, 'value': value or '—'}
+
+    @classmethod
+    def _dict_metadata_entries(
+        cls,
+        source: Optional[Dict[str, Any]],
+        field_map: Sequence[Tuple[str, str]],
+        *,
+        prefix: str,
+    ) -> List[Dict[str, Any]]:
+        """Create metadata entries from a dict source with prefixed labels."""
+        if not source:
+            return []
+
+        entries: List[Dict[str, Any]] = []
+        for field_name, label in field_map:
+            value = source.get(field_name)
+            entry = cls._metadata_entry(f"{prefix} · {label}", value)
+            # Skip empty entries
+            if entry.get('value') == '—' and 'value_list' not in entry:
+                continue
+            entries.append(entry)
+        return entries
+
+    @staticmethod
+    def _build_metadata_from_detail_index(entry: ProjectDetailIndex) -> List[Dict[str, Any]]:
+        """Build metadata list from ProjectDetailIndex - matching dev branch pattern."""
+        from arkumu.catalog.services.wikidata_service import WikidataService
+
         metadata: List[Dict[str, Any]] = []
 
-        # Extract property metadata from properties dict
-        for key, label in self.PROPERTY_METADATA_FIELDS:
-            value = entry.properties.get(key)
-            if value:
-                metadata.append({"key": key, "label": label, "value": value})
+        # 1. Basic fields
+        metadata.append(ProjectView._metadata_entry('Projekt URI', entry.uri))
+        metadata.append(ProjectView._metadata_entry('Institution', entry.institution_label))
+        metadata.append(ProjectView._metadata_entry('Projektart', entry.project_type_label))
 
-        # Extract status metadata from status dict
-        for key, label in self.STATUS_METADATA_FIELDS:
-            value = entry.status.get(key)
-            if value:
-                metadata.append({"key": key, "label": label, "value": value})
+        # 2. List fields - extract from JSON
+        # Resolve Wikidata IDs to labels for catchphrases
+        wikidata_service = WikidataService()
+        catchphrase_labels_raw = [c.get('label', '') for c in (entry.catchphrases or []) if c.get('label')]
+        catchphrase_labels = [wikidata_service.get_entity_label(wikidata_id=label) for label in catchphrase_labels_raw]
+        catchphrase_labels = [label for label in catchphrase_labels if label]  # Filter empty
 
-        # Extract license metadata from licenses dict
-        for key, label in self.LICENSE_METADATA_FIELDS:
-            value = entry.licenses.get(key)
-            if value:
-                metadata.append({"key": key, "label": label, "value": value})
+        category_labels = [c.get('label', '') for c in (entry.categories or []) if c.get('label')]
+        digital_object_paths = [d.get('path', '') for d in (entry.digital_objects or []) if d.get('path')]
+        alternative_titles = [t.get('value', '') for t in (entry.alternative_titles or []) if t.get('value')]
 
-        return metadata
+        metadata.append(ProjectView._metadata_entry('Schlagworte', catchphrase_labels))
+        metadata.append(ProjectView._metadata_entry('Kategorien', category_labels))
+        metadata.append(ProjectView._metadata_entry('Digitale Objekte', digital_object_paths))
+        metadata.append(ProjectView._metadata_entry('Alternative Titel', alternative_titles))
+
+        # 3. Rights status
+        rights_label = entry.rights_status.get('label', '') if entry.rights_status else ''
+        metadata.append(ProjectView._metadata_entry('Rechtsstatus', rights_label))
+
+        # 4. Event count
+        if entry.events:
+            metadata.append(ProjectView._metadata_entry('Anzahl Ereignisse', len(entry.events)))
+
+        # 5. Bundled fields with prefixes
+        metadata.extend(
+            ProjectView._dict_metadata_entries(
+                entry.properties,
+                ProjectView.PROPERTY_METADATA_FIELDS,
+                prefix="Eigenschaften",
+            )
+        )
+        metadata.extend(
+            ProjectView._dict_metadata_entries(
+                entry.status,
+                ProjectView.STATUS_METADATA_FIELDS,
+                prefix="Status",
+            )
+        )
+        metadata.extend(
+            ProjectView._dict_metadata_entries(
+                entry.authority,
+                ProjectView.AUTHORITY_METADATA_FIELDS,
+                prefix="Normdaten",
+            )
+        )
+        metadata.extend(
+            ProjectView._dict_metadata_entries(
+                entry.submitter,
+                ProjectView.SUBMITTER_METADATA_FIELDS,
+                prefix="Einreichung",
+            )
+        )
+        metadata.extend(
+            ProjectView._dict_metadata_entries(
+                entry.licenses,
+                ProjectView.LICENSE_METADATA_FIELDS,
+                prefix="Lizenzen",
+            )
+        )
+
+        # Filter out empty entries (value == '—' and no value_list)
+        return [m for m in metadata if m.get('value') != '—' or 'value_list' in m]
 
     @staticmethod
     def _find_record(records: List[ProjectRecord], uri: str) -> Optional[ProjectRecord]:
@@ -674,13 +756,6 @@ class ProjectView(LoginRequiredMixin, View):
         logger.debug("ProjectView: raw ProjectRecord payload for %s\n%s", record.uri, pretty_record)
 
     @staticmethod
-    def _metadata_entry(label: str, value: Any) -> Dict[str, Any]:
-        if isinstance(value, (list, tuple, set)):
-            values = [item for item in value if item]
-            return {'key': label, 'values': values} if values else {'key': label, 'value': '—'}
-        return {'key': label, 'value': value or '—'}
-
-    @staticmethod
     def _dataclass_field_breakdown(payload: Any) -> Tuple[Dict[str, Any], List[str]]:
         if not payload:
             return {}, []
@@ -738,8 +813,20 @@ class ProjectTabView(LoginRequiredMixin, View):
         if not projekt_uri:
             return HttpResponseBadRequest("Missing project URI")
 
-        # Mirror ProjectView backend selection for tabs.
-        if ProjectView._backend() == "graph":
+        backend = ProjectView._backend()
+
+        # For db/graph backends, prefer ProjectDetailIndex for fast structured access
+        if backend in ("db", "graph"):
+            try:
+                detail_entry = ProjectDetailIndex.objects.get(uri=projekt_uri)
+                project_context = detail_entry.to_view_context()
+                metadata = ProjectView._build_metadata_from_detail_index(detail_entry)
+                return self._render_tab(request, tab, project_context, metadata)
+            except ProjectDetailIndex.DoesNotExist:
+                pass  # Fall through to other backends
+
+        # Fallback for graph backend without detail index entry
+        if backend == "graph":
             project_data = get_project_view_data(projekt_uri)
             if not project_data:
                 return HttpResponseNotFound("Project not found")
@@ -757,6 +844,10 @@ class ProjectTabView(LoginRequiredMixin, View):
             project_context = ProjectView._build_context(record)
             metadata = ProjectView._build_metadata(record)
 
+        return self._render_tab(request, tab, project_context, metadata)
+
+    def _render_tab(self, request, tab: str, project_context: Dict[str, Any], metadata: List[Dict[str, Any]]):
+        """Render the appropriate tab partial."""
         if tab == 'events':
             return render(request, 'catalog/partials/project_events.html', {'events': project_context['events']})
 
