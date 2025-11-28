@@ -25,6 +25,7 @@ urlpatterns = [
     path("media-links/link/<int:link_id>/update/", media_link_views.oai_media_link_update, name="oai_media_link_update"),
     path("media-links/link/<int:link_id>/delete/", media_link_views.oai_media_link_delete, name="oai_media_link_delete"),
     path("media-links/link/add/", media_link_views.oai_media_link_add, name="oai_media_link_add"),
+    path("media-links/link/add-bulk/", media_link_views.oai_media_link_add_bulk, name="oai_media_link_add_bulk"),
     path("media-links/seed/preview/", media_link_views.oai_media_link_seed_preview, name="oai_media_link_seed_preview"),
     path("media-links/seed/run/", media_link_views.oai_media_link_seed_execute, name="oai_media_link_seed_execute"),
     path("media-links/clear/", media_link_views.oai_media_link_clear_data, name="oai_media_link_clear_data"),

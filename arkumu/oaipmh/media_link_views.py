@@ -41,14 +41,16 @@ from arkumu.users.models import Organization
 
 logger = logging.getLogger(__name__)
 
-LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = (
-    "bevorzugter",
-    "preferred",
-    "titel",
-    "title",
-    "name",
-    "label",
-    "dateiname",
+# Keywords ordered by priority - earlier keywords take precedence
+LABEL_PREFERRED_KEYWORDS_PRIORITY: tuple[tuple[str, ...], ...] = (
+    ("bevorzugter", "preferred"),  # Highest priority
+    ("titel", "title"),            # High priority
+    ("label", "dateiname"),        # Medium priority
+    ("name",),                     # Low priority - too generic, matches many predicates
+)
+# Flat list for backward compatibility
+LABEL_PREFERRED_KEYWORDS: tuple[str, ...] = tuple(
+    kw for group in LABEL_PREFERRED_KEYWORDS_PRIORITY for kw in group
 )
 
 MEDIA_LINKS_PAGE_SIZE = 10
@@ -299,19 +301,36 @@ def _build_media_links_summary(
     filtered_total = links_total
     # Project-level stats for summary header (restricted to canonical project scope)
     project_scope = _project_scope_or_all_entities(organization)
+
+    # Count all projects in scope (regardless of links)
+    total_project_count = project_scope.count()
+
+    # Count projects with media links
+    projects_with_links = project_scope.filter(oai_media_links__isnull=False).distinct().count()
+
+    # Count projects with harvestable files (matches "Has files" filter)
+    if s3_harvestable_ids is not None:
+        has_files_count = len(s3_harvestable_ids)
+    elif curated_harvestable_ids is not None:
+        has_files_count = len(curated_harvestable_ids)
+    else:
+        has_files_count = 0
+
+    # Count OAI-approved projects
     publication_qs = OAIProjectPublication.objects.filter(
         project_id__in=project_scope.values("id"),
     )
-    available_projects = publication_qs.count()
-    harvestable_projects = publication_qs.filter(is_approved=True).count()
+    oai_approved_count = publication_qs.filter(is_approved=True).count()
 
     return {
         "links_total": links_total,
         "filtered_links_total": filtered_total,
         "status_totals": [],
         "stale_count": link_qs.filter(is_stale=True).count(),
-        "available_project_count": available_projects,
-        "harvestable_project_count": harvestable_projects,
+        "total_project_count": total_project_count,
+        "projects_with_links_count": projects_with_links,
+        "has_files_count": has_files_count,
+        "oai_approved_count": oai_approved_count,
         "selected_org_code": organization.code or "",
         "organization": organization,
         "project_access_filter": project_access_filter,
@@ -594,23 +613,26 @@ def _prefetch_resource_labels(
         value = obj.value or obj.name
         return str(value).strip() if value else None
 
-    for triple in literal_triples:
-        subject_id = triple.subject_id
-        if subject_id not in pending:
-            continue
-        predicate_value = (
-            (getattr(triple.predicate, "uri", "") or "")
-            + " "
-            + (getattr(triple.predicate, "name", "") or "")
-            + " "
-            + (getattr(triple.predicate, "canonical_uri", "") or "")
-        ).lower()
-        if predicate_value and any(token in predicate_value for token in LABEL_PREFERRED_KEYWORDS):
-            literal = _literal_value(triple)
-            if literal:
-                cache[subject_id] = literal
-                pending.pop(subject_id, None)
+    # Process triples in keyword priority order (higher priority keywords first)
+    for keyword_group in LABEL_PREFERRED_KEYWORDS_PRIORITY:
+        for triple in literal_triples:
+            subject_id = triple.subject_id
+            if subject_id not in pending:
+                continue
+            predicate_value = (
+                (getattr(triple.predicate, "uri", "") or "")
+                + " "
+                + (getattr(triple.predicate, "name", "") or "")
+                + " "
+                + (getattr(triple.predicate, "canonical_uri", "") or "")
+            ).lower()
+            if predicate_value and any(token in predicate_value for token in keyword_group):
+                literal = _literal_value(triple)
+                if literal:
+                    cache[subject_id] = literal
+                    pending.pop(subject_id, None)
 
+    # Fallback: use any literal value
     for triple in literal_triples:
         subject_id = triple.subject_id
         if subject_id not in pending:
@@ -888,18 +910,32 @@ def _build_media_links_panel_context(
             harvestable_qs = _restrict_to_harvestable_files(base_projects_qs)
             base_projects_qs = base_projects_qs.exclude(pk__in=harvestable_qs.values("pk"))
 
-    # Apply search BEFORE pagination using label lookup (matches curated labels as well as URIs)
+    # Apply search BEFORE pagination using label lookup (matches labels, URIs, and project IDs)
     if search_query:
         search_lower = search_query.lower()
         candidate_resources = list(
             base_projects_qs.only("id", "uri", "name", "value")
         )
         label_lookup = _prefetch_resource_labels(candidate_resources)
+
+        def _matches_search(resource) -> bool:
+            # Match against label
+            if search_lower in (label_lookup.get(resource.id, "") or "").lower():
+                return True
+            # Match against full URI
+            uri = (resource.uri or "").lower()
+            if search_lower in uri:
+                return True
+            # Match against project ID (last segment of URI)
+            project_id = uri.rsplit("/", 1)[-1] if uri else ""
+            if search_lower in project_id:
+                return True
+            return False
+
         matching_ids = [
             resource.id
             for resource in candidate_resources
-            if search_lower in (label_lookup.get(resource.id, "") or "").lower()
-            or search_lower in (resource.uri or "").lower()
+            if _matches_search(resource)
         ]
         if matching_ids:
             base_projects_qs = base_projects_qs.filter(id__in=matching_ids)
@@ -1353,6 +1389,95 @@ def oai_media_link_add(request):
         project_id=link.project_id,
         page_number=page_number,
     )
+
+
+@general_login_required
+@require_http_methods(["POST"])
+def oai_media_link_add_bulk(request):
+    """Add multiple digital objects to a project at once."""
+    organization = _resolve_organization_by_code(request.POST.get('organization'))
+    if not organization:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Select an organization.</div>")
+
+    if not _has_oai_org_access(request.user, organization):
+        return HttpResponseForbidden(
+            "<div class='alert alert-error'>Access denied: you do not have access to this organization</div>"
+        )
+
+    project_uri = (request.POST.get('project_uri') or '').strip()
+    digital_uris_raw = (request.POST.get('digital_uris') or '').strip()
+
+    if not project_uri:
+        return HttpResponseBadRequest("<div class='alert alert-error'>Project URI is required.</div>")
+    if not digital_uris_raw:
+        return HttpResponseBadRequest("<div class='alert alert-error'>At least one digital object URI is required.</div>")
+
+    # Parse digital URIs (one per line)
+    digital_uris = [uri.strip() for uri in digital_uris_raw.splitlines() if uri.strip()]
+    if not digital_uris:
+        return HttpResponseBadRequest("<div class='alert alert-error'>At least one digital object URI is required.</div>")
+
+    # Look up project
+    project = Resource.objects.filter(
+        organization=organization,
+        uri=project_uri,
+        resource_type=ResourceType.ENTITY,
+    ).first()
+    if not project:
+        return HttpResponseBadRequest(f"<div class='alert alert-error'>Project not found: {escape(project_uri)}</div>")
+
+    # Process each digital object
+    created_count = 0
+    skipped_count = 0
+    not_found_uris = []
+
+    for digital_uri in digital_uris:
+        digital_object = Resource.objects.filter(
+            uri=digital_uri,
+            resource_type=ResourceType.ENTITY,
+        ).first()
+
+        if not digital_object:
+            not_found_uris.append(digital_uri)
+            continue
+
+        exists = OAIProjectMediaLink.objects.filter(
+            project=project,
+            digital_object=digital_object,
+        ).exists()
+
+        if exists:
+            skipped_count += 1
+            continue
+
+        OAIProjectMediaLink.objects.create(
+            project=project,
+            digital_object=digital_object,
+            source=OAIProjectMediaLink.SOURCE_MANUAL,
+            last_reviewed_by=request.user if request.user.is_authenticated else None,
+            last_reviewed_at=timezone.now(),
+        )
+        created_count += 1
+
+    # Build result message
+    if created_count > 0:
+        messages.success(request, f"Created {created_count} link(s) for project.")
+    if skipped_count > 0:
+        messages.info(request, f"Skipped {skipped_count} already linked object(s).")
+    if not_found_uris:
+        messages.warning(request, f"Digital objects not found: {', '.join(not_found_uris[:5])}" +
+                        (f" (+{len(not_found_uris) - 5} more)" if len(not_found_uris) > 5 else ""))
+
+    # Ensure project has publication record
+    OAIProjectPublication.objects.get_or_create(project=project)
+
+    # Return updated panel
+    panel_context = _build_media_links_panel_context(
+        organization=organization,
+        page_number=1,
+    )
+    panel_context['include_summary_partial'] = True
+    return render(request, 'oai/partials/oai_media_links_panel.html', panel_context)
 
 
 @general_login_required
