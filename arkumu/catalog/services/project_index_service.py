@@ -148,6 +148,20 @@ class ProjectIndexService:
             if normalized:
                 project_predicates.add(normalized)
 
+        # Extra neighbor predicates for actor extraction
+        extra_neighbor_predicates: Sequence[str] = [
+            # Event -> actor junction
+            "http://arkumu.org/data/properties/akteurinnen-am-ereignis",
+            # Junction -> actor link
+            "http://arkumu.org/data/properties/akteurin-im-ereignis",
+            # Actor name
+            "http://arkumu.org/data/properties/deutscher-name",
+        ]
+        for uri in extra_neighbor_predicates:
+            normalized = str(uri).strip()
+            if normalized:
+                neighbor_predicates.add(normalized)
+
         return {
             "project": sorted(project_predicates),
             "neighbor": sorted(neighbor_predicates),
@@ -260,6 +274,12 @@ class ProjectIndexService:
         event_start_prop = _property("event", "start")
         event_end_prop = _property("event", "end")
 
+        # Actor extraction properties
+        actor_link_prop = _property("actor_event", "actor_link")
+        actor_name_prop = _property("actor", "name")
+        # Event -> actor junction canonical URI (not in schema, hardcoded)
+        event_actor_junction_uri = "http://arkumu.org/data/properties/akteurinnen-am-ereignis"
+
         institution_name_prop = _property("institution", "german_name")
         category_name_prop = _property("project_category", "german_name")
         category_wikidata_prop = _property("project_category", "wikidata_id")
@@ -339,6 +359,48 @@ class ProjectIndexService:
 
             year_range = self._derive_year_range_from_pairs(event_ranges) or ""
 
+            # Extract actors - handle two patterns:
+            # 1. FUK: Event -> Junction (akteurinnen-am-ereignis) -> Actor (akteurin-im-ereignis)
+            # 2. KHM: Event -> Actor directly (akteurin-im-ereignis)
+            actor_names: List[str] = []
+            seen_actors: set = set()
+            actor_link_uri = getattr(actor_link_prop, "canonical_uri", None)
+            actor_name_uri = getattr(actor_name_prop, "canonical_uri", None)
+
+            def _extract_actor_name(actor_id: str) -> Optional[str]:
+                actor_edges = edges_by_subject.get(actor_id, [])
+                name = self._first_literal(actor_edges, actor_name_uri)
+                if not name:
+                    actor_node = nodes.get(actor_id) or {}
+                    name = actor_node.get("name") or actor_node.get("value")
+                return name
+
+            for event_id in event_ids:
+                event_edges = edges_by_subject.get(event_id, [])
+
+                # Pattern 1: Try junction path first (FUK)
+                junction_ids = self._related_ids(event_edges, event_actor_junction_uri)
+                for junction_id in junction_ids:
+                    junction_edges = edges_by_subject.get(junction_id, [])
+                    actor_ids = self._related_ids(junction_edges, actor_link_uri)
+                    for actor_id in actor_ids:
+                        actor_name = _extract_actor_name(actor_id)
+                        if actor_name:
+                            normalized = str(actor_name).strip()
+                            if normalized and normalized not in seen_actors:
+                                actor_names.append(normalized)
+                                seen_actors.add(normalized)
+
+                # Pattern 2: Direct actor links on event (KHM)
+                direct_actor_ids = self._related_ids(event_edges, actor_link_uri)
+                for actor_id in direct_actor_ids:
+                    actor_name = _extract_actor_name(actor_id)
+                    if actor_name:
+                        normalized = str(actor_name).strip()
+                        if normalized and normalized not in seen_actors:
+                            actor_names.append(normalized)
+                            seen_actors.add(normalized)
+
             # Categories: use Wikidata IDs if available, otherwise fall back to labels
             categories: List[str] = []
             category_ids = self._related_ids(
@@ -386,6 +448,19 @@ class ProjectIndexService:
                 "digital_objects": [],
             }
 
+            # Add contributor fields (actor names)
+            for idx, name in enumerate(actor_names[:4]):
+                if name:
+                    card[f"contributor{idx + 1}_name"] = name
+            if len(actor_names) > 4:
+                card["additional_contributors"] = f"{len(actor_names) - 4} weitere"
+
+            # Add category fields for template compatibility
+            for idx, category in enumerate(categories[:4]):
+                card[f"category{idx + 1}"] = category
+            if len(categories) > 4:
+                card["additional_categories"] = f"{len(categories) - 4} weitere"
+
             cards.append(card)
 
         return cards
@@ -411,6 +486,8 @@ class ProjectIndexService:
             predicate_canon_whitelist=project_predicates,
             expand_neighbors=True,
             neighbor_predicate_canon_whitelist=neighbor_predicates,
+            # Use depth 2 to traverse: Event -> Junction -> Actor
+            neighbor_depth=2,
         )
 
         cards = self._build_cards_from_graph(graph, card_schema)
@@ -489,6 +566,12 @@ class ProjectIndexService:
 
             def _matches(card: Dict[str, Any]) -> bool:
                 if normalized_query:
+                    # Collect actor names from contributor fields
+                    actor_names = [
+                        card.get(f"contributor{i}_name")
+                        for i in range(1, 5)
+                        if card.get(f"contributor{i}_name")
+                    ]
                     haystack = " ".join(
                         filter(
                             None,
@@ -497,6 +580,7 @@ class ProjectIndexService:
                                 card.get("subtitle"),
                                 card.get("institution"),
                                 " ".join(card.get("categories") or []),
+                                " ".join(actor_names),
                             ],
                         )
                     ).lower()

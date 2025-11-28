@@ -83,14 +83,17 @@ class CanonicalGraphService:
         predicate_canon_whitelist: Optional[Sequence[str]] = None,
         expand_neighbors: bool = True,
         neighbor_predicate_canon_whitelist: Optional[Sequence[str]] = None,
+        neighbor_depth: int = 1,
     ) -> Dict[str, Any]:
         """Build a subject‑centric graph for a dataset (e.g., FUK Projekt).
 
         - Resolves project subjects by rdf:type with a canonical class
           (from SchemaService when available; otherwise `type_canonical_uri`).
         - Fetches all subject triples, optionally filtered by canonical predicates.
-        - Optionally expands one hop to neighbor entities (non‑literal objects),
+        - Optionally expands to neighbor entities (non‑literal objects),
           using FK predicate canonical whitelist derived from the schema or provided.
+        - neighbor_depth controls how many hops to expand (default 1, use 2+ for
+          deeper traversals like Project -> Event -> Junction -> Actor).
         """
 
         canonical_type = type_canonical_uri or self._get_canonical_type_from_schema(dataset_name)
@@ -102,10 +105,19 @@ class CanonicalGraphService:
 
         edges = self._fetch_triples_for_subjects(subject_ids, predicate_canon_whitelist)
 
-        if expand_neighbors:
+        if expand_neighbors and neighbor_depth > 0:
             neighbor_pred_canons = neighbor_predicate_canon_whitelist or self._get_fk_predicate_canons(dataset_name)
-            neighbor_ids = [e.object_id for e in edges if e.object_type != ResourceType.LITERAL]
-            if neighbor_ids:
+            visited_ids: set = set(subject_ids)
+
+            for _ in range(neighbor_depth):
+                # Get neighbor IDs from current edges that haven't been visited
+                neighbor_ids = [
+                    e.object_id for e in edges
+                    if e.object_type != ResourceType.LITERAL and e.object_id not in visited_ids
+                ]
+                if not neighbor_ids:
+                    break
+                visited_ids.update(neighbor_ids)
                 edges.extend(self._fetch_triples_for_subjects(neighbor_ids, neighbor_pred_canons))
 
         nodes = self._collect_nodes_from_edges(edges)
