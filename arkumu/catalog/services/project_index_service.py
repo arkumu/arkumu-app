@@ -150,10 +150,12 @@ class ProjectIndexService:
 
         # Extra neighbor predicates for actor extraction
         extra_neighbor_predicates: Sequence[str] = [
-            # Event -> actor junction
+            # Event -> actor junction (legacy, not in use)
             "http://arkumu.org/data/properties/akteurinnen-am-ereignis",
-            # Junction -> actor link
+            # Direct event -> actor links (KHM/HMT)
             "http://arkumu.org/data/properties/akteurin-im-ereignis",
+            # Direct event -> actor links (FUK)
+            "http://arkumu.org/data/properties/ereignis-hat-akteurin",
             # Actor name
             "http://arkumu.org/data/properties/deutscher-name",
         ]
@@ -391,15 +393,20 @@ class ProjectIndexService:
                                 actor_names.append(normalized)
                                 seen_actors.add(normalized)
 
-                # Pattern 2: Direct actor links on event (KHM)
-                direct_actor_ids = self._related_ids(event_edges, actor_link_uri)
-                for actor_id in direct_actor_ids:
-                    actor_name = _extract_actor_name(actor_id)
-                    if actor_name:
-                        normalized = str(actor_name).strip()
-                        if normalized and normalized not in seen_actors:
-                            actor_names.append(normalized)
-                            seen_actors.add(normalized)
+                # Pattern 2: Direct actor links on event
+                # KHM/HMT use akteurin-im-ereignis, FUK uses ereignis-hat-akteurin
+                fuk_direct_uri = "http://arkumu.org/data/properties/ereignis-hat-akteurin"
+                for direct_uri in (actor_link_uri, fuk_direct_uri):
+                    if not direct_uri:
+                        continue
+                    direct_actor_ids = self._related_ids(event_edges, direct_uri)
+                    for actor_id in direct_actor_ids:
+                        actor_name = _extract_actor_name(actor_id)
+                        if actor_name:
+                            normalized = str(actor_name).strip()
+                            if normalized and normalized not in seen_actors:
+                                actor_names.append(normalized)
+                                seen_actors.add(normalized)
 
             # Categories: use Wikidata IDs if available, otherwise fall back to labels
             categories: List[str] = []

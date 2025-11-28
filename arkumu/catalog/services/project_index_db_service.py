@@ -37,8 +37,9 @@ class _CanonicalURIs:
     # Event properties
     EVENT_START = "http://arkumu.org/data/properties/ereignisbeginn"
     EVENT_END = "http://arkumu.org/data/properties/ereignisende"
-    EVENT_ACTOR_JUNCTION = "http://arkumu.org/data/properties/akteurinnen-am-ereignis"  # Legacy junction
-    EVENT_DIRECT_ACTOR = "http://arkumu.org/data/properties/ereignis-hat-akteurin"  # Direct event->actor
+    EVENT_ACTOR_JUNCTION = "http://arkumu.org/data/properties/akteurinnen-am-ereignis"  # Legacy junction (not in use)
+    EVENT_DIRECT_ACTOR_FUK = "http://arkumu.org/data/properties/ereignis-hat-akteurin"  # FUK direct event->actor
+    EVENT_DIRECT_ACTOR_KHM = "http://arkumu.org/data/properties/akteurin-im-ereignis"  # KHM/HMT direct event->actor
     EVENT_NAME = "http://arkumu.org/data/properties/name-des-ereignisses"  # Legacy event name
     EVENT_NAME_ALT = "http://arkumu.org/data/properties/ereignisname"  # Canonical event name
     EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
@@ -90,7 +91,8 @@ class _CanonicalURIs:
             cls.EVENT_START,
             cls.EVENT_END,
             cls.EVENT_ACTOR_JUNCTION,
-            cls.EVENT_DIRECT_ACTOR,
+            cls.EVENT_DIRECT_ACTOR_FUK,
+            cls.EVENT_DIRECT_ACTOR_KHM,
             cls.EVENT_NAME,
             cls.EVENT_NAME_ALT,
             cls.EVENT_LOCATION,
@@ -982,15 +984,16 @@ class ProjectIndexDbService:
     ) -> None:
         """Fetch 2nd level neighbor data: actors linked from events via direct links.
 
-        The canonical model uses direct event->actor links (ereignis-hat-akteurin),
-        so actors are 2 hops from projects. This method fetches actor properties separately.
+        FUK uses ereignis-hat-akteurin, KHM/HMT use akteurin-im-ereignis.
+        Actors are 2 hops from projects. This method fetches actor properties separately.
         """
-        # Collect all actor IDs linked from events via direct links
+        # Collect all actor IDs linked from events via direct links (both patterns)
         actor_ids: Set[str] = set()
+        direct_actor_uris = (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM)
         for subject_id, subject_edges in edges_by_subject.items():
             for edge in subject_edges:
                 predicate = self._canonical(edge)
-                if predicate == _CanonicalURIs.EVENT_DIRECT_ACTOR:
+                if predicate in direct_actor_uris:
                     actor_id = edge.get("object_id")
                     if actor_id:
                         actor_ids.add(str(actor_id))
@@ -1115,31 +1118,43 @@ class ProjectIndexDbService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         nodes: Dict[str, Dict[str, Any]],
     ) -> List[str]:
-        """Extract actor names via event -> junction -> actor chain."""
+        """Extract actor names via two patterns:
+        1. FUK: event -> junction (akteurinnen-am-ereignis) -> actor (akteurin-im-ereignis)
+        2. KHM/HMT: event -> actor directly (akteurin-im-ereignis)
+        """
         event_ids = self._related_ids(subject_edges, _CanonicalURIs.EVENT)
         actor_names: List[str] = []
         seen: Set[str] = set()
 
+        def _add_actor_name(actor_id: str) -> None:
+            actor_edges = edges_by_subject.get(actor_id, [])
+            name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
+            if not name:
+                actor_node = nodes.get(actor_id, {})
+                name = actor_node.get("name") or actor_node.get("value")
+            if name:
+                normalized = str(name).strip()
+                if normalized and normalized not in seen:
+                    actor_names.append(normalized)
+                    seen.add(normalized)
+
         for event_id in event_ids:
             event_edges = edges_by_subject.get(event_id, [])
-            junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
 
+            # Pattern 1: FUK junction path (akteurinnen-am-ereignis -> akteurin-im-ereignis)
+            junction_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_ACTOR_JUNCTION)
             for junction_id in junction_ids:
                 junction_edges = edges_by_subject.get(junction_id, [])
                 actor_ids = self._related_ids(junction_edges, _CanonicalURIs.ACTOR_LINK)
-
                 for actor_id in actor_ids:
-                    actor_edges = edges_by_subject.get(actor_id, [])
-                    name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
-                    if not name:
-                        actor_node = nodes.get(actor_id, {})
-                        name = actor_node.get("name") or actor_node.get("value")
+                    _add_actor_name(actor_id)
 
-                    if name:
-                        normalized = str(name).strip()
-                        if normalized and normalized not in seen:
-                            actor_names.append(normalized)
-                            seen.add(normalized)
+            # Pattern 2: Direct actor links on event
+            # FUK uses ereignis-hat-akteurin, KHM/HMT use akteurin-im-ereignis
+            for direct_uri in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
+                direct_actor_ids = self._related_ids(event_edges, direct_uri)
+                for actor_id in direct_actor_ids:
+                    _add_actor_name(actor_id)
 
         return actor_names
 
@@ -1419,34 +1434,35 @@ class ProjectIndexDbService:
                             })
                             seen_names.add(normalized)
 
-            # Also try direct event->actor links (ereignis-hat-akteurin) - canonical model
-            direct_actor_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_DIRECT_ACTOR)
-            for actor_id in direct_actor_ids:
-                actor_edges = edges_by_subject.get(actor_id, [])
-                actor_node = nodes.get(actor_id, {})
+            # Also try direct event->actor links (both FUK and KHM/HMT patterns)
+            for direct_uri in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
+                direct_actor_ids = self._related_ids(event_edges, direct_uri)
+                for actor_id in direct_actor_ids:
+                    actor_edges = edges_by_subject.get(actor_id, [])
+                    actor_node = nodes.get(actor_id, {})
 
-                name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
-                if not name:
-                    name = actor_node.get("name") or actor_node.get("value")
+                    name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
+                    if not name:
+                        name = actor_node.get("name") or actor_node.get("value")
 
-                # Get role from actor's junction link (akteurin-im-ereignis -> role)
-                actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
-                role = None
-                for aj_id in actor_junction_ids:
-                    aj_edges = edges_by_subject.get(aj_id, [])
-                    role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
-                    if role:
-                        break
+                    # Get role from actor's junction link (akteurin-im-ereignis -> role)
+                    actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
+                    role = None
+                    for aj_id in actor_junction_ids:
+                        aj_edges = edges_by_subject.get(aj_id, [])
+                        role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
+                        if role:
+                            break
 
-                if name:
-                    normalized = str(name).strip()
-                    if normalized not in seen_names:
-                        actors.append({
-                            "name": normalized,
-                            "roles": [role] if role else [],
-                            "uri": actor_node.get("uri") or "",
-                        })
-                        seen_names.add(normalized)
+                    if name:
+                        normalized = str(name).strip()
+                        if normalized not in seen_names:
+                            actors.append({
+                                "name": normalized,
+                                "roles": [role] if role else [],
+                                "uri": actor_node.get("uri") or "",
+                            })
+                            seen_names.add(normalized)
 
         return actors
 
@@ -1532,33 +1548,34 @@ class ProjectIndexDbService:
                         })
                         seen_names.add(normalized)
 
-        # Also try direct event->actor links (ereignis-hat-akteurin) - canonical model
-        direct_actor_ids = self._related_ids(event_edges, _CanonicalURIs.EVENT_DIRECT_ACTOR)
-        for actor_id in direct_actor_ids:
-            actor_edges = edges_by_subject.get(actor_id, [])
-            actor_node = nodes.get(actor_id, {})
+        # Also try direct event->actor links (both FUK and KHM/HMT patterns)
+        for direct_uri in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
+            direct_actor_ids = self._related_ids(event_edges, direct_uri)
+            for actor_id in direct_actor_ids:
+                actor_edges = edges_by_subject.get(actor_id, [])
+                actor_node = nodes.get(actor_id, {})
 
-            name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
-            if not name:
-                name = actor_node.get("name") or actor_node.get("value")
+                name = self._first_literal(actor_edges, _CanonicalURIs.ACTOR_NAME)
+                if not name:
+                    name = actor_node.get("name") or actor_node.get("value")
 
-            # Get role from actor's junction link
-            actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
-            role = None
-            for aj_id in actor_junction_ids:
-                aj_edges = edges_by_subject.get(aj_id, [])
-                role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
-                if role:
-                    break
+                # Get role from actor's junction link
+                actor_junction_ids = self._related_ids(actor_edges, _CanonicalURIs.ACTOR_LINK)
+                role = None
+                for aj_id in actor_junction_ids:
+                    aj_edges = edges_by_subject.get(aj_id, [])
+                    role = self._first_literal(aj_edges, _CanonicalURIs.ACTOR_ROLE)
+                    if role:
+                        break
 
-            if name:
-                normalized = str(name).strip()
-                if normalized not in seen_names:
-                    actors.append({
-                        "name": normalized,
-                        "roles": [role] if role else [],
-                    })
-                    seen_names.add(normalized)
+                if name:
+                    normalized = str(name).strip()
+                    if normalized not in seen_names:
+                        actors.append({
+                            "name": normalized,
+                            "roles": [role] if role else [],
+                        })
+                        seen_names.add(normalized)
 
         return actors
 
