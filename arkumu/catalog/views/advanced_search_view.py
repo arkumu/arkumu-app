@@ -15,7 +15,6 @@ from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.catalog.models import ProjectIndex
 from arkumu.catalog.services.project_index_service import ProjectIndexService
 from arkumu.metadata.models import PublicAccessLevel
-from ..services.wikidata_service import WikidataService
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
 
         try:
             index_service = ProjectIndexService(backend="db")
-            wikidata_service = WikidataService()
 
             # Determine if we have any filters
             has_filters = query or institutions or categories or actors
@@ -69,19 +67,19 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 )
                 total_results = len(filtered_cards)
 
-            # Resolve category Wikidata IDs to labels for display
+            # Categories are already human-readable labels in ProjectIndex
+            # Just copy category labels to category{N}_name for template
             for card in filtered_cards:
                 card_categories = card.get("categories", [])
-                if card_categories:
-                    for idx, cat_id in enumerate(card_categories[:3]):
-                        if cat_id:
-                            card[f"category{idx+1}_name"] = wikidata_service.get_entity_label(wikidata_id=cat_id)
+                for idx, cat_label in enumerate(card_categories[:3]):
+                    if cat_label:
+                        card[f"category{idx+1}_name"] = cat_label
 
-            # Build dropdown options from indexed data
-            dropdown_options = self._get_dropdown_options(institutions, categories, actors, wikidata_service)
+            # Build dropdown options from indexed data (no Wikidata needed)
+            dropdown_options = self._get_dropdown_options(institutions, categories, actors)
 
             # Build active filters for display
-            active_filters = self._build_active_filters(request, institutions, categories, actors, wikidata_service)
+            active_filters = self._build_active_filters(request, institutions, categories, actors)
 
             query_params = request.GET.copy()
             query_params.pop('view', None)
@@ -126,7 +124,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         selected_institutions: List[str],
         selected_categories: List[str],
         selected_actors: List[str],
-        wikidata_service: WikidataService,
     ) -> dict:
         """Get dropdown options from indexed data with caching."""
         cache_key = "arkumu:advanced_search:dropdown_options"
@@ -148,19 +145,18 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 .distinct()
             ))
 
-            # Get unique categories (flatten ArrayField)
+            # Get unique categories (flatten ArrayField) - already human-readable labels
             all_categories_raw = set()
             for cats in base_qs.values_list('categories', flat=True):
                 if cats:
                     all_categories_raw.update(cats)
 
-            # Resolve Wikidata IDs to labels
-            all_categories = []
-            for cat_id in all_categories_raw:
-                if cat_id:
-                    label = wikidata_service.get_entity_label(wikidata_id=cat_id)
-                    all_categories.append({"id": cat_id, "name": label or cat_id})
-            all_categories = sorted(all_categories, key=lambda x: x["name"])
+            # Categories are already labels, use them directly
+            all_categories = [
+                {"id": cat, "name": cat}
+                for cat in sorted(all_categories_raw)
+                if cat
+            ]
 
             # Get unique actor names (flatten ArrayField)
             all_actors = set()
@@ -189,7 +185,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         institutions: List[str],
         categories: List[str],
         actors: List[str],
-        wikidata_service: WikidataService,
     ) -> List[dict]:
         """Build list of active filters with remove URLs."""
         active_filters = []
@@ -205,14 +200,14 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 'remove_url': f"{request.path}?{q.urlencode()}"
             })
 
-        # Category filters
-        for cat_id in categories:
+        # Category filters - categories are already human-readable labels
+        for cat in categories:
             q = request.GET.copy()
-            q.setlist('kategorie', [c for c in categories if c != cat_id])
+            q.setlist('kategorie', [c for c in categories if c != cat])
             active_filters.append({
                 'type': 'kategorie',
-                'value': cat_id,
-                'display_name': wikidata_service.get_entity_label(cat_id) or cat_id,
+                'value': cat,
+                'display_name': cat,
                 'remove_url': f"{request.path}?{q.urlencode()}"
             })
 
