@@ -58,6 +58,11 @@ class _CanonicalURIs:
     # Category properties
     CATEGORY_NAME = "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb"
     CATEGORY_SLUG = "http://arkumu.org/data/properties/slug-der-projektkategorie"
+    CATEGORY_WIKIDATA = "http://arkumu.org/data/properties/wikidata-id"
+
+    # Schlagwort properties (fallback for orgs that map categories to schlagwort)
+    SCHLAGWORT_NAME = "http://arkumu.org/data/properties/deutscher-name-des-schlagworts"
+    SCHLAGWORT_WIKIDATA_LABEL = "http://arkumu.org/data/properties/deutsches-wikidata-label"
 
     # Project type properties
     PROJECT_TYPE_NAME = "http://arkumu.org/data/properties/deutscher-name-der-projektart"
@@ -157,6 +162,9 @@ class _CanonicalURIs:
             cls.INSTITUTION_NAME,
             cls.CATEGORY_NAME,
             cls.CATEGORY_SLUG,
+            cls.CATEGORY_WIKIDATA,
+            cls.SCHLAGWORT_NAME,
+            cls.SCHLAGWORT_WIKIDATA_LABEL,
             cls.PROJECT_TYPE_NAME,
             cls.CATCHPHRASE_NAME,
             cls.DO_PATH,
@@ -1146,18 +1154,82 @@ class ProjectIndexDbService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         nodes: Dict[str, Dict[str, Any]],
     ) -> List[str]:
-        """Extract category labels from project's category relations."""
+        """Extract category labels from project's category and schlagwort relations.
+
+        Checks both projektkategorie and schlagwort predicates since some orgs
+        (like KHM) use schlagwort for categorization while others (FUK) use
+        projektkategorie.
+        """
+        # Get IDs from both projektkategorie and schlagwort predicates
         cat_ids = self._related_ids(subject_edges, _CanonicalURIs.CATEGORY)
+        schlagwort_ids = self._related_ids(subject_edges, _CanonicalURIs.CATCHPHRASE)
+
         categories: List[str] = []
         seen: Set[str] = set()
 
-        for cat_id in cat_ids:
-            cat_edges = edges_by_subject.get(cat_id, [])
-            label = self._first_literal(cat_edges, _CanonicalURIs.CATEGORY_NAME)
-            if not label:
-                cat_node = nodes.get(cat_id, {})
-                label = cat_node.get("name") or cat_node.get("value")
+        def _is_invalid_label(value: str) -> bool:
+            """Check if a label is invalid (numeric-only or numeric list)."""
+            cleaned = value.strip()
+            # Skip empty
+            if not cleaned:
+                return True
+            # Skip pure numbers
+            if cleaned.isdigit():
+                return True
+            # Skip Q-IDs (Wikidata identifiers)
+            if cleaned.startswith("Q") and cleaned[1:].isdigit():
+                return True
+            # Skip numeric lists like "205,232"
+            if all(c.isdigit() or c in ",. " for c in cleaned):
+                return True
+            return False
 
+        def _extract_label(entity_id: str) -> Optional[str]:
+            """Try multiple canonical URIs to find a label."""
+            entity_edges = edges_by_subject.get(entity_id, [])
+
+            # Try projektkategorie breadcrumb name first (FUK)
+            label = self._first_literal(entity_edges, _CanonicalURIs.CATEGORY_NAME)
+            if label and not _is_invalid_label(label):
+                return label
+
+            # Try schlagwort german name (KHM)
+            label = self._first_literal(entity_edges, _CanonicalURIs.SCHLAGWORT_NAME)
+            if label and not _is_invalid_label(label):
+                return label
+
+            # Try FUK schlagwort wikidata label
+            label = self._first_literal(entity_edges, _CanonicalURIs.SCHLAGWORT_WIKIDATA_LABEL)
+            if label and not _is_invalid_label(label):
+                return label
+
+            # Try Wikidata lookup if Q-ID is available
+            wikidata_id = self._first_literal(entity_edges, _CanonicalURIs.CATEGORY_WIKIDATA)
+            if wikidata_id:
+                label = self._lookup_wikidata_label(wikidata_id)
+                if label and not _is_invalid_label(label):
+                    return label
+
+            # Fallback to node name (skip if invalid)
+            entity_node = nodes.get(entity_id, {})
+            fallback = entity_node.get("name") or entity_node.get("value")
+            if fallback and not _is_invalid_label(str(fallback)):
+                return fallback
+
+            return None
+
+        # Process projektkategorie entities
+        for cat_id in cat_ids:
+            label = _extract_label(cat_id)
+            if label:
+                normalized = str(label).strip()
+                if normalized and normalized not in seen:
+                    categories.append(normalized)
+                    seen.add(normalized)
+
+        # Process schlagwort entities (for orgs like KHM that use schlagwort as categories)
+        for sw_id in schlagwort_ids:
+            label = _extract_label(sw_id)
             if label:
                 normalized = str(label).strip()
                 if normalized and normalized not in seen:
@@ -1165,6 +1237,32 @@ class ProjectIndexDbService:
                     seen.add(normalized)
 
         return categories
+
+    def _lookup_wikidata_label(self, wikidata_id: str) -> Optional[str]:
+        """Look up Wikidata label from ExternalSourcesEntity table."""
+        if not wikidata_id:
+            return None
+
+        # Normalize Q-ID format
+        qid = wikidata_id.strip()
+        if not qid.startswith("Q"):
+            qid = f"Q{qid}"
+
+        try:
+            from arkumu.metadata.models import ExternalSourcesEntity
+
+            entry = ExternalSourcesEntity.objects.filter(
+                data_id=qid,
+                property="label_de",
+                source=ExternalSourcesEntity.SourceEnum.WIKIDATA,
+            ).first()
+
+            if entry and entry.datum:
+                return entry.datum
+        except Exception:
+            pass
+
+        return None
 
     def _extract_actor_names(
         self,
@@ -1418,31 +1516,79 @@ class ProjectIndexDbService:
         edges_by_subject: Dict[str, List[Dict[str, Any]]],
         nodes: Dict[str, Dict[str, Any]],
     ) -> List[Dict[str, str]]:
-        """Extract category data as structured dicts for ProjectDetailIndex."""
+        """Extract category data as structured dicts for ProjectDetailIndex.
+
+        Checks both projektkategorie and schlagwort predicates.
+        """
         cat_ids = self._related_ids(subject_edges, _CanonicalURIs.CATEGORY)
+        schlagwort_ids = self._related_ids(subject_edges, _CanonicalURIs.CATCHPHRASE)
         categories: List[Dict[str, str]] = []
+        seen_labels: Set[str] = set()
 
-        for cat_id in cat_ids:
-            cat_edges = edges_by_subject.get(cat_id, [])
-            cat_node = nodes.get(cat_id, {})
+        def _is_invalid_label(value: str) -> bool:
+            """Check if a label is invalid (numeric-only or numeric list)."""
+            cleaned = value.strip()
+            if not cleaned:
+                return True
+            if cleaned.isdigit():
+                return True
+            if cleaned.startswith("Q") and cleaned[1:].isdigit():
+                return True
+            if all(c.isdigit() or c in ",. " for c in cleaned):
+                return True
+            return False
 
-            label = self._first_literal(cat_edges, _CanonicalURIs.CATEGORY_NAME)
+        def _process_entity(entity_id: str) -> None:
+            entity_edges = edges_by_subject.get(entity_id, [])
+            entity_node = nodes.get(entity_id, {})
+
+            # Try multiple canonical URIs to find a label
+            label = self._first_literal(entity_edges, _CanonicalURIs.CATEGORY_NAME)
+            if not label or _is_invalid_label(label):
+                label = self._first_literal(entity_edges, _CanonicalURIs.SCHLAGWORT_NAME)
+            if not label or _is_invalid_label(label):
+                label = self._first_literal(entity_edges, _CanonicalURIs.SCHLAGWORT_WIKIDATA_LABEL)
+            if not label or _is_invalid_label(label):
+                # Try Wikidata lookup
+                wikidata_id = self._first_literal(entity_edges, _CanonicalURIs.CATEGORY_WIKIDATA)
+                if wikidata_id:
+                    label = self._lookup_wikidata_label(wikidata_id)
+            if not label or _is_invalid_label(label):
+                # Fallback to node name (skip if invalid)
+                fallback = entity_node.get("name") or entity_node.get("value")
+                if fallback and not _is_invalid_label(str(fallback)):
+                    label = fallback
+                else:
+                    label = None
+
             if not label:
-                label = cat_node.get("name") or cat_node.get("value") or ""
+                return
 
-            slug = self._first_literal(cat_edges, _CanonicalURIs.CATEGORY_SLUG)
+            normalized_label = str(label).strip()
+            if not normalized_label or normalized_label in seen_labels:
+                return
+
+            slug = self._first_literal(entity_edges, _CanonicalURIs.CATEGORY_SLUG)
             if not slug:
-                uri = cat_node.get("uri") or ""
+                uri = entity_node.get("uri") or ""
                 slug = uri.rstrip("/").split("/")[-1] if uri else ""
 
-            uri = cat_node.get("uri") or ""
+            uri = entity_node.get("uri") or ""
 
-            if label:
-                categories.append({
-                    "label": str(label).strip(),
-                    "uri": uri,
-                    "slug": str(slug).strip().lower() if slug else "",
-                })
+            categories.append({
+                "label": normalized_label,
+                "uri": uri,
+                "slug": str(slug).strip().lower() if slug else "",
+            })
+            seen_labels.add(normalized_label)
+
+        # Process projektkategorie entities
+        for cat_id in cat_ids:
+            _process_entity(cat_id)
+
+        # Process schlagwort entities
+        for sw_id in schlagwort_ids:
+            _process_entity(sw_id)
 
         return categories
 
