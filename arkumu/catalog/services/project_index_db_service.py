@@ -26,6 +26,8 @@ class _CanonicalURIs:
     SUBTITLE = "http://arkumu.org/data/properties/bevorzugter-untertitel"
     DESCRIPTION = "http://arkumu.org/data/properties/kurzbeschreibung"
     DESCRIPTION_ENTITY = "http://arkumu.org/data/properties/beschreibung"  # Nested description entity
+    DESCRIPTION_DE = "http://arkumu.org/data/properties/deutsche-beschreibung"
+    DESCRIPTION_DE_CONTENT = "http://arkumu.org/data/properties/deutsche-inhaltliche-beschreibung"
     IMAGE = "http://arkumu.org/data/properties/vorschaubild"
     EVENT = "http://arkumu.org/data/properties/ereignis"
     INSTITUTION = "http://arkumu.org/data/properties/einliefernde-hochschule"
@@ -110,6 +112,9 @@ class _CanonicalURIs:
             cls.SUBTITLE,
             cls.DESCRIPTION,
             cls.DESCRIPTION_ENTITY,
+            cls.DESCRIPTION_DE,
+            cls.DESCRIPTION_DE_CONTENT,
+            cls.EVENT_DESCRIPTION,  # KHM maps project descriptions to this
             cls.IMAGE,
             cls.EVENT,
             cls.INSTITUTION,
@@ -689,8 +694,15 @@ class ProjectIndexDbService:
                 continue
 
             subtitle = self._first_literal(subject_edges, _CanonicalURIs.SUBTITLE)
-            # Try direct description first, then nested beschreibung entity
+            # Try multiple description canonicals
             description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION)
+            if not description:
+                description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION_DE_CONTENT)
+            if not description:
+                description = self._first_literal(subject_edges, _CanonicalURIs.DESCRIPTION_DE)
+            if not description:
+                # KHM maps project descriptions to ereignisbeschreibung canonical
+                description = self._first_literal(subject_edges, _CanonicalURIs.EVENT_DESCRIPTION)
             if not description:
                 description = self._extract_nested_description(
                     subject_edges, edges_by_subject, nodes
