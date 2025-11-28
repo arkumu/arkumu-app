@@ -1,0 +1,21 @@
+{% if options %}
+<ul class="max-h-60 overflow-y-auto">
+  {% for option in options %}
+  <li>
+    <button type="button"
+            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors
+                   text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue
+                   theme-dark:hover:bg-gray-700 theme-blue:hover:bg-gray-100"
+            data-value="{{ option }}"
+            data-filter-type="{{ filter_type }}"
+            onclick="selectAutocompleteOption(this)">
+      {{ option }}
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="px-4 py-3 text-sm text-gray-500 theme-dark:text-gray-400">
+  Keine Ergebnisse
+</div>
+{% endif %}

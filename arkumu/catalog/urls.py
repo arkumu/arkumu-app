@@ -3,6 +3,7 @@ from django.views.generic import TemplateView
 from django.contrib.auth.decorators import login_required
 
 from .views.advanced_search_view import AdvancedSearchView
+from .views.autocomplete_view import FilterAutocompleteView
 from .views.cards import GraphSearchView
 from .views.catalog_view import CatalogView
 from .views.images import ImagesView
@@ -38,5 +39,6 @@ urlpatterns = [
     path('university_page_RSH/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_RSH.html")), name='university_page_RSH'),
     path('university_page_KHM/', login_required(TemplateView.as_view(template_name="catalog/university_pages/university_page_KHM.html")), name='university_page_KHM'),
     path('advanced-search/', login_required(AdvancedSearchView.as_view()), name='advanced_search'),
+    path('autocomplete/<str:filter_type>/', login_required(FilterAutocompleteView.as_view()), name='filter_autocomplete'),
 
 ]
