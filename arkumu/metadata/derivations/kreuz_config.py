@@ -327,10 +327,39 @@ KREUZ_DATASET_PROFILES: Dict[str, Dict[str, DatasetProfile]] = {
             notes=("Role-based actor assignments for events",),
         ),
     },
+    "hmt": {
+        "01_hfm_kreuz_projekt_ereignis": DatasetProfile(
+            name="01_hfm_Kreuz_Projekt_Ereignis",
+            canonical_predicates=(PROJECT, EVENT),
+            pattern_names=("project_event",),
+            notes=("Project-Event junction table",),
+        ),
+        "03_hfm_kreuz_ereignis_akteure": DatasetProfile(
+            name="03_hfm_Kreuz_Ereignis_Akteure",
+            canonical_predicates=(EVENT, ACTOR_IN_EVENT, ROLE_IN_EVENT),
+            pattern_names=("event_actor",),
+            notes=("Event-Actor assignments with roles",),
+        ),
+        "05_hfm_kreuz_ereignis_koerperschaften": DatasetProfile(
+            name="05_hfm_Kreuz_Ereignis_Koerperschaften",
+            canonical_predicates=(EVENT, ACTOR_IN_EVENT),
+            pattern_names=("event_actor",),
+            notes=("Event-Organization assignments",),
+        ),
+        "07_hfm_kreuz_ereignis_digitalesobjekt": DatasetProfile(
+            name="07_hfm_Kreuz_Ereignis_DigitalesObjekt",
+            canonical_predicates=(EVENT, DIGITAL_OBJECT),
+            pattern_names=("event_digital_object",),
+            notes=("Event-Digital Object junction",),
+        ),
+        "10_hfm_kreuz_projekt_oberwerk": DatasetProfile(
+            name="10_hfm_Kreuz_Projekt_Oberwerk",
+            canonical_predicates=(PROJECT,),
+            pattern_names=(),  # No derivations - just a project-project relationship
+            notes=("Project-Oberwerk relationship - no event derivation",),
+        ),
+    },
 }
-
-# Share Folkwang configuration with HMT until a dedicated profile exists.
-KREUZ_DATASET_PROFILES["hmt"] = KREUZ_DATASET_PROFILES["fuk"]
 
 
 def normalize_dataset_key(dataset_name: str | None) -> str | None:
