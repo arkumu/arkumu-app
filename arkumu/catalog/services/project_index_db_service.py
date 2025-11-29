@@ -78,7 +78,7 @@ class _CanonicalURIs:
     # Catchphrase properties
     CATCHPHRASE_NAME = "http://arkumu.org/data/properties/deutscher-name-des-schlagworts"
 
-    # Digital object properties
+    # Digital object properties (for image path resolution)
     DO_PATH = "http://arkumu.org/data/properties/dateipfad"
 
     # License properties
@@ -1245,6 +1245,7 @@ class ProjectIndexDbService:
                 "subtitle": None,
                 "description": None,
                 "image": None,
+                "image_entity_id": None,  # For vorschaubild → digital object lookup
                 "institution_id": None,
                 "institution_label": "",
                 "institution_uri": "",
@@ -1286,7 +1287,11 @@ class ProjectIndexDbService:
                 elif pred == _CanonicalURIs.EVENT_DESCRIPTION and not proj["description"]:
                     proj["description"] = obj_val
                 elif pred == _CanonicalURIs.IMAGE and not proj["image"]:
-                    proj["image"] = obj_val
+                    if obj_val:
+                        proj["image"] = obj_val
+                    elif obj_id:
+                        # vorschaubild points to entity (digital object) - resolve later
+                        proj["image_entity_id"] = obj_id
                 elif pred == _CanonicalURIs.INSTITUTION and obj_id:
                     proj["institution_id"] = obj_id
                 elif pred == _CanonicalURIs.CATEGORY and obj_id:
@@ -1324,6 +1329,14 @@ class ProjectIndexDbService:
                     proj["institution_label"] = inst_node.get("name") or inst_node.get("value") or ""
                 inst_node = nodes.get(proj["institution_id"], {})
                 proj["institution_uri"] = inst_node.get("uri") or ""
+
+            # Image path from vorschaubild entity (digital object → dateipfad)
+            if not proj["image"] and proj["image_entity_id"]:
+                img_edges = edges_by_subject.get(proj["image_entity_id"], [])
+                for e in img_edges:
+                    if self._canonical(e) == _CanonicalURIs.DO_PATH:
+                        proj["image"] = e.get("object_value")
+                        break
 
             # Categories
             seen_cats = set()
