@@ -1288,7 +1288,8 @@ class ProjectIndexDbService:
                     proj["description"] = obj_val
                 elif pred == _CanonicalURIs.IMAGE and not proj["image"]:
                     if obj_val:
-                        proj["image"] = obj_val
+                        # Normalize path: backslashes → forward slashes, spaces → underscores
+                        proj["image"] = obj_val.replace("\\", "/").replace(" ", "_")
                     elif obj_id:
                         # vorschaubild points to entity (digital object) - resolve later
                         proj["image_entity_id"] = obj_id
@@ -1335,7 +1336,9 @@ class ProjectIndexDbService:
                 img_edges = edges_by_subject.get(proj["image_entity_id"], [])
                 for e in img_edges:
                     if self._canonical(e) == _CanonicalURIs.DO_PATH:
-                        proj["image"] = e.get("object_value")
+                        raw_path = e.get("object_value") or ""
+                        # Normalize path: backslashes → forward slashes, spaces → underscores
+                        proj["image"] = raw_path.replace("\\", "/").replace(" ", "_")
                         break
 
             # Categories
