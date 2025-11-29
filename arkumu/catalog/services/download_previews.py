@@ -43,7 +43,7 @@ class DownloadPreviews:
 
     def _remove_already_downloaded(self, paths):
         existing = set(PreviewImages.objects.values_list('bucket', 'path'))
-        return [p for p in paths if (p['bucket'], p['orig_path']) not in existing]
+        return [p for p in paths if (p['bucket'], clean_path(p['orig_path'])) not in existing]
 
     def _digital_objs_path(self, digital_objs):
         return  [{'bucket': path.source.code, 'path': f"data{clean_path(path.object.value)}", 'orig_path': path.object.value}
@@ -64,9 +64,11 @@ class DownloadPreviews:
                 if img['success']:
                     # Pre-compute ETag for efficient cache validation
                     etag = hashlib.md5(img['content']).hexdigest()
+                    # Normalize path to match ProjectIndex.image format
+                    normalized_path = clean_path(path['orig_path'])
                     PreviewImages.objects.update_or_create(
                         bucket=path['bucket'],
-                        path=path['orig_path'],
+                        path=normalized_path,
                         defaults={
                             'img': img['content'],
                             'content_length': img['metadata']['content_length'],
