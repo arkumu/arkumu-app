@@ -58,7 +58,7 @@ class FilterAutocompleteView(GeneralLoginRequiredMixin, View):
     def _get_category_options(self, query, selected):
         qs = self._get_base_queryset()
         all_categories = set()
-        for cats in qs.values_list('categories', flat=True):
+        for cats in qs.values_list('category_labels', flat=True):
             if cats:
                 all_categories.update(cats)
 
