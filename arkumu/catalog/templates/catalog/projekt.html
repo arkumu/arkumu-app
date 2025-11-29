@@ -55,10 +55,10 @@
                data-rdf-property="http://arkumu.org/data/properties/projektkategorie"
                aria-label="Projektkategorien">
             {% for category in project.categories %}
-              <a tabindex="0" href="/catalog/advanced-search/?kategorie={{ category.id }}">
+              <a tabindex="0" href="/catalog/advanced-search/?kategorie={{ category.label|urlencode }}">
                 <div data-rdf-type="http://arkumu.org/data/types/projektkategorie"
                      data-rdf-name="http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb">
-                  {% include 'components/buttons/small_secondary_button.html' with button_text=category.name %}
+                  {% include 'components/buttons/small_secondary_button.html' with button_text=category.label %}
                 </div>
               </a>
             {% endfor %}
