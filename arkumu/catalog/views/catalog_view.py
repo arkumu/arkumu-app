@@ -82,22 +82,28 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                 page_size=self.ITEMS_PER_PAGE,
             )
 
-            # Wikidata resolution for category labels
+            # Categories are already labels from ProjectIndex (db backend).
+            # Only do Wikidata lookup if value looks like a Wikidata ID (Q followed by digits).
+            def _is_wikidata_id(val: str) -> bool:
+                return val and val.startswith("Q") and val[1:].isdigit()
+
             for card in cards:
-                wikidata_service = WikidataService()
-                if card.get("category1"):
-                    card["category1_name"] = wikidata_service.get_entity_label(wikidata_id=card.get("category1"))
-                if card.get("category2"):
-                    card["category2_name"] = wikidata_service.get_entity_label(wikidata_id=card.get("category2"))
-                if card.get("category3"):
-                    card["category3_name"] = wikidata_service.get_entity_label(wikidata_id=card.get("category3"))
+                # category1-4 fields: use as-is if already a label
+                for i in range(1, 5):
+                    key = f"category{i}"
+                    val = card.get(key)
+                    if val:
+                        if _is_wikidata_id(val):
+                            card[f"{key}_name"] = WikidataService().get_entity_label(wikidata_id=val)
+                        else:
+                            card[f"{key}_name"] = val  # Already a label
+
+                # categories array: convert to {id, name} format
                 if card.get("categories"):
-                    categories_name = []
-                    for w in card.get("categories"):
-                        categories_name.append(wikidata_service.get_entity_label(wikidata_id=w))
                     card["categories"] = [
-                        {"id": cid, "name": cname}
-                        for cid, cname in zip(card.get("categories"), categories_name)
+                        {"id": cat, "name": cat} if not _is_wikidata_id(cat)
+                        else {"id": cat, "name": WikidataService().get_entity_label(wikidata_id=cat)}
+                        for cat in card.get("categories")
                     ]
 
 
