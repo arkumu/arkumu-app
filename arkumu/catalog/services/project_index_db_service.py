@@ -1566,7 +1566,7 @@ class ProjectIndexDbService:
             actor_node = nodes.get(actor_id, {})
             return name or "", actor_node.get("uri") or ""
 
-        def add_actor(proj: Dict, name: str, uri: str, roles: List[str]) -> None:
+        def add_actor(proj: Dict, name: str, uri: str, roles: List[str], event_id: str = None) -> None:
             if not name:
                 return
             normalized = str(name).strip()
@@ -1581,6 +1581,20 @@ class ProjectIndexDbService:
                 }
             else:
                 proj["actors_structured"][normalized]["roles"].update(roles)
+            # Also add to event-level actors if event_id provided
+            if event_id:
+                for evt in proj["events_structured"]:
+                    if evt.get("id") == event_id:
+                        # Check if actor already in event
+                        existing = next((a for a in evt["actors"] if a.get("name") == normalized), None)
+                        if not existing:
+                            evt["actors"].append({"name": normalized, "roles": list(roles), "uri": uri})
+                        else:
+                            # Merge roles
+                            for r in roles:
+                                if r not in existing["roles"]:
+                                    existing["roles"].append(r)
+                        break
 
         # Process junctions via events (FUK pattern)
         for event_id, project_ids in event_to_projects.items():
@@ -1597,7 +1611,7 @@ class ProjectIndexDbService:
                     name, uri = get_actor_info(actor_id)
                     for pid in project_ids:
                         if pid in result:
-                            add_actor(result[pid], name, uri, roles)
+                            add_actor(result[pid], name, uri, roles, event_id=event_id)
 
             # Direct event->actor links
             for direct_pred in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
@@ -1606,7 +1620,7 @@ class ProjectIndexDbService:
                     name, uri = get_actor_info(actor_id)
                     for pid in project_ids:
                         if pid in result:
-                            add_actor(result[pid], name, uri, [])
+                            add_actor(result[pid], name, uri, [], event_id=event_id)
 
         # Process junctions via projects (KHM pattern)
         for project_id, junction_ids in self._junctions_by_project.items():
