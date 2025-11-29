@@ -21,6 +21,19 @@ from arkumu.metadata.models import Resource, Triple, ResourceType
 from arkumu.users.models import Organization
 
 
+# CV URI patterns: cv_type -> (prefix, id_format)
+# id_format: 'numeric' for {id}, 'slug' for slug-based
+CV_PATTERNS = {
+    "projektkategorie": ("types/projektkategorie/project-category-", "numeric"),
+    "rolle": ("types/rolle/role-", "numeric"),
+    "organisationseinheit": ("types/organisationseinheit/organisational-unit-", "numeric"),
+    "ereignistyp": ("types/ereignistyp/event-type-", "numeric"),
+    "equipmentart": ("types/equipmentart/equipment-type-", "numeric"),
+    "informationstraegertyp": ("types/informationstraegertyp/information-storage-medium-type-", "numeric"),
+    "projektart": ("types/projektart/", "slug"),  # Uses slugs, not numeric IDs
+}
+
+
 class Command(BaseCommand):
     help = "Migrate org entity references to controlled vocabulary"
 
@@ -121,9 +134,18 @@ class Command(BaseCommand):
         self.stdout.write(f"\nMigrating {org}/{entity_type} to CV {cv_type}")
         self.stdout.write("=" * 60)
 
+        # Get CV pattern
+        if cv_type not in CV_PATTERNS:
+            self.stderr.write(
+                self.style.ERROR(f"Unknown CV type: {cv_type}. Known types: {list(CV_PATTERNS.keys())}")
+            )
+            return {"triples_updated": 0, "entities_orphaned": 0}
+
+        cv_path, id_format = CV_PATTERNS[cv_type]
+
         # URI patterns
         org_entity_prefix = f"http://arkumu.org/data/{org}/entities/{entity_type}/"
-        cv_prefix = f"http://arkumu.org/data/types/{cv_type}/project-category-"
+        cv_prefix = f"http://arkumu.org/data/{cv_path}"
 
         # Find all org entities
         org_entities = Resource.objects.filter(
@@ -145,7 +167,14 @@ class Command(BaseCommand):
 
         for org_entity in org_entities:
             entity_id = org_entity.uri.replace(org_entity_prefix, "").rstrip("/")
-            cv_uri = f"{cv_prefix}{entity_id}"
+
+            if id_format == "numeric":
+                cv_uri = f"{cv_prefix}{entity_id}"
+            else:
+                # For slug-based CVs, try to find matching CV entity by ID or name
+                # First try direct match, then search by ID property
+                cv_uri = f"{cv_prefix}{entity_id}"
+
             cv_entity = Resource.objects.filter(uri=cv_uri).first()
 
             if cv_entity:
