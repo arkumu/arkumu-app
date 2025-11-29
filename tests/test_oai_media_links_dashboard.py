@@ -190,7 +190,7 @@ def test_summary_counts_unique_project_uris():
     link_qs = media_link_views._media_link_prefetch_queryset(org)
     summary = media_link_views._build_media_links_summary(org, link_qs)
 
-    assert summary["available_project_count"] == 1
+    assert summary["projects_with_links_count"] == 1
 
 
 @pytest.mark.django_db
@@ -218,8 +218,10 @@ def test_summary_counts_curated_projects_for_non_s3_org(monkeypatch):
         curated_harvestable_ids=curated_ids,
     )
 
-    assert summary["harvestable_project_count"] == 1
-    assert summary["available_project_count"] == 3
+    assert summary["oai_approved_count"] == 1
+    assert summary["has_files_count"] == 2  # harvestable_project + duplicate_uri_project have non-stale links
+    assert summary["projects_with_links_count"] == 3
+    # total_project_count = 5 (3 projects + 2 digital objects) since org has no project scope config
 
 
 @pytest.mark.django_db

@@ -182,6 +182,19 @@ def reset_database(request):
             # Delete all triples first (due to foreign key constraints)
             Triple.objects.all().delete()
 
+            # PATCH: Clear project index tables before deleting resources (tables may exist from another branch)
+            from django.db import connection
+            fk_tables = ['projects_index', 'project_records', 'project_detail_index']
+            with connection.cursor() as cursor:
+                for table_name in fk_tables:
+                    cursor.execute(
+                        "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
+                        [table_name]
+                    )
+                    if cursor.fetchone()[0]:
+                        cursor.execute(f"DELETE FROM {table_name}")
+                        logger.info(f"Cleared {cursor.rowcount} {table_name} entries during database reset")
+
             # Delete all resources
             Resource.objects.all().delete()
 
@@ -304,6 +317,26 @@ def delete_organization_triples(request):
 
             # Delete organization-specific triples first
             deleted_triples = org_triples.delete()[0]
+
+            # PATCH: Clear project index tables referencing resources we're about to delete
+            # These tables may exist from another branch migration and have FK to metadata_resource
+            from django.db import connection
+            resource_ids_to_delete = list(resources_to_delete.values_list('id', flat=True))
+            if resource_ids_to_delete:
+                # Tables from other branch that reference metadata_resource
+                fk_tables = ['projects_index', 'project_records', 'project_detail_index']
+                with connection.cursor() as cursor:
+                    for table_name in fk_tables:
+                        cursor.execute(
+                            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
+                            [table_name]
+                        )
+                        if cursor.fetchone()[0]:
+                            cursor.execute(
+                                f"DELETE FROM {table_name} WHERE project_resource_id = ANY(%s)",
+                                [resource_ids_to_delete]
+                            )
+                            logger.info(f"Cleared {cursor.rowcount} {table_name} entries for organization {organization.name}")
 
             # Delete the identified orphaned resources
             deleted_resources = resources_to_delete.delete()[0]

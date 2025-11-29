@@ -218,11 +218,13 @@ class OAIProjectMediaSyncService:
             .select_related("object")
         )
 
+        seen_ids: set[UUID] = set()
         results: List[MediaLinkCandidate] = []
         for triple in triples:
             digital = getattr(triple, "object", None)
-            if not digital:
+            if not digital or digital.id in seen_ids:
                 continue
+            seen_ids.add(digital.id)
             results.append(
                 MediaLinkCandidate(
                     resource=digital,
@@ -387,6 +389,9 @@ class OAIProjectMediaSyncService:
                 link = existing_by_value.get(candidate_path)
 
             if link is None:
+                # Skip if we already processed this digital object in this batch
+                if digital_pk in seen:
+                    continue
                 seen.add(digital_pk)
             else:
                 seen.add(link.digital_object_id)

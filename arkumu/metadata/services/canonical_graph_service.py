@@ -35,6 +35,43 @@ except Exception:  # pragma: no cover - optional at runtime
 
 RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
+# Entity-type-aware expansion exclusions.
+# When expanding FROM entities of a given type, exclude predicates matching these patterns.
+# This prevents cross-project pollution (e.g., actors linking to events from other projects).
+# Keys are entity type patterns (matched against URI path like /entities/{type}/).
+# Values are predicate patterns to exclude (matched case-insensitively against predicate URI).
+EXPANSION_EXCLUSIONS_BY_TYPE: Dict[str, Sequence[str]] = {
+    "akteurin": ("im-ereignis", "ereignis-hat-akteurin"),  # Don't follow actor -> event links
+    "akteur": ("im-ereignis", "ereignis-hat-akteur"),      # Alternative spelling
+    "ereignis": ("projekt",),                               # Don't follow event -> project reverse links
+}
+
+
+def _extract_entity_type_from_uri(uri: Optional[str]) -> Optional[str]:
+    """Extract entity type from URI like http://arkumu.org/data/fuk/entities/akteurin/123."""
+    if not uri:
+        return None
+    # Look for /entities/{type}/ pattern
+    if "/entities/" in uri:
+        parts = uri.split("/entities/")
+        if len(parts) > 1:
+            type_part = parts[1].split("/")[0]
+            return type_part.lower() if type_part else None
+    return None
+
+
+def _should_exclude_predicate(entity_type: Optional[str], predicate_uri: Optional[str]) -> bool:
+    """Check if a predicate should be excluded based on the source entity type."""
+    if not entity_type or not predicate_uri:
+        return False
+    predicate_lower = predicate_uri.lower()
+    for type_pattern, exclusions in EXPANSION_EXCLUSIONS_BY_TYPE.items():
+        if type_pattern in entity_type:
+            for exclusion in exclusions:
+                if exclusion in predicate_lower:
+                    return True
+    return False
+
 
 @dataclass
 class GraphEdge:
@@ -167,15 +204,40 @@ class CanonicalGraphService:
 
         if expand_neighbors and depth > 0:
             visited: set[str] = {root_id}
-            frontier: List[str] = [e.object_id for e in edges if e.object_type != ResourceType.LITERAL]
-            frontier = [nid for nid in dict.fromkeys(frontier) if nid not in visited]
+            # Track (id, uri) tuples for entity-type-aware filtering
+            frontier_with_uris: List[Tuple[str, Optional[str]]] = [
+                (e.object_id, e.object_uri) for e in edges if e.object_type != ResourceType.LITERAL
+            ]
+            frontier_with_uris = [
+                (nid, uri) for nid, uri in dict.fromkeys(frontier_with_uris) if nid not in visited
+            ]
             hops = 0
-            while frontier and hops < depth:
-                visited.update(frontier)
-                next_edges = self._fetch_triples_for_subjects(frontier, neighbor_predicate_canon_whitelist)
-                edges.extend(next_edges)
-                next_frontier = [e.object_id for e in next_edges if e.object_type != ResourceType.LITERAL]
-                frontier = [nid for nid in dict.fromkeys(next_frontier) if nid not in visited]
+            while frontier_with_uris and hops < depth:
+                frontier_ids = [nid for nid, _ in frontier_with_uris]
+                visited.update(frontier_ids)
+
+                # Build a map of subject_id -> entity_type for filtering
+                subject_type_map: Dict[str, Optional[str]] = {
+                    nid: _extract_entity_type_from_uri(uri) for nid, uri in frontier_with_uris
+                }
+
+                next_edges = self._fetch_triples_for_subjects(frontier_ids, neighbor_predicate_canon_whitelist)
+
+                # Filter edges based on entity-type-aware exclusions
+                filtered_edges: List[GraphEdge] = []
+                for edge in next_edges:
+                    entity_type = subject_type_map.get(edge.subject_id)
+                    predicate = edge.predicate_canonical or edge.predicate_uri
+                    if not _should_exclude_predicate(entity_type, predicate):
+                        filtered_edges.append(edge)
+
+                edges.extend(filtered_edges)
+                next_frontier = [
+                    (e.object_id, e.object_uri) for e in filtered_edges if e.object_type != ResourceType.LITERAL
+                ]
+                frontier_with_uris = [
+                    (nid, uri) for nid, uri in dict.fromkeys(next_frontier) if nid not in visited
+                ]
                 hops += 1
 
         nodes = self._collect_nodes_from_edges(edges)
@@ -375,3 +437,71 @@ class CanonicalGraphService:
                 )
             )
         return edges
+
+    def fetch_junction_entities(
+        self,
+        target_ids: Sequence[str],
+        *,
+        junction_type_uris: Optional[Sequence[str]] = None,
+    ) -> List[GraphEdge]:
+        """Find junction entities (Kreuztabelle) pointing TO target entities.
+
+        Junction tables in Arkumu model n-ary relationships like Actor-Event-Role.
+        They have edges pointing TO events and FROM actors, plus properties like
+        'ist-urheberin' (is copyright holder) and 'rolle' (role).
+
+        This method finds junction entities that point to any of the target_ids,
+        then returns ALL edges from those junction entities.
+
+        Args:
+            target_ids: Entity IDs to find junctions pointing to (e.g., Event IDs)
+            junction_type_uris: Canonical type URIs for junction tables.
+                               Defaults to actor-event and actor-actor junctions.
+
+        Returns:
+            List of GraphEdges from junction entities (including their properties).
+        """
+        if not target_ids:
+            return []
+
+        # Default junction types
+        if junction_type_uris is None:
+            junction_type_uris = [
+                "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
+                "http://arkumu.org/data/types/akteurin-akteurin-kreuztabelle",
+            ]
+
+        # Build org filter if organization is set
+        org_filter = Q()
+        if self.organization:
+            org_filter = Q(subject__organization=self.organization)
+
+        # Single optimized query: find junction entities by type that point to targets
+        # Using subquery to find subjects of junction type, then filter by target
+        junction_type_subjects = (
+            Triple.objects.filter(
+                Q(predicate__uri=RDF_TYPE_URI)
+                & (
+                    Q(object__canonical_uri__in=junction_type_uris)
+                    | Q(object__uri__in=junction_type_uris)
+                )
+            )
+            .filter(org_filter)
+            .values_list("subject_id", flat=True)
+        )
+
+        # Find junction entities that point to our targets
+        junction_ids = set(
+            Triple.objects.filter(
+                subject_id__in=junction_type_subjects,
+                object_id__in=list(target_ids),
+            )
+            .values_list("subject_id", flat=True)
+            .distinct()
+        )
+
+        if not junction_ids:
+            return []
+
+        # Fetch ALL edges from junction entities
+        return self._fetch_triples_for_subjects(list(junction_ids), None)

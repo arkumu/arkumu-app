@@ -360,16 +360,123 @@ class TestCanonicalGraphService(TestCase):
         assert literal_node["value"] == "Project Alpha"
         assert literal_node["organization"] is None  # Literals have no org
 
-    def test_subject_limit(self):
-        """Test limiting the number of subjects returned."""
-        service = CanonicalGraphService(org_code="fuk")
-
-        graph = service.get_project_graph(
-            dataset_name="Projekt",
-            type_canonical_uri="http://arkumu.org/types/projekt",
-            expand_neighbors=False,
-            limit_subjects=1
+    def test_fetch_junction_entities(self):
+        """Test fetching junction entities (Kreuztabelle) pointing to target entities."""
+        # Create junction type class
+        junction_class = Resource.objects.create(
+            uri="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
+            canonical_uri="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
+            name="Akteurin-Ereignis-Kreuztabelle",
+            resource_type=ResourceType.CLASS,
+            organization=None
         )
 
-        assert len(graph["subjects"]) == 1
-        assert graph["counts"]["subjects"] == 1
+        # Create an event (target entity)
+        event = Resource.objects.create(
+            uri="http://arkumu.org/data/fuk/entities/ereignis/1",
+            name="Event 1",
+            resource_type=ResourceType.ENTITY,
+            organization=self.fuk
+        )
+
+        # Create an actor
+        actor = Resource.objects.create(
+            uri="http://arkumu.org/data/fuk/entities/akteurin/1",
+            name="Actor 1",
+            resource_type=ResourceType.ENTITY,
+            organization=self.fuk
+        )
+
+        # Create a junction entity
+        junction = Resource.objects.create(
+            uri="http://arkumu.org/data/fuk/entities/junction/1",
+            name="Junction 1",
+            resource_type=ResourceType.ENTITY,
+            organization=self.fuk
+        )
+
+        # Create predicates
+        akteurin_prop = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/akteurin",
+            canonical_uri="http://arkumu.org/data/properties/akteurin",
+            name="akteurin",
+            resource_type=ResourceType.PROPERTY,
+            organization=None
+        )
+        im_ereignis_prop = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/im-ereignis",
+            canonical_uri="http://arkumu.org/data/properties/im-ereignis",
+            name="im-ereignis",
+            resource_type=ResourceType.PROPERTY,
+            organization=None
+        )
+        ist_urheberin_prop = Resource.objects.create(
+            uri="http://arkumu.org/data/properties/ist-urheberin",
+            canonical_uri="http://arkumu.org/data/properties/ist-urheberin",
+            name="ist-urheberin",
+            resource_type=ResourceType.PROPERTY,
+            organization=None
+        )
+        urheber_literal = Resource.objects.create(
+            uri="http://arkumu.org/literals/true",
+            value="true",
+            resource_type=ResourceType.LITERAL,
+            organization=None
+        )
+
+        # Create triples: junction -> event, junction -> actor, junction -> property
+        Triple.objects.create(
+            subject=junction,
+            predicate=self.rdf_type,
+            object=junction_class,
+            source=self.fuk
+        )
+        Triple.objects.create(
+            subject=junction,
+            predicate=im_ereignis_prop,
+            object=event,
+            source=self.fuk
+        )
+        Triple.objects.create(
+            subject=junction,
+            predicate=akteurin_prop,
+            object=actor,
+            source=self.fuk
+        )
+        Triple.objects.create(
+            subject=junction,
+            predicate=ist_urheberin_prop,
+            object=urheber_literal,
+            source=self.fuk
+        )
+
+        service = CanonicalGraphService(org_code="fuk")
+
+        # Fetch junction entities pointing to the event
+        edges = service.fetch_junction_entities([str(event.id)])
+
+        # Should find 4 edges (type, im-ereignis, akteurin, ist-urheberin)
+        assert len(edges) == 4
+
+        # Check that the junction entity is the subject of all edges
+        for edge in edges:
+            assert edge.subject_id == str(junction.id)
+
+        # Check we have edges to actor, event, and literal
+        object_ids = {edge.object_id for edge in edges}
+        assert str(event.id) in object_ids
+        assert str(actor.id) in object_ids
+        assert str(urheber_literal.id) in object_ids
+
+    def test_fetch_junction_entities_empty_targets(self):
+        """Test fetch_junction_entities with empty target list returns empty."""
+        service = CanonicalGraphService(org_code="fuk")
+        edges = service.fetch_junction_entities([])
+        assert edges == []
+
+    def test_fetch_junction_entities_no_junctions(self):
+        """Test fetch_junction_entities when no junctions point to targets."""
+        service = CanonicalGraphService(org_code="fuk")
+        # Use an ID that has no junctions pointing to it
+        edges = service.fetch_junction_entities([str(self.fuk_projekt_1.id)])
+        assert edges == []

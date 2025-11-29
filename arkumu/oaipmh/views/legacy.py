@@ -2007,7 +2007,6 @@ def _build_dc_payload_from_project(
 
     if record.institution and record.institution.label:
         _add_dc_value(payload, 'publisher', record.institution.label)
-        _add_dc_value(payload, 'contributor', record.institution.label)
 
     primary_actors = _select_primary_event_actors(record)
     seen_creators: set[str] = set()

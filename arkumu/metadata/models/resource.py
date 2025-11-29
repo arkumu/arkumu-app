@@ -212,6 +212,8 @@ class Resource(UUIDModel):
             models.Index(fields=['organization']),
             # New indexes for public access queries
             models.Index(fields=['public_access_level', 'is_public_approved']),
+            # Composite index for project-digital materialization queries
+            models.Index(fields=['organization', 'resource_type'], name='metadata_re_org_type_idx'),
             # Trigram GIN index for fast text search on literal values
             GinIndex(
                 fields=['value'],

@@ -9,7 +9,7 @@ reuse the same implementation.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import rdflib
@@ -84,8 +84,34 @@ def build_rdf_graph(
         restrict_to_org=bool(org_code),
     )
 
-    rdf_graph = rdflib.Graph()
+    # Fetch junction entities (Kreuztabelle) for events to include actor-role relationships
+    # Actors already appear with deutscher-name from depth=2, but junctions add:
+    # - ist-urheberin, leistungsschutz flags
+    # - links to roles (akteurin-hat-rolle-im-ereignis)
     nodes = graph_data.get("nodes", {})
+    edges = graph_data.get("edges", [])
+
+    # Find event IDs from existing nodes
+    event_ids: List[str] = [
+        node_id
+        for node_id, node in nodes.items()
+        if node.get("uri") and "/ereignis" in node.get("uri", "").lower()
+    ]
+
+    if event_ids:
+        junction_edges = service.fetch_junction_entities(event_ids)
+        if junction_edges:
+            # Add junction edges to the graph
+            for edge in junction_edges:
+                edges.append(edge.__dict__)
+
+            # Collect new nodes for junction entities and their linked resources
+            new_nodes = service._collect_nodes_from_edges(junction_edges)
+            for node_id, node_data in new_nodes.items():
+                if node_id not in nodes:
+                    nodes[node_id] = node_data
+
+    rdf_graph = rdflib.Graph()
 
     namespace_cache: Dict[str, rdflib.Namespace] = {
         RDF_NS: rdflib.Namespace(RDF_NS),
@@ -153,7 +179,7 @@ def build_rdf_graph(
     def _node_info(node_id: str) -> Optional[Dict[str, Any]]:
         return nodes.get(node_id)
 
-    for edge in graph_data.get("edges", []):
+    for edge in edges:
         subj_node = _node_info(edge.get("subject_id"))
         obj_node = _node_info(edge.get("object_id"))
         predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")

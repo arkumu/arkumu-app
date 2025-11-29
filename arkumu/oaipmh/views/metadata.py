@@ -441,6 +441,223 @@ def _select_primary_event_actors(record: ProjectRecord) -> List[Dict[str, Any]]:
         )
 
     return fallback
+
+
+def _extract_creators_from_junctions(resource: Resource, record: ProjectRecord) -> tuple[list, list]:
+    """Extract creators and contributors from junction entities.
+
+    Queries junction entities (Kreuztabelle) to find actor-event relationships:
+    - dc:creator: actors where ist-urheberin=1 (copyright holders)
+    - dc:contributor: actors where ist-urheberin=0
+
+    Uses canonical predicate URIs to find relationships across all institutions.
+    Format: "Actor Name (Role)" or just "Actor Name" if no role.
+    """
+    from arkumu.metadata.models.triples import Triple
+    from django.db.models import Q
+
+    creators = []
+    contributors = []
+
+    if not resource or not resource.id:
+        return creators, contributors
+
+    org_code = resource.organization.code if resource.organization else None
+
+    # Canonical URIs for predicates and types
+    CANONICAL_JUNCTION_TYPE = "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle"
+    CANONICAL_PROJECT_PREDICATE = "http://arkumu.org/data/properties/projekt"
+    CANONICAL_EVENT_PREDICATE = "http://arkumu.org/data/properties/ereignis"
+    CANONICAL_ACTOR_PREDICATE = "http://arkumu.org/data/properties/akteurin-im-ereignis"
+    CANONICAL_IST_URHEBERIN = "http://arkumu.org/data/properties/ist-urheberin"
+    CANONICAL_LEISTUNGSSCHUTZ = "http://arkumu.org/data/properties/besitzt-leistungsschutzrechte"
+    CANONICAL_ROLE_PREDICATE = "http://arkumu.org/data/properties/akteurin-hat-rolle"
+    RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+    # Get event IDs from the record's events
+    event_uris = []
+    for event in record.events:
+        uri = getattr(event, "uri", None)
+        if uri:
+            event_uris.append(uri)
+
+    # Find event resource IDs
+    from arkumu.metadata.models.resource import Resource as ResourceModel
+    event_ids = []
+    if event_uris:
+        event_resources = ResourceModel.objects.filter(uri__in=event_uris).values_list("id", flat=True)
+        event_ids = list(event_resources)
+
+    # Find event entities that link to this project via canonical "projekt" predicate
+    # This covers KHM grundereignis and HMT hfm-ereignis through their canonical mappings
+    linked_event_ids = []
+    if resource.id:
+        linked_events_qs = Triple.objects.filter(
+            Q(predicate__canonical_uri=CANONICAL_PROJECT_PREDICATE)
+            | Q(predicate__uri=CANONICAL_PROJECT_PREDICATE),
+            object_id=resource.id,
+        ).values_list("subject_id", flat=True).distinct()[:20]
+        linked_event_ids = list(linked_events_qs)
+
+    if not event_ids and not resource.id and not linked_event_ids:
+        return creators, contributors
+
+    org_filter = Q()
+    if org_code:
+        org_filter = Q(subject__organization__code=org_code)
+
+    try:
+        # Find junction entities by canonical type
+        junction_type_subjects = (
+            Triple.objects.filter(
+                Q(predicate__uri=RDF_TYPE_URI)
+                & (
+                    Q(object__canonical_uri=CANONICAL_JUNCTION_TYPE)
+                    | Q(object__uri=CANONICAL_JUNCTION_TYPE)
+                )
+            )
+            .filter(org_filter)
+            .values_list("subject_id", flat=True)
+        )
+
+        # Find junctions pointing to our events, linked events, or the project
+        # Using canonical predicates: projekt, ereignis
+        target_ids = list(event_ids)
+        target_ids.extend(linked_event_ids)
+        if resource.id:
+            target_ids.append(resource.id)
+
+        junction_ids = list(
+            Triple.objects.filter(
+                subject_id__in=junction_type_subjects,
+                object_id__in=target_ids,
+            )
+            .values_list("subject_id", flat=True)
+            .distinct()[:50]
+        )
+    except Exception:
+        return creators, contributors
+
+    if not junction_ids:
+        return creators, contributors
+
+    # Fetch junction triples
+    junction_triples = Triple.objects.filter(
+        subject_id__in=junction_ids
+    ).select_related("predicate", "object").only(
+        "subject_id",
+        "predicate__uri",
+        "predicate__canonical_uri",
+        "object__id",
+        "object__uri",
+        "object__value",
+        "object__name",
+    )
+
+    # Group by junction entity
+    junction_data: Dict[str, Dict[str, Any]] = {}
+    for t in junction_triples:
+        jid = str(t.subject_id)
+        if jid not in junction_data:
+            junction_data[jid] = {"ist_urheberin": False, "leistungsschutz": False, "actor_id": None, "role_id": None}
+
+        # Use canonical URI if available, otherwise fall back to direct URI
+        pred_uri = t.predicate.canonical_uri or t.predicate.uri or ""
+        pred_canonical = t.predicate.canonical_uri or ""
+
+        # Check ist-urheberin via canonical URI
+        if pred_canonical == CANONICAL_IST_URHEBERIN or "ist-urheberin" in pred_uri:
+            val = t.object.value if hasattr(t.object, "value") else None
+            junction_data[jid]["ist_urheberin"] = val in ("1", "true", True, 1)
+        # Check leistungsschutz via canonical URI
+        elif pred_canonical == CANONICAL_LEISTUNGSSCHUTZ or "leistungsschutz" in pred_uri:
+            val = t.object.value if hasattr(t.object, "value") else None
+            junction_data[jid]["leistungsschutz"] = val in ("1", "true", True, 1)
+        # Check actor link via canonical URI (akteurin-im-ereignis)
+        elif pred_canonical == CANONICAL_ACTOR_PREDICATE or "akteurin-im-ereignis" in pred_uri:
+            # Object should be an actor/person entity
+            obj_uri = (t.object.uri or "").lower()
+            if obj_uri and t.object.id:
+                junction_data[jid]["actor_id"] = str(t.object.id)
+        # Check role link via canonical URI
+        elif pred_canonical == CANONICAL_ROLE_PREDICATE or "akteurin-hat-rolle" in pred_uri:
+            if t.object.uri and "/rolle" in t.object.uri.lower():
+                junction_data[jid]["role_id"] = str(t.object.id)
+
+    # Canonical name predicate
+    CANONICAL_NAME_PREDICATE = "http://arkumu.org/data/properties/deutscher-name"
+
+    # Fetch actor names via canonical deutscher-name predicate
+    actor_ids = [d["actor_id"] for d in junction_data.values() if d.get("actor_id")]
+    actor_names = {}
+    if actor_ids:
+        # Query triples using canonical predicate (covers all institution-specific mappings)
+        name_triples = Triple.objects.filter(
+            Q(subject_id__in=actor_ids)
+            & (
+                Q(predicate__canonical_uri=CANONICAL_NAME_PREDICATE)
+                | Q(predicate__uri=CANONICAL_NAME_PREDICATE)
+            )
+        ).select_related("object").only("subject_id", "object__value")
+        for t in name_triples:
+            if t.object.value:
+                actor_names[str(t.subject_id)] = t.object.value
+
+    # Fetch role names via canonical deutscher-name predicate
+    role_ids = [d["role_id"] for d in junction_data.values() if d.get("role_id")]
+    role_names = {}
+    if role_ids:
+        role_triples = Triple.objects.filter(
+            Q(subject_id__in=role_ids)
+            & (
+                Q(predicate__canonical_uri=CANONICAL_NAME_PREDICATE)
+                | Q(predicate__uri=CANONICAL_NAME_PREDICATE)
+            )
+        ).select_related("object").only("subject_id", "object__value")
+        for t in role_triples:
+            if t.object.value:
+                role_names[str(t.subject_id)] = t.object.value
+
+    # Institution filter
+    institution_keywords = [
+        "universität", "hochschule", "akademie", "institut", "university",
+        "college", "school", "academy", "institute", "stiftung", "foundation",
+    ]
+
+    def is_institution(name: str) -> bool:
+        name_lower = name.lower()
+        return any(kw in name_lower for kw in institution_keywords)
+
+    # Build creator/contributor lists
+    seen = set()
+    for jdata in junction_data.values():
+        actor_id = jdata.get("actor_id")
+        if not actor_id or actor_id in seen:
+            continue
+        seen.add(actor_id)
+
+        actor_name = actor_names.get(actor_id)
+        if not actor_name:
+            continue  # Skip if no name found
+        if is_institution(actor_name):
+            continue
+
+        role_id = jdata.get("role_id")
+        role_name = role_names.get(role_id) if role_id else None
+        if role_name:
+            formatted = f"{actor_name} ({role_name})"
+        else:
+            formatted = actor_name
+
+        # Creator if ist-urheberin=1 OR besitzt-leistungsschutzrechte=1
+        if jdata.get("ist_urheberin") or jdata.get("leistungsschutz"):
+            creators.append(formatted)
+        else:
+            contributors.append(formatted)
+
+    return creators, contributors
+
+
 def _build_dc_payload_from_project(
     project: OAIProject,
     resource: Resource,
@@ -466,19 +683,29 @@ def _build_dc_payload_from_project(
 
     if record.institution and record.institution.label:
         _add_dc_value(payload, 'publisher', record.institution.label)
-        _add_dc_value(payload, 'contributor', record.institution.label)
 
-    primary_actors = _select_primary_event_actors(record)
-    seen_creators: set[str] = set()
-    for actor in primary_actors:
-        name = actor.get('name')
-        if name and name not in seen_creators:
-            _add_dc_value(payload, 'creator', name)
-            seen_creators.add(name)
+    # Extract creators/contributors from junction entities (ist-urheberin based)
+    # This works for KHM/HMT that have junction tables with ist-urheberin flags
+    creators, contributors = _extract_creators_from_junctions(resource, record)
+    for creator in creators:
+        _add_dc_value(payload, 'creator', creator)
+    for contributor in contributors:
+        _add_dc_value(payload, 'contributor', contributor)
 
-        for role in actor.get('roles') or []:
-            contributor_value = f"{name} ({role})" if name else role
-            _add_dc_value(payload, 'contributor', contributor_value)
+    # Fallback: If no creators found from junctions, use primary event actors from record
+    # This maintains compatibility with canonical entities (FUK/DET/RSH) and tests
+    if not creators and not contributors:
+        primary_actors = _select_primary_event_actors(record)
+        seen_creators: set[str] = set()
+        for actor in primary_actors:
+            name = actor.get('name')
+            if name and name not in seen_creators:
+                _add_dc_value(payload, 'creator', name)
+                seen_creators.add(name)
+
+            for role in actor.get('roles') or []:
+                contributor_value = f"{name} ({role})" if name else role
+                _add_dc_value(payload, 'contributor', contributor_value)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
