@@ -455,9 +455,18 @@ class ControlledVocabularyService:
             uri=uri,
             defaults={"resource_type": resource_type},
         )
+        update_fields = []
         if not created and resource.resource_type != resource_type:
             resource.resource_type = resource_type
-            resource.save(update_fields=["resource_type"])
+            update_fields.append("resource_type")
+
+        # Set self-canonical for shared predicates
+        if resource.canonical_uri is None and uri.startswith("http://arkumu.org/data/properties/"):
+            resource.canonical_uri = uri
+            update_fields.append("canonical_uri")
+
+        if update_fields:
+            resource.save(update_fields=update_fields)
         return resource
 
     def _ensure_literal(self, value: str, language: Optional[str], datatype: Optional[str]) -> Resource:
