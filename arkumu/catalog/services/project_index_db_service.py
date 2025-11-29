@@ -47,6 +47,8 @@ class _CanonicalURIs:
     EVENT_NAME_ALT = "http://arkumu.org/data/properties/ereignisname"  # Canonical event name
     EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
     EVENT_DESCRIPTION = "http://arkumu.org/data/properties/ereignisbeschreibung"
+    EVENT_TYPE = "http://arkumu.org/data/properties/ereignistyp"
+    EVENT_TYPE_NAME = "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps"
 
     # Actor junction properties (FUK uses junction table that links TO events/actors)
     JUNCTION_TO_EVENT = "http://arkumu.org/data/properties/im-ereignis"  # junction -> event (FUK)
@@ -228,6 +230,7 @@ class ProjectIndexDbService:
         self.snapshot_service = ProjectSnapshotService()
         self.detail_service = ProjectDetailIndexService()
         self.now = now or timezone.now()
+        self._event_type_labels: Dict[str, str] = {}
 
     # ------------------------------------------------------------------ #
     # Public API                                                         #
@@ -633,6 +636,9 @@ class ProjectIndexDbService:
         # FUK uses direct event->actor links, so we need to also fetch actor properties
         self._expand_second_level_actors(edges_by_subject, nodes, graph_service)
 
+        # Pre-build CV label lookup for event types (ereignistyp)
+        self._event_type_labels = self._build_cv_label_cache("ereignistyp")
+
         # Discover junction entities for FUK/KHM data models (batch pre-fetch)
         project_subject_id_set = set(str(sid) for sid in subject_ids)
         self._expand_event_junctions(edges_by_subject, nodes, project_subject_id_set)
@@ -975,6 +981,55 @@ class ProjectIndexDbService:
                         roles.append(role_name)
 
         return roles
+
+    def _build_cv_label_cache(self, cv_type: str) -> Dict[str, str]:
+        """Build lookup dict: CV entity ID (str) -> German label.
+
+        Used for resolving CV entity references to human-readable labels.
+        """
+        from arkumu.metadata.models import Triple, Resource, ResourceType
+
+        # CV label predicates by type
+        label_predicates = {
+            "ereignistyp": _CanonicalURIs.EVENT_TYPE_NAME,
+            "projektkategorie": _CanonicalURIs.CATEGORY_NAME,
+            "projektart": _CanonicalURIs.PROJECT_TYPE_NAME,
+            "rolle": _CanonicalURIs.ROLE_GERMAN_NAME,
+        }
+        label_pred = label_predicates.get(cv_type)
+        if not label_pred:
+            return {}
+
+        # CV class URI pattern
+        cv_prefix = f"http://arkumu.org/data/types/{cv_type}/"
+
+        # Find all CV entities
+        cv_entities = Resource.objects.filter(
+            uri__startswith=cv_prefix,
+            resource_type=ResourceType.ENTITY,
+        ).values_list("id", "uri", "name")
+
+        # Batch-fetch labels
+        entity_ids = [e[0] for e in cv_entities]
+        label_triples = Triple.objects.filter(
+            subject_id__in=entity_ids,
+            predicate__canonical_uri=label_pred,
+        ).values_list("subject_id", "object__value")
+
+        # Build lookup
+        label_by_id: Dict[str, str] = {}
+        for subj_id, label in label_triples:
+            if label:
+                label_by_id[str(subj_id)] = label
+
+        # Fallback to entity name for any missing
+        for eid, uri, name in cv_entities:
+            sid = str(eid)
+            if sid not in label_by_id and name:
+                label_by_id[sid] = name
+
+        logger.debug("_build_cv_label_cache: built %d labels for %s", len(label_by_id), cv_type)
+        return label_by_id
 
     def _expand_second_level_actors(
         self,
@@ -1419,6 +1474,8 @@ class ProjectIndexDbService:
                 start = None
                 end = None
                 location = None
+                event_type_id = None
+                event_type_label = None
                 for e in event_edges:
                     p = self._canonical(e)
                     if p == _CanonicalURIs.EVENT_NAME:
@@ -1431,8 +1488,20 @@ class ProjectIndexDbService:
                         end = e.get("object_value")
                     elif p == _CanonicalURIs.EVENT_LOCATION:
                         location = e.get("object_value")
+                    elif p == _CanonicalURIs.EVENT_TYPE:
+                        # May be literal (legacy) or entity reference (CV)
+                        event_type_label = e.get("object_value")
+                        event_type_id = e.get("object_id")
                 if not event_name:
                     event_name = event_node.get("name") or event_node.get("value") or ""
+                # Resolve event type label from CV entity if needed
+                if not event_type_label and event_type_id:
+                    # Use pre-built CV label cache
+                    event_type_label = self._event_type_labels.get(event_type_id, "")
+                    if not event_type_label:
+                        # Fallback to node data
+                        et_node = nodes.get(event_type_id, {})
+                        event_type_label = et_node.get("name") or et_node.get("value") or ""
                 # Extract years
                 for val in (start, end):
                     year = _coerce_year(val)
@@ -1447,6 +1516,7 @@ class ProjectIndexDbService:
                     "id": event_id,
                     "uri": event_node.get("uri") or "",
                     "name": event_name,
+                    "type": event_type_label or "",
                     "start": start,
                     "end": end,
                     "location": location,
