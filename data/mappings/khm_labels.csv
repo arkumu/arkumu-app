@@ -205,7 +205,7 @@ Property,http://arkumu.org/data/properties/kurzbeschreibung-englisch,Kurzbeschre
 Property,http://arkumu.org/data/properties/label-handelsmarke,Label Handelsmarke,,
 Property,http://arkumu.org/data/properties/lccn-id,Lccn Id,PE_Normdatum_LCCN,
 Property,http://arkumu.org/data/properties/letzte-datensatzmodifikation-beim-einlieferer,Letzte Datensatzmodifikation Beim Einlieferer,"SQL_Pr_AenderungsTS,__SQL_TS_LastModified,SQL_PE_AenderungsTS,SQL_AenderungsTS,Projekte_SQL_Pr_AenderungsTS,SQL_Ev_AenderungsTS",
-Property,http://arkumu.org/data/properties/letzte-projektmodifikation-beim-einlieferer,Letzte Projektmodifikation Beim Einlieferer,,(benutze überall Letzte Datensatzmodifikation Beim Einlieferer) 
+Property,http://arkumu.org/data/properties/letzte-projektmodifikation-beim-einlieferer,Letzte Projektmodifikation Beim Einlieferer,,(benutze überall Letzte Datensatzmodifikation Beim Einlieferer)
 Property,http://arkumu.org/data/properties/lido-terminologie-id,Lido Terminologie Id,,
 Property,http://arkumu.org/data/properties/lizenzstatus,Lizenzstatus,_arkumu_Lizenzstatus,
 Property,http://arkumu.org/data/properties/masse,Masse,Projekte_Masse_Umfang_Dimension,
@@ -237,7 +237,7 @@ Property,http://arkumu.org/data/properties/projekt-projekteigenschaft-id,Projekt
 Property,http://arkumu.org/data/properties/projektart,Projektart,,
 Property,http://arkumu.org/data/properties/projektart-id,Projektart Id,,
 Property,http://arkumu.org/data/properties/projekteigenschaft-id,Projekteigenschaft Id,,
-Property,http://arkumu.org/data/properties/projekterstellung-beim-einlieferer,Projekterstellung Beim Einlieferer,,(benutze überall Letzte Datensatzmodifikation Beim Einlieferer) 
+Property,http://arkumu.org/data/properties/projekterstellung-beim-einlieferer,Projekterstellung Beim Einlieferer,,(benutze überall Letzte Datensatzmodifikation Beim Einlieferer)
 Property,http://arkumu.org/data/properties/projektkategorie,Projektkategorie,_Projekte_Export_Projektkategorien_arkumu,
 Property,http://arkumu.org/data/properties/projektkategorie-id,Projektkategorie Id,,
 Property,http://arkumu.org/data/properties/projektkompilation,Projektkompilation,,
@@ -288,7 +288,7 @@ Property,http://arkumu.org/data/properties/verknuepftes-physisches-objekt,Verknu
 Property,http://arkumu.org/data/properties/verknuepftes-projekt,Verknuepftes Projekt,,
 Property,http://arkumu.org/data/properties/viaf-id,Viaf Id,PE_Normdatum_VIAF,
 Property,http://arkumu.org/data/properties/vorangestellter-titel,Vorangestellter Titel,vorangestellterTitel,
-Property,http://arkumu.org/data/properties/vorschaubild,Vorschaubild,,
+Property,http://arkumu.org/data/properties/vorschaubild,Vorschaubild,_Projekte_Export__arkumu_preview_UUID_of_Vorschaubild,
 Property,http://arkumu.org/data/properties/waehlt-automatisch-folgenden-anzeigestatus-aus,Waehlt Automatisch Folgenden Anzeigestatus Aus,,
 Property,http://arkumu.org/data/properties/waehlt-automatisch-folgenden-lizenzstatus-aus,Waehlt Automatisch Folgenden Lizenzstatus Aus,,
 Property,http://arkumu.org/data/properties/waehlt-besitzt-leistungsschutzrechte-automatisch-aus,Waehlt Besitzt Leistungsschutzrechte Automatisch Aus,,
@@ -312,6 +312,5 @@ Property,http://arkumu.org/data/properties/bildfrequenz,Bildfrequenz,"Bildfreque
 Property,http://arkumu.org/data/properties/aspect-ratio-bildseitenverhaeltnis,Seitenverhältnis,Aspect_Ratio_Bildseitenverhältnis,
 Property,http://arkumu.org/data/properties/dauer-freitext,Dauer (Freitext),Länge_Dauer,
 Property,http://arkumu.org/data/properties/produktionsformat,Produktionsformat,Technisches Produktionsformat,
-Property,http://arkumu.org/data/properties/vorschaubild,Vorschaubild,_Projekte_Export__arkumu_preview_UUID_of_Vorschaubild,
 Property,http://arkumu.org/data/properties/informationstraegertyp,Informationsträgertyp,Medienformat,
 Property,http://arkumu.org/data/properties/englisches-wikidata-label,Englisches Wikidata Label,Keyword_eng,

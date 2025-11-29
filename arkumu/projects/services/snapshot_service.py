@@ -986,6 +986,20 @@ class ProjectSnapshotService:
         title = self._first_literal(subject_edges, title_prop.canonical_uri if title_prop else None)
         subtitle = self._first_literal(subject_edges, subtitle_prop.canonical_uri if subtitle_prop else None)
         image = self._first_literal(subject_edges, image_prop.canonical_uri if image_prop else None)
+        if not image and image_prop:
+            linked = triple_service.get_related_entities(
+                subject_id,
+                predicate_uri=image_prop.canonical_uri,
+                organization_code=self.relationship_org_code
+            )
+            object_ids = [e.get('id') for e in linked if e.get('id')]
+            if object_ids:
+                path_map = triple_service.get_literal_map(
+                    subject_ids=object_ids,
+                    predicate_uri="http://arkumu.org/data/properties/dateipfad",
+                    organization_code=self.relationship_org_code
+                )
+                image = next((path_map.get(oid) for oid in object_ids if path_map.get(oid)), None)
 
         description = triple_service.get_project_description(
             subject_id,

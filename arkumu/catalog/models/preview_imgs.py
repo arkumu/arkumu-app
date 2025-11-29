@@ -33,4 +33,4 @@ class PreviewImages(models.Model):
         unique_together = ('bucket', 'path')
 
     def __str__(self):
-        return self.bucket + '/' + self.path
+        return self.bucket + self.path

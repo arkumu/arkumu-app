@@ -360,10 +360,10 @@ class ProjectRecord:
 
             if valid_preview:
                 card["image"] = valid_preview
-            else:
-                fallback_path = _object_display_path(self.digital_objects[0])
-                if fallback_path:
-                    card["image"] = fallback_path
+        #     else:
+        #         fallback_path = _object_display_path(self.digital_objects[0])
+        #         if fallback_path:
+        #             card["image"] = fallback_path
 
         for idx, actor in enumerate(self.actors[:4]):
             if actor.name:
