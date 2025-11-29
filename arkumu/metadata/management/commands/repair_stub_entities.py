@@ -1,16 +1,18 @@
 """
-Management command to repair stub entities by linking them to corresponding source entities.
+Management command to repair stub entities by copying triples from source entities within the same org.
 
 Stub entities are entities that have incoming references but no outgoing triples.
-This typically happens when a column is not properly configured as an FK in the mapping.
+This command copies triples from one entity type to another when both share the same ID.
 
-Example: KHM projektkategorie entities are stubs with numeric IDs (135, 128) that should
-have triples copied from the corresponding 08-keywords entities.
+Use case: When entity type A references entity type B by ID, but B has no data.
+If another entity type C has the same IDs with data, copy from C to B.
 
 Usage:
     python manage.py repair_stub_entities --org khm --dry-run
-    python manage.py repair_stub_entities --org khm --stub-type projektkategorie --source-type 08-keywords
-    python manage.py repair_stub_entities --org khm --stub-type projektkategorie --source-type 08-keywords --rebuild-index
+    python manage.py repair_stub_entities --org khm --stub-type schlagwort --source-type 08-keywords
+    python manage.py repair_stub_entities --org khm --stub-type schlagwort --source-type 08-keywords --rebuild-index
+
+Note: For copying from controlled vocabularies, use repair_from_cv instead.
 """
 
 import logging
