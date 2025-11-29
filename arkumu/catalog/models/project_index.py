@@ -221,13 +221,23 @@ class ProjectIndex(models.Model):
         """Extract image paths with preview availability."""
         from arkumu.catalog.models import PreviewImages
 
+        def normalize(p: str) -> str:
+            return p.replace("\\", "/").replace(" ", "_")
+
         candidates = []
+        seen = set()
         if self.image:
-            candidates.append(self.image)
+            norm = normalize(self.image)
+            if norm not in seen:
+                seen.add(norm)
+                candidates.append(norm)
         for obj in self.digital_objects or []:
             path = obj.get("path")
             if path:
-                candidates.append(path)
+                norm = normalize(path)
+                if norm not in seen:
+                    seen.add(norm)
+                    candidates.append(norm)
 
         preview_paths = []
         for candidate in candidates:
