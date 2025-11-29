@@ -125,7 +125,7 @@ LOGGING["loggers"]["arkumu.projects.services.snapshot_service"] = {
 
 # Project index backend for local development
 # ------------------------------------------------------------------------------
-# Use the graph-backed card index by default in local/dev so catalog card
-# searches exercise the canonical graph + cached card projection pipeline.
-PROJECT_INDEX_BACKEND = "graph"
+# Use db-backed index for fast searches with pre-computed category labels.
+# The 'graph' backend re-computes from graph on every request (slow).
+PROJECT_INDEX_BACKEND = "db"
 PROJECT_CARD_INDEX_TTL_SECONDS = 3600
