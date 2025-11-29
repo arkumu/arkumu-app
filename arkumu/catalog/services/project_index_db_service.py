@@ -169,6 +169,7 @@ class _CanonicalURIs:
             cls.EVENT_NAME_ALT,
             cls.EVENT_LOCATION,
             cls.EVENT_DESCRIPTION,
+            cls.EVENT_TYPE,
             cls.ACTOR_LINK,
             cls.ACTOR_ROLE,
             cls.ROLE_GERMAN_NAME,  # For rolle entity name lookup
