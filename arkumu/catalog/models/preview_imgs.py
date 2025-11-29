@@ -18,6 +18,12 @@ class PreviewImages(models.Model):
     content_length = models.IntegerField(
         help_text='HTTP Content Length'
     )
+    etag = models.CharField(
+        max_length=32,
+        help_text='MD5 hash for HTTP ETag header',
+        blank=True,
+        default='',
+    )
     last_download = models.DateTimeField(
         help_text='Last Downloaded',
         default=timezone.now(),

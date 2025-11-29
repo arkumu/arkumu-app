@@ -1,3 +1,4 @@
+import hashlib
 import logging
 
 from django.utils import timezone
@@ -61,6 +62,8 @@ class DownloadPreviews:
             if content_type['success'] and content_type['content_type'].startswith('image/'):
                 img = self.storage.get_file_content(path['bucket'], path['path'])
                 if img['success']:
+                    # Pre-compute ETag for efficient cache validation
+                    etag = hashlib.md5(img['content']).hexdigest()
                     PreviewImages.objects.update_or_create(
                         bucket=path['bucket'],
                         path=path['orig_path'],
@@ -68,6 +71,7 @@ class DownloadPreviews:
                             'img': img['content'],
                             'content_length': img['metadata']['content_length'],
                             'content_type': img['metadata']['content_type'],
+                            'etag': etag,
                             'last_download': timezone.now(),
                         }
                     )
