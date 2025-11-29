@@ -1,5 +1,6 @@
 import hashlib
 
+from django.db.models import Q
 from django.core.management import BaseCommand
 
 from arkumu.catalog.models import PreviewImages
@@ -16,9 +17,15 @@ class Command(BaseCommand):
             '--backfill-etags',
             action='store_true',
             help='Backfill ETags for existing images without re-downloading')
+        parser.add_argument(
+            '--cleanup',
+            action='store_true',
+            help='Remove images with un-normalized paths (backslashes or spaces)')
 
     def handle(self, *args, **options):
-        if options['backfill_etags']:
+        if options['cleanup']:
+            self._cleanup_unnormalized()
+        elif options['backfill_etags']:
             self._backfill_etags()
         else:
             DownloadPreviews().download_previews(options['force'])
@@ -35,3 +42,10 @@ class Command(BaseCommand):
             updated += 1
 
         self.stdout.write(self.style.SUCCESS(f'Updated {updated} images'))
+
+    def _cleanup_unnormalized(self):
+        qs = PreviewImages.objects.filter(Q(path__contains='\\') | Q(path__contains=' '))
+        count = qs.count()
+        self.stdout.write(f'Found {count} images with un-normalized paths')
+        deleted, _ = qs.delete()
+        self.stdout.write(self.style.SUCCESS(f'Deleted {deleted} images'))
