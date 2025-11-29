@@ -36,6 +36,12 @@ CV_LABEL_PREDICATES = {
     ],
 }
 
+# Wikidata ID predicates for matching Q-IDs (e.g., Q178651)
+CV_WIKIDATA_PREDICATES = [
+    "http://arkumu.org/data/properties/wikidata-id",
+    "http://arkumu.org/data/properties/wikidata",
+]
+
 # CV class URIs
 CV_CLASS_URIS = {
     "ereignistyp": "http://arkumu.org/data/types/ereignistyp",
@@ -159,7 +165,7 @@ class Command(BaseCommand):
             )
 
     def _build_cv_lookup(self, cv_type: str, verbose: bool) -> dict:
-        """Build lookup dict: label (lowercase) -> CV entity Resource."""
+        """Build lookup dict: label/wikidata_id (lowercase) -> CV entity Resource."""
         class_uri = CV_CLASS_URIS[cv_type]
         label_predicates = CV_LABEL_PREDICATES[cv_type]
 
@@ -184,6 +190,20 @@ class Command(BaseCommand):
                     if key not in lookup:
                         lookup[key] = entity
                     if verbose:
-                        self.stdout.write(f"  CV: {label} -> {entity.uri}")
+                        self.stdout.write(f"  CV label: {label} -> {entity.uri}")
+
+            # Also get Wikidata IDs for matching Q-IDs (e.g., Q178651)
+            wikidata_ids = Triple.objects.filter(
+                subject=entity,
+                predicate__uri__in=CV_WIKIDATA_PREDICATES,
+            ).values_list("object__value", flat=True)
+
+            for wikidata_id in wikidata_ids:
+                if wikidata_id:
+                    key = wikidata_id.strip().lower()
+                    if key not in lookup:
+                        lookup[key] = entity
+                    if verbose:
+                        self.stdout.write(f"  CV wikidata: {wikidata_id} -> {entity.uri}")
 
         return lookup
