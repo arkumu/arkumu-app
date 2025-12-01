@@ -56,7 +56,7 @@ class SchemaService:
         """Ensure schema is loaded from cache or created if needed."""
         if self._schema_loaded:
             return
-        
+
         # Get organization object for the mapping
         try:
             mapping = Mapping.objects.get(id=self.mapping_id)
@@ -64,32 +64,23 @@ class SchemaService:
         except (Mapping.DoesNotExist, Organization.DoesNotExist) as e:
             logger.error(f"Failed to load mapping or organization: {e}")
             raise ValueError(f"Cannot load schema - mapping or organization not found: {e}")
-        
-        # Check cache first
+
+        # Check Django cache - trust the cache, no validation needed
+        # If cache is stale, errors will surface when forms try to use it
         cache_key = f"complete_schema_blueprints_mapping_{self.mapping_id}"
         cached_blueprints = cache.get(cache_key)
-        
+
         if cached_blueprints:
-            logger.info(f"📋 Loading cached schema for mapping {self.mapping_id}")
-            
-            # Validate cached blueprints - check if Resource objects still exist
-            try:
-                self._validate_cached_resources(cached_blueprints)
-                
-                # Create processor with cached blueprints
-                self._processor = CompleteSchemaProcessor(
-                    organization=organization,
-                    base_uri=self.base_uri,
-                    statistics=ExecutionStatistics()
-                )
-                self._processor.dataset_blueprints = cached_blueprints
-                self._schema_loaded = True
-                return
-                
-            except ValueError as e:
-                logger.warning(f"Cached blueprints invalid: {e}. Regenerating schema...")
-                # Cache will be cleared by validation function, continue to regeneration
-        
+            logger.debug(f"Using cached schema for mapping {self.mapping_id}")
+            self._processor = CompleteSchemaProcessor(
+                organization=organization,
+                base_uri=self.base_uri,
+                statistics=ExecutionStatistics()
+            )
+            self._processor.dataset_blueprints = cached_blueprints
+            self._schema_loaded = True
+            return
+
         # Schema not in cache - need to create it with distributed locking
         self._create_schema_with_locking(organization)
     
@@ -97,26 +88,71 @@ class SchemaService:
         """Create schema with distributed locking to prevent concurrent creation."""
         lock_key = f"schema_creation_lock_mapping_{self.mapping_id}"
         cache_key = f"complete_schema_blueprints_mapping_{self.mapping_id}"
-        
+
         # Try to acquire distributed lock
         lock_timeout = 300  # 5 minutes max for schema creation
         lock_acquired = False
-        
+
         try:
             # Use cache-based distributed lock with timeout
             lock_acquired = cache.add(lock_key, "locked", timeout=lock_timeout)
-            
+
             if lock_acquired:
-                logger.info(f"🔒 Acquired schema creation lock for mapping {self.mapping_id}")
-                
+                logger.info(f"Acquired schema creation lock for mapping {self.mapping_id}")
+
                 # Double-check cache after acquiring lock (another process may have completed)
                 cached_blueprints = cache.get(cache_key)
                 if cached_blueprints:
-                    try:
-                        self._validate_cached_resources(cached_blueprints)
-                        logger.info(f"📋 Found valid cached schema after acquiring lock for mapping {self.mapping_id}")
-                        
-                        # Use the cached version
+                    logger.info(f"Found cached schema after acquiring lock for mapping {self.mapping_id}")
+                    self._processor = CompleteSchemaProcessor(
+                        organization=organization,
+                        base_uri=self.base_uri,
+                        statistics=ExecutionStatistics()
+                    )
+                    self._processor.dataset_blueprints = cached_blueprints
+                    self._schema_loaded = True
+                    return
+
+                # Create the schema (we have the lock)
+                logger.info(f"Creating schema for mapping {self.mapping_id}")
+
+                # Load mapping configuration
+                adapter = MappingAdapter()
+                execution_config = adapter.translate_to_execution_config(
+                    self.mapping_id,
+                    schema_variant_key=self.schema_variant_key,
+                )
+
+                # Create processor and generate complete schema
+                self._processor = CompleteSchemaProcessor(
+                    organization=organization,
+                    base_uri=self.base_uri,
+                    statistics=ExecutionStatistics()
+                )
+
+                # This will create and cache the complete schema
+                self._processor._create_complete_schema_blueprints(execution_config)
+                self._schema_loaded = True
+
+                logger.info(f"Schema creation completed for mapping {self.mapping_id}")
+                
+            else:
+                # Lock not acquired - another process is creating schema
+                logger.info(f"Waiting for concurrent schema creation for mapping {self.mapping_id}")
+
+                # Wait for the other process to complete (with exponential backoff)
+                max_wait_time = 300  # 5 minutes max wait
+                wait_time = 1
+                total_waited = 0
+
+                while total_waited < max_wait_time:
+                    time.sleep(wait_time + random.uniform(0, 0.5))  # Add jitter
+                    total_waited += wait_time
+
+                    # Check if schema is now available in cache
+                    cached_blueprints = cache.get(cache_key)
+                    if cached_blueprints:
+                        logger.info(f"Schema became available after waiting {total_waited}s for mapping {self.mapping_id}")
                         self._processor = CompleteSchemaProcessor(
                             organization=organization,
                             base_uri=self.base_uri,
@@ -125,73 +161,15 @@ class SchemaService:
                         self._processor.dataset_blueprints = cached_blueprints
                         self._schema_loaded = True
                         return
-                    except ValueError:
-                        logger.info(f"Cached schema invalid even after lock, recreating...")
-                
-                # Create the schema (we have the lock)
-                logger.info(f"🏗️  Creating schema for mapping {self.mapping_id} (with lock)")
-                
-                # Load mapping configuration
-                adapter = MappingAdapter()
-                execution_config = adapter.translate_to_execution_config(
-                    self.mapping_id,
-                    schema_variant_key=self.schema_variant_key,
-                )
-                
-                # Create processor and generate complete schema
-                self._processor = CompleteSchemaProcessor(
-                    organization=organization,
-                    base_uri=self.base_uri,
-                    statistics=ExecutionStatistics()
-                )
-                
-                # This will create and cache the complete schema
-                self._processor._create_complete_schema_blueprints(execution_config)
-                self._schema_loaded = True
-                
-                logger.info(f"✅ Schema creation completed for mapping {self.mapping_id}")
-                
-            else:
-                # Lock not acquired - another process is creating schema
-                logger.info(f"⏳ Waiting for concurrent schema creation for mapping {self.mapping_id}")
-                
-                # Wait for the other process to complete (with exponential backoff)
-                max_wait_time = 300  # 5 minutes max wait
-                wait_time = 1
-                total_waited = 0
-                
-                while total_waited < max_wait_time:
-                    time.sleep(wait_time + random.uniform(0, 0.5))  # Add jitter
-                    total_waited += wait_time
-                    
-                    # Check if schema is now available in cache
-                    cached_blueprints = cache.get(cache_key)
-                    if cached_blueprints:
-                        try:
-                            self._validate_cached_resources(cached_blueprints)
-                            logger.info(f"📋 Schema became available after waiting {total_waited}s for mapping {self.mapping_id}")
-                            
-                            # Use the cached version
-                            self._processor = CompleteSchemaProcessor(
-                                organization=organization,
-                                base_uri=self.base_uri,
-                                statistics=ExecutionStatistics()
-                            )
-                            self._processor.dataset_blueprints = cached_blueprints
-                            self._schema_loaded = True
-                            return
-                        except ValueError:
-                            logger.warning(f"Cached schema invalid, continuing to wait...")
-                    
+
                     # Check if lock is still held (other process still working)
                     if not cache.get(lock_key):
-                        logger.warning(f"Schema creation lock released but no valid cache found, breaking wait loop...")
-                        # Lock released but no cache - break out and try to create ourselves
+                        logger.warning(f"Schema creation lock released but no cache found, breaking wait loop")
                         break
-                    
+
                     # Exponential backoff with max
                     wait_time = min(wait_time * 1.5, 10)
-                
+
                 raise RuntimeError(f"Timeout waiting for schema creation for mapping {self.mapping_id}")
                 
         finally:
@@ -199,44 +177,10 @@ class SchemaService:
             if lock_acquired:
                 try:
                     cache.delete(lock_key)
-                    logger.debug(f"🔓 Released schema creation lock for mapping {self.mapping_id}")
+                    logger.debug(f"Released schema creation lock for mapping {self.mapping_id}")
                 except:
                     pass  # Lock might have expired, that's ok
-    
-    def _validate_cached_resources(self, blueprints: Dict[str, Any]):
-        """
-        Validate that all Resource objects in cached blueprints still exist in database.
-        Raises ValueError if stale references found (e.g., after DB deletion).
-        """
-        missing_resources = []
-        
-        for dataset_name, blueprint in blueprints.items():
-            # Check entity_type_resource
-            if 'entity_type_resource' in blueprint:
-                resource = blueprint['entity_type_resource']
-                if hasattr(resource, 'id') and not Resource.objects.filter(id=resource.id).exists():
-                    missing_resources.append(f"entity_type_resource for {dataset_name} (ID: {resource.id})")
-            
-            # Check property_resources
-            if 'property_resources' in blueprint:
-                for prop_name, prop_resource in blueprint['property_resources'].items():
-                    if hasattr(prop_resource, 'id') and not Resource.objects.filter(id=prop_resource.id).exists():
-                        missing_resources.append(f"property_resource {prop_name} for {dataset_name} (ID: {prop_resource.id})")
-        
-        if missing_resources:
-            # Clear all related caches to force regeneration
-            cache_keys = [
-                f"schema_blueprints_mapping_{self.mapping_id}",
-                f"complete_schema_blueprints_mapping_{self.mapping_id}"
-            ]
-            for key in cache_keys:
-                cache.delete(key)
-            
-            raise ValueError(
-                f"Stale blueprint resources detected (likely after database reset). "
-                f"Cache cleared. Missing: {missing_resources[:3]}{'...' if len(missing_resources) > 3 else ''}"
-            )
-    
+
     def get_dataset_schema(self, dataset_name: str) -> Optional[Dict[str, Any]]:
         """
         Get complete schema for a dataset.
