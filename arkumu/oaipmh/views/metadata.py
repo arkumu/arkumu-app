@@ -1985,6 +1985,7 @@ def _build_metadata_element(
     project_hint: Optional[OAIProject] = None,
     *,
     request: Optional[HttpRequest] = None,
+    skip_validation: bool = False,
 ) -> ET._Element:
     """Build metadata element for different formats."""
     metadata = ET.Element("metadata")
@@ -2029,6 +2030,17 @@ def _build_metadata_element(
                     request=request,
                 )
             t_mets_gen = time.time()
+
+            if skip_validation:
+                # Skip validation for tailored endpoint - we control generation
+                logger.info(
+                    "METS %s: gen=%.3fs (validation skipped)",
+                    getattr(resource, "uri", "?")[-20:],
+                    t_mets_gen - t_mets_start,
+                )
+                mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+                metadata.append(ET.fromstring(mets_bytes))
+                break
 
             candidate_wrapper = ET.Element("metadata")
             candidate_wrapper.append(ET.fromstring(ET.tostring(mets_root)))

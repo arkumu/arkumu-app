@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import logging
 
@@ -13,6 +13,54 @@ from arkumu.oaipmh.models import OAIDcpPathIndex
 from arkumu.oaipmh import path_mapping
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for ALL DCP file lists (folder_name -> tuple of file paths)
+_DCP_FILES_CACHE: Dict[str, Tuple[str, ...]] = {}
+_DCP_FILES_CACHE_LOADED = False
+
+
+def _load_dcp_files_cache() -> None:
+    """Load ALL KHM DCP file lists into memory (one-time)."""
+    global _DCP_FILES_CACHE, _DCP_FILES_CACHE_LOADED
+    if _DCP_FILES_CACHE_LOADED:
+        return
+
+    # Query all KHM DCP entries at once
+    qs = OAIDcpPathIndex.objects.filter(org_code="khm").order_by("folder_name", "relative_file_path")
+
+    # Group by folder_name
+    results: Dict[str, List[str]] = {}
+    for entry in qs:
+        folder_name = entry.folder_name
+        rel_path = entry.relative_file_path.strip().lstrip("/")
+        if not rel_path:
+            continue
+
+        if folder_name not in results:
+            results[folder_name] = []
+
+        # Extract the file path after the folder_name segment
+        if "/" not in rel_path:
+            if rel_path == folder_name:
+                results[folder_name].append(rel_path)
+            continue
+
+        segments = rel_path.split("/")
+        try:
+            idx = segments.index(folder_name)
+        except ValueError:
+            continue
+
+        remainder = segments[idx + 1:]
+        if remainder:
+            results[folder_name].append("/".join(remainder))
+
+    # Convert to tuples
+    _DCP_FILES_CACHE = {k: tuple(v) for k, v in results.items()}
+    _DCP_FILES_CACHE_LOADED = True
+    logger.info("DCP files cache loaded: %d folders, %d total files",
+                len(_DCP_FILES_CACHE),
+                sum(len(v) for v in _DCP_FILES_CACHE.values()))
 
 
 @dataclass(frozen=True)
@@ -54,9 +102,6 @@ def _rosetta_root(org_code: str) -> Optional[str]:
     return None
 
 
-from typing import Dict
-
-
 def batch_get_bundle_members(
     org_code: str,
     folder_names: Sequence[str],
@@ -64,19 +109,23 @@ def batch_get_bundle_members(
     """Batch fetch DCP bundle members for multiple folders at once.
 
     Returns a dict mapping folder_name -> tuple of relative file paths.
-    Much faster than calling get_bundle_members() per folder.
+    Uses in-memory cache for KHM (no DB query needed).
     """
     org = _normalize_org_code(org_code)
     if not org or not folder_names:
         return {}
 
-    # Query all folders at once
+    # Use in-memory cache for KHM
+    if org == "khm":
+        _load_dcp_files_cache()
+        return {fn: _DCP_FILES_CACHE.get(fn, ()) for fn in folder_names if fn in _DCP_FILES_CACHE}
+
+    # Fallback to DB query for other orgs
     qs = OAIDcpPathIndex.objects.filter(
         org_code=org,
         folder_name__in=list(folder_names),
     ).order_by("folder_name", "relative_file_path")
 
-    # Group results by folder_name
     results: Dict[str, List[str]] = {fn: [] for fn in folder_names}
 
     for entry in qs:
@@ -85,7 +134,6 @@ def batch_get_bundle_members(
         if not rel_path:
             continue
 
-        # Match on folder_name as a segment
         if "/" not in rel_path:
             if rel_path == folder_name:
                 results[folder_name].append(rel_path)

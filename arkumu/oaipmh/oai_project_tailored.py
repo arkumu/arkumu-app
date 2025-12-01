@@ -63,41 +63,66 @@ class BatchedDcpData:
     file_lists: Dict[str, Tuple[str, ...]]  # folder_name -> (relative_file_paths,)
 
 
-def batch_fetch_dcp_folders(digital_object_uris: Sequence[str]) -> BatchedDcpData:
+# In-memory cache for DCP folder mappings (digital_object_uri -> folder_name)
+_DCP_FOLDER_CACHE: Dict[str, str] = {}
+_DCP_FOLDER_CACHE_LOADED = False
+
+
+def _load_dcp_folder_cache() -> None:
+    """Load all KHM DCP folder mappings into memory (one-time)."""
+    global _DCP_FOLDER_CACHE, _DCP_FOLDER_CACHE_LOADED
+    if _DCP_FOLDER_CACHE_LOADED:
+        return
+
+    DCP_PREDICATE = "http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner"
+    triples = Triple.objects.filter(
+        predicate__uri=DCP_PREDICATE,
+    ).select_related("subject", "object")
+
+    for t in triples:
+        uri = getattr(t.subject, "uri", None)
+        value = getattr(t.object, "value", None)
+        if uri and value:
+            path = str(value).strip().replace("\\", "/")
+            folder_name = path.rstrip("/").split("/")[-1] if "/" in path else path
+            _DCP_FOLDER_CACHE[uri] = folder_name
+
+    _DCP_FOLDER_CACHE_LOADED = True
+    logger.info("DCP folder cache loaded: %d mappings", len(_DCP_FOLDER_CACHE))
+
+
+def batch_fetch_dcp_folders(curated_links_by_project: Dict[UUID, List]) -> BatchedDcpData:
     """
-    Batch fetch DCP folder paths and file lists for multiple digital objects.
+    Batch fetch DCP file lists using in-memory cache (no per-request Triple query).
 
     Returns BatchedDcpData with:
-    - folder_paths: dict mapping digital_object_uri -> folder_path
+    - folder_paths: dict mapping digital_object_uri -> folder_name
     - file_lists: dict mapping folder_name -> tuple of relative file paths
     """
     from arkumu.oaipmh.services import dcp_index
 
-    if not digital_object_uris:
+    if not curated_links_by_project:
         return BatchedDcpData(folder_paths={}, file_lists={})
 
-    DCP_FOLDER_PREDICATE = "http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner"
-
-    triples = Triple.objects.filter(
-        subject__uri__in=list(digital_object_uris),
-        predicate__uri=DCP_FOLDER_PREDICATE,
-    ).select_related("subject", "object")
+    # Load cache once
+    _load_dcp_folder_cache()
 
     folder_paths: Dict[str, str] = {}
     folder_names: List[str] = []
 
-    for triple in triples:
-        subject_uri = getattr(triple.subject, "uri", None)
-        folder_value = getattr(triple.object, "value", None)
-        if subject_uri and folder_value:
-            folder_path = str(folder_value).strip().replace("\\", "/")
-            folder_paths[subject_uri] = folder_path
-            # Extract folder name (last segment)
-            folder_name = folder_path.rstrip("/").split("/")[-1] if "/" in folder_path else folder_path
-            if folder_name and folder_name not in folder_names:
-                folder_names.append(folder_name)
+    for links in curated_links_by_project.values():
+        for link in links:
+            digital_obj = getattr(link, "digital_object", None)
+            if digital_obj:
+                obj_uri = getattr(digital_obj, "uri", None)
+                if obj_uri:
+                    folder_name = _DCP_FOLDER_CACHE.get(obj_uri)
+                    if folder_name:
+                        folder_paths[obj_uri] = folder_name
+                        if folder_name not in folder_names:
+                            folder_names.append(folder_name)
 
-    # Batch fetch file lists for all folders (KHM only for now)
+    # Batch fetch file lists for all folders
     file_lists: Dict[str, Tuple[str, ...]] = {}
     if folder_names:
         file_lists = dcp_index.batch_get_bundle_members("khm", folder_names)

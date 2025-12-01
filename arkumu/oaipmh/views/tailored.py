@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 from uuid import UUID
 
 from django.conf import settings
@@ -36,7 +39,6 @@ from .harvest import (
 from .metadata import (
     _build_metadata_element,
     _build_record_header,
-    _metadata_element_is_valid,
     _metadata_xml_is_valid,
 )
 from .projects import _build_tailored_project_hint_from_resource
@@ -148,26 +150,23 @@ def _tailored_harvestable_page(
     project_ids = [UUID(str(r.id)) for r in batch_resources]
     curated_links_by_project = batch_fetch_curated_links(project_ids)
 
-    # Collect all digital object IDs and URIs from curated links
-    all_digital_object_uris: List[str] = []
+    # Collect digital object IDs for graph data fetch
     all_digital_object_ids: List[str] = []
     for links in curated_links_by_project.values():
         for link in links:
             digital_obj = getattr(link, "digital_object", None)
             if digital_obj:
-                uri = getattr(digital_obj, "uri", None)
                 obj_id = getattr(digital_obj, "id", None)
-                if uri:
-                    all_digital_object_uris.append(uri)
                 if obj_id:
                     all_digital_object_ids.append(str(obj_id))
 
-    # DCP and graph data needed for harvestability checks (even for ListIdentifiers)
-    dcp_data = batch_fetch_dcp_folders(all_digital_object_uris)
+    # DCP data from curated links (uses in-memory cache, no DB query)
+    dcp_data = batch_fetch_dcp_folders(curated_links_by_project)
+    # Graph data needed for harvestability checks
     prefetched_graph_data = batch_fetch_graph_data(all_digital_object_ids) if all_digital_object_ids else None
 
-    # RDF graphs only needed for ListRecords (METS generation), skip for ListIdentifiers
-    if include_hints:
+    # RDF graphs for METS sourceMD - bulk fetch
+    if include_hints and batch_resources:
         from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
         project_resource_ids = [str(r.id) for r in batch_resources]
         rdf_graph_service = CanonicalGraphService(org_code=None)
@@ -337,13 +336,8 @@ def _list_records_tailored(
             metadata_prefix,
             project_hint=project_hint,
             request=request,
+            skip_validation=True,
         )
-
-        if metadata_prefix == 'mets' and not _metadata_element_is_valid(
-            metadata,
-            resource_uri=getattr(resource, 'uri', None),
-        ):
-            continue
 
         record = ET.SubElement(list_records, "record")
         record.append(header)
@@ -422,13 +416,8 @@ def _get_record_tailored(
         metadata_prefix,
         project_hint=project_hint,
         request=request,
+        skip_validation=True,
     )
-
-    if metadata_prefix == 'mets' and not _metadata_element_is_valid(
-        metadata,
-        resource_uri=getattr(resource, 'uri', None),
-    ):
-        return _error(oai, "idDoesNotExist", "Identifier not available for METS dissemination")
 
     record.append(header)
     record.append(metadata)

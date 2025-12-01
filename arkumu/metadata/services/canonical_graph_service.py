@@ -285,11 +285,14 @@ class CanonicalGraphService:
             # Collect all neighbor IDs from all roots
             all_neighbor_ids: set[str] = set()
             neighbor_uri_map: Dict[str, Optional[str]] = {}
-            for edges in edges_by_root.values():
+            # Build reverse index: subject_id -> set of root_ids that contain it
+            roots_by_subject: Dict[str, set[str]] = {rid: {rid} for rid in root_ids}
+            for rid, edges in edges_by_root.items():
                 for e in edges:
                     if e.object_type != ResourceType.LITERAL and e.object_id not in root_ids:
                         all_neighbor_ids.add(e.object_id)
                         neighbor_uri_map[e.object_id] = e.object_uri
+                        roots_by_subject.setdefault(e.object_id, set()).add(rid)
 
             # Fetch all neighbor triples in bulk
             visited = set(root_ids)
@@ -314,13 +317,13 @@ class CanonicalGraphService:
                     if _should_exclude_predicate(entity_type, predicate):
                         continue
 
-                    # Add to all roots that have this subject in their graph
-                    for rid, edges in edges_by_root.items():
-                        # Check if this subject is reachable from root
-                        if any(e.object_id == edge.subject_id for e in edges):
-                            edges.append(edge)
-                            if edge.object_type != ResourceType.LITERAL:
-                                neighbor_uri_map[edge.object_id] = edge.object_uri
+                    # Use reverse index for O(1) lookup of which roots contain this subject
+                    affected_roots = roots_by_subject.get(edge.subject_id, set())
+                    for rid in affected_roots:
+                        edges_by_root[rid].append(edge)
+                        if edge.object_type != ResourceType.LITERAL:
+                            neighbor_uri_map[edge.object_id] = edge.object_uri
+                            roots_by_subject.setdefault(edge.object_id, set()).add(rid)
 
                 # Build next frontier
                 next_frontier = set()
