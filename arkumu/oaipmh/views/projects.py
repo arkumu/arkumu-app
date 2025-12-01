@@ -65,11 +65,28 @@ def _get_db_project_assembler() -> Optional[OAIProjectAssembler]:
         _db_project_assembler_instance = OAIProjectAssembler()
     return _db_project_assembler_instance
 def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject]:
-    record = _assemble_record_from_db(resource)
+    """Build OAI project from resource.
+
+    Uses ProjectIndex.record_jsonb directly when available for fast access.
+    """
+    record = None
+
+    # Fast path: use pre-computed ProjectIndex.record_jsonb
+    project_index = getattr(resource, "project_index", None)
+    if project_index is not None:
+        try:
+            record = project_index.to_record()
+        except Exception:
+            logger.debug("Failed to load record from ProjectIndex for %s", resource.uri)
+
+    # Fallback to assembler/snapshot
+    if record is None:
+        record = _assemble_record_from_db(resource)
     if record is None and not _db_mode_enabled():
         record = snapshot_service.get_record_by_uri(resource.uri)
     if record is None:
         return None
+
     try:
         builder = get_project_builder()
         return builder.from_project_record(
@@ -83,19 +100,39 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
         return None
 
 
-def _build_tailored_project_hint_from_resource(resource: Resource) -> Optional[OAIProject]:
-    """Build a tailored project using the tailored-only builder."""
+def _build_tailored_project_hint_from_resource(
+    resource: Resource,
+    prefetched_curated_links: Optional[list] = None,
+    prefetched_dcp_folders: Optional[dict] = None,
+    prefetched_graph_data: Optional[object] = None,
+) -> Optional[OAIProject]:
+    """Build a tailored project using the tailored-only builder.
 
-    record = _assemble_record_from_db(resource)
+    Uses ProjectIndex.record_jsonb directly for fast access, avoiding
+    expensive canonical graph queries. Digital objects come from
+    OAIProjectMediaLink via curated media links.
+    """
+    from dataclasses import replace as dataclass_replace
+
+    record = None
+
+    # Fast path: use pre-computed ProjectIndex.record_jsonb
+    project_index = getattr(resource, "project_index", None)
+    if project_index is not None:
+        try:
+            record = project_index.to_record()
+        except Exception:
+            logger.debug("Failed to load record from ProjectIndex for %s", resource.uri)
+
+    # Fallback to assembler/snapshot only if index record unavailable
+    if record is None:
+        record = _assemble_record_from_db(resource)
     if record is None and not _db_mode_enabled():
         record = snapshot_service.get_record_by_uri(resource.uri)
     if record is None:
         return None
 
-    # For tailored profile, clear snapshot digital_objects so the builder loads
-    # from curated media links instead. The snapshot's digital_objects lack proper
-    # URIs needed for DCP folder expansion.
-    from dataclasses import replace as dataclass_replace
+    # Clear digital_objects - they come from OAIProjectMediaLink instead
     record = dataclass_replace(record, digital_objects=[])
 
     try:
@@ -104,6 +141,9 @@ def _build_tailored_project_hint_from_resource(resource: Resource) -> Optional[O
             skip_shared_event_filter=False,
             skip_format_exclusion=_db_mode_enabled(),
             use_curated_media_links=True,
+            prefetched_curated_links=prefetched_curated_links,
+            prefetched_dcp_folders=prefetched_dcp_folders,
+            prefetched_graph_data=prefetched_graph_data,
         )
     except Exception:
         logger.exception("Failed to build tailored OAI project for %s", resource.uri)

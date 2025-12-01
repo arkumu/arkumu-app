@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Dict, List, Optional
+from uuid import UUID
 
 from django.conf import settings
 from django.db.models import DateTimeField, Value, F, Max
@@ -13,6 +14,11 @@ from lxml import etree as ET
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.oaipmh.oai_project import OAIProject
+from arkumu.oaipmh.oai_project_tailored import (
+    batch_fetch_curated_links,
+    batch_fetch_dcp_folders,
+    batch_fetch_graph_data,
+)
 
 from . import base
 from .config import _TAILORED_MIN_DATETIME
@@ -60,7 +66,7 @@ def _tailored_resources_queryset(
             oai_media_links__isnull=False,
             oai_publication__is_approved=True,
         )
-        .select_related("organization", "oai_publication")
+        .select_related("organization", "oai_publication", "project_index")
     )
     if project_type_clause is not None:
         queryset = queryset.filter(project_type_clause).distinct()
@@ -134,17 +140,51 @@ def _tailored_harvestable_page(
         field_name="effective_datestamp",
     )
 
-    iterator = ordered.iterator(chunk_size=max(page_size * 10, 100))
+    # Fetch a batch of resources upfront (3x page_size to account for filtering)
+    batch_size = page_size * 3
+    batch_resources = list(ordered[:batch_size])
+
+    # Batch fetch curated links for all resources in the batch
+    project_ids = [UUID(str(r.id)) for r in batch_resources]
+    curated_links_by_project = batch_fetch_curated_links(project_ids)
+
+    # Collect all digital object IDs and URIs from curated links
+    all_digital_object_uris: List[str] = []
+    all_digital_object_ids: List[str] = []
+    for links in curated_links_by_project.values():
+        for link in links:
+            digital_obj = getattr(link, "digital_object", None)
+            if digital_obj:
+                uri = getattr(digital_obj, "uri", None)
+                obj_id = getattr(digital_obj, "id", None)
+                if uri:
+                    all_digital_object_uris.append(uri)
+                if obj_id:
+                    all_digital_object_ids.append(str(obj_id))
+
+    # Batch fetch DCP folders for all digital objects (mainly for KHM)
+    dcp_folders_by_uri = batch_fetch_dcp_folders(all_digital_object_uris)
+
+    # Batch fetch graph data for Rosetta orgs (KHM, HMT) to avoid N+1 queries
+    prefetched_graph_data = batch_fetch_graph_data(all_digital_object_ids) if all_digital_object_ids else None
+
     resources: List[Resource] = []
     project_hints: Dict[str, OAIProject] = {}
     last_cursor_position = cursor_position
 
-    for resource in iterator:
+    for resource in batch_resources:
         last_cursor_position = _format_cursor_position(
             resource,
             field_name="effective_datestamp",
         )
-        project_hint = _build_tailored_project_hint_from_resource(resource)
+        # Get prefetched curated links for this project
+        prefetched_links = curated_links_by_project.get(resource.id)
+        project_hint = _build_tailored_project_hint_from_resource(
+            resource,
+            prefetched_curated_links=prefetched_links,
+            prefetched_dcp_folders=dcp_folders_by_uri,
+            prefetched_graph_data=prefetched_graph_data,
+        )
         if not project_hint or not project_hint.harvestable:
             continue
         if include_hints:
@@ -152,6 +192,24 @@ def _tailored_harvestable_page(
         resources.append(resource)
         if len(resources) == page_size:
             break
+
+    # If we didn't fill the page from the batch, continue with the iterator
+    if len(resources) < page_size:
+        iterator = ordered[batch_size:].iterator(chunk_size=max(page_size * 10, 100))
+        for resource in iterator:
+            last_cursor_position = _format_cursor_position(
+                resource,
+                field_name="effective_datestamp",
+            )
+            # No prefetched links for resources outside the initial batch
+            project_hint = _build_tailored_project_hint_from_resource(resource)
+            if not project_hint or not project_hint.harvestable:
+                continue
+            if include_hints:
+                project_hints[resource.uri] = project_hint
+            resources.append(resource)
+            if len(resources) == page_size:
+                break
 
     has_more = False
     if resources:

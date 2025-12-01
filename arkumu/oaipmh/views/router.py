@@ -260,7 +260,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
             resource_qs = (
                 Resource.objects.filter(uri=resource_uri)
                 .filter(access_clause)
-                .select_related("organization")
+                .select_related("organization", "project_index")
             )
             if project_type_clause is not None:
                 resource_qs = resource_qs.filter(project_type_clause).distinct()
@@ -291,7 +291,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                 fallback_qs = (
                     Resource.objects.filter(uri=resource_uri)
                     .filter(access_clause)
-                    .select_related("organization")
+                    .select_related("organization", "project_index")
                 )
                 fallback_resource = fallback_qs.first()
                 if fallback_resource:
