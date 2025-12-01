@@ -393,8 +393,8 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
-    """Snapshot-based OAI endpoint - always uses pre-built snapshots, never DB mode."""
-    with _force_db_mode(False):
+    """Public OAI endpoint - serves tailored mode for external harvesters (IP-restricted by nginx)."""
+    with _force_db_mode(True), _force_curated_links(True), _force_tailored_mode(True):
         return _handle_oai_request(request)
 @general_login_required
 @csrf_exempt

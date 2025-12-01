@@ -32,12 +32,11 @@ from arkumu.oaipmh.services.media_sync_planner import (
     get_sync_state,
 )
 from arkumu.oaipmh.views import (
-    oai_db_endpoint,
     _restrict_to_harvestable_files,
     _project_type_filter,
     _build_identifier,
 )
-from arkumu.oaipmh.views.legacy import oai_endpoint
+from arkumu.oaipmh.views.router import oai_endpoint, oai_db_endpoint
 from arkumu.oaipmh.services.oai_project_assembler import OAIProjectAssembler, AssemblyContext
 from arkumu.oaipmh.oai_project import OAIProjectBuilder, HARVESTABLE_STORAGE_STATUSES
 from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
