@@ -789,6 +789,7 @@ class ProjectIndexDbService:
         """
         from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 
+        logger.info("rebuild_from_graph: loading project graph from triple store...")
         graph_service = CanonicalGraphService(org_code=None)
         graph = graph_service.get_project_graph(
             dataset_name="Projekt",
@@ -799,6 +800,7 @@ class ProjectIndexDbService:
         )
 
         subject_ids: List[str] = graph.get("subjects", []) or []
+        logger.info("rebuild_from_graph: loaded %d projects from graph", len(subject_ids))
         if not subject_ids:
             logger.warning("rebuild_from_graph: no project subjects found")
             return {"project_index": 0}
@@ -825,8 +827,10 @@ class ProjectIndexDbService:
         self._event_type_labels = self._build_cv_label_cache("ereignistyp")
 
         # Discover junction entities for FUK/KHM data models (batch pre-fetch)
+        logger.info("rebuild_from_graph: expanding junction entities...")
         project_subject_id_set = set(str(sid) for sid in subject_ids)
         self._expand_event_junctions(edges_by_subject, nodes, project_subject_id_set)
+        logger.info("rebuild_from_graph: junction expansion complete")
 
         # Build reverse indexes for O(1) junction lookup
         self._junctions_by_event: Dict[str, List[str]] = {}
@@ -841,11 +845,11 @@ class ProjectIndexDbService:
                     self._junctions_by_project.setdefault(obj_id, []).append(subj_id)
 
         # PRE-COMPUTE all fields for all projects in ONE pass
-        logger.debug("rebuild_from_graph: pre-computing all fields for %d projects", len(subject_ids))
+        logger.info("rebuild_from_graph: pre-computing all fields for %d projects", len(subject_ids))
         self._project_cache = self._batch_precompute_all_fields(
             subject_ids, edges_by_subject, nodes
         )
-        logger.debug("rebuild_from_graph: all fields pre-computed for %d projects", len(self._project_cache))
+        logger.info("rebuild_from_graph: all fields pre-computed for %d projects", len(self._project_cache))
 
         # Batch-fetch Resources for visibility and org info
         resource_map = self._fetch_resources_batch(subject_ids)
@@ -1230,7 +1234,7 @@ class ProjectIndexDbService:
 
         for idx, subject_id in enumerate(subject_ids):
             if idx % 500 == 0:
-                logger.debug("_write_indexes_from_graph: processing %d/%d", idx, total)
+                logger.info("rebuild_from_graph: processing %d/%d projects", idx, total)
             subject_uuid = _as_uuid(subject_id)
             if not subject_uuid:
                 continue
@@ -1393,6 +1397,7 @@ class ProjectIndexDbService:
             logger.info("DC creators/contributors populated for %d projects", len(dc_data))
 
         # Bulk write
+        logger.info("rebuild_from_graph: writing %d index rows to database...", len(index_rows))
         with transaction.atomic():
             if not index_rows:
                 if prune_missing:
