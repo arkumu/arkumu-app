@@ -893,6 +893,323 @@ class ProjectIndexDbService:
             return {}
         return Resource.objects.select_related("organization").in_bulk(uuids)
 
+    def _batch_fetch_dc_from_junctions(
+        self,
+        index_rows: List[ProjectIndex],
+        resource_map: Dict[uuid.UUID, Resource],
+    ) -> Dict[uuid.UUID, Dict[str, List[str]]]:
+        """Batch fetch dc:creator/dc:contributor from junction entities.
+
+        Rights logic:
+        - ist-urheberin=1 OR besitzt-leistungsschutzrechte=1 → dc:creator
+        - Both = 0 → dc:contributor
+
+        Institution-specific data models:
+        ================================
+
+        FUK/RSH/DET (canonical structure):
+            Junction: akteurin-ereignis-kreuztabelle
+            Chain: junction -[im-ereignis]-> ereignis -[projekt]-> projekt
+            Fields: ist-urheberin, besitzt-leistungsschutzrechte, akteurin-im-ereignis
+
+        KHM (custom structure):
+            Junction: 02-kreuz-projekte-personen
+            Chain: junction -[projekt]-> 01-grundereignis (grundereignis IS the project!)
+            Note: KHM's 01-grundereignis/X maps to 00-projekte/X (same numeric ID)
+            Fields: ist-urheberin, akteurin-im-ereignis
+
+        HMT (custom structure):
+            Junction: 03-hfm-kreuz-ereignis-akteure
+            Chain: junction -[ereignis]-> 02-hfm-ereignis -[projekt]-> projekt
+            Fields: ist-urheberin (institutional predicate!), akteurin-im-ereignis
+        """
+        from arkumu.metadata.models.triples import Triple
+        from django.db.models import Q
+
+        result: Dict[uuid.UUID, Dict[str, List[str]]] = {}
+
+        # Group projects by org_code for institution-specific queries
+        projects_by_org: Dict[str, List[ProjectIndex]] = {}
+        for row in index_rows:
+            org = row.org_code or "unknown"
+            projects_by_org.setdefault(org, []).append(row)
+
+        # Process each institution type
+        for org_code, org_rows in projects_by_org.items():
+            org_lower = org_code.lower()
+            project_ids = [row.project_resource_id for row in org_rows]
+
+            if org_lower == "khm":
+                org_result = self._fetch_dc_khm(project_ids)
+            elif org_lower == "hmt":
+                org_result = self._fetch_dc_hmt(project_ids)
+            elif org_lower in ("fuk", "rsh", "det"):
+                org_result = self._fetch_dc_canonical(project_ids, org_code)
+            else:
+                # Unknown org - try canonical approach
+                org_result = self._fetch_dc_canonical(project_ids, org_code)
+
+            result.update(org_result)
+
+        return result
+
+    def _fetch_dc_khm(
+        self,
+        project_ids: List[uuid.UUID],
+    ) -> Dict[uuid.UUID, Dict[str, List[str]]]:
+        """Fetch dc:creator/contributor for KHM projects.
+
+        KHM structure:
+        - Junction: 02-kreuz-projekte-personen
+        - projekt predicate points to 01-grundereignis (which IS the project)
+        - 01-grundereignis/X maps to 00-projekte/X (same numeric ID)
+        """
+        from arkumu.metadata.models.triples import Triple
+        from arkumu.metadata.models.resource import Resource as ResourceModel
+        from django.db.models import Q
+
+        result: Dict[uuid.UUID, Dict[str, List[str]]] = {}
+        if not project_ids:
+            return result
+
+        # Build mapping: grundereignis numeric ID -> project UUID
+        # KHM projects are in 00-projekte, grundereignis in 01-grundereignis
+        project_resources = ResourceModel.objects.filter(id__in=project_ids).values_list("id", "uri")
+        grundereignis_to_project: Dict[str, uuid.UUID] = {}
+        for pid, uri in project_resources:
+            # Extract numeric ID: .../00-projekte/1234 -> 1234
+            if "/00-projekte/" in uri:
+                numeric_id = uri.split("/00-projekte/")[-1]
+                grundereignis_uri = uri.replace("/00-projekte/", "/01-grundereignis/")
+                grundereignis_to_project[grundereignis_uri] = pid
+
+        if not grundereignis_to_project:
+            return result
+
+        # Find grundereignis resource IDs
+        grundereignis_resources = ResourceModel.objects.filter(
+            uri__in=grundereignis_to_project.keys()
+        ).values_list("id", "uri")
+        grundereignis_id_to_project: Dict[uuid.UUID, uuid.UUID] = {}
+        for gid, guri in grundereignis_resources:
+            if guri in grundereignis_to_project:
+                grundereignis_id_to_project[gid] = grundereignis_to_project[guri]
+
+        # Find junctions pointing to grundereignis via projekt predicate
+        CANONICAL_PROJECT = "http://arkumu.org/data/properties/projekt"
+        junction_triples = Triple.objects.filter(
+            Q(predicate__canonical_uri=CANONICAL_PROJECT) | Q(predicate__uri__icontains="projekt"),
+            object_id__in=grundereignis_id_to_project.keys(),
+            subject__organization__code="khm",
+        ).values_list("subject_id", "object_id")
+
+        junction_ids = set()
+        junction_project_map: Dict[uuid.UUID, uuid.UUID] = {}
+        for junction_id, grundereignis_id in junction_triples:
+            junction_ids.add(junction_id)
+            project_id = grundereignis_id_to_project.get(grundereignis_id)
+            if project_id:
+                junction_project_map[junction_id] = project_id
+
+        if not junction_ids:
+            return result
+
+        return self._process_junctions(junction_ids, junction_project_map)
+
+    def _fetch_dc_hmt(
+        self,
+        project_ids: List[uuid.UUID],
+    ) -> Dict[uuid.UUID, Dict[str, List[str]]]:
+        """Fetch dc:creator/contributor for HMT projects.
+
+        HMT structure:
+        - Junction: 03-hfm-kreuz-ereignis-akteure
+        - ereignis predicate points to 02-hfm-ereignis
+        - Event then links to project via projekt predicate
+        - ist-urheberin uses INSTITUTIONAL predicate (hmt/properties/ist-urheberin)
+        """
+        from arkumu.metadata.models.triples import Triple
+        from django.db.models import Q
+
+        result: Dict[uuid.UUID, Dict[str, List[str]]] = {}
+        if not project_ids:
+            return result
+
+        # Find events that link to our projects
+        CANONICAL_PROJECT = "http://arkumu.org/data/properties/projekt"
+        event_to_project = Triple.objects.filter(
+            Q(predicate__canonical_uri=CANONICAL_PROJECT) | Q(predicate__uri__icontains="projekt"),
+            object_id__in=project_ids,
+            subject__organization__code="hmt",
+        ).values_list("subject_id", "object_id")
+
+        event_project_map: Dict[uuid.UUID, uuid.UUID] = {}
+        for event_id, project_id in event_to_project:
+            event_project_map[event_id] = project_id
+
+        if not event_project_map:
+            return result
+
+        # Find junctions pointing to these events
+        CANONICAL_EREIGNIS = "http://arkumu.org/data/properties/ereignis"
+        junction_triples = Triple.objects.filter(
+            Q(predicate__canonical_uri=CANONICAL_EREIGNIS) | Q(predicate__uri__icontains="ereignis"),
+            object_id__in=event_project_map.keys(),
+            subject__organization__code="hmt",
+        ).values_list("subject_id", "object_id")
+
+        junction_ids = set()
+        junction_project_map: Dict[uuid.UUID, uuid.UUID] = {}
+        for junction_id, event_id in junction_triples:
+            junction_ids.add(junction_id)
+            project_id = event_project_map.get(event_id)
+            if project_id:
+                junction_project_map[junction_id] = project_id
+
+        if not junction_ids:
+            return result
+
+        return self._process_junctions(junction_ids, junction_project_map)
+
+    def _fetch_dc_canonical(
+        self,
+        project_ids: List[uuid.UUID],
+        org_code: str,
+    ) -> Dict[uuid.UUID, Dict[str, List[str]]]:
+        """Fetch dc:creator/contributor for FUK/RSH/DET (canonical structure).
+
+        Canonical structure:
+        - Junction: akteurin-ereignis-kreuztabelle
+        - im-ereignis predicate points to ereignis
+        - Project links TO ereignis via ereignis predicate (projekt --[ereignis]--> ereignis)
+        """
+        from arkumu.metadata.models.triples import Triple
+        from django.db.models import Q
+
+        result: Dict[uuid.UUID, Dict[str, List[str]]] = {}
+        if not project_ids:
+            return result
+
+        # Find events linked FROM our projects (projekt --[ereignis]--> ereignis)
+        CANONICAL_EREIGNIS = "http://arkumu.org/data/properties/ereignis"
+        project_to_event = Triple.objects.filter(
+            Q(predicate__canonical_uri=CANONICAL_EREIGNIS) | Q(predicate__uri__icontains="ereignis"),
+            subject_id__in=project_ids,
+            subject__organization__code__iexact=org_code,
+        ).values_list("subject_id", "object_id")
+
+        event_project_map: Dict[uuid.UUID, uuid.UUID] = {}
+        for project_id, event_id in project_to_event:
+            event_project_map[event_id] = project_id
+
+        if not event_project_map:
+            return result
+
+        # Find junctions pointing to these events via im-ereignis
+        # IMPORTANT: Only match kreuztabelle entities, not actors (which also have im-ereignis)
+        CANONICAL_IM_EREIGNIS = "http://arkumu.org/data/properties/im-ereignis"
+        junction_triples = Triple.objects.filter(
+            Q(predicate__canonical_uri=CANONICAL_IM_EREIGNIS) | Q(predicate__uri__icontains="im-ereignis"),
+            object_id__in=event_project_map.keys(),
+            subject__organization__code__iexact=org_code,
+            subject__uri__icontains="kreuztabelle",
+        ).values_list("subject_id", "object_id")
+
+        junction_ids = set()
+        junction_project_map: Dict[uuid.UUID, uuid.UUID] = {}
+        for junction_id, event_id in junction_triples:
+            junction_ids.add(junction_id)
+            project_id = event_project_map.get(event_id)
+            if project_id:
+                junction_project_map[junction_id] = project_id
+
+        if not junction_ids:
+            return result
+
+        return self._process_junctions(junction_ids, junction_project_map)
+
+    def _process_junctions(
+        self,
+        junction_ids: Set[uuid.UUID],
+        junction_project_map: Dict[uuid.UUID, uuid.UUID],
+    ) -> Dict[uuid.UUID, Dict[str, List[str]]]:
+        """Process junction entities to extract creator/contributor data.
+
+        Common logic for all institutions after junction->project mapping is established.
+        """
+        from arkumu.metadata.models.triples import Triple
+        from django.db.models import Q
+
+        result: Dict[uuid.UUID, Dict[str, List[str]]] = {}
+
+        CANONICAL_ACTOR = "http://arkumu.org/data/properties/akteurin-im-ereignis"
+        CANONICAL_IST_URHEBERIN = "http://arkumu.org/data/properties/ist-urheberin"
+        CANONICAL_LEISTUNGSSCHUTZ = "http://arkumu.org/data/properties/besitzt-leistungsschutzrechte"
+        CANONICAL_NAME = "http://arkumu.org/data/properties/deutscher-name"
+
+        # Fetch all triples for junctions
+        junction_triples = Triple.objects.filter(
+            subject_id__in=junction_ids,
+        ).select_related("predicate", "object")
+
+        # Build junction data
+        junction_data: Dict[uuid.UUID, Dict] = {}
+        for t in junction_triples:
+            jid = t.subject_id
+            if jid not in junction_data:
+                junction_data[jid] = {"actor_id": None, "ist_urheberin": False, "leistungsschutz": False}
+
+            pred = t.predicate.canonical_uri or t.predicate.uri or ""
+            # Match exact predicate - avoid matching "rollen-der-akteurin-im-ereignis"
+            if pred == CANONICAL_ACTOR or pred.endswith("/akteurin-im-ereignis"):
+                junction_data[jid]["actor_id"] = t.object_id
+            elif pred == CANONICAL_IST_URHEBERIN or "ist-urheberin" in pred:
+                val = getattr(t.object, "value", "0")
+                junction_data[jid]["ist_urheberin"] = str(val) == "1"
+            elif pred == CANONICAL_LEISTUNGSSCHUTZ or "leistungsschutz" in pred:
+                val = getattr(t.object, "value", "0")
+                junction_data[jid]["leistungsschutz"] = str(val) == "1"
+
+        # Fetch actor names
+        actor_ids = {d["actor_id"] for d in junction_data.values() if d["actor_id"]}
+        actor_names: Dict[uuid.UUID, str] = {}
+        if actor_ids:
+            name_triples = Triple.objects.filter(
+                subject_id__in=actor_ids,
+            ).filter(
+                Q(predicate__canonical_uri=CANONICAL_NAME) | Q(predicate__uri__icontains="name")
+            ).select_related("object")
+            for t in name_triples:
+                name = getattr(t.object, "value", None)
+                if name and t.subject_id not in actor_names:
+                    actor_names[t.subject_id] = str(name).strip()
+
+        # Build result
+        for junction_id, data in junction_data.items():
+            actor_id = data["actor_id"]
+            if not actor_id:
+                continue
+            name = actor_names.get(actor_id)
+            if not name:
+                continue
+
+            project_id = junction_project_map.get(junction_id)
+            if not project_id:
+                continue
+
+            if project_id not in result:
+                result[project_id] = {"creators": [], "contributors": []}
+
+            is_creator = data["ist_urheberin"] or data["leistungsschutz"]
+            if is_creator:
+                if name not in result[project_id]["creators"]:
+                    result[project_id]["creators"].append(name)
+            else:
+                if name not in result[project_id]["contributors"]:
+                    result[project_id]["contributors"].append(name)
+
+        return result
+
     def _write_indexes_from_graph(
         self,
         *,
@@ -1043,28 +1360,37 @@ class ProjectIndexDbService:
             seen_ids.add(resource.id)
 
         # Batch generate RDF/XML for all projects (unless skipped)
+        # Uses precomputed edges_by_subject which includes junction data
         if index_rows and not skip_rdf:
             import time as _time
             total_rows = len(index_rows)
-            logger.info("Batch generating RDF/XML for %d projects...", total_rows)
-            resource_ids_for_rdf = [str(row.project_resource_id) for row in index_rows]
+            logger.info("Batch generating RDF/XML for %d projects (with junctions)...", total_rows)
             t0 = _time.perf_counter()
-            rdf_graphs = graph_service.get_entity_graphs_bulk(resource_ids_for_rdf, depth=2)
-            t1 = _time.perf_counter()
-            logger.info("Bulk graph fetch completed in %.2fs", t1 - t0)
 
             for idx, row in enumerate(index_rows):
                 if idx % 500 == 0:
                     logger.info("RDF serialization progress: %d/%d (%.1f%%)", idx, total_rows, 100.0 * idx / total_rows)
                 rid = str(row.project_resource_id)
-                graph_data = rdf_graphs.get(rid)
-                if graph_data:
+                # Build graph_data from precomputed edges (includes junctions)
+                graph_data = self._build_project_graph_for_rdf(rid, edges_by_subject, nodes)
+                if graph_data and graph_data.get("edges"):
                     row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
                     row.institutional_rdf_xml = _serialize_institutional_rdf_xml(row.project_resource, graph_data=graph_data)
-            t2 = _time.perf_counter()
-            logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t2 - t1, (t2 - t1) / total_rows)
+            t1 = _time.perf_counter()
+            logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t1 - t0, (t1 - t0) / total_rows)
         elif skip_rdf:
             logger.info("Skipping RDF/XML generation (--skip-rdf flag)")
+
+        # Batch populate dc_creators/dc_contributors from junction entities
+        if index_rows:
+            logger.info("Batch fetching DC creators/contributors from junctions...")
+            dc_data = self._batch_fetch_dc_from_junctions(index_rows, resource_map)
+            for row in index_rows:
+                rid = row.project_resource_id
+                if rid in dc_data:
+                    row.dc_creators = dc_data[rid].get("creators", [])
+                    row.dc_contributors = dc_data[rid].get("contributors", [])
+            logger.info("DC creators/contributors populated for %d projects", len(dc_data))
 
         # Bulk write
         with transaction.atomic():
@@ -1423,13 +1749,10 @@ class ProjectIndexDbService:
 
         logger.debug("_expand_event_junctions: found %d junctions", len(junction_ids))
 
-        # Fetch junction edges: actor links and role links
+        # Fetch ALL junction edges (actor links, role links, and properties like ist-urheberin)
+        # This is needed for RDF serialization to include junction properties
         junction_edge_triples = Triple.objects.filter(
             subject_id__in=[_as_uuid(jid) for jid in junction_ids if _as_uuid(jid)],
-            predicate__canonical_uri__in=[
-                _CanonicalURIs.ACTOR_LINK,
-                _CanonicalURIs.ACTOR_ROLE,
-            ],
         ).select_related("predicate", "object")
 
         rolle_ids: Set[str] = set()
@@ -1437,7 +1760,8 @@ class ProjectIndexDbService:
 
         for t in junction_edge_triples:
             junction_id = str(t.subject_id)
-            pred_canonical = t.predicate.canonical_uri
+            pred_canonical = t.predicate.canonical_uri or ""
+            pred_uri = t.predicate.uri or ""
 
             # Check if object is a literal (KHM pattern) or entity (FUK pattern)
             # For literals, object.resource_type == 'LITERAL' and value is in object.value
@@ -1447,10 +1771,33 @@ class ProjectIndexDbService:
             edge_dict = {
                 "subject_id": junction_id,
                 "predicate_canonical": pred_canonical,
-                "object_id": str(t.object_id) if t.object_id and not is_literal else None,
+                "predicate_uri": pred_uri,
+                "object_id": str(t.object_id) if t.object_id else None,  # Include for literals too
                 "object_value": object_value,
+                "object_uri": t.object.uri if t.object else None,
             }
             edges_by_subject.setdefault(junction_id, []).append(edge_dict)
+
+            # Add junction node to nodes dict (needed for RDF serialization)
+            if junction_id not in nodes:
+                nodes[junction_id] = {
+                    "uri": t.subject.uri if t.subject else None,
+                    "resource_type": ResourceType.ENTITY.value,
+                }
+
+            # Add object node to nodes dict
+            obj_id = str(t.object_id) if t.object_id else None
+            if obj_id and obj_id not in nodes:
+                if is_literal:
+                    nodes[obj_id] = {
+                        "value": object_value,
+                        "resource_type": ResourceType.LITERAL.value,
+                    }
+                else:
+                    nodes[obj_id] = {
+                        "uri": t.object.uri if t.object else None,
+                        "resource_type": ResourceType.ENTITY.value,
+                    }
 
             # Collect rolle and actor IDs for further expansion (only for entity links)
             if pred_canonical == _CanonicalURIs.ACTOR_ROLE and t.object_id and not is_literal:
@@ -2276,6 +2623,94 @@ class ProjectIndexDbService:
             "events": [],
             "alternative_titles": [],
             "category_slugs": category_slugs,
+        }
+
+    # ------------------------------------------------------------------ #
+    # RDF graph builder for precomputed RDF/XML                           #
+    # ------------------------------------------------------------------ #
+
+    def _build_project_graph_for_rdf(
+        self,
+        project_id: str,
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Build complete graph data for a project including junctions.
+
+        Traverses the project's subgraph to collect ALL edges:
+        - Project edges (project -> ereignis, etc.)
+        - Event edges (ereignis -> akteurin, properties)
+        - Junction edges (junction -> akteurin, im-ereignis, ist-urheberin, etc.)
+        - Actor edges (akteurin properties)
+
+        Returns graph_data dict suitable for build_rdf_graph().
+        """
+        collected_edges: List[Dict[str, Any]] = []
+        visited_subjects: set[str] = set()
+
+        def collect_from_subject(subject_id: str) -> None:
+            if subject_id in visited_subjects:
+                return
+            visited_subjects.add(subject_id)
+            edges = edges_by_subject.get(subject_id, [])
+            collected_edges.extend(edges)
+
+        # 1. Collect project edges
+        collect_from_subject(project_id)
+        project_edges = edges_by_subject.get(project_id, [])
+
+        # 2. Find events linked from this project and collect their edges
+        event_ids: List[str] = []
+        for edge in project_edges:
+            pred = self._canonical(edge)
+            obj_id = edge.get("object_id")
+            if pred == _CanonicalURIs.EVENT and obj_id:
+                event_ids.append(obj_id)
+                collect_from_subject(obj_id)
+
+        # 3. Collect junction edges via events
+        for event_id in event_ids:
+            # Junctions pointing TO this event
+            junction_ids = self._junctions_by_event.get(event_id, [])
+            for junction_id in junction_ids:
+                collect_from_subject(junction_id)
+                # Collect actor edges from junction
+                junction_edges = edges_by_subject.get(junction_id, [])
+                for jedge in junction_edges:
+                    jpred = self._canonical(jedge)
+                    jobj = jedge.get("object_id")
+                    if jpred == _CanonicalURIs.ACTOR_LINK and jobj:
+                        collect_from_subject(jobj)
+
+            # Forward junctions (EVENT_ACTOR_JUNCTION)
+            event_edges = edges_by_subject.get(event_id, [])
+            for edge in event_edges:
+                pred = self._canonical(edge)
+                obj_id = edge.get("object_id")
+                if pred == _CanonicalURIs.EVENT_ACTOR_JUNCTION and obj_id:
+                    collect_from_subject(obj_id)
+                    junction_edges = edges_by_subject.get(obj_id, [])
+                    for jedge in junction_edges:
+                        jpred = self._canonical(jedge)
+                        jobj = jedge.get("object_id")
+                        if jpred == _CanonicalURIs.ACTOR_LINK and jobj:
+                            collect_from_subject(jobj)
+
+        # 4. Collect junctions linked directly to project (KHM pattern)
+        direct_junction_ids = self._junctions_by_project.get(project_id, [])
+        for junction_id in direct_junction_ids:
+            collect_from_subject(junction_id)
+            junction_edges = edges_by_subject.get(junction_id, [])
+            for jedge in junction_edges:
+                jpred = self._canonical(jedge)
+                jobj = jedge.get("object_id")
+                if jpred == _CanonicalURIs.ACTOR_LINK and jobj:
+                    collect_from_subject(jobj)
+
+        return {
+            "root_id": project_id,
+            "nodes": nodes,  # Full nodes dict (filtering happens in build_rdf_graph)
+            "edges": collected_edges,
         }
 
     # ------------------------------------------------------------------ #
