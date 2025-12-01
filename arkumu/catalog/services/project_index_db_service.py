@@ -840,12 +840,6 @@ class ProjectIndexDbService:
                 elif pred == _CanonicalURIs.JUNCTION_TO_PROJECT and obj_id:
                     self._junctions_by_project.setdefault(obj_id, []).append(subj_id)
 
-        logger.debug(
-            "rebuild_from_graph: junction indexes built - by_event=%d, by_project=%d",
-            len(self._junctions_by_event),
-            len(self._junctions_by_project),
-        )
-
         # PRE-COMPUTE all fields for all projects in ONE pass
         logger.debug("rebuild_from_graph: pre-computing all fields for %d projects", len(subject_ids))
         self._project_cache = self._batch_precompute_all_fields(
