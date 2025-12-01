@@ -521,7 +521,6 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             "title": "Titelinformationen",
             "badge": "Titel & Sprache",
             "fields": [
-                "Alternativer Titel-Set-ID",
                 "Alternativer Titel",
                 {
                     "name": "Sprache des Alternativen Titels",
