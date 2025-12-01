@@ -735,6 +735,21 @@ class SchemaWorkspaceService:
             if relationship.other_dataset in direct_multi_targets and not relationship.widget_name:
                 continue
 
+            # Only process join relationships that actually involve this dataset.
+            # Skip relationships where the self_column is not in the current dataset's
+            # field metadata - these are unrelated junction relationships that should
+            # not affect FK fields in the current dataset.
+            if relationship.self_column not in field_metadata:
+                # Also check if this is a configured relationship for this dataset
+                # by verifying it doesn't just happen to share a target dataset
+                has_relevant_fk = any(
+                    (meta.get("fk_relationship") or {}).get("target_dataset") == relationship.other_dataset
+                    and relationship.join_dataset == dataset_name
+                    for meta in field_metadata.values()
+                )
+                if not has_relevant_fk:
+                    continue
+
             dataset_fk_field = None
             for field_name, field_meta in list(metadata.items()):
                 fk_info = field_meta.get("fk_relationship") or {}
