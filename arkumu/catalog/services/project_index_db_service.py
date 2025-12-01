@@ -976,15 +976,9 @@ class ProjectIndexDbService:
                 institution_codes=institution_codes,
             )
 
-            # Pre-compute canonical RDF/XML using existing graph data (fast, no extra queries)
-            graph_data_for_rdf = {
-                "root_id": subject_id_str,
-                "nodes": nodes,
-                "edges": edges_by_subject.get(subject_id_str, []),
-            }
-            canonical_rdf_xml = _serialize_canonical_rdf_xml(resource, graph_data=graph_data_for_rdf)
-            # Institutional RDF uses predicate_uri instead of predicate_canonical
-            institutional_rdf_xml = _serialize_institutional_rdf_xml(resource, graph_data=graph_data_for_rdf)
+            # RDF precomputed below after collecting all project IDs
+            canonical_rdf_xml = ""
+            institutional_rdf_xml = ""
 
             # Build unified ProjectIndex row
             index_row = ProjectIndex(
@@ -1042,6 +1036,9 @@ class ProjectIndexDbService:
             )
             index_rows.append(index_row)
             seen_ids.add(resource.id)
+
+        # RDF/XML generated at request time using batch-fetched graph data
+        # (avoids slow per-project serialization during rebuild)
 
         # Bulk write
         with transaction.atomic():

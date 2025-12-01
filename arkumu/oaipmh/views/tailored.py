@@ -162,11 +162,18 @@ def _tailored_harvestable_page(
                 if obj_id:
                     all_digital_object_ids.append(str(obj_id))
 
-    # Batch fetch DCP folders and file lists for all digital objects (mainly for KHM)
+    # DCP and graph data needed for harvestability checks (even for ListIdentifiers)
     dcp_data = batch_fetch_dcp_folders(all_digital_object_uris)
-
-    # Batch fetch graph data for Rosetta orgs (KHM, HMT) to avoid N+1 queries
     prefetched_graph_data = batch_fetch_graph_data(all_digital_object_ids) if all_digital_object_ids else None
+
+    # RDF graphs only needed for ListRecords (METS generation), skip for ListIdentifiers
+    if include_hints:
+        from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+        project_resource_ids = [str(r.id) for r in batch_resources]
+        rdf_graph_service = CanonicalGraphService(org_code=None)
+        rdf_graphs_by_project = rdf_graph_service.get_entity_graphs_bulk(project_resource_ids, depth=2)
+    else:
+        rdf_graphs_by_project = {}
 
     resources: List[Resource] = []
     project_hints: Dict[str, OAIProject] = {}
@@ -179,11 +186,13 @@ def _tailored_harvestable_page(
         )
         # Get prefetched curated links for this project
         prefetched_links = curated_links_by_project.get(resource.id)
+        rdf_graph_data = rdf_graphs_by_project.get(str(resource.id))
         project_hint = _build_tailored_project_hint_from_resource(
             resource,
             prefetched_curated_links=prefetched_links,
             prefetched_dcp_data=dcp_data,
             prefetched_graph_data=prefetched_graph_data,
+            prefetched_rdf_graph=rdf_graph_data,
         )
         if not project_hint or not project_hint.harvestable:
             continue

@@ -1203,9 +1203,15 @@ def _build_simplified_mets_from_project(
     precomputed_canonical = getattr(project_index, "canonical_rdf_xml", "") if project_index else ""
     precomputed_institutional = getattr(project_index, "institutional_rdf_xml", "") if project_index else ""
 
+    # Also check for batch-fetched graph_data on the project (from tailored endpoint)
+    prefetched_graph = getattr(project, "graph_data", None)
+
     try:
         if precomputed_canonical:
             canonical_rdf = ET.fromstring(precomputed_canonical.encode("utf-8"))
+        elif prefetched_graph:
+            # Use batch-fetched graph data (no queries needed)
+            canonical_rdf = build_rdf_graph(resource, graph_data=prefetched_graph)
         else:
             rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
             canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
@@ -1221,11 +1227,14 @@ def _build_simplified_mets_from_project(
     try:
         if precomputed_institutional:
             institutional_rdf = ET.fromstring(precomputed_institutional.encode("utf-8"))
+        elif prefetched_graph:
+            # Use batch-fetched graph data with institutional predicates
+            institutional_rdf = build_rdf_graph(resource, graph_data=prefetched_graph, use_institutional_predicates=True)
         else:
-            # Skip expensive institutional RDF query if not precomputed
+            # Skip expensive institutional RDF query if not precomputed/prefetched
             institutional_rdf = None
     except Exception:
-        logger.exception("Failed to parse precomputed institutional RDF for %s", getattr(resource, "uri", "unknown"))
+        logger.exception("Failed to build institutional RDF for %s", getattr(resource, "uri", "unknown"))
         institutional_rdf = None
 
     if institutional_rdf is not None:

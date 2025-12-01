@@ -204,6 +204,7 @@ class OAIProject:
     institution_code: Optional[str]
     digital_objects: Tuple[NormalizedDigitalObject, ...]
     curated_selection: Optional[CuratedMediaSelection] = None
+    graph_data: Optional[Dict[str, Any]] = None  # For RDF generation without queries
 
     @property
     def harvestable(self) -> bool:
