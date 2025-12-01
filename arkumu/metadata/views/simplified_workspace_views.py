@@ -525,12 +525,12 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
                 "Alternativer Titel",
                 {
                     "name": "Sprache des Alternativen Titels",
-                    "search_property": "Sprachbezeichnung",
+                    "search_property": "Deutscher Name der Sprache",
                 },
                 "Alternativer Untertitel",
                 {
                     "name": "Sprache des Alternativen Untertitels",
-                    "search_property": "Sprachbezeichnung",
+                    "search_property": "Deutscher Name der Sprache",
                 },
             ],
         },
