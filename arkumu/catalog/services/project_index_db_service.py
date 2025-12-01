@@ -3,20 +3,148 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from django.db import transaction
 from django.utils import timezone
+from lxml import etree as ET
 
 from arkumu.catalog.models import ProjectIndex
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.common.hash_utils import generate_value_hash
 from arkumu.metadata.models import PublicAccessLevel, Resource, ResourceType
+from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DcMetadata:
+    """Pre-computed DC creator/contributor metadata."""
+    creators: List[str]
+    contributors: List[str]
+    has_copyright_holder: bool
+    has_neighbouring_rights_holder: bool
+
+
+def _extract_dc_metadata(resource: Resource, record: ProjectRecord) -> DcMetadata:
+    """Extract DC creators/contributors and rights flags from junction entities."""
+    from arkumu.oaipmh.views.metadata import _extract_creators_from_junctions
+
+    creators, contributors = _extract_creators_from_junctions(resource, record)
+
+    # Check for copyright/neighbouring rights holders in event actors
+    has_copyright = False
+    has_neighbouring = False
+    for event in (record.events or []):
+        for actor in (getattr(event, "actors", []) or []):
+            if getattr(actor, "is_copyright_holder", False):
+                has_copyright = True
+            if getattr(actor, "is_neighbouring_rights_holder", False):
+                has_neighbouring = True
+
+    return DcMetadata(
+        creators=creators,
+        contributors=contributors,
+        has_copyright_holder=has_copyright,
+        has_neighbouring_rights_holder=has_neighbouring,
+    )
+
+
+def _serialize_canonical_rdf_xml(
+    resource: Resource,
+    graph_data: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Serialize canonical RDF/XML for a resource graph."""
+    try:
+        rdf_element = build_rdf_graph(resource, graph_service=None, graph_data=graph_data)
+        return ET.tostring(rdf_element, encoding="unicode")
+    except Exception:
+        logger.exception("Failed to serialize canonical RDF/XML for %s", resource.uri)
+        return ""
+
+
+def _serialize_institutional_rdf_xml(resource: Resource) -> str:
+    """Serialize institutional RDF/XML for a resource graph using InstitutionalGraphService."""
+    from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
+
+    try:
+        rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+        if rdf_element is None:
+            return ""
+        return ET.tostring(rdf_element, encoding="unicode")
+    except Exception:
+        logger.exception("Failed to serialize institutional RDF/XML for %s", resource.uri)
+        return ""
+
+
+@dataclass
+class PrecomputedOaiData:
+    """Pre-computed OAI data for a resource."""
+    canonical_rdf_xml: str
+    institutional_rdf_xml: str
+    dc_creators: List[str]
+    dc_contributors: List[str]
+
+
+def _batch_precompute_oai_data(
+    resource_map: Dict[uuid.UUID, Resource],
+    record_map: Dict[uuid.UUID, Dict],
+) -> Dict[uuid.UUID, PrecomputedOaiData]:
+    """Batch pre-compute OAI data using BULK graph fetching (much faster)."""
+    results: Dict[uuid.UUID, PrecomputedOaiData] = {}
+    empty_result = PrecomputedOaiData(
+        canonical_rdf_xml="",
+        institutional_rdf_xml="",
+        dc_creators=[],
+        dc_contributors=[],
+    )
+
+    if not resource_map:
+        return results
+
+    # Fetch ALL graphs in ONE bulk query
+    resource_ids = [str(rid) for rid in resource_map.keys()]
+    logger.info("Fetching %d entity graphs in bulk...", len(resource_ids))
+    graph_service = CanonicalGraphService(org_code=None)
+    graphs_by_id = graph_service.get_entity_graphs_bulk(resource_ids, depth=2)
+    logger.info("Bulk graph fetch complete.")
+
+    # Serialize RDF for each resource using pre-fetched graph data
+    for rid, resource in resource_map.items():
+        try:
+            graph_data = graphs_by_id.get(str(rid))
+            canonical_rdf = _serialize_canonical_rdf_xml(resource, graph_data=graph_data)
+            institutional_rdf = _serialize_institutional_rdf_xml(resource)
+
+            # Extract DC metadata
+            creators: List[str] = []
+            contributors: List[str] = []
+            record_dict = record_map.get(rid)
+            if record_dict:
+                try:
+                    record = ProjectRecord.from_dict(record_dict)
+                    from arkumu.oaipmh.views.metadata import _extract_creators_from_junctions
+                    creators, contributors = _extract_creators_from_junctions(resource, record)
+                except Exception:
+                    logger.exception("Failed to extract DC metadata for %s", rid)
+
+            results[rid] = PrecomputedOaiData(
+                canonical_rdf_xml=canonical_rdf,
+                institutional_rdf_xml=institutional_rdf,
+                dc_creators=creators,
+                dc_contributors=contributors,
+            )
+        except Exception:
+            logger.exception("OAI data precomputation failed for %s", rid)
+            results[rid] = empty_result
+
+    return results
 
 
 # Canonical URIs for graph-based index building
@@ -327,21 +455,36 @@ class ProjectIndexDbService:
         seen_ids: set[uuid.UUID] = set()
         index_rows: List[ProjectIndex] = []
 
+        # Collect valid resource IDs and record dicts for batch pre-computation
+        valid_pairs: List[Tuple[ProjectRecord, uuid.UUID]] = []
         for record in records:
             subject_uuid = _as_uuid(getattr(record, "subject_id", None))
             if not subject_uuid:
                 logger.warning("ProjectIndexDbService: missing subject_id for uri=%s", record.uri)
                 continue
-            resource = resource_map.get(subject_uuid)
-            if not resource:
+            if subject_uuid not in resource_map:
                 logger.warning(
                     "ProjectIndexDbService: resource not found for subject_id=%s (uri=%s)",
                     subject_uuid,
                     record.uri,
                 )
                 continue
+            valid_pairs.append((record, subject_uuid))
 
-            defaults = self._unified_defaults(record, resource, built_at, source_version)
+        # Batch pre-compute OAI data using BULK graph fetching
+        valid_resource_map = {rid: resource_map[rid] for _, rid in valid_pairs}
+        valid_record_map = {rid: record.to_dict() for record, rid in valid_pairs}
+        logger.info("Batch pre-computing OAI data for %d resources...", len(valid_pairs))
+        oai_cache = _batch_precompute_oai_data(valid_resource_map, valid_record_map)
+        logger.info("OAI data pre-computation complete.")
+
+        for record, subject_uuid in valid_pairs:
+            resource = resource_map[subject_uuid]
+            oai_data = oai_cache.get(subject_uuid)
+            defaults = self._unified_defaults(
+                record, resource, built_at, source_version,
+                precomputed_oai=oai_data,
+            )
             index_rows.append(ProjectIndex(project_resource=resource, **defaults))
             seen_ids.add(resource.id)
 
@@ -389,6 +532,12 @@ class ProjectIndexDbService:
                     "licenses",
                     "rights_status",
                     "record_jsonb",
+                    "canonical_rdf_xml",
+                    "institutional_rdf_xml",
+                    "dc_creators",
+                    "dc_contributors",
+                    "has_copyright_holder",
+                    "has_neighbouring_rights_holder",
                     "reference_only",
                     "harvestable",
                     "ownership_filtered",
@@ -409,6 +558,7 @@ class ProjectIndexDbService:
         resource: Resource,
         built_at,
         source_version: str,
+        precomputed_oai: Optional[PrecomputedOaiData] = None,
     ) -> Dict[str, object]:
         """Build defaults for the unified ProjectIndex model."""
         org_code = self._org_code(resource)
@@ -495,6 +645,13 @@ class ProjectIndexDbService:
             "rights_status": {},
             # Full record JSON
             "record_jsonb": record.to_dict(),
+            # Pre-computed OAI-PMH data
+            "canonical_rdf_xml": precomputed_oai.canonical_rdf_xml if precomputed_oai else _serialize_canonical_rdf_xml(resource),
+            "institutional_rdf_xml": precomputed_oai.institutional_rdf_xml if precomputed_oai else _serialize_institutional_rdf_xml(resource),
+            "dc_creators": precomputed_oai.dc_creators if precomputed_oai else [],
+            "dc_contributors": precomputed_oai.dc_contributors if precomputed_oai else [],
+            "has_copyright_holder": self._has_copyright_holder(record, precomputed_oai),
+            "has_neighbouring_rights_holder": self._has_neighbouring_rights_holder(record, precomputed_oai),
             # Flags
             "reference_only": bool(getattr(record, "reference_only", False)),
             "harvestable": bool(getattr(record, "harvestable", True)),
@@ -516,6 +673,24 @@ class ProjectIndexDbService:
         institution = getattr(record, "institution", None)
         label = getattr(institution, "label", "") if institution else ""
         return str(label or "").strip()
+
+    @staticmethod
+    def _has_copyright_holder(record: ProjectRecord, precomputed_oai: Optional[PrecomputedOaiData]) -> bool:
+        """Check if any event actor is a copyright holder."""
+        for event in (record.events or []):
+            for actor in (getattr(event, "actors", []) or []):
+                if getattr(actor, "is_copyright_holder", False):
+                    return True
+        return False
+
+    @staticmethod
+    def _has_neighbouring_rights_holder(record: ProjectRecord, precomputed_oai: Optional[PrecomputedOaiData]) -> bool:
+        """Check if any event actor is a neighbouring rights holder."""
+        for event in (record.events or []):
+            for actor in (getattr(event, "actors", []) or []):
+                if getattr(actor, "is_neighbouring_rights_holder", False):
+                    return True
+        return False
 
     def _category_tokens(self, record: ProjectRecord) -> List[str]:
         tokens: List[str] = []
@@ -892,6 +1067,12 @@ class ProjectIndexDbService:
                     "licenses",
                     "rights_status",
                     "record_jsonb",
+                    "canonical_rdf_xml",
+                    "institutional_rdf_xml",
+                    "dc_creators",
+                    "dc_contributors",
+                    "has_copyright_holder",
+                    "has_neighbouring_rights_holder",
                     "reference_only",
                     "harvestable",
                     "ownership_filtered",

@@ -684,28 +684,39 @@ def _build_dc_payload_from_project(
     if record.institution and record.institution.label:
         _add_dc_value(payload, 'publisher', record.institution.label)
 
-    # Extract creators/contributors from junction entities (ist-urheberin based)
-    # This works for KHM/HMT that have junction tables with ist-urheberin flags
-    creators, contributors = _extract_creators_from_junctions(resource, record)
-    for creator in creators:
-        _add_dc_value(payload, 'creator', creator)
-    for contributor in contributors:
-        _add_dc_value(payload, 'contributor', contributor)
+    # Try to use pre-computed DC metadata from ProjectIndex for better performance
+    project_index = getattr(resource, "project_index", None)
+    precomputed_creators = getattr(project_index, "dc_creators", None) if project_index else None
+    precomputed_contributors = getattr(project_index, "dc_contributors", None) if project_index else None
 
-    # Fallback: If no creators found from junctions, use primary event actors from record
-    # This maintains compatibility with canonical entities (FUK/DET/RSH) and tests
-    if not creators and not contributors:
-        primary_actors = _select_primary_event_actors(record)
-        seen_creators: set[str] = set()
-        for actor in primary_actors:
-            name = actor.get('name')
-            if name and name not in seen_creators:
-                _add_dc_value(payload, 'creator', name)
-                seen_creators.add(name)
+    if precomputed_creators or precomputed_contributors:
+        # Use pre-computed values
+        for creator in (precomputed_creators or []):
+            _add_dc_value(payload, 'creator', creator)
+        for contributor in (precomputed_contributors or []):
+            _add_dc_value(payload, 'contributor', contributor)
+    else:
+        # Fall back to junction query (slower)
+        creators, contributors = _extract_creators_from_junctions(resource, record)
+        for creator in creators:
+            _add_dc_value(payload, 'creator', creator)
+        for contributor in contributors:
+            _add_dc_value(payload, 'contributor', contributor)
 
-            for role in actor.get('roles') or []:
-                contributor_value = f"{name} ({role})" if name else role
-                _add_dc_value(payload, 'contributor', contributor_value)
+        # Fallback: If no creators found from junctions, use primary event actors from record
+        # This maintains compatibility with canonical entities (FUK/DET/RSH) and tests
+        if not creators and not contributors:
+            primary_actors = _select_primary_event_actors(record)
+            seen_creators: set[str] = set()
+            for actor in primary_actors:
+                name = actor.get('name')
+                if name and name not in seen_creators:
+                    _add_dc_value(payload, 'creator', name)
+                    seen_creators.add(name)
+
+                for role in actor.get('roles') or []:
+                    contributor_value = f"{name} ({role})" if name else role
+                    _add_dc_value(payload, 'contributor', contributor_value)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
@@ -1187,9 +1198,17 @@ def _build_simplified_mets_from_project(
             )
         source_xml.append(rdf_elem)
 
+    # Try to use pre-computed RDF/XML from ProjectIndex for better performance
+    project_index = getattr(resource, "project_index", None)
+    precomputed_canonical = getattr(project_index, "canonical_rdf_xml", "") if project_index else ""
+    precomputed_institutional = getattr(project_index, "institutional_rdf_xml", "") if project_index else ""
+
     try:
-        rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
-        canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
+        if precomputed_canonical:
+            canonical_rdf = ET.fromstring(precomputed_canonical.encode("utf-8"))
+        else:
+            rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
+            canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
         _append_rdf_md(
             "simplified-rdf-canonical",
             "RDF",
@@ -1199,7 +1218,15 @@ def _build_simplified_mets_from_project(
     except Exception:
         logger.exception("Failed to build canonical RDF metadata for %s", getattr(resource, "uri", "unknown"))
 
-    institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+    try:
+        if precomputed_institutional:
+            institutional_rdf = ET.fromstring(precomputed_institutional.encode("utf-8"))
+        else:
+            institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+    except Exception:
+        logger.exception("Failed to parse precomputed institutional RDF for %s", getattr(resource, "uri", "unknown"))
+        institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+
     if institutional_rdf is not None:
         _append_rdf_md(
             "simplified-rdf-institutional",

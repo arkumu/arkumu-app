@@ -64,6 +64,7 @@ def build_rdf_graph(
     resource: Resource,
     *,
     graph_service: Optional[CanonicalGraphService] = None,
+    graph_data: Optional[Dict[str, Any]] = None,
 ) -> ET._Element:
     """
     Build an RDF/XML element representing the resource graph.
@@ -71,18 +72,22 @@ def build_rdf_graph(
     Args:
         resource: The root resource whose graph should be serialised.
         graph_service: Optional canonical graph service to reuse in tests.
+        graph_data: Optional pre-fetched graph data (from bulk fetch). If provided,
+                    skips the per-entity graph query.
 
     Returns:
         lxml element containing the RDF/XML serialisation.
     """
     org_code = resource.organization.code if resource.organization else None
     service = graph_service or CanonicalGraphService(org_code=org_code)
-    graph_data = service.get_entity_graph(
-        resource_uri=resource.uri,
-        expand_neighbors=True,
-        depth=2,
-        restrict_to_org=bool(org_code),
-    )
+
+    if graph_data is None:
+        graph_data = service.get_entity_graph(
+            resource_uri=resource.uri,
+            expand_neighbors=True,
+            depth=2,
+            restrict_to_org=bool(org_code),
+        )
 
     # Fetch junction entities (Kreuztabelle) for events to include actor-role relationships
     # Actors already appear with deutscher-name from depth=2, but junctions add:

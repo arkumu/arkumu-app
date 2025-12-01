@@ -254,6 +254,95 @@ class CanonicalGraphService:
             },
         }
 
+    def get_entity_graphs_bulk(
+        self,
+        resource_ids: Sequence[str],
+        *,
+        depth: int = 2,
+        restrict_to_org: bool = True,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Fetch entity graphs for multiple resources in bulk (much faster than per-resource calls).
+
+        Returns a dict mapping resource_id -> graph_data.
+        This method fetches all triples in bulk queries instead of per-resource queries.
+        """
+        if not resource_ids:
+            return {}
+
+        root_ids = list(resource_ids)
+
+        # Fetch all outgoing triples for all root resources in ONE query
+        all_edges = self._fetch_triples_for_subjects(root_ids, None)
+
+        # Track which edges belong to which root
+        edges_by_root: Dict[str, List[GraphEdge]] = {rid: [] for rid in root_ids}
+        for edge in all_edges:
+            if edge.subject_id in edges_by_root:
+                edges_by_root[edge.subject_id].append(edge)
+
+        # Expand neighbors if depth > 0
+        if depth > 0:
+            # Collect all neighbor IDs from all roots
+            all_neighbor_ids: set[str] = set()
+            neighbor_uri_map: Dict[str, Optional[str]] = {}
+            for edges in edges_by_root.values():
+                for e in edges:
+                    if e.object_type != ResourceType.LITERAL and e.object_id not in root_ids:
+                        all_neighbor_ids.add(e.object_id)
+                        neighbor_uri_map[e.object_id] = e.object_uri
+
+            # Fetch all neighbor triples in bulk
+            visited = set(root_ids)
+            frontier_ids = list(all_neighbor_ids - visited)
+            hops = 0
+
+            while frontier_ids and hops < depth:
+                visited.update(frontier_ids)
+
+                # Build entity type map for filtering
+                subject_type_map: Dict[str, Optional[str]] = {
+                    nid: _extract_entity_type_from_uri(neighbor_uri_map.get(nid))
+                    for nid in frontier_ids
+                }
+
+                neighbor_edges = self._fetch_triples_for_subjects(frontier_ids, None)
+
+                # Filter and track which root each neighbor edge relates to
+                for edge in neighbor_edges:
+                    entity_type = subject_type_map.get(edge.subject_id)
+                    predicate = edge.predicate_canonical or edge.predicate_uri
+                    if _should_exclude_predicate(entity_type, predicate):
+                        continue
+
+                    # Add to all roots that have this subject in their graph
+                    for rid, edges in edges_by_root.items():
+                        # Check if this subject is reachable from root
+                        if any(e.object_id == edge.subject_id for e in edges):
+                            edges.append(edge)
+                            if edge.object_type != ResourceType.LITERAL:
+                                neighbor_uri_map[edge.object_id] = edge.object_uri
+
+                # Build next frontier
+                next_frontier = set()
+                for edge in neighbor_edges:
+                    if edge.object_type != ResourceType.LITERAL and edge.object_id not in visited:
+                        next_frontier.add(edge.object_id)
+                frontier_ids = list(next_frontier)
+                hops += 1
+
+        # Build per-root graph dicts
+        result: Dict[str, Dict[str, Any]] = {}
+        for rid in root_ids:
+            edges = edges_by_root[rid]
+            nodes = self._collect_nodes_from_edges(edges)
+            result[rid] = {
+                "root_id": rid,
+                "nodes": nodes,
+                "edges": [e.__dict__ for e in edges],
+            }
+
+        return result
+
     # ----- Internals ------------------------------------------------------
     def _get_canonical_type_from_schema(self, dataset_name: str) -> Optional[str]:
         if not self._schema:
