@@ -780,6 +780,7 @@ class ProjectIndexDbService:
         self,
         *,
         project_uris: Optional[Sequence[str]] = None,
+        skip_rdf: bool = False,
     ) -> Dict[str, int]:
         """Rebuild index tables directly from the canonical graph.
 
@@ -862,6 +863,8 @@ class ProjectIndexDbService:
             built_at=built_at,
             source_version=source_version,
             prune_missing=prune_missing,
+            graph_service=graph_service,
+            skip_rdf=skip_rdf,
         )
 
     def _build_edge_index(
@@ -900,6 +903,8 @@ class ProjectIndexDbService:
         built_at,
         source_version: str,
         prune_missing: bool,
+        graph_service: CanonicalGraphService,
+        skip_rdf: bool = False,
     ) -> Dict[str, int]:
         """Transform graph data into unified ProjectIndex rows."""
         seen_ids: Set[uuid.UUID] = set()
@@ -1037,8 +1042,29 @@ class ProjectIndexDbService:
             index_rows.append(index_row)
             seen_ids.add(resource.id)
 
-        # RDF/XML generated at request time using batch-fetched graph data
-        # (avoids slow per-project serialization during rebuild)
+        # Batch generate RDF/XML for all projects (unless skipped)
+        if index_rows and not skip_rdf:
+            import time as _time
+            total_rows = len(index_rows)
+            logger.info("Batch generating RDF/XML for %d projects...", total_rows)
+            resource_ids_for_rdf = [str(row.project_resource_id) for row in index_rows]
+            t0 = _time.perf_counter()
+            rdf_graphs = graph_service.get_entity_graphs_bulk(resource_ids_for_rdf, depth=2)
+            t1 = _time.perf_counter()
+            logger.info("Bulk graph fetch completed in %.2fs", t1 - t0)
+
+            for idx, row in enumerate(index_rows):
+                if idx % 500 == 0:
+                    logger.info("RDF serialization progress: %d/%d (%.1f%%)", idx, total_rows, 100.0 * idx / total_rows)
+                rid = str(row.project_resource_id)
+                graph_data = rdf_graphs.get(rid)
+                if graph_data:
+                    row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
+                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(row.project_resource, graph_data=graph_data)
+            t2 = _time.perf_counter()
+            logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t2 - t1, (t2 - t1) / total_rows)
+        elif skip_rdf:
+            logger.info("Skipping RDF/XML generation (--skip-rdf flag)")
 
         # Bulk write
         with transaction.atomic():

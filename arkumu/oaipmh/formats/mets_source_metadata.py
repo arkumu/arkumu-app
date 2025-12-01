@@ -226,6 +226,8 @@ def build_rdf_graph(
 
         if _is_literal(obj_node):
             literal_value = obj_node.get("value") or ""
+            # Strip invalid XML control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F)
+            literal_value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', literal_value)
             rdf_graph.add((subject_ref, predicate_ref, rdflib.Literal(literal_value)))
             continue
 

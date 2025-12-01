@@ -282,7 +282,6 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         prefetched_curated_links: Optional[List] = None,
         prefetched_dcp_data: Optional[BatchedDcpData] = None,
         prefetched_graph_data: Optional[BatchedGraphData] = None,
-        prefetched_rdf_graph: Optional[Dict[str, Any]] = None,
     ) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
         original_digital_objects = list(getattr(record, "digital_objects", []) or [])
@@ -323,7 +322,6 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             institution_code=institution_code,
             digital_objects=tuple(normalized_objects),
             curated_selection=curated_selection,
-            graph_data=prefetched_rdf_graph,
         )
 
     # Tailored profile keeps "Oberwerk" umbrella assets so override the parent

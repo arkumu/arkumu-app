@@ -105,7 +105,6 @@ def _build_tailored_project_hint_from_resource(
     prefetched_curated_links: Optional[list] = None,
     prefetched_dcp_data: Optional[object] = None,
     prefetched_graph_data: Optional[object] = None,
-    prefetched_rdf_graph: Optional[Dict[str, Any]] = None,
 ) -> Optional[OAIProject]:
     """Build a tailored project using the tailored-only builder.
 
@@ -155,7 +154,6 @@ def _build_tailored_project_hint_from_resource(
             prefetched_curated_links=prefetched_curated_links,
             prefetched_dcp_data=prefetched_dcp_data,
             prefetched_graph_data=prefetched_graph_data,
-            prefetched_rdf_graph=prefetched_rdf_graph,
         )
         t2 = time.time()
         logger.info(

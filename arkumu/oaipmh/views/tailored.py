@@ -165,14 +165,8 @@ def _tailored_harvestable_page(
     # Graph data needed for harvestability checks
     prefetched_graph_data = batch_fetch_graph_data(all_digital_object_ids) if all_digital_object_ids else None
 
-    # RDF graphs for METS sourceMD - bulk fetch
-    if include_hints and batch_resources:
-        from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
-        project_resource_ids = [str(r.id) for r in batch_resources]
-        rdf_graph_service = CanonicalGraphService(org_code=None)
-        rdf_graphs_by_project = rdf_graph_service.get_entity_graphs_bulk(project_resource_ids, depth=2)
-    else:
-        rdf_graphs_by_project = {}
+    # RDF is precomputed in ProjectIndex (canonical_rdf_xml, institutional_rdf_xml)
+    # No bulk fetch needed - metadata.py reads from project_index via select_related
 
     resources: List[Resource] = []
     project_hints: Dict[str, OAIProject] = {}
@@ -185,13 +179,11 @@ def _tailored_harvestable_page(
         )
         # Get prefetched curated links for this project
         prefetched_links = curated_links_by_project.get(resource.id)
-        rdf_graph_data = rdf_graphs_by_project.get(str(resource.id))
         project_hint = _build_tailored_project_hint_from_resource(
             resource,
             prefetched_curated_links=prefetched_links,
             prefetched_dcp_data=dcp_data,
             prefetched_graph_data=prefetched_graph_data,
-            prefetched_rdf_graph=rdf_graph_data,
         )
         if not project_hint or not project_hint.harvestable:
             continue

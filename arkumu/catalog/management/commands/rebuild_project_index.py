@@ -27,17 +27,24 @@ class Command(BaseCommand):
             default="snapshot",
             help="Data source: 'snapshot' (default) or 'graph' (canonical graph, faster).",
         )
+        parser.add_argument(
+            "--skip-rdf",
+            action="store_true",
+            dest="skip_rdf",
+            help="Skip RDF/XML generation (faster rebuild, no precomputed RDF).",
+        )
 
     def handle(self, *args, **options):
         backend = options.get("backend", "snapshot")
         project_uris = options.get("project_uris") or None
+        skip_rdf = options.get("skip_rdf", False)
 
         service = ProjectIndexDbService()
         start = time.perf_counter()
 
         if backend == "graph":
             self.stdout.write("Rebuilding from canonical graph...")
-            result = service.rebuild_from_graph(project_uris=project_uris)
+            result = service.rebuild_from_graph(project_uris=project_uris, skip_rdf=skip_rdf)
         else:
             self.stdout.write("Rebuilding from snapshot...")
             result = service.rebuild(

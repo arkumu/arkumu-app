@@ -1059,15 +1059,20 @@ def _build_simplified_mets_from_project(
     request: Optional[HttpRequest] = None,
 ) -> ET._Element:
     """Emit the pared-down METS variant used exclusively by the DB endpoint."""
+    import time as _time
+    _t0 = _time.perf_counter()
 
     _register_rosetta_namespaces()
 
     record = project.record
+    _t_dc0 = _time.perf_counter()
     dc_payload = _build_dc_payload_from_project(
         project,
         resource,
         include_event_details=False,
     )
+    _t_dc1 = _time.perf_counter()
+    logger.info("DC payload build took %.3fs", _t_dc1 - _t_dc0)
     reference_parent = None
     for candidate in getattr(record, "reference_project_uris", []) or []:
         if candidate:
@@ -1206,6 +1211,8 @@ def _build_simplified_mets_from_project(
     # Also check for batch-fetched graph_data on the project (from tailored endpoint)
     prefetched_graph = getattr(project, "graph_data", None)
 
+    _t1 = _time.perf_counter()
+
     try:
         if precomputed_canonical:
             canonical_rdf = ET.fromstring(precomputed_canonical.encode("utf-8"))
@@ -1249,6 +1256,8 @@ def _build_simplified_mets_from_project(
             "Simplified METS could not build institutional RDF for %s",
             getattr(resource, "uri", "unknown"),
         )
+
+    _t2 = _time.perf_counter()
 
     harvestable_objects = [
         obj for obj in project.digital_objects
@@ -1304,6 +1313,15 @@ def _build_simplified_mets_from_project(
         )
         ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_id})
 
+    _t3 = _time.perf_counter()
+    logger.info(
+        "METS timing %s: setup=%.3fs, rdf=%.3fs, files=%.3fs, total=%.3fs",
+        getattr(resource, "uri", "?")[-25:],
+        _t1 - _t0,
+        _t2 - _t1,
+        _t3 - _t2,
+        _t3 - _t0,
+    )
     return mets_root
 def _build_mets_from_project(
     project: OAIProject,
