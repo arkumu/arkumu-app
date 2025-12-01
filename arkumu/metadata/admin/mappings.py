@@ -831,30 +831,12 @@ class MappingAdmin(admin.ModelAdmin):
 
         mapping = queryset.first()
 
-        # Build export data from mapping_config with metadata
-        export_data = {
-            "version": (mapping.mapping_config or {}).get("version", "1.0"),
-            "created_at": timezone.now().isoformat(),
-            "exported_from": str(mapping.id),
-            "original_name": mapping.name,
-            "organization_id": mapping.organization_id,
-        }
+        # Export mapping_config with keys renamed for importer compatibility
+        export_data = dict(mapping.mapping_config or {})
 
-        # Add all mapping_config fields
-        if mapping.mapping_config:
-            for key in [
-                "workspace_datasets",
-                "workspace_columns",
-                "entity_mappings",
-                "schema_manifest",
-                "fk_relationships",
-                "external_ontologies",
-                "relationship_contexts",
-                "junction_patterns",
-                "promoted_manifest",
-            ]:
-                if key in mapping.mapping_config:
-                    export_data[key] = mapping.mapping_config[key]
+        # Importer expects 'metadata' not 'original_metadata'
+        if 'original_metadata' in export_data:
+            export_data['metadata'] = export_data.pop('original_metadata')
 
         # Create JSON response
         response = HttpResponse(
