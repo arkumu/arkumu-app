@@ -65,6 +65,11 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
             "Equipment Software",
             "metadata:tabular_equipment_software",
         ),
+        (
+            "alternativer_titel",
+            "Alternative Titel",
+            "metadata:tabular_alternativer_titel",
+        ),
     )
     default_entity = "project"
 

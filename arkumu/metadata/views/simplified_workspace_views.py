@@ -515,6 +515,26 @@ SIMPLIFIED_SECTION_CONFIG: Dict[str, List[Dict[str, Any]]] = {
             ],
         },
     ],
+    "Alternativer_Titel": [
+        {
+            "key": "titel",
+            "title": "Titelinformationen",
+            "badge": "Titel & Sprache",
+            "fields": [
+                "Alternativer Titel-Set-ID",
+                "Alternativer Titel",
+                {
+                    "name": "Sprache des Alternativen Titels",
+                    "search_property": "Sprachbezeichnung",
+                },
+                "Alternativer Untertitel",
+                {
+                    "name": "Sprache des Alternativen Untertitels",
+                    "search_property": "Sprachbezeichnung",
+                },
+            ],
+        },
+    ],
 }
 
 PROJECT_LINK_FIELD_NAME = "Verknüpftes Projekt"
@@ -4126,6 +4146,22 @@ class SimplifiedEquipmentSoftwareEditView(_BaseSimplifiedEditView):
                 self.metadata_entry_entity,
             )
             return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
+
+
+class SimplifiedAlternativerTitelCreateView(_BaseSimplifiedCreateView):
+    dataset_name = "Alternativer_Titel"
+    metadata_entry_entity = "alternativer_titel"
+    template_name = "metadata/simplified_workspace/edit_alternativer_titel.html"
+    page_title = "Neuen Alternativen Titel erstellen"
+    page_description = "Erfasse einen neuen alternativen Titel."
+
+
+class SimplifiedAlternativerTitelEditView(_BaseSimplifiedEditView):
+    dataset_name = "Alternativer_Titel"
+    metadata_entry_entity = "alternativer_titel"
+    template_name = "metadata/simplified_workspace/edit_alternativer_titel.html"
+    page_title = "Alternativen Titel bearbeiten"
+    page_description = "Aktualisiere die Angaben zu diesem alternativen Titel."
 
 
 class ActorParticipationCardView(LoginRequiredMixin, View):

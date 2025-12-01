@@ -417,6 +417,8 @@ urlpatterns = [
     path('edit/ort/', simplified_workspace_views.SimplifiedOrtEditView.as_view(), name='edit_ort'),
     path('edit/digital-object/', simplified_workspace_views.SimplifiedDigitalesObjektEditView.as_view(), name='edit_digital_object'),
     path('edit/equipment-software/', simplified_workspace_views.SimplifiedEquipmentSoftwareEditView.as_view(), name='edit_equipment_software'),
+    path('edit/alternativer-titel/', simplified_workspace_views.SimplifiedAlternativerTitelEditView.as_view(), name='edit_alternativer_titel'),
+    path('create/alternativer-titel/', simplified_workspace_views.SimplifiedAlternativerTitelCreateView.as_view(), name='create_alternativer_titel'),
     path(
         'edit/ereignis/actor-card/',
         simplified_workspace_views.ActorParticipationCardView.as_view(),
@@ -447,6 +449,7 @@ urlpatterns = [
     path('tabular/akteur/', tabular_views.akteur_table_view, name='tabular_akteur'),
     path('tabular/akteur-relation/', tabular_views.akteur_relation_table_view, name='tabular_akteur_relation'),
     path('tabular/bestehender-lizenzvertrag/', tabular_views.bestehender_lizenzvertrag_table_view, name='tabular_bestehender_lizenzvertrag'),
+    path('tabular/alternativer-titel/', tabular_views.alternativer_titel_table_view, name='tabular_alternativer_titel'),
     path('tabular/digitales-objekt/', tabular_views.digitales_objekt_table_view, name='tabular_digitales_objekt'),
     path('tabular/eigenschaft/', tabular_views.eigenschaft_table_view, name='tabular_eigenschaft'),
     path('tabular/equipment-software/', tabular_views.equipment_software_table_view, name='tabular_equipment_software'),
