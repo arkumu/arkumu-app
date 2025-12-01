@@ -840,6 +840,12 @@ class ProjectIndexDbService:
                 elif pred == _CanonicalURIs.JUNCTION_TO_PROJECT and obj_id:
                     self._junctions_by_project.setdefault(obj_id, []).append(subj_id)
 
+        logger.debug(
+            "rebuild_from_graph: junction indexes built - by_event=%d, by_project=%d",
+            len(self._junctions_by_event),
+            len(self._junctions_by_project),
+        )
+
         # PRE-COMPUTE all fields for all projects in ONE pass
         logger.debug("rebuild_from_graph: pre-computing all fields for %d projects", len(subject_ids))
         self._project_cache = self._batch_precompute_all_fields(
@@ -1717,11 +1723,19 @@ class ProjectIndexDbService:
             for t in junction_triples:
                 junction_id = str(t.subject_id)
                 junction_ids.add(junction_id)
+                # Add junction node to nodes dict immediately
+                if junction_id not in nodes:
+                    nodes[junction_id] = {
+                        "uri": t.subject.uri if t.subject else None,
+                        "resource_type": ResourceType.ENTITY.value,
+                    }
                 # Add the im-ereignis edge to the graph
                 edges_by_subject.setdefault(junction_id, []).append({
                     "subject_id": junction_id,
                     "predicate_canonical": _CanonicalURIs.JUNCTION_TO_EVENT,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
                     "object_id": str(t.object_id) if t.object_id else None,
+                    "object_uri": t.object.uri if t.object else None,
                 })
 
         # Pattern 2: KHM - junctions that link TO projects via projekt
@@ -1736,11 +1750,19 @@ class ProjectIndexDbService:
             for t in project_junction_triples:
                 junction_id = str(t.subject_id)
                 junction_ids.add(junction_id)
+                # Add junction node to nodes dict immediately
+                if junction_id not in nodes:
+                    nodes[junction_id] = {
+                        "uri": t.subject.uri if t.subject else None,
+                        "resource_type": ResourceType.ENTITY.value,
+                    }
                 # Add the projekt edge to the graph
                 edges_by_subject.setdefault(junction_id, []).append({
                     "subject_id": junction_id,
                     "predicate_canonical": _CanonicalURIs.JUNCTION_TO_PROJECT,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
                     "object_id": str(t.object_id) if t.object_id else None,
+                    "object_uri": t.object.uri if t.object else None,
                 })
 
         if not junction_ids:
