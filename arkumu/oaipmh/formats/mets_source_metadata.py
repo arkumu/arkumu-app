@@ -65,6 +65,7 @@ def build_rdf_graph(
     *,
     graph_service: Optional[CanonicalGraphService] = None,
     graph_data: Optional[Dict[str, Any]] = None,
+    use_institutional_predicates: bool = False,
 ) -> ET._Element:
     """
     Build an RDF/XML element representing the resource graph.
@@ -74,12 +75,16 @@ def build_rdf_graph(
         graph_service: Optional canonical graph service to reuse in tests.
         graph_data: Optional pre-fetched graph data (from bulk fetch). If provided,
                     skips the per-entity graph query.
+        use_institutional_predicates: If True, use predicate_uri (native) instead of
+                    predicate_canonical (normalized). Used for institutional RDF.
 
     Returns:
         lxml element containing the RDF/XML serialisation.
     """
     org_code = resource.organization.code if resource.organization else None
     service = graph_service or CanonicalGraphService(org_code=org_code)
+
+    skip_junction_fetch = graph_data is not None  # Pre-fetched data already has junctions
 
     if graph_data is None:
         graph_data = service.get_entity_graph(
@@ -93,28 +98,30 @@ def build_rdf_graph(
     # Actors already appear with deutscher-name from depth=2, but junctions add:
     # - ist-urheberin, leistungsschutz flags
     # - links to roles (akteurin-hat-rolle-im-ereignis)
+    # Skip if graph_data was pre-fetched (rebuild already includes junctions)
     nodes = graph_data.get("nodes", {})
     edges = graph_data.get("edges", [])
 
-    # Find event IDs from existing nodes
-    event_ids: List[str] = [
-        node_id
-        for node_id, node in nodes.items()
-        if node.get("uri") and "/ereignis" in node.get("uri", "").lower()
-    ]
+    if not skip_junction_fetch:
+        # Find event IDs from existing nodes
+        event_ids: List[str] = [
+            node_id
+            for node_id, node in nodes.items()
+            if node.get("uri") and "/ereignis" in node.get("uri", "").lower()
+        ]
 
-    if event_ids:
-        junction_edges = service.fetch_junction_entities(event_ids)
-        if junction_edges:
-            # Add junction edges to the graph
-            for edge in junction_edges:
-                edges.append(edge.__dict__)
+        if event_ids:
+            junction_edges = service.fetch_junction_entities(event_ids)
+            if junction_edges:
+                # Add junction edges to the graph
+                for edge in junction_edges:
+                    edges.append(edge.__dict__)
 
-            # Collect new nodes for junction entities and their linked resources
-            new_nodes = service._collect_nodes_from_edges(junction_edges)
-            for node_id, node_data in new_nodes.items():
-                if node_id not in nodes:
-                    nodes[node_id] = node_data
+                # Collect new nodes for junction entities and their linked resources
+                new_nodes = service._collect_nodes_from_edges(junction_edges)
+                for node_id, node_data in new_nodes.items():
+                    if node_id not in nodes:
+                        nodes[node_id] = node_data
 
     rdf_graph = rdflib.Graph()
 
@@ -187,7 +194,10 @@ def build_rdf_graph(
     for edge in edges:
         subj_node = _node_info(edge.get("subject_id"))
         obj_node = _node_info(edge.get("object_id"))
-        predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")
+        if use_institutional_predicates:
+            predicate_source = edge.get("predicate_uri")
+        else:
+            predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")
         normalized_predicate = _normalize_predicate_uri(predicate_source)
 
         if not subj_node or not obj_node or not normalized_predicate:

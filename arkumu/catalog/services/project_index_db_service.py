@@ -69,14 +69,22 @@ def _serialize_canonical_rdf_xml(
         return ""
 
 
-def _serialize_institutional_rdf_xml(resource: Resource) -> str:
-    """Serialize institutional RDF/XML for a resource graph using InstitutionalGraphService."""
-    from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
+def _serialize_institutional_rdf_xml(
+    resource: Resource,
+    graph_data: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Serialize institutional RDF/XML for a resource graph.
 
+    Uses predicate_uri (native URIs) instead of predicate_canonical.
+    When graph_data is provided, reuses the same edges without extra queries.
+    """
     try:
-        rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
-        if rdf_element is None:
-            return ""
+        rdf_element = build_rdf_graph(
+            resource,
+            graph_service=None,
+            graph_data=graph_data,
+            use_institutional_predicates=True,
+        )
         return ET.tostring(rdf_element, encoding="unicode")
     except Exception:
         logger.exception("Failed to serialize institutional RDF/XML for %s", resource.uri)
@@ -120,7 +128,7 @@ def _batch_precompute_oai_data(
         try:
             graph_data = graphs_by_id.get(str(rid))
             canonical_rdf = _serialize_canonical_rdf_xml(resource, graph_data=graph_data)
-            institutional_rdf = _serialize_institutional_rdf_xml(resource)
+            institutional_rdf = _serialize_institutional_rdf_xml(resource, graph_data=graph_data)
 
             # Extract DC metadata
             creators: List[str] = []
@@ -968,6 +976,16 @@ class ProjectIndexDbService:
                 institution_codes=institution_codes,
             )
 
+            # Pre-compute canonical RDF/XML using existing graph data (fast, no extra queries)
+            graph_data_for_rdf = {
+                "root_id": subject_id_str,
+                "nodes": nodes,
+                "edges": edges_by_subject.get(subject_id_str, []),
+            }
+            canonical_rdf_xml = _serialize_canonical_rdf_xml(resource, graph_data=graph_data_for_rdf)
+            # Institutional RDF uses predicate_uri instead of predicate_canonical
+            institutional_rdf_xml = _serialize_institutional_rdf_xml(resource, graph_data=graph_data_for_rdf)
+
             # Build unified ProjectIndex row
             index_row = ProjectIndex(
                 project_resource=resource,
@@ -1010,6 +1028,9 @@ class ProjectIndexDbService:
                 rights_status={},
                 # Full record JSON
                 record_jsonb=record_jsonb,
+                # Pre-computed RDF/XML for fast METS generation
+                canonical_rdf_xml=canonical_rdf_xml,
+                institutional_rdf_xml=institutional_rdf_xml,
                 # Flags
                 reference_only=False,
                 harvestable=True,

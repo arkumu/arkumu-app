@@ -1222,10 +1222,11 @@ def _build_simplified_mets_from_project(
         if precomputed_institutional:
             institutional_rdf = ET.fromstring(precomputed_institutional.encode("utf-8"))
         else:
-            institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+            # Skip expensive institutional RDF query if not precomputed
+            institutional_rdf = None
     except Exception:
         logger.exception("Failed to parse precomputed institutional RDF for %s", getattr(resource, "uri", "unknown"))
-        institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+        institutional_rdf = None
 
     if institutional_rdf is not None:
         _append_rdf_md(
@@ -1995,11 +1996,13 @@ def _build_metadata_element(
         dc_root = _append_dc_metadata(metadata, dc_payload)
         _append_arkumu_identifier(dc_root, resource)
     elif metadata_prefix == "mets":
+        import time
         simplified_mode = _tailored_mode_enabled()
         for project in projects:
             if not project.harvestable:
                 continue
 
+            t_mets_start = time.time()
             if simplified_mode:
                 mets_root = _build_simplified_mets_from_project(project, resource, request=request)
             else:
@@ -2016,13 +2019,23 @@ def _build_metadata_element(
                     dc_source_payloads=dc_payload_source,
                     request=request,
                 )
+            t_mets_gen = time.time()
 
             candidate_wrapper = ET.Element("metadata")
             candidate_wrapper.append(ET.fromstring(ET.tostring(mets_root)))
 
+            t_parse = time.time()
             validation = rosetta_mets_validator.validate_metadata_element(
                 candidate_wrapper,
                 resource_uri=getattr(resource, "uri", None),
+            )
+            t_valid = time.time()
+            logger.info(
+                "METS %s: gen=%.3fs, parse=%.3fs, valid=%.3fs",
+                getattr(resource, "uri", "?")[-20:],
+                t_mets_gen - t_mets_start,
+                t_parse - t_mets_gen,
+                t_valid - t_parse,
             )
 
             if not validation.is_valid:
