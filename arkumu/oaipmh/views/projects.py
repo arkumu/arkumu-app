@@ -103,7 +103,7 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
 def _build_tailored_project_hint_from_resource(
     resource: Resource,
     prefetched_curated_links: Optional[list] = None,
-    prefetched_dcp_folders: Optional[dict] = None,
+    prefetched_dcp_data: Optional[object] = None,
     prefetched_graph_data: Optional[object] = None,
 ) -> Optional[OAIProject]:
     """Build a tailored project using the tailored-only builder.
@@ -112,39 +112,59 @@ def _build_tailored_project_hint_from_resource(
     expensive canonical graph queries. Digital objects come from
     OAIProjectMediaLink via curated media links.
     """
+    import time
     from dataclasses import replace as dataclass_replace
 
+    t0 = time.time()
     record = None
+    record_source = "none"
 
     # Fast path: use pre-computed ProjectIndex.record_jsonb
     project_index = getattr(resource, "project_index", None)
     if project_index is not None:
         try:
             record = project_index.to_record()
+            record_source = "index"
         except Exception:
             logger.debug("Failed to load record from ProjectIndex for %s", resource.uri)
 
     # Fallback to assembler/snapshot only if index record unavailable
     if record is None:
         record = _assemble_record_from_db(resource)
+        if record:
+            record_source = "assembler"
     if record is None and not _db_mode_enabled():
         record = snapshot_service.get_record_by_uri(resource.uri)
+        if record:
+            record_source = "snapshot"
     if record is None:
         return None
+
+    t1 = time.time()
 
     # Clear digital_objects - they come from OAIProjectMediaLink instead
     record = dataclass_replace(record, digital_objects=[])
 
     try:
-        return _tailored_project_builder.from_project_record(
+        result = _tailored_project_builder.from_project_record(
             record,
             skip_shared_event_filter=False,
             skip_format_exclusion=_db_mode_enabled(),
             use_curated_media_links=True,
             prefetched_curated_links=prefetched_curated_links,
-            prefetched_dcp_folders=prefetched_dcp_folders,
+            prefetched_dcp_data=prefetched_dcp_data,
             prefetched_graph_data=prefetched_graph_data,
         )
+        t2 = time.time()
+        logger.info(
+            "OAI build %s: record=%.3fs (%s), builder=%.3fs, total=%.3fs",
+            resource.uri[-20:],
+            t1 - t0,
+            record_source,
+            t2 - t1,
+            t2 - t0,
+        )
+        return result
     except Exception:
         logger.exception("Failed to build tailored OAI project for %s", resource.uri)
         return None

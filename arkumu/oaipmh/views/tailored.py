@@ -162,8 +162,8 @@ def _tailored_harvestable_page(
                 if obj_id:
                     all_digital_object_ids.append(str(obj_id))
 
-    # Batch fetch DCP folders for all digital objects (mainly for KHM)
-    dcp_folders_by_uri = batch_fetch_dcp_folders(all_digital_object_uris)
+    # Batch fetch DCP folders and file lists for all digital objects (mainly for KHM)
+    dcp_data = batch_fetch_dcp_folders(all_digital_object_uris)
 
     # Batch fetch graph data for Rosetta orgs (KHM, HMT) to avoid N+1 queries
     prefetched_graph_data = batch_fetch_graph_data(all_digital_object_ids) if all_digital_object_ids else None
@@ -182,7 +182,7 @@ def _tailored_harvestable_page(
         project_hint = _build_tailored_project_hint_from_resource(
             resource,
             prefetched_curated_links=prefetched_links,
-            prefetched_dcp_folders=dcp_folders_by_uri,
+            prefetched_dcp_data=dcp_data,
             prefetched_graph_data=prefetched_graph_data,
         )
         if not project_hint or not project_hint.harvestable:

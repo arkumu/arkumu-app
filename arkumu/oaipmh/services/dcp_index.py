@@ -54,6 +54,60 @@ def _rosetta_root(org_code: str) -> Optional[str]:
     return None
 
 
+from typing import Dict
+
+
+def batch_get_bundle_members(
+    org_code: str,
+    folder_names: Sequence[str],
+) -> Dict[str, Tuple[str, ...]]:
+    """Batch fetch DCP bundle members for multiple folders at once.
+
+    Returns a dict mapping folder_name -> tuple of relative file paths.
+    Much faster than calling get_bundle_members() per folder.
+    """
+    org = _normalize_org_code(org_code)
+    if not org or not folder_names:
+        return {}
+
+    # Query all folders at once
+    qs = OAIDcpPathIndex.objects.filter(
+        org_code=org,
+        folder_name__in=list(folder_names),
+    ).order_by("folder_name", "relative_file_path")
+
+    # Group results by folder_name
+    results: Dict[str, List[str]] = {fn: [] for fn in folder_names}
+
+    for entry in qs:
+        folder_name = entry.folder_name
+        rel_path = entry.relative_file_path.strip().lstrip("/")
+        if not rel_path:
+            continue
+
+        # Match on folder_name as a segment
+        if "/" not in rel_path:
+            if rel_path == folder_name:
+                results[folder_name].append(rel_path)
+            continue
+
+        segments = rel_path.split("/")
+        try:
+            idx = segments.index(folder_name)
+        except ValueError:
+            continue
+
+        remainder = segments[idx + 1:]
+        if len(remainder) != 1:
+            continue
+
+        candidate = "/".join(segments[idx:])
+        if candidate not in results[folder_name]:
+            results[folder_name].append(candidate)
+
+    return {fn: tuple(paths) for fn, paths in results.items() if paths}
+
+
 def get_bundle_members(
     org_code: str,
     folder_name: str,

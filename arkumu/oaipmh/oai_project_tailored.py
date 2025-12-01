@@ -56,15 +56,25 @@ def batch_fetch_curated_links(project_ids: Sequence[UUID]) -> Dict[UUID, List]:
     return dict(result)
 
 
-def batch_fetch_dcp_folders(digital_object_uris: Sequence[str]) -> Dict[str, str]:
-    """
-    Batch fetch DCP folder paths for multiple digital objects.
+@dataclass
+class BatchedDcpData:
+    """Pre-fetched DCP folder paths and expanded file lists."""
+    folder_paths: Dict[str, str]  # uri -> folder_path
+    file_lists: Dict[str, Tuple[str, ...]]  # folder_name -> (relative_file_paths,)
 
-    Returns a dict mapping digital_object_uri -> folder_path.
-    Only returns entries for objects that have DCP folder triples.
+
+def batch_fetch_dcp_folders(digital_object_uris: Sequence[str]) -> BatchedDcpData:
     """
+    Batch fetch DCP folder paths and file lists for multiple digital objects.
+
+    Returns BatchedDcpData with:
+    - folder_paths: dict mapping digital_object_uri -> folder_path
+    - file_lists: dict mapping folder_name -> tuple of relative file paths
+    """
+    from arkumu.oaipmh.services import dcp_index
+
     if not digital_object_uris:
-        return {}
+        return BatchedDcpData(folder_paths={}, file_lists={})
 
     DCP_FOLDER_PREDICATE = "http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner"
 
@@ -73,14 +83,26 @@ def batch_fetch_dcp_folders(digital_object_uris: Sequence[str]) -> Dict[str, str
         predicate__uri=DCP_FOLDER_PREDICATE,
     ).select_related("subject", "object")
 
-    result: Dict[str, str] = {}
+    folder_paths: Dict[str, str] = {}
+    folder_names: List[str] = []
+
     for triple in triples:
         subject_uri = getattr(triple.subject, "uri", None)
         folder_value = getattr(triple.object, "value", None)
         if subject_uri and folder_value:
-            result[subject_uri] = str(folder_value).strip().replace("\\", "/")
+            folder_path = str(folder_value).strip().replace("\\", "/")
+            folder_paths[subject_uri] = folder_path
+            # Extract folder name (last segment)
+            folder_name = folder_path.rstrip("/").split("/")[-1] if "/" in folder_path else folder_path
+            if folder_name and folder_name not in folder_names:
+                folder_names.append(folder_name)
 
-    return result
+    # Batch fetch file lists for all folders (KHM only for now)
+    file_lists: Dict[str, Tuple[str, ...]] = {}
+    if folder_names:
+        file_lists = dcp_index.batch_get_bundle_members("khm", folder_names)
+
+    return BatchedDcpData(folder_paths=folder_paths, file_lists=file_lists)
 
 
 @dataclass
@@ -233,7 +255,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         skip_format_exclusion: bool = False,
         use_curated_media_links: bool = False,
         prefetched_curated_links: Optional[List] = None,
-        prefetched_dcp_folders: Optional[Dict[str, str]] = None,
+        prefetched_dcp_data: Optional[BatchedDcpData] = None,
         prefetched_graph_data: Optional[BatchedGraphData] = None,
     ) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
@@ -245,14 +267,11 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         filtered_record = self._filter_overarching_projects(filtered_record, institution_code)
 
         # Store prefetched data for use in helper methods
-        self._prefetched_dcp_folders = prefetched_dcp_folders
+        self._prefetched_dcp_data = prefetched_dcp_data
         self._prefetched_graph_data = prefetched_graph_data
 
         # Mark DCP bundle members upfront (before normalization)
         self._mark_dcp_bundle_members(filtered_record, institution_code)
-
-        # Clear the prefetched DCP data after marking (graph data still needed for _normalize_objects)
-        self._prefetched_dcp_folders = None
 
         curated_selection: Optional[CuratedMediaSelection] = None
         if use_curated_media_links:
@@ -295,15 +314,72 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         institution_code: Optional[str],
     ) -> Optional[List[ProjectDigitalObject]]:
         """
-        Expand DCP folders using the path index - delegates to parent implementation.
+        Expand DCP folders using prefetched data or the path index.
 
         When a digital object has a `dateipfad-dcp-ordner` triple, look up all files
-        in that folder from the path index and return them as expanded objects.
+        in that folder from prefetched data or the path index.
         """
-        # Use the parent class implementation which reads from the path index
+        # Only check for KHM institution
+        if (institution_code or "").strip().lower() != "khm":
+            return None
+
+        obj_uri = getattr(obj, "uri", None)
+        if not obj_uri:
+            return None
+
+        # Try to use prefetched data first (batch loaded at page level)
+        prefetched = getattr(self, "_prefetched_dcp_data", None)
+        if prefetched is not None:
+            folder_path = prefetched.folder_paths.get(obj_uri)
+            if not folder_path:
+                return None
+
+            folder_path_clean = folder_path.replace("\\", "/").rstrip("/")
+            folder_name = folder_path_clean.split("/")[-1] if "/" in folder_path_clean else folder_path_clean
+
+            # Use prefetched file lists
+            relative_file_paths = prefetched.file_lists.get(folder_name, ())
+            if not relative_file_paths:
+                return None
+
+            from django.conf import settings
+            rosetta_root = getattr(settings, "OAI_EXTERNAL_ROSETTA_ROOTS", {}).get("khm") or ""
+            rosetta_root = str(rosetta_root).rstrip("/")
+
+            expanded_objects: List[ProjectDigitalObject] = []
+            for rel_path in relative_file_paths:
+                rel_path_clean = str(rel_path).lstrip("/")
+                if not rel_path_clean:
+                    continue
+                abs_path = f"{rosetta_root}/{rel_path_clean}" if rosetta_root else rel_path_clean
+
+                new_obj = ProjectDigitalObject(
+                    path=abs_path,
+                    uri=obj.uri,
+                )
+                new_obj.resource_id = getattr(obj, "resource_id", None)
+
+                # Copy other relevant attributes from the original object
+                for attr in [
+                    "content_type", "size_bytes", "checksum", "checksum_algorithm",
+                    "checksum_provenance", "access_url", "storage_status", "created_at",
+                    "updated_at", "license", "uuid", "genesis_type", "media_type",
+                    "significant_properties_de", "significant_properties_en",
+                ]:
+                    if hasattr(obj, attr):
+                        value = getattr(obj, attr)
+                        if value is not None:
+                            setattr(new_obj, attr, value)
+
+                # Mark as DCP bundle member
+                setattr(new_obj, "_from_dcp_bundle", True)
+                expanded_objects.append(new_obj)
+
+            return expanded_objects if expanded_objects else None
+
+        # Fall back to parent implementation with individual queries
         expanded = super()._expand_dcp_folder_if_needed(obj, institution_code)
         if expanded:
-            # Mark expanded objects so they bypass curated selection filters
             for expanded_obj in expanded:
                 setattr(expanded_obj, "_from_dcp_bundle", True)
         return expanded
@@ -433,9 +509,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             return None
 
         # Use prefetched data if available
-        prefetched = getattr(self, "_prefetched_dcp_folders", None)
+        prefetched = getattr(self, "_prefetched_dcp_data", None)
         if prefetched is not None:
-            folder_path = prefetched.get(obj_uri)
+            folder_path = prefetched.folder_paths.get(obj_uri)
             if folder_path:
                 return folder_path.rstrip("/")
             return None
