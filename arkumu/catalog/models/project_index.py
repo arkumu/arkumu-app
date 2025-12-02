@@ -189,6 +189,16 @@ class ProjectIndex(models.Model):
 
         return card
 
+    # --- RDF properties ---
+
+    @property
+    def has_canonical_rdf(self) -> bool:
+        return bool(self.canonical_rdf_xml)
+
+    @property
+    def has_institutional_rdf(self) -> bool:
+        return bool(self.institutional_rdf_xml)
+
     # --- Record methods ---
 
     def to_record(self) -> Optional["ProjectRecord"]:

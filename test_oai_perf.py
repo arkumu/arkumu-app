@@ -20,12 +20,12 @@ def main():
         print("No resources to test")
         return
 
-    # Time the first page fetch
+    # Time the first page fetch (page_size=10 matches production)
     start = time.time()
     page = _tailored_harvestable_page(
         queryset,
         cursor_position=None,
-        page_size=100,
+        page_size=10,
         include_hints=True,
     )
     elapsed = time.time() - start

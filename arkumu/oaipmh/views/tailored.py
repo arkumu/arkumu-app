@@ -292,12 +292,20 @@ def _list_records_tailored(
     cursor_position_from_token: Optional[str],
     request: HttpRequest,
 ) -> ET._Element:
+    import time
+    t0 = time.perf_counter()
+
     queryset = _tailored_resources_queryset(
         set_spec=set_spec,
         from_date=from_date,
         until_date=until_date,
     )
+    t1 = time.perf_counter()
+    logger.info("ListRecords timing: queryset build %.3fs", t1 - t0)
+
     cursor_marker = _dataset_marker_for_queryset(queryset, field_name="effective_datestamp")
+    t2 = time.perf_counter()
+    logger.info("ListRecords timing: dataset marker %.3fs", t2 - t1)
 
     if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
         return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
@@ -309,6 +317,9 @@ def _list_records_tailored(
         page_size=page_size,
         include_hints=True,
     )
+    t3 = time.perf_counter()
+    logger.info("ListRecords timing: page fetch %.3fs", t3 - t2)
+
     resources = page.resources
 
     if offset == 0 and not resources:

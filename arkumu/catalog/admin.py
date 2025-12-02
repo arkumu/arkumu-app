@@ -2,6 +2,8 @@ import base64
 import json
 
 from django.contrib import admin
+from django.db.models import Case, When, Value, BooleanField
+from django.db.models.functions import Length
 from django.template.defaultfilters import filesizeformat, truncatechars
 from django.utils.html import format_html
 
@@ -77,6 +79,24 @@ class PreviewImagesAdmin(admin.ModelAdmin):
 class ProjectIndexAdmin(admin.ModelAdmin):
     """Unified admin for the consolidated ProjectIndex model."""
 
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        # Defer large text fields and annotate with length checks
+        return qs.defer(
+            "canonical_rdf_xml", "institutional_rdf_xml", "record_jsonb"
+        ).annotate(
+            _has_canonical_rdf=Case(
+                When(canonical_rdf_xml__gt="", then=Value(True)),
+                default=Value(False),
+                output_field=BooleanField(),
+            ),
+            _has_institutional_rdf=Case(
+                When(institutional_rdf_xml__gt="", then=Value(True)),
+                default=Value(False),
+                output_field=BooleanField(),
+            ),
+        )
+
     list_display = (
         "title_short",
         "org_code",
@@ -87,6 +107,8 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         "event_count",
         "public_access_level",
         "is_public_approved",
+        "has_canonical_rdf_display",
+        "has_institutional_rdf_display",
         "built_at",
     )
     list_display_links = ("title_short",)
@@ -208,6 +230,14 @@ class ProjectIndexAdmin(admin.ModelAdmin):
     @admin.display(description="Evt.")
     def event_count(self, obj):
         return len(obj.events) if obj.events else 0
+
+    @admin.display(description="RDF", boolean=True)
+    def has_canonical_rdf_display(self, obj):
+        return getattr(obj, "_has_canonical_rdf", False)
+
+    @admin.display(description="Inst.", boolean=True)
+    def has_institutional_rdf_display(self, obj):
+        return getattr(obj, "_has_institutional_rdf", False)
 
     @admin.display(description="Categories (flat)")
     def category_labels_display(self, obj):
