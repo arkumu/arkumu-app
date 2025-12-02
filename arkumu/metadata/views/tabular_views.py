@@ -1736,24 +1736,9 @@ def _tabular_view(request, entity_type: str):
     paginator = Paginator(subjects_qs, 20)
     page_obj = paginator.get_page(page_number)
 
+    # NOTE: EntityLabelResolver disabled for performance - it makes N+1 queries
+    # per entity. The _build_entity_label_map batch query is sufficient.
     label_resolver: Optional[EntityLabelResolver] = None
-    try:
-        mapping = Mapping.get_active_for_organization(org)
-    except Exception:
-        mapping = None
-        logger.debug("Failed to load mapping for org %s", org.code, exc_info=True)
-
-    if mapping:
-        try:
-            schema_service = SchemaWorkspaceService(mapping=mapping, organization=org)
-        except Exception:
-            logger.debug(
-                "Failed to initialize schema workspace service for org %s",
-                org.code,
-                exc_info=True,
-            )
-        else:
-            label_resolver = EntityLabelResolver(schema_service)
 
     # Build rows for current page
     rows, columns_meta = _build_rows_for_subjects(
