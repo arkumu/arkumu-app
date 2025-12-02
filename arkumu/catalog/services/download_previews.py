@@ -34,8 +34,9 @@ class DownloadPreviews:
         return result
 
     def _get_download_paths(self, force=False):
-        preview_objs = [triple.object for triple in Triple.objects.filter(predicate__in=self.preview_pred)]
-        paths = [*self._digital_objs_path(preview_objs), *self._digital_objs_path_khm(preview_objs)]
+        preview_objs_other = [triple.object for triple in Triple.objects.filter(predicate__in=self.preview_pred).exclude(source__code='khm')]
+        preview_objs_khm = [triple.object for triple in Triple.objects.filter(predicate__in=self.preview_pred, source__code='khm')]
+        paths = [*self._digital_objs_path(preview_objs_other), *self._digital_objs_path_khm(preview_objs_khm)]
         if not force:
             paths = self._remove_already_downloaded(paths)
 
