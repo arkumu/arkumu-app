@@ -60,6 +60,71 @@ def _extract_dc_metadata(resource: Resource, record: ProjectRecord) -> DcMetadat
     )
 
 
+# Institution keywords to filter out from DC creators/contributors
+_INSTITUTION_KEYWORDS = (
+    "universität", "hochschule", "akademie", "institut", "university",
+    "college", "school", "academy", "institute", "stiftung", "foundation",
+)
+
+
+def _extract_dc_metadata_from_record(record: ProjectRecord) -> DcMetadata:
+    """Extract DC creators/contributors directly from ProjectRecord.
+
+    Uses actor data already in record.events[].actors[] without additional queries.
+    - Creator: is_copyright_holder=True OR is_neighbouring_rights_holder=True
+    - Contributor: neither is True
+    - Format: "Name (Role)" or just "Name"
+    - Skips institutions (Universität, Hochschule, etc.)
+    """
+    creators: List[str] = []
+    contributors: List[str] = []
+    seen_names: Set[str] = set()
+    has_copyright = False
+    has_neighbouring = False
+
+    def is_institution(name: str) -> bool:
+        name_lower = name.lower()
+        return any(kw in name_lower for kw in _INSTITUTION_KEYWORDS)
+
+    for event in (record.events or []):
+        for actor in (getattr(event, "actors", []) or []):
+            name = getattr(actor, "name", None)
+            if not name or name in seen_names:
+                continue
+            if is_institution(name):
+                continue
+            seen_names.add(name)
+
+            # Get first role if available
+            roles = getattr(actor, "roles", []) or []
+            role = roles[0] if roles else None
+
+            # Format as "Name (Role)" or just "Name"
+            formatted = f"{name} ({role})" if role else name
+
+            # Check rights flags
+            is_copyright = getattr(actor, "is_copyright_holder", False)
+            is_neighbouring = getattr(actor, "is_neighbouring_rights_holder", False)
+
+            if is_copyright:
+                has_copyright = True
+            if is_neighbouring:
+                has_neighbouring = True
+
+            # Creator if has copyright OR neighbouring rights
+            if is_copyright or is_neighbouring:
+                creators.append(formatted)
+            else:
+                contributors.append(formatted)
+
+    return DcMetadata(
+        creators=creators,
+        contributors=contributors,
+        has_copyright_holder=has_copyright,
+        has_neighbouring_rights_holder=has_neighbouring,
+    )
+
+
 def _serialize_canonical_rdf_xml(
     resource: Resource,
     graph_data: Optional[Dict[str, Any]] = None,
@@ -122,6 +187,40 @@ def _serialize_institutional_rdf_xml(
     except Exception:
         logger.exception("Failed to serialize institutional RDF/XML for %s", resource.uri)
         return ""
+
+
+def _build_oai_from_graphs(
+    graphs: "ProjectGraphs",
+    resource: Resource,
+    record: ProjectRecord,
+) -> "PrecomputedOaiData":
+    """Build OAI data directly from pre-fetched ProjectGraphs.
+
+    Uses the same graph data for both canonical and institutional RDF,
+    avoiding redundant database queries.
+    """
+    # Get org_code for institutional RDF
+    org = getattr(resource, "organization", None)
+    org_code = str(getattr(org, "code", "") or "").strip().lower() if org else ""
+
+    # Convert ProjectGraphs to graph_data format
+    graph_data = graphs.to_graph_data()
+
+    # Generate RDF using the graph data
+    canonical_rdf_xml = _serialize_canonical_rdf_xml(resource, graph_data=graph_data)
+    institutional_rdf_xml = _serialize_institutional_rdf_xml(
+        resource, graph_data=graph_data, org_code=org_code
+    )
+
+    # Extract DC metadata from record (no extra queries)
+    dc_metadata = _extract_dc_metadata_from_record(record)
+
+    return PrecomputedOaiData(
+        canonical_rdf_xml=canonical_rdf_xml,
+        institutional_rdf_xml=institutional_rdf_xml,
+        dc_creators=dc_metadata.creators,
+        dc_contributors=dc_metadata.contributors,
+    )
 
 
 @dataclass
@@ -458,21 +557,25 @@ class ProjectIndexDbService:
         *,
         project_uris: Optional[Sequence[str]] = None,
         force_snapshot: bool = False,
-        use_graph_service: bool = False,
+        use_graph_service: bool = True,
         batch_size: int = 100,
     ) -> Dict[str, int]:
         """Rebuild index tables from ProjectRecord instances.
 
+        Uses graph_service by default for efficient batched fetching.
+
         Args:
             project_uris: Optional list of specific URIs to rebuild
-            force_snapshot: Force refresh of snapshot cache (ignored if use_graph_service=True)
-            use_graph_service: Use graph_service instead of snapshot for fetching
-            batch_size: Batch size for graph_service (default 100)
+            force_snapshot: Force refresh of snapshot cache (only used if use_graph_service=False)
+            use_graph_service: Use graph_service for fetching (default True)
+            batch_size: Batch size for graph_service fetching (default 100)
         """
+        graphs_map: Optional[Dict[str, "ProjectGraphs"]] = None
+
         if project_uris:
             records = self._records_for_uris(project_uris)
         elif use_graph_service:
-            records = self._records_from_graph_service(batch_size=batch_size)
+            records, graphs_map = self._records_from_graph_service(batch_size=batch_size)
         else:
             snapshot = self.snapshot_service.get_cross_institutional_snapshot(
                 force_refresh=force_snapshot,
@@ -489,6 +592,7 @@ class ProjectIndexDbService:
             resources,
             source_version,
             prune_missing=prune_missing,
+            graphs_map=graphs_map,
         )
 
     # ------------------------------------------------------------------ #
@@ -515,7 +619,7 @@ class ProjectIndexDbService:
         self,
         org_codes: Sequence[str] = DEFAULT_ORG_CODES,
         batch_size: int = 100,
-    ) -> List[ProjectRecord]:
+    ) -> Tuple[List[ProjectRecord], Dict[str, "ProjectGraphs"]]:
         """Build ProjectRecord list using graph_service batched fetching.
 
         More efficient than snapshot for large catalogs:
@@ -528,9 +632,12 @@ class ProjectIndexDbService:
             batch_size: Projects per batch (default 100)
 
         Returns:
-            List of ProjectRecord instances
+            Tuple of (records, graphs_by_project_id)
         """
+        from arkumu.projects.services.graph_service import ProjectGraphs
+
         records: List[ProjectRecord] = []
+        graphs_map: Dict[str, ProjectGraphs] = {}
 
         for org_code in org_codes:
             org_count = 0
@@ -538,6 +645,7 @@ class ProjectIndexDbService:
                 try:
                     record = graphs.to_project_record(project_id)
                     records.append(record)
+                    graphs_map[project_id] = graphs
                     org_count += 1
                 except Exception:
                     logger.exception(
@@ -556,7 +664,7 @@ class ProjectIndexDbService:
             "ProjectIndexDbService: total %d records from graph_service",
             len(records),
         )
-        return records
+        return records, graphs_map
 
     def _resource_map(self, records: Sequence[ProjectRecord]) -> Dict[uuid.UUID, Resource]:
         ids: List[uuid.UUID] = []
@@ -595,6 +703,7 @@ class ProjectIndexDbService:
         source_version: str,
         *,
         prune_missing: bool,
+        graphs_map: Optional[Dict[str, "ProjectGraphs"]] = None,
     ) -> Dict[str, int]:
         built_at = self.now
         seen_ids: set[uuid.UUID] = set()
@@ -616,12 +725,25 @@ class ProjectIndexDbService:
                 continue
             valid_pairs.append((record, subject_uuid))
 
-        # Batch pre-compute OAI data using BULK graph fetching
-        valid_resource_map = {rid: resource_map[rid] for _, rid in valid_pairs}
-        valid_record_map = {rid: record.to_dict() for record, rid in valid_pairs}
-        logger.info("Batch pre-computing OAI data for %d resources...", len(valid_pairs))
-        oai_cache = _batch_precompute_oai_data(valid_resource_map, valid_record_map)
-        logger.info("OAI data pre-computation complete.")
+        # Pre-compute OAI data: use graphs_map if available (no extra queries), else batch fetch
+        oai_cache: Dict[uuid.UUID, PrecomputedOaiData] = {}
+        if graphs_map:
+            # Use pre-fetched graphs - no additional DB queries needed
+            logger.info("Building OAI data from %d pre-fetched graphs...", len(valid_pairs))
+            for record, subject_uuid in valid_pairs:
+                graphs = graphs_map.get(str(subject_uuid))
+                if graphs:
+                    oai_cache[subject_uuid] = _build_oai_from_graphs(
+                        graphs, resource_map[subject_uuid], record
+                    )
+            logger.info("OAI data built from graphs complete.")
+        else:
+            # Fallback: batch fetch graphs via CanonicalGraphService
+            valid_resource_map = {rid: resource_map[rid] for _, rid in valid_pairs}
+            valid_record_map = {rid: record.to_dict() for record, rid in valid_pairs}
+            logger.info("Batch pre-computing OAI data for %d resources...", len(valid_pairs))
+            oai_cache = _batch_precompute_oai_data(valid_resource_map, valid_record_map)
+            logger.info("OAI data pre-computation complete.")
 
         for record, subject_uuid in valid_pairs:
             resource = resource_map[subject_uuid]
@@ -717,6 +839,9 @@ class ProjectIndexDbService:
             cp.label for cp in (record.catchphrases or []) if getattr(cp, "label", None)
         ]
 
+        # Extract DC metadata from record (fallback when precomputed_oai is None)
+        dc_from_record = _extract_dc_metadata_from_record(record) if not precomputed_oai else None
+
         # Build structured data for detail views
         categories_structured = [
             {"label": cat.label, "uri": getattr(cat, "uri", ""), "slug": getattr(cat, "slug", "")}
@@ -794,8 +919,9 @@ class ProjectIndexDbService:
             # Pre-computed OAI-PMH data
             "canonical_rdf_xml": precomputed_oai.canonical_rdf_xml if precomputed_oai else _serialize_canonical_rdf_xml(resource),
             "institutional_rdf_xml": precomputed_oai.institutional_rdf_xml if precomputed_oai else _serialize_institutional_rdf_xml(resource),
-            "dc_creators": precomputed_oai.dc_creators if precomputed_oai else [],
-            "dc_contributors": precomputed_oai.dc_contributors if precomputed_oai else [],
+            # DC metadata: use precomputed or extract from record (no extra queries)
+            "dc_creators": precomputed_oai.dc_creators if precomputed_oai else dc_from_record.creators,
+            "dc_contributors": precomputed_oai.dc_contributors if precomputed_oai else dc_from_record.contributors,
             "has_copyright_holder": self._has_copyright_holder(record, precomputed_oai),
             "has_neighbouring_rights_holder": self._has_neighbouring_rights_holder(record, precomputed_oai),
             # Flags
