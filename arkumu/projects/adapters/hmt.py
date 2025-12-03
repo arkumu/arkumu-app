@@ -4,8 +4,6 @@ Junction patterns:
 - Project-Event: 01_hfm_Kreuz_Projekt_Ereignis (junction -> projekt -> project, junction -> ereignis -> event)
 - Event-DigitalObject: 07_hfm_Kreuz_Ereignis_DigitalesObjekt (junction -> ereignis -> event, junction -> digitales-objekt -> DO)
 - Actor-Event: 03_hfm_Kreuz_Ereignis_Akteure (standard actor junction)
-
-HMT predicates often lack canonical_uri mappings in the database.
 """
 
 from __future__ import annotations
@@ -19,26 +17,39 @@ from arkumu.projects.adapters.base import (
     InstitutionAdapter,
     CanonicalURIs,
     DigitalObjectData,
-    EventData,
     _as_uuid,
 )
+
+
+class HmtPredicates:
+    """HMT-specific predicate URIs from database."""
+    # Junction foreign keys
+    EREIGNIS_FK = "http://arkumu.org/data/hmt/properties/ereignis-nr-fk"
+    DIGITALES_OBJEKT_FK = "http://arkumu.org/data/hmt/properties/digitalesobjekt-id-fk"
+    AKTEUR_FK = "http://arkumu.org/data/hmt/properties/hfmt-akteur-id-fk"
+
+    # Digital object properties
+    FILE_PATH = "http://arkumu.org/data/hmt/properties/dateipfad-absolut"
+    FILE_NAME = "http://arkumu.org/data/hmt/properties/digitales-objekt-dateiname"
+
+    # Actor properties
+    IST_URHEBERIN = "http://arkumu.org/data/hmt/properties/ist-urheberin"
+    LEISTUNGSSCHUTZRECHTE = "http://arkumu.org/data/hmt/properties/besitzt-leistungsschutzrechte"
+    JUNCTION_ROLLE = "http://arkumu.org/data/hmt/properties/junction-rolle"
+    AKTEURIN_NAME = "http://arkumu.org/data/hmt/properties/akteurin-name"
 
 
 class HmtAdapter(InstitutionAdapter):
     """Adapter for HMT institution.
 
-    HMT uses:
-    - 'ereignis' predicate (not 'im-ereignis') for junction -> event links
-    - Some predicates lack canonical_uri mappings in the database
-
-    The PREDICATE_CANONICAL_MAP provides fallback mappings for predicates
-    that don't have canonical_uri set.
+    HMT uses junction tables with specific foreign key predicates.
+    All queries use exact predicate URIs for efficiency.
     """
 
     ORG_CODE = "hmt"
-    JUNCTION_PREDICATE = "http://arkumu.org/data/hmt/properties/ereignis"
+    JUNCTION_PREDICATE = HmtPredicates.EREIGNIS_FK
 
-    # Fallback mappings for HMT predicates lacking canonical_uri
+    # Fallback mappings for HMT predicates to canonical URIs
     PREDICATE_CANONICAL_MAP = {
         "/ist-urheberin": CanonicalURIs.IST_URHEBERIN,
         "/besitzt-leistungsschutzrechte": CanonicalURIs.LEISTUNGSSCHUTZRECHTE,
@@ -52,7 +63,7 @@ class HmtAdapter(InstitutionAdapter):
         project_uuid: uuid.UUID,
         event_ids: Optional[Sequence[str]],
     ) -> tuple[Set[uuid.UUID], Dict[uuid.UUID, uuid.UUID]]:
-        """Find junctions via ereignis -> event pattern."""
+        """Find junctions via ereignis-nr-fk -> event pattern."""
         from arkumu.metadata.models.triples import Triple
 
         if not event_ids:
@@ -63,11 +74,12 @@ class HmtAdapter(InstitutionAdapter):
         if not event_uuids:
             return set(), {}
 
-        # Find junctions pointing to events via ereignis predicate
-        # HMT uses 'ereignis' not 'im-ereignis'
+        # Find junctions pointing to events via exact predicate URIs
         junction_triples = Triple.objects.filter(
-            Q(predicate__canonical_uri=CanonicalURIs.EVENT)
-            | Q(predicate__uri__icontains="ereignis"),
+            predicate__uri__in=[
+                HmtPredicates.EREIGNIS_FK,
+                CanonicalURIs.EVENT,
+            ],
             object_id__in=event_uuids,
             subject__organization__code__iexact="hmt",
         ).values_list("subject_id", "object_id")
@@ -109,10 +121,8 @@ class HmtAdapter(InstitutionAdapter):
         from arkumu.metadata.models.triples import Triple
 
         # Find project-event junctions that point to this project
-        # Junction has: projekt -> project, ereignis -> event
         projekt_junctions = Triple.objects.filter(
-            Q(predicate__canonical_uri=CanonicalURIs.PROJEKT)
-            | Q(predicate__uri__icontains="/projekt"),
+            predicate__canonical_uri=CanonicalURIs.PROJEKT,
             object_id=project_uuid,
             subject__organization__code__iexact="hmt",
         ).values_list("subject_id", flat=True)
@@ -121,10 +131,12 @@ class HmtAdapter(InstitutionAdapter):
         if not junction_ids:
             return []
 
-        # Now find ereignis links from these junctions
+        # Now find ereignis links from these junctions using exact URIs
         event_triples = Triple.objects.filter(
-            Q(predicate__canonical_uri=CanonicalURIs.EVENT)
-            | Q(predicate__uri__icontains="ereignis"),
+            predicate__uri__in=[
+                HmtPredicates.EREIGNIS_FK,
+                CanonicalURIs.EVENT,
+            ],
             subject_id__in=junction_ids,
         ).values_list("object_id", flat=True)
 
@@ -151,13 +163,15 @@ class HmtAdapter(InstitutionAdapter):
         event_uuids = [_as_uuid(eid) for eid in event_ids]
         event_uuids = [e for e in event_uuids if e is not None]
 
-        # Find event-DO junctions that point to these events
+        # Find event-DO junctions that point to these events using exact predicates
         event_do_junctions = Triple.objects.filter(
-            Q(predicate__canonical_uri=CanonicalURIs.EVENT)
-            | Q(predicate__uri__icontains="ereignis"),
+            predicate__uri__in=[
+                HmtPredicates.EREIGNIS_FK,
+                CanonicalURIs.EVENT,
+            ],
             object_id__in=event_uuids,
             subject__organization__code__iexact="hmt",
-            subject__entity_type__uri__icontains="kreuz-ereignis-digitalesobjekt",
+            subject__uri__icontains="kreuz-ereignis-digitalesobjekt",
         ).values_list("subject_id", "object_id")
 
         junction_ids: Set[uuid.UUID] = set()
@@ -167,26 +181,14 @@ class HmtAdapter(InstitutionAdapter):
             junction_event_map[junction_id] = str(event_id)
 
         if not junction_ids:
-            # Fallback: try without entity_type filter
-            event_do_junctions = Triple.objects.filter(
-                Q(predicate__canonical_uri=CanonicalURIs.EVENT)
-                | Q(predicate__uri__icontains="ereignis"),
-                object_id__in=event_uuids,
-                subject__organization__code__iexact="hmt",
-            ).values_list("subject_id", "object_id")
-
-            for junction_id, event_id in event_do_junctions:
-                junction_ids.add(junction_id)
-                junction_event_map[junction_id] = str(event_id)
-
-        if not junction_ids:
             return []
 
-        # Find digital object links from these junctions
+        # Find digital object links from these junctions using exact predicates
         do_triples = Triple.objects.filter(
-            Q(predicate__canonical_uri=CanonicalURIs.DIGITAL_OBJECT)
-            | Q(predicate__uri__icontains="digitales")
-            | Q(predicate__uri__icontains="digitalesobjekt"),
+            predicate__uri__in=[
+                HmtPredicates.DIGITALES_OBJEKT_FK,
+                CanonicalURIs.DIGITAL_OBJECT,
+            ],
             subject_id__in=junction_ids,
         ).values_list("subject_id", "object_id")
 
@@ -214,11 +216,13 @@ class HmtAdapter(InstitutionAdapter):
         do_resources = Resource.objects.filter(id__in=do_uuids).values("id", "uri")
         uri_map = {str(r["id"]): r["uri"] for r in do_resources}
 
-        # Get file paths
+        # Get file paths using exact predicates
         path_triples = Triple.objects.filter(
-            Q(predicate__canonical_uri=CanonicalURIs.FILE_PATH)
-            | Q(predicate__uri__icontains="dateipfad")
-            | Q(predicate__uri__icontains="dateiname"),
+            predicate__uri__in=[
+                HmtPredicates.FILE_PATH,
+                HmtPredicates.FILE_NAME,
+                CanonicalURIs.FILE_PATH,
+            ],
             subject_id__in=do_uuids,
         ).select_related("object")
 

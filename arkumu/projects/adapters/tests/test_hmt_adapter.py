@@ -163,5 +163,5 @@ class TestHmtJunctionPatterns:
     def test_actor_event_junction_pattern(self):
         """HMT uses 03_hfm_Kreuz_Ereignis_Akteure for actor-event links."""
         adapter = HmtAdapter()
-        # Junction has: ereignis -> event, akteurin -> actor
-        assert adapter.JUNCTION_PREDICATE == "http://arkumu.org/data/hmt/properties/ereignis"
+        # Junction has: ereignis-nr-fk -> event, akteurin -> actor
+        assert adapter.JUNCTION_PREDICATE == "http://arkumu.org/data/hmt/properties/ereignis-nr-fk"

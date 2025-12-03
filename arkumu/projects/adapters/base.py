@@ -107,16 +107,21 @@ class ProjectGraph:
         return list(self.triples)
 
 
-# Common canonical URIs
+# Common canonical URIs from database mappings
 class CanonicalURIs:
-    """Canonical predicate URIs used across institutions."""
+    """Canonical predicate URIs used across institutions.
+
+    These URIs match the canonical_uri field in the database Predicate/Resource model.
+    """
     # Project properties
-    TITLE = "http://arkumu.org/data/properties/projekttitel"
-    SUBTITLE = "http://arkumu.org/data/properties/projektuntertitel"
-    DESCRIPTION = "http://arkumu.org/data/properties/projektbeschreibung"
+    TITLE = "http://arkumu.org/data/properties/bevorzugter-titel"
+    SUBTITLE = "http://arkumu.org/data/properties/bevorzugter-untertitel"
+    DESCRIPTION = "http://arkumu.org/data/properties/beschreibung"
+    DESCRIPTION_DE = "http://arkumu.org/data/properties/deutsche-beschreibung"
     IMAGE = "http://arkumu.org/data/properties/vorschaubild"
     INSTITUTION = "http://arkumu.org/data/properties/einliefernde-hochschule"
     CATEGORY = "http://arkumu.org/data/properties/projektkategorie"
+    PROJECT_TYPE = "http://arkumu.org/data/properties/projektart"
 
     # Project -> Event link
     EVENT = "http://arkumu.org/data/properties/ereignis"
@@ -146,7 +151,8 @@ class CanonicalURIs:
     # Digital object predicates
     DIGITAL_OBJECT = "http://arkumu.org/data/properties/digitales-objekt"
     FILE_PATH = "http://arkumu.org/data/properties/dateipfad"
-    LICENSE = "http://arkumu.org/data/properties/lizenz"
+    FILE_NAME = "http://arkumu.org/data/properties/dateiname"
+    LICENSE = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
 
     # Institution/Category name predicates
     INSTITUTION_NAME = "http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule"
@@ -649,11 +655,12 @@ class InstitutionAdapter(ABC):
         except Resource.DoesNotExist:
             return None
 
-        # Get project properties
+        # Get project properties - use canonical URIs from database
         property_predicates = [
             CanonicalURIs.TITLE,
             CanonicalURIs.SUBTITLE,
             CanonicalURIs.DESCRIPTION,
+            CanonicalURIs.DESCRIPTION_DE,
             CanonicalURIs.IMAGE,
             CanonicalURIs.INSTITUTION,
             CanonicalURIs.CATEGORY,
@@ -664,35 +671,38 @@ class InstitutionAdapter(ABC):
         category_ids: List[uuid.UUID] = []
         institution_id: Optional[uuid.UUID] = None
 
+        # Query by canonical_uri since the DB has proper mappings
         prop_triples = Triple.objects.filter(
             subject_id=project_uuid,
-        ).filter(
-            Q(predicate__canonical_uri__in=property_predicates)
-            | Q(predicate__uri__icontains="projekt")
+            predicate__canonical_uri__in=property_predicates,
         ).select_related("predicate", "object")
 
         for t in prop_triples:
-            pred = t.predicate.canonical_uri or t.predicate.uri or ""
-            pred = self.normalize_predicate(pred)
+            # Use canonical_uri for matching since that's what we filter by
+            pred = t.predicate.canonical_uri
 
             if t.object.resource_type == ResourceType.LITERAL:
                 value = t.object.value
             else:
                 value = t.object.uri or str(t.object_id)
 
-            if pred == CanonicalURIs.TITLE or "projekttitel" in pred:
+            if pred == CanonicalURIs.TITLE:
                 props["title"] = value
-            elif pred == CanonicalURIs.SUBTITLE or "projektuntertitel" in pred:
+            elif pred == CanonicalURIs.SUBTITLE:
                 props["subtitle"] = value
-            elif pred == CanonicalURIs.DESCRIPTION or "projektbeschreibung" in pred:
-                props["description"] = value
-            elif pred == CanonicalURIs.IMAGE or "vorschaubild" in pred:
+            elif pred in (CanonicalURIs.DESCRIPTION, CanonicalURIs.DESCRIPTION_DE):
+                # Only set description if not already set
+                if "description" not in props:
+                    props["description"] = value
+            elif pred == CanonicalURIs.IMAGE:
                 props["image"] = value
-            elif pred == CanonicalURIs.INSTITUTION or "einliefernde-hochschule" in pred:
-                props["institution_uri"] = value
-                if t.object.resource_type != ResourceType.LITERAL:
+            elif pred == CanonicalURIs.INSTITUTION:
+                if t.object.resource_type == ResourceType.LITERAL:
+                    props["institution_label"] = value
+                else:
+                    props["institution_uri"] = value
                     institution_id = t.object_id
-            elif pred == CanonicalURIs.CATEGORY or "projektkategorie" in pred:
+            elif pred == CanonicalURIs.CATEGORY:
                 category_uris.append(value)
                 if t.object.resource_type != ResourceType.LITERAL:
                     category_ids.append(t.object_id)
@@ -729,24 +739,37 @@ class InstitutionAdapter(ABC):
 
             category_labels = [label_map.get(cid, "") for cid in category_ids]
 
+        # Use institution_label from props (literal) or fetched label (entity)
+        final_institution_label = props.get("institution_label") or institution_label
+
         return ProjectPropertiesData(
             title=props.get("title"),
             subtitle=props.get("subtitle"),
             description=props.get("description"),
             image=props.get("image"),
             institution_uri=props.get("institution_uri"),
-            institution_label=institution_label,
+            institution_label=final_institution_label,
             category_uris=category_uris,
             category_labels=category_labels,
         )
 
+    # -------------------------------------------------------------------------
+    # Efficient graph traversal (3 queries)
+    # -------------------------------------------------------------------------
+
     def get_project_graph(self, project_id: str) -> Optional[ProjectGraph]:
-        """Get complete project data for RDF serialization.
+        """Get complete project data using efficient 3-query graph traversal.
+
+        Query 1: Project's direct triples
+        Query 2: Junction triples (to get their targets)
+        Query 3: Entity triples (events, actors, DOs)
 
         Returns a ProjectGraph with all data needed to generate both
         canonical and institutional RDF.
         """
-        from arkumu.metadata.models.resource import Resource
+        from arkumu.metadata.models.triples import Triple
+        from arkumu.metadata.models.resource import Resource, ResourceType
+        from collections import defaultdict
 
         project_uuid = _as_uuid(project_id)
         if not project_uuid:
@@ -757,74 +780,452 @@ class InstitutionAdapter(ABC):
         except Resource.DoesNotExist:
             return None
 
-        properties = self.get_project_properties(project_id)
-        if not properties:
-            properties = ProjectPropertiesData()
+        # Query 1: Project's direct triples
+        project_triples = list(Triple.objects.filter(
+            subject_id=project_uuid
+        ).select_related('predicate', 'object'))
 
-        events = self.get_events_for_project(project_id)
-        actors = self.get_actors_for_project(project_id)
-        digital_objects = self.get_digital_objects_for_project(project_id)
-        triples = self._collect_project_triples(project_id)
+        if not project_triples:
+            return ProjectGraph(
+                project_uri=project_resource.uri,
+                properties=ProjectPropertiesData(),
+                events=[],
+                actors=[],
+                digital_objects=[],
+                triples=[],
+            )
+
+        # Get neighbor IDs and their URIs
+        neighbor_ids: Set[uuid.UUID] = set()
+        for t in project_triples:
+            if t.object_id and t.object.resource_type != ResourceType.LITERAL:
+                neighbor_ids.add(t.object_id)
+
+        # Fetch URIs for neighbors to identify junctions
+        uri_map: Dict[uuid.UUID, str] = {project_uuid: project_resource.uri}
+        if neighbor_ids:
+            for r in Resource.objects.filter(id__in=neighbor_ids).values('id', 'uri'):
+                uri_map[r['id']] = r['uri']
+
+        # Separate junctions from real entities
+        junction_ids: Set[uuid.UUID] = set()
+        entity_ids: Set[uuid.UUID] = set()
+        for nid in neighbor_ids:
+            uri = uri_map.get(nid, '')
+            if self._is_junction(uri):
+                junction_ids.add(nid)
+            else:
+                entity_ids.add(nid)
+
+        # Query 2: Junction triples (to get their targets)
+        junction_triples: List = []
+        junction_target_ids: Set[uuid.UUID] = set()
+        if junction_ids:
+            junction_triples = list(Triple.objects.filter(
+                subject_id__in=junction_ids
+            ).select_related('predicate', 'object'))
+
+            for t in junction_triples:
+                if t.object_id and t.object.resource_type != ResourceType.LITERAL:
+                    junction_target_ids.add(t.object_id)
+
+            # Get URIs for junction targets
+            new_ids = junction_target_ids - set(uri_map.keys())
+            if new_ids:
+                for r in Resource.objects.filter(id__in=new_ids).values('id', 'uri'):
+                    uri_map[r['id']] = r['uri']
+
+            # Check for nested junctions (e.g., project -> junction1 -> junction2 -> entity)
+            nested_junction_ids: Set[uuid.UUID] = set()
+            for tid in junction_target_ids:
+                uri = uri_map.get(tid, '')
+                if self._is_junction(uri):
+                    nested_junction_ids.add(tid)
+                else:
+                    entity_ids.add(tid)
+
+            # Follow nested junctions if any
+            if nested_junction_ids:
+                nested_triples = list(Triple.objects.filter(
+                    subject_id__in=nested_junction_ids
+                ).select_related('predicate', 'object'))
+                junction_triples.extend(nested_triples)
+                junction_ids.update(nested_junction_ids)
+
+                for t in nested_triples:
+                    if t.object_id and t.object.resource_type != ResourceType.LITERAL:
+                        entity_ids.add(t.object_id)
+                        if t.object_id not in uri_map:
+                            # Fetch URI
+                            try:
+                                r = Resource.objects.get(id=t.object_id)
+                                uri_map[t.object_id] = r.uri
+                            except Resource.DoesNotExist:
+                                pass
+
+        # Query 3: Entity triples (properties of events, actors, DOs)
+        entity_triples: List = []
+        if entity_ids:
+            entity_triples = list(Triple.objects.filter(
+                subject_id__in=entity_ids
+            ).select_related('predicate', 'object'))
+
+            # Get URIs for any new objects
+            new_object_ids: Set[uuid.UUID] = set()
+            for t in entity_triples:
+                if t.object_id and t.object.resource_type != ResourceType.LITERAL:
+                    if t.object_id not in uri_map:
+                        new_object_ids.add(t.object_id)
+            if new_object_ids:
+                for r in Resource.objects.filter(id__in=new_object_ids).values('id', 'uri'):
+                    uri_map[r['id']] = r['uri']
+
+        # Combine all triples
+        all_triples = project_triples + junction_triples + entity_triples
+
+        # Build the graph from collected triples
+        return self._build_graph_from_triples(
+            project_uuid=project_uuid,
+            project_uri=project_resource.uri,
+            all_triples=all_triples,
+            junction_ids=junction_ids,
+            uri_map=uri_map,
+        )
+
+    def _is_junction(self, uri: str) -> bool:
+        """Check if URI represents a junction entity.
+
+        Junctions are intermediate linking entities, identifiable by URI pattern.
+        Override in subclasses for institution-specific patterns.
+        """
+        if not uri:
+            return False
+        uri_lower = uri.lower()
+        return 'kreuz' in uri_lower or 'kreuztabelle' in uri_lower
+
+    def _build_graph_from_triples(
+        self,
+        project_uuid: uuid.UUID,
+        project_uri: str,
+        all_triples: List,
+        junction_ids: Set[uuid.UUID],
+        uri_map: Dict[uuid.UUID, str],
+    ) -> ProjectGraph:
+        """Build ProjectGraph from collected triples."""
+        from arkumu.metadata.models.resource import ResourceType
+        from collections import defaultdict
+
+        # Group triples by subject
+        triples_by_subject: Dict[uuid.UUID, List] = defaultdict(list)
+        for t in all_triples:
+            triples_by_subject[t.subject_id].append(t)
+
+        # Extract project properties
+        properties = self._extract_properties_from_triples(triples_by_subject[project_uuid])
+
+        # Classify entities and build structured data
+        events: List[EventData] = []
+        actors: List[ActorData] = []
+        digital_objects: List[DigitalObjectData] = []
+
+        # Track which actors we've seen (to avoid duplicates from junctions)
+        seen_actor_ids: Set[uuid.UUID] = set()
+
+        for entity_id, entity_triples in triples_by_subject.items():
+            if entity_id == project_uuid:
+                continue
+
+            if entity_id in junction_ids:
+                # Extract actor data from junction
+                actor_data = self._extract_actor_from_junction(
+                    entity_triples, uri_map, triples_by_subject
+                )
+                if actor_data and actor_data.actor_id:
+                    actor_uuid = _as_uuid(actor_data.actor_id)
+                    if actor_uuid and actor_uuid not in seen_actor_ids:
+                        seen_actor_ids.add(actor_uuid)
+                        actors.append(actor_data)
+            else:
+                # Classify entity type
+                entity_type = self._classify_entity(entity_triples)
+                entity_uri = uri_map.get(entity_id)
+
+                if entity_type == 'event':
+                    events.append(self._build_event_from_triples(
+                        entity_id, entity_uri, entity_triples
+                    ))
+                elif entity_type == 'digital_object':
+                    digital_objects.append(self._build_do_from_triples(
+                        entity_id, entity_uri, entity_triples
+                    ))
+                elif entity_type == 'actor':
+                    if entity_id not in seen_actor_ids:
+                        seen_actor_ids.add(entity_id)
+                        actors.append(self._build_actor_from_triples(
+                            entity_id, entity_triples, uri_map, triples_by_subject
+                        ))
+
+        # Build TripleData for RDF serialization
+        triple_data = self._build_triple_data(all_triples, uri_map)
 
         return ProjectGraph(
-            project_uri=project_resource.uri,
+            project_uri=project_uri,
             properties=properties,
             events=events,
             actors=actors,
             digital_objects=digital_objects,
-            triples=triples,
+            triples=triple_data,
         )
 
-    def _collect_project_triples(self, project_id: str) -> List[TripleData]:
-        """Collect all triples for a project and its related entities.
+    def _classify_entity(self, triples: List) -> str:
+        """Classify entity type from its triples using canonical URIs."""
+        predicates: Set[str] = set()
+        for t in triples:
+            if t.predicate.canonical_uri:
+                predicates.add(t.predicate.canonical_uri.lower())
+            if t.predicate.uri:
+                predicates.add(t.predicate.uri.lower())
 
-        Override in subclasses for institution-specific triple collection.
-        """
-        from arkumu.metadata.models.triples import Triple
-        from arkumu.metadata.models.resource import Resource, ResourceType
+        pred_str = ' '.join(predicates)
 
-        project_uuid = _as_uuid(project_id)
-        if not project_uuid:
-            return []
+        # Digital object: has file path
+        if 'dateipfad' in pred_str or 'dateiname' in pred_str:
+            return 'digital_object'
 
-        # Get project resource
-        try:
-            project_resource = Resource.objects.get(id=project_uuid)
-        except Resource.DoesNotExist:
-            return []
+        # Event: has event-specific properties
+        if 'ereignisname' in pred_str or 'ereignisbeginn' in pred_str or 'ereignistyp' in pred_str:
+            return 'event'
 
-        # Collect entity IDs to fetch triples for
-        entity_ids: Set[uuid.UUID] = {project_uuid}
+        # Actor: has name property (but not event/DO)
+        if 'deutscher-name' in pred_str or 'akteurin-name' in pred_str:
+            return 'actor'
 
-        # Add event IDs
-        event_ids = self._get_event_ids_for_project(project_uuid)
-        for eid in event_ids:
-            euuid = _as_uuid(eid)
-            if euuid:
-                entity_ids.add(euuid)
+        return 'unknown'
 
-        # Add digital object IDs
-        digital_objects = self.get_digital_objects_for_project(project_id)
-        for do in digital_objects:
-            duuid = _as_uuid(do.object_id)
-            if duuid:
-                entity_ids.add(duuid)
+    def _extract_properties_from_triples(self, triples: List) -> ProjectPropertiesData:
+        """Extract project properties from triples."""
+        from arkumu.metadata.models.resource import ResourceType
 
-        # Fetch all triples for these entities
-        all_triples = Triple.objects.filter(
-            subject_id__in=entity_ids,
-        ).select_related("subject", "predicate", "object")
+        props: Dict[str, Any] = {}
+        category_uris: List[str] = []
+        category_labels: List[str] = []
 
-        # Get URI map for all entities
-        uri_map: Dict[uuid.UUID, str] = {}
-        for resource in Resource.objects.filter(id__in=entity_ids):
-            uri_map[resource.id] = resource.uri
+        for t in triples:
+            pred = (t.predicate.canonical_uri or t.predicate.uri or '').lower()
 
-        # Build TripleData list
+            if t.object.resource_type == ResourceType.LITERAL:
+                value = t.object.value
+            else:
+                value = t.object.uri or str(t.object_id)
+
+            if 'bevorzugter-titel' in pred and 'untertitel' not in pred:
+                props['title'] = value
+            elif 'bevorzugter-untertitel' in pred or ('untertitel' in pred and 'sprache' not in pred):
+                props['subtitle'] = value
+            elif 'beschreibung' in pred and 'ereignis' not in pred:
+                if 'description' not in props:
+                    props['description'] = value
+            elif 'vorschaubild' in pred:
+                props['image'] = value
+            elif 'einliefernde-hochschule' in pred:
+                if t.object.resource_type == ResourceType.LITERAL:
+                    props['institution_label'] = value
+                else:
+                    props['institution_uri'] = value
+            elif 'projektkategorie' in pred:
+                if t.object.resource_type != ResourceType.LITERAL:
+                    category_uris.append(value)
+
+        return ProjectPropertiesData(
+            title=props.get('title'),
+            subtitle=props.get('subtitle'),
+            description=props.get('description'),
+            image=props.get('image'),
+            institution_uri=props.get('institution_uri'),
+            institution_label=props.get('institution_label'),
+            category_uris=category_uris,
+            category_labels=category_labels,
+        )
+
+    def _build_event_from_triples(
+        self, event_id: uuid.UUID, event_uri: Optional[str], triples: List
+    ) -> EventData:
+        """Build EventData from triples."""
+        from arkumu.metadata.models.resource import ResourceType
+
+        props: Dict[str, Optional[str]] = {}
+
+        for t in triples:
+            pred = (t.predicate.canonical_uri or t.predicate.uri or '').lower()
+
+            if t.object.resource_type == ResourceType.LITERAL:
+                value = t.object.value
+            else:
+                value = t.object.uri
+
+            if 'ereignisname' in pred or 'eventname' in pred:
+                props['name'] = value
+            elif 'ereignisbeginn' in pred or 'eventanfang' in pred:
+                props['start'] = value
+            elif 'ereignisende' in pred or 'eventend' in pred:
+                props['end'] = value
+            elif 'ereignisort' in pred:
+                props['location'] = value
+            elif 'ereignisbeschreibung' in pred:
+                props['description'] = value
+            elif 'ereignistyp' in pred:
+                props['event_type'] = value
+
+        return EventData(
+            event_id=str(event_id),
+            event_uri=event_uri,
+            name=props.get('name'),
+            description=props.get('description'),
+            location=props.get('location'),
+            start=props.get('start'),
+            end=props.get('end'),
+            event_type=props.get('event_type'),
+            actors=[],  # Actors are extracted from junctions
+        )
+
+    def _build_do_from_triples(
+        self, do_id: uuid.UUID, do_uri: Optional[str], triples: List
+    ) -> DigitalObjectData:
+        """Build DigitalObjectData from triples."""
+        from arkumu.metadata.models.resource import ResourceType
+
+        path: Optional[str] = None
+        file_name: Optional[str] = None
+        license_uri: Optional[str] = None
+
+        for t in triples:
+            pred = (t.predicate.canonical_uri or t.predicate.uri or '').lower()
+
+            if t.object.resource_type == ResourceType.LITERAL:
+                value = t.object.value
+            else:
+                value = t.object.uri
+
+            if 'dateipfad' in pred:
+                path = value
+            elif 'dateiname' in pred:
+                file_name = value
+            elif 'lizenz' in pred and t.object.resource_type != ResourceType.LITERAL:
+                license_uri = value
+
+        return DigitalObjectData(
+            object_id=str(do_id),
+            object_uri=do_uri,
+            path=path,
+            file_name=file_name,
+            license_uri=license_uri,
+            source_event_ids=[],
+        )
+
+    def _build_actor_from_triples(
+        self,
+        actor_id: uuid.UUID,
+        triples: List,
+        uri_map: Dict[uuid.UUID, str],
+        triples_by_subject: Dict[uuid.UUID, List],
+    ) -> ActorData:
+        """Build ActorData from actor entity triples."""
+        from arkumu.metadata.models.resource import ResourceType
+
+        name: Optional[str] = None
+
+        for t in triples:
+            pred = (t.predicate.canonical_uri or t.predicate.uri or '').lower()
+
+            if 'deutscher-name' in pred or 'akteurin-name' in pred or 'name' in pred:
+                if t.object.resource_type == ResourceType.LITERAL and t.object.value:
+                    name = t.object.value
+                    break
+
+        return ActorData(
+            actor_id=str(actor_id),
+            actor_name=name or '',
+            event_id=None,
+            roles=[],
+            is_copyright_holder=False,
+            is_neighbouring_rights_holder=False,
+        )
+
+    def _extract_actor_from_junction(
+        self,
+        junction_triples: List,
+        uri_map: Dict[uuid.UUID, str],
+        triples_by_subject: Dict[uuid.UUID, List],
+    ) -> Optional[ActorData]:
+        """Extract actor data from junction triples."""
+        from arkumu.metadata.models.resource import ResourceType
+
+        actor_id: Optional[uuid.UUID] = None
+        event_id: Optional[uuid.UUID] = None
+        role_ids: List[uuid.UUID] = []
+        is_copyright = False
+        is_neighbouring = False
+
+        for t in junction_triples:
+            pred = (t.predicate.canonical_uri or t.predicate.uri or '').lower()
+
+            if 'akteurin-im-ereignis' in pred or 'akteur' in pred and 'fk' in pred:
+                if t.object.resource_type != ResourceType.LITERAL:
+                    actor_id = t.object_id
+            elif 'im-ereignis' in pred or 'ereignis' in pred and 'fk' in pred:
+                if t.object.resource_type != ResourceType.LITERAL:
+                    event_id = t.object_id
+            elif 'rollen-der-akteurin' in pred or 'rolle' in pred:
+                if t.object.resource_type != ResourceType.LITERAL:
+                    role_ids.append(t.object_id)
+            elif 'ist-urheberin' in pred:
+                is_copyright = _is_truthy(getattr(t.object, 'value', None))
+            elif 'leistungsschutzrechte' in pred:
+                is_neighbouring = _is_truthy(getattr(t.object, 'value', None))
+
+        if not actor_id:
+            return None
+
+        # Get actor name from actor's triples
+        actor_name = ''
+        actor_triples = triples_by_subject.get(actor_id, [])
+        for t in actor_triples:
+            pred = (t.predicate.canonical_uri or t.predicate.uri or '').lower()
+            if 'deutscher-name' in pred or 'akteurin-name' in pred or 'name' in pred:
+                if t.object.resource_type == ResourceType.LITERAL and t.object.value:
+                    actor_name = t.object.value
+                    break
+
+        # Get role names
+        role_names: List[str] = []
+        for role_id in role_ids:
+            role_triples = triples_by_subject.get(role_id, [])
+            for t in role_triples:
+                pred = (t.predicate.canonical_uri or t.predicate.uri or '').lower()
+                if 'name' in pred and 'rolle' in pred:
+                    if t.object.resource_type == ResourceType.LITERAL and t.object.value:
+                        role_names.append(t.object.value)
+                        break
+
+        return ActorData(
+            actor_id=str(actor_id),
+            actor_name=actor_name,
+            event_id=str(event_id) if event_id else None,
+            roles=role_names,
+            is_copyright_holder=is_copyright,
+            is_neighbouring_rights_holder=is_neighbouring,
+        )
+
+    def _build_triple_data(
+        self, triples: List, uri_map: Dict[uuid.UUID, str]
+    ) -> List[TripleData]:
+        """Build TripleData list for RDF serialization."""
+        from arkumu.metadata.models.resource import ResourceType
+
         results: List[TripleData] = []
-        for t in all_triples:
+        for t in triples:
             subject_uri = uri_map.get(t.subject_id, str(t.subject_id))
-            predicate_uri = t.predicate.uri or ""
+            predicate_uri = t.predicate.uri or ''
             predicate_canonical = t.predicate.canonical_uri
 
             if t.object.resource_type == ResourceType.LITERAL:
@@ -837,7 +1238,7 @@ class InstitutionAdapter(ABC):
                     object_is_literal=True,
                 ))
             else:
-                object_uri = t.object.uri or str(t.object_id)
+                object_uri = uri_map.get(t.object_id) or t.object.uri or str(t.object_id)
                 results.append(TripleData(
                     subject_uri=subject_uri,
                     predicate_uri=predicate_uri,

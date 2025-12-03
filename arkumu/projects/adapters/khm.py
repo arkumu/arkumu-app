@@ -171,19 +171,16 @@ class KhmAdapter(InstitutionAdapter):
 
         # 3. Via junction table (11_Kreuz_DigitaleObjekte_Proj)
         # Junction links to project via Projekt_ID and to digital object
-        try:
-            junction_triples = Triple.objects.filter(
-                Q(predicate__canonical_uri=CanonicalURIs.PROJEKT)
-                | Q(predicate__uri__icontains="/projekt"),
-                object_id=project_uuid,
-                subject__organization__code__iexact="khm",
-            ).filter(
-                subject__entity_type__uri__icontains="kreuz-digitaleobjekte",
-            ).values_list("subject_id", flat=True)
+        # Use URI pattern instead of entity_type (which doesn't exist on Resource)
+        junction_triples = Triple.objects.filter(
+            Q(predicate__canonical_uri=CanonicalURIs.PROJEKT)
+            | Q(predicate__uri__icontains="/projekt"),
+            object_id=project_uuid,
+            subject__organization__code__iexact="khm",
+            subject__uri__icontains="kreuz-digitaleobjekte",
+        ).values_list("subject_id", flat=True)
 
-            junction_ids = list(junction_triples)
-        except Exception:
-            junction_ids = []
+        junction_ids = list(junction_triples)
 
         if not junction_ids and grundereignis_id:
             # Try with grundereignis
