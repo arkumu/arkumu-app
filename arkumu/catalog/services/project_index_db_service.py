@@ -69,16 +69,18 @@ def _serialize_canonical_rdf_xml(
         return ""
 
 
-def _serialize_institutional_rdf_xml(
-    resource: Resource,
-    graph_data: Dict[str, Any],
-) -> str:
-    """Serialize institutional RDF/XML from bulk-fetched graph data.
+def _serialize_institutional_rdf_xml(resource: Resource) -> str:
+    """Serialize institutional RDF/XML using InstitutionalGraphService.
 
-    Uses use_institutional_predicates=True to serialize native predicate URIs.
+    Uses the same logic as _build_institutional_rdf_element for consistency
+    between ProjectIndex and GetRecord/ListRecords output.
     """
+    from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
+
     try:
-        rdf_element = build_rdf_graph(resource, graph_data=graph_data, use_institutional_predicates=True)
+        rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+        if rdf_element is None:
+            return ""
         return ET.tostring(rdf_element, encoding="unicode")
     except Exception:
         logger.exception("Failed to serialize institutional RDF/XML for %s", resource.uri)
@@ -122,7 +124,7 @@ def _batch_precompute_oai_data(
         try:
             graph_data = graphs_by_id.get(str(rid))
             canonical_rdf = _serialize_canonical_rdf_xml(resource, graph_data=graph_data)
-            institutional_rdf = _serialize_institutional_rdf_xml(resource, graph_data=graph_data)
+            institutional_rdf = _serialize_institutional_rdf_xml(resource)
 
             # Extract DC metadata
             creators: List[str] = []
@@ -1371,7 +1373,7 @@ class ProjectIndexDbService:
                 graph_data = self._build_project_graph_for_rdf(rid, edges_by_subject, nodes)
                 if graph_data and graph_data.get("edges"):
                     row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
-                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(row.project_resource, graph_data=graph_data)
+                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(row.project_resource)
             t1 = _time.perf_counter()
             logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t1 - t0, (t1 - t0) / total_rows)
         elif skip_rdf:

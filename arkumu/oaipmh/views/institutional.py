@@ -63,9 +63,28 @@ def _build_institutional_rdf_element(
         return None
 
     nodes = graph.get("nodes") or {}
-    edges = graph.get("edges") or []
+    edges = list(graph.get("edges") or [])
     if not nodes or not edges:
         return None
+
+    # Fetch junction entities (Kreuztabelle) for related entities
+    # This adds actor-role relationships and other n-ary data
+    traverser = graph_service._get_traverser()
+    if traverser:
+        # Get all entity IDs from the graph to find junctions pointing to them
+        entity_ids = [
+            node_id for node_id, node in nodes.items()
+            if node.get("resource_type") == ResourceType.ENTITY
+        ]
+        if entity_ids:
+            junction_edges = graph_service.fetch_junction_entities(entity_ids)
+            if junction_edges:
+                edges.extend(junction_edges)
+                # Add new nodes from junction edges
+                new_nodes = graph_service._collect_nodes_from_edges(junction_edges)
+                for node_id, node_data in new_nodes.items():
+                    if node_id not in nodes:
+                        nodes[node_id] = node_data
 
     namespaces = OrderedDict()
     for edge in edges:
