@@ -6,10 +6,13 @@ Produces both canonical and institutional graphs.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from arkumu.projects import ProjectRecord
@@ -451,11 +454,14 @@ def get_all_project_graphs_batched(
 
     RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
 
+    logger.info("get_all_project_graphs_batched: starting for org=%s", org_code)
+
     # Get junction FK predicates from mapping (once)
     junction_config = _get_junction_config(org_code)
     fk_predicates = junction_config.get('fk_predicates', set())
 
     # Find projects via rdf:type triple with canonical projekt type
+    logger.info("get_all_project_graphs_batched: finding projects for org=%s...", org_code)
     project_ids = list(
         Triple.objects.filter(
             predicate__uri=RDF_TYPE,
@@ -463,15 +469,20 @@ def get_all_project_graphs_batched(
             subject__organization__code__iexact=org_code,
         ).values_list('subject_id', flat=True).distinct()
     )
+    logger.info("get_all_project_graphs_batched: found %d projects for org=%s", len(project_ids), org_code)
 
     # Get project resources
     project_resources = list(
         Resource.objects.filter(id__in=project_ids).only('id', 'uri')
     )
 
+    total_batches = (len(project_resources) + batch_size - 1) // batch_size
+
     # Process in batches
     for i in range(0, len(project_resources), batch_size):
+        batch_num = i // batch_size + 1
         batch = project_resources[i:i + batch_size]
+        logger.info("get_all_project_graphs_batched: processing batch %d/%d (%d projects)", batch_num, total_batches, len(batch))
 
         # Fetch graphs for this batch (5 queries)
         graphs_map = _fetch_graphs_for_batch(batch, fk_predicates)
