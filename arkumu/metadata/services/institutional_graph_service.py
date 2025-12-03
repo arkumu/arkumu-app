@@ -283,11 +283,15 @@ class InstitutionalGraphService:
         depth: int = 2,
         include_junctions: bool = True,
     ) -> Dict[str, Dict[str, Any]]:
-        """Fetch graphs for a single batch of resources."""
+        """Fetch graphs for a single batch of resources.
+
+        Follows the same pattern as CanonicalGraphService.get_entity_graphs_bulk
+        but adds incoming edges and junction entities.
+        """
         if not root_ids:
             return {}
 
-        # Track edges by root resource
+        # Track edges per root
         edges_by_root: Dict[str, List[Dict[str, Any]]] = {rid: [] for rid in root_ids}
 
         # 1. Fetch all outgoing triples for all roots in ONE query
@@ -304,12 +308,12 @@ class InstitutionalGraphService:
             if object_id in edges_by_root:
                 edges_by_root[object_id].append(edge)
 
-        # 3. Expand neighbors if depth > 0
+        # 3. Expand neighbors if depth > 0 (same pattern as CanonicalGraphService)
         if depth > 0:
-            # Build reverse index: subject_id -> set of root_ids that contain it
-            roots_by_subject: Dict[str, Set[str]] = {rid: {rid} for rid in root_ids}
+            # Build reverse index: node_id -> set of root_ids that contain it
+            roots_by_node: Dict[str, Set[str]] = {rid: {rid} for rid in root_ids}
 
-            # Collect all neighbor IDs from all roots
+            # Collect initial neighbor IDs from outgoing edges only
             all_neighbor_ids: Set[str] = set()
             for rid, edges in edges_by_root.items():
                 for edge in edges:
@@ -317,30 +321,28 @@ class InstitutionalGraphService:
                     obj_type = edge.get("object_type")
                     if obj_type == ResourceType.ENTITY and obj_id and obj_id not in root_ids:
                         all_neighbor_ids.add(obj_id)
-                        roots_by_subject.setdefault(obj_id, set()).add(rid)
+                        roots_by_node.setdefault(obj_id, set()).add(rid)
 
-            # Expand neighbors in hops
+            # Expand neighbors in bulk
             visited = set(root_ids)
             frontier_ids = list(all_neighbor_ids - visited)
             hops = 0
 
             while frontier_ids and hops < depth:
                 visited.update(frontier_ids)
-
-                # Fetch triples for all frontier nodes in ONE query
                 neighbor_edges = self._fetch_triples_for_subjects(frontier_ids)
 
+                # Add edges to appropriate roots using reverse index
                 for edge in neighbor_edges:
                     subject_id = edge.get("subject_id")
-                    obj_id = edge.get("object_id")
-                    obj_type = edge.get("object_type")
-
-                    # Add edge to all roots that contain this subject
-                    affected_roots = roots_by_subject.get(subject_id, set())
+                    affected_roots = roots_by_node.get(subject_id, set())
                     for rid in affected_roots:
                         edges_by_root[rid].append(edge)
+                        # Track new objects for this root
+                        obj_id = edge.get("object_id")
+                        obj_type = edge.get("object_type")
                         if obj_type == ResourceType.ENTITY and obj_id:
-                            roots_by_subject.setdefault(obj_id, set()).add(rid)
+                            roots_by_node.setdefault(obj_id, set()).add(rid)
 
                 # Build next frontier
                 next_frontier: Set[str] = set()
@@ -353,35 +355,29 @@ class InstitutionalGraphService:
                 frontier_ids = list(next_frontier)
                 hops += 1
 
-        # 4. Fetch junction entities if requested
+        # 4. Fetch junctions in bulk for all entity IDs, then distribute to roots
         if include_junctions:
-            # Collect all entity IDs from all graphs
+            # Collect all entity IDs per root
+            entity_ids_by_root: Dict[str, Set[str]] = {}
             all_entity_ids: Set[str] = set()
             for rid, edges in edges_by_root.items():
-                all_entity_ids.add(rid)
+                entity_ids: Set[str] = {rid}
                 for edge in edges:
                     obj_id = edge.get("object_id")
                     obj_type = edge.get("object_type")
                     if obj_type == ResourceType.ENTITY and obj_id:
-                        all_entity_ids.add(obj_id)
+                        entity_ids.add(obj_id)
+                entity_ids_by_root[rid] = entity_ids
+                all_entity_ids.update(entity_ids)
 
-            # Fetch junctions pointing to these entities
-            junction_edges = self.fetch_junction_entities(list(all_entity_ids))
-            if junction_edges:
-                # Add junction edges to appropriate roots
-                # Build a map: entity_id -> which roots contain it
-                entity_to_roots: Dict[str, Set[str]] = {}
-                for rid, edges in edges_by_root.items():
-                    entity_to_roots.setdefault(rid, set()).add(rid)
-                    for edge in edges:
-                        obj_id = edge.get("object_id")
-                        if obj_id:
-                            entity_to_roots.setdefault(obj_id, set()).add(rid)
+            # Fetch all junctions in ONE query
+            all_junction_edges = self.fetch_junction_entities(list(all_entity_ids))
 
-                for junc_edge in junction_edges:
-                    obj_id = junc_edge.get("object_id")
-                    affected_roots = entity_to_roots.get(obj_id, set())
-                    for rid in affected_roots:
+            # Distribute junction edges to roots that contain the target entity
+            for junc_edge in all_junction_edges:
+                obj_id = junc_edge.get("object_id")
+                for rid, entity_ids in entity_ids_by_root.items():
+                    if obj_id in entity_ids:
                         edges_by_root[rid].append(junc_edge)
 
         # 5. Build per-root graph dicts
@@ -581,20 +577,93 @@ class InstitutionalGraphService:
             logger.debug("No FK predicates found in manifest for target %s", target_dataset)
             return []
 
-        # Find entities that have FK predicates pointing to our targets
-        # This is the key query - using institutional predicate URIs directly
-        junction_ids = list(
-            Triple.objects.filter(
-                self._triple_filter(),
-                predicate__uri__in=fk_predicate_uris,
-                object_id__in=list(target_ids),
+        # Find junction edges that point TO our target entities
+        # Only return edges where object_id is in target_ids (pre-filtered)
+        target_id_set = set(str(tid) for tid in target_ids)
+
+        clause = (
+            self._triple_filter()
+            & Q(predicate__uri__in=fk_predicate_uris)
+            & Q(object_id__in=list(target_ids))
+            & Q(subject__resource_type=ResourceType.ENTITY)
+        )
+        triples = (
+            Triple.objects.filter(clause)
+            .select_related("predicate", "object", "subject")
+            .only(
+                "id",
+                "subject_id",
+                "subject__uri",
+                "subject__resource_type",
+                "predicate__uri",
+                "predicate__canonical_uri",
+                "object__id",
+                "object__uri",
+                "object__canonical_uri",
+                "object__resource_type",
+                "object__value",
             )
-            .values_list("subject_id", flat=True)
-            .distinct()
         )
 
-        if not junction_ids:
-            return []
+        # Build edge dicts - these are already filtered to only edges pointing to our targets
+        edges = []
+        junction_ids: Set[str] = set()
+        for t in triples:
+            if not getattr(t.predicate, "uri", None):
+                continue
+            junction_ids.add(str(t.subject_id))
+            edges.append({
+                "triple_id": str(t.id),
+                "subject_id": str(t.subject_id),
+                "subject_uri": getattr(t.subject, "uri", None),
+                "predicate_uri": t.predicate.uri,
+                "predicate_canonical": getattr(t.predicate, "canonical_uri", None),
+                "object_id": str(t.object.id),
+                "object_uri": getattr(t.object, "uri", None),
+                "object_canonical": getattr(t.object, "canonical_uri", None),
+                "object_type": t.object.resource_type,
+                "object_value": getattr(t.object, "value", None),
+            })
 
-        # Fetch all edges from junction entities
-        return self._fetch_triples_for_subjects(junction_ids)
+        if not junction_ids:
+            return edges
+
+        # Also fetch edges FROM junctions TO other entities in our target set
+        # (junctions often have multiple FK relationships)
+        additional_edges = []
+        for t in Triple.objects.filter(
+            self._triple_filter(),
+            subject_id__in=list(junction_ids),
+            object_id__in=list(target_ids),
+            subject__resource_type=ResourceType.ENTITY,
+        ).select_related("predicate", "object").only(
+            "id", "subject_id", "predicate__uri", "predicate__canonical_uri",
+            "object__id", "object__uri", "object__canonical_uri",
+            "object__resource_type", "object__value",
+        ):
+            if not getattr(t.predicate, "uri", None):
+                continue
+            # Avoid duplicates
+            edge_key = (str(t.subject_id), t.predicate.uri, str(t.object.id))
+            additional_edges.append({
+                "triple_id": str(t.id),
+                "subject_id": str(t.subject_id),
+                "predicate_uri": t.predicate.uri,
+                "predicate_canonical": getattr(t.predicate, "canonical_uri", None),
+                "object_id": str(t.object.id),
+                "object_uri": getattr(t.object, "uri", None),
+                "object_canonical": getattr(t.object, "canonical_uri", None),
+                "object_type": t.object.resource_type,
+                "object_value": getattr(t.object, "value", None),
+            })
+
+        # Deduplicate
+        seen = set()
+        result = []
+        for e in edges + additional_edges:
+            key = (e["subject_id"], e["predicate_uri"], e["object_id"])
+            if key not in seen:
+                seen.add(key)
+                result.append(e)
+
+        return result
