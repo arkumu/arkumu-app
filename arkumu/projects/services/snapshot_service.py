@@ -25,6 +25,7 @@ from arkumu.catalog.services.schema_manifest_service import (
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.catalog.services.junction_actor_service import JunctionActorService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
+from arkumu.projects.adapters import get_adapter
 from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
@@ -1077,9 +1078,9 @@ class ProjectSnapshotService:
             self._populate_event_metadata(event, nodes, edges_by_subject)
         year_range = self._derive_year_range(events)
 
-        # Use JunctionActorService for proper FUK/KHM/HMT handling
-        junction_service = JunctionActorService(organization_code=self.relationship_org_code)
-        junction_actors = junction_service.get_actors_for_project(subject_id, event_ids)
+        # Use institution adapter for proper FUK/KHM/HMT handling
+        adapter = get_adapter(self.relationship_org_code)
+        junction_actors = adapter.get_actors_for_project(subject_id, event_ids)
 
         actors_by_event: Dict[str, List[ProjectEventActor]] = defaultdict(list)
         actors: List[ProjectActor] = []
