@@ -109,25 +109,6 @@ def _tailored_resources_queryset(
     return queryset
 
 
-def _has_more_tailored_harvestables(queryset, cursor_position: Optional[str]) -> bool:
-    cursor_state = _parse_cursor_position(cursor_position)
-    if cursor_state is None:
-        return False
-
-    ordered = queryset.order_by("effective_datestamp", "id")
-    lookahead_qs = _apply_cursor_filter(
-        ordered,
-        cursor_state,
-        field_name="effective_datestamp",
-    )
-    iterator = lookahead_qs.iterator(chunk_size=100)
-    for resource in iterator:
-        project_hint = _build_tailored_project_hint_from_resource(resource)
-        if project_hint and project_hint.harvestable:
-            return True
-    return False
-
-
 def _tailored_harvestable_page(
     queryset,
     *,
@@ -135,19 +116,21 @@ def _tailored_harvestable_page(
     page_size: int,
     include_hints: bool,
 ) -> HarvestPageResult:
-    ordered = queryset.order_by("effective_datestamp", "id")
+    # Filter by precomputed harvestable flag (rebuilt nightly)
+    ordered = queryset.filter(project_index__harvestable=True).order_by("effective_datestamp", "id")
     ordered = _apply_cursor_filter(
         ordered,
         _parse_cursor_position(cursor_position),
         field_name="effective_datestamp",
     )
 
-    # Fetch a batch of resources upfront (3x page_size to account for filtering)
-    batch_size = page_size * 3
-    batch_resources = list(ordered[:batch_size])
+    # Fetch page_size + 1 to check if there's more
+    batch_resources = list(ordered[:page_size + 1])
+    has_more = len(batch_resources) > page_size
+    resources = batch_resources[:page_size]
 
-    # Batch fetch curated links for all resources in the batch
-    project_ids = [UUID(str(r.id)) for r in batch_resources]
+    # Batch fetch curated links for building project hints
+    project_ids = [UUID(str(r.id)) for r in resources]
     curated_links_by_project = batch_fetch_curated_links(project_ids)
 
     # Collect digital object IDs for graph data fetch
@@ -160,60 +143,28 @@ def _tailored_harvestable_page(
                 if obj_id:
                     all_digital_object_ids.append(str(obj_id))
 
-    # DCP data from curated links (uses in-memory cache, no DB query)
+    # DCP data from curated links
     dcp_data = batch_fetch_dcp_folders(curated_links_by_project)
-    # Graph data needed for harvestability checks
     prefetched_graph_data = batch_fetch_graph_data(all_digital_object_ids) if all_digital_object_ids else None
 
-    # RDF is precomputed in ProjectIndex (canonical_rdf_xml, institutional_rdf_xml)
-    # No bulk fetch needed - metadata.py reads from project_index via select_related
-
-    resources: List[Resource] = []
     project_hints: Dict[str, OAIProject] = {}
     last_cursor_position = cursor_position
 
-    for resource in batch_resources:
+    for resource in resources:
         last_cursor_position = _format_cursor_position(
             resource,
             field_name="effective_datestamp",
         )
-        # Get prefetched curated links for this project
-        prefetched_links = curated_links_by_project.get(resource.id)
-        project_hint = _build_tailored_project_hint_from_resource(
-            resource,
-            prefetched_curated_links=prefetched_links,
-            prefetched_dcp_data=dcp_data,
-            prefetched_graph_data=prefetched_graph_data,
-        )
-        if not project_hint or not project_hint.harvestable:
-            continue
         if include_hints:
-            project_hints[resource.uri] = project_hint
-        resources.append(resource)
-        if len(resources) == page_size:
-            break
-
-    # If we didn't fill the page from the batch, continue with the iterator
-    if len(resources) < page_size:
-        iterator = ordered[batch_size:].iterator(chunk_size=max(page_size * 10, 100))
-        for resource in iterator:
-            last_cursor_position = _format_cursor_position(
+            prefetched_links = curated_links_by_project.get(resource.id)
+            project_hint = _build_tailored_project_hint_from_resource(
                 resource,
-                field_name="effective_datestamp",
+                prefetched_curated_links=prefetched_links,
+                prefetched_dcp_data=dcp_data,
+                prefetched_graph_data=prefetched_graph_data,
             )
-            # No prefetched links for resources outside the initial batch
-            project_hint = _build_tailored_project_hint_from_resource(resource)
-            if not project_hint or not project_hint.harvestable:
-                continue
-            if include_hints:
+            if project_hint:
                 project_hints[resource.uri] = project_hint
-            resources.append(resource)
-            if len(resources) == page_size:
-                break
-
-    has_more = False
-    if resources:
-        has_more = _has_more_tailored_harvestables(ordered, last_cursor_position)
 
     return HarvestPageResult(
         resources=resources,
