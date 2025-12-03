@@ -164,12 +164,15 @@ class NormalizedDigitalObject:
 
     @property
     def preferred_location(self) -> Optional[str]:
-        """Return the location that should appear in METS FLocat."""
+        """Return the location that should appear in METS FLocat.
 
-        if self.download_href:
-            return self.download_href
+        For METS, prefer rosetta_path (local hbz path) over download_href (S3 URL)
+        since hbz harvests files from S3 and stores them locally.
+        """
         if self.rosetta_path:
             return self.rosetta_path
+        if self.download_href:
+            return self.download_href
         if self.storage_key:
             return self.storage_key
         return self.original_path or self.access_url
@@ -812,15 +815,18 @@ class OAIProjectBuilder:
                 )
                 return None
 
+        # Build Rosetta path for orgs with configured base paths (both S3 and non-S3)
+        # S3 orgs need this for METS FLocat since hbz harvests files from S3 and stores locally
         if (
-            not is_s3_org
-            and not rosetta_path
+            not rosetta_path
             and normalized_code
             and normalized_code in self._s3_rosetta_bases
             and storage_key
         ):
             base = self._s3_rosetta_bases[normalized_code]
-            candidate = f"{base}/{storage_key.lstrip('/')}"
+            # Use just filename for S3 orgs (flat storage), full key for others
+            path_component = file_name if is_s3_org and file_name else storage_key.lstrip('/')
+            candidate = f"{base}/{path_component}"
             rosetta_path = candidate
             rosetta_candidates = (candidate,)
 
