@@ -691,33 +691,19 @@ def _build_dc_payload_from_project(
     precomputed_contributors = getattr(project_index, "dc_contributors", None) if project_index else None
 
     if precomputed_creators or precomputed_contributors:
-        # Use pre-computed values
+        # Use pre-computed values from ProjectIndex
         for creator in (precomputed_creators or []):
             _add_dc_value(payload, 'creator', creator)
         for contributor in (precomputed_contributors or []):
             _add_dc_value(payload, 'contributor', contributor)
     else:
-        # Fall back to junction query (slower)
-        creators, contributors = _extract_creators_from_junctions(resource, record)
-        for creator in creators:
+        # Extract from ProjectRecord (same logic as precomputed)
+        from arkumu.catalog.services.project_index_db_service import _extract_dc_metadata_from_record
+        dc_meta = _extract_dc_metadata_from_record(record)
+        for creator in dc_meta.creators:
             _add_dc_value(payload, 'creator', creator)
-        for contributor in contributors:
+        for contributor in dc_meta.contributors:
             _add_dc_value(payload, 'contributor', contributor)
-
-        # Fallback: If no creators found from junctions, use primary event actors from record
-        # This maintains compatibility with canonical entities (FUK/DET/RSH) and tests
-        if not creators and not contributors:
-            primary_actors = _select_primary_event_actors(record)
-            seen_creators: set[str] = set()
-            for actor in primary_actors:
-                name = actor.get('name')
-                if name and name not in seen_creators:
-                    _add_dc_value(payload, 'creator', name)
-                    seen_creators.add(name)
-
-                for role in actor.get('roles') or []:
-                    contributor_value = f"{name} ({role})" if name else role
-                    _add_dc_value(payload, 'contributor', contributor_value)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
