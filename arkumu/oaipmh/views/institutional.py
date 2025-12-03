@@ -13,8 +13,22 @@ from arkumu.metadata.services.institutional_graph_service import InstitutionalGr
 from arkumu.oaipmh.formats.mets_source_metadata import RDF_NS
 from arkumu.oaipmh.oai_project import OAIProject
 
+import re
 
 _KHM_HMT_LICENSE_ORGS: set[str] = {"khm", "hmt"}
+
+# XML 1.0 allows: #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+# This pattern matches characters that are NOT allowed
+_INVALID_XML_CHARS = re.compile(
+    r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFE\uFFFF]"
+)
+
+
+def _sanitize_xml_text(value: Optional[str]) -> Optional[str]:
+    """Remove characters that are invalid in XML 1.0."""
+    if not value:
+        return value
+    return _INVALID_XML_CHARS.sub("", value)
 
 
 def _split_namespace(uri: str) -> tuple[str, str]:
@@ -96,7 +110,8 @@ def build_institutional_rdf_from_graph(
             continue
         obj_type = obj_node.get("resource_type")
         if obj_type == ResourceType.LITERAL:
-            element.text = obj_node.get("value") or edge.get("object_value")
+            raw_value = obj_node.get("value") or edge.get("object_value")
+            element.text = _sanitize_xml_text(raw_value)
         else:
             obj_uri = obj_node.get("uri")
             if not obj_uri:
