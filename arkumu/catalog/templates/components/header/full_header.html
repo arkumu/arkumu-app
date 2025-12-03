@@ -2,8 +2,9 @@
 
 <style>
   @media (max-width: 834px) {
-    /* Oculta los botones de tema y el botón de búsqueda */
+    /* Oculta los botones de tema, botones de imagen y el botón de búsqueda */
     .theme-buttons,
+    .image-buttons,
     .search-button-wrapper {
       display: none !important;
     }
@@ -36,6 +37,22 @@
 
     <!-- Theme buttons and icons -->
     <div class="flex items-center ml-auto">
+      <!-- Botones de imagen -->
+      <div class="image-buttons flex items-center space-x-3 mr-10">
+        <button class="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 transition-all duration-300 hover:opacity-70">
+          <img src="{% static 'images/zoom.svg' %}" alt="Button 1"
+               class="w-full h-full">
+        </button>
+        <button class="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 transition-all duration-300 hover:opacity-70">
+          <img src="{% static 'images/language.svg' %}" alt="Button 2"
+               class="w-full h-full">
+        </button>
+        <button class="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 transition-all duration-300 hover:opacity-70">
+          <img src="{% static 'images/english.svg' %}" alt="Button 3"
+               class="w-full h-full">
+        </button>
+      </div>
+
       <!-- Botones de tema -->
       <div class="theme-buttons">
         {% include 'components/header/theme_buttons.html' %}
