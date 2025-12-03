@@ -569,6 +569,7 @@ class ProjectIndexDbService:
         """Rebuild index tables from ProjectRecord instances.
 
         Uses graph_service by default for efficient batched fetching.
+        Streams batches through to minimize memory usage.
 
         Args:
             project_uris: Optional list of specific URIs to rebuild
@@ -576,30 +577,153 @@ class ProjectIndexDbService:
             use_graph_service: Use graph_service for fetching (default True)
             batch_size: Batch size for graph_service fetching (default 100)
         """
-        graphs_map: Optional[Dict[str, "ProjectGraphs"]] = None
-
         if project_uris:
+            # Single URIs mode - use old path
             records = self._records_for_uris(project_uris)
-        elif use_graph_service:
-            records, graphs_map = self._records_from_graph_service(batch_size=batch_size)
-        else:
-            snapshot = self.snapshot_service.get_cross_institutional_snapshot(
-                force_refresh=force_snapshot,
-                include_non_public=True,
-            )
-            records = list(snapshot.projects)
+            resources = self._resource_map(records)
+            source_version = self._source_version(resources.values(), records)
+            return self._write_indexes(records, resources, source_version, prune_missing=False)
 
+        if use_graph_service:
+            # Streaming mode - process batches completely, release memory after each
+            return self._rebuild_streaming(batch_size=batch_size)
+
+        # Snapshot mode - old path
+        snapshot = self.snapshot_service.get_cross_institutional_snapshot(
+            force_refresh=force_snapshot,
+            include_non_public=True,
+        )
+        records = list(snapshot.projects)
         resources = self._resource_map(records)
         source_version = self._source_version(resources.values(), records)
-        prune_missing = not bool(project_uris)
+        return self._write_indexes(records, resources, source_version, prune_missing=True)
 
-        return self._write_indexes(
-            records,
-            resources,
-            source_version,
-            prune_missing=prune_missing,
-            graphs_map=graphs_map,
-        )
+    def _rebuild_streaming(
+        self,
+        org_codes: Sequence[str] = DEFAULT_ORG_CODES,
+        batch_size: int = 100,
+    ) -> Dict[str, int]:
+        """Rebuild index streaming through batches to minimize memory.
+
+        For each batch: fetch graphs → build records → serialize RDF → bulk write → release.
+        """
+        built_at = self.now
+        total_count = 0
+        seen_ids: set[uuid.UUID] = set()
+        batch_rows: List[ProjectIndex] = []
+        write_batch_size = 50  # Write to DB every N records
+
+        def _flush_batch():
+            nonlocal batch_rows
+            if not batch_rows:
+                return
+            ProjectIndex.objects.bulk_create(
+                batch_rows,
+                update_conflicts=True,
+                unique_fields=["project_resource"],
+                update_fields=[
+                    "uri", "org_code", "public_access_level", "is_public_approved",
+                    "is_derived", "title", "subtitle", "description", "image",
+                    "year_range", "institution_label", "institution_uri",
+                    "institution_codes", "project_type_label", "category_labels",
+                    "category_slugs", "actor_names", "year_values", "catchphrase_labels",
+                    "digital_object_paths", "categories", "actors", "events",
+                    "digital_objects", "alternative_titles", "catchphrases",
+                    "properties", "status", "authority", "submitter", "licenses",
+                    "rights_status", "record_jsonb", "canonical_rdf_xml",
+                    "institutional_rdf_xml", "dc_creators", "dc_contributors",
+                    "has_copyright_holder", "has_neighbouring_rights_holder",
+                    "reference_only", "harvestable", "ownership_filtered",
+                    "source_updated_at", "built_at", "source_version",
+                ],
+            )
+            batch_rows = []
+
+        for org_code in org_codes:
+            org_count = 0
+            # Collect a processing batch, then bulk fetch resources
+            processing_batch: List[Tuple[str, "ProjectGraphs"]] = []
+
+            for project_id, graphs in get_all_project_graphs_batched(org_code, batch_size=batch_size):
+                processing_batch.append((project_id, graphs))
+
+                # Process when we have enough
+                if len(processing_batch) >= write_batch_size:
+                    org_count += self._process_streaming_batch(
+                        processing_batch, built_at, batch_rows, seen_ids, _flush_batch
+                    )
+                    processing_batch = []
+
+            # Process remaining
+            if processing_batch:
+                org_count += self._process_streaming_batch(
+                    processing_batch, built_at, batch_rows, seen_ids, _flush_batch
+                )
+
+            # Flush remaining after each org
+            _flush_batch()
+            logger.info("Rebuilt %d indexes for org=%s", org_count, org_code)
+            total_count += org_count
+
+        # Prune missing
+        if seen_ids:
+            deleted, _ = ProjectIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
+            if deleted:
+                logger.info("Pruned %d stale indexes", deleted)
+
+        logger.info("Streaming rebuild complete: %d total indexes", total_count)
+        return {"project_index": total_count}
+
+    def _process_streaming_batch(
+        self,
+        processing_batch: List[Tuple[str, "ProjectGraphs"]],
+        built_at,
+        batch_rows: List[ProjectIndex],
+        seen_ids: set,
+        flush_fn,
+    ) -> int:
+        """Process a batch: bulk fetch resources, build records/RDF, append to write batch."""
+        if not processing_batch:
+            return 0
+
+        # Bulk fetch resources
+        uuids = [_as_uuid(pid) for pid, _ in processing_batch]
+        valid_uuids = [u for u in uuids if u]
+        resource_map = Resource.objects.in_bulk(valid_uuids)
+
+        count = 0
+        for (project_id, graphs), subject_uuid in zip(processing_batch, uuids):
+            if not subject_uuid or subject_uuid not in resource_map:
+                continue
+
+            try:
+                resource = resource_map[subject_uuid]
+                record = graphs.to_project_record(project_id)
+
+                # Build OAI data (RDF serialization)
+                oai_data = _build_oai_from_graphs(graphs, resource, record)
+
+                # Build source version
+                updated = getattr(resource, "updated_at", None)
+                source_version = generate_value_hash(f"{resource.id}:{updated.isoformat() if updated else ''}")
+
+                # Build index row
+                defaults = self._unified_defaults(
+                    record, resource, built_at, source_version,
+                    precomputed_oai=oai_data,
+                )
+                batch_rows.append(ProjectIndex(project_resource=resource, **defaults))
+                seen_ids.add(resource.id)
+                count += 1
+
+                # Flush if write batch is full
+                if len(batch_rows) >= 50:
+                    flush_fn()
+
+            except Exception:
+                logger.exception("Failed to process project %s", project_id)
+
+        return count
 
     # ------------------------------------------------------------------ #
     # Internals                                                          #
