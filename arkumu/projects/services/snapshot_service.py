@@ -23,6 +23,7 @@ from arkumu.catalog.services.schema_manifest_service import (
     CARD_SCHEMA_TEMPLATE,
 )
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
+from arkumu.catalog.services.junction_actor_service import JunctionActorService
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
@@ -1076,35 +1077,47 @@ class ProjectSnapshotService:
             self._populate_event_metadata(event, nodes, edges_by_subject)
         year_range = self._derive_year_range(events)
 
-        actors_payload = triple_service.get_actor_relationships(
-            subject_id,
-            event_predicate=event_prop.canonical_uri if event_prop else None,
-            actor_link_predicate=actor_link_prop.canonical_uri if actor_link_prop else None,
-            role_link_predicate=role_link_prop.canonical_uri if role_link_prop else None,
-            actor_name_predicate=actor_name_prop.canonical_uri if actor_name_prop else None,
-            role_name_predicate=role_name_prop.canonical_uri if role_name_prop else None,
-            event_ids=event_ids,
-            organization_code=self.relationship_org_code,
-        )
+        # Use JunctionActorService for proper FUK/KHM/HMT handling
+        junction_service = JunctionActorService(organization_code=self.relationship_org_code)
+        junction_actors = junction_service.get_actors_for_project(subject_id, event_ids)
+
         actors_by_event: Dict[str, List[ProjectEventActor]] = defaultdict(list)
         actors: List[ProjectActor] = []
-        for payload in actors_payload:
-            name = payload.get('name')
+        seen_actor_names: Set[str] = set()
+
+        for actor_data in junction_actors:
+            name = actor_data.actor_name
             if not name:
                 continue
-            roles = list(payload.get('roles', []))
-            actors.append(ProjectActor(name=name, roles=roles))
-            rights_by_event = payload.get('event_rights', {})
-            for event_id in payload.get('event_ids', []):
-                rights_flags = rights_by_event.get(event_id, {})
+
+            # Add to flat actors list (deduplicated)
+            if name not in seen_actor_names:
+                seen_actor_names.add(name)
+                actors.append(ProjectActor(name=name, roles=actor_data.roles, uri=actor_data.actor_id))
+
+            # Add to event-specific actors
+            event_id = actor_data.event_id
+            if event_id:
                 actors_by_event[event_id].append(
                     ProjectEventActor(
                         name=name,
-                        roles=list(roles),
-                        is_copyright_holder=rights_flags.get('is_copyright_holder', False),
-                        is_neighbouring_rights_holder=rights_flags.get('is_neighbouring_rights_holder', False),
+                        roles=list(actor_data.roles),
+                        is_copyright_holder=actor_data.is_copyright_holder,
+                        is_neighbouring_rights_holder=actor_data.is_neighbouring_rights_holder,
                     )
                 )
+            else:
+                # KHM pattern: no event_id, add to all events
+                for eid in event_ids:
+                    if eid:
+                        actors_by_event[eid].append(
+                            ProjectEventActor(
+                                name=name,
+                                roles=list(actor_data.roles),
+                                is_copyright_holder=actor_data.is_copyright_holder,
+                                is_neighbouring_rights_holder=actor_data.is_neighbouring_rights_holder,
+                            )
+                        )
 
         for event in events:
             if event.id:

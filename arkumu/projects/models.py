@@ -236,6 +236,39 @@ class ProjectRecord:
     def slug(self) -> str:
         return self.uri.rstrip('/').split('/')[-1]
 
+    def get_dc_creators_contributors(self) -> Dict[str, List[str]]:
+        """Extract dc:creator and dc:contributor from event actors.
+
+        Rights logic:
+        - is_copyright_holder=True OR is_neighbouring_rights_holder=True -> dc:creator
+        - Both False -> dc:contributor
+
+        Returns:
+            Dict with 'creators' and 'contributors' lists.
+        """
+        creators: List[str] = []
+        contributors: List[str] = []
+
+        # Collect from all events (including main_event)
+        all_events = list(self.events)
+        if self.main_event:
+            all_events.append(self.main_event)
+
+        for event in all_events:
+            for actor in event.actors:
+                name = actor.name
+                if not name:
+                    continue
+                is_creator = actor.is_copyright_holder or actor.is_neighbouring_rights_holder
+                if is_creator:
+                    if name not in creators:
+                        creators.append(name)
+                else:
+                    if name not in contributors:
+                        contributors.append(name)
+
+        return {"creators": creators, "contributors": contributors}
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
