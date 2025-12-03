@@ -21,6 +21,7 @@ from arkumu.common.arkumu_license import (
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.projects.services.graph_service import get_project_graphs
 from arkumu.storage.models.s3_file_objects import S3FileObject
 from arkumu.oaipmh.constants import DNX_NS, XLINK_NS, XSI_NS
 from arkumu.oaipmh.formats.dublin_core import DC_NS, DCTERMS_NS, OAI_DC_NS
@@ -1200,16 +1201,23 @@ def _build_simplified_mets_from_project(
 
     _t1 = _time.perf_counter()
 
+    # Fetch graph data once, reuse for both canonical and institutional RDF
+    project_graphs = None
+    if not precomputed_canonical or not precomputed_institutional:
+        org_code = resource.organization.code if resource.organization else None
+        if org_code:
+            project_graphs = get_project_graphs(str(resource.id), org_code)
+
     try:
         if precomputed_canonical:
             canonical_rdf = ET.fromstring(precomputed_canonical.encode("utf-8"))
         elif prefetched_graph:
-            # Use batch-fetched graph data (no queries needed)
             canonical_rdf = build_rdf_graph(resource, graph_data=prefetched_graph)
+        elif project_graphs:
+            graph_data = project_graphs.to_graph_data()
+            canonical_rdf = build_rdf_graph(resource, graph_data=graph_data)
         else:
-            # On-demand fetch (always used when force_live_rdf=True)
-            rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
-            canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
+            raise ValueError("No graph data available for canonical RDF")
         _append_rdf_md(
             "simplified-rdf-canonical",
             "RDF",
@@ -1222,13 +1230,11 @@ def _build_simplified_mets_from_project(
     try:
         if precomputed_institutional:
             institutional_rdf = ET.fromstring(precomputed_institutional.encode("utf-8"))
-        elif prefetched_graph:
-            # Use batch-fetched graph data with institutional predicates
-            institutional_rdf = build_rdf_graph(resource, graph_data=prefetched_graph, use_institutional_predicates=True)
+        elif project_graphs:
+            graph_data = project_graphs.to_graph_data()
+            institutional_rdf = build_rdf_graph(resource, graph_data=graph_data, use_institutional_predicates=True)
         else:
-            # On-demand fetch via InstitutionalGraphService (always used when force_live_rdf=True)
-            from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
-            institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+            raise ValueError("No graph data available for institutional RDF")
     except Exception:
         logger.exception("Failed to build institutional RDF for %s", getattr(resource, "uri", "unknown"))
         institutional_rdf = None

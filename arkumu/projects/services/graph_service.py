@@ -50,6 +50,60 @@ class ProjectGraphs:
                 result.append((t.subject_uri, t.predicate_uri, obj))
         return result
 
+    def to_graph_data(self) -> Dict:
+        """Convert to format expected by build_rdf_graph().
+
+        Returns dict with 'nodes' and 'edges' compatible with
+        CanonicalGraphService.get_entity_graph() format.
+        """
+        nodes: Dict[str, Dict] = {}
+        edges: List[Dict] = []
+
+        # Build nodes from all unique URIs in triples
+        for t in self.triples:
+            # Subject node (always an entity)
+            if t.subject_uri and t.subject_uri not in nodes:
+                nodes[t.subject_uri] = {
+                    "uri": t.subject_uri,
+                    "resource_type": "ENTITY",
+                }
+
+            # Object node
+            if t.object_value:
+                # Literal node - use value as key
+                lit_key = f"_lit_{hash(t.object_value)}"
+                if lit_key not in nodes:
+                    nodes[lit_key] = {
+                        "uri": None,
+                        "value": t.object_value,
+                        "resource_type": "LITERAL",
+                    }
+                obj_key = lit_key
+            elif t.object_uri:
+                # Entity/IRI node
+                if t.object_uri not in nodes:
+                    nodes[t.object_uri] = {
+                        "uri": t.object_uri,
+                        "resource_type": "ENTITY",
+                    }
+                obj_key = t.object_uri
+            else:
+                continue
+
+            # Build edge
+            edges.append({
+                "subject_id": t.subject_uri,
+                "object_id": obj_key,
+                "predicate_uri": t.predicate_uri,
+                "predicate_canonical": t.predicate_canonical_uri,
+            })
+
+        return {
+            "root_uri": self.project_uri,
+            "nodes": nodes,
+            "edges": edges,
+        }
+
 
 def _as_uuid(value: str) -> Optional[uuid.UUID]:
     """Convert string to UUID."""

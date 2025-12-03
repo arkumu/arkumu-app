@@ -197,9 +197,11 @@ def build_rdf_graph(
         obj_node = _node_info(edge.get("object_id"))
         if use_institutional_predicates:
             predicate_source = edge.get("predicate_uri")
+            # Don't normalize institutional predicates - keep org prefix
+            normalized_predicate = predicate_source
         else:
             predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")
-        normalized_predicate = _normalize_predicate_uri(predicate_source)
+            normalized_predicate = _normalize_predicate_uri(predicate_source)
 
         if not subj_node or not obj_node or not normalized_predicate:
             continue
