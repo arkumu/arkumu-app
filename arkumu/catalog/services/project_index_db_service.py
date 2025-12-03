@@ -19,8 +19,12 @@ from arkumu.metadata.services.canonical_graph_service import CanonicalGraphServi
 from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
+from arkumu.projects.services.graph_service import get_all_project_graphs_batched
 
 logger = logging.getLogger(__name__)
+
+# Default organization codes for cross-institutional rebuild
+DEFAULT_ORG_CODES = ("fuk", "rsh", "det", "khm", "hmt")
 
 
 @dataclass
@@ -454,11 +458,21 @@ class ProjectIndexDbService:
         *,
         project_uris: Optional[Sequence[str]] = None,
         force_snapshot: bool = False,
+        use_graph_service: bool = False,
+        batch_size: int = 100,
     ) -> Dict[str, int]:
-        """Rebuild index tables from ProjectRecord instances."""
+        """Rebuild index tables from ProjectRecord instances.
 
+        Args:
+            project_uris: Optional list of specific URIs to rebuild
+            force_snapshot: Force refresh of snapshot cache (ignored if use_graph_service=True)
+            use_graph_service: Use graph_service instead of snapshot for fetching
+            batch_size: Batch size for graph_service (default 100)
+        """
         if project_uris:
             records = self._records_for_uris(project_uris)
+        elif use_graph_service:
+            records = self._records_from_graph_service(batch_size=batch_size)
         else:
             snapshot = self.snapshot_service.get_cross_institutional_snapshot(
                 force_refresh=force_snapshot,
@@ -495,6 +509,53 @@ class ProjectIndexDbService:
                 records.append(record)
             else:
                 logger.warning("ProjectIndexDbService: record not found for uri=%s", normalized)
+        return records
+
+    def _records_from_graph_service(
+        self,
+        org_codes: Sequence[str] = DEFAULT_ORG_CODES,
+        batch_size: int = 100,
+    ) -> List[ProjectRecord]:
+        """Build ProjectRecord list using graph_service batched fetching.
+
+        More efficient than snapshot for large catalogs:
+        - 5 queries per batch vs 5 queries per project
+        - Controlled memory via batching
+        - Same data source as OAI RDF generation
+
+        Args:
+            org_codes: Organization codes to include
+            batch_size: Projects per batch (default 100)
+
+        Returns:
+            List of ProjectRecord instances
+        """
+        records: List[ProjectRecord] = []
+
+        for org_code in org_codes:
+            org_count = 0
+            for project_id, graphs in get_all_project_graphs_batched(org_code, batch_size=batch_size):
+                try:
+                    record = graphs.to_project_record(project_id)
+                    records.append(record)
+                    org_count += 1
+                except Exception:
+                    logger.exception(
+                        "Failed to build ProjectRecord for project_id=%s org=%s",
+                        project_id,
+                        org_code,
+                    )
+
+            logger.info(
+                "ProjectIndexDbService: built %d records for org=%s via graph_service",
+                org_count,
+                org_code,
+            )
+
+        logger.info(
+            "ProjectIndexDbService: total %d records from graph_service",
+            len(records),
+        )
         return records
 
     def _resource_map(self, records: Sequence[ProjectRecord]) -> Dict[uuid.UUID, Resource]:
