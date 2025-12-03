@@ -447,17 +447,26 @@ def get_all_project_graphs_batched(
     Yields:
         (project_id, ProjectGraphs) tuples
     """
+    from arkumu.metadata.models.triples import Triple
+
+    RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+
     # Get junction FK predicates from mapping (once)
     junction_config = _get_junction_config(org_code)
     fk_predicates = junction_config.get('fk_predicates', set())
 
-    # Get all project resources for this org by URI pattern
-    # Projects have URIs like: http://arkumu.org/data/{org}/entities/projekt/{id}
+    # Find projects via rdf:type triple with canonical projekt type
+    project_ids = list(
+        Triple.objects.filter(
+            predicate__uri=RDF_TYPE,
+            object__canonical_uri=PROJECT_TYPE_URI,
+            subject__organization__code__iexact=org_code,
+        ).values_list('subject_id', flat=True).distinct()
+    )
+
+    # Get project resources
     project_resources = list(
-        Resource.objects.filter(
-            uri__regex=rf'/data/{org_code}/entities/projekt/\d+$',
-            organization__code__iexact=org_code,
-        ).only('id', 'uri')
+        Resource.objects.filter(id__in=project_ids).only('id', 'uri')
     )
 
     # Process in batches
