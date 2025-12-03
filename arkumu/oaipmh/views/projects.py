@@ -105,12 +105,17 @@ def _build_tailored_project_hint_from_resource(
     prefetched_curated_links: Optional[list] = None,
     prefetched_dcp_data: Optional[object] = None,
     prefetched_graph_data: Optional[object] = None,
+    force_live: bool = False,
 ) -> Optional[OAIProject]:
     """Build a tailored project using the tailored-only builder.
 
     Uses ProjectIndex.record_jsonb directly for fast access, avoiding
     expensive canonical graph queries. Digital objects come from
     OAIProjectMediaLink via curated media links.
+
+    Args:
+        force_live: If True, skip ProjectIndex and build fresh from graph_service.
+                   Use for GetRecord previews to ensure latest actor data.
     """
     import time
     from dataclasses import replace as dataclass_replace
@@ -119,14 +124,25 @@ def _build_tailored_project_hint_from_resource(
     record = None
     record_source = "none"
 
+    # Live path: build fresh from graph_service (for GetRecord)
+    if force_live:
+        org_code = resource.organization.code if resource.organization else None
+        if org_code:
+            from arkumu.projects.services.graph_service import get_project_graphs
+            graphs = get_project_graphs(str(resource.id), org_code)
+            if graphs:
+                record = graphs.to_project_record(str(resource.id))
+                record_source = "graph_service"
+
     # Fast path: use pre-computed ProjectIndex.record_jsonb
-    project_index = getattr(resource, "project_index", None)
-    if project_index is not None:
-        try:
-            record = project_index.to_record()
-            record_source = "index"
-        except Exception:
-            logger.debug("Failed to load record from ProjectIndex for %s", resource.uri)
+    if record is None:
+        project_index = getattr(resource, "project_index", None)
+        if project_index is not None:
+            try:
+                record = project_index.to_record()
+                record_source = "index"
+            except Exception:
+                logger.debug("Failed to load record from ProjectIndex for %s", resource.uri)
 
     # Fallback to assembler/snapshot only if index record unavailable
     if record is None:

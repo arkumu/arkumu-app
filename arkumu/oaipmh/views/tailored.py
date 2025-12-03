@@ -381,7 +381,7 @@ def _get_record_tailored(
     if not resource:
         return _error(oai, "idDoesNotExist", "Identifier not approved for tailored OAI")
 
-    project_hint = _build_tailored_project_hint_from_resource(resource)
+    project_hint = _build_tailored_project_hint_from_resource(resource, force_live=True)
     if not project_hint or not project_hint.harvestable:
         return _error(oai, "idDoesNotExist", "Identifier not harvestable")
 
