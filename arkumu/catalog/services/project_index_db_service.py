@@ -117,6 +117,12 @@ def _extract_dc_metadata_from_record(record: ProjectRecord) -> DcMetadata:
             else:
                 contributors.append(formatted)
 
+    # Fallback: if no creators but have contributors, promote contributors to creators
+    # A work should have at least one dc:creator
+    if not creators and contributors:
+        creators = contributors
+        contributors = []
+
     return DcMetadata(
         creators=creators,
         contributors=contributors,
