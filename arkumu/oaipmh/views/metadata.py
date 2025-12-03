@@ -664,6 +664,7 @@ def _build_dc_payload_from_project(
     resource: Resource,
     *,
     include_event_details: bool = True,
+    force_live_dc: bool = False,
 ) -> Dict[str, List[str]]:
     payload: Dict[str, List[str]] = {}
 
@@ -677,8 +678,6 @@ def _build_dc_payload_from_project(
         )
 
     _add_dc_value(payload, 'title', record.title)
-    for alt in record.alternative_titles:
-        _add_dc_value(payload, 'title', getattr(alt, 'value', None))
 
     _add_dc_value(payload, 'description', record.description)
 
@@ -686,7 +685,8 @@ def _build_dc_payload_from_project(
         _add_dc_value(payload, 'publisher', record.institution.label)
 
     # Try to use pre-computed DC metadata from ProjectIndex for better performance
-    project_index = getattr(resource, "project_index", None)
+    # Skip precomputed if force_live_dc is True (for GetRecord previews)
+    project_index = getattr(resource, "project_index", None) if not force_live_dc else None
     precomputed_creators = getattr(project_index, "dc_creators", None) if project_index else None
     precomputed_contributors = getattr(project_index, "dc_contributors", None) if project_index else None
 
@@ -1077,6 +1077,7 @@ def _build_simplified_mets_from_project(
         project,
         resource,
         include_event_details=False,
+        force_live_dc=force_live_rdf,
     )
     _t_dc1 = _time.perf_counter()
     logger.info("DC payload build took %.3fs", _t_dc1 - _t_dc0)
