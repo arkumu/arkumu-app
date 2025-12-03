@@ -164,6 +164,9 @@ class ManifestGraphTraverser:
 class InstitutionalGraphService:
     """Build org-scoped graphs using archive-native predicates."""
 
+    # Default batch size for bulk operations (memory vs speed tradeoff)
+    DEFAULT_BATCH_SIZE = 100
+
     def __init__(self, org_code: Optional[str] = None) -> None:
         self.org_code = org_code
         self.organization = (
@@ -231,6 +234,169 @@ class InstitutionalGraphService:
             "edges": edges,
             "counts": {"nodes": len(nodes), "edges": len(edges)},
         }
+
+    def get_entity_graphs_bulk(
+        self,
+        resource_ids: Sequence[str],
+        *,
+        depth: int = 2,
+        include_junctions: bool = True,
+        batch_size: Optional[int] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Fetch entity graphs for multiple resources in bulk with batching.
+
+        Processes resources in batches to avoid memory overflow while still
+        being much faster than per-resource queries.
+
+        Args:
+            resource_ids: List of resource IDs to fetch graphs for.
+            depth: How many hops to expand neighbors (default 2).
+            include_junctions: Whether to fetch junction entities (default True).
+            batch_size: Number of resources per batch (default 100).
+
+        Returns:
+            Dict mapping resource_id -> graph_data with nodes, edges, org.
+        """
+        if not resource_ids:
+            return {}
+
+        batch_size = batch_size or self.DEFAULT_BATCH_SIZE
+        all_ids = list(resource_ids)
+        result: Dict[str, Dict[str, Any]] = {}
+
+        # Process in batches to avoid memory overflow
+        for batch_start in range(0, len(all_ids), batch_size):
+            batch_ids = all_ids[batch_start:batch_start + batch_size]
+            batch_result = self._get_graphs_for_batch(
+                batch_ids,
+                depth=depth,
+                include_junctions=include_junctions,
+            )
+            result.update(batch_result)
+
+        return result
+
+    def _get_graphs_for_batch(
+        self,
+        root_ids: List[str],
+        *,
+        depth: int = 2,
+        include_junctions: bool = True,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Fetch graphs for a single batch of resources."""
+        if not root_ids:
+            return {}
+
+        # Track edges by root resource
+        edges_by_root: Dict[str, List[Dict[str, Any]]] = {rid: [] for rid in root_ids}
+
+        # 1. Fetch all outgoing triples for all roots in ONE query
+        all_edges = self._fetch_triples_for_subjects(root_ids)
+        for edge in all_edges:
+            subject_id = edge.get("subject_id")
+            if subject_id in edges_by_root:
+                edges_by_root[subject_id].append(edge)
+
+        # 2. Fetch all incoming triples for all roots in ONE query
+        incoming_edges = self._fetch_triples_for_objects(root_ids)
+        for edge in incoming_edges:
+            object_id = edge.get("object_id")
+            if object_id in edges_by_root:
+                edges_by_root[object_id].append(edge)
+
+        # 3. Expand neighbors if depth > 0
+        if depth > 0:
+            # Build reverse index: subject_id -> set of root_ids that contain it
+            roots_by_subject: Dict[str, Set[str]] = {rid: {rid} for rid in root_ids}
+
+            # Collect all neighbor IDs from all roots
+            all_neighbor_ids: Set[str] = set()
+            for rid, edges in edges_by_root.items():
+                for edge in edges:
+                    obj_id = edge.get("object_id")
+                    obj_type = edge.get("object_type")
+                    if obj_type == ResourceType.ENTITY and obj_id and obj_id not in root_ids:
+                        all_neighbor_ids.add(obj_id)
+                        roots_by_subject.setdefault(obj_id, set()).add(rid)
+
+            # Expand neighbors in hops
+            visited = set(root_ids)
+            frontier_ids = list(all_neighbor_ids - visited)
+            hops = 0
+
+            while frontier_ids and hops < depth:
+                visited.update(frontier_ids)
+
+                # Fetch triples for all frontier nodes in ONE query
+                neighbor_edges = self._fetch_triples_for_subjects(frontier_ids)
+
+                for edge in neighbor_edges:
+                    subject_id = edge.get("subject_id")
+                    obj_id = edge.get("object_id")
+                    obj_type = edge.get("object_type")
+
+                    # Add edge to all roots that contain this subject
+                    affected_roots = roots_by_subject.get(subject_id, set())
+                    for rid in affected_roots:
+                        edges_by_root[rid].append(edge)
+                        if obj_type == ResourceType.ENTITY and obj_id:
+                            roots_by_subject.setdefault(obj_id, set()).add(rid)
+
+                # Build next frontier
+                next_frontier: Set[str] = set()
+                for edge in neighbor_edges:
+                    obj_id = edge.get("object_id")
+                    obj_type = edge.get("object_type")
+                    if obj_type == ResourceType.ENTITY and obj_id and obj_id not in visited:
+                        next_frontier.add(obj_id)
+
+                frontier_ids = list(next_frontier)
+                hops += 1
+
+        # 4. Fetch junction entities if requested
+        if include_junctions:
+            # Collect all entity IDs from all graphs
+            all_entity_ids: Set[str] = set()
+            for rid, edges in edges_by_root.items():
+                all_entity_ids.add(rid)
+                for edge in edges:
+                    obj_id = edge.get("object_id")
+                    obj_type = edge.get("object_type")
+                    if obj_type == ResourceType.ENTITY and obj_id:
+                        all_entity_ids.add(obj_id)
+
+            # Fetch junctions pointing to these entities
+            junction_edges = self.fetch_junction_entities(list(all_entity_ids))
+            if junction_edges:
+                # Add junction edges to appropriate roots
+                # Build a map: entity_id -> which roots contain it
+                entity_to_roots: Dict[str, Set[str]] = {}
+                for rid, edges in edges_by_root.items():
+                    entity_to_roots.setdefault(rid, set()).add(rid)
+                    for edge in edges:
+                        obj_id = edge.get("object_id")
+                        if obj_id:
+                            entity_to_roots.setdefault(obj_id, set()).add(rid)
+
+                for junc_edge in junction_edges:
+                    obj_id = junc_edge.get("object_id")
+                    affected_roots = entity_to_roots.get(obj_id, set())
+                    for rid in affected_roots:
+                        edges_by_root[rid].append(junc_edge)
+
+        # 5. Build per-root graph dicts
+        result: Dict[str, Dict[str, Any]] = {}
+        for rid in root_ids:
+            edges = edges_by_root[rid]
+            nodes = self._collect_nodes_from_edges(edges)
+            result[rid] = {
+                "organization": getattr(self.organization, "code", None),
+                "root_id": rid,
+                "nodes": nodes,
+                "edges": edges,
+            }
+
+        return result
 
     # Helpers --------------------------------------------------------------
     def _triple_filter(self) -> Q:

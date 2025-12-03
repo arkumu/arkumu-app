@@ -82,16 +82,36 @@ def _serialize_canonical_rdf_xml(
         return ""
 
 
-def _serialize_institutional_rdf_xml(resource: Resource) -> str:
+def _serialize_institutional_rdf_xml(
+    resource: Resource,
+    graph_data: Optional[Dict[str, Any]] = None,
+    org_code: Optional[str] = None,
+) -> str:
     """Serialize institutional RDF/XML using InstitutionalGraphService.
 
-    Always uses InstitutionalGraphService to ensure junction entities are included.
-    This matches the GetRecord behavior exactly.
+    If graph_data and org_code are provided (bulk mode), uses pre-fetched data.
+    Otherwise fetches on-demand using InstitutionalGraphService.
+
+    Args:
+        resource: The resource to serialize.
+        graph_data: Pre-fetched graph data from InstitutionalGraphService.get_entity_graphs_bulk().
+        org_code: Organization code for namespace prefixes.
     """
-    from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
+    from arkumu.oaipmh.views.institutional import (
+        _build_institutional_rdf_element,
+        build_institutional_rdf_from_graph,
+    )
 
     try:
-        rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+        if graph_data and org_code:
+            # Fast path: use pre-fetched graph data (from bulk query)
+            nodes = graph_data.get("nodes") or {}
+            edges = graph_data.get("edges") or []
+            rdf_element = build_institutional_rdf_from_graph(nodes, edges, org_code)
+        else:
+            # Slow path: query InstitutionalGraphService on-demand
+            rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+
         if rdf_element is None:
             return ""
         return ET.tostring(rdf_element, encoding="unicode")
@@ -112,8 +132,17 @@ class PrecomputedOaiData:
 def _batch_precompute_oai_data(
     resource_map: Dict[uuid.UUID, Resource],
     record_map: Dict[uuid.UUID, Dict],
+    batch_size: int = 100,
 ) -> Dict[uuid.UUID, PrecomputedOaiData]:
-    """Batch pre-compute OAI data using BULK graph fetching (much faster)."""
+    """Batch pre-compute OAI data using BULK graph fetching (much faster).
+
+    Args:
+        resource_map: Map of resource UUID -> Resource.
+        record_map: Map of resource UUID -> record dict.
+        batch_size: Number of resources to process per batch (for memory management).
+    """
+    from arkumu.metadata.services.institutional_graph_service import InstitutionalGraphService
+
     results: Dict[uuid.UUID, PrecomputedOaiData] = {}
     empty_result = PrecomputedOaiData(
         canonical_rdf_xml="",
@@ -125,21 +154,53 @@ def _batch_precompute_oai_data(
     if not resource_map:
         return results
 
-    # Fetch ALL graphs in ONE bulk query
     resource_ids = [str(rid) for rid in resource_map.keys()]
-    logger.info("Fetching %d entity graphs in bulk...", len(resource_ids))
-    graph_service = CanonicalGraphService(org_code=None)
-    graphs_by_id = graph_service.get_entity_graphs_bulk(resource_ids, depth=2)
-    logger.info("Bulk graph fetch complete.")
 
-    # Serialize RDF for each resource
-    # - Canonical RDF: uses pre-fetched graph data from CanonicalGraphService
-    # - Institutional RDF: uses InstitutionalGraphService (includes junction entities)
+    # 1. Fetch ALL canonical graphs in ONE bulk query
+    logger.info("Fetching %d canonical graphs in bulk...", len(resource_ids))
+    canonical_service = CanonicalGraphService(org_code=None)
+    canonical_graphs = canonical_service.get_entity_graphs_bulk(resource_ids, depth=2)
+    logger.info("Canonical graph fetch complete.")
+
+    # 2. Group resources by org_code for institutional RDF
+    resources_by_org: Dict[str, List[uuid.UUID]] = {}
+    org_by_resource: Dict[uuid.UUID, str] = {}
+    for rid, resource in resource_map.items():
+        org = getattr(resource, "organization", None)
+        org_code = str(getattr(org, "code", "") or "").strip().lower() if org else ""
+        if org_code:
+            resources_by_org.setdefault(org_code, []).append(rid)
+            org_by_resource[rid] = org_code
+
+    # 3. Fetch institutional graphs per org (with batching)
+    institutional_graphs: Dict[str, Dict[str, Any]] = {}
+    for org_code, org_rids in resources_by_org.items():
+        org_resource_ids = [str(rid) for rid in org_rids]
+        logger.info("Fetching %d institutional graphs for org %s...", len(org_resource_ids), org_code)
+        inst_service = InstitutionalGraphService(org_code=org_code)
+        org_graphs = inst_service.get_entity_graphs_bulk(
+            org_resource_ids,
+            depth=2,
+            include_junctions=True,
+            batch_size=batch_size,
+        )
+        institutional_graphs.update(org_graphs)
+    logger.info("Institutional graph fetch complete.")
+
+    # 4. Serialize RDF for each resource using pre-fetched graph data
     for rid, resource in resource_map.items():
         try:
-            graph_data = graphs_by_id.get(str(rid))
-            canonical_rdf = _serialize_canonical_rdf_xml(resource, graph_data=graph_data)
-            institutional_rdf = _serialize_institutional_rdf_xml(resource)
+            rid_str = str(rid)
+            canonical_graph = canonical_graphs.get(rid_str)
+            institutional_graph = institutional_graphs.get(rid_str)
+            org_code = org_by_resource.get(rid, "")
+
+            canonical_rdf = _serialize_canonical_rdf_xml(resource, graph_data=canonical_graph)
+            institutional_rdf = _serialize_institutional_rdf_xml(
+                resource,
+                graph_data=institutional_graph,
+                org_code=org_code,
+            )
 
             # Extract DC metadata
             creators: List[str] = []
@@ -1377,10 +1438,37 @@ class ProjectIndexDbService:
 
         # Batch generate RDF/XML for all projects (unless skipped)
         if index_rows and not skip_rdf:
+            from arkumu.metadata.services.institutional_graph_service import InstitutionalGraphService
             import time as _time
             total_rows = len(index_rows)
             logger.info("Batch generating RDF/XML for %d projects...", total_rows)
             t0 = _time.perf_counter()
+
+            # Pre-fetch institutional graphs in bulk (grouped by org)
+            resources_by_org: Dict[str, List[str]] = {}
+            org_by_rid: Dict[str, str] = {}
+            for row in index_rows:
+                rid = str(row.project_resource_id)
+                resource = row.project_resource
+                org = getattr(resource, "organization", None)
+                org_code = str(getattr(org, "code", "") or "").strip().lower() if org else ""
+                if org_code:
+                    resources_by_org.setdefault(org_code, []).append(rid)
+                    org_by_rid[rid] = org_code
+
+            institutional_graphs: Dict[str, Dict[str, Any]] = {}
+            for org_code, org_rids in resources_by_org.items():
+                logger.info("Fetching %d institutional graphs for org %s...", len(org_rids), org_code)
+                inst_service = InstitutionalGraphService(org_code=org_code)
+                org_graphs = inst_service.get_entity_graphs_bulk(
+                    org_rids,
+                    depth=2,
+                    include_junctions=True,
+                    batch_size=100,
+                )
+                institutional_graphs.update(org_graphs)
+            t_inst = _time.perf_counter()
+            logger.info("Institutional graph bulk fetch complete in %.2fs", t_inst - t0)
 
             for idx, row in enumerate(index_rows):
                 if idx % 500 == 0:
@@ -1389,8 +1477,14 @@ class ProjectIndexDbService:
                 graph_data = self._build_project_graph_for_rdf(rid, edges_by_subject, nodes)
                 if graph_data and graph_data.get("edges"):
                     row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
-                    # Institutional RDF uses InstitutionalGraphService (includes junction entities)
-                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(row.project_resource)
+                    # Use pre-fetched institutional graph data
+                    inst_graph = institutional_graphs.get(rid)
+                    org_code = org_by_rid.get(rid, "")
+                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(
+                        row.project_resource,
+                        graph_data=inst_graph,
+                        org_code=org_code,
+                    )
             t1 = _time.perf_counter()
             logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t1 - t0, (t1 - t0) / total_rows)
         elif skip_rdf:
