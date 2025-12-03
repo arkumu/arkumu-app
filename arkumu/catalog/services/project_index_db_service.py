@@ -69,16 +69,31 @@ def _serialize_canonical_rdf_xml(
         return ""
 
 
-def _serialize_institutional_rdf_xml(resource: Resource) -> str:
-    """Serialize institutional RDF/XML using InstitutionalGraphService.
+def _serialize_institutional_rdf_xml(
+    resource: Resource,
+    graph_data: Optional[Dict[str, Any]] = None,
+    org_code: Optional[str] = None,
+) -> str:
+    """Serialize institutional RDF/XML.
 
-    Uses the same logic as _build_institutional_rdf_element for consistency
-    between ProjectIndex and GetRecord/ListRecords output.
+    If graph_data and org_code are provided, uses pre-loaded data (fast batch mode).
+    Otherwise falls back to querying the graph service (GetRecord mode).
     """
-    from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
+    from arkumu.oaipmh.views.institutional import (
+        _build_institutional_rdf_element,
+        build_institutional_rdf_from_graph,
+    )
 
     try:
-        rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+        if graph_data and org_code:
+            # Fast path: use pre-loaded graph data
+            nodes = graph_data.get("nodes") or {}
+            edges = graph_data.get("edges") or []
+            rdf_element = build_institutional_rdf_from_graph(nodes, edges, org_code)
+        else:
+            # Slow path: query graph service (for GetRecord)
+            rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+
         if rdf_element is None:
             return ""
         return ET.tostring(rdf_element, encoding="unicode")
@@ -1373,7 +1388,12 @@ class ProjectIndexDbService:
                 graph_data = self._build_project_graph_for_rdf(rid, edges_by_subject, nodes)
                 if graph_data and graph_data.get("edges"):
                     row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
-                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(row.project_resource)
+                    # Get org_code for institutional RDF prefix
+                    org = getattr(row.project_resource, "organization", None)
+                    org_code = str(org.code).strip().lower() if org and getattr(org, "code", None) else None
+                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(
+                        row.project_resource, graph_data=graph_data, org_code=org_code
+                    )
             t1 = _time.perf_counter()
             logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t1 - t0, (t1 - t0) / total_rows)
         elif skip_rdf:

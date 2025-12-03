@@ -24,8 +24,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--backend",
             choices=["snapshot", "graph"],
-            default="snapshot",
-            help="Data source: 'snapshot' (default) or 'graph' (canonical graph, faster).",
+            default="graph",
+            help="Data source: 'graph' (default, canonical graph, faster) or 'snapshot'.",
         )
         parser.add_argument(
             "--skip-rdf",

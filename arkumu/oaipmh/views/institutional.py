@@ -39,52 +39,18 @@ def _should_emit_institutional_rdf(org_code: Optional[str]) -> bool:
     return normalized in configured
 
 
-def _build_institutional_rdf_element(
-    resource: Resource,
-    *,
-    require_org_opt_in: bool = True,
+def build_institutional_rdf_from_graph(
+    nodes: Dict[str, dict],
+    edges: List[dict],
+    org_code: str,
 ) -> Optional[ET._Element]:
-    organization = getattr(resource, "organization", None)
-    if not organization or not getattr(organization, "code", None):
-        return None
-    org_code = str(organization.code).strip().lower()
-    if require_org_opt_in and not _should_emit_institutional_rdf(org_code):
-        return None
+    """Build institutional RDF element from pre-loaded graph data.
 
-    graph_service = InstitutionalGraphService(org_code=org_code)
-    try:
-        graph = graph_service.get_entity_graph(
-            resource.uri,
-            include_incoming=True,
-            expand_neighbors=True,
-            depth=2,
-        )
-    except ValueError:
-        return None
-
-    nodes = graph.get("nodes") or {}
-    edges = list(graph.get("edges") or [])
+    This is the core RDF building logic, separated for reuse by both
+    GetRecord (live queries) and ProjectIndex (pre-loaded batch data).
+    """
     if not nodes or not edges:
         return None
-
-    # Fetch junction entities (Kreuztabelle) for related entities
-    # This adds actor-role relationships and other n-ary data
-    traverser = graph_service._get_traverser()
-    if traverser:
-        # Get all entity IDs from the graph to find junctions pointing to them
-        entity_ids = [
-            node_id for node_id, node in nodes.items()
-            if node.get("resource_type") == ResourceType.ENTITY
-        ]
-        if entity_ids:
-            junction_edges = graph_service.fetch_junction_entities(entity_ids)
-            if junction_edges:
-                edges.extend(junction_edges)
-                # Add new nodes from junction edges
-                new_nodes = graph_service._collect_nodes_from_edges(junction_edges)
-                for node_id, node_data in new_nodes.items():
-                    if node_id not in nodes:
-                        nodes[node_id] = node_data
 
     namespaces = OrderedDict()
     for edge in edges:
@@ -138,6 +104,60 @@ def _build_institutional_rdf_element(
             element.set(ET.QName(RDF_NS, "resource"), obj_uri)
 
     return root if len(root) else None
+
+
+def _build_institutional_rdf_element(
+    resource: Resource,
+    *,
+    require_org_opt_in: bool = True,
+) -> Optional[ET._Element]:
+    """Build institutional RDF by querying the graph service.
+
+    Used for GetRecord where we don't have pre-loaded graph data.
+    """
+    organization = getattr(resource, "organization", None)
+    if not organization or not getattr(organization, "code", None):
+        return None
+    org_code = str(organization.code).strip().lower()
+    if require_org_opt_in and not _should_emit_institutional_rdf(org_code):
+        return None
+
+    graph_service = InstitutionalGraphService(org_code=org_code)
+    try:
+        graph = graph_service.get_entity_graph(
+            resource.uri,
+            include_incoming=True,
+            expand_neighbors=True,
+            depth=2,
+        )
+    except ValueError:
+        return None
+
+    nodes = graph.get("nodes") or {}
+    edges = list(graph.get("edges") or [])
+    if not nodes or not edges:
+        return None
+
+    # Fetch junction entities (Kreuztabelle) for related entities
+    # This adds actor-role relationships and other n-ary data
+    traverser = graph_service._get_traverser()
+    if traverser:
+        # Get all entity IDs from the graph to find junctions pointing to them
+        entity_ids = [
+            node_id for node_id, node in nodes.items()
+            if node.get("resource_type") == ResourceType.ENTITY
+        ]
+        if entity_ids:
+            junction_edges = graph_service.fetch_junction_entities(entity_ids)
+            if junction_edges:
+                edges.extend(junction_edges)
+                # Add new nodes from junction edges
+                new_nodes = graph_service._collect_nodes_from_edges(junction_edges)
+                for node_id, node_data in new_nodes.items():
+                    if node_id not in nodes:
+                        nodes[node_id] = node_data
+
+    return build_institutional_rdf_from_graph(nodes, edges, org_code)
 
 
 def _normalized_org_code(
