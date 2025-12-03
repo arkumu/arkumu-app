@@ -58,10 +58,23 @@ def _extract_dc_metadata(resource: Resource, record: ProjectRecord) -> DcMetadat
 
 def _serialize_canonical_rdf_xml(
     resource: Resource,
-    graph_data: Dict[str, Any],
+    graph_data: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Serialize canonical RDF/XML from bulk-fetched graph data."""
+    """Serialize canonical RDF/XML using CanonicalGraphService.
+
+    If graph_data is provided (bulk mode), uses it directly.
+    Otherwise fetches from CanonicalGraphService on-demand.
+    """
     try:
+        if graph_data is None:
+            # Fetch on-demand using CanonicalGraphService
+            graph_service = CanonicalGraphService(org_code=None)
+            graph_data = graph_service.get_entity_graph(
+                resource.uri,
+                include_incoming=True,
+                expand_neighbors=True,
+                depth=2,
+            )
         rdf_element = build_rdf_graph(resource, graph_data=graph_data)
         return ET.tostring(rdf_element, encoding="unicode")
     except Exception:
@@ -69,31 +82,16 @@ def _serialize_canonical_rdf_xml(
         return ""
 
 
-def _serialize_institutional_rdf_xml(
-    resource: Resource,
-    graph_data: Optional[Dict[str, Any]] = None,
-    org_code: Optional[str] = None,
-) -> str:
-    """Serialize institutional RDF/XML.
+def _serialize_institutional_rdf_xml(resource: Resource) -> str:
+    """Serialize institutional RDF/XML using InstitutionalGraphService.
 
-    If graph_data and org_code are provided, uses pre-loaded data (fast batch mode).
-    Otherwise falls back to querying the graph service (GetRecord mode).
+    Always uses InstitutionalGraphService to ensure junction entities are included.
+    This matches the GetRecord behavior exactly.
     """
-    from arkumu.oaipmh.views.institutional import (
-        _build_institutional_rdf_element,
-        build_institutional_rdf_from_graph,
-    )
+    from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
 
     try:
-        if graph_data and org_code:
-            # Fast path: use pre-loaded graph data
-            nodes = graph_data.get("nodes") or {}
-            edges = graph_data.get("edges") or []
-            rdf_element = build_institutional_rdf_from_graph(nodes, edges, org_code)
-        else:
-            # Slow path: query graph service (for GetRecord)
-            rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
-
+        rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
         if rdf_element is None:
             return ""
         return ET.tostring(rdf_element, encoding="unicode")
@@ -134,7 +132,9 @@ def _batch_precompute_oai_data(
     graphs_by_id = graph_service.get_entity_graphs_bulk(resource_ids, depth=2)
     logger.info("Bulk graph fetch complete.")
 
-    # Serialize RDF for each resource using pre-fetched graph data
+    # Serialize RDF for each resource
+    # - Canonical RDF: uses pre-fetched graph data from CanonicalGraphService
+    # - Institutional RDF: uses InstitutionalGraphService (includes junction entities)
     for rid, resource in resource_map.items():
         try:
             graph_data = graphs_by_id.get(str(rid))
@@ -564,6 +564,7 @@ class ProjectIndexDbService:
                     "built_at",
                     "source_version",
                 ],
+                batch_size=100,
             )
 
             if prune_missing and seen_ids:
@@ -1388,12 +1389,8 @@ class ProjectIndexDbService:
                 graph_data = self._build_project_graph_for_rdf(rid, edges_by_subject, nodes)
                 if graph_data and graph_data.get("edges"):
                     row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
-                    # Get org_code for institutional RDF prefix
-                    org = getattr(row.project_resource, "organization", None)
-                    org_code = str(org.code).strip().lower() if org and getattr(org, "code", None) else None
-                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(
-                        row.project_resource, graph_data=graph_data, org_code=org_code
-                    )
+                    # Institutional RDF uses InstitutionalGraphService (includes junction entities)
+                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(row.project_resource)
             t1 = _time.perf_counter()
             logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t1 - t0, (t1 - t0) / total_rows)
         elif skip_rdf:
@@ -1469,6 +1466,7 @@ class ProjectIndexDbService:
                     "built_at",
                     "source_version",
                 ],
+                batch_size=100,
             )
 
             if prune_missing and seen_ids:
@@ -1849,11 +1847,24 @@ class ProjectIndexDbService:
 
             for t in rolle_name_triples:
                 rolle_id = str(t.subject_id)
+                obj_id = str(t.object_id) if t.object_id else None
+                obj_value = t.object.value if t.object else None
                 edges_by_subject.setdefault(rolle_id, []).append({
                     "subject_id": rolle_id,
                     "predicate_canonical": _CanonicalURIs.ROLE_GERMAN_NAME,
-                    "object_value": t.object.value if t.object else None,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
+                    "object_id": obj_id,
+                    "object_value": obj_value,
                 })
+                # Add literal node for role name
+                if obj_id and obj_id not in nodes:
+                    nodes[obj_id] = {
+                        "value": obj_value,
+                        "resource_type": ResourceType.LITERAL.value,
+                    }
+                # Ensure rolle node has resource_type
+                if rolle_id in nodes and "resource_type" not in nodes[rolle_id]:
+                    nodes[rolle_id]["resource_type"] = ResourceType.ENTITY.value
 
         # Fetch actor name edges (for actors found via junctions)
         if actor_ids:
@@ -1864,13 +1875,26 @@ class ProjectIndexDbService:
 
             for t in actor_name_triples:
                 actor_id = str(t.subject_id)
+                obj_id = str(t.object_id) if t.object_id else None
+                obj_value = t.object.value if t.object else None
                 edges_by_subject.setdefault(actor_id, []).append({
                     "subject_id": actor_id,
                     "predicate_canonical": _CanonicalURIs.ACTOR_NAME,
-                    "object_value": t.object.value if t.object else None,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
+                    "object_id": obj_id,
+                    "object_value": obj_value,
                 })
-                # Also add to nodes
-                nodes.setdefault(actor_id, {})["uri"] = t.subject.uri if t.subject else ""
+                # Add literal node for actor name
+                if obj_id and obj_id not in nodes:
+                    nodes[obj_id] = {
+                        "value": obj_value,
+                        "resource_type": ResourceType.LITERAL.value,
+                    }
+                # Add/update actor node with uri and resource_type
+                if actor_id not in nodes:
+                    nodes[actor_id] = {}
+                nodes[actor_id]["uri"] = t.subject.uri if t.subject else ""
+                nodes[actor_id]["resource_type"] = ResourceType.ENTITY.value
 
         logger.debug(
             "_expand_event_junctions: added %d junction edges, %d rolle edges, %d actor edges",
