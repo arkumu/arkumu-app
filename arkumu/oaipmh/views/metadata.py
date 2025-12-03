@@ -1057,8 +1057,14 @@ def _build_simplified_mets_from_project(
     resource: Resource,
     *,
     request: Optional[HttpRequest] = None,
+    force_live_rdf: bool = False,
 ) -> ET._Element:
-    """Emit the pared-down METS variant used exclusively by the DB endpoint."""
+    """Emit the pared-down METS variant used exclusively by the DB endpoint.
+
+    Args:
+        force_live_rdf: If True, always fetch RDF on-demand (skip precomputed ProjectIndex).
+                       Use for GetRecord previews; False for ListRecords harvesting.
+    """
     import time as _time
     _t0 = _time.perf_counter()
 
@@ -1204,12 +1210,14 @@ def _build_simplified_mets_from_project(
         source_xml.append(rdf_elem)
 
     # Try to use pre-computed RDF/XML from ProjectIndex for better performance
-    project_index = getattr(resource, "project_index", None)
+    # Skip precomputed if force_live_rdf is True (for GetRecord previews)
+    project_index = getattr(resource, "project_index", None) if not force_live_rdf else None
     precomputed_canonical = getattr(project_index, "canonical_rdf_xml", "") if project_index else ""
     precomputed_institutional = getattr(project_index, "institutional_rdf_xml", "") if project_index else ""
 
     # Also check for batch-fetched graph_data on the project (from tailored endpoint)
-    prefetched_graph = getattr(project, "graph_data", None)
+    # Skip prefetched if force_live_rdf is True
+    prefetched_graph = getattr(project, "graph_data", None) if not force_live_rdf else None
 
     _t1 = _time.perf_counter()
 
@@ -1220,6 +1228,7 @@ def _build_simplified_mets_from_project(
             # Use batch-fetched graph data (no queries needed)
             canonical_rdf = build_rdf_graph(resource, graph_data=prefetched_graph)
         else:
+            # On-demand fetch (always used when force_live_rdf=True)
             rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
             canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
         _append_rdf_md(
@@ -1238,7 +1247,7 @@ def _build_simplified_mets_from_project(
             # Use batch-fetched graph data with institutional predicates
             institutional_rdf = build_rdf_graph(resource, graph_data=prefetched_graph, use_institutional_predicates=True)
         else:
-            # Fall back to on-demand fetch via InstitutionalGraphService
+            # On-demand fetch via InstitutionalGraphService (always used when force_live_rdf=True)
             from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
             institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
     except Exception:
@@ -2005,8 +2014,13 @@ def _build_metadata_element(
     *,
     request: Optional[HttpRequest] = None,
     skip_validation: bool = False,
+    force_live_rdf: bool = False,
 ) -> ET._Element:
-    """Build metadata element for different formats."""
+    """Build metadata element for different formats.
+
+    Args:
+        force_live_rdf: If True, always fetch RDF on-demand (for GetRecord previews).
+    """
     metadata = ET.Element("metadata")
 
     projects = _candidate_projects_for_resource(resource, primary_project=project_hint)
@@ -2033,7 +2047,7 @@ def _build_metadata_element(
 
             t_mets_start = time.time()
             if simplified_mode:
-                mets_root = _build_simplified_mets_from_project(project, resource, request=request)
+                mets_root = _build_simplified_mets_from_project(project, resource, request=request, force_live_rdf=force_live_rdf)
             else:
                 dc_payload_core = _build_dc_payload_from_project(
                     project,

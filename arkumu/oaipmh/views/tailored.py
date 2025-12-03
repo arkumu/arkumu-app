@@ -420,6 +420,7 @@ def _get_record_tailored(
         project_hint=project_hint,
         request=request,
         skip_validation=True,
+        force_live_rdf=True,  # GetRecord always uses live RDF for preview
     )
 
     record.append(header)
