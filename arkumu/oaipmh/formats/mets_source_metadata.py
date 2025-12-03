@@ -151,10 +151,11 @@ def build_rdf_graph(
         if ns_uri.startswith("http://arkumu.org/data/") and ns_uri.endswith("/properties/"):
             suffix = ns_uri[len("http://arkumu.org/data/"):-len("/properties/")].strip("/")
             if not suffix:
-                candidate = "ark_prop"
+                candidate = "arkumu"
             else:
+                # Use org code directly as prefix (e.g., "khm" not "khm_prop")
                 parts = [part for part in suffix.split("/") if part]
-                candidate = f"{parts[-1]}_prop" if parts else "ark_prop"
+                candidate = parts[-1] if parts else "arkumu"
         else:
             parsed = urlparse(ns_uri)
             host = parsed.netloc.split(":")[0].replace(".", "_")

@@ -1238,8 +1238,9 @@ def _build_simplified_mets_from_project(
             # Use batch-fetched graph data with institutional predicates
             institutional_rdf = build_rdf_graph(resource, graph_data=prefetched_graph, use_institutional_predicates=True)
         else:
-            # Skip expensive institutional RDF query if not precomputed/prefetched
-            institutional_rdf = None
+            # Fall back to on-demand fetch via InstitutionalGraphService
+            from arkumu.oaipmh.views.institutional import _build_institutional_rdf_element
+            institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
     except Exception:
         logger.exception("Failed to build institutional RDF for %s", getattr(resource, "uri", "unknown"))
         institutional_rdf = None

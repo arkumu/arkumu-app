@@ -58,11 +58,11 @@ def _extract_dc_metadata(resource: Resource, record: ProjectRecord) -> DcMetadat
 
 def _serialize_canonical_rdf_xml(
     resource: Resource,
-    graph_data: Optional[Dict[str, Any]] = None,
+    graph_data: Dict[str, Any],
 ) -> str:
-    """Serialize canonical RDF/XML for a resource graph."""
+    """Serialize canonical RDF/XML from bulk-fetched graph data."""
     try:
-        rdf_element = build_rdf_graph(resource, graph_service=None, graph_data=graph_data)
+        rdf_element = build_rdf_graph(resource, graph_data=graph_data)
         return ET.tostring(rdf_element, encoding="unicode")
     except Exception:
         logger.exception("Failed to serialize canonical RDF/XML for %s", resource.uri)
@@ -71,20 +71,14 @@ def _serialize_canonical_rdf_xml(
 
 def _serialize_institutional_rdf_xml(
     resource: Resource,
-    graph_data: Optional[Dict[str, Any]] = None,
+    graph_data: Dict[str, Any],
 ) -> str:
-    """Serialize institutional RDF/XML for a resource graph.
+    """Serialize institutional RDF/XML from bulk-fetched graph data.
 
-    Uses predicate_uri (native URIs) instead of predicate_canonical.
-    When graph_data is provided, reuses the same edges without extra queries.
+    Uses use_institutional_predicates=True to serialize native predicate URIs.
     """
     try:
-        rdf_element = build_rdf_graph(
-            resource,
-            graph_service=None,
-            graph_data=graph_data,
-            use_institutional_predicates=True,
-        )
+        rdf_element = build_rdf_graph(resource, graph_data=graph_data, use_institutional_predicates=True)
         return ET.tostring(rdf_element, encoding="unicode")
     except Exception:
         logger.exception("Failed to serialize institutional RDF/XML for %s", resource.uri)
@@ -794,9 +788,9 @@ class ProjectIndexDbService:
         graph = graph_service.get_project_graph(
             dataset_name="Projekt",
             type_canonical_uri=_CanonicalURIs.PROJECT_TYPE,
-            predicate_canon_whitelist=_CanonicalURIs.project_predicates(),
+            predicate_canon_whitelist=None,  # No whitelist - fetch ALL predicates for RDF
             expand_neighbors=True,
-            neighbor_predicate_canon_whitelist=_CanonicalURIs.neighbor_predicates(),
+            neighbor_predicate_canon_whitelist=None,  # No whitelist for neighbors
         )
 
         subject_ids: List[str] = graph.get("subjects", []) or []
@@ -1364,18 +1358,16 @@ class ProjectIndexDbService:
             seen_ids.add(resource.id)
 
         # Batch generate RDF/XML for all projects (unless skipped)
-        # Uses precomputed edges_by_subject which includes junction data
         if index_rows and not skip_rdf:
             import time as _time
             total_rows = len(index_rows)
-            logger.info("Batch generating RDF/XML for %d projects (with junctions)...", total_rows)
+            logger.info("Batch generating RDF/XML for %d projects...", total_rows)
             t0 = _time.perf_counter()
 
             for idx, row in enumerate(index_rows):
                 if idx % 500 == 0:
                     logger.info("RDF serialization progress: %d/%d (%.1f%%)", idx, total_rows, 100.0 * idx / total_rows)
                 rid = str(row.project_resource_id)
-                # Build graph_data from precomputed edges (includes junctions)
                 graph_data = self._build_project_graph_for_rdf(rid, edges_by_subject, nodes)
                 if graph_data and graph_data.get("edges"):
                     row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
