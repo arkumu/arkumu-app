@@ -535,6 +535,9 @@ class InstitutionAdapter(ABC):
         if not project_uuid:
             return []
 
+        # Track which events link to which digital objects
+        do_event_map: Dict[str, List[str]] = {}
+
         # Find digital objects linked directly to project
         do_triples = Triple.objects.filter(
             Q(predicate__canonical_uri=CanonicalURIs.DIGITAL_OBJECT)
@@ -558,7 +561,11 @@ class InstitutionAdapter(ABC):
 
             for do_id, event_id in event_do_triples:
                 if do_id:
-                    do_ids.append(str(do_id))
+                    did = str(do_id)
+                    do_ids.append(did)
+                    if did not in do_event_map:
+                        do_event_map[did] = []
+                    do_event_map[did].append(str(event_id))
 
         if not do_ids:
             return []
@@ -572,17 +579,42 @@ class InstitutionAdapter(ABC):
         do_resources = Resource.objects.filter(id__in=do_uuids).values("id", "uri")
         uri_map = {str(r["id"]): r["uri"] for r in do_resources}
 
-        # Get file paths
-        path_triples = Triple.objects.filter(
-            Q(predicate__canonical_uri=CanonicalURIs.FILE_PATH)
-            | Q(predicate__uri__icontains="dateipfad"),
+        # Get all properties for digital objects in one query
+        property_predicates = [
+            CanonicalURIs.FILE_PATH,
+            CanonicalURIs.LICENSE,
+        ]
+        do_properties = Triple.objects.filter(
+            Q(predicate__canonical_uri__in=property_predicates)
+            | Q(predicate__uri__icontains="dateipfad")
+            | Q(predicate__uri__icontains="dateiname")
+            | Q(predicate__uri__icontains="mime")
+            | Q(predicate__uri__icontains="lizenz"),
             subject_id__in=do_uuids,
-        ).select_related("object")
+        ).select_related("predicate", "object")
 
         path_map: Dict[str, str] = {}
-        for t in path_triples:
-            if t.object.resource_type == ResourceType.LITERAL and t.object.value:
-                path_map[str(t.subject_id)] = t.object.value
+        file_name_map: Dict[str, str] = {}
+        content_type_map: Dict[str, str] = {}
+        license_uri_map: Dict[str, str] = {}
+
+        for t in do_properties:
+            did = str(t.subject_id)
+            pred = t.predicate.canonical_uri or t.predicate.uri or ""
+
+            if t.object.resource_type == ResourceType.LITERAL:
+                value = t.object.value
+            else:
+                value = t.object.uri or str(t.object_id)
+
+            if "dateipfad" in pred or pred == CanonicalURIs.FILE_PATH:
+                path_map[did] = value
+            elif "dateiname" in pred:
+                file_name_map[did] = value
+            elif "mime" in pred:
+                content_type_map[did] = value
+            elif "lizenz" in pred or pred == CanonicalURIs.LICENSE:
+                license_uri_map[did] = value
 
         # Build DigitalObjectData
         results: List[DigitalObjectData] = []
@@ -594,6 +626,10 @@ class InstitutionAdapter(ABC):
                 object_id=did,
                 object_uri=uri_map.get(did),
                 path=path,
+                file_name=file_name_map.get(did),
+                content_type=content_type_map.get(did),
+                license_uri=license_uri_map.get(did),
+                source_event_ids=do_event_map.get(did, []),
             ))
 
         return results
@@ -625,6 +661,8 @@ class InstitutionAdapter(ABC):
 
         props: Dict[str, Any] = {}
         category_uris: List[str] = []
+        category_ids: List[uuid.UUID] = []
+        institution_id: Optional[uuid.UUID] = None
 
         prop_triples = Triple.objects.filter(
             subject_id=project_uuid,
@@ -652,8 +690,44 @@ class InstitutionAdapter(ABC):
                 props["image"] = value
             elif pred == CanonicalURIs.INSTITUTION or "einliefernde-hochschule" in pred:
                 props["institution_uri"] = value
+                if t.object.resource_type != ResourceType.LITERAL:
+                    institution_id = t.object_id
             elif pred == CanonicalURIs.CATEGORY or "projektkategorie" in pred:
                 category_uris.append(value)
+                if t.object.resource_type != ResourceType.LITERAL:
+                    category_ids.append(t.object_id)
+
+        # Fetch institution label
+        institution_label = None
+        if institution_id:
+            inst_label_triples = Triple.objects.filter(
+                Q(predicate__canonical_uri=CanonicalURIs.INSTITUTION_NAME)
+                | Q(predicate__uri__icontains="deutscher-name")
+                | Q(predicate__uri__icontains="name"),
+                subject_id=institution_id,
+            ).select_related("object")[:1]
+            for t in inst_label_triples:
+                if t.object.resource_type == ResourceType.LITERAL and t.object.value:
+                    institution_label = t.object.value
+                    break
+
+        # Fetch category labels
+        category_labels: List[str] = []
+        if category_ids:
+            cat_label_triples = Triple.objects.filter(
+                Q(predicate__canonical_uri=CanonicalURIs.CATEGORY_NAME)
+                | Q(predicate__uri__icontains="deutscher-name")
+                | Q(predicate__uri__icontains="name"),
+                subject_id__in=category_ids,
+            ).select_related("object")
+
+            label_map: Dict[uuid.UUID, str] = {}
+            for t in cat_label_triples:
+                if t.object.resource_type == ResourceType.LITERAL and t.object.value:
+                    if t.subject_id not in label_map:
+                        label_map[t.subject_id] = t.object.value
+
+            category_labels = [label_map.get(cid, "") for cid in category_ids]
 
         return ProjectPropertiesData(
             title=props.get("title"),
@@ -661,7 +735,9 @@ class InstitutionAdapter(ABC):
             description=props.get("description"),
             image=props.get("image"),
             institution_uri=props.get("institution_uri"),
+            institution_label=institution_label,
             category_uris=category_uris,
+            category_labels=category_labels,
         )
 
     def get_project_graph(self, project_id: str) -> Optional[ProjectGraph]:
