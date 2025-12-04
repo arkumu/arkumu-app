@@ -158,6 +158,36 @@ def _build_tailored_project_hint_from_resource(
 
     t1 = time.time()
 
+    # Ensure institution metadata is set from resource if missing
+    # This is critical for Rosetta path rewriting (KHM/HMT orgs)
+    org = getattr(resource, "organization", None)
+    if org:
+        org_code = getattr(org, "code", None)
+        normalized_code = org_code.lower().strip() if isinstance(org_code, str) and org_code.strip() else None
+        org_label = getattr(org, "name", None) or org_code
+
+        institution = getattr(record, "institution", None)
+        if institution is None and (org_label or normalized_code):
+            from arkumu.projects import ProjectInstitution
+            record = dataclass_replace(record, institution=ProjectInstitution(label=org_label, code=normalized_code))
+        elif institution and normalized_code and not getattr(institution, "code", None):
+            from arkumu.projects import ProjectInstitution
+            record = dataclass_replace(
+                record,
+                institution=ProjectInstitution(
+                    label=getattr(institution, "label", None) or org_label,
+                    uri=getattr(institution, "uri", None),
+                    code=normalized_code,
+                )
+            )
+
+        # Ensure institution_codes list includes the org code
+        if normalized_code:
+            codes = list(getattr(record, "institution_codes", []) or [])
+            if normalized_code not in {code.lower() for code in codes if code}:
+                codes.append(normalized_code)
+                record = dataclass_replace(record, institution_codes=codes)
+
     # Clear digital_objects - they come from OAIProjectMediaLink instead
     record = dataclass_replace(record, digital_objects=[])
 

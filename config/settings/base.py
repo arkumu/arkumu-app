@@ -566,6 +566,9 @@ OAI_ROSETTA_CURATED_PREFIXES = {
     for key, value in {
         "hmt": env("OAI_ROSETTA_CURATED_PREFIX_HMT", default="/rosetta/hfmt/sandbox/input/arkumu/daten"),
         "khm": env("OAI_ROSETTA_CURATED_PREFIX_KHM", default="/rosetta/khm/sandbox/input/arkumu/daten"),
+        "fuk": env("OAI_ROSETTA_CURATED_PREFIX_FUK", default="/rosetta/fuk/sandbox/input/arkumu/daten"),
+        "det": env("OAI_ROSETTA_CURATED_PREFIX_DET", default="/rosetta/det/sandbox/input/arkumu/daten"),
+        "rsh": env("OAI_ROSETTA_CURATED_PREFIX_RSH", default="/rosetta/rsh/sandbox/input/arkumu/daten"),
     }.items()
     if value and value.strip()
 }

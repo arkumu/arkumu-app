@@ -823,31 +823,62 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         uri_by_resource: Mapping[str, Optional[str]],
         institution_code: Optional[str],
     ) -> Dict[str, List[ProjectDigitalObject]]:
-        """Load curated media by consulting storage for S3 orgs and the canonical graph otherwise."""
+        """Load curated media from S3FileObject for all orgs.
+
+        All digital objects should have an S3FileObject with the filename.
+        The output path is always: {rosetta_prefix}/{filename}
+        """
+        if not resource_ids:
+            return {}
+
+        uuid_map: Dict[UUID, str] = {}
+        for rid in resource_ids:
+            try:
+                uuid_map[UUID(str(rid))] = str(rid)
+            except (TypeError, ValueError):
+                continue
+
+        if not uuid_map:
+            return {}
+
+        # Query S3FileObject for all digital objects
+        files = (
+            S3FileObject.objects.filter(
+                related_resource_id__in=list(uuid_map.keys()),
+                s3_key__isnull=False,
+            )
+            .exclude(s3_key="")
+            .exclude(file_name="")
+            .select_related("related_resource")
+        )
 
         curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
-        s3_objects = self._load_curated_objects_from_s3(
-            resource_ids,
-            uri_by_resource,
-            institution_code,
-        )
-        curated_objects.update(s3_objects)
-
-        normalized_code = (institution_code or "").lower().strip()
-        if normalized_code in self._s3_orgs:
-            # For S3 orgs, only accept objects that have verified S3 inventory.
-            return curated_objects
-
-        for rid in resource_ids:
-            if rid in curated_objects:
+        for file_obj in files:
+            rid_uuid = getattr(file_obj, "related_resource_id", None)
+            if rid_uuid not in uuid_map:
                 continue
-            graph_obj = self._graph_digital_object(
-                rid,
-                uri_by_resource.get(rid),
-                institution_code,
+            rid_str = uuid_map[rid_uuid]
+            fixity = parse_fixity(getattr(file_obj, "sha256_checksum", None))
+            resource_uri = uri_by_resource.get(rid_str)
+            if not resource_uri and getattr(file_obj, "related_resource", None):
+                resource_uri = getattr(file_obj.related_resource, "uri", None)
+
+            project_obj = ProjectDigitalObject(
+                path=file_obj.file_name,  # Just the filename
+                storage_key=file_obj.s3_key,
+                file_name=file_obj.file_name,
+                content_type=file_obj.content_type,
+                size_bytes=file_obj.file_size_bytes,
+                checksum=fixity.digest,
+                checksum_algorithm=fixity.algorithm,
+                checksum_provenance='s3' if fixity.digest else None,
+                access_url=file_obj.s3_url,
+                storage_status=file_obj.status,
+                resource_id=rid_str,
+                uri=resource_uri,
             )
-            if graph_obj:
-                curated_objects[rid] = [graph_obj]
+            setattr(project_obj, "_from_s3_file_object", True)
+            curated_objects.setdefault(rid_str, []).append(project_obj)
 
         return curated_objects
 
@@ -917,27 +948,21 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         obj: ProjectDigitalObject,
         institution_code: Optional[str],
     ) -> Optional[NormalizedDigitalObject]:
-        if institution_code and institution_code in self._s3_orgs:
-            setattr(obj, "_bypass_dump_fixity", True)
+        # Only process objects from S3FileObject (via OAIProjectMediaLink)
+        if not getattr(obj, "_from_s3_file_object", False):
+            return None
+
+        setattr(obj, "_bypass_dump_fixity", True)
         normalized = super()._normalize_object(obj, institution_code)
         if not normalized:
             return None
-        normalized_code = (institution_code or "").lower().strip()
-        if normalized_code in self._s3_orgs:
-            if getattr(obj, "_from_s3_file_object", False):
-                return normalized
-            # Objects without verified S3 inventory are not eligible for tailored exports.
-            return None
 
-        # For Rosetta orgs (KHM/HMT), prefer prefix+filename to avoid leaking deep ingest paths
-        # BUT: Don't rewrite paths for DCP bundle files - they need to keep the folder structure
-        # Note: source can be "rosetta" or "graph" depending on data origin
+        # Apply rosetta prefix for ALL orgs
+        # Output is always: {rosetta_prefix}/{filename}
+        # DCP bundle files keep their folder structure
+        normalized_code = (institution_code or "").lower().strip()
         is_dcp_bundle = getattr(obj, "_from_dcp_bundle", False)
-        if (
-            normalized.file_name
-            and normalized_code in {"khm", "hmt"}
-            and not is_dcp_bundle
-        ):
+        if normalized.file_name and not is_dcp_bundle:
             prefix = self._rosetta_curated_prefixes.get(normalized_code)
             if prefix:
                 rosetta_path = f"{prefix}/{normalized.file_name}"
