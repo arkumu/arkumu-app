@@ -16,6 +16,7 @@ XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 # Paths to bundled Rosetta schemas
 SCHEMA_BASE_PATH = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema"
 METS_SCHEMA_PATH = SCHEMA_BASE_PATH / "mets.xsd"
+ROSETTA_METS_SCHEMA_PATH = SCHEMA_BASE_PATH / "rosettaMets.xsd"
 DNX_SCHEMA_PATH = SCHEMA_BASE_PATH / "dnx_sip.xsd"
 XLINK_SCHEMA_PATH = SCHEMA_BASE_PATH / "xlink.xsd"
 
@@ -36,6 +37,7 @@ __all__ = [
     "METS_NS",
     "METS_SCHEMA_PATH",
     "METS_SCHEMA_URL",
+    "ROSETTA_METS_SCHEMA_PATH",
     "SCHEMA_BASE_PATH",
     "XLINK_NS",
     "XLINK_SCHEMA_PATH",

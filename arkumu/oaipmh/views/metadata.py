@@ -1274,10 +1274,7 @@ def _build_simplified_mets_from_project(
             general_keys.append(("label", label_value))
         if obj.file_name:
             general_keys.append(("fileOriginalName", obj.file_name))
-        # fileOriginalPath from original_path or storage_key
-        original_path = getattr(obj, "original_path", None) or getattr(obj, "storage_key", None)
-        if original_path:
-            general_keys.append(("fileOriginalPath", original_path))
+        # fileOriginalPath removed per Rosetta requirements (Issue #4)
         if obj.content_type:
             general_keys.append(("fileMIMEType", obj.content_type))
         if obj.size_bytes is not None:
@@ -1289,15 +1286,7 @@ def _build_simplified_mets_from_project(
             for key_id, value in general_keys:
                 _create_dnx_element(general_record, "key", {"id": key_id}, value)
 
-        # fileFixity with checksum
-        checksum_algorithm, checksum_value = obj.checksum_tuple()
-        checksum_label = obj.checksum_label() if checksum_algorithm else None
-        if checksum_value:
-            fixity_type = _normalize_fixity_type(checksum_label or "SHA-256")
-            fixity_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixity"})
-            fixity_record = _create_dnx_element(fixity_section, "record")
-            _create_dnx_element(fixity_record, "key", {"id": "fixityType"}, fixity_type)
-            _create_dnx_element(fixity_record, "key", {"id": "fixityValue"}, checksum_value)
+        # fileFixity removed per Rosetta requirements (Issue #5)
 
         file_amd_sections.append((file_id, file_amd))
 
@@ -1627,9 +1616,7 @@ def _build_mets_from_project(
                 general_keys.append(("label", label_value))
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
-            storage_path = _original_storage_path(obj)
-            if storage_path:
-                general_keys.append(("fileOriginalPath", storage_path))
+            # fileOriginalPath removed per Rosetta requirements (Issue #4)
             if obj.content_type:
                 general_keys.append(("fileMIMEType", obj.content_type))
             if obj.size_bytes is not None:
