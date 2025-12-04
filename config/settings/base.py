@@ -564,7 +564,7 @@ OAI_S3_ROSETTA_BASE_PATHS = {
 OAI_ROSETTA_CURATED_PREFIXES = {
     key.strip().lower(): value.rstrip("/")
     for key, value in {
-        "hmt": env("OAI_ROSETTA_CURATED_PREFIX_HMT", default=""),
+        "hmt": env("OAI_ROSETTA_CURATED_PREFIX_HMT", default="/rosetta/hfmt/sandbox/input/arkumu/daten"),
         "khm": env("OAI_ROSETTA_CURATED_PREFIX_KHM", default="/rosetta/khm/sandbox/input/arkumu/daten"),
     }.items()
     if value and value.strip()
