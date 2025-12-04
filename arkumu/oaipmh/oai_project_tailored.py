@@ -823,10 +823,10 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         uri_by_resource: Mapping[str, Optional[str]],
         institution_code: Optional[str],
     ) -> Dict[str, List[ProjectDigitalObject]]:
-        """Load curated media from S3FileObject only.
+        """Load curated media from OAIProjectMediaLink.
 
-        Digital objects MUST have S3FileObject entries to be harvestable.
-        No graph fallback - OAIProjectMediaLink + S3FileObject is the source of truth.
+        For S3 orgs (DET/RSH/FUK): requires S3FileObject, filename from s3_key/file_name
+        For Rosetta orgs (KHM/HMT): filename from Resource.name or Resource.value
         """
         if not resource_ids:
             return {}
@@ -841,7 +841,13 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         if not uuid_map:
             return {}
 
-        # Query S3FileObject - the ONLY source for digital object files
+        normalized_code = (institution_code or "").lower().strip()
+        is_s3_org = normalized_code in self._s3_orgs
+
+        curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
+        found_resource_ids: set[str] = set()
+
+        # Try S3FileObject first (required for S3 orgs, optional for Rosetta orgs)
         files = (
             S3FileObject.objects.filter(
                 related_resource_id__in=list(uuid_map.keys()),
@@ -851,7 +857,6 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             .select_related("related_resource")
         )
 
-        curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
         for file_obj in files:
             rid_uuid = getattr(file_obj, "related_resource_id", None)
             if rid_uuid not in uuid_map:
@@ -862,7 +867,6 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             if not resource_uri and getattr(file_obj, "related_resource", None):
                 resource_uri = getattr(file_obj.related_resource, "uri", None)
 
-            # Derive filename from file_name or s3_key
             filename = file_obj.file_name
             if not filename and file_obj.s3_key:
                 filename = file_obj.s3_key.split("/")[-1]
@@ -885,6 +889,39 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             )
             setattr(project_obj, "_from_s3_file_object", True)
             curated_objects.setdefault(rid_str, []).append(project_obj)
+            found_resource_ids.add(rid_str)
+
+        # For Rosetta orgs (KHM/HMT), also check Resource.name/value for missing ones
+        if not is_s3_org:
+            missing_ids = [rid for rid in uuid_map.values() if rid not in found_resource_ids]
+            if missing_ids:
+                missing_uuids = [UUID(rid) for rid in missing_ids]
+                resources = Resource.objects.filter(pk__in=missing_uuids)
+
+                for resource in resources:
+                    rid_str = str(resource.id)
+                    # Get filename from Resource.name or Resource.value
+                    filename = resource.name or resource.value
+                    if not filename:
+                        continue
+                    # Extract just the filename if it's a path
+                    filename = str(filename).replace("\\", "/").split("/")[-1]
+                    if not filename:
+                        continue
+
+                    resource_uri = uri_by_resource.get(rid_str) or resource.uri
+
+                    project_obj = ProjectDigitalObject(
+                        path=filename,
+                        storage_key=None,
+                        file_name=filename,
+                        content_type=None,
+                        storage_status="completed",
+                        resource_id=rid_str,
+                        uri=resource_uri,
+                    )
+                    setattr(project_obj, "_from_s3_file_object", True)
+                    curated_objects.setdefault(rid_str, []).append(project_obj)
 
         return curated_objects
 
