@@ -201,6 +201,19 @@ def get_project_graphs(project_id: str, org_code: str) -> Optional[ProjectGraphs
 
     neighbor_ids = {t.object_id for t in project_triples if t.object_id}
 
+    # Query 1b: Incoming links via canonical projekt predicate
+    # This catches KHM Grundereignis which links TO project (not FROM project)
+    # Typically 1 Grundereignis per project, so no limit needed
+    CANONICAL_PROJEKT = 'http://arkumu.org/data/properties/projekt'
+    incoming_triples = list(Triple.objects.filter(
+        object_id=project_uuid,
+        predicate__canonical_uri=CANONICAL_PROJEKT,
+    ).select_related('subject', 'predicate', 'object'))
+
+    for t in incoming_triples:
+        if t.subject_id:
+            neighbor_ids.add(t.subject_id)
+
     # Query 2: Neighbor triples (events, etc.)
     neighbor_triples = []
     if neighbor_ids:
@@ -241,6 +254,7 @@ def get_project_graphs(project_id: str, org_code: str) -> Optional[ProjectGraphs
     # Combine and dedupe
     all_triples = (
         project_triples +
+        incoming_triples +
         neighbor_triples +
         junction_triples +
         junction_entity_triples +
