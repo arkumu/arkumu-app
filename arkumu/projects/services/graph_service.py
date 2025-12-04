@@ -174,19 +174,14 @@ def _get_junction_config(org_code: str) -> Dict:
 def get_project_graphs(project_id: str, org_code: str) -> Optional[ProjectGraphs]:
     """Get both canonical and institutional graphs for a project.
 
-    Traversal:
-    1. Project triples
-    2. Neighbor triples (events, etc.)
-    3. Junction triples (using FK predicates from relationship_contexts)
-    4. Junction entity properties (roles, rights)
-    5. Linked entity properties (actors, roles)
+    Delegates to _fetch_graphs_for_batch() for single project.
     """
     project_uuid = _as_uuid(project_id)
     if not project_uuid:
         return None
 
     try:
-        project_resource = Resource.objects.get(id=project_uuid)
+        project_resource = Resource.objects.only('id', 'uri').get(id=project_uuid)
     except Resource.DoesNotExist:
         return None
 
@@ -194,93 +189,9 @@ def get_project_graphs(project_id: str, org_code: str) -> Optional[ProjectGraphs
     junction_config = _get_junction_config(org_code)
     fk_predicates = junction_config.get('fk_predicates', set())
 
-    # Query 1: Project's direct triples
-    project_triples = list(Triple.objects.filter(
-        subject_id=project_uuid
-    ).select_related('subject', 'predicate', 'object'))
-
-    neighbor_ids = {t.object_id for t in project_triples if t.object_id}
-
-    # Query 1b: Incoming links via canonical projekt predicate
-    # This catches KHM Grundereignis which links TO project (not FROM project)
-    # Typically 1 Grundereignis per project, so no limit needed
-    CANONICAL_PROJEKT = 'http://arkumu.org/data/properties/projekt'
-    incoming_triples = list(Triple.objects.filter(
-        object_id=project_uuid,
-        predicate__canonical_uri=CANONICAL_PROJEKT,
-    ).select_related('subject', 'predicate', 'object'))
-
-    for t in incoming_triples:
-        if t.subject_id:
-            neighbor_ids.add(t.subject_id)
-
-    # Query 2: Neighbor triples (events, etc.)
-    neighbor_triples = []
-    if neighbor_ids:
-        neighbor_triples = list(Triple.objects.filter(
-            subject_id__in=neighbor_ids
-        ).select_related('subject', 'predicate', 'object'))
-
-    # Query 3: Find junctions pointing to neighbors via FK predicates
-    junction_triples = []
-    if neighbor_ids and fk_predicates:
-        junction_triples = list(Triple.objects.filter(
-            predicate__uri__in=fk_predicates,
-            object_id__in=neighbor_ids
-        ).select_related('subject', 'predicate', 'object'))
-
-    junction_ids = {t.subject_id for t in junction_triples}
-
-    # Query 4: Junction entity triples (roles, rights, other FKs)
-    junction_entity_triples = []
-    if junction_ids:
-        junction_entity_triples = list(Triple.objects.filter(
-            subject_id__in=junction_ids
-        ).select_related('subject', 'predicate', 'object'))
-
-    # Collect entities linked from junctions (actors, roles)
-    linked_ids = set()
-    for t in junction_entity_triples:
-        if t.object_id and t.object_id not in neighbor_ids and t.object_id != project_uuid:
-            linked_ids.add(t.object_id)
-
-    # Query 5: Linked entity triples (actor names, role names)
-    linked_triples = []
-    if linked_ids:
-        linked_triples = list(Triple.objects.filter(
-            subject_id__in=linked_ids
-        ).select_related('subject', 'predicate', 'object'))
-
-    # Combine and dedupe
-    all_triples = (
-        project_triples +
-        incoming_triples +
-        neighbor_triples +
-        junction_triples +
-        junction_entity_triples +
-        linked_triples
-    )
-
-    triple_results = []
-    seen = set()
-    for t in all_triples:
-        key = (t.subject_id, t.predicate_id, t.object_id)
-        if key in seen:
-            continue
-        seen.add(key)
-
-        triple_results.append(TripleResult(
-            subject_uri=t.subject.uri if t.subject else '',
-            predicate_uri=t.predicate.uri if t.predicate else '',
-            predicate_canonical_uri=t.predicate.canonical_uri if t.predicate else None,
-            object_uri=t.object.uri if t.object and not t.object.value else None,
-            object_value=t.object.value if t.object else None,
-        ))
-
-    return ProjectGraphs(
-        project_uri=project_resource.uri,
-        triples=triple_results,
-    )
+    # Use batch function for single project
+    result = _fetch_graphs_for_batch([project_resource], fk_predicates)
+    return result.get(project_uuid)
 
 
 def _fetch_graphs_for_batch(
@@ -309,6 +220,18 @@ def _fetch_graphs_for_batch(
         if t.object_id:
             neighbor_to_projects[t.object_id].add(t.subject_id)
 
+    # Query 1b: Incoming links via canonical projekt predicate
+    # This catches KHM Grundereignis which links TO project (not FROM project)
+    CANONICAL_PROJEKT = 'http://arkumu.org/data/properties/projekt'
+    incoming_triples = list(Triple.objects.filter(
+        object_id__in=all_project_ids,
+        predicate__canonical_uri=CANONICAL_PROJEKT,
+    ).select_related('subject', 'predicate', 'object'))
+
+    for t in incoming_triples:
+        if t.subject_id and t.object_id:
+            neighbor_to_projects[t.subject_id].add(t.object_id)
+
     all_neighbor_ids = set(neighbor_to_projects.keys())
 
     # Query 2: ALL neighbor triples at once
@@ -325,6 +248,12 @@ def _fetch_graphs_for_batch(
             predicate__uri__in=fk_predicates,
             object_id__in=all_neighbor_ids
         ).select_related('subject', 'predicate', 'object'))
+
+    # Filter out digital object junctions (kreuz-digitaleobjekte-proj) - they bloat RDF
+    junction_triples = [
+        t for t in junction_triples
+        if not (t.subject and t.subject.uri and 'kreuz-digitaleobjekte' in t.subject.uri.lower())
+    ]
 
     # Track which junctions link to which neighbors (and thus which projects)
     junction_to_neighbors: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
@@ -403,6 +332,11 @@ def _fetch_graphs_for_batch(
     # Assign project triples
     for t in project_triples:
         _add_triple_to_projects(t, {t.subject_id})
+
+    # Assign incoming triples (Grundereignis -> project)
+    for t in incoming_triples:
+        if t.object_id:
+            _add_triple_to_projects(t, {t.object_id})
 
     # Assign neighbor triples
     for t in neighbor_triples:

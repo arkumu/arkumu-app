@@ -825,8 +825,8 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
     ) -> Dict[str, List[ProjectDigitalObject]]:
         """Load curated media from OAIProjectMediaLink.
 
-        For S3 orgs (DET/RSH/FUK): requires S3FileObject, filename from s3_key/file_name
-        For Rosetta orgs (KHM/HMT): filename from Resource.name or Resource.value
+        S3 orgs (DET/RSH/FUK): S3FileObject only
+        Rosetta orgs (KHM/HMT): dateipfad triple first, S3FileObject fallback
         """
         if not resource_ids:
             return {}
@@ -845,9 +845,71 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         is_s3_org = normalized_code in self._s3_orgs
 
         curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
-        found_resource_ids: set[str] = set()
 
-        # Try S3FileObject first (required for S3 orgs, optional for Rosetta orgs)
+        # S3 orgs: use S3FileObject only
+        if is_s3_org:
+            files = (
+                S3FileObject.objects.filter(
+                    related_resource_id__in=list(uuid_map.keys()),
+                    s3_key__isnull=False,
+                )
+                .exclude(s3_key="")
+                .select_related("related_resource")
+            )
+
+            for file_obj in files:
+                rid_uuid = getattr(file_obj, "related_resource_id", None)
+                if rid_uuid not in uuid_map:
+                    continue
+                rid_str = uuid_map[rid_uuid]
+
+                filename = file_obj.file_name
+                if not filename and file_obj.s3_key:
+                    filename = file_obj.s3_key.split("/")[-1]
+                if not filename:
+                    continue
+
+                fixity = parse_fixity(getattr(file_obj, "sha256_checksum", None))
+                resource_uri = uri_by_resource.get(rid_str)
+                if not resource_uri and getattr(file_obj, "related_resource", None):
+                    resource_uri = getattr(file_obj.related_resource, "uri", None)
+
+                project_obj = ProjectDigitalObject(
+                    path=filename,
+                    storage_key=file_obj.s3_key,
+                    file_name=filename,
+                    content_type=file_obj.content_type,
+                    size_bytes=file_obj.file_size_bytes,
+                    checksum=fixity.digest,
+                    checksum_algorithm=fixity.algorithm,
+                    checksum_provenance='s3' if fixity.digest else None,
+                    access_url=file_obj.s3_url,
+                    storage_status=file_obj.status,
+                    resource_id=rid_str,
+                    uri=resource_uri,
+                )
+                setattr(project_obj, "_from_s3_file_object", True)
+                curated_objects.setdefault(rid_str, []).append(project_obj)
+
+            return curated_objects
+
+        # Rosetta orgs (KHM/HMT): dateipfad first, S3 fallback
+        DATEIPFAD_URI = "http://arkumu.org/data/properties/dateipfad"
+        path_triples = Triple.objects.filter(
+            subject_id__in=list(uuid_map.keys()),
+            predicate__canonical_uri=DATEIPFAD_URI,
+        ).select_related("object")
+
+        filename_by_id: Dict[UUID, str] = {}
+        for triple in path_triples:
+            if triple.object and triple.object.value:
+                path_value = str(triple.object.value)
+                filename = path_value.replace("\\", "/").split("/")[-1]
+                if filename:
+                    filename_by_id[triple.subject_id] = filename
+
+        # Get S3 data for fallback and metadata
+        s3_by_id: Dict[UUID, S3FileObject] = {}
         files = (
             S3FileObject.objects.filter(
                 related_resource_id__in=list(uuid_map.keys()),
@@ -856,72 +918,57 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             .exclude(s3_key="")
             .select_related("related_resource")
         )
-
         for file_obj in files:
             rid_uuid = getattr(file_obj, "related_resource_id", None)
-            if rid_uuid not in uuid_map:
-                continue
-            rid_str = uuid_map[rid_uuid]
-            fixity = parse_fixity(getattr(file_obj, "sha256_checksum", None))
-            resource_uri = uri_by_resource.get(rid_str)
-            if not resource_uri and getattr(file_obj, "related_resource", None):
-                resource_uri = getattr(file_obj.related_resource, "uri", None)
+            if rid_uuid:
+                s3_by_id[rid_uuid] = file_obj
 
-            filename = file_obj.file_name
-            if not filename and file_obj.s3_key:
-                filename = file_obj.s3_key.split("/")[-1]
+        for rid_uuid, rid_str in uuid_map.items():
+            filename = filename_by_id.get(rid_uuid)
+            s3_obj = s3_by_id.get(rid_uuid)
+
+            # Fallback to S3 filename if no dateipfad
+            if not filename and s3_obj:
+                filename = s3_obj.file_name
+                if not filename and s3_obj.s3_key:
+                    filename = s3_obj.s3_key.split("/")[-1]
+
             if not filename:
                 continue
 
-            project_obj = ProjectDigitalObject(
-                path=filename,
-                storage_key=file_obj.s3_key,
-                file_name=filename,
-                content_type=file_obj.content_type,
-                size_bytes=file_obj.file_size_bytes,
-                checksum=fixity.digest,
-                checksum_algorithm=fixity.algorithm,
-                checksum_provenance='s3' if fixity.digest else None,
-                access_url=file_obj.s3_url,
-                storage_status=file_obj.status,
-                resource_id=rid_str,
-                uri=resource_uri,
-            )
+            resource_uri = uri_by_resource.get(rid_str)
+            if not resource_uri and s3_obj and getattr(s3_obj, "related_resource", None):
+                resource_uri = getattr(s3_obj.related_resource, "uri", None)
+
+            if s3_obj:
+                fixity = parse_fixity(getattr(s3_obj, "sha256_checksum", None))
+                project_obj = ProjectDigitalObject(
+                    path=filename,
+                    storage_key=s3_obj.s3_key,
+                    file_name=filename,
+                    content_type=s3_obj.content_type,
+                    size_bytes=s3_obj.file_size_bytes,
+                    checksum=fixity.digest,
+                    checksum_algorithm=fixity.algorithm,
+                    checksum_provenance='s3' if fixity.digest else None,
+                    access_url=s3_obj.s3_url,
+                    storage_status=s3_obj.status,
+                    resource_id=rid_str,
+                    uri=resource_uri,
+                )
+            else:
+                project_obj = ProjectDigitalObject(
+                    path=filename,
+                    storage_key=None,
+                    file_name=filename,
+                    content_type=None,
+                    storage_status="completed",
+                    resource_id=rid_str,
+                    uri=resource_uri,
+                )
+
             setattr(project_obj, "_from_s3_file_object", True)
             curated_objects.setdefault(rid_str, []).append(project_obj)
-            found_resource_ids.add(rid_str)
-
-        # For Rosetta orgs (KHM/HMT), also check Resource.name/value for missing ones
-        # This matches _resource_display_label logic from media_link_views.py
-        if not is_s3_org:
-            missing_ids = [rid for rid in uuid_map.values() if rid not in found_resource_ids]
-            if missing_ids:
-                missing_uuids = [UUID(rid) for rid in missing_ids]
-                resources = Resource.objects.filter(pk__in=missing_uuids)
-
-                for resource in resources:
-                    rid_str = str(resource.id)
-                    # Match _resource_display_label: name -> value -> uri tail
-                    filename = resource.name or resource.value
-                    if not filename and resource.uri:
-                        filename = resource.uri.rstrip("/").split("/")[-1]
-                    if not filename:
-                        continue
-                    filename = str(filename)
-
-                    resource_uri = uri_by_resource.get(rid_str) or resource.uri
-
-                    project_obj = ProjectDigitalObject(
-                        path=filename,
-                        storage_key=None,
-                        file_name=filename,
-                        content_type=None,
-                        storage_status="completed",
-                        resource_id=rid_str,
-                        uri=resource_uri,
-                    )
-                    setattr(project_obj, "_from_s3_file_object", True)
-                    curated_objects.setdefault(rid_str, []).append(project_obj)
 
         return curated_objects
 
