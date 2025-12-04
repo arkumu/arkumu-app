@@ -234,19 +234,68 @@ def _fetch_graphs_for_batch(
 
     all_neighbor_ids = set(neighbor_to_projects.keys())
 
-    # Query 2: ALL neighbor triples at once
-    neighbor_triples = []
+    # Identify project/oberwerk entities among neighbors - don't expand their graphs
+    # This prevents explosion through oberwerk (parent work) relationships
+    # where one parent work has hundreds of events shared by siblings
+    # Use canonical rdf:type to identify projekt and ereignis entities
+    RDF_TYPE_URI = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+    CANONICAL_PROJEKT_TYPE = 'http://arkumu.org/data/types/projekt'
+    CANONICAL_EREIGNIS_TYPE = 'http://arkumu.org/data/types/ereignis'
+
+    project_neighbor_ids: Set[uuid.UUID] = set()
     if all_neighbor_ids:
+        project_type_triples = Triple.objects.filter(
+            subject_id__in=all_neighbor_ids,
+            predicate__uri=RDF_TYPE_URI,
+            object__canonical_uri=CANONICAL_PROJEKT_TYPE
+        ).values_list('subject_id', flat=True)
+        project_neighbor_ids = set(project_type_triples)
+        if project_neighbor_ids:
+            logger.debug(
+                "Excluding %d project neighbors from expansion (canonical type)",
+                len(project_neighbor_ids)
+            )
+
+    # Filter neighbors for expansion (exclude project entities)
+    expandable_neighbor_ids = all_neighbor_ids - project_neighbor_ids
+
+    # Query 2: ALL neighbor triples at once (excluding project entities)
+    neighbor_triples = []
+    if expandable_neighbor_ids:
         neighbor_triples = list(Triple.objects.filter(
-            subject_id__in=all_neighbor_ids
+            subject_id__in=expandable_neighbor_ids
         ).select_related('subject', 'predicate', 'object'))
 
+        # Filter out triples that link TO project entities (prevents pulling in sibling projects)
+        # e.g., event -> projekt links that point to other projects sharing the event
+        neighbor_object_ids = {t.object_id for t in neighbor_triples if t.object_id}
+        if neighbor_object_ids:
+            project_object_triples = Triple.objects.filter(
+                subject_id__in=neighbor_object_ids,
+                predicate__uri=RDF_TYPE_URI,
+                object__canonical_uri=CANONICAL_PROJEKT_TYPE
+            ).values_list('subject_id', flat=True)
+            project_object_ids = set(project_object_triples)
+            if project_object_ids:
+                original_count = len(neighbor_triples)
+                neighbor_triples = [
+                    t for t in neighbor_triples
+                    if t.object_id not in project_object_ids or t.object_id in all_project_ids
+                ]
+                filtered_count = original_count - len(neighbor_triples)
+                if filtered_count:
+                    logger.debug(
+                        "Filtered %d neighbor triples linking to other projects",
+                        filtered_count
+                    )
+
     # Query 3: Find ALL junctions pointing to neighbors via FK predicates
+    # Only look for junctions pointing to expandable neighbors (not project entities)
     junction_triples = []
-    if all_neighbor_ids and fk_predicates:
+    if expandable_neighbor_ids and fk_predicates:
         junction_triples = list(Triple.objects.filter(
             predicate__uri__in=fk_predicates,
-            object_id__in=all_neighbor_ids
+            object_id__in=expandable_neighbor_ids
         ).select_related('subject', 'predicate', 'object'))
 
     # Filter out digital object junctions (kreuz-digitaleobjekte-proj) - they bloat RDF
@@ -254,6 +303,45 @@ def _fetch_graphs_for_batch(
         t for t in junction_triples
         if not (t.subject and t.subject.uri and 'kreuz-digitaleobjekte' in t.subject.uri.lower())
     ]
+
+    # Filter out project and event entities from junction subjects
+    # Query 3 finds entities pointing to neighbors via FK - but projects and events also use FK predicates!
+    # This causes 553 sibling projects and 1104 events to be treated as "junctions"
+    junction_subject_ids = {t.subject_id for t in junction_triples if t.subject_id}
+    # Exclude our own projects and direct neighbor events
+    junction_subject_ids -= all_project_ids
+    junction_subject_ids -= all_neighbor_ids
+    if junction_subject_ids:
+        # Find project subjects
+        project_junction_triples = Triple.objects.filter(
+            subject_id__in=junction_subject_ids,
+            predicate__uri=RDF_TYPE_URI,
+            object__canonical_uri=CANONICAL_PROJEKT_TYPE
+        ).values_list('subject_id', flat=True)
+        project_junction_ids = set(project_junction_triples)
+
+        # Find event subjects (events that aren't direct neighbors)
+        event_junction_triples = Triple.objects.filter(
+            subject_id__in=junction_subject_ids,
+            predicate__uri=RDF_TYPE_URI,
+            object__canonical_uri=CANONICAL_EREIGNIS_TYPE
+        ).values_list('subject_id', flat=True)
+        event_junction_ids = set(event_junction_triples)
+
+        # Filter out both
+        exclude_ids = project_junction_ids | event_junction_ids
+        if exclude_ids:
+            original_count = len(junction_triples)
+            junction_triples = [
+                t for t in junction_triples
+                if t.subject_id not in exclude_ids
+            ]
+            filtered_count = original_count - len(junction_triples)
+            if filtered_count:
+                logger.debug(
+                    "Filtered %d junction triples with project/event subjects (%d projects, %d events)",
+                    filtered_count, len(project_junction_ids), len(event_junction_ids)
+                )
 
     # Track which junctions link to which neighbors (and thus which projects)
     junction_to_neighbors: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
@@ -270,18 +358,145 @@ def _fetch_graphs_for_batch(
             subject_id__in=all_junction_ids
         ).select_related('subject', 'predicate', 'object'))
 
+        # Filter out triples that link TO sibling projects (prevents oberwerk explosion)
+        junction_object_ids = {t.object_id for t in junction_entity_triples if t.object_id}
+        # Exclude our own projects from the check
+        junction_object_ids -= all_project_ids
+        if junction_object_ids:
+            sibling_project_triples = Triple.objects.filter(
+                subject_id__in=junction_object_ids,
+                predicate__uri=RDF_TYPE_URI,
+                object__canonical_uri=CANONICAL_PROJEKT_TYPE
+            ).values_list('subject_id', flat=True)
+            sibling_project_ids = set(sibling_project_triples)
+            if sibling_project_ids:
+                original_count = len(junction_entity_triples)
+                junction_entity_triples = [
+                    t for t in junction_entity_triples
+                    if t.object_id not in sibling_project_ids
+                ]
+                filtered_count = original_count - len(junction_entity_triples)
+                if filtered_count:
+                    logger.debug(
+                        "Filtered %d junction triples linking to sibling projects",
+                        filtered_count
+                    )
+
+        # Filter out triples that link TO non-neighbor events
+        # This prevents junctions from pulling in hundreds of shared events
+        junction_object_ids = {t.object_id for t in junction_entity_triples if t.object_id}
+        junction_object_ids -= all_neighbor_ids  # Keep links to direct neighbor events
+        if junction_object_ids:
+            non_neighbor_event_triples = Triple.objects.filter(
+                subject_id__in=junction_object_ids,
+                predicate__uri=RDF_TYPE_URI,
+                object__canonical_uri=CANONICAL_EREIGNIS_TYPE
+            ).values_list('subject_id', flat=True)
+            non_neighbor_event_ids = set(non_neighbor_event_triples)
+            if non_neighbor_event_ids:
+                original_count = len(junction_entity_triples)
+                junction_entity_triples = [
+                    t for t in junction_entity_triples
+                    if t.object_id not in non_neighbor_event_ids
+                ]
+                filtered_count = original_count - len(junction_entity_triples)
+                if filtered_count:
+                    logger.debug(
+                        "Filtered %d junction triples linking to non-neighbor events",
+                        filtered_count
+                    )
+
     # Collect ALL linked entities from junctions
     all_linked_ids: Set[uuid.UUID] = set()
     for t in junction_entity_triples:
         if t.object_id and t.object_id not in all_neighbor_ids and t.object_id not in all_project_ids:
             all_linked_ids.add(t.object_id)
 
-    # Query 5: ALL linked entity triples
+    # Filter out project entities from linked IDs (e.g., oberwerk entities linked from junctions)
+    # This prevents expansion through oberwerk relationships
+    if all_linked_ids:
+        linked_project_triples = Triple.objects.filter(
+            subject_id__in=all_linked_ids,
+            predicate__uri=RDF_TYPE_URI,
+            object__canonical_uri=CANONICAL_PROJEKT_TYPE
+        ).values_list('subject_id', flat=True)
+        linked_project_ids_set = set(linked_project_triples)
+        if linked_project_ids_set:
+            logger.debug(
+                "Excluding %d project entities from linked expansion (canonical type)",
+                len(linked_project_ids_set)
+            )
+            all_linked_ids -= linked_project_ids_set
+
+    # Filter out event entities from linked IDs (events that aren't direct neighbors)
+    # This prevents pulling in hundreds of events shared through actors
+    if all_linked_ids:
+        linked_event_triples = Triple.objects.filter(
+            subject_id__in=all_linked_ids,
+            predicate__uri=RDF_TYPE_URI,
+            object__canonical_uri=CANONICAL_EREIGNIS_TYPE
+        ).values_list('subject_id', flat=True)
+        linked_event_ids_set = set(linked_event_triples)
+        if linked_event_ids_set:
+            logger.debug(
+                "Excluding %d event entities from linked expansion (canonical type)",
+                len(linked_event_ids_set)
+            )
+            all_linked_ids -= linked_event_ids_set
+
+    # Query 5: ALL linked entity triples (excluding project and event entities)
     linked_triples = []
     if all_linked_ids:
         linked_triples = list(Triple.objects.filter(
             subject_id__in=all_linked_ids
         ).select_related('subject', 'predicate', 'object'))
+
+        # Filter out triples that link TO sibling projects
+        linked_object_ids = {t.object_id for t in linked_triples if t.object_id}
+        linked_object_ids -= all_project_ids  # Exclude our own projects
+        if linked_object_ids:
+            linked_sibling_triples = Triple.objects.filter(
+                subject_id__in=linked_object_ids,
+                predicate__uri=RDF_TYPE_URI,
+                object__canonical_uri=CANONICAL_PROJEKT_TYPE
+            ).values_list('subject_id', flat=True)
+            linked_sibling_ids = set(linked_sibling_triples)
+            if linked_sibling_ids:
+                original_count = len(linked_triples)
+                linked_triples = [
+                    t for t in linked_triples
+                    if t.object_id not in linked_sibling_ids
+                ]
+                filtered_count = original_count - len(linked_triples)
+                if filtered_count:
+                    logger.debug(
+                        "Filtered %d linked triples linking to sibling projects",
+                        filtered_count
+                    )
+
+        # Filter out triples that link TO events (not direct neighbors)
+        # This prevents actors from pulling in hundreds of shared events
+        linked_object_ids = {t.object_id for t in linked_triples if t.object_id}
+        linked_object_ids -= all_neighbor_ids  # Keep links to direct neighbor events
+        if linked_object_ids:
+            linked_event_object_triples = Triple.objects.filter(
+                subject_id__in=linked_object_ids,
+                predicate__uri=RDF_TYPE_URI,
+                object__canonical_uri=CANONICAL_EREIGNIS_TYPE
+            ).values_list('subject_id', flat=True)
+            linked_event_object_ids = set(linked_event_object_triples)
+            if linked_event_object_ids:
+                original_count = len(linked_triples)
+                linked_triples = [
+                    t for t in linked_triples
+                    if t.object_id not in linked_event_object_ids
+                ]
+                filtered_count = original_count - len(linked_triples)
+                if filtered_count:
+                    logger.debug(
+                        "Filtered %d linked triples linking to non-neighbor events",
+                        filtered_count
+                    )
 
     # Now assign triples to projects
     # A triple belongs to a project if:
