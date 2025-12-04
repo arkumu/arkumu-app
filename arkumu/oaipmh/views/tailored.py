@@ -116,8 +116,8 @@ def _tailored_harvestable_page(
     page_size: int,
     include_hints: bool,
 ) -> HarvestPageResult:
-    # Filter by precomputed harvestable flag (rebuilt nightly)
-    ordered = queryset.filter(project_index__harvestable=True).order_by("effective_datestamp", "id")
+    # Filter by projects that have OAIProjectMediaLink entries (the source of truth for OAI)
+    ordered = queryset.filter(oai_media_links__isnull=False).distinct().order_by("effective_datestamp", "id")
     ordered = _apply_cursor_filter(
         ordered,
         _parse_cursor_position(cursor_position),
