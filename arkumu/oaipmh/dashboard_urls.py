@@ -16,6 +16,7 @@ urlpatterns = [
     path("dashboard/snapshot/", dashboard_views.oai_snapshot_dashboard, name="oai_snapshot_dashboard"),
     path("dashboard/db/", dashboard_views.oai_db_dashboard, name="oai_db_dashboard"),
     path("dashboard/tailored/", tailored_dashboard_views.oai_tailored_dashboard, name="oai_tailored_dashboard"),
+    path("dashboard/preserialized/", dashboard_views.oai_preserialized_dashboard, name="oai_preserialized_dashboard"),
     path("dashboard/endpoints/", dashboard_views.oai_endpoints_info, name="oai_endpoints_info"),
 
     # Media links management

@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication, OAIDcpPathIndex
+from arkumu.oaipmh.models import (
+    OAIDcpPathIndex,
+    OAIProjectMediaLink,
+    OAIProjectPublication,
+    OAISnapshotMeta,
+    OAISnapshotRecord,
+)
 
 
 @admin.register(OAIProjectMediaLink)
@@ -103,3 +109,49 @@ class OAIDcpPathIndexAdmin(admin.ModelAdmin):
     )
     ordering = ("org_code", "bundle_key", "relative_file_path")
     list_per_page = 100
+
+
+@admin.register(OAISnapshotMeta)
+class OAISnapshotMetaAdmin(admin.ModelAdmin):
+    """Admin for OAI snapshot metadata."""
+
+    list_display = (
+        "id",
+        "generated_at",
+        "total_count",
+        "created_at",
+    )
+    readonly_fields = ("generated_at", "total_count", "counts_by_org", "created_at")
+
+
+@admin.register(OAISnapshotRecord)
+class OAISnapshotRecordAdmin(admin.ModelAdmin):
+    """Admin for pre-serialized OAI records."""
+
+    list_display = (
+        "position",
+        "uri",
+        "organization",
+        "datestamp",
+        "has_dc",
+        "has_mets",
+    )
+    list_filter = (
+        ("organization", admin.RelatedOnlyFieldListFilter),
+    )
+    search_fields = (
+        "uri",
+    )
+    raw_id_fields = ("organization",)
+    readonly_fields = ("created_at",)
+    ordering = ("position",)
+    list_select_related = ("organization",)
+    list_per_page = 50
+
+    @admin.display(description="DC", boolean=True)
+    def has_dc(self, obj: OAISnapshotRecord) -> bool:
+        return bool(obj.metadata_dc_xml)
+
+    @admin.display(description="METS", boolean=True)
+    def has_mets(self, obj: OAISnapshotRecord) -> bool:
+        return bool(obj.metadata_mets_xml)

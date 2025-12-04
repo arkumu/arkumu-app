@@ -56,10 +56,11 @@
           <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
           {% if request.user.is_authenticated %}
           <li>
-            <details {% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard' %}open{% endif %}>
-              <summary class="{% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
+            <details {% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard oai_preserialized_dashboard' %}open{% endif %}>
+              <summary class="{% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard oai_preserialized_dashboard' %}active{% endif %}">OAI</summary>
               <ul class="bg-base-100 rounded-t-none p-2 z-[60]">
                 <li><a href="{% url 'oai_admin:oai_tailored_dashboard' %}" class="{% if current_url_name == 'oai_tailored_dashboard' %}active{% endif %}">Tailored</a></li>
+                <li><a href="{% url 'oai_admin:oai_preserialized_dashboard' %}" class="{% if current_url_name == 'oai_preserialized_dashboard' %}active{% endif %}">Snapshot</a></li>
                 {% if request.user.is_superuser or request.user.role == 'system_admin' or request.user.organization %}
                 <li><a href="{% url 'oai_admin:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
                 {% endif %}
@@ -109,10 +110,11 @@
         <li><a href="/catalog/browse/" class="{% if request.path == '/catalog/browse/' or request.path|slice:':16' == '/catalog/browse/' or request.path|slice:':15' == '/catalog/browse' %}active{% endif %}">Catalog</a></li>
         {% if request.user.is_authenticated %}
           <li>
-            <details {% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard' %}open{% endif %}>
-              <summary class="{% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard' %}active{% endif %}">OAI</summary>
+            <details {% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard oai_preserialized_dashboard' %}open{% endif %}>
+              <summary class="{% if current_url_name in 'oai_tailored_dashboard oai_media_links_dashboard oai_preserialized_dashboard' %}active{% endif %}">OAI</summary>
               <ul class="bg-base-100 rounded-t-none p-2">
                 <li><a href="{% url 'oai_admin:oai_tailored_dashboard' %}" class="{% if current_url_name == 'oai_tailored_dashboard' %}active{% endif %}">Tailored</a></li>
+                <li><a href="{% url 'oai_admin:oai_preserialized_dashboard' %}" class="{% if current_url_name == 'oai_preserialized_dashboard' %}active{% endif %}">Snapshot</a></li>
                 {% if request.user.is_superuser or request.user.role == 'system_admin' or request.user.organization %}
                 <li><a href="{% url 'oai_admin:oai_media_links_dashboard' %}" class="{% if current_url_name == 'oai_media_links_dashboard' %}active{% endif %}">Links</a></li>
                 {% endif %}

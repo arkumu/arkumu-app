@@ -259,3 +259,56 @@ def oai_db_dashboard(request):
             'snapshot_endpoint_url': snapshot_endpoint_url,
         },
     )
+
+
+@general_login_required
+@require_http_methods(["GET"])
+def oai_preserialized_dashboard(request):
+    """Dashboard for the pre-serialized OAI snapshot endpoint."""
+    from arkumu.oaipmh.models import OAISnapshotMeta, OAISnapshotRecord
+
+    meta = OAISnapshotMeta.get_current()
+    endpoints = []
+
+    if meta:
+        # Build endpoint summaries from OAISnapshotRecord counts
+        org_counts = (
+            OAISnapshotRecord.objects
+            .values("organization__code", "organization__name")
+            .annotate(count=models.Count("id"))
+            .order_by("-count")
+        )
+
+        for row in org_counts:
+            org_code = row.get("organization__code")
+            if not org_code:
+                continue
+            endpoints.append({
+                "code": org_code,
+                "label": row.get("organization__name") or org_code.upper(),
+                "accessible_count": row["count"],
+            })
+
+    snapshot_proxy_url = request.build_absolute_uri(reverse("metadata:oai_preserialized_proxy"))
+
+    return render(
+        request,
+        "oai/oai_preserialized_dashboard.html",
+        {
+            "snapshot_meta": meta,
+            "endpoints": endpoints,
+            "snapshot_proxy_url": snapshot_proxy_url,
+        },
+    )
+
+
+@general_login_required
+def oai_preserialized_proxy(request):
+    """Proxy pre-serialized OAI requests through the Django session."""
+    from arkumu.oaipmh.views.snapshot import oai_snapshot_handler
+
+    return _proxy_oai_request(
+        request,
+        handler=oai_snapshot_handler,
+        internal_path="/oai/snapshot/",
+    )
