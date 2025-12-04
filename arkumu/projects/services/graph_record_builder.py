@@ -124,12 +124,18 @@ def extract_event_actors(index: TripleIndex, event_uri: str) -> List[ProjectEven
         junction_event = get_object_uri(index, subject, Predicates.IM_EREIGNIS)
         if not junction_event:
             junction_event = get_object_uri(index, subject, Predicates.EVENT)
+        # KHM: junctions link to Grundereignis via projekt predicate
+        if not junction_event:
+            junction_event = get_object_uri(index, subject, Predicates.PROJEKT)
 
-        # Also check for institutional FK predicates (ereignis-nr-fk, etc.)
+        # Also check for institutional FK predicates (ereignis-nr-fk, projekt-fk, etc.)
         if not junction_event:
             for t in index.by_subject.get(subject, []):
                 pred = t.predicate_canonical_uri or t.predicate_uri
-                if pred and ("ereignis" in pred.lower() and "fk" in pred.lower()):
+                if pred and (
+                    ("ereignis" in pred.lower() and "fk" in pred.lower())
+                    or ("proj" in pred.lower() and "fk" in pred.lower())
+                ):
                     junction_event = t.object_uri
                     break
 

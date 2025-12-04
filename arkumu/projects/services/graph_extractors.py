@@ -43,6 +43,7 @@ class Predicates:
     IST_URHEBERIN = "http://arkumu.org/data/properties/ist-urheberin"
     LEISTUNGSSCHUTZRECHTE = "http://arkumu.org/data/properties/besitzt-leistungsschutzrechte"
     IM_EREIGNIS = "http://arkumu.org/data/properties/im-ereignis"
+    PROJEKT = "http://arkumu.org/data/properties/projekt"  # KHM junctions link to Grundereignis via this
 
     # Digital object predicates
     DIGITAL_OBJECT = "http://arkumu.org/data/properties/digitales-objekt"
