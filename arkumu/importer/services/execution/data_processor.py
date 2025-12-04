@@ -98,7 +98,8 @@ class DataProcessor:
             Tuple of (delimiter, confidence_score) or None if no delimiter detected
         """
         if potential_delimiters is None:
-            potential_delimiters = [',', '-', '|', ';', ':', '/', '\\']
+            # Note: '/' excluded to prevent splitting URLs
+            potential_delimiters = [',', '|', ';']
         
         # Get non-null values from the column
         try:
