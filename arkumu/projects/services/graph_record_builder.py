@@ -193,17 +193,18 @@ def extract_events(index: TripleIndex, project_uri: str) -> List[ProjectEvent]:
     """Extract events from graph."""
     events = []
 
-    # Direct event links
+    # Direct event links from project
     event_uris = get_all_object_uris(index, project_uri, Predicates.EVENT)
 
-    # Also find events via pattern matching in subjects
+    # Find events that link TO this project (incoming links via PROJEKT predicate)
+    # This handles KHM Grundereignis which links to project, not the other way around
     for subject in index.all_subjects:
-        if "/ereignis/" in subject.lower() or "/event/" in subject.lower():
-            if subject not in event_uris:
-                # Check if this event is linked to our project
-                project_link = get_object_uri(index, subject, Predicates.IM_EREIGNIS)
-                if project_link == project_uri:
-                    event_uris.append(subject)
+        if subject in event_uris or subject == project_uri:
+            continue
+        # Check if this entity links to our project via PROJEKT predicate
+        project_link = get_object_uri(index, subject, Predicates.PROJEKT)
+        if project_link == project_uri:
+            event_uris.append(subject)
 
     for event_uri in event_uris:
         event_id = event_uri.rstrip("/").split("/")[-1] if event_uri else None
