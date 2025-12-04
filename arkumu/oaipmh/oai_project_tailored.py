@@ -931,10 +931,10 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
         # For Rosetta orgs (KHM/HMT), prefer prefix+filename to avoid leaking deep ingest paths
         # BUT: Don't rewrite paths for DCP bundle files - they need to keep the folder structure
+        # Note: source can be "rosetta" or "graph" depending on data origin
         is_dcp_bundle = getattr(obj, "_from_dcp_bundle", False)
         if (
-            normalized.source == "rosetta"
-            and normalized.file_name
+            normalized.file_name
             and normalized_code in {"khm", "hmt"}
             and not is_dcp_bundle
         ):
