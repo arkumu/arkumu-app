@@ -209,6 +209,17 @@ def build_rdf_graph(
         if predicate_source and "defines" in predicate_source.lower():
             continue
 
+        # Skip redundant digitales-objekt links from KHM junction tables
+        # KHM data repeats all project DOs on every junction (grundereignis, kreuz-*)
+        # Only keep digitales-objekt links from the project entity itself
+        if predicate_source and "digitales-objekt" in predicate_source.lower():
+            subj_uri_check = subj_node.get("uri") if subj_node else ""
+            # Only apply to KHM - other orgs don't have this redundancy
+            if subj_uri_check and "/data/khm/" in subj_uri_check:
+                # Allow from projekt entities, skip from junctions
+                if "/00-projekte/" not in subj_uri_check:
+                    continue
+
         if not _is_data_node(subj_node):
             continue
 
