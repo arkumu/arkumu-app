@@ -848,7 +848,6 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                 s3_key__isnull=False,
             )
             .exclude(s3_key="")
-            .exclude(file_name="")
             .select_related("related_resource")
         )
 
@@ -863,10 +862,17 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             if not resource_uri and getattr(file_obj, "related_resource", None):
                 resource_uri = getattr(file_obj.related_resource, "uri", None)
 
+            # Derive filename from file_name or s3_key
+            filename = file_obj.file_name
+            if not filename and file_obj.s3_key:
+                filename = file_obj.s3_key.split("/")[-1]
+            if not filename:
+                continue  # Skip if no filename can be derived
+
             project_obj = ProjectDigitalObject(
-                path=file_obj.file_name,  # Just the filename
+                path=filename,  # Just the filename
                 storage_key=file_obj.s3_key,
-                file_name=file_obj.file_name,
+                file_name=filename,
                 content_type=file_obj.content_type,
                 size_bytes=file_obj.file_size_bytes,
                 checksum=fixity.digest,
