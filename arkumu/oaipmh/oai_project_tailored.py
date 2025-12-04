@@ -923,6 +923,18 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             if rid_uuid:
                 s3_by_id[rid_uuid] = file_obj
 
+        # Batch fetch checksums from Triple table for Rosetta orgs
+        checksum_by_id: Dict[UUID, str] = {}
+        checksum_predicate = ProjectSnapshotService.ROSETTA_CHECKSUM_PREDICATES.get(normalized_code)
+        if checksum_predicate:
+            checksum_filter = Q(predicate__canonical_uri=checksum_predicate) | Q(predicate__uri=checksum_predicate)
+            checksum_triples = Triple.objects.filter(
+                subject_id__in=list(uuid_map.keys())
+            ).filter(checksum_filter).select_related("object")
+            for triple in checksum_triples:
+                if triple.object and triple.object.value:
+                    checksum_by_id[triple.subject_id] = str(triple.object.value)
+
         for rid_uuid, rid_str in uuid_map.items():
             filename = filename_by_id.get(rid_uuid)
             s3_obj = s3_by_id.get(rid_uuid)
@@ -957,6 +969,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                     uri=resource_uri,
                 )
             else:
+                # Use checksum from Triple table for Rosetta orgs
+                checksum_literal = checksum_by_id.get(rid_uuid)
+                fixity = parse_fixity(checksum_literal) if checksum_literal else None
                 project_obj = ProjectDigitalObject(
                     path=filename,
                     storage_key=None,
@@ -965,6 +980,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                     storage_status="completed",
                     resource_id=rid_str,
                     uri=resource_uri,
+                    checksum=fixity.digest if fixity else None,
+                    checksum_algorithm=fixity.algorithm if fixity else None,
+                    checksum_provenance="metadata" if fixity and fixity.digest else None,
                 )
 
             setattr(project_obj, "_from_s3_file_object", True)
