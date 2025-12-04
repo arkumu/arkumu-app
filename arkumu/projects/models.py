@@ -335,7 +335,7 @@ class ProjectRecord:
             "uri": self.uri,
             "title": self.title or "",
             "subtitle": self.subtitle or "",
-            "image": self.image or "images/main/card_1.png",
+            # "image": self.image or "images/main/card_1.png",
             "institution": (self.institution.label if self.institution and self.institution.label else ""),
             "categories": [cat.label for cat in self.categories if cat.label],
             "year_range": self.year_range or "",
@@ -345,7 +345,7 @@ class ProjectRecord:
             ],
         }
 
-        if self.digital_objects and not self.image:
+        if self.digital_objects:
 
             preview_candidates = [
                 obj for obj in self.digital_objects
@@ -361,9 +361,8 @@ class ProjectRecord:
             if valid_preview:
                 card["image"] = valid_preview
             else:
-                fallback_path = _object_display_path(self.digital_objects[0])
-                if fallback_path:
-                    card["image"] = fallback_path
+                card["image"] = "images/main/card_1.png"
+
 
         for idx, actor in enumerate(self.actors[:4]):
             if actor.name:

@@ -34,6 +34,9 @@ class ProjectCardSearchService:
     ACTOR_NAME_PREDICATES: Tuple[str, ...] = (
         CardURIs.ACTOR_GERMAN_NAME,
     )
+    ACTOR_ROLE_PREDICATES: Tuple[str, ...] = (
+        CardURIs.ROLE_GERMAN_NAME,
+    )
 
     def __init__(self) -> None:
         self.detail_service = ProjectDetailIndexService()
@@ -51,7 +54,7 @@ class ProjectCardSearchService:
         backend = getattr(settings, "PROJECT_INDEX_BACKEND", "snapshot")
 
         if backend in ("db", "graph"):
-            index_service = ProjectIndexService(backend=backend)
+            index_service = ProjectIndexService(backend="db")
             cards = index_service.get_cards(query=query, organ_code=org_code)
             total = len(cards)
 
@@ -75,10 +78,76 @@ class ProjectCardSearchService:
             record = self.detail_service.get_record(uri)
             if record:
                 card = record.to_card_dict()
+                self._add_role_fields(card, uri)
                 cards.append(card)
                 ProjectCardCache.set(uri, card)
 
         return cards, total
+
+    def _add_role_fields(self, card: dict, uri: str) -> None:
+        """Add role fields to card dictionary."""
+        # Extract actor names from card
+        actor_names = []
+        for i in range(1, 5):
+            name_key = f"contributor{i}_name"
+            if name_key in card and card[name_key]:
+                actor_names.append(card[name_key])
+
+        if not actor_names:
+            return
+
+        # Get roles for these actors in this project
+        roles = self._get_roles_for_project(uri, actor_names)
+
+        # Add roles to card
+        for i, name in enumerate(actor_names):
+            role = roles.get(name, "")
+            card[f"contributor{i+1}_role"] = role
+
+    def _get_roles_for_project(self, uri: str, actor_names: List[str]) -> dict:
+        """Get roles for actors in a specific project."""
+        roles = {}
+        project_resource = Resource.objects.filter(uri=uri).first()
+        if not project_resource:
+            return roles
+
+        # Get events for this project
+        event_ids = Triple.objects.filter(
+            subject=project_resource,
+            predicate__uri=CardURIs.EVENT
+        ).values_list('object_id', flat=True)
+
+        if not event_ids:
+            return roles
+
+        # Get actor-event links
+        actor_link_ids = Triple.objects.filter(
+            subject_id__in=event_ids,
+            predicate__uri=CardURIs.ACTOR_IN_EVENT
+        ).values_list('object_id', flat=True)
+
+        if not actor_link_ids:
+            return roles
+
+        # Get roles for these actor-event links
+        role_triples = Triple.objects.filter(
+            subject_id__in=actor_link_ids,
+            predicate__uri=CardURIs.ROLE_LINK
+        ).select_related('object')
+
+        # Map actor names to roles
+        for triple in role_triples:
+            role_name = triple.object.value if triple.object else ""
+            # Find the actor name associated with this role
+            actor_triple = Triple.objects.filter(
+                subject=triple.subject,
+                predicate__uri=CardURIs.ACTOR_LINK
+            ).select_related('object').first()
+
+            if actor_triple and actor_triple.object and actor_triple.object.value in actor_names:
+                roles[actor_triple.object.value] = role_name
+
+        return roles
 
     def _search_project_uris(
         self,
@@ -243,7 +312,10 @@ class ProjectCardSearchService:
                     cached_schema = schema_cache.get(org_code) if org_code else None
                     record = self.detail_service.get_record(uri, card_schema=cached_schema)
                     if record:
-                        ProjectCardCache.set(uri, record.to_card_dict())
+                        card = record.to_card_dict()
+
+                        self._add_role_fields(card, uri)
+                        ProjectCardCache.set(uri, card)
             except OperationalError:
                 logger.warning("ProjectCardSearchService: preload skipped (DB not ready)")
             except Exception:

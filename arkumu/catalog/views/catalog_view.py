@@ -30,7 +30,7 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         start_time = time.time()
 
         query = request.GET.get('query', '').strip()
-        orga_code = request.GET.get('orga_code', "").strip().lower() or None
+        orga_code = request.GET.get('orga_code', "").strip() or None
         query = query or None
 
         # Mapping der Kürzel zu vollständigen Namen
@@ -42,8 +42,8 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             "hmt": "Hochschule für Musik und Tanz Köln"
         }
 
-        orga_display = orga_mapping.get(orga_code) if orga_code else None
-
+        orga_display = orga_mapping.get(orga_code, orga_code)
+        orga_code = orga_display
         try:
             page = max(int(request.GET.get('page', 1)), 1)
         except ValueError:

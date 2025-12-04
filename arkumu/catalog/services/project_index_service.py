@@ -158,6 +158,8 @@ class ProjectIndexService:
             "http://arkumu.org/data/properties/ereignis-hat-akteurin",
             # Actor name
             "http://arkumu.org/data/properties/deutscher-name",
+            # Actor role
+            "http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb",
         ]
         for uri in extra_neighbor_predicates:
             normalized = str(uri).strip()
@@ -278,7 +280,9 @@ class ProjectIndexService:
 
         # Actor extraction properties
         actor_link_prop = _property("actor_event", "actor_link")
+        actor_role_link_prop = _property("actor_event", "role_link")
         actor_name_prop = _property("actor", "name")
+        actor_role_name_prop = _property("role", "name")
         # Event -> actor junction canonical URI (not in schema, hardcoded)
         event_actor_junction_uri = "http://arkumu.org/data/properties/akteurinnen-am-ereignis"
 
@@ -361,13 +365,15 @@ class ProjectIndexService:
 
             year_range = self._derive_year_range_from_pairs(event_ranges) or ""
 
-            # Extract actors - handle two patterns:
+            # Extract actors and roles - handle two patterns:
             # 1. FUK: Event -> Junction (akteurinnen-am-ereignis) -> Actor (akteurin-im-ereignis)
             # 2. KHM: Event -> Actor directly (akteurin-im-ereignis)
-            actor_names: List[str] = []
+            actor_entries: List[Dict[str, str]] = []
             seen_actors: set = set()
             actor_link_uri = getattr(actor_link_prop, "canonical_uri", None)
+            actor_role_link_uri = getattr(actor_role_link_prop, "canonical_uri", None)
             actor_name_uri = getattr(actor_name_prop, "canonical_uri", None)
+            actor_role_name_uri = getattr(actor_role_name_prop, "canonical_uri", None)
 
             def _extract_actor_name(actor_id: str) -> Optional[str]:
                 actor_edges = edges_by_subject.get(actor_id, [])
@@ -377,6 +383,14 @@ class ProjectIndexService:
                     name = actor_node.get("name") or actor_node.get("value")
                 return name
 
+            def _extract_role_name(role_id: str) -> Optional[str]:
+                role_edges = edges_by_subject.get(role_id, [])
+                role_name = self._first_literal(role_edges, actor_role_name_uri)
+                if not role_name:
+                    role_node = nodes.get(role_id) or {}
+                    role_name = role_node.get("name") or role_node.get("value")
+                return role_name
+
             for event_id in event_ids:
                 event_edges = edges_by_subject.get(event_id, [])
 
@@ -385,13 +399,24 @@ class ProjectIndexService:
                 for junction_id in junction_ids:
                     junction_edges = edges_by_subject.get(junction_id, [])
                     actor_ids = self._related_ids(junction_edges, actor_link_uri)
+                    role_ids = self._related_ids(junction_edges, actor_role_link_uri)
+
+                    # Get role name if available
+                    role_name = None
+                    if role_ids:
+                        role_id = role_ids[0]
+                        role_name = _extract_role_name(role_id)
+
                     for actor_id in actor_ids:
                         actor_name = _extract_actor_name(actor_id)
                         if actor_name:
-                            normalized = str(actor_name).strip()
-                            if normalized and normalized not in seen_actors:
-                                actor_names.append(normalized)
-                                seen_actors.add(normalized)
+                            normalized_name = str(actor_name).strip()
+                            if normalized_name and normalized_name not in seen_actors:
+                                actor_entries.append({
+                                    "name": normalized_name,
+                                    "role": role_name.strip() if role_name else ""
+                                })
+                                seen_actors.add(normalized_name)
 
                 # Pattern 2: Direct actor links on event
                 # KHM/HMT use akteurin-im-ereignis, FUK uses ereignis-hat-akteurin
@@ -400,13 +425,24 @@ class ProjectIndexService:
                     if not direct_uri:
                         continue
                     direct_actor_ids = self._related_ids(event_edges, direct_uri)
+
+                    # Try to get role directly from the event-actor link
+                    role_name = None
+                    role_ids = self._related_ids(event_edges, actor_role_link_uri)
+                    if role_ids:
+                        role_id = role_ids[0]
+                        role_name = _extract_role_name(role_id)
+
                     for actor_id in direct_actor_ids:
                         actor_name = _extract_actor_name(actor_id)
                         if actor_name:
-                            normalized = str(actor_name).strip()
-                            if normalized and normalized not in seen_actors:
-                                actor_names.append(normalized)
-                                seen_actors.add(normalized)
+                            normalized_name = str(actor_name).strip()
+                            if normalized_name and normalized_name not in seen_actors:
+                                actor_entries.append({
+                                    "name": normalized_name,
+                                    "role": role_name.strip() if role_name else ""
+                                })
+                                seen_actors.add(normalized_name)
 
             # Categories: use Wikidata IDs if available, otherwise fall back to labels
             categories: List[str] = []
@@ -455,12 +491,13 @@ class ProjectIndexService:
                 "digital_objects": [],
             }
 
-            # Add contributor fields (actor names)
-            for idx, name in enumerate(actor_names[:4]):
-                if name:
-                    card[f"contributor{idx + 1}_name"] = name
-            if len(actor_names) > 4:
-                card["additional_contributors"] = f"{len(actor_names) - 4} weitere"
+            # Add contributor fields with roles
+            for idx, actor in enumerate(actor_entries[:4]):
+                if actor['name']:
+                    card[f"contributor{idx + 1}_name"] = actor['name']
+                    card[f"contributor{idx + 1}_role"] = actor['role']
+            if len(actor_entries) > 4:
+                card["additional_contributors"] = f"{len(actor_entries) - 4} weitere"
 
             # Add category fields for template compatibility
             for idx, category in enumerate(categories[:4]):
@@ -474,7 +511,7 @@ class ProjectIndexService:
 
     def _get_graph_cards(self, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """Build or return cached cards from the canonical project graph."""
-
+        force_refresh = True
         cache_key = "arkumu:project_index:graph_cards"
         if not force_refresh:
             cached = cache.get(cache_key)
@@ -521,8 +558,10 @@ class ProjectIndexService:
         actors: Optional[List[str]] = None,
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return card dictionaries for projects matching the filters."""
+        #Why on earth would anyone decide otherwise?
+        # self.backend ="db"
 
+        """Return card dictionaries for projects matching the filters."""
         if self.backend == "snapshot":
             records = self._get_all_records(force_refresh=force_refresh)
             filtered_records = self._filter_records(
@@ -546,7 +585,7 @@ class ProjectIndexService:
             )
 
             if organ_code:
-                base_qs = base_qs.filter(org_code__iexact=organ_code.strip())
+                base_qs = base_qs.filter(institution_label__icontains=organ_code.strip())
 
             if query:
                 normalized_query = query.strip()

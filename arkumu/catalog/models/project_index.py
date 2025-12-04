@@ -155,11 +155,30 @@ class ProjectIndex(models.Model):
             "digital_objects": list(self.digital_object_paths or []),
         }
 
-        if self.actor_names:
+        # Use structured actors data if available
+        if self.actors:
+            for idx, actor in enumerate(self.actors[:4]):
+                name = actor.get('name', '')
+                if not name:
+                    continue
+
+                # Combine roles if available
+                roles = actor.get('roles', [])
+                role_str = ', '.join(roles) if roles else ''
+                card[f"contributor{idx + 1}_name"] = name
+                card[f"contributor{idx + 1}_role"] = role_str
+
+            if len(self.actors) > 4:
+                card["additional_contributors"] = f"{len(self.actors) - 4} weitere"
+
+        # Fallback to simple names if structured data is missing
+        elif self.actor_names:
             for idx, name in enumerate(self.actor_names[:4]):
                 if not name:
                     continue
                 card[f"contributor{idx + 1}_name"] = name
+                card[f"contributor{idx + 1}_role"] = ""  # Empty role
+
             if len(self.actor_names) > 4:
                 card["additional_contributors"] = f"{len(self.actor_names) - 4} weitere"
 
