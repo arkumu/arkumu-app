@@ -823,10 +823,10 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         uri_by_resource: Mapping[str, Optional[str]],
         institution_code: Optional[str],
     ) -> Dict[str, List[ProjectDigitalObject]]:
-        """Load curated media for all orgs.
+        """Load curated media from S3FileObject only.
 
-        First tries S3FileObject, then falls back to graph dateipfad triple.
-        The output path is always: {rosetta_prefix}/{filename}
+        Digital objects MUST have S3FileObject entries to be harvestable.
+        No graph fallback - OAIProjectMediaLink + S3FileObject is the source of truth.
         """
         if not resource_ids:
             return {}
@@ -841,10 +841,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         if not uuid_map:
             return {}
 
-        curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
-        found_resource_ids: set[str] = set()
-
-        # First try S3FileObject for all digital objects
+        # Query S3FileObject - the ONLY source for digital object files
         files = (
             S3FileObject.objects.filter(
                 related_resource_id__in=list(uuid_map.keys()),
@@ -854,6 +851,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             .select_related("related_resource")
         )
 
+        curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
         for file_obj in files:
             rid_uuid = getattr(file_obj, "related_resource_id", None)
             if rid_uuid not in uuid_map:
@@ -869,10 +867,10 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             if not filename and file_obj.s3_key:
                 filename = file_obj.s3_key.split("/")[-1]
             if not filename:
-                continue  # Skip if no filename can be derived
+                continue
 
             project_obj = ProjectDigitalObject(
-                path=filename,  # Just the filename
+                path=filename,
                 storage_key=file_obj.s3_key,
                 file_name=filename,
                 content_type=file_obj.content_type,
@@ -887,52 +885,6 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             )
             setattr(project_obj, "_from_s3_file_object", True)
             curated_objects.setdefault(rid_str, []).append(project_obj)
-            found_resource_ids.add(rid_str)
-
-        # For resources without S3FileObject, try graph dateipfad triple
-        missing_ids = [rid for rid in uuid_map.values() if rid not in found_resource_ids]
-        if missing_ids:
-            from arkumu.catalog.services.project_views import ProjectURIs
-            missing_uuids = [UUID(rid) for rid in missing_ids]
-
-            # Query dateipfad triples
-            path_filter = Q(predicate__canonical_uri=ProjectURIs.DIGITAL_OBJECT_PATH) | Q(
-                predicate__uri=ProjectURIs.DIGITAL_OBJECT_PATH
-            )
-            path_triples = Triple.objects.filter(
-                subject_id__in=missing_uuids
-            ).filter(path_filter).select_related("object", "subject")
-
-            for triple in path_triples:
-                rid_str = str(triple.subject_id)
-                if rid_str in found_resource_ids:
-                    continue
-                raw_path = getattr(triple.object, "value", None)
-                if not raw_path:
-                    continue
-
-                # Extract filename from path
-                raw_path_str = str(raw_path).replace("\\", "/")
-                filename = raw_path_str.split("/")[-1] if "/" in raw_path_str else raw_path_str
-                if not filename:
-                    continue
-
-                resource_uri = uri_by_resource.get(rid_str)
-                if not resource_uri and triple.subject:
-                    resource_uri = getattr(triple.subject, "uri", None)
-
-                project_obj = ProjectDigitalObject(
-                    path=filename,
-                    storage_key=raw_path_str,
-                    file_name=filename,
-                    content_type=None,
-                    storage_status="completed",
-                    resource_id=rid_str,
-                    uri=resource_uri,
-                )
-                setattr(project_obj, "_from_s3_file_object", True)  # Still mark as valid
-                curated_objects.setdefault(rid_str, []).append(project_obj)
-                found_resource_ids.add(rid_str)
 
         return curated_objects
 
