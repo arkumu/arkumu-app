@@ -892,6 +892,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             found_resource_ids.add(rid_str)
 
         # For Rosetta orgs (KHM/HMT), also check Resource.name/value for missing ones
+        # This matches _resource_display_label logic from media_link_views.py
         if not is_s3_org:
             missing_ids = [rid for rid in uuid_map.values() if rid not in found_resource_ids]
             if missing_ids:
@@ -900,14 +901,13 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
                 for resource in resources:
                     rid_str = str(resource.id)
-                    # Get filename from Resource.name or Resource.value
+                    # Match _resource_display_label: name -> value -> uri tail
                     filename = resource.name or resource.value
+                    if not filename and resource.uri:
+                        filename = resource.uri.rstrip("/").split("/")[-1]
                     if not filename:
                         continue
-                    # Extract just the filename if it's a path
-                    filename = str(filename).replace("\\", "/").split("/")[-1]
-                    if not filename:
-                        continue
+                    filename = str(filename)
 
                     resource_uri = uri_by_resource.get(rid_str) or resource.uri
 
