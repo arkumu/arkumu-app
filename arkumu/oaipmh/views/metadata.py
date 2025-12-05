@@ -1075,8 +1075,7 @@ def _build_simplified_mets_from_project(
     if reference_parent:
         _add_dc_value(dc_payload, 'isPartOf', reference_parent, namespace='dcterms')
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
-    mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
-    # Note: OBJID removed - not allowed in Rosetta METS schema
+    # Note: OBJID and xsi:schemaLocation removed per Rosetta example
 
     # Note: metsHdr removed per Rosetta requirements
 
@@ -1353,6 +1352,8 @@ def _build_simplified_mets_from_project(
         _t3 - _t0,
     )
     return mets_root
+
+
 def _build_mets_from_project(
     project: OAIProject,
     resource: Resource,
@@ -1368,7 +1369,7 @@ def _build_mets_from_project(
     apply_khm_licensing = normalized_org_code in _KHM_HMT_LICENSE_ORGS
 
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
-    mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
+    # Note: OBJID and xsi:schemaLocation removed per Rosetta example
 
     dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
     md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
@@ -2024,7 +2025,10 @@ def _build_mets_from_project(
                     },
                 )
                 ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
+
     return mets_root
+
+
 def _build_metadata_element(
     resource: Resource,
     metadata_prefix: str,
