@@ -1075,7 +1075,7 @@ def _build_simplified_mets_from_project(
     if reference_parent:
         _add_dc_value(dc_payload, 'isPartOf', reference_parent, namespace='dcterms')
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
-    # Note: OBJID and xsi:schemaLocation removed per Rosetta example
+    mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
 
     # Note: metsHdr removed per Rosetta requirements
 
@@ -1369,7 +1369,7 @@ def _build_mets_from_project(
     apply_khm_licensing = normalized_org_code in _KHM_HMT_LICENSE_ORGS
 
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
-    # Note: OBJID and xsi:schemaLocation removed per Rosetta example
+    mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
 
     dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
     md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})

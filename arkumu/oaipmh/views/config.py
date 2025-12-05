@@ -34,7 +34,7 @@ SCHEMA_DESCRIPTION_NS = "http://arkumu.org/oai/schema-info/1.0"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
 # Toggle between LOC METS and Rosetta METS namespace for testing
-USE_ROSETTA_METS = True  # Set to False for standard LOC METS
+USE_ROSETTA_METS = False  # Set to False for standard LOC METS
 
 METS_NS = ROSETTA_METS_NS if USE_ROSETTA_METS else DEFAULT_METS_NS
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
