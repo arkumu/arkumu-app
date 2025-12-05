@@ -338,5 +338,63 @@ class RosettaMETSValidator:
         return all(elem.text and elem.text.strip() for elem in elements)
 
 
+    def validate_rosetta_mets_xml(
+        self,
+        mets_xml: str,
+        *,
+        resource_uri: str | None = None,
+    ) -> ValidationResult:
+        """Validate METS XML directly against Rosetta METS schema (XSD 1.1).
+
+        This validates against the rosettaMets.xsd schema which uses the
+        http://www.exlibrisgroup.com/xsd/dps/rosettaMets namespace.
+
+        Use this for testing Rosetta-specific METS output.
+        """
+        if not mets_xml:
+            return ValidationResult(False, (ValidationIssue("Empty METS payload", None),))
+
+        try:
+            mets_root = ET.fromstring(mets_xml.encode("utf-8"))
+        except (TypeError, ET.XMLSyntaxError) as exc:
+            self.logger.debug("Failed to parse METS XML for %s: %s", resource_uri or "unknown", exc)
+            return ValidationResult(False, (ValidationIssue(f"Invalid XML: {exc}", None),))
+
+        # Validate against Rosetta METS schema
+        schema = _load_rosetta_mets_schema(self.rosetta_schema_path)
+        if schema is None:
+            return ValidationResult(
+                False,
+                (ValidationIssue("Rosetta METS schema could not be loaded", None),),
+            )
+
+        mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+        issues = []
+        for error in schema.iter_errors(BytesIO(mets_bytes)):
+            detail = error.reason or error.message
+            path = getattr(error, "path", None)
+            location = str(path) if path else None
+            issues.append(ValidationIssue(detail, location))
+
+        if issues:
+            for issue in issues[:5]:
+                self.logger.error(
+                    "Rosetta METS validation error for %s: %s (at %s)",
+                    resource_uri or "unknown",
+                    issue.message,
+                    issue.location or "unknown",
+                )
+            return ValidationResult(False, tuple(issues))
+
+        # Also validate DNX sections
+        if not self._validate_dnx_sections(mets_root, resource_uri):
+            return ValidationResult(
+                False,
+                (ValidationIssue("DNX validation failed", None),),
+            )
+
+        return ValidationResult(True)
+
+
 # Shared singleton used by views and tests
 rosetta_mets_validator = RosettaMETSValidator()

@@ -1076,7 +1076,7 @@ def _build_simplified_mets_from_project(
         _add_dc_value(dc_payload, 'isPartOf', reference_parent, namespace='dcterms')
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
-    mets_root.set("OBJID", getattr(record, "uri", getattr(resource, "uri", "")) or "")
+    # Note: OBJID removed - not allowed in Rosetta METS schema
 
     # Note: metsHdr removed per Rosetta requirements
 
@@ -1305,10 +1305,11 @@ def _build_simplified_mets_from_project(
 
     struct_map = ET.SubElement(mets_root, ET.QName(METS_NS, "structMap"), {"ID": "structMap-1", "TYPE": "LOGICAL"})
     project_label = record.title or getattr(resource, "name", None) or identifier_value or "Project"
+    # Note: TYPE must be 'FILE' per Rosetta METS schema requirements
     struct_root = ET.SubElement(
         struct_map,
         ET.QName(METS_NS, "div"),
-        {"TYPE": "project", "LABEL": project_label},
+        {"TYPE": "FILE", "LABEL": project_label},
     )
 
     for index, obj in enumerate(harvestable_objects, start=1):
@@ -1316,11 +1317,9 @@ def _build_simplified_mets_from_project(
         if not href:
             continue
         file_id = f"fid1-{index}"
-        # Note: CHECKSUM, CHECKSUMTYPE, MIMETYPE removed per Rosetta requirements
+        # Note: CHECKSUM, CHECKSUMTYPE, MIMETYPE, SIZE removed per Rosetta requirements
         # Fixity info is in per-file DNX amdTech section
         file_attrs: Dict[str, str] = {"ID": file_id, "ADMID": f"{file_id}-amd"}
-        if obj.size_bytes:
-            file_attrs["SIZE"] = str(obj.size_bytes)
 
         file_element = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), file_attrs)
         flocat_attrs = {
