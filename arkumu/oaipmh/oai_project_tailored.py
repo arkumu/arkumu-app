@@ -247,14 +247,11 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         record: ProjectRecord,
         *,
         skip_shared_event_filter: bool = False,
-        skip_format_exclusion: bool = False,
-        use_curated_media_links: bool = False,
         prefetched_curated_links: Optional[List] = None,
         prefetched_dcp_data: Optional[BatchedDcpData] = None,
         prefetched_graph_data: Optional[BatchedGraphData] = None,
     ) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
-        original_digital_objects = list(getattr(record, "digital_objects", []) or [])
 
         filtered_record = record
         # Tailored feeds intentionally keep shared-event objects, so skip the shared-event filter.
@@ -268,24 +265,17 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         # Mark DCP bundle members upfront (before normalization)
         self._mark_dcp_bundle_members(filtered_record, institution_code)
 
-        curated_selection: Optional[CuratedMediaSelection] = None
-        if use_curated_media_links:
-            curated_selection = self._resolve_curated_selection(
-                filtered_record, prefetched_links=prefetched_curated_links
-            )
-
-        normalized_objects = self._normalize_objects(
-            filtered_record,
-            institution_code,
-            skip_format_exclusion=skip_format_exclusion,
-            curated_selection=curated_selection,
-            extra_objects=original_digital_objects,
+        # Tailored feeds ALWAYS use curated media links as source of truth
+        curated_selection = self._resolve_curated_selection(
+            filtered_record, prefetched_links=prefetched_curated_links
         )
-        if use_curated_media_links and curated_selection and not normalized_objects:
-            normalized_objects = self._normalize_curated_only_objects(
-                curated_selection,
-                institution_code,
-            )
+
+        # Always use curated links - they are the source of truth for tailored OAI
+        # No fallback to graph digital objects
+        normalized_objects = self._normalize_curated_only_objects(
+            curated_selection,
+            institution_code,
+        )
 
         return OAIProject(
             record=filtered_record,

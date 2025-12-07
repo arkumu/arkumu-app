@@ -192,8 +192,6 @@ def _build_tailored_project_hint_from_resource(
         result = _tailored_project_builder.from_project_record(
             record,
             skip_shared_event_filter=False,
-            skip_format_exclusion=_db_mode_enabled(),
-            use_curated_media_links=True,
             prefetched_curated_links=prefetched_curated_links,
             prefetched_dcp_data=prefetched_dcp_data,
             prefetched_graph_data=prefetched_graph_data,
