@@ -110,10 +110,50 @@ def extract_catchphrases(index: TripleIndex, project_uri: str) -> List[ProjectCa
     return catchphrases
 
 
+def _get_role_property_uris_from_schema(event_uri: str) -> Set[str]:
+    """Extract role property URIs from schema manifest based on org code."""
+    role_uris = set()
+
+    # Extract org code from URI (e.g., "hmt" from "http://arkumu.org/data/hmt/...")
+    if not event_uri or "/data/" not in event_uri:
+        return role_uris
+
+    try:
+        parts = event_uri.split("/data/")
+        if len(parts) < 2:
+            return role_uris
+        org_code = parts[1].split("/")[0]
+
+        from arkumu.metadata.models import Mapping
+        mapping = Mapping.get_active_for_organization(org_code)
+        if not mapping:
+            return role_uris
+
+        schema = mapping.mapping_config.get('schema_manifest', {})
+        for ds_config in schema.values():
+            rel_contexts = ds_config.get('relationship_contexts', [])
+            for ctx in rel_contexts:
+                # Add both context_property_uri and secondary_property_uri
+                ctx_uri = ctx.get('context_property_uri')
+                if ctx_uri and 'rolle' in ctx_uri.lower():
+                    role_uris.add(ctx_uri)
+                sec_uri = ctx.get('secondary_property_uri')
+                if sec_uri and 'rolle' in sec_uri.lower():
+                    role_uris.add(sec_uri)
+    except Exception:
+        # Silently fail if schema extraction fails
+        pass
+
+    return role_uris
+
+
 def extract_event_actors(index: TripleIndex, event_uri: str) -> List[ProjectEventActor]:
     """Extract actors for an event from junction entities."""
     actors = []
     seen_names: Set[str] = set()
+
+    # Extract org code and get role property URIs from schema manifest
+    role_property_uris = _get_role_property_uris_from_schema(event_uri)
 
     # Find junctions pointing to this event
     for subject in index.all_subjects:
@@ -165,15 +205,24 @@ def extract_event_actors(index: TripleIndex, event_uri: str) -> List[ProjectEven
             continue
         seen_names.add(actor_name)
 
-        # Get roles
-        role_uris = get_all_object_uris(index, subject, Predicates.ROLE_LINK)
+        # Get roles - try both URI links (FUK/RSH/DET) and literal values (HMT/KHM)
         roles = []
+
+        # Method 1: Role URIs (canonical - FUK/RSH/DET)
+        role_uris = get_all_object_uris(index, subject, Predicates.ROLE_LINK)
         for role_uri in role_uris:
             role_name = get_literal(index, role_uri, Predicates.ROLE_NAME)
             if not role_name:
                 role_name = get_literal(index, role_uri, Predicates.ACTOR_NAME)
             if role_name:
                 roles.append(role_name)
+
+        # Method 2: Role literals from org-specific properties (HMT/KHM)
+        if not roles and role_property_uris:
+            for t in index.by_subject.get(subject, []):
+                pred_uri = t.predicate_uri or t.predicate_canonical_uri
+                if pred_uri in role_property_uris and t.object_value:
+                    roles.append(t.object_value)
 
         # Get rights flags
         is_copyright = is_truthy(get_literal(index, subject, Predicates.IST_URHEBERIN))
