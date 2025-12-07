@@ -103,12 +103,40 @@ def build_rdf_graph(
     edges = graph_data.get("edges", [])
 
     if not skip_junction_fetch:
-        # Find event IDs from existing nodes
-        event_ids: List[str] = [
-            node_id
-            for node_id, node in nodes.items()
-            if node.get("uri") and "/ereignis" in node.get("uri", "").lower()
-        ]
+        # Find event IDs using canonical event predicate (org-agnostic)
+        from arkumu.metadata.canonical import canonical_uri
+        EVENT_CANONICAL = canonical_uri("event")
+
+        # Get root identifier - try root_id first, fallback to root_uri
+        root_id = graph_data.get("root_id")
+        root_uri = graph_data.get("root_uri") if not root_id else None
+
+        # Find root ID from URI if needed (graph_data from get_project_graphs uses URIs as node keys)
+        if root_uri and not root_id:
+            root_id = root_uri  # In URI-keyed graphs, use URI as identifier
+
+        event_ids: List[str] = []
+        if root_id:
+            # Only include events directly linked to the root resource via canonical event predicate
+            # Handle both ID-based and URI-based graphs
+            event_identifiers = [
+                edge.get("object_id") or edge.get("object_uri")
+                for edge in edges
+                if (edge.get("subject_id") == root_id or edge.get("subject_uri") == root_id)
+                and edge.get("predicate_canonical") == EVENT_CANONICAL
+                and (edge.get("object_id") or edge.get("object_uri"))
+            ]
+
+            # Convert URIs to UUIDs if necessary (fetch_junction_entities expects UUIDs)
+            # Check if these are URIs (contain "http") or UUIDs
+            if event_identifiers and "http" in str(event_identifiers[0]):
+                # URI-based graph - need to resolve URIs to Resource UUIDs
+                from arkumu.metadata.models.resource import Resource
+                event_resources = Resource.objects.filter(uri__in=event_identifiers).only("id")
+                event_ids = [str(r.id) for r in event_resources]
+            else:
+                # UUID-based graph
+                event_ids = event_identifiers
 
         if event_ids:
             junction_edges = service.fetch_junction_entities(event_ids)
