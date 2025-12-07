@@ -205,6 +205,17 @@ def _fetch_graphs_for_batch(
     if not project_resources:
         return {}
 
+    # Collect FK predicates from ALL organizations in this batch
+    # This handles mixed-org batches where different orgs use different junction schemas
+    org_codes = {r.organization.code for r in project_resources if r.organization}
+    all_fk_predicates = set(fk_predicates)  # Start with passed-in predicates
+    for org_code in org_codes:
+        org_config = _get_junction_config(org_code)
+        all_fk_predicates.update(org_config.get('fk_predicates', set()))
+
+    # Use combined FK predicates for junction discovery
+    fk_predicates = all_fk_predicates
+
     # Map project IDs to URIs
     project_id_to_uri = {r.id: r.uri for r in project_resources}
     all_project_ids = set(project_id_to_uri.keys())
@@ -383,21 +394,16 @@ def _fetch_graphs_for_batch(
                     )
 
         # Filter junction ENTITIES to prevent explosion from shared actors
-        # Strategy: Keep junctions only if their RESOURCE links (actor, event) point to neighbors
+        # Strategy: Keep junctions only if their FK links (to actors/events) point to neighbors
         # Ignore literal values (role names, flags, type URIs) when filtering
-
-        from arkumu.metadata.canonical import canonical_uri
-        EVENT_CANONICAL = canonical_uri("event")
-        ACTOR_CANONICAL = canonical_uri("actor")
-        ACTOR_IN_EVENT_CANONICAL = canonical_uri("actor_in_event")
+        # Use FK predicates from schema manifests - works for both canonical and org-specific models
 
         junction_resource_links: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
         for t in junction_entity_triples:
-            if t.object_id and t.object:
-                # Only consider resource links (not literal values)
-                # Resource links use canonical predicates like event, actor, actor_in_event
-                pred_canonical = t.predicate.canonical_uri if t.predicate else None
-                if pred_canonical in (EVENT_CANONICAL, ACTOR_CANONICAL, ACTOR_IN_EVENT_CANONICAL):
+            if t.object_id and t.object and t.predicate:
+                # Check if this is a FK predicate (resource link to actor/event)
+                pred_uri = t.predicate.uri
+                if pred_uri in fk_predicates:
                     junction_resource_links[t.subject_id].add(t.object_id)
 
         junctions_to_keep = set()
