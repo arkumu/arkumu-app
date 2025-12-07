@@ -138,6 +138,53 @@ def _as_uuid(value: str) -> Optional[uuid.UUID]:
         return None
 
 
+def _get_second_degree_neighbors(
+    org_codes: Set[str],
+    neighbor_triples: List,
+    neighbor_ids: Set[uuid.UUID]
+) -> Set[uuid.UUID]:
+    """Get second-degree neighbors based on schema FK relationships.
+
+    Returns IDs of entities that neighbors link to via FK predicates defined in schema.
+    E.g., information carriers linked from events.
+    """
+    second_degree_ids = set()
+
+    # Get FK predicates for each neighbor entity type from schema
+    neighbor_fk_predicates = set()
+
+    for org_code in org_codes:
+        try:
+            mapping = Mapping.get_active_for_organization(org_code)
+            if not mapping:
+                continue
+
+            schema = mapping.mapping_config.get('schema_manifest', {})
+            for ds_config in schema.values():
+                fk_rels = ds_config.get('fk_relationships', [])
+                for fk in fk_rels:
+                    source_uri = fk.get('source_property_uri')
+                    if source_uri:
+                        neighbor_fk_predicates.add(source_uri)
+        except Exception:
+            continue
+
+    if not neighbor_fk_predicates:
+        return second_degree_ids
+
+    # Find objects that neighbors link to via these FK predicates
+    for triple in neighbor_triples:
+        if triple.subject_id in neighbor_ids:
+            # Triple objects from ORM have .predicate.uri, not .predicate_uri
+            pred_uri = triple.predicate.uri if triple.predicate else None
+            if pred_uri in neighbor_fk_predicates and triple.object_id:
+                # Exclude entities already in neighbor set
+                if triple.object_id not in neighbor_ids:
+                    second_degree_ids.add(triple.object_id)
+
+    return second_degree_ids
+
+
 def _get_junction_config(org_code: str) -> Dict:
     """Extract junction FK predicates from relationship_contexts.
 
@@ -316,6 +363,22 @@ def _fetch_graphs_for_batch(
                         "Filtered %d neighbor triples linking to other projects",
                         filtered_count
                     )
+
+    # Query 2b: Fetch second-degree neighbors based on schema FK relationships
+    # E.g., information carriers linked from events
+    second_degree_neighbor_ids = _get_second_degree_neighbors(
+        org_codes, neighbor_triples, expandable_neighbor_ids
+    )
+
+    second_degree_triples = []
+    if second_degree_neighbor_ids:
+        second_degree_triples = list(Triple.objects.filter(
+            subject_id__in=second_degree_neighbor_ids
+        ).select_related('subject', 'predicate', 'object'))
+        logger.debug(
+            "Fetched %d second-degree neighbors from schema FK relationships",
+            len(second_degree_neighbor_ids)
+        )
 
     # Query 3: Find ALL junctions pointing to neighbors via FK predicates
     # Only look for junctions pointing to expandable neighbors (not project entities)
@@ -612,6 +675,17 @@ def _fetch_graphs_for_batch(
     # Assign neighbor triples
     for t in neighbor_triples:
         projects = neighbor_to_projects.get(t.subject_id, set())
+        _add_triple_to_projects(t, projects)
+
+    # Assign second-degree neighbor triples (e.g., information carriers)
+    # These belong to same projects as their parent neighbors
+    second_degree_to_projects: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
+    for t in neighbor_triples:
+        if t.subject_id in neighbor_to_projects and t.object_id in second_degree_neighbor_ids:
+            second_degree_to_projects[t.object_id].update(neighbor_to_projects[t.subject_id])
+
+    for t in second_degree_triples:
+        projects = second_degree_to_projects.get(t.subject_id, set())
         _add_triple_to_projects(t, projects)
 
     # Assign junction triples
