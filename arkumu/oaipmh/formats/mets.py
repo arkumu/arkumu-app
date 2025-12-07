@@ -407,22 +407,41 @@ class METSSerializer:
         if not valid_event_ids:
             return creators, contributors
 
-        # Query junction entities that point to these events
-        junction_type_uris = [
-            "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
-            "http://arkumu.org/data/types/akteurin-akteurin-kreuztabelle",
-        ]
-
-        # Find junction entities by type that point to our events
+        # Query junction entities that point to these events using schema manifest
         from arkumu.metadata.models.resource import Resource
+        from arkumu.metadata.models.mappings import Mapping
+
         RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+        # Get junction dataset types from schema manifest
+        junction_type_uris = []
+        if self.org_code:
+            mapping = Mapping.get_active_for_organization(self.org_code)
+            if mapping:
+                schema = mapping.mapping_config.get('schema_manifest', {})
+                for ds_name, ds_config in schema.items():
+                    # Check if this dataset has relationship_contexts (junction indicator)
+                    rel_contexts = ds_config.get('relationship_contexts', [])
+                    if rel_contexts:
+                        # Get the type URI for this junction dataset
+                        entity_type = ds_config.get('entity_type', {})
+                        dataset_type_uri = entity_type.get('uri', '')
+                        if dataset_type_uri:
+                            junction_type_uris.append(dataset_type_uri)
+
+        if not junction_type_uris:
+            # Fallback to canonical junction types if schema not available
+            junction_type_uris = [
+                "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
+                "http://arkumu.org/data/types/akteurin-akteurin-kreuztabelle",
+            ]
 
         org_filter = Q()
         if self.org_code:
             org_filter = Q(subject__organization__code=self.org_code)
 
         try:
-            junction_type_subjects = (
+            junction_type_subjects = list(
                 Triple.objects.filter(
                     Q(predicate__uri=RDF_TYPE_URI)
                     & (

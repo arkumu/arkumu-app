@@ -144,16 +144,18 @@ def _get_junction_config(org_code: str) -> Dict:
     Returns:
         {
             'fk_predicates': set of predicate URIs that link junctions to main entities,
+            'event_fk_predicates': set of predicate URIs that specifically link to events,
         }
     """
     mapping = Mapping.get_active_for_organization(org_code)
     if not mapping:
-        return {'fk_predicates': set()}
+        return {'fk_predicates': set(), 'event_fk_predicates': set()}
 
     config = mapping.mapping_config
     schema = config.get('schema_manifest', {})
 
     fk_predicates = set()
+    event_fk_predicates = set()
 
     for ds_name, ds_config in schema.items():
         rel_contexts = ds_config.get('relationship_contexts', [])
@@ -168,7 +170,15 @@ def _get_junction_config(org_code: str) -> Dict:
             if pred_uri:
                 fk_predicates.add(pred_uri)
 
-    return {'fk_predicates': fk_predicates}
+                # Check if this FK links to an event entity (Ereignis)
+                target_dataset = rel.get('target_dataset', '').lower()
+                if 'ereignis' in target_dataset or 'event' in target_dataset:
+                    event_fk_predicates.add(pred_uri)
+
+    return {
+        'fk_predicates': fk_predicates,
+        'event_fk_predicates': event_fk_predicates,
+    }
 
 
 def get_project_graphs(project_id: str, org_code: str) -> Optional[ProjectGraphs]:
@@ -209,9 +219,16 @@ def _fetch_graphs_for_batch(
     # This handles mixed-org batches where different orgs use different junction schemas
     org_codes = {r.organization.code for r in project_resources if r.organization}
     all_fk_predicates = set(fk_predicates)  # Start with passed-in predicates
+    event_fk_predicates = set()  # FK predicates that link to events
+
     for org_code in org_codes:
         org_config = _get_junction_config(org_code)
-        all_fk_predicates.update(org_config.get('fk_predicates', set()))
+        org_predicates = org_config.get('fk_predicates', set())
+        all_fk_predicates.update(org_predicates)
+
+        # Track which FK predicates link to events (not actors)
+        event_predicates = org_config.get('event_fk_predicates', set())
+        event_fk_predicates.update(event_predicates)
 
     # Use combined FK predicates for junction discovery
     fk_predicates = all_fk_predicates
@@ -394,23 +411,24 @@ def _fetch_graphs_for_batch(
                     )
 
         # Filter junction ENTITIES to prevent explosion from shared actors
-        # Strategy: Keep junctions only if their FK links (to actors/events) point to neighbors
-        # Ignore literal values (role names, flags, type URIs) when filtering
+        # Strategy: Keep junctions only if their event FK links point to neighbors
+        # This prevents pulling in junctions for non-neighbor events via shared actors
         # Use FK predicates from schema manifests - works for both canonical and org-specific models
 
-        junction_resource_links: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
+        junction_event_links: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
         for t in junction_entity_triples:
             if t.object_id and t.object and t.predicate:
-                # Check if this is a FK predicate (resource link to actor/event)
+                # Check if this is an event FK predicate (resource link to event)
                 pred_uri = t.predicate.uri
-                if pred_uri in fk_predicates:
-                    junction_resource_links[t.subject_id].add(t.object_id)
+                if pred_uri in event_fk_predicates:
+                    junction_event_links[t.subject_id].add(t.object_id)
 
         junctions_to_keep = set()
-        for junction_id, resource_links in junction_resource_links.items():
-            # Keep this junction if ALL its resource links point to neighbors
+        for junction_id, event_links in junction_event_links.items():
+            # Keep junction if it links to at least ONE neighbor event or project
+            # This allows junction→neighbor_event for all org schemas
             allowed_ids = all_neighbor_ids | all_project_ids
-            if resource_links and resource_links.issubset(allowed_ids):
+            if event_links and event_links & allowed_ids:
                 junctions_to_keep.add(junction_id)
 
         # Debug logging for first batch
