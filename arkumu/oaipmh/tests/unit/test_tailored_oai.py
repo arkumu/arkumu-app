@@ -277,7 +277,7 @@ def test_project_hint_uses_curated_links_only_when_tailored(monkeypatch):
     ]
 
     curated_hint = project_views._build_tailored_project_hint_from_resource(project)
-
+    # Curated hint should reorder based on OAIProjectMediaLink.order_index
     assert [obj.resource_id for obj in curated_hint.digital_objects] == [
         str(digital_b.id),
         str(digital_a.id),
@@ -460,7 +460,8 @@ def test_tailored_builder_hydrates_graph_only_curated_media():
     curated_project = builder.from_project_record(record, use_curated_media_links=True)
 
     assert [obj.resource_id for obj in curated_project.digital_objects] == [str(digital.id)]
-    assert curated_project.digital_objects[0].storage_key == "/graph/curated-object.jpg"
+    # For Rosetta orgs, storage_key is just the filename (path prefix stripped)
+    assert curated_project.digital_objects[0].storage_key == "curated-object.jpg"
     assert curated_project.digital_objects[0].uri == digital.uri
     assert curated_project.digital_objects[0].checksum == "feedface"
 

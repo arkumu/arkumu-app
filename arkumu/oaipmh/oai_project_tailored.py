@@ -1056,8 +1056,10 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         obj: ProjectDigitalObject,
         institution_code: Optional[str],
     ) -> Optional[NormalizedDigitalObject]:
-        # Only process objects from S3FileObject (via OAIProjectMediaLink)
-        if not getattr(obj, "_from_s3_file_object", False):
+        # Only process objects from S3FileObject or curated media links
+        from_s3 = getattr(obj, "_from_s3_file_object", False)
+        from_curated = getattr(obj, "_from_curated_media_link", False)
+        if not from_s3 and not from_curated:
             return None
 
         setattr(obj, "_bypass_dump_fixity", True)
