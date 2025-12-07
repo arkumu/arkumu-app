@@ -382,29 +382,53 @@ def _fetch_graphs_for_batch(
                         filtered_count
                     )
 
-        # Filter out triples that link TO non-neighbor events
+        # Filter out junction ENTITIES that don't link to neighbor events
+        # A junction is only relevant if it connects a neighbor (actor) to a neighbor event
         # This prevents junctions from pulling in hundreds of shared events
-        junction_object_ids = {t.object_id for t in junction_entity_triples if t.object_id}
-        junction_object_ids -= all_neighbor_ids  # Keep links to direct neighbor events
-        if junction_object_ids:
-            non_neighbor_event_triples = Triple.objects.filter(
-                subject_id__in=junction_object_ids,
-                predicate__uri=RDF_TYPE_URI,
-                object__canonical_uri=CANONICAL_EREIGNIS_TYPE
-            ).values_list('subject_id', flat=True)
-            non_neighbor_event_ids = set(non_neighbor_event_triples)
-            if non_neighbor_event_ids:
-                original_count = len(junction_entity_triples)
-                junction_entity_triples = [
-                    t for t in junction_entity_triples
-                    if t.object_id not in non_neighbor_event_ids
-                ]
-                filtered_count = original_count - len(junction_entity_triples)
-                if filtered_count:
-                    logger.debug(
-                        "Filtered %d junction triples linking to non-neighbor events",
-                        filtered_count
-                    )
+
+        # Find which junction entities link to NEIGHBOR events
+        from arkumu.metadata.canonical import canonical_uri
+        EVENT_CANONICAL = canonical_uri("event")
+
+        junctions_to_keep = set()
+        for t in junction_entity_triples:
+            # Check predicate canonical URI (Triple model uses predicate.canonical_uri)
+            pred_canonical = t.predicate.canonical_uri if t.predicate else None
+            if pred_canonical == EVENT_CANONICAL and t.object_id:
+                # This junction links to an event - check if it's a neighbor event
+                if t.object_id in all_neighbor_ids:
+                    junctions_to_keep.add(t.subject_id)
+
+        # Debug logging for first batch
+        if junctions_to_keep and len(all_project_ids) ==  1:
+            logger.debug(
+                "Junction filter: keeping %d junctions (link to neighbor events) out of %d total",
+                len(junctions_to_keep), len(all_junction_ids)
+            )
+
+        # Remove all junctions that are NOT in the keep set
+        junctions_to_remove = all_junction_ids - junctions_to_keep
+
+        if junctions_to_remove:
+            original_count = len(junction_entity_triples)
+            junction_entity_triples = [
+                t for t in junction_entity_triples
+                if t.subject_id not in junctions_to_remove
+            ]
+            filtered_count = original_count - len(junction_entity_triples)
+
+            # Also update junction_to_neighbors mapping to remove filtered junctions
+            for junction_id in junctions_to_remove:
+                junction_to_neighbors.pop(junction_id, None)
+
+            # Update all_junction_ids to reflect filtered set
+            all_junction_ids = junctions_to_keep
+
+            if filtered_count:
+                logger.debug(
+                    "Filtered %d junction entity triples (from %d junction entities linking to non-neighbor events)",
+                    filtered_count, len(junctions_to_remove)
+                )
 
     # Collect ALL linked entities from junctions
     all_linked_ids: Set[uuid.UUID] = set()
