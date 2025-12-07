@@ -347,38 +347,62 @@ class METSSerializer:
         Format: "Actor Name (Role)" or just "Actor Name" if no role.
         """
         from arkumu.metadata.models.triples import Triple
+        from arkumu.metadata.canonical import canonical_uri
         from django.db.models import Q
         import uuid
 
         creators = []
         contributors = []
 
+        # Get root identifier - try root_id first, fallback to root_uri
         root_id = graph.get("root_id")
+        root_uri = graph.get("root_uri") if not root_id else None
+
+        # For URI-based graphs (from get_project_graphs), resolve URI to UUID
+        if root_uri and not root_id:
+            try:
+                from arkumu.metadata.models.resource import Resource
+                root_resource = Resource.objects.filter(uri=root_uri).only("id").first()
+                if root_resource:
+                    root_id = str(root_resource.id)
+                else:
+                    return creators, contributors
+            except Exception:
+                return creators, contributors
+
         if not root_id:
             return creators, contributors
 
         edges = graph.get("edges", []) or []
         nodes = graph.get("nodes", {}) or {}
 
-        # Find direct event IDs (neighbors of the project)
+        # Find direct event IDs using canonical event predicate (org-agnostic)
+        EVENT_CANONICAL = canonical_uri("event")
         event_ids = set()
         for edge in edges:
             subj = edge.get("subject_id")
+            pred_canonical = edge.get("predicate_canonical")
             obj = edge.get("object_id")
-            if subj == root_id and obj:
+            if subj == root_id and pred_canonical == EVENT_CANONICAL and obj:
                 event_ids.add(obj)
 
         if not event_ids:
             return creators, contributors
 
-        # Validate that event_ids are valid UUIDs (skip if mock data)
-        valid_event_ids = []
-        for eid in event_ids:
-            try:
-                uuid.UUID(str(eid))
-                valid_event_ids.append(eid)
-            except (ValueError, AttributeError):
-                pass
+        # Convert URIs to UUIDs if necessary (for URI-based graphs)
+        if event_ids and "http" in str(next(iter(event_ids))):
+            from arkumu.metadata.models.resource import Resource
+            event_resources = Resource.objects.filter(uri__in=event_ids).only("id")
+            valid_event_ids = [str(r.id) for r in event_resources]
+        else:
+            # Validate that event_ids are valid UUIDs (skip if mock data)
+            valid_event_ids = []
+            for eid in event_ids:
+                try:
+                    uuid.UUID(str(eid))
+                    valid_event_ids.append(eid)
+                except (ValueError, AttributeError):
+                    pass
 
         if not valid_event_ids:
             return creators, contributors
@@ -439,6 +463,11 @@ class METSSerializer:
             "object__name",
         )
 
+        # Canonical URIs for junction properties
+        ACTOR_IN_EVENT_CANONICAL = canonical_uri("actor_in_event")
+        ROLE_IN_EVENT_CANONICAL = canonical_uri("role_in_event")
+        IST_URHEBERIN_CANONICAL = "http://arkumu.org/data/properties/ist-urheberin"
+
         # Group by junction entity
         junction_data: Dict[str, Dict[str, Any]] = {}
         for t in junction_triples:
@@ -446,14 +475,16 @@ class METSSerializer:
             if jid not in junction_data:
                 junction_data[jid] = {"ist_urheberin": False, "actor_id": None, "role": None}
 
-            pred_uri = t.predicate.canonical_uri or t.predicate.uri or ""
+            pred_canonical = t.predicate.canonical_uri or ""
+            pred_uri = t.predicate.uri or ""
 
-            if "ist-urheberin" in pred_uri:
+            # Check canonical URI first, fallback to substring matching for legacy support
+            if pred_canonical == IST_URHEBERIN_CANONICAL or "ist-urheberin" in pred_uri:
                 val = t.object.value if hasattr(t.object, "value") else None
                 junction_data[jid]["ist_urheberin"] = val in ("1", "true", True, 1)
-            elif "akteurin-im-ereignis" in pred_uri or "akteurin" in pred_uri.split("/")[-1]:
+            elif pred_canonical == ACTOR_IN_EVENT_CANONICAL or "akteurin-im-ereignis" in pred_uri or "akteurin" in pred_uri.split("/")[-1]:
                 junction_data[jid]["actor_id"] = str(t.object.id)
-            elif "rollen-der-akteurin" in pred_uri or "rolle" in pred_uri.split("/")[-1]:
+            elif pred_canonical == ROLE_IN_EVENT_CANONICAL or "rollen-der-akteurin" in pred_uri or "rolle" in pred_uri.split("/")[-1]:
                 # Get role name
                 role_val = t.object.value or t.object.name if hasattr(t.object, "value") else None
                 if role_val:
