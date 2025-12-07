@@ -8,9 +8,9 @@ from django.utils import timezone
 from arkumu.catalog.services.project_views import ProjectURIs
 from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
 from arkumu.metadata.models.triples import Triple
-from arkumu.oaipmh import views
 from arkumu.oaipmh.models import OAIProjectMediaLink, OAIProjectPublication
 from arkumu.oaipmh.oai_project_tailored import OAIProjectBuilderTailored
+from arkumu.oaipmh.views import tailored
 from arkumu.oaipmh.views import projects as project_views
 from arkumu.projects import ProjectDigitalObject, ProjectInstitution, ProjectRecord
 from arkumu.projects.services.snapshot_service import ProjectSnapshotService
@@ -19,13 +19,13 @@ from arkumu.users.models import Organization
 
 
 @pytest.mark.django_db
-def test_tailored_queryset_requires_curated_and_approved(monkeypatch):
+def test_approved_publications_queryset_filters_by_approval():
+    """Test that _approved_publications_queryset only returns approved publications."""
     org = Organization.objects.create(code="fuk", name="FUK", is_active=True)
     now = timezone.now()
 
-    monkeypatch.setattr(views, "_project_type_filter", lambda: None)
-
-    project = Resource.objects.create(
+    # Create approved project with publication
+    project_approved = Resource.objects.create(
         uri="https://arkumu.org/entities/projekt/1",
         organization=org,
         resource_type=ResourceType.ENTITY,
@@ -40,11 +40,11 @@ def test_tailored_queryset_requires_curated_and_approved(monkeypatch):
         public_access_level=PublicAccessLevel.PUBLIC,
         is_public_approved=True,
     )
-    OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
-    pub = OAIProjectPublication.objects.create(project=project, is_approved=True)
-    # Force publication timestamp to be newer than resource update
-    OAIProjectPublication.objects.filter(pk=pub.pk).update(updated_at=now - timedelta(days=1))
+    OAIProjectMediaLink.objects.create(project=project_approved, digital_object=digital)
+    pub_approved = OAIProjectPublication.objects.create(project=project_approved, is_approved=True)
+    OAIProjectPublication.objects.filter(pk=pub_approved.pk).update(updated_at=now - timedelta(days=1))
 
+    # Create unapproved project
     project_unapproved = Resource.objects.create(
         uri="https://arkumu.org/entities/projekt/2",
         organization=org,
@@ -63,90 +63,135 @@ def test_tailored_queryset_requires_curated_and_approved(monkeypatch):
     OAIProjectMediaLink.objects.create(project=project_unapproved, digital_object=digital_two)
     OAIProjectPublication.objects.create(project=project_unapproved, is_approved=False)
 
-    qs = views._tailored_resources_queryset()
-    uris = list(qs.values_list("uri", flat=True))
+    qs = tailored._approved_publications_queryset()
+    project_uris = [pub.project.uri for pub in qs]
 
-    assert project.uri in uris
-    assert project_unapproved.uri not in uris
-
-    annotated = qs.get(uri=project.uri)
-    assert hasattr(annotated, "effective_datestamp")
-    assert annotated.effective_datestamp >= annotated.updated_at
+    assert project_approved.uri in project_uris
+    assert project_unapproved.uri not in project_uris
 
 
 @pytest.mark.django_db
-def test_tailored_harvestable_page_uses_effective_datestamp(monkeypatch):
+def test_approved_publications_queryset_uses_publication_updated_at():
+    """Test that publication's updated_at is used for ordering."""
+    org = Organization.objects.create(code="fuk", name="FUK", is_active=True)
+    now = timezone.now()
+
+    project = Resource.objects.create(
+        uri="https://arkumu.org/entities/projekt/1",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+        public_access_level=PublicAccessLevel.PUBLIC,
+        is_public_approved=True,
+        updated_at=now - timedelta(days=10),
+    )
+    digital = Resource.objects.create(
+        uri="https://arkumu.org/entities/digitales-objekt/1",
+        organization=org,
+        resource_type=ResourceType.ENTITY,
+    )
+    OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
+    pub = OAIProjectPublication.objects.create(project=project, is_approved=True)
+
+    # Set publication updated_at to a specific time
+    publication_time = now - timedelta(days=1)
+    OAIProjectPublication.objects.filter(pk=pub.pk).update(updated_at=publication_time)
+
+    qs = tailored._approved_publications_queryset()
+    result = qs.first()
+
+    assert result is not None
+    assert result.updated_at == publication_time
+
+
+@pytest.mark.django_db
+def test_fetch_publication_page_pagination():
+    """Test cursor-based pagination through publications."""
     org = Organization.objects.create(code="fuk", name="FUK", is_active=True)
     base = datetime(2024, 1, 1, tzinfo=dt_timezone.utc)
 
-    monkeypatch.setattr(views, "_project_type_filter", lambda: None)
-
-    def make_project(idx: int, updated: datetime) -> Resource:
-        return Resource.objects.create(
-            uri=f"https://arkumu.org/entities/projekt/{idx}",
+    # Create multiple approved projects
+    projects = []
+    for i in range(3):
+        project = Resource.objects.create(
+            uri=f"https://arkumu.org/entities/projekt/{i+1}",
             organization=org,
             resource_type=ResourceType.ENTITY,
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,
-            updated_at=updated,
         )
+        digital = Resource.objects.create(
+            uri=f"https://arkumu.org/entities/digitales-objekt/{i+1}",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+        )
+        OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
+        pub = OAIProjectPublication.objects.create(project=project, is_approved=True)
+        OAIProjectPublication.objects.filter(pk=pub.pk).update(
+            updated_at=base + timedelta(days=i)
+        )
+        projects.append(project)
 
-    proj_a = make_project(1, base)
-    proj_b = make_project(2, base + timedelta(days=1))
+    qs = tailored._approved_publications_queryset()
 
-    dig_a = Resource.objects.create(
-        uri="https://arkumu.org/entities/digitales-objekt/a",
+    # First page
+    first_page = tailored._fetch_publication_page(
+        qs,
+        cursor_position=None,
+        page_size=2,
+    )
+    assert len(first_page.publications) == 2
+    assert first_page.has_more is True
+    assert first_page.cursor_position is not None
+
+    # Second page
+    second_page = tailored._fetch_publication_page(
+        qs,
+        cursor_position=first_page.cursor_position,
+        page_size=2,
+    )
+    assert len(second_page.publications) == 1
+    assert second_page.has_more is False
+
+
+@pytest.mark.django_db
+def test_fetch_publication_page_ordering():
+    """Test that publications are ordered by updated_at."""
+    org = Organization.objects.create(code="fuk", name="FUK", is_active=True)
+    base = datetime(2024, 1, 1, tzinfo=dt_timezone.utc)
+
+    # Create projects with different publication timestamps
+    proj_a = Resource.objects.create(
+        uri="https://arkumu.org/entities/projekt/a",
         organization=org,
         resource_type=ResourceType.ENTITY,
-        public_access_level=PublicAccessLevel.PUBLIC,
-        is_public_approved=True,
     )
-    dig_b = Resource.objects.create(
-        uri="https://arkumu.org/entities/digitales-objekt/b",
+    proj_b = Resource.objects.create(
+        uri="https://arkumu.org/entities/projekt/b",
         organization=org,
         resource_type=ResourceType.ENTITY,
-        public_access_level=PublicAccessLevel.PUBLIC,
-        is_public_approved=True,
     )
 
-    link_a = OAIProjectMediaLink.objects.create(project=proj_a, digital_object=dig_a)
-    link_b = OAIProjectMediaLink.objects.create(project=proj_b, digital_object=dig_b)
+    for proj in [proj_a, proj_b]:
+        digital = Resource.objects.create(
+            uri=f"{proj.uri}/digital",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+        )
+        OAIProjectMediaLink.objects.create(project=proj, digital_object=digital)
+
     pub_a = OAIProjectPublication.objects.create(project=proj_a, is_approved=True)
     pub_b = OAIProjectPublication.objects.create(project=proj_b, is_approved=True)
 
-    # Make effective datestamp ordering explicit:
-    # proj_b should appear first due to earlier link/publication timestamps.
-    OAIProjectMediaLink.objects.filter(pk=link_a.pk).update(updated_at=base + timedelta(days=5))
-    OAIProjectMediaLink.objects.filter(pk=link_b.pk).update(updated_at=base + timedelta(days=2))
-    OAIProjectPublication.objects.filter(pk=pub_a.pk).update(updated_at=base + timedelta(days=4))
+    # proj_b has earlier timestamp, should come first
+    OAIProjectPublication.objects.filter(pk=pub_a.pk).update(updated_at=base + timedelta(days=5))
     OAIProjectPublication.objects.filter(pk=pub_b.pk).update(updated_at=base + timedelta(days=1))
 
-    monkeypatch.setattr(
-        views,
-        "_build_tailored_project_hint_from_resource",
-        lambda resource: SimpleNamespace(harvestable=True, uri=resource.uri),
-    )
+    qs = tailored._approved_publications_queryset()
+    page = tailored._fetch_publication_page(qs, cursor_position=None, page_size=10)
 
-    qs = views._tailored_resources_queryset()
-
-    first_page = views._tailored_harvestable_page(
-        qs,
-        cursor_position=None,
-        page_size=1,
-        include_hints=True,
-    )
-    assert first_page.resources
-
-    second_page = views._tailored_harvestable_page(
-        qs,
-        cursor_position=first_page.cursor_position,
-        page_size=1,
-        include_hints=True,
-    )
-    assert second_page.resources
-    first_resource = first_page.resources[0]
-    second_resource = second_page.resources[0]
-    assert first_resource.effective_datestamp <= second_resource.effective_datestamp
+    assert len(page.publications) == 2
+    assert page.publications[0].project.uri == proj_b.uri  # Earlier timestamp first
+    assert page.publications[1].project.uri == proj_a.uri
 
 
 @pytest.mark.django_db
@@ -497,3 +542,61 @@ def test_tailored_builder_uses_pending_curated_links():
         str(digital_one.id),
     ]
     assert project_view.digital_objects[0].label_override == "Second Pending"
+
+
+@pytest.mark.django_db
+def test_publication_dataset_marker_returns_latest_timestamp():
+    """Test that dataset marker returns the latest publication timestamp."""
+    org = Organization.objects.create(code="test", name="Test", is_active=True)
+    base = datetime(2024, 6, 1, tzinfo=dt_timezone.utc)
+
+    for i in range(3):
+        project = Resource.objects.create(
+            uri=f"https://arkumu.org/entities/projekt/{i}",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+        )
+        digital = Resource.objects.create(
+            uri=f"https://arkumu.org/entities/digital/{i}",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+        )
+        OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
+        pub = OAIProjectPublication.objects.create(project=project, is_approved=True)
+        OAIProjectPublication.objects.filter(pk=pub.pk).update(
+            updated_at=base + timedelta(days=i)
+        )
+
+    qs = tailored._approved_publications_queryset()
+    marker = tailored._publication_dataset_marker(qs)
+
+    # Should be the latest timestamp (day 2)
+    expected = (base + timedelta(days=2)).isoformat()
+    assert marker == expected
+
+
+@pytest.mark.django_db
+def test_approved_publications_queryset_filters_inactive_orgs():
+    """Test that inactive organizations are excluded."""
+    active_org = Organization.objects.create(code="active", name="Active", is_active=True)
+    inactive_org = Organization.objects.create(code="inactive", name="Inactive", is_active=False)
+
+    for org in [active_org, inactive_org]:
+        project = Resource.objects.create(
+            uri=f"https://arkumu.org/entities/projekt/{org.code}",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+        )
+        digital = Resource.objects.create(
+            uri=f"https://arkumu.org/entities/digital/{org.code}",
+            organization=org,
+            resource_type=ResourceType.ENTITY,
+        )
+        OAIProjectMediaLink.objects.create(project=project, digital_object=digital)
+        OAIProjectPublication.objects.create(project=project, is_approved=True)
+
+    qs = tailored._approved_publications_queryset()
+    org_codes = [pub.project.organization.code for pub in qs]
+
+    assert "active" in org_codes
+    assert "inactive" not in org_codes
