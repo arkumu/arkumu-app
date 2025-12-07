@@ -1626,7 +1626,9 @@ def _build_mets_from_project(
                 general_keys.append(("label", label_value))
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
-            # fileOriginalPath removed per Rosetta requirements (Issue #4)
+            original_path = getattr(obj, "path", None) or getattr(obj, "storage_key", None)
+            if original_path:
+                general_keys.append(("fileOriginalPath", original_path))
             if obj.content_type:
                 general_keys.append(("fileMIMEType", obj.content_type))
             if obj.size_bytes is not None:
