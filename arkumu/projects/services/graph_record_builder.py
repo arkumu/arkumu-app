@@ -316,6 +316,17 @@ def extract_digital_objects(
                 if t.object_uri not in do_uris:
                     do_uris.append(t.object_uri)
 
+    # Batch fetch S3 metadata for all digital objects
+    from arkumu.storage.models import S3FileObject
+    s3_by_uri = {}
+    if do_uris:
+        s3_objects = S3FileObject.objects.filter(
+            related_resource__uri__in=do_uris
+        ).select_related('related_resource')
+        for s3_obj in s3_objects:
+            if s3_obj.related_resource and s3_obj.related_resource.uri:
+                s3_by_uri[s3_obj.related_resource.uri] = s3_obj
+
     for do_uri in do_uris:
         if do_uri in seen_uris:
             continue
@@ -340,11 +351,39 @@ def extract_digital_objects(
         if license_label:
             license_obj = ProjectDigitalObjectLicense(label_de=license_label)
 
+        # Enrich with S3 metadata if available
+        s3_obj = s3_by_uri.get(do_uri)
+        storage_key = None
+        storage_status = None
+        resource_id = None
+        content_type = None
+        size_bytes = None
+        checksum = None
+        access_url = None
+
+        if s3_obj:
+            storage_key = s3_obj.s3_key
+            storage_status = s3_obj.status
+            resource_id = str(s3_obj.related_resource_id) if s3_obj.related_resource_id else None
+            content_type = s3_obj.content_type
+            size_bytes = s3_obj.file_size_bytes
+            checksum = s3_obj.sha256_checksum
+            access_url = s3_obj.s3_url
+            if not file_name:
+                file_name = s3_obj.file_name
+
         digital_objects.append(ProjectDigitalObject(
             path=path,
             uri=do_uri,
             file_name=file_name,
             license=license_obj,
+            storage_key=storage_key,
+            storage_status=storage_status,
+            resource_id=resource_id,
+            content_type=content_type,
+            size_bytes=size_bytes,
+            checksum=checksum,
+            access_url=access_url,
         ))
 
     return digital_objects
